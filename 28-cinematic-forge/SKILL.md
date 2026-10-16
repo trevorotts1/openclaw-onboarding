@@ -299,7 +299,7 @@ If either skill is missing, install it. Do NOT skip the analysis just because a 
 **Image analysis** (visually analyzing extracted frames):
 - This is a built-in capability of the agent (uses the vision/image model)
 - No installation needed - the agent can analyze images natively
-- If the agent's current model does not support image analysis, switch to a client-available vision model (Ollama Cloud first — never Anthropic): `ollama/qwen3-vl:235b-cloud` or `ollama/minimax-m3:cloud` (primary), `openrouter/qwen/qwen3-vl-235b-a22b-instruct` or `google/gemini-3.1-pro-preview` (fallback) all support vision
+- If the agent's current model does not support image analysis, switch to a client-available vision model the client has selected (Ollama Cloud first, never Anthropic), or the client's configured default model if it supports vision. Recommendation: a model with image-analysis (vision) support, because this step analyzes images
 
 **The self-teaching flow:**
 1. Agent detects the missing skill
@@ -917,7 +917,7 @@ cc_return_to_orchestrator() {     # cc_return_to_orchestrator <task_id> <reason>
 6. **Only provide START image to VEO for Segment 1.** End images constrain generation and produce stiff video.
 7. **Design the final segment as a static card** (logo, CTA, "Thank You") so FFmpeg trimming doesn't cut mid-action.
 8. **No Topaz upscale until the user approves the draft.** Don't waste processing on unapproved content.
-9. **The agent executing this skill MUST support tool calls.** Use MiniMax M2.5 or similar. NEVER use Kimi K2.5 (cannot make API calls).
+9. **The agent executing this skill MUST support tool calls.** Use the client's selected model or their configured default model, provided it supports tool calls. Recommendation: a model with reliable tool calling, because this skill executes through API calls; a model that cannot make API calls cannot run this skill.
 10. **Budget confirmation is MANDATORY.** Never start generation without telling the user the estimated cost and getting their approval.
 11. **Check KIE.ai credit balance** before starting. If insufficient, tell the user immediately.
 12. **Update project-state.json after EVERY step.** This is how sessions recover from crashes. If you skip this and the session dies, all progress is lost.

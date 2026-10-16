@@ -70,6 +70,13 @@ class GateUnitTests(unittest.TestCase):
         self.assertFalse(PS._gate_satisfied("book_teaser", PS.preset_flags("solo")))
         self.assertFalse(PS._gate_satisfied("book_teaser", PS.preset_flags("episode_asset_pack")))
 
+    def test_solo_skips_link_back(self):
+        # Solo must never run Step 16: its link-back write is what changes
+        # contact.podcast_survey_episode_url, the trigger of 04-Podcast is
+        # Completed (the guest notifier), which the Personal silence rule forbids.
+        self.assertIs(PS.preset_flags("solo")["link_back"], False)
+        self.assertIs(PS.preset_flags("interview")["link_back"], True)
+
     # -- the gate blocks / passes on the producing transitions -------------
     def test_publish_transition_requires_audio_permalink_and_description(self):
         row = _row("publishing")  # interview, no outputs set

@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.60 - 2026-10-14 - model doctrine cleanup: client choice or configured default
+
+`register-routing-dept.py` no longer writes a hardcoded model chain for a newly registered department: the entry takes the client's explicit `--model-primary` / `--model-fallbacks` choice, or inherits the client's configured default model (`agents.defaults.model` in openclaw.json), and stops with an ask-the-client error when neither exists. `run-full-install.sh` no longer rewrites a retired model id to a named successor: a retired id resolves to the box's own configured default model, and is left untouched with a `retired-unresolved` note when the box has no usable default. Anthropic/Claude exclusions unchanged. skill-version v13.1.59 -> v13.1.60.
+
 ## v13.1.48 - 2026-10-08 - Standard placeholder company builds the board without an interview (STD001)
 
 `run-full-install.sh`: when build-state carries `companyMode = "standard-placeholder"` with `standardPlaceholder.status = "active"` (interview incomplete 14+ days, onboarding v26.4.7), the interview gate (BLOCK A to B) is skipped and BLOCK B runs for the standard company. BLOCK B treats an `--update-only` refresh as a full install (`BLOCK_B_UPDATE_ONLY`) until the first `done` stamps `standardPlaceholder.ccProvisionedAt`. `interviewComplete` is never changed and `/interview` stays open. Real-interview gating is otherwise unchanged. Tests: `23-ai-workforce-blueprint/scripts/test-standard-placeholder-install-gate.sh`.

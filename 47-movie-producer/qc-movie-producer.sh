@@ -66,6 +66,32 @@ pre_or_hard() {
 # The skill folder is THIS dir (works whether run from the repo or from an installed
 # ~/.openclaw/skills/47-movie-producer/ copy).
 SELF_SKILL_DIR="$SKILL_DIR"
+REPO_ROOT_QC="${SELF_SKILL_DIR}/.."
+# FIX-PRF-001 (replaces the FIX-S36-38 directory marker "[ -d .github ] || [ -d .git ]"):
+# repo-level artifacts resolve through a PER-FILE candidate chain. A deployed box can
+# carry a STALE $REPO_ROOT/.github/ tree while the SPECIFIC asserted files are absent,
+# and the old directory gate then re-armed the original client-install aborts (it could
+# also silently skip an assertion that had to run). resolve_repo_path <relative/path>
+# returns the FIRST existing candidate, in order:
+#   (1) $REPO_ROOT_QC/<path>
+#   (2) $HOME/.openclaw/onboarding/<path>
+#   (3) scripts/ paths only: $HOME/.openclaw/scripts/<path> (scripts/-stripped, then bare)
+# It prints nothing and returns 1 when no candidate exists, so every caller below turns
+# that into a loud FAIL: nothing passes and nothing silently skips.
+resolve_repo_path() {
+  local _rel="$1" _c
+  for _c in "${REPO_ROOT_QC}/${_rel}" "${HOME}/.openclaw/onboarding/${_rel}"; do
+    [ -f "${_c}" ] && { printf '%s\n' "${_c}"; return 0; }
+  done
+  case "${_rel}" in
+    scripts/*)
+      for _c in "${HOME}/.openclaw/scripts/${_rel#scripts/}" "${HOME}/.openclaw/scripts/${_rel}"; do
+        [ -f "${_c}" ] && { printf '%s\n' "${_c}"; return 0; }
+      done
+      ;;
+  esac
+  return 1
+}
 # The installed-clone path (only exists post-install).
 # v14.0.1: the clone lives OUTSIDE the hashed skill dir (A3 content-hash fix), in a
 # sibling runtime dir, so a ~56MB clone can never break the skill's content hash.
@@ -209,11 +235,11 @@ assert "Dockerfile installs the Chromium system libraries (libnss3)" \
   "grep -q 'libnss3' \"${SELF_SKILL_DIR}/Dockerfile\""
 
 # ---- SOP DMAIC headers (HARD — the standalone SOP must satisfy the gate regex) ----
-# Resolve the role-library video SOP relative to the repo root (skill folder is a
-# sibling of 23-ai-workforce-blueprint/ in the repo). Post-install it may be absent;
-# treat absent as a PRE note, present-but-missing-DMAIC as a HARD fail.
-SOP_FILE="${SELF_SKILL_DIR}/../23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--automated-video-production-specialist-openmontage-sops.md"
-if [ -f "${SOP_FILE}" ]; then
+# The role-library video SOP is a REPO-LEVEL artifact: resolve_repo_path picks the first
+# existing candidate (repo root, then ~/.openclaw/onboarding). No candidate -> this HARD
+# assertion FAILS loudly; it never silently skips and never passes on an empty path.
+SOP_FILE="$(resolve_repo_path "23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--automated-video-production-specialist-openmontage-sops.md")"
+if [ -n "${SOP_FILE}" ]; then
   assert "OpenMontage SOP carries all 5 DMAIC '## Define/Measure/Analyze/Improve/Control' headers (gate regex)" \
     "python3 -c \"
 import re,sys
@@ -222,7 +248,7 @@ rx=re.compile(r'^#{1,4}\\\\s*(define|measure|analyze|improve|control)\\\\b', re.
 found={m.group(1).lower() for m in rx.finditer(t)}
 sys.exit(0 if {'define','measure','analyze','improve','control'} <= found else 1)\""
 else
-  blue "  PRE  -- OpenMontage SOP DMAIC-header check (SOP not present beside this install copy)"; PREFLAG=$((PREFLAG+1))
+  red "  FAIL -- OpenMontage SOP carries all 5 DMAIC '## Define/Measure/Analyze/Improve/Control' headers (gate regex) (no candidate resolved: REPO_ROOT, ~/.openclaw/onboarding)"; FAIL=$((FAIL+1))
 fi
 
 # ---- Python deps (HARD: needed in both states once make setup / pip ran; many boxes
@@ -271,16 +297,16 @@ echo "--- v14.1.0 anti-bypass enforcement layer (HARD — always present in repo
 
 # The enforcement spine: manifest (single source of truth) + driver + receipt
 # validators + ruleset + lockstep/Guard-A/test + GOOD/BAD fixtures + CI workflow.
-REPO_ROOT_QC="${SELF_SKILL_DIR}/.."
-VID_MANIFEST="${REPO_ROOT_QC}/universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
-VID_RULESET="${REPO_ROOT_QC}/universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md"
+# REPO_ROOT_QC and resolve_repo_path are defined near the top (per-file candidate chain).
+VID_MANIFEST="$(resolve_repo_path "universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json")"
+VID_RULESET="$(resolve_repo_path "universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md")"
 VID_DRIVER="${SELF_SKILL_DIR}/scripts/executive_producer.py"
 VID_BUILDCHK="${SELF_SKILL_DIR}/scripts/video_build_check.py"
 VID_SYNC="${SELF_SKILL_DIR}/scripts/video_sync_check.py"
 VID_GUARDA="${SELF_SKILL_DIR}/scripts/video_gate_integrity_check.py"
 VID_TEST="${SELF_SKILL_DIR}/scripts/test_video_preflight.py"
 VID_FIXTURES="${SELF_SKILL_DIR}/test-fixtures/make-video-fixtures.sh"
-VID_CI="${REPO_ROOT_QC}/.github/workflows/video-pipeline-lockstep.yml"
+VID_CI="$(resolve_repo_path ".github/workflows/video-pipeline-lockstep.yml")"
 VID_CCBOARD="${SELF_SKILL_DIR}/scripts/cc_board.py"
 VID_CCBOARD_TEST="${SELF_SKILL_DIR}/scripts/test_cc_board.py"
 
@@ -295,16 +321,13 @@ assert "make-video-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${VID_FIXTURES
 assert "cc_board.py producer-side board caller present" "[ -f \"${VID_CCBOARD}\" ]"
 assert "test_cc_board.py present" "[ -f \"${VID_CCBOARD_TEST}\" ]"
 
-# FIX-S36-38: the CI workflow file lives at the REPO ROOT under .github/ and is
-# intentionally NOT copied to client boxes by any installer (only the skill dir +
-# its universal-sops clusters are). A HARD assert here aborted EVERY client install
-# (install.sh Step 8). Gate it behind repo detection: HARD in the repo / CI (where
-# a .git or .github tree exists beside the skill), a non-blocking PRE note on a
-# client box where the file legitimately does not exist.
-if [ -d "${REPO_ROOT_QC}/.github" ] || [ -d "${REPO_ROOT_QC}/.git" ]; then
+# FIX-PRF-001: keyed on the SPECIFIC FILE via resolve_repo_path (candidate chain), never
+# on a directory marker — a stale $REPO_ROOT/.github/ tree with the lockstep file absent
+# must not re-arm the original install abort, and a missing file must FAIL loudly here.
+if [ -n "${VID_CI}" ]; then
   assert "video-pipeline-lockstep.yml CI workflow present" "[ -f \"${VID_CI}\" ]"
 else
-  blue "  PRE  -- video-pipeline-lockstep.yml CI workflow (repo-only; not copied to client boxes)"; PREFLAG=$((PREFLAG+1))
+  red "  FAIL -- video-pipeline-lockstep.yml CI workflow present (no candidate resolved: REPO_ROOT, ~/.openclaw/onboarding)"; FAIL=$((FAIL+1))
 fi
 
 # The enforcement code must parse.

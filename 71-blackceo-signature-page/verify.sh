@@ -13,6 +13,45 @@ need_file() {
   fi
 }
 
+# Capability matrix (Amendment 1, Item 29 rider): with --capabilities,
+# print what this host can actually run and the named skips for what it
+# cannot, then exit. SKIP-RENDER means the Playwright/Chromium render
+# tests skip on this host; SKIP-IMAGE means the Pillow pixel tests skip.
+# Absence is reported, never worked around silently.
+if [ "${1:-}" = "--capabilities" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    echo "CAP python $(python3 -c 'import platform; print(platform.python_version())')"
+  else
+    echo "MISSING python (python3 not on PATH)"
+    echo "SKIP-RENDER playwright unavailable (no python3)"
+    echo "SKIP-IMAGE pillow unavailable (no python3)"
+    exit 0
+  fi
+  if python3 -c 'import PIL' >/dev/null 2>&1; then
+    echo "CAP pillow $(python3 -c 'import PIL; print(PIL.__version__)')"
+  else
+    echo "SKIP-IMAGE pillow not importable (pixel tests skip)"
+  fi
+  if python3 -c 'import playwright' >/dev/null 2>&1; then
+    echo "CAP playwright $(python3 -c 'import importlib.metadata as m; print(m.version("playwright"))' 2>/dev/null || echo present)"
+    CHROME_BIN="$(python3 -c 'from playwright.sync_api import sync_playwright
+with sync_playwright() as p: print(p.chromium.executable_path)' 2>/dev/null || true)"
+    if [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then
+      echo "CAP chromium $CHROME_BIN"
+    else
+      echo "SKIP-RENDER playwright present but its chromium executable is missing"
+    fi
+  else
+    echo "SKIP-RENDER playwright not importable (render tests skip)"
+  fi
+  if command -v fc-list >/dev/null 2>&1; then
+    echo "CAP fonts $(fc-list | wc -l | tr -d ' ') fontconfig entries"
+  else
+    echo "CAP fonts UNKNOWN (fontconfig fc-list unavailable)"
+  fi
+  exit 0
+fi
+
 for f in \
   SKILL.md skill-version.txt MASTERDOC.md INSTRUCTIONS.md INSTALL.md QC.md REPO-INTEGRATION.md \
   references/authority-map.md \
@@ -28,6 +67,7 @@ for f in \
   scripts/validate_public_copy.py scripts/combine_review_pdf.py scripts/validate_review_pdf.py \
   scripts/stage_gate.py scripts/render_page.py scripts/compare_sheet.py \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
+  scripts/calibrate_grade.py scripts/check_authority_pins.py \
   scripts/install_local.py scripts/write_intake.py \
   tests/run_tests.py tests/test_scripts.py \
   assets/brand/blackceo-brand.json assets/brand/brand.schema.json \
@@ -35,8 +75,23 @@ for f in \
   assets/page-references/README.md \
   references/BlackCEO-Page-Brand-Law.md references/stage-contract.json \
   references/swarm-plan.md references/html-qc-rubric.md references/private-label-list.txt \
+  references/external-authorities.json \
+  assets/brand/gold-set/README.md assets/brand/gold-set/gold-set.json \
   CHANGELOG.md VERSION START-HERE.md EVALUATION-CHECKLIST.md \
   references/runtime-adapters.md references/kie-generation-route.md agents/openai.yaml \
+  scripts/swarm_runner.py scripts/browser_sessions.py scripts/ship_run_events.py \
+  scripts/validate_copy_structure.py scripts/validate_install.py \
+  scripts/validate_funnel_completion.py scripts/check_deliverables.py \
+  references/run-events-schema.md references/run-events.schema.json \
+  references/run-events.example.jsonl references/report-json.schema.json \
+  references/report-json.example.json references/style-selection.md \
+  references/style-selection.schema.json references/prompt-budget-policy.json \
+  references/runner-profiles.json references/item-gate-spec.md \
+  references/browser-hygiene.md references/funnel-completion-checklist.md \
+  references/browser-engine-contract.md references/automation-handoff.md \
+  references/deliverables-manifest.md references/layout-trait-vocabulary.json \
+  references/copy-specs/standard-v6.json references/copy-specs/long-form-v6.json \
+  tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \
   repo-integration/universal-sops/signature-page-craft/README.md; do
@@ -90,6 +145,38 @@ if python3 "$ROOT/scripts/validate_public_copy.py" "$TMP/public.md" >/dev/null; 
 else
   echo "[FAIL] public-copy validator sanity fixture" >&2
   fail=1
+fi
+
+# Pinned external authorities (Item 11): drift is a warning, never a
+# failure here. PIN OK / PIN DRIFT / PIN MISSING lines print as-is.
+if [ -f "$ROOT/scripts/check_authority_pins.py" ] && [ -f "$ROOT/references/external-authorities.json" ]; then
+  python3 "$ROOT/scripts/check_authority_pins.py" || true
+fi
+
+# Cross-repo parity (Item 27): when the sibling repo's checkout is
+# named, run the parity checker. In the onboarding repo set
+# SKILL71_999_ROOT to a 999-setup checkout; in the 999 repo set
+# SKILL71_ONB_ROOT to an onboarding checkout. Unset means this install
+# is verified standalone and the section reports its skip by name.
+PARITY_REPO_ROOT="$(cd "$ROOT/../.." && pwd)"
+if [ -n "${SKILL71_999_ROOT:-}" ]; then
+  if python3 "$PARITY_REPO_ROOT/scripts/check-skill71-parity.py" \
+       --onb-root "$PARITY_REPO_ROOT" --nine-root "$SKILL71_999_ROOT"; then
+    echo "[PASS] parity against 999 checkout $SKILL71_999_ROOT"
+  else
+    echo "[FAIL] parity against 999 checkout $SKILL71_999_ROOT" >&2
+    fail=1
+  fi
+elif [ -n "${SKILL71_ONB_ROOT:-}" ]; then
+  if python3 "$PARITY_REPO_ROOT/scripts/check-skill71-parity.py" \
+       --onb-root "$SKILL71_ONB_ROOT" --nine-root "$PARITY_REPO_ROOT"; then
+    echo "[PASS] parity against onboarding checkout $SKILL71_ONB_ROOT"
+  else
+    echo "[FAIL] parity against onboarding checkout $SKILL71_ONB_ROOT" >&2
+    fail=1
+  fi
+else
+  echo "[SKIP] parity: neither SKILL71_999_ROOT nor SKILL71_ONB_ROOT is set"
 fi
 
 if [ "$fail" -eq 0 ]; then

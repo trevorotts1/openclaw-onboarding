@@ -783,7 +783,9 @@ class TestIntakeExecutorWiring:
             build_type=ii.BUILD_TYPE_FUNNEL,
             answers={},
             executor=stub,
-            env={},
+            # A configured client: under the client-choice doctrine an empty
+            # env is the ask-the-client stop, not a runnable configuration.
+            env={"MODEL_ROUTER_DEFAULT": "client-default:cloud"},
             ask_fn=lambda q: "",   # silent → proposed won't be confirmed, but branch runs
         )
         assert result.get("_skip_reason") != "no_executor", (

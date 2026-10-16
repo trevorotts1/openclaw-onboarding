@@ -8,16 +8,27 @@ without Playwright, with or without a Firebase refresh token — by PROBING the
 host, classifying it, selecting a browser lane, and degrading gracefully.
 Never assume the operator reference box (2026.9.2 + CUA + 0.27.0 + Playwright).
 
+ENGINE DEFAULT (2026-10-13, operator decision): the OpenClaw Chrome extension
+is Skill 6's PRIMARY browser engine — the OpenClaw browser driven through the
+extension on the operator's paired, already signed-in Chrome. The
+openclaw_managed_browser lane is therefore selected FIRST, but only when the
+extension itself is installed and current (see _probe_openclaw_extension);
+agent-browser is the FALLBACK lane. Currency is enforced at install time by
+scripts/check-openclaw-extension-version.sh; the probe re-checks it here so a
+stale extension never silently becomes the default lane.
+
 Output: one JSON document (stdout, and --out writes working/skill6-capability.json
 under the skill dir by default). Every probe step is NON-FATAL: a failure sets the
 field to false/"unknown" and appends to `warnings`. Secrets are booleans ONLY —
 no secret VALUE is ever emitted, and env is the only source consulted.
 
-Lane selection (plan 2.2 + 9.6 REVISED table):
-  1  agent_browser            — `agent-browser` on PATH (version reported). Lane 1b is
+Lane selection (plan 2.2 + 9.6 REVISED table, engine order revised 2026-10-13):
+  1  openclaw_managed_browser — the OpenClaw browser lane (Chrome extension seat
+                              first): ONLY if OpenClaw >= 2026.8.1 AND browser plugin
+                              enabled AND `openclaw browser ...` CLI works AND the
+                              OpenClaw Chrome extension is installed + current.
+  2  agent_browser            — `agent-browser` on PATH (version reported). Lane 2b is
                               the same lane with playwright hybrid: iframeDrag.available.
-  2  openclaw_managed_browser — ONLY if OpenClaw >= 2026.8.1 AND browser plugin enabled
-                              AND `openclaw browser ...` CLI works.
   3  playwright_direct        — Playwright importable (legacy degraded fallback).
   4  existing_session         — NEVER default; only when env GHL_SKILL6_ALLOW_EXISTING_SESSION=1.
   5  cua_last_resort          — NEVER auto-selected.
@@ -44,6 +55,17 @@ from typing import Any, Callable, Dict, List, Optional
 
 # Plan Part 0: OpenClaw "2.0" shipped as version 2026.8.1 — that is the floor.
 OC_2X_FLOOR = (2026, 8, 1)
+
+# OpenClaw Chrome extension (Chrome Web Store identity, offered by the OpenClaw
+# Foundation). The extension version preflight lives in
+# scripts/check-openclaw-extension-version.sh; the probe re-derives the same
+# facts from disk so lane selection can require an installed + current
+# extension without launching a browser.
+OPENCLAW_EXTENSION_ID = "kcdjddhmeafeomebliikmbpblkmkfoig"
+# Env knobs (tests + operators): explicit Chrome user-data roots to scan
+# (os.pathsep-separated), and an explicit expected-version override.
+EXTENSION_ROOTS_ENV = "GHL_SKILL6_CHROME_PROFILE_ROOTS"
+EXTENSION_EXPECTED_ENV = "SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION"
 
 # Secret env aliases. FIREBASE refresh token: the canonical chain is
 # GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN -> GHL_FIREBASE_REFRESH_TOKEN ->
@@ -258,6 +280,124 @@ def _probe_openclaw_browser_plugin(runner: Callable[..., Any], env: Dict[str, st
     return lane
 
 
+def _chrome_user_data_roots(env: Dict[str, str]) -> List[str]:
+    """Chrome/Chromium user-data dirs to scan for the OpenClaw extension.
+
+    Explicit env roots win (tests, operators); otherwise the OS Chrome dir
+    plus every OpenClaw-managed browser user-data dir on the box. Pure path
+    math — nothing is created and no browser is launched."""
+    roots: List[str] = []
+    raw = env.get(EXTENSION_ROOTS_ENV, "")
+    if raw:
+        roots.extend([p for p in raw.split(os.pathsep) if p])
+    home = env.get("HOME") or os.path.expanduser("~")
+    system = (env.get("OS") or "").lower()
+    import platform as _pf
+    plat = system or _pf.system().lower()
+    if "darwin" in plat or "mac" in plat:
+        roots.append(os.path.join(
+            home, "Library", "Application Support", "Google", "Chrome"))
+    else:
+        roots.append(os.path.join(home, ".config", "google-chrome"))
+        roots.append(os.path.join(home, ".config", "chromium"))
+    oc_home = env.get("OPENCLAW_HOME") or os.path.join(home, ".openclaw")
+    browser_dir = os.path.join(oc_home, "browser")
+    try:
+        for name in sorted(os.listdir(browser_dir)):
+            ud = os.path.join(browser_dir, name, "user-data")
+            if os.path.isdir(ud):
+                roots.append(ud)
+    except OSError:
+        pass
+    seen: List[str] = []
+    for r in roots:
+        if r not in seen:
+            seen.append(r)
+    return seen
+
+
+def _extension_version_in_user_data(user_data: str) -> Optional[str]:
+    """Newest installed OpenClaw extension version in one user-data dir.
+
+    Reads each profile's Secure Preferences; returns the max version string
+    for OPENCLAW_EXTENSION_ID, or None when the extension is absent."""
+    import glob as _glob
+    best: Optional[List[int]] = None
+    best_str: Optional[str] = None
+    candidates = [user_data] + sorted(
+        d for d in _glob.glob(os.path.join(user_data, "*")) if os.path.isdir(d))
+    for prof in candidates:
+        prefs = os.path.join(prof, "Secure Preferences")
+        try:
+            with open(prefs, "r") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        settings = (data.get("extensions", {}) or {}).get("settings", {}) or {}
+        info = settings.get(OPENCLAW_EXTENSION_ID)
+        if not info:
+            continue
+        ver = ((info.get("manifest") or {}).get("version")
+               or info.get("version") or "")
+        parsed = _semver(str(ver))
+        if parsed and (best is None or parsed > best):
+            best, best_str = parsed, _semver_str(str(ver))
+    return best_str
+
+
+def _probe_openclaw_extension(env: Dict[str, str],
+                              warnings: List[str]) -> Dict[str, Any]:
+    """OpenClaw Chrome extension presence + currency, from disk only.
+
+    expectedVersion: EXTENSION_EXPECTED_ENV wins; else the version of the
+    extension source the local OpenClaw install bundles
+    (~/.openclaw/browser/chrome-extension/manifest.json); else None, in which
+    case presence alone counts as current-with-warning (the standalone
+    preflight script is the store-currency authority)."""
+    installed: Optional[str] = None
+    for root in _chrome_user_data_roots(env):
+        ver = _extension_version_in_user_data(root)
+        if ver and (installed is None
+                    or (_semver(ver) or []) > (_semver(installed) or [])):
+            installed = ver
+    expected = env.get(EXTENSION_EXPECTED_ENV) or None
+    if not expected:
+        home = env.get("HOME") or os.path.expanduser("~")
+        oc_home = env.get("OPENCLAW_HOME") or os.path.join(home, ".openclaw")
+        manifest = os.path.join(oc_home, "browser", "chrome-extension",
+                                "manifest.json")
+        try:
+            with open(manifest, "r") as f:
+                expected = str(json.load(f).get("version") or "") or None
+        except Exception:
+            expected = None
+    if installed is None:
+        current = False
+        warnings.append("OpenClaw Chrome extension not found in any Chrome "
+                        "profile on this box; the PRIMARY lane is unavailable "
+                        "(install it from the Chrome Web Store; see "
+                        "scripts/check-openclaw-extension-version.sh)")
+    elif expected is None:
+        current = True
+        warnings.append("OpenClaw Chrome extension present (v%s) but the "
+                        "expected version is unknown on this box; presence "
+                        "accepted; run scripts/check-openclaw-extension-"
+                        "version.sh for the store-currency check" % installed)
+    else:
+        current = (_semver(installed) or []) >= (_semver(expected) or [])
+        if not current:
+            warnings.append("OpenClaw Chrome extension is behind: installed "
+                            "v%s, expected v%s; update it before relying on "
+                            "the PRIMARY lane (scripts/check-openclaw-"
+                            "extension-version.sh)" % (installed, expected))
+    return {
+        "installed": installed is not None,
+        "version": installed,
+        "expectedVersion": expected,
+        "current": bool(current),
+    }
+
+
 def _probe_existing_session(env: Dict[str, str],
                             warnings: List[str]) -> Dict[str, Any]:
     opted_in = env.get("GHL_SKILL6_ALLOW_EXISTING_SESSION", "") == "1"
@@ -304,14 +444,22 @@ def _probe_cua(runner: Callable[..., Any], env: Dict[str, str],
 
 # ── lane selection (plan 2.2 + 9.6 REVISED) ───────────────────────────────────
 
+def _oc_lane_eligible(oc: Dict[str, Any]) -> bool:
+    """The OpenClaw browser lane (PRIMARY since 2026-10-13) requires the
+    plugin + a working CLI + the Chrome extension installed and current."""
+    ext = oc.get("extension") or {}
+    return bool(oc.get("pluginEnabled") and oc.get("cliWorks")
+                and ext.get("installed") and ext.get("current"))
+
+
 def _select_lane(lanes: Dict[str, Any], env: Dict[str, str]) -> Optional[str]:
     ab = lanes["agent_browser"]["available"]
     pw = lanes["playwright_direct"]["available"]
     oc = lanes["openclaw_managed_browser"]
+    if _oc_lane_eligible(oc):
+        return "openclaw_managed_browser"  # 1 — PRIMARY (extension default)
     if ab:
-        return "agent_browser"          # 1 / 1b (1b when playwright also present)
-    if oc["pluginEnabled"] and oc["cliWorks"]:
-        return "openclaw_managed_browser"  # 2
+        return "agent_browser"          # 2 / 2b (2b when playwright also present)
     if pw:
         return "playwright_direct"      # 3
     if env.get("GHL_SKILL6_ALLOW_EXISTING_SESSION", "") == "1":
@@ -348,6 +496,7 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
     ab = _probe_agent_browser(runner, env, warnings)
     pw = _probe_playwright(runner, env, warnings)
     managed = _probe_openclaw_browser_plugin(runner, env, oc, warnings)
+    extension = _probe_openclaw_extension(env, warnings)
     existing = _probe_existing_session(env, warnings)
     cua = _probe_cua(runner, env, warnings)
 
@@ -359,6 +508,7 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
             "playwrightAvailable": managed["playwrightAvailable"],
             "profile": managed["profile"],
             "doctorOk": managed["doctorOk"],
+            "extension": extension,
         },
         "existing_session": existing,
         "playwright_direct": pw,
@@ -389,19 +539,27 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
 
     selected = _select_lane(lanes, env)
 
-    # Lane-2 gate: managed browser only when OC >= 2026.8.1 AND plugin enabled
-    # AND cli works (plan 2.2). Demote with a warning when below the floor.
+    # OpenClaw-lane gate: the OpenClaw browser lane only when OC >= 2026.8.1
+    # AND plugin enabled AND cli works AND the Chrome extension is installed
+    # and current (plan 2.2, engine order revised 2026-10-13). Demote with a
+    # warning when below the floor.
     oc_semver = oc.get("semver")
     if selected == "openclaw_managed_browser" and not _is_2x_or_newer(oc_semver):
         selected = "playwright_direct" if pw["available"] else None
         warnings.append("openclaw older than 2026.8.1 — managed-browser lane "
                         "not eligible (plan 2.2)")
+    elif (oc.get("cliPresent") and managed["pluginEnabled"]
+            and managed["cliWorks"] and not _is_2x_or_newer(oc_semver)):
+        # Below-floor OpenClaw: the lane was never selected (the extension
+        # gate or the floor), but the operator still gets the floor warning.
+        warnings.append("openclaw older than 2026.8.1 — managed-browser lane "
+                        "not eligible (plan 2.2)")
 
     fallback_chain: List[str] = []
+    if _oc_lane_eligible(lanes["openclaw_managed_browser"]):
+        fallback_chain.append("openclaw_managed_browser")
     if ab["available"]:
         fallback_chain.append("agent_browser")
-    if managed["pluginEnabled"] and managed["cliWorks"]:
-        fallback_chain.append("openclaw_managed_browser")
     if pw["available"]:
         fallback_chain.append("playwright_direct")
     fallback_chain.append("cua_last_resort")

@@ -353,7 +353,15 @@ def check_openrouter_model(model_id: str) -> tuple:
                 return False, "ultra: OpenRouter model " + repr(mid) + " is retired"
         except (ValueError, TypeError):
             pass
-    return True, 
+    # FIX 61.4 regression fix: this success path used to be `return True, `
+    # (a trailing comma and nothing after it), which returns the 1-tuple
+    # (True,) instead of the documented (ok, reason) 2-tuple. Both callers
+    # (the intake poller's FIX 61.4 block and the launcher's model-plan
+    # gate) unpack two values, so a VALID declared OpenRouter model raised
+    # ValueError at the unpack and an ultra launch failed precisely
+    # because the model was fine. Pinned by
+    # tests/test_fix61_openrouter_model_check.py.
+    return True, ""
 
 
 def read_measured_calls(run_dir: Optional[Path]) -> Dict[str, int]:

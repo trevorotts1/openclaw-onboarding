@@ -12,7 +12,7 @@ The fleet has already been burned once: a 6-hour heartbeat across many agents pl
 
 1. **Recurring work must be metered, capped, and inventoried.** If a cron, poller, or heartbeat cannot state its worst-case daily cost, it does not ship.
 2. **A signed-in Ollama daemon bills Ollama Cloud on ANY `:cloud` turn.** Health checks never take a model turn when a balance endpoint exists.
-3. **Model tiering:** Opus 4.8 is a BUILD-TIME thinking tool only. The shipped client runtime routes all content work to Kimi 2.6 / GLM 5.2 on Ollama Cloud, then OpenRouter equivalents, then Gemini 3.1 Flash Lite. Client skills NEVER use Anthropic/Claude models. This is enforced by a build gate, not by prose.
+3. **Model tiering:** Opus 4.8 is a BUILD-TIME thinking tool only. The shipped client runtime routes all content work to the model the client selected, or the client's configured default model, then the client's configured fallback chain. Client skills NEVER use Anthropic/Claude models. This is enforced by a build gate, not by prose.
 4. **Enforcement, not description.** Every rule below names a script, a config key, a threshold, and the exact enforcement point.
 
 Known gaps in the source docs that this design closes: no per-episode cost ceiling; the QC 3-strike loop implies re-running the FULL writing protocol (up to 3x episode cost); no cap on web-research calls; a daily 6:00 AM credit smoke test, queue pollers, and dashboard polling that can each become a furnace; no alert dedup (a downed Fish Audio with 20 queued jobs would storm the founder with 20 Telegram messages).
@@ -102,7 +102,7 @@ Enforcement points:
 
 - **Research runs ONCE.** The research package (improved answers, power statements, case studies) is frozen into the episode record after Step 3. QC failure attempts 2 and 3 REUSE it. Steps 3–5 (research, sizing, blueprint) are never re-executed on a QC retry. Sole exception: a Tier 1 check 12 (fabrication) failure unlocks one supplemental research pass of at most `web_research_bonus_on_fabrication_fail = 4` calls, once per episode.
 - **Retries are TARGETED, not full rewrites.** Attempt 2 and 3 revise only the sections/dimensions that failed (the gate passes the failure list into the revision prompt). A full Step 6–8 rewrite is permitted only on attempt 2 if more than 4 rubric dimensions failed; attempt 3 is always targeted. Worst case is therefore roughly 1.6x single-write cost, not 3x.
-- **Tier 1 is deterministic, not LLM.** `scripts/qc-tier1-mechanical.py` checks em dash, triple backticks, markdown, labels, title placement, speakable characters, tag syntax, tag-excluded word count, forbidden names, forbidden word by style, intake contamination — pure string/regex/counting at $0.00. Only fabrication, mode perspective, and pronoun correctness use an LLM check, routed to the CHEAP tier (Gemini 3.1 Flash Lite or GLM 5.2). Tier 2 rubric scoring runs on the mid tier, never on the primary creative model with high thinking.
+- **Tier 1 is deterministic, not LLM.** `scripts/qc-tier1-mechanical.py` checks em dash, triple backticks, markdown, labels, title placement, speakable characters, tag syntax, tag-excluded word count, forbidden names, forbidden word by style, intake contamination: pure string/regex/counting at $0.00. Only fabrication, mode perspective, and pronoun correctness use an LLM check, routed to the CHEAP tier (the client's configured low-cost tier). Tier 2 rubric scoring runs on the mid tier, never on the primary creative model with high thinking.
 - **Web-research cap:** `web_research_calls_per_episode = 12` (covers 3 case studies at ~3 queries each plus verification), enforced by the research-tool wrapper through `podcast-cost-ledger.py precheck`. Call 13 returns a typed refusal; the writer proceeds with what it has (the spec already prefers fewer honest case studies over padded ones).
 - All attempts draw from the ONE shared `llm_tokens_per_episode_hard` budget (Guardrail 3), so even a pathological retry loop cannot spend past the ceiling.
 - Book teaser (interview mode) gets one write plus at most one revision; it shares the episode token budget.
@@ -116,15 +116,14 @@ Runtime routing config (shipped in the skill):
 ```yaml
 podcast_engine:
   models:
-    content:            # in strict priority order, high thinking on 1 and 2
-      - ollama-cloud/kimi-2.6
-      - ollama-cloud/glm-5.2
-      - openrouter/<kimi-2.6-equivalent>   # build agent pins exact current OpenRouter ids
-      - openrouter/<glm-5.2-equivalent>
-      - gemini-3.1-flash-lite              # final fallback
-    qc_judge:           # rubric + semantic Tier 1 checks (cheap tier)
-      - gemini-3.1-flash-lite
-      - ollama-cloud/glm-5.2
+    content:            # the client's selected model first, then their configured
+                        # fallback chain in order; high thinking on the primary rungs
+      - <client-selected model id>
+      - <client-configured fallback ids, in the client's order>
+    qc_judge:           # rubric + semantic Tier 1 checks (cheap tier); a different
+                        # model than the content writer (QC independence)
+      - <client-selected judge model id>
+      - <client-configured judge fallback ids>
     deny_patterns: ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"]
 ```
 
@@ -135,7 +134,7 @@ podcast_engine:
 - Runs in the repo QC pipeline (same gate family as the existing G-gates) on every merge touching the podcast skill.
 - Scans every SHIPPED runtime file of the skill (skill markdown, prompts, `.py`, `.sh`, `.json`, `.yaml`, dashboard source) for: `claude-` model ids, `anthropic` (provider slug, package import, or API host), `us.anthropic`, `@anthropic-ai`, `ANTHROPIC_API_KEY`, and `api.anthropic.com`.
 - Exit non-zero with the offending file and line = BUILD FAILS, no merge. Allowlist file `config/anthropic-guard-allow.json` exists only for documentation files explicitly marked non-runtime; the runtime directories accept no allowlist entries.
-- Companion check in the same script: asserts the routing config's `content` list is non-empty, contains no denied ids, and that `thinking: high` is set only on Kimi 2.6 / GLM 5.2 entries (Flash Lite runs default thinking — paying for high reasoning on the fallback is its own small furnace).
+- Companion check in the same script: asserts the routing config's `content` list is non-empty, contains no denied ids, and that `thinking: high` is set only on the primary content entries (the final fallback runs default thinking; paying for high reasoning on the fallback is its own small furnace).
 
 ---
 
@@ -213,8 +212,8 @@ podcast_engine:
     dedup_window_hours: 6
     max_founder_alerts_per_client_per_day: 4
   models:
-    content: [ollama-cloud/kimi-2.6, ollama-cloud/glm-5.2, openrouter/<kimi-eq>, openrouter/<glm-eq>, gemini-3.1-flash-lite]
-    qc_judge: [gemini-3.1-flash-lite, ollama-cloud/glm-5.2]
+    content: [<client-selected model id>, <client-configured fallback ids in order>]
+    qc_judge: [<client-selected judge model id>, <client-configured judge fallback ids>]
     deny_patterns: [claude, anthropic, us.anthropic, opus, sonnet, haiku]
 ```
 

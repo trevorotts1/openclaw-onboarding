@@ -5,7 +5,7 @@
   "question_set": "standard",
   "source": "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate. (deployed-r2/public/index.html is PRES-005-owned and server-driven — not regenerated.)",
   "contract_version": 2,
-  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 21.",
+  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 23.",
   "questions": [
     {
       "id": "presentation_type",
@@ -222,6 +222,39 @@
       "storeOn": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
       "conditional_on": {
         "id": "want_vsl_page",
+        "equals": "no"
+      }
+    },
+    {
+      "id": "want_email_sequences",
+      "order": 11.2,
+      "kind": "enum",
+      "prompt": "Would you like <span class=\"emph\">email follow-up sequences</span> prepared for this launch?",
+      "help": "Default no. A yes elects the Skill 50 (Email Engine) delivery option: the sequences are prepared as drafts at delivery and deployed draft-only through Skill 44 after a human approves them. Nothing is sent automatically.",
+      "label": "Email sequences",
+      "required": true,
+      "storeOn": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, prepare the email sequences as drafts",
+        "no": "No thank you"
+      }
+    },
+    {
+      "id": "email_sequences_declined_reason",
+      "order": 11.3,
+      "kind": "text",
+      "prompt": "Understood, no email sequences. In your own words, why not? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked only when you declined the email sequences. Stored word-for-word as your waiver, an empty answer cannot be accepted.",
+      "label": "Why no email sequences",
+      "placeholder": "e.g. we run our own email list",
+      "required": true,
+      "storeOn": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
+      "conditional_on": {
+        "id": "want_email_sequences",
         "equals": "no"
       }
     },

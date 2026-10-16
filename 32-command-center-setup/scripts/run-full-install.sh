@@ -600,19 +600,35 @@ _cc_is_retired_ollama_flash() {
   [[ "$m" =~ $re ]]
 }
 
-# _cc_retired_successor — echo the LIVE successor of a retired id, keeping its
-# provider prefix: ollama-cloud/deepseek-v4.1-flash, else ...deepseek-v4.1-flash:cloud.
-_cc_retired_successor() {
-  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
-    ollama-cloud/*) printf 'ollama-cloud/deepseek-v4.1-flash' ;;
-    ollama/*)       printf 'ollama/deepseek-v4.1-flash:cloud' ;;
-    *)              printf 'deepseek-v4.1-flash:cloud' ;;
-  esac
+# _cc_box_default_model: echo THIS box's configured default TEXT model id
+# (agents.defaults.model.primary, or the plain-string agents.defaults.model),
+# or empty when the box has none. Read from the box's own openclaw.json:
+# never a hardcoded model name.
+_cc_box_default_model() {
+  [[ -n "${OC_CONFIG:-}" && -f "${OC_CONFIG:-}" ]] || { printf ''; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
+  jq -r '
+    (if (.agents.defaults.model | type) == "object"
+     then (.agents.defaults.model.primary? // "")
+     else (.agents.defaults.model? // "") end)
+    | select(type == "string")
+  ' "${OC_CONFIG:-}" 2>/dev/null | head -n 1
 }
 
-# _cc_live_model_id — echo the id unchanged, or its live successor when retired.
+# _cc_live_model_id: echo the id unchanged when it is live. When the id is a
+# RETIRED Ollama deepseek-v4-flash id, no successor is prescribed by name:
+# resolve instead to THIS box's configured default model. Echoes empty when
+# the box has no usable configured default, so callers skip the dead id.
 _cc_live_model_id() {
-  if _cc_is_retired_ollama_flash "${1:-}"; then _cc_retired_successor "$1"; else printf '%s' "${1:-}"; fi
+  if _cc_is_retired_ollama_flash "${1:-}"; then
+    local def
+    def="$(_cc_box_default_model)"
+    if [[ -n "$def" ]] && ! _cc_is_retired_ollama_flash "$def"; then
+      printf '%s' "$def"
+    fi
+  else
+    printf '%s' "${1:-}"
+  fi
 }
 
 # cc_resolve_sovereign_model — echo the box's OWN primary TEXT model id (or empty
@@ -625,7 +641,11 @@ _cc_live_model_id() {
 # NEVER a hardcoded shared model — everything is read from THIS box's config.
 cc_resolve_sovereign_model() {
   if [[ -n "${CC_SOVEREIGN_DEFAULT_MODEL:-}" ]] && _cc_model_is_sovereign "$CC_SOVEREIGN_DEFAULT_MODEL"; then
-    _cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL"; return 0
+    local env_live
+    env_live="$(_cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL")"
+    if [[ -n "$env_live" ]]; then printf '%s' "$env_live"; return 0; fi
+    # The operator override names a RETIRED id and the box's configured
+    # default cannot stand in for it: fall through to the config candidates.
   fi
   [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
@@ -805,15 +825,23 @@ PYASSIGN
   return 1
 }
 
-# cc_env_correct_retired — when KEY holds a RETIRED Ollama deepseek-v4-flash id,
-# replace it with its live successor (every update). Any other value is left
-# untouched. Echoes "corrected(<old> -> <new>)" or nothing. Returns 0 either way.
+# cc_env_correct_retired: when KEY holds a RETIRED Ollama deepseek-v4-flash id,
+# replace it with THIS box's configured default model (agents.defaults.model
+# in the box's own openclaw.json): no successor model is prescribed by name.
+# When the box has no usable configured default, the retired value is left
+# untouched and the echo says so, so the operator can ask the client to choose
+# a model. Any other value is left untouched. Echoes "corrected(<old> -> <new>)",
+# "retired-unresolved(<old>)", or nothing. Returns 0 either way.
 cc_env_correct_retired() {
   local file="$1" key="$2" cur new tmp
   cur="$(cc_env_get "$file" "$key" 2>/dev/null || true)"
   [[ -n "$cur" ]] || return 0
   _cc_is_retired_ollama_flash "$cur" || return 0
-  new="$(_cc_retired_successor "$cur")"
+  new="$(_cc_live_model_id "$cur")"
+  if [[ -z "$new" || "$new" == "$cur" ]]; then
+    printf 'retired-unresolved(%s)' "$cur"
+    return 0
+  fi
   tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 0
   grep -vE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" > "$tmp" 2>/dev/null || true
   if mv "$tmp" "$file"; then

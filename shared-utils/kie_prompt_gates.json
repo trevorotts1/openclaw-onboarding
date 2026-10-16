@@ -187,9 +187,12 @@
     "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py": [
       "PROMPT_CAP_SUNBURST",
       "PROMPT_CAP_LEGACY"
+    ],
+    "71-blackceo-signature-page/scripts/validate_prompt.py": [
+      "len-compare:chars < tripwire"
     ]
   },
-  "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths; Skill 25's `max` is the integer seed range 0 to 2147483647 in the per-model input-type table, not a prompt length.",
+  "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths; Skill 25's `max` is the integer seed range 0 to 2147483647 in the per-model input-type table, not a prompt length. Skill 71's 'len-compare:chars < tripwire' is the FIX-PLAN Amendment 6 Part C-rule 3 tripwire in 71-blackceo-signature-page/scripts/validate_prompt.py: a warning-only completeness smell test (element completeness governs inside Skill 71 and prompt length is telemetry there), registered here as rule 12's declared divergence rather than a hidden local band.",
   "exemptions": [
     {
       "path": "62-cinematic-web-funnel-engine/providers/_fixture_support.py",
@@ -226,6 +229,15 @@
       ],
       "reason": "Agnes is not a KIE model; its house band is Skill 63's own",
       "status": "pending owner signature"
+    },
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/agnes_dispatch/agnes_dispatch.py",
+      "names": [
+        "PROMPT_MIN_CHARS",
+        "PROMPT_MAX_CHARS"
+      ],
+      "reason": "Agnes is not a KIE model; the 5,000 to 20,000 character band is the Agnes video route's own dispatch band, enforced by the module itself (reject over band, flag under band). KIE rule 12 governs KIE routes; this follows the Skill 63 Agnes exemption precedent in this same list. The module landed undeclared with train #2132, which put main's fast-guards red; declared here by owner-ordered cure (Trevor, 2026-10-15).",
+      "status": "owner-ordered cure 2026-10-15"
     },
     {
       "path": "shared-utils/fleet_refresh_runner.py",

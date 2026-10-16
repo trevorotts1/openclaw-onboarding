@@ -3,16 +3,16 @@
 BlackCEO Coaching Personas Matrix - Orchestration Engine
 Manages the 3-phase book-to-persona pipeline across all 21 books.
 
-Pipeline (v10.10.0 — PRD §5.4 'book-to-persona' chain):
-  Phase 1 - Extraction (selector-resolved, see PRD §5.4):
-              1. Ollama Cloud Kimi  →  2. OpenRouter Kimi  →
-              3. Ollama Cloud DeepSeek V4.1 Flash  →
-              4. OpenRouter DeepSeek V4.1 Flash  →
-              5. OpenRouter Gemini 3.1 Flash Lite (cheapest fallback)
-  Phase 2 - Analysis (same chain as Phase 1)
-  Phase 3 - Synthesis (same chain — was GPT-5.3 Codex pre-v10.10.0;
-              now uses the §5.4 chain so the cheapest fallback is
-              Gemini Flash Lite, not GPT, matching N1 + cost policy)
+Pipeline (model doctrine updated 2026-10-13):
+  Every phase runs on the model the client selected, or the client's
+  configured default model, resolved at runtime via
+  shared-utils/select_model.py. No model is prescribed by name in this
+  pipeline. If neither a client choice nor a configured default exists,
+  the pipeline stops and asks the client which model to use; it never
+  silently substitutes another model.
+  Phase 1 - Extraction (selector-resolved)
+  Phase 2 - Analysis (same resolution as Phase 1)
+  Phase 3 - Synthesis (same resolution as Phase 1)
   Phase 3b - Playbook Appendix (same chain as Phase 3): emits
               PLAYBOOK-APPENDIX.md next to persona-blueprint.md. The
               blueprint DISTILLS the book into governance + coaching; the
@@ -25,7 +25,7 @@ Pipeline (v10.10.0 — PRD §5.4 'book-to-persona' chain):
               _validate_appendix + APPENDIX_* constants); fail-loud on the
               structure/honesty gate, one stricter retry on richness shortfall.
 
-Anthropic models are FORBIDDEN by policy (N1). Filter applied at every tier.
+Anthropic models are FORBIDDEN by policy (N1). Filter applied at every step.
 
 Runs up to 4 books in parallel per phase. Manages queue automatically.
 
@@ -163,29 +163,80 @@ PROMPTS_DIR = Path(__file__).parent.parent / "agent-prompts"
 STATUS_FILE = BASE / "pipeline-status.json"
 LOG_FILE = BASE / "pipeline-log.txt"
 
-# ─── MODEL IDs (v10.10.0: PRD §5.4 'book-to-persona' chain) ──────────────────
-# Model selection is dynamic via shared-utils/select_model.py with the
-# 'book-to-persona' purpose_tier chain (5 positions):
-#   1. ollama/kimi-k*:cloud
-#   2. openrouter/moonshot/kimi-k*
-#   3. ollama/deepseek-v*-pro:cloud
-#   4. openrouter/deepseek/deepseek-v*-pro
-#   5. openrouter/google/gemini-*-flash-lite       ← cheapest fallback
+# ─── MODEL RESOLUTION (client choice or configured default) ──────────────────
+# Model selection is dynamic via shared-utils/select_model.py. The model
+# for every phase is the one the client selected, or the client's
+# configured default model. No model is prescribed by name in this
+# pipeline (doctrine updated 2026-10-13, superseding the v10.10.0 named
+# chain and the 2026-06-01 fleet-standard directive that used to live in
+# resolve_phase_model).
 #
-# Phase 3 (synthesis) used to default to GPT-5.3 Codex when nothing else was
-# available. As of v10.10.0 we no longer fall through to GPT — Gemini Flash
-# Lite is the cheapest non-Anthropic non-GPT path, matching the audit's
-# Phase 14.4 requirement (PRD §5.4) and the no-Anthropic-models policy (N1).
-# Anthropic models are FORBIDDEN. Filter applied at every tier.
-# The fallback strings below are last-resort defaults only used if
-# select_model.py itself is unreachable.
+# Resolution order in resolve_phase_model():
+#   1. shared-utils/select_model.py (resolves from the client's own config)
+#   2. the client's configured default model, read from openclaw.json
+#      (agents.defaults.model) by _client_configured_default_model()
+#   3. neither exists: raise ModelNotConfiguredError so the run stops with
+#      a clear ask-the-client message. NEVER substitute another named model.
+#
+# Recommendation (guidance only, never a default): a large-context model
+# on a subscription-billed route, because extraction passes whole books
+# at once and subscription billing keeps per-book cost flat.
+#
+# Anthropic models are FORBIDDEN (N1). Filter applied at every step.
+
+
+class ModelNotConfiguredError(RuntimeError):
+    """No client-selected model and no configured default model exists."""
+
+
+def _ask_the_client_message(phase: str) -> str:
+    return (
+        f"No model is configured for Book-to-Persona {phase}. "
+        "Ask the client which model to use for this phase, or set the "
+        "client's configured default model (agents.defaults.model in "
+        "openclaw.json), then re-run. No model was substituted: this "
+        "pipeline never prescribes a model by name."
+    )
+
+
+def _client_configured_default_model():
+    """Return the client's configured default model ID, or None.
+
+    Reads agents.defaults.model from openclaw.json at the roots this
+    pipeline already uses for configuration (~/clawd, ~/.openclaw,
+    /data/.openclaw). The value may be a bare string or the object form
+    {"primary": ..., "fallbacks": [...]}; the primary wins, then the
+    first fallback. Anthropic models are filtered out (N1).
+    """
+    for root in (Path.home() / "clawd", Path.home() / ".openclaw", Path("/data/.openclaw")):
+        cfg_path = root / "openclaw.json"
+        if not cfg_path.exists():
+            continue
+        try:
+            cfg = json.loads(cfg_path.read_text(errors="ignore"))
+        except Exception:
+            continue
+        model = ((cfg.get("agents") or {}).get("defaults") or {}).get("model")
+        candidates = []
+        if isinstance(model, str):
+            candidates = [model]
+        elif isinstance(model, dict):
+            if model.get("primary"):
+                candidates.append(model["primary"])
+            candidates.extend(model.get("fallbacks") or [])
+        for cand in candidates:
+            if cand and "anthropic/" not in cand.lower() and "claude-" not in cand.lower():
+                return cand
+    return None
 def _resolve_model(skill: str, purpose: str, purpose_tier: str,
-                   fallback: str, input_chars: int = None) -> str:
+                   input_chars: int = None):
     """Call shared-utils/select_model.py with purpose-tier + optional input_chars.
 
-    Passing input_chars makes the selector auto-pick DeepSeek V4.1 Flash (1M ctx) for
-    inputs that won't fit in Kimi's 262K window. Default behavior with no
-    input_chars uses Kimi-first (smartest thinker).
+    Returns the resolved model ID, or None when the selector is missing or
+    returns nothing usable. The selector owns selection; input_chars only
+    tells it the input size so it can account for the resolved model's
+    context window. Callers must handle None (see resolve_phase_model):
+    there is deliberately no named-model fallback string anymore.
     """
     selector = Path(__file__).resolve().parents[2] / "shared-utils" / "select_model.py"
     if not selector.exists():
@@ -195,7 +246,7 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str,
     if not selector.exists():
         selector = Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"
     if not selector.exists():
-        return fallback
+        return None
     cmd = ["python3", str(selector),
            "--skill", skill,
            "--purpose-tier", purpose_tier,
@@ -210,7 +261,7 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str,
             return model_id
     except Exception:
         pass
-    return fallback
+    return None
 
 
 def _route_for(model_id: str) -> str:
@@ -266,18 +317,18 @@ def _openrouter_fallback_model(model_id: str) -> str:
 def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     """
     Resolve (model_id, route) for a given pipeline phase.
-    Pass input_chars when the actual input size is known so the selector
-    can context-switch to DeepSeek V4.1 Flash for large/huge books.
 
-    v10.10.0 — all three phases use the PRD §5.4 'book-to-persona' chain:
-      normal context: Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek Pro →
-                      OpenRouter DeepSeek Pro → Gemini Flash Lite
-      large context (800K-3M chars): same chain, large-input variant where
-                      DeepSeek Pro (1M ctx) leads
-      huge context  (> 3M chars):    DeepSeek Pro only
+    Resolution order (2026-10-13 doctrine):
+      1. shared-utils/select_model.py (the client's choice, or the client's
+         configured default, per the selector's own contract). Pass
+         input_chars when the input size is known so the selector can
+         account for the resolved model's context window.
+      2. the client's configured default model from openclaw.json
+         (_client_configured_default_model)
+      3. neither exists: raise ModelNotConfiguredError so the run stops
+         with a clear ask-the-client message.
 
-    No GPT in the chain. No Anthropic. Gemini Flash Lite is the cheapest
-    fallback per PRD §5.4 and the audit's Phase 14.4 requirement.
+    No named model is ever substituted. Anthropic is filtered at every step.
     """
     purpose_map = {
         "phase1": "Phase 1 extraction",
@@ -285,36 +336,41 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
         "phase3": "Phase 3 synthesis",
     }
     purpose = purpose_map.get(phase, phase)
-    # v10.10.0: the LAST-RESORT fallback (used only when select_model.py is
-    # itself unreachable) is now Gemini Flash Lite, not GPT/Kimi. This
-    # matches PRD §5.4 (the 'book-to-persona' chain ends at Flash Lite) and
-    # closes audit Phase 14.4 finding ("Phase 3 = GPT-5.3 Codex").
-    # Trevor 2026-06-01: book-to-persona runs on the fleet-standard DeepSeek V4.1 Flash
-    # chain (the latest). Primary = Ollama Cloud deepseek-v4.1-flash:cloud; the selector
-    # falls to OpenRouter deepseek/deepseek-v4.1-flash if Ollama isn't on the box. No kimi.
-    fallback = "ollama/deepseek-v4.1-flash:cloud"
-    # Tier-5 (no Ollama, no OpenRouter, no models matching) falls to
-    # Gemini Flash Lite per PRD §5.4 position 5 — this is the LAST RESORT.
-    last_resort = "openrouter/google/gemini-3.1-flash-lite-preview"
 
-    model_id = _resolve_model("book-to-persona", purpose, "book-to-persona", fallback, input_chars=input_chars)
-    # If _resolve_model couldn't find anything, it falls back to the
-    # `fallback` string above. If even that's not in the client's config,
-    # final defense: Gemini Flash Lite. This makes the comment "no GPT in
-    # the chain" structurally true.
+    model_id = _resolve_model("book-to-persona", purpose, "book-to-persona", input_chars=input_chars)
     if not model_id:
-        model_id = last_resort
+        model_id = _client_configured_default_model()
+    if not model_id:
+        raise ModelNotConfiguredError(_ask_the_client_message(purpose))
     return model_id, _route_for(model_id)
 
 
-# Default models for module import (resolved without book size — caller should re-resolve per book):
-MODEL_EXTRACTION, MODEL_EXTRACTION_ROUTE = resolve_phase_model("phase1")
-MODEL_ANALYSIS,   MODEL_ANALYSIS_ROUTE   = resolve_phase_model("phase2")
-MODEL_SYNTHESIS,  MODEL_SYNTHESIS_ROUTE  = resolve_phase_model("phase3")
+# Default models for module import (resolved without book size - callers
+# re-resolve per book). Import must NOT raise when no model is configured:
+# offline tooling imports this module for persona registration and matching
+# (see the _assert_provider_route note below), so a missing configuration is
+# stashed here and surfaced by _ensure_models_resolved() before any live
+# provider call, where the run stops with the ask-the-client message.
+_MODEL_RESOLUTION_ERROR = None
+try:
+    MODEL_EXTRACTION, MODEL_EXTRACTION_ROUTE = resolve_phase_model("phase1")
+    MODEL_ANALYSIS,   MODEL_ANALYSIS_ROUTE   = resolve_phase_model("phase2")
+    MODEL_SYNTHESIS,  MODEL_SYNTHESIS_ROUTE  = resolve_phase_model("phase3")
+except ModelNotConfiguredError as _e:
+    _MODEL_RESOLUTION_ERROR = _e
+    MODEL_EXTRACTION = MODEL_ANALYSIS = MODEL_SYNTHESIS = None
+    MODEL_EXTRACTION_ROUTE = MODEL_ANALYSIS_ROUTE = MODEL_SYNTHESIS_ROUTE = None
+
+
+def _ensure_models_resolved():
+    """Fail loud before any provider call when no model is configured."""
+    if _MODEL_RESOLUTION_ERROR is not None:
+        log(f"MODEL CONFIGURATION REQUIRED: {_MODEL_RESOLUTION_ERROR}")
+        sys.exit(3)
 
 # ─── LIMITS ───────────────────────────────────────────────────────────────────
 PARALLEL_LIMIT   = 40        # Max books processed simultaneously per phase
-OPENROUTER_FALLBACK_FOLDERS = {"samit-disrupt-yourself", "attwood-passion-test"}  # Books that hit Kimi content filter
+OPENROUTER_FALLBACK_FOLDERS = {"samit-disrupt-yourself", "attwood-passion-test"}  # Books that hit the direct route's content filter
 CHUNK_THRESHOLD  = 80000    # Characters - books above this get chunked for Phase 2
 MAX_CHUNK_SIZE   = 70000    # Characters per chunk for Phase 2
 MAX_RETRIES      = 3        # Retry failed API calls this many times
@@ -441,6 +497,17 @@ def _assert_provider_route():
             "ollama.com — only needed with a non-local OLLAMA_BASE_URL), or "
             "OPENAI_API_KEY (last resort) in secrets/.env or as a container env var."
         )
+
+# Measured capability data (NOT model selection): whether the RESOLVED
+# model's context window is ~1M tokens. Used only to size input for the
+# model the client already chose or configured (see run_extraction); the
+# pipeline never picks a model because of this check, and an unrecognized
+# model safely gets the conservative input cap. Same character as the
+# _MODEL_MAX_OUTPUT_TOKENS table below: per-model API facts.
+def _has_million_token_window(model_id: str) -> bool:
+    m = model_id or ""
+    return "deepseek-v" in m and "pro" in m
+
 
 # task-64 bug 4 (max_tokens ceiling): Ollama Cloud hard-caps each model's
 # OUTPUT tokens; requesting more is a deterministic 400 ("max_tokens exceeds
@@ -1779,7 +1846,7 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
     OLLAMA_BASE_URL points at a non-local base such as https://ollama.com/api.
 
     `model` arg must be an Ollama model id WITHOUT the "ollama/" prefix
-    (e.g. "deepseek-v4.1-flash:cloud" not "ollama/deepseek-v4.1-flash:cloud").
+    (e.g. "<model>:cloud" not "ollama/<model>:cloud").
     max_tokens is clamped to the model's real output ceiling (bug 4) — a
     request above it is a deterministic 400 on Ollama Cloud.
     """
@@ -1802,7 +1869,7 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
             {"role": "user", "content": user},
         ],
         "stream": False,
-        "think": True,  # Trevor 2026-06-01: thinking ON (high) for DeepSeek V4.1 Flash reasoning
+        "think": True,  # thinking ON (high) for the resolved model's reasoning
         "options": {
             "temperature": 1.0,
             "num_predict": max_tokens,
@@ -1854,22 +1921,34 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
     raise RuntimeError(f"All {_attempts} attempts failed for {model} via Ollama ({OLLAMA_BASE_URL})")
 
 
-async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) -> str:
+async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str, model: str = None) -> str:
     """
     DEPRECATED in v10.3.0. Kept for backward compatibility but no longer
-    referenced by the routing chain. The selector chain now goes:
-    Ollama Cloud → OpenRouter (same models) → OAuth GPT. Moonshot direct
-    API is not in the chain.
+    referenced by the routing chain. Moonshot direct API is not in the
+    chain; routing resolves through the selector (see resolve_phase_model).
 
-    Calls Kimi K2.5 via Moonshot direct API (legacy path).
+    Legacy Moonshot-direct call. The model is never hardcoded: pass
+    `model` explicitly, or the client's configured default model is used.
+    The Moonshot direct API only serves Moonshot models, so the resolved
+    model must be one; anything else raises instead of silently
+    substituting a named model.
     """
+    resolved = model or _client_configured_default_model()
+    if not resolved:
+        raise ModelNotConfiguredError(_ask_the_client_message("the Moonshot direct call"))
+    bare = resolved.split("/", 1)[-1].split(":", 1)[0]  # drop route prefix / tag
+    if "kimi" not in bare.lower():
+        raise RuntimeError(
+            f"Moonshot direct API requires a Moonshot model; resolved model is {resolved!r}. "
+            "Ask the client to configure a Moonshot model as the default, or route via the selector."
+        )
     headers = {
         "Authorization": f"Bearer {MOONSHOT_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
-        "model": "kimi-k2.6",
+        "model": bare,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user}
@@ -1904,17 +1983,17 @@ async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) 
     raise RuntimeError("All attempts failed for moonshot direct API")
 
 async def call_openrouter(session: aiohttp.ClientSession, model: str, system: str, user: str, max_tokens: int = 16000) -> str:
-    """Call Kimi K2.5 or DeepSeek V3.2-Speciale via OpenRouter."""
+    """Call the resolved model via OpenRouter."""
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://blackceo.com",
         "X-Title": "BlackCEO Coaching Personas Matrix"
     }
-    # bug 4: clamp to the model's real output ceiling here too — the primary
-    # OpenRouter fallback (deepseek/deepseek-v4.1-flash) shares the 65536 cap, and
-    # no model in this pipeline's chain accepts the 120000 the synthesis phases
-    # request (so an over-ask is a deterministic 400 on every route).
+    # bug 4: clamp to the model's real output ceiling here too - several
+    # OpenRouter-served models share the 65536 cap, and no model this
+    # pipeline resolves accepts the 120000 the synthesis phases request
+    # (so an over-ask is a deterministic 400 on every route).
     max_tokens = _clamp_max_tokens(model, max_tokens)
     payload = {
         "model": model,
@@ -1980,17 +2059,17 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
 
 async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int = 120000) -> str:
     """
-    Call GPT-5.3 Codex via OpenAI Responses API (Trevor's OAuth subscription).
-    Uses the direct OpenAI API key - NOT OpenRouter.
-    Model: gpt-5.3-codex
-    API: /v1/responses (required - Codex does not use /v1/chat/completions)
+    Call the resolved synthesis model via the OpenAI Responses API route
+    (OAuth subscription). Uses the direct OpenAI API key - NOT OpenRouter.
+    Model: MODEL_SYNTHESIS (resolved at runtime; never prescribed by name)
+    API: /v1/responses (required - this route does not use /v1/chat/completions)
     """
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": MODEL_SYNTHESIS,       # gpt-5.3-codex
+        "model": MODEL_SYNTHESIS,       # resolved synthesis model
         "input": user,
         "max_output_tokens": max_tokens,
         "temperature": 1.0
@@ -2020,12 +2099,12 @@ async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int 
                     raise RuntimeError(f"Unexpected response format: {json.dumps(data)[:300]}")
                 else:
                     error_text = await response.text()
-                    log(f"  OpenAI Codex error {response.status}: {error_text[:200]}")
+                    log(f"  OpenAI Responses error {response.status}: {error_text[:200]}")
                     if not _is_retryable_status(response.status):
-                        # G1: non-transient — fail fast (no fallback beyond Codex).
+                        # G1: non-transient — fail fast (no fallback beyond this route).
                         _storm_record("openai", False, f"http_{response.status}")
                         raise _DeterministicHTTPError(
-                            f"OpenAI Codex {response.status} (non-transient — not retrying): {error_text[:300]}")
+                            f"OpenAI Responses {response.status} (non-transient — not retrying): {error_text[:300]}")
                     _storm_record("openai", False, f"http_{response.status}")
                     if attempt < _attempts:
                         log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{_attempts})")
@@ -2033,12 +2112,12 @@ async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int 
         except (_DeterministicHTTPError, _BuildAbort):
             raise
         except Exception as e:
-            log(f"  Codex exception on attempt {attempt}: {e}")
+            log(f"  OpenAI Responses exception on attempt {attempt}: {e}")
             _storm_record("openai", False, type(e).__name__)
             if attempt < _attempts:
                 await asyncio.sleep(RETRY_DELAY * attempt)
 
-    raise RuntimeError(f"All {_attempts} attempts failed for GPT-5.3 Codex")
+    raise RuntimeError(f"All {_attempts} attempts failed for the OpenAI Responses route")
 
 
 # ─── G2: PREFLIGHT AUTH/CREDIT PROBE ──────────────────────────────────────────
@@ -2265,14 +2344,19 @@ async def run_extraction(session: aiohttp.ClientSession, book: dict, status: dic
             return False
 
         # v9.5.1: re-resolve model PER BOOK based on its actual char count.
-        # Books > 800K chars switch from Kimi (262K ctx) to DeepSeek V4.1 Flash (1M ctx).
-        # Books > 3M chars get DeepSeek-only.
+        # The input size goes to the selector so it can account for the
+        # resolved model's context window; selection stays the client's
+        # choice or configured default.
         per_book_model, per_book_route = resolve_phase_model("phase1", input_chars=len(text))
         log(f"  Model for this book (Phase 1, {len(text):,} chars): {per_book_model} via {per_book_route}")
 
-        # If the resolved model is DeepSeek-pro (1M ctx) we can pass the full text.
-        # Otherwise truncate to leave room for the system prompt (Kimi: 262K tokens ≈ 900K chars cap).
-        max_chars = 3_500_000 if "deepseek-v" in per_book_model and "pro" in per_book_model else 900_000
+        # Capability check on the ALREADY-RESOLVED model (measured data, not
+        # selection): a resolved model with a ~1M-token window can take the
+        # full text; anything else is truncated to leave room for the system
+        # prompt (a ~262K-token window is roughly a 900K-char cap). Unknown
+        # models take the conservative cap. The pipeline never PICKS a model
+        # because of this check; it only sizes input for the chosen model.
+        max_chars = 3_500_000 if _has_million_token_window(per_book_model) else 900_000
 
         user_prompt = f"""BOOK: {book['title']}
 AUTHOR: {book['author']}
@@ -2283,11 +2367,9 @@ Here is the complete book text. Extract all 20 items as specified in your instru
 
 {text[:max_chars]}"""
 
-        # v10.3.0: Route the call based on the resolved model. Priority is
-        # Ollama Cloud first (cheap subscription), OpenRouter same-model
-        # fallback second, OAuth GPT third. Moonshot direct API is no longer
-        # in the routing chain (Kimi 2.6 + DeepSeek V4.1 Flash both available
-        # via Ollama Cloud and OpenRouter — no need for the direct route).
+        # v10.3.0: Route the call based on the resolved model's route
+        # (Ollama, OpenRouter, or the OpenAI Responses route). Moonshot
+        # direct API is not in the routing chain.
         _ext_sys = _extraction_system()
         if folder in OPENROUTER_FALLBACK_FOLDERS:
             log(f"  Using OpenRouter fallback for {book['title']} (content filter)")
@@ -2343,13 +2425,15 @@ async def run_analysis(session: aiohttp.ClientSession, book: dict, status: dict)
         extraction_text = extraction_path.read_text()
         log(f"  Extraction notes: {len(extraction_text):,} chars")
 
-        # CHUNKING LOGIC - DeepSeek V3.2-Speciale has 163K context
-        # Extraction notes for large books may exceed safe limit
-        DEEPSEEK_SAFE_LIMIT = 120000  # Leave room for system prompt + output
+        # CHUNKING LOGIC - conservative safe chunk for analysis inputs.
+        # Extraction notes for large books may exceed a safe single-call size
+        # for mid-size context windows; 120K chars leaves room for the system
+        # prompt + output. (Historically sized against a 163K-context model.)
+        ANALYSIS_SAFE_CHUNK_CHARS = 120000  # Leave room for system prompt + output
 
-        if len(extraction_text) > DEEPSEEK_SAFE_LIMIT:
+        if len(extraction_text) > ANALYSIS_SAFE_CHUNK_CHARS:
             log(f"  Large extraction ({len(extraction_text):,} chars) - chunking for analysis")
-            chunks = chunk_text(extraction_text, chunk_size=DEEPSEEK_SAFE_LIMIT, overlap=3000)
+            chunks = chunk_text(extraction_text, chunk_size=ANALYSIS_SAFE_CHUNK_CHARS, overlap=3000)
 
             # Run analysis on each chunk, then synthesize chunk analyses
             chunk_analyses = []
@@ -2716,7 +2800,7 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
             _syn_sys = _synthesis_system()
             full_input = f"{_syn_sys}\n\n---\n\n{user_prompt}"
             if phase3_route == "openai-responses":
-                # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
+                # OpenAI Responses route (OAuth subscription; no per-call cost)
                 result = await call_codex(session, full_input, max_tokens=120000)
             elif phase3_route == "ollama":
                 # v10.3.0: Ollama Cloud is now a real route — call it directly
@@ -2728,7 +2812,7 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                     fallback_model = _openrouter_fallback_model(phase3_model)
                     result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
             else:
-                # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
+                # OpenRouter route (the resolved model, served via OpenRouter)
                 or_model = phase3_model.replace("openrouter/", "", 1)
                 result = await call_openrouter(session, or_model, _syn_sys, user_prompt, max_tokens=120000)
 
@@ -3158,6 +3242,7 @@ async def main(args=None):
                 # G2 preflight then G3/G4 storm guard (1 book) — see the
                 # STRUCTURAL STORM GUARDS block. A dead key / no-credits box
                 # aborts here BEFORE the phase loop.
+                _ensure_models_resolved()
                 await preflight_providers(
                     session, [MODEL_EXTRACTION, MODEL_ANALYSIS, MODEL_SYNTHESIS])
                 init_storm_guard(PER_BOOK_EXPECTED_CALLS)
@@ -3246,6 +3331,7 @@ async def main(args=None):
             # fails auth/credits/params) then arm the G3/G4 storm guard. The
             # global request budget scales with the pending-book count, so no
             # batch — however large — can produce an unbounded request storm.
+            _ensure_models_resolved()
             await preflight_providers(
                 session, [MODEL_EXTRACTION, MODEL_ANALYSIS, MODEL_SYNTHESIS])
             init_storm_guard(len(pending) * PER_BOOK_EXPECTED_CALLS)
@@ -3341,7 +3427,7 @@ def _exit_if_categories_failed() -> None:
 if __name__ == "__main__":
     asyncio.run(main())
 
-# Fallback list — books that hit Kimi direct content filter, route via OpenRouter
+# Fallback list — books that hit the direct route's content filter, route via OpenRouter
 # NOTE: This duplicate definition (also at line ~153) is kept here to avoid
 # breaking any callers that access it via module inspection. The set at line ~153
 # is the canonical one used at runtime; this one is a no-op (already defined).

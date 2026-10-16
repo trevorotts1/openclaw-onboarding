@@ -1,12 +1,14 @@
 # Skill 06 — GHL Install Pages: Day-0 Install Card
 
-**What this skill is:** browser-control skill that builds and verifies GHL (Convert and Flow) funnels/websites/forms/surveys/courses/pipelines through the Skill 03 agent-browser gateway (Playwright = fallback only).
+**What this skill is:** browser-control skill that builds and verifies GHL (Convert and Flow) funnels/websites/forms/surveys/courses/pipelines through the OpenClaw Chrome extension (PRIMARY), with the Skill 03 agent-browser gateway as the fallback lane (Playwright = escape hatch only).
 
-**Prerequisites — in this exact order (hard rule):** 01 TYP → 02 Backup → **03 agent-browser → 06**, and **05 GHL Setup → 06**. Skill 06 MUST NOT start until 03 and 05 are complete.
+**Prerequisites — in this exact order (hard rule):** 01 TYP → 02 Backup → **03 agent-browser → 06**, and **05 GHL Setup → 06**. Skill 06 MUST NOT start until 03 and 05 are complete. 03 stays required because it carries the fallback lane.
 
-**Step 1 — agent-browser:** install/verify Skill 03 and pin `0.27.0` (`agent-browser --version` must print `0.27.0`; anything else stops Day-0).
+**Step 1 — OpenClaw Chrome extension (PRIMARY):** verify the extension is installed in the operator's Chrome and current: `bash scripts/check-openclaw-extension-version.sh` must exit 0. Behind or missing stops Day-0 with the update path named in the output.
 
-**Step 2 — capability probe + browser_manager:** run the capability probe (writes `working/skill6-capability.json`, see `tools/README.md` capability group), then `source tools/browser_manager.sh` + `bm_ensure` — start only the selected lane.
+**Step 1b — agent-browser (fallback lane):** install/verify Skill 03 and pin `0.27.0` (`agent-browser --version` must print `0.27.0`; anything else stops Day-0).
+
+**Step 2 — capability probe + lane start:** run the capability probe (writes `working/skill6-capability.json`, see `tools/README.md` capability group); it selects the extension lane first when the extension is installed and current. On the fallback lane, `source tools/browser_manager.sh` + `bm_ensure` — start only the selected lane.
 
 **Step 3 — Firebase token (Tier-1 only):** `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` must resolve; no login form, no 2FA path. Pointer only — see SKILL.md Prerequisites (auth bullet) and `tools/seed-ghl-auth.py --check`.
 

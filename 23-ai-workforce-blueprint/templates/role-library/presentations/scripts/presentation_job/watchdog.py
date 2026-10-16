@@ -12,6 +12,21 @@ Staging (Rule 3.5 -- warn-mode before fail-closed):
   stage 2 (drive to zero) : U014 lands the in-loop checkpoint; false alarms go to zero.
   stage 3 (flip / WI-04a fix): --enforce is wired in the launchd script; a stall
     exits 5 AND marks the CC card as blocked.
+
+Item 9 (forever-state rescue coverage): this scan no longer silently skips
+the states that used to be invisible forever. A run parked in terminal
+BLOCKED is classified on every pass: PARKED-FOR-HUMAN when state carries a
+recorded park (a state["blocked"] reason, or a configuration_pending stamp)
+and the park has outlived the auto-resume window, ORPHANED-BLOCKED when
+nothing recorded the park at all. A non-terminal run with no heartbeat whose
+state has been untouched past the same window is flagged NO-HEARTBEAT. A run
+carrying dead-lettered notifications (state["dead_letter"], Item 9(e)) is
+surfaced on every pass, whatever its terminal value. Flagging is a printed
+line, a relay event, an operator notification through the existing notify
+path, and an escalation record in watchdog-escalations.jsonl beside the
+findings file -- never a state mutation: this module stays read-only on
+run directories (Super Spec 8.3), and none of these flags changes the exit
+code (they are escalations, not stalls).
 """
 
 from __future__ import annotations
@@ -31,6 +46,36 @@ from .scan_roots import (
     default_config_path, format_roots_report, ok_roots, resolve_scan_roots,
     split_primary, undetermined_roots,
 )
+
+
+# Item 9: how old a park (or a heartbeat-less run's untouched state) must be
+# before this pass flags it as a forever state. 24h is auto_resume's rolling
+# window (AUTO_RESUME_WINDOW_HOURS): inside the window a BLOCKED park is
+# still the poller's active recovery domain and a heartbeat-less run may
+# still be starting; past it, every automatic remedy has had its chance and
+# silence itself becomes the failure. Restated here, not imported --
+# auto_resume is a heavier module and this pass stays leaf-light; the two
+# numbers must move together.
+FOREVER_FLAG_AGE_HOURS = 24
+
+
+def _age_hours(value, now) -> float | None:
+    """Age in hours of an ISO timestamp, or None when it cannot be parsed.
+
+    A stamp in the future reads as 0 (fresh, never old). A naive stamp is
+    read as UTC, matching heal._parse_heal_at / auto_resume._parse_at."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - dt.astimezone(timezone.utc)).total_seconds() / 3600.0)
 
 
 def _find_state_files(scan_root: Path, depth: int):
@@ -112,6 +157,14 @@ def watchdog(
     as UNDETERMINED and disqualifies the pass from claiming completeness. It
     never causes a deck to be blocked, healed, or failed -- absence from a scan
     this pass could not perform is not evidence about that deck at all.
+
+    Item 9: terminal BLOCKED runs and heartbeat-less non-terminal runs are
+    classified, not silently skipped (see the module docstring and
+    FOREVER_FLAG_AGE_HOURS). A parked run inside the auto-resume window is
+    counted (parked_recent) and left to the poller; past the window it is
+    flagged. Dead-lettered notifications (state["dead_letter"]) are counted
+    and surfaced for every scanned run. None of this touches state.json,
+    the enforce board patch, or the exit code.
     """
     if roots_config is None:
         # Default config location: <department>/config/scan-roots.conf beside the
@@ -132,11 +185,19 @@ def watchdog(
     print(format_roots_report(roots, "watchdog"), flush=True)
 
     findings: list = []
+    # Item 9: forever-state flags, (kind, run_dir, job_id, detail, line) --
+    # a SEPARATE list from stall findings on purpose: a flag is an
+    # escalation with its own record stream, never a stall, and it never
+    # feeds the --enforce board patch or the EXIT_STALLED verdict.
+    forever: list = []
+    dead_letter_runs: list = []
     scanned = 0
     skipped_terminal = 0
+    parked_recent = 0
     skipped_no_heartbeat = 0
     skipped_bad_timestamp = 0
     healthy = 0
+    now_utc = datetime.now(timezone.utc)
 
     for _root, state_path in _find_state_files_multi(readable, scan_depth):
         scanned += 1
@@ -144,14 +205,98 @@ def watchdog(
         if not st:
             skipped_bad_timestamp += 1
             continue
-        if st.get("terminal") in ("DONE", "BLOCKED"):
+        # Item 9(e): dead-lettered notifications surface on EVERY pass, for
+        # every run whatever its terminal value -- a dead letter in a DONE
+        # run is still a message the requester never got.
+        dl = st.get("dead_letter")
+        if isinstance(dl, list) and dl:
+            dl_kinds = sorted({str(m.get("kind") or "?")
+                               for m in dl if isinstance(m, dict)})
+            dl_last = ""
+            for m in dl:
+                if isinstance(m, dict) and str(m.get("dead_lettered_at") or "") > dl_last:
+                    dl_last = str(m.get("dead_lettered_at"))
+            dead_letter_runs.append((state_path.parent, st.get("job_id", "?"),
+                                     len(dl), dl_kinds, dl_last))
+        if st.get("terminal") == "DONE":
             skipped_terminal += 1
+            continue
+        if st.get("terminal") == "BLOCKED":
+            skipped_terminal += 1
+            # Item 9(a): a terminal BLOCKED run used to be skipped forever
+            # -- counted, never looked at again. Classify the park instead.
+            # A RECORDED park (state["blocked"] reason, or a
+            # configuration_pending stamp) is a human's decision pending:
+            # flag it PARKED-FOR-HUMAN once it outlives the auto-resume
+            # window. NO park record at all means nothing owns this park
+            # and no automatic remedy can even classify it: flag it
+            # ORPHANED-BLOCKED immediately, whatever its age.
+            blk = st.get("blocked") if isinstance(st.get("blocked"), dict) else {}
+            reason = str(blk.get("reason") or "").strip()
+            cfg_pending = isinstance(st.get("configuration_pending"), dict)
+            park_phase = blk.get("phase") or st.get("current_phase") or "?"
+            if not reason and not cfg_pending:
+                forever.append((
+                    "blocked_orphaned", state_path.parent, st.get("job_id", "?"),
+                    {"phase": park_phase},
+                    f"ORPHANED-BLOCKED {state_path.parent}: job "
+                    f"{st.get('job_id', '?')} is terminal BLOCKED with NO "
+                    f"recorded park (no state['blocked'] reason, no "
+                    f"configuration_pending stamp) -- nothing owns this "
+                    f"park, no automatic remedy can classify it, and it "
+                    f"will sit here forever without an operator"))
+            else:
+                age_h = _age_hours(blk.get("at"), now_utc)
+                if age_h is None:
+                    age_h = _age_hours(st.get("updated_at"), now_utc)
+                if age_h is None or age_h > FOREVER_FLAG_AGE_HOURS:
+                    age_txt = (f"{age_h:.1f}h" if age_h is not None
+                               else "an unrecorded age")
+                    forever.append((
+                        "blocked_parked_for_human", state_path.parent,
+                        st.get("job_id", "?"),
+                        {"phase": park_phase, "reason": reason,
+                         "age_hours": (round(age_h, 1)
+                                       if age_h is not None else None)},
+                        f"PARKED-FOR-HUMAN {state_path.parent}: job "
+                        f"{st.get('job_id', '?')} has been parked at phase "
+                        f"{park_phase} for {age_txt} -- past the "
+                        f"{FOREVER_FLAG_AGE_HOURS}h auto-resume window, so "
+                        f"no automatic remedy remains; it is awaiting a "
+                        f"human decision: "
+                        f"{reason or '(configuration pending)'}"))
+                else:
+                    parked_recent += 1
             continue
         hb = st.get("heartbeat") or {}
         last = hb.get("last_checkpoint_at")
         pid = hb.get("current_phase") or st.get("current_phase") or "?"
         if not last:
-            skipped_no_heartbeat += 1
+            # Item 9(a): a non-terminal run with NO heartbeat is only
+            # "starting" while its state is fresh. Untouched past the
+            # forever window, nothing is servicing it and nothing ever
+            # will on its own -- flag it instead of counting it away.
+            age_h = _age_hours(st.get("updated_at"), now_utc)
+            if age_h is None:
+                age_h = _age_hours(st.get("created_at"), now_utc)
+            if age_h is None:
+                try:
+                    age_h = max(0.0, (now_utc.timestamp()
+                                      - state_path.stat().st_mtime) / 3600.0)
+                except OSError:
+                    age_h = None
+            if age_h is not None and age_h > FOREVER_FLAG_AGE_HOURS:
+                forever.append((
+                    "no_heartbeat", state_path.parent, st.get("job_id", "?"),
+                    {"age_hours": round(age_h, 1)},
+                    f"NO-HEARTBEAT {state_path.parent}: job "
+                    f"{st.get('job_id', '?')} is non-terminal but has no "
+                    f"heartbeat and its state has been untouched for "
+                    f"{age_h:.1f}h (forever threshold "
+                    f"{FOREVER_FLAG_AGE_HOURS}h) -- no engine is servicing "
+                    f"this run; resume it deliberately or retire it"))
+            else:
+                skipped_no_heartbeat += 1
             continue
         try:
             age_min = (datetime.now(timezone.utc) -
@@ -191,8 +336,19 @@ def watchdog(
         print(f"STALLED {run_dir}: phase {pid} last checkpointed {age} min ago "
               f"(threshold {threshold} min = interval {interval} x grace {grace_multiplier}; "
               f"interval source: {source})", flush=True)
+    for _kind, _run_dir, _job_id, _detail, line in forever:
+        print(line, flush=True)
+    for run_dir, job_id, count, kinds, _last_dl in dead_letter_runs:
+        print(f"DEAD-LETTER {run_dir}: job {job_id} has {count} dead-lettered "
+              f"notification(s) (kinds: {', '.join(kinds) if kinds else '?'}) -- "
+              f"the requester was never told; see state['dead_letter'] in that "
+              f"run's state.json", flush=True)
 
     n_stalled = len(findings)
+    n_parked_human = sum(1 for k, *_ in forever if k == "blocked_parked_for_human")
+    n_orphaned_blocked = sum(1 for k, *_ in forever if k == "blocked_orphaned")
+    n_no_heartbeat = sum(1 for k, *_ in forever if k == "no_heartbeat")
+    n_dead_lettered = sum(c for _r, _j, c, _k, _l in dead_letter_runs)
     root_list = ", ".join(str(r.path) for r in readable) or "(none readable)"
     if scanned == 0:
         print("watchdog: NO state.json found -- check --scan-root and --scan-depth "
@@ -204,6 +360,12 @@ def watchdog(
               f"[{root_list}] (depth {scan_depth}); {skipped_terminal} terminal, "
               f"{skipped_no_heartbeat} without a heartbeat, {skipped_bad_timestamp} with an "
               f"unreadable timestamp, {healthy} healthy, {n_stalled} stalled", flush=True)
+        print(f"watchdog: forever-state flags: {n_parked_human} parked-for-human, "
+              f"{n_orphaned_blocked} orphaned-blocked, {n_no_heartbeat} without a "
+              f"heartbeat past {FOREVER_FLAG_AGE_HOURS}h, {parked_recent} recent "
+              f"park(s) still inside the auto-resume window; {n_dead_lettered} "
+              f"dead-lettered notification(s) across {len(dead_letter_runs)} run(s)",
+              flush=True)
 
     findings_path = findings_owner / "watchdog-findings.jsonl"
     # The findings owner may be an env/arg-supplied root that does not exist
@@ -233,6 +395,37 @@ def watchdog(
         with open(findings_path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
 
+    # Item 9: the escalation record. One jsonl row per forever-state flag
+    # and per dead-letter run, on EVERY pass that sees them, in a SIBLING
+    # file -- the same homogeneity doctrine as the scan audit below
+    # (watchdog-findings.jsonl stays a pure stall stream). This file is the
+    # durable operator surface for the flags; the printed lines, the relay
+    # events and the notification are its echoes.
+    if forever or dead_letter_runs:
+        esc_path = findings_owner / "watchdog-escalations.jsonl"
+        esc_records = [
+            {"kind": kind, "run_dir": str(run_dir), "job_id": job_id, **detail}
+            for kind, run_dir, job_id, detail, _line in forever
+        ] + [
+            {"kind": "dead_letter", "run_dir": str(run_dir), "job_id": job_id,
+             "count": count, "kinds": kinds, "last_dead_lettered_at": last_dl}
+            for run_dir, job_id, count, kinds, last_dl in dead_letter_runs
+        ]
+        try:
+            with open(esc_path, "a", encoding="utf-8") as fh:
+                for rec in esc_records:
+                    fh.write(json.dumps({
+                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        "record": "escalation",
+                        **rec,
+                        "scan_roots": [str(getattr(r, "path", r)) for r in readable],
+                        "scan_roots_undetermined": [
+                            str(getattr(r, "path", r)) for r in unreadable],
+                    }, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            print(f"watchdog: WARNING could not append escalations to "
+                  f"{esc_path}: {exc}", flush=True)
+
     # Coverage audit: one record on EVERY pass, stalls or not, because a clean
     # pass that searched the wrong forest is exactly the failure that has to
     # become greppable. Deliberately a SIBLING file, not a second record type
@@ -254,25 +447,45 @@ def watchdog(
                 "scan_depth": scan_depth,
                 "scanned": scanned,
                 "stalled": n_stalled,
+                "forever_flagged": len(forever),
+                "dead_lettered_notifications": n_dead_lettered,
                 "complete": not unreadable,
             }, ensure_ascii=False) + "\n")
     except OSError as exc:
         print(f"watchdog: WARNING could not append scan audit to {audit_path}: {exc}",
               flush=True)
 
-    if findings and os.environ.get("PRESENTATION_NOTIFY_CMD"):
-        lines = []
-        for run_dir, pid, age, interval, threshold, source, job_id in findings:
-            lines.append(
-                f"- {job_id}: {pid} at {age} min (threshold {threshold} min, "
-                f"interval source: {source})"
+    if (findings or forever or dead_letter_runs) \
+            and os.environ.get("PRESENTATION_NOTIFY_CMD"):
+        sections = []
+        if findings:
+            lines = []
+            for run_dir, pid, age, interval, threshold, source, job_id in findings:
+                lines.append(
+                    f"- {job_id}: {pid} at {age} min (threshold {threshold} min, "
+                    f"interval source: {source})"
+                )
+            sections.append(
+                f"Watchdog: {n_stalled} stalled job(s) in {findings_owner}\n"
+                + "\n".join(lines)
             )
-        msg = (
-            f"Watchdog: {n_stalled} stalled job(s) in {findings_owner}\n"
-            + "\n".join(lines)
-        )
+        if forever:
+            sections.append(
+                "Watchdog forever-state flags (no automatic remedy remains):\n"
+                + "\n".join(f"- {line}" for _k, _r, _j, _d, line in forever)
+            )
+        if dead_letter_runs:
+            sections.append(
+                "Watchdog dead-lettered notifications (the requester was "
+                "never told):\n"
+                + "\n".join(
+                    f"- {job_id}: {count} dead-lettered (kinds: "
+                    f"{', '.join(kinds) if kinds else '?'})"
+                    for _r, job_id, count, kinds, _l in dead_letter_runs)
+            )
+        msg = "\n".join(sections)
         from .report import dispatch
-        dispatch("watchdog", "stall", msg)
+        dispatch("watchdog", "stall" if findings else "blocked", msg)
         # PRES-052: stalled state visible per run in the supervised relay,
         # even when the transport cannot deliver (dispatch is best-effort).
         # Never raises out of the watchdog.
@@ -292,6 +505,35 @@ def watchdog(
                                 f"(threshold {threshold} min).",
                                 stage=pid, store=_store)
                 except Exception:  # noqa: BLE001 — one bad run never stops scan
+                    continue
+            # Item 9: forever-state flags and dead letters are board events
+            # too (KIND_BLOCKED -- the run is parked or a message died), so
+            # the supervised relay shows them beside the stalls above.
+            for _kind, run_dir, _job_id, detail, line in forever:
+                try:
+                    _rd = Path(run_dir)
+                    _store = StateStore(_rd)
+                    _state = _store.load()
+                    _relay.emit(_state, _rd, _relay.KIND_BLOCKED, line,
+                                stage=str(detail.get("phase")
+                                          or _state.get("current_phase")
+                                          or "?"),
+                                store=_store)
+                except Exception:  # noqa: BLE001 -- one bad run never stops scan
+                    continue
+            for run_dir, job_id, count, kinds, _last_dl in dead_letter_runs:
+                try:
+                    _rd = Path(run_dir)
+                    _store = StateStore(_rd)
+                    _state = _store.load()
+                    _relay.emit(_state, _rd, _relay.KIND_BLOCKED,
+                                f"{count} notification(s) dead-lettered "
+                                f"(kinds: {', '.join(kinds) if kinds else '?'}) "
+                                f"-- the requester was never told; see "
+                                f"state['dead_letter'].",
+                                stage=str(_state.get("current_phase") or "?"),
+                                store=_store)
+                except Exception:  # noqa: BLE001 -- one bad run never stops scan
                     continue
         except Exception:  # noqa: BLE001 — relay must never break watchdog
             pass

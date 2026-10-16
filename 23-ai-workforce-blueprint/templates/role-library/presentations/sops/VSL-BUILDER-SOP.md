@@ -1,35 +1,42 @@
-# SOP -- VSL (Video Sales Letter) Page [Wave C build target]
+# SOP -- VSL (Video Sales Letter) Page
 
 **Cluster:** Presentations -- additional deliverable, client-elected (opt-in). Part of the
 department's "15" deliverable tier; for the exact count arithmetic link
 `DEPT/DEPARTMENT-COUNTS-CANONICAL.md` -- do not restate the numbers here.
-**Status as of this SOP (RUN 2, 2026-08-19):** **PARTIALLY LANDED.** While this SOP was being written,
-Unit C1 landed `P-U-VSL-BUILD` into `PIPELINE-MANIFEST.json` (manifest_version 51, order 8.93 --
-identical to this SOP's own earlier proposed value). `DEPT/scripts/vsl_builder.py` (Unit C3) does
-**not** exist in this worktree as of this revision -- still genuinely PENDING, unlike the sales/
-checkout pair (`SALES-CHECKOUT-BUILDER-SOP.md`, whose executor landed but does not yet match its own
-manifest entry -- see that SOP's §3/§7 for a verified, unresolved manifest/executor CLI mismatch this
-unit found and flagged, not fixed). See
-[STATUS -- LIVE vs PENDING](#7-status-live-vs-pending-verified-2026-08-19) for the itemized breakdown.
-**Phase id (LANDED, `PIPELINE-MANIFEST.json` manifest_version 51):** `P-U-VSL-BUILD`, order **8.93**
--- matching the `P-U-VSL-*` id family that `DEPT/intake/upsell-questions.json` already promises by
-name (its `want_vsl_page` `resolverHint`, quoted verbatim in
-[SECTION 1](#1-the-waiver-mechanic-quoted-verbatim-from-upsell-questionsjson)).
-**Owning role (LANDED):** `media-librarian-ghl-updater` -- confirmed in the manifest entry; the same
-role that already owns the department's only other GHL-push deliverable, `P9.6-WEBINAR-VIDEO`
-(`WEBINAR-BUILDER-SOP.md`), whose output this phase directly depends on (§2). `sop_refs` points at
-`media-librarian-ghl-updater-sops.md` SOP 9.9, which in turn points here.
-**Executor (PENDING, Unit C3):** `DEPT/scripts/vsl_builder.py` -- named in
-`CONTROL/MASTER-WORK-ORDER-20260818.md` Wave C (C3) and in the manifest's own `executor.cmd`
-(`python3 scripts/vsl_builder.py --run-dir {run_dir}`, no `--mode` flag, unlike the sales/checkout
-executor's mismatched wiring). Confirmed absent from this worktree at the time of this revision (see
-§7). This SOP's author does not create, edit, or stub this file -- C3 owns it exclusively per the work
-order's file-ownership rule.
-**Push mechanism:** `06-ghl-install-pages/tools/ghl_rest_canvas.py` (same mechanism as the sales/
-checkout pages -- see `SALES-CHECKOUT-BUILDER-SOP.md` §3 step 4 for how the landed sales/checkout
-executor actually resolved the Cloudflare-WAF caveat this SOP originally flagged as open: a delegated
-plan + receipt pattern, not a live in-process browser drive. C3 should follow the same pattern for
-consistency, though this SOP does not assert it will.).
+**Status (2026-10-14, FIX-PLAN Item 23):** **LANDED, single design.** The executor
+`DEPT/scripts/vsl_builder.py` exists and is the ONE VSL page design this department ships
+(the Wave C executor). Its registered verifier is `phase_verifiers._verify_upsell_vsl_build`;
+its autofail row is `AF-U-VSL-BUILD`; its test coverage lives in
+`DEPT/scripts/tests/test_upsell_verifiers.py` and `test_upsell_intake_shape.py`. The earlier
+Gauntlet page-assembly design is RETIRED: its files are archived byte-identical in
+`presentations/archive/vsl-gauntlet/` and its one reusable idea is preserved, without
+authority, in `VSL-GAUNTLET-SPEC-NOTE.md` (same directory as this SOP). Do not build to the
+retired design.
+**Phase id (LANDED):** `P-U-VSL-BUILD`, order **8.93** -- matching the `P-U-VSL-*` id family
+that `DEPT/intake/upsell-questions.json` already promises by name (its `want_vsl_page`
+`resolverHint`, quoted verbatim in [SECTION 1](#1-the-waiver-mechanic-quoted-verbatim-from-upsell-questionsjson)).
+The manifest version is read live from `PIPELINE-MANIFEST.json`; this SOP does not pin it.
+**Owning role (LANDED):** `media-librarian-ghl-updater` -- confirmed in the manifest entry; the
+same role that already owns the department's only other GHL-push deliverable,
+`P9.6-WEBINAR-VIDEO` (`WEBINAR-BUILDER-SOP.md`), whose output this phase directly depends on
+(§2). `sop_refs` points at `media-librarian-ghl-updater-sops.md` SOP 9.9, which in turn points
+here.
+**Executor (LANDED):** `DEPT/scripts/vsl_builder.py` -- invoked by the manifest as
+`python3 scripts/vsl_builder.py --run-dir {run_dir}` (no `--mode` flag). It builds the whole
+page itself: copy, Kie.ai hero design, HTML with the viewer gate (§4), and hosts the hero
+image through `ghl_media`. Offline smoke form: `--skip-design --no-push` (no nonce, no GHL
+write of any kind). `--selftest` runs its deterministic offline self-test.
+**Install mechanism (NOT the builder):** the funnel install is a separate phase,
+`P-U-GHL-VSL` (order 6.4), executed by `DEPT/scripts/ghl_external_installer.py` (PRES-011):
+it emits the install plan, a delegated Skill 6 execution lands the page (net-new create,
+one funnel per client per run, reusing this run's verified sales funnel when one exists),
+and the phase completes only on the installer's own `validate_receipt()` (adapter
+funnel/page IDs + matching-location readback + ops-ledger provenance), recorded at
+`working/vsl/ghl_build_receipt.json`. The gate form object is likewise a separate phase,
+`P-U-FORM-GATE` (order 5.6, Skill 44, contract `DEPT/scripts/vsl-gate-form-spec.json`).
+The builder emits NO push plan and verifies NO push receipt: an earlier builder-side plan +
+receipt path was retired with the Gauntlet design (Item 23) because it duplicated this
+install path and was enforced by no registered verifier.
 **Proven-by-hand template:** `~/Downloads/GAUNTLET-LOOP-WORK/LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md`
 (Loop 2C, COMPLETE 2026-08-07 -- one client's VSL page, built and render-verified by hand, gate
 included). This SOP documents the proven FLOW only. Per the fleet-wide no-client-names rule, that
@@ -44,7 +51,9 @@ A **VSL (video sales letter) page** is a single long-form landing page built ARO
 own webinar video (`{deck_slug}-WEBINAR.mp4`, produced and GHL-hosted by `P9.6-WEBINAR-VIDEO`,
 `WEBINAR-BUILDER-SOP.md`) -- not a new video, a page that presents the existing one with a
 conversion mechanic layered on top (§4). It is opt-in: unlike the sales/checkout pair
-(`SALES-CHECKOUT-BUILDER-SOP.md`), the client must actively say yes.
+(`SALES-CHECKOUT-BUILDER-SOP.md`), the client must actively say yes. There is exactly ONE VSL
+page per elected run (no a/b variants; the two-variant requirement belonged to the retired
+design and is preserved only in the spec note).
 
 ## 1. THE WAIVER MECHANIC (quoted verbatim from `upsell-questions.json`)
 
@@ -106,63 +115,85 @@ P9.6 (video dependency)").
   `WEBINAR-BUILDER-SOP.md`) is what produces `{deck_slug}-WEBINAR.mp4` and uploads it to GHL, writing
   the result into `working/checkpoints/media_library.json` as a `webinar_mp4` record carrying
   `ghl_media_id`, `ghl_url` (the public GCS url), `size_bytes`, and `uploaded_at`
-  (`WEBINAR-BUILDER-SOP.md` §6). The VSL page's build cannot start until that record exists --
+  (`WEBINAR-BUILDER-SOP.md` §6). The VSL page's build cannot start until that video exists --
   there is nothing to embed before it does.
-- **Landed manifest order: 8.93** -- confirmed in `PIPELINE-MANIFEST.json` manifest_version 51,
-  between `P9.6-WEBINAR-VIDEO` (8.92) and `P7-TELEPROMPTER` (8.95), matching this SOP's own earlier
-  proposed value exactly. The manifest's own `routing_note` for this phase states the reasoning in the
-  same terms this SOP used, quoted verbatim: *"VIDEO DEPENDENCY: order 8.93 is deliberately AFTER
-  P9.6-WEBINAR-VIDEO (order 8.92) -- the VSL page references the hosted `{deck_slug}-WEBINAR.mp4` that
-  phase produces, so this phase must never run before it."*
-- **Fail-closed on a missing video.** If `WANT_VSL_PAGE == "yes"` but `media_library.json` carries no
-  `webinar_mp4` record (e.g. `P9.6` failed its own `AF-WEBINAR-SIZE` gate), `P-U-VSL-BUILD` must FAIL
-  LOUD, never silently build a page with a missing/broken video embed and never fall back to a
-  placeholder video.
+- **Landed manifest order: 8.93** -- confirmed in the live `PIPELINE-MANIFEST.json`, between
+  `P9.6-WEBINAR-VIDEO` (8.92) and `P7-TELEPROMPTER` (8.95). The manifest's own `routing_note` for
+  this phase states the reasoning, quoted verbatim: *"VIDEO DEPENDENCY: order 8.93 is deliberately
+  AFTER P9.6-WEBINAR-VIDEO (order 8.92) -- vsl_builder.py's verify_video_dependency() resolves
+  working/delivery/{deck_slug}-WEBINAR.mp4 via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE
+  and fails closed (AF-VSL-NO-VIDEO) if it is absent, so this phase must never run before P9.6."*
+- **Fail-closed on a missing video.** The executor's check is over the LOCAL artifact, not the
+  ledger: `verify_video_dependency()` requires `working/delivery/{deck_slug}-WEBINAR.mp4` to exist
+  AND pass `ghl_media.verify_video()`'s local probe (non-empty, inside the 500MB v3 ceiling, real
+  MP4 `ftyp` box). If `WANT_VSL_PAGE == "yes"` but the video is absent or broken, `P-U-VSL-BUILD`
+  FAILS LOUD (executor exit 5, `AF-VSL-NO-VIDEO`), never silently builds a page with a missing/broken
+  video embed and never falls back to a placeholder video. The hosted url for the embed is then
+  resolved from the ledger's `webinar_mp4` record (with a deck-slug cross-check warning); when no
+  hosted url exists yet, the build proceeds with a local reference plus a loud warning, because
+  hosting is P9.6's concern and the hard gate is the video's existence.
 - **No such dependency exists for the sales/checkout pair** -- see `SALES-CHECKOUT-BUILDER-SOP.md`
   §2. Do not accidentally serialize the sales/checkout branch behind `P9.6` too; only the VSL page
   needs it.
 
-## 3. THE PIPELINE (proposed, templating Loop 2C)
+## 3. THE PIPELINE (landed, templating Loop 2C)
 
-Same four-stage shape as the sales/checkout pair (`SALES-CHECKOUT-BUILDER-SOP.md` §3), with the video
-embed and the gate (§4) as VSL-specific additions, proposed as internal steps inside one
-`vsl_builder.py` executor under the single `P-U-VSL-BUILD` phase (not split into multiple manifest
-phases, mirroring `WORKBOOK-BUILDER-SOP.md`'s single-phase/multi-internal-step precedent):
+One executor, `vsl_builder.py`, under the single `P-U-VSL-BUILD` phase (mirroring
+`WORKBOOK-BUILDER-SOP.md`'s single-phase/multi-internal-step precedent), followed by the two
+PRES-011 install phases. In order:
 
-1. **COPY.** Long-form VSL page copy from the same locked sources as the deck and the sales page
-   (`intake.json`, `price_ladder.json` for price -- never authored fresh) plus the deck's own hook/
-   proof/story arc so the VSL reads as a continuation of the presentation, not a separate pitch.
-2. **DESIGN (Kie.ai, GPT Image 2.5 Sunburst or the client's routed Agnes tier -- no alternative provider, ever,
-   no partial-verification passes).** Same **9,000-18,000 stripped-char** rich-prompt band as the sales/checkout
-   pages (`SALES-CHECKOUT-BUILDER-SOP.md` §3 step 2) -- not Loop 2C's looser 5,000-19,000 research
-   band. Brand palette + logo from `intake.json`, logo I2I only.
-3. **HTML** that mirrors the design, with the video embed (the `webinar_mp4` GHL url from §2) and the
-   gate mechanic (§4) built into the page structure, not bolted on after.
-4. **GHL FUNNEL PUSH (`06-ghl-install-pages/tools/ghl_rest_canvas.py`)** -- identical mechanism and
-   the SAME Cloudflare-WAF / agent-browser-eval operating caveat as the sales/checkout pages
-   (`SALES-CHECKOUT-BUILDER-SOP.md` §3.4). Unit C3 must resolve that caveat the same way C2 does for
-   the sales/checkout executor -- ideally the SAME resolution, since both executors call the same
-   push mechanism.
+1. **COPY.** The builder generates the long-form VSL page copy itself
+   (`build_vsl_copy`, written to `working/vsl/copy/vsl.md`) from the run's own locked sources:
+   `intake.json`'s brief fields (offer, transformation promise, audience, CTA, objection, proof,
+   hook seed) -- never authored fresh, never read from the Path A agent phases' fragment files.
+2. **DESIGN (Kie.ai only -- no alternative provider, ever, no partial-verification passes).** The
+   builder authors the hero design prompt from the brand palette in `intake.json` and renders it
+   through Kie.ai (or reuses `working/vsl/renders/` under `--skip-design`). The rich-prompt gate
+   is KIE rule 12 through the shared `prompt_gate` enforcer plus the builder's own content
+   assertion (every required content string present, wireframe directives refused); the retired
+   fixed char band no longer exists anywhere in this pipeline.
+3. **HTML** assembled by the builder into `working/vsl/html/vsl.html`: the design mirrored, the
+   video embed (the `webinar_mp4` GHL url from §2), and the viewer gate (§4) built into the page
+   structure, not bolted on after. The page carries the run's own `ZHC-VSL-BUILDER`
+   `deck_slug=<slug>` marker, which is what the phase verifier checks.
+4. **INSTALL (`P-U-GHL-VSL`, NOT this executor).** `ghl_external_installer.py` installs
+   `working/vsl/html/vsl.html` into the client's funnel through the Skill 6 canonical
+   page-install path (the `ghl_rest_canvas.py` sequence executed in a delegated live session),
+   under the PRES-011 receipt discipline described in the header. The gate form and its tag
+   workflow are installed by `P-U-FORM-GATE` (Skill 44) from
+   `DEPT/scripts/vsl-gate-form-spec.json`. A built page with no verified install receipt is a
+   page that is NOT live; never report it as installed.
 
 ## 4. THE VSL VIEWER GATE
 
 Loop 2C's proven design (source: `~/Downloads/GAUNTLET-LOOP-WORK/LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md`
-§"THE FEATURE"): the VSL page has a **gate at roughly 3-8 minutes into the video** (timed to land
-"after the first big revelation"), forcing the viewer to submit **email / first name / cell** before
-the video continues. This is a viewer-facing lead-capture mechanic -- do not confuse it with the
+§"THE FEATURE"): the VSL page has a **gate inside the [180s, 480s] window (roughly 3-8 minutes
+into the video)**, forcing the viewer to submit **first name / email / cell** before the video
+continues. This is a viewer-facing lead-capture mechanic -- do not confuse it with the
 `block_gate` waiver terminology used in §1 (intake-side consent gates); this section is about the
 PUBLISHED PAGE's own behavior, not the build pipeline's gating.
 
 - **Build the gate INTO the page/video presentation**, not as an afterthought -- Loop 2C's own rule,
-  carried forward.
-- The exact timestamp is content-dependent (tied to where the "first big revelation" actually lands
-  in THIS client's video) -- `vsl_builder.py` must derive it from the actual `webinar_timing.json`
-  track (§2's dependency) rather than hardcoding a fixed second count, since talk length and pacing
-  vary deck to deck.
-- The captured lead fields (email / first name / cell) are the checkout-form-adjacent capability
-  described in `SALES-CHECKOUT-BUILDER-SOP.md` §4 -- Unit C3 should confirm with C2 whether this reuses
-  the same `universal-sops/form-craft/` engine or a lighter native GHL capture element, and record
-  that decision when the executor lands (this SOP does not assert which one ships).
+  carried forward. The builder emits the gate overlay markup and the pause + seek-block +
+  reveal-on-submit mechanic in the page itself.
+- **THE GATE RULE (the single rule, stated exactly as `resolve_gate_timestamp()` implements it):**
+  the timestamp is DERIVED from the run's own `working/checkpoints/webinar_timing.json` track,
+  never hardcoded. Take every slide boundary (`audio_start`) that falls inside [180s, 480s];
+  the gate fires at the boundary CLOSEST TO the window midpoint (330s). If no boundary falls
+  inside the window but the track's total duration is known, the gate fires at half the total
+  duration clamped into the window. If there is no usable track at all, the gate fires at the
+  window midpoint (330s). The result always lands inside the band, and the builder records the
+  chosen seconds and their source in the phase ledger.
+- **The retired alternative:** an earlier design placed the gate relative to the talk's first big
+  revelation (the R+20 rule). That rule is RETIRED (Item 23): no run artifact identifies a
+  revelation slide, so it could never execute except through its own flagged fallbacks. It is
+  preserved, without authority, in `VSL-GAUNTLET-SPEC-NOTE.md`. Do not re-introduce it.
+- The captured lead fields (first name / email / cell) are the Skill 44 form-object contract in
+  `DEPT/scripts/vsl-gate-form-spec.json` (fields `zhc_vsl_first_name` / `zhc_vsl_email` /
+  `zhc_vsl_phone`, all required), installed by `P-U-FORM-GATE` and attached on the install path.
+  The page's built-in gate form is the in-page capture mechanic; its consent posture follows the
+  department's standing rule (benefit-first copy, every consent box required to proceed,
+  unchecked by default). A page whose gate form is a static mock is not a gate.
 - **QC with Playwright headless** (staged/live where possible) is Loop 2C's own stated QC approach for
   this page type -- "never clobbering client work." Whatever this department's own render-verify
   convention turns out to be for the phase (Unit C4's job), it must never touch a live client page
@@ -176,51 +207,64 @@ PUBLISHED PAGE's own behavior, not the build pipeline's gating.
 - **Never print a credential value.** Same discipline as `SALES-CHECKOUT-BUILDER-SOP.md` §5.
 - **Never fabricate or fake the video embed.** If the dependency in §2 is unmet, FAIL the phase --
   never link a placeholder, stock, or wrong-deck video.
-- **Never overwrite an existing client GHL page or funnel** -- same `ghl_rest_canvas.py` net-new
-  create discipline as the sales/checkout pages.
-- **Operator credits for tests; never a client.** A sample VSL build, once an executor exists, runs on
-  the operator's own GHL location and against a sample run's own webinar video -- never a client's.
+- **Never overwrite an existing client GHL page or funnel** -- installs are net-new creates on
+  the PRES-011 path, one funnel per client per run.
+- **Operator credits for tests; never a client.** A sample VSL build runs on the operator's own
+  GHL location and against a sample run's own webinar video -- never a client's.
 - **The waiver record is the client's own words**, exactly as §1 requires.
 
 ## 6. VERIFY
 
-**No executor exists in this worktree to run this against (verified 2026-08-19 -- see §7).** As with
-`SALES-CHECKOUT-BUILDER-SOP.md` §6, a placeholder command that cannot be run would itself misstate a
-capability that does not exist. When Unit C3 lands `vsl_builder.py`, this section is the place to add
-the operator-smoke invocation (a `--run-dir <sample> --out ~/Downloads/... --no-upload`-style dry run
-against a sample run dir that already has a `webinar_mp4` record from a completed `P9.6` phase), with
-explicit pass criteria: the gate timestamp falls inside the sample's actual "first big revelation"
-window per `webinar_timing.json`, the video embed resolves to a real, reachable GHL url, and the page
-does not exist before the run and does exist (once) after it.
+Offline, deterministic, no spend:
 
-## 7. STATUS -- LIVE vs PENDING (RUN 2, re-verified 2026-08-19 after C1 landed the phase mid-unit)
+```bash
+python3 scripts/vsl_builder.py --selftest
+python3 scripts/ghl_external_installer.py --selftest
+python3 -m pytest scripts/tests/test_upsell_verifiers.py scripts/tests/test_upsell_intake_shape.py
+```
+
+Operator smoke against a sample run dir that already carries a real P9.6 video artifact:
+
+```bash
+python3 scripts/vsl_builder.py --run-dir <sample> --skip-design --no-push
+```
+
+Pass criteria: exit 0; `working/vsl/html/vsl.html` exists and carries the run's own
+`ZHC-VSL-BUILDER deck_slug=<slug>` marker and a real `<video>` element; the gate timestamp
+recorded in `working/checkpoints/vsl.json` falls inside [180s, 480s] and matches the §4 rule
+against the sample's `webinar_timing.json`; `phase_verifiers.verify("P-U-VSL-BUILD", <sample>)`
+passes. The install side verifies separately: `P-U-GHL-VSL` passes only on the installer's
+`validate_receipt()` over `working/vsl/ghl_build_receipt.json`.
+
+## 7. STATUS -- LIVE vs PENDING (re-verified 2026-10-14 for FIX-PLAN Item 23)
 
 | Claim | Status | Evidence |
 |---|---|---|
 | The client is asked "would you like a VSL page?" | **LIVE** (deployed interview app / repo question bank) | `DEPT/intake/upsell-questions.json` v1.0.0; `DEPT/intake/deck-intake-questions.json` v1.5.0 orders 7.7/7.71. NOT live on the operator Mac Mini department (Wave D, separate unit) -- the live box's question bank is v1.2.0/50q with no upsell questions (`CONTROL/FABLE-TRUTH.md` §6). |
 | The answer is captured and stored | **LIVE** in the repo interview-app bridge | `DEPT/intake/interview-app/bridge/intake_writer.py` maps `want_vsl_page` -> `WANT_VSL_PAGE`; see `SALES-CHECKOUT-BUILDER-SOP.md` §1's KNOWN GAP (identical mapping caveat applies to `VSL_PAGE_DECLINED_REASON`). |
-| A `P-U-VSL-BUILD` phase exists in the manifest | **LIVE** (landed mid-unit by C1) | `PIPELINE-MANIFEST.json` manifest_version 51, order 8.93, confirmed present and read in full for this revision. |
-| An executor script exists | **PENDING** | `find DEPT -iname "vsl_builder.py"` -> no result in this worktree (re-checked for this revision). |
-| A verifier / test exists | **PENDING** | No `P-U-` entries in `DEPT/scripts/phase_verifiers.py`; no `test_vsl*` file under `DEPT/scripts/tests/`; no `AF-U-VSL-BUILD` row in `PIPELINE-MANIFEST.autofails[]` (the phase's own `gate_codes` cites it; the registry does not yet declare it) or in `MASTER-QC-AUTOFAIL-RULESET.md`. |
-| `P9.6-WEBINAR-VIDEO` (the video this phase depends on) exists and is enforced | **LIVE** | `P9.6-WEBINAR-VIDEO`, order 8.92, in `PIPELINE-MANIFEST.json`; `DEPT/scripts/build_webinar_video.py` + `WEBINAR-BUILDER-SOP.md`. |
-| `ghl_rest_canvas.py` (the push mechanism) exists and is merged | **LIVE** | `06-ghl-install-pages/tools/ghl_rest_canvas.py`, present in this worktree. |
-| The sales/checkout sibling executor's manifest wiring is trustworthy as a precedent | **NO -- verified broken, see `SALES-CHECKOUT-BUILDER-SOP.md` §3/§7** | The landed `sales_checkout_builder.py` has no `--mode` flag; its manifest entries' executor commands crash on dispatch. C3 should NOT assume the sibling phases are a working reference implementation to copy uncritically. |
+| A `P-U-VSL-BUILD` phase exists in the manifest | **LIVE** | Live `PIPELINE-MANIFEST.json`, order 8.93, correctly sequenced after `P9.6-WEBINAR-VIDEO`. |
+| An executor script exists | **LIVE** | `DEPT/scripts/vsl_builder.py` (the Wave C executor); `--selftest` passes offline. |
+| A verifier / test exists | **LIVE** | `phase_verifiers._verify_upsell_vsl_build` is registered for `P-U-VSL-BUILD`; `AF-U-VSL-BUILD` is declared in the manifest's `autofails[]` and in `MASTER-QC-AUTOFAIL-RULESET.md`; coverage in `test_upsell_verifiers.py` (the elected build is produced by ACTUALLY RUNNING the builder) and `test_upsell_intake_shape.py`. |
+| `P9.6-WEBINAR-VIDEO` (the video this phase depends on) exists and is enforced | **LIVE** | `P9.6-WEBINAR-VIDEO`, order 8.92, in `PIPELINE-MANIFEST.json`; `DEPT/scripts/build_webinar_video.py` + `WEBINAR-BUILDER-SOP.md`; the dependency is enforced by the executor and re-checked by the verifier via `verify_video_dependency()`. |
+| The install path exists and is verified | **LIVE** | `P-U-GHL-VSL` + `P-U-FORM-GATE` execute via `ghl_external_installer.py` (PRES-011); completion requires `validate_receipt()` (adapter IDs + matching-location readback + ops-ledger provenance). The delegated Skill 6 / Skill 44 execution itself is staffed per run, as with the sales funnel. |
+| The Gauntlet VSL design is a current alternative | **RETIRED** (2026-10-14) | Archived byte-identical in `presentations/archive/vsl-gauntlet/`; design preserved without authority in `VSL-GAUNTLET-SPEC-NOTE.md`; Guard B patterns `vsl-gauntlet-*` lint its values against silent return. |
 | The flow (VSL page + gate) has been proven end-to-end, by hand, once | **LIVE (historical), not repeatable from this repo alone** | Loop 2C, COMPLETE 2026-08-07, render-verified, gate built in. Client-specific artifacts correctly excluded from this repo. |
 
-**Plain statement:** a client who answers "yes" today gets the question asked, the answer recorded,
-the manifest phase declared (order 8.93, correctly sequenced after `P9.6-WEBINAR-VIDEO`) -- and still
-nothing built, because `vsl_builder.py` does not exist yet. This SOP is the design for what Unit C3
-still has to land; Unit C1's manifest wiring for this specific phase is already done.
+**Plain statement:** a client who answers "yes" gets the question asked, the answer recorded,
+the manifest phase declared (order 8.93, correctly sequenced after `P9.6-WEBINAR-VIDEO`), the page
+built by `vsl_builder.py`, and the funnel install executed and receipt-proven by `P-U-GHL-VSL`.
+There is one VSL design; this SOP is its doctrine.
 
-## 8. HANDBACK (proposed schema, once built)
+## 8. HANDBACK (landed schema)
 
-`working/checkpoints/upsell.json` (proposed -- C3's to finalize; note the sales/checkout sibling
-landed as `working/checkpoints/sales_checkout.json` instead of a shared `upsell.json`, per
-`SALES-CHECKOUT-BUILDER-SOP.md` §8 -- C3 should decide deliberately whether to match that filename
-convention or use its own) should record: the HTML source path, the design image URL(s), the embedded
-video's
-`ghl_url` (cross-referenced against `media_library.json`'s `webinar_mp4` record so a QC pass can
-confirm the VSL page embeds THIS run's video, not a stale one), the resolved gate timestamp and its
-source window in `webinar_timing.json`, the GHL `funnel_id`/`page_id`/url `ghl_rest_canvas.py`
-returns, and the waiver record (`want_vsl_page` value +, if explicitly "no," the verbatim
-`client_request_quote`).
+The build phase records into `working/checkpoints/vsl.json` (merged, never clobbered):
+`deck_slug`, the gate resolution, `video_path` + `video_hosted`, the resolved
+`gate_timestamp` (seconds + source, per §4), `vsl_copy` / `vsl_render` / `vsl_html` paths,
+`built_at`, and a `status` (`deferred` / `waived` / `fail_closed` / `video_missing` /
+`design_failed` / `html_content_gate_failed` / `built_offline_no_push` / `built`).
+
+The install phase's proof is separate and lives at `working/vsl/ghl_build_receipt.json`
+(owned by `P-U-GHL-VSL`): the adapter funnel/page IDs, the matching-location readback, and
+the ops-ledger provenance that `ghl_external_installer.validate_receipt()` checks. The
+waiver record (`want_vsl_page` value +, if explicitly "no," the verbatim
+`client_request_quote`) is carried in the phase ledger's `gate` object.

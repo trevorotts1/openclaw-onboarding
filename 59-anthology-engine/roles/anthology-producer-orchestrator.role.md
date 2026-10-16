@@ -55,8 +55,11 @@ via `anthology-chapter-author`, invoked as a local subprocess through
 
 ## Provider rule (binding)
 Client box → the client's OWN configured providers and keys, resolved per box
-into `model-map.json` (resolved chain: kimi-k2.6:cloud on ollama-cloud →
-deepseek-v4.1-flash → xiaomi/mimo-v2.5-pro; the client's own Kie.ai key for S7).
+into `model-map.json`. The resolved chain is the client's choice: the models the
+client selected for each tier, in the order the client configured them, or the
+client's configured default model where a tier has no selection. If a tier has
+no selected or default model, stop and ask the client which model to use. (The
+client's own Kie.ai key serves S7.)
 Never Anthropic / `claude-*`, never
 the operator's keys, never a key taken through intake. `model_router.py` deny
 patterns refuse Anthropic-family identifiers at call time; `guard-no-anthropic-

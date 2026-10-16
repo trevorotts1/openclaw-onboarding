@@ -211,6 +211,38 @@ The CLI has NO media upload commands. Media NEVER routes to Tier 0 — always Ti
 
 ---
 
+## Consumers (who hands work to this skill, verified 2026-10-14)
+
+This section states, for each consumer, what that consumer actually does today, verified from the consumer's own code and docs on 2026-10-14. Trust this section over any looser description. The pattern across every consumer below: work arrives as FILES AND PLANS that an operator agent running this skill executes under this skill's own gates. No consumer calls the caf CLI in process, nothing here polls for work, and a handed-off plan is not a built object until execution receipts with read-backs exist.
+
+### Skill 6: 06-ghl-install-pages (P4 to P5 funnel seam)
+
+- Full-funnel builds: Skill 6's v2_dispatcher.py writes routing/skill44-handoff.json when a verified full-funnel build carries linked automations marked build_now (funnel template id, location id, the timing contract, and the to_build list), reads the file back, and FAILS the dispatch if the write or the read-back fails. An orchestrator then dispatches each to_build automation to this skill as its own build (PLAN MODE plus Step 9 QC). The handoff is a file, not an API call, and it fires only when build_now automations exist.
+- Form dependency plans: Skill 6's ghl_form_builder.py THINK layer emits routing/form-dependency-plan.json (owner_skill 44, cli "caf (PIT-authenticated)") listing the zhc_ custom fields and tags a form needs, each stamped create or reuse. This skill creates or looks up those dependencies BEFORE the browser build, because the browser layer adds pre-created fields via Add Object Fields and never mints fields on the fly. The builder itself never invokes caf.
+- The P4 to P5 page and form ids and the approved email sequence copy described in READ-BEFORE-ACT above arrive through these Skill 6 artifacts and the funnel task record, not through a live integration.
+
+### Presentations department: 23-ai-workforce-blueprint role library (presentations)
+
+- Emits plan contracts into a run folder, nothing more. checkout_form_builder.py writes working/sales-checkout/checkout_form_skill44.json (the checkout form plus Form-Submitted workflow contract, mechanism SKILL44_WIDGET -> FORM) and records its own receipt at status plan_emitted with the form and workflow ids null. ghl_external_installer.py (phases P-U-GHL-SALES, P-U-GHL-VSL, P-U-FORM-GATE) writes working/vsl/gate_form_skill44_plan.json naming this skill's real entry points (caf workflows build --from-plan via CampaignBuilder under the write lock, the Skill 6 workflow builder harness, caf read-backs) and leaves ecosystem/gate-form.json plus workflows/gate-workflow.json at pending_external_execution until an execution returns adapter ids and read-backs that pass its validate_receipt.
+- What does NOT happen today: no presentations code executes this skill. Its live Skill 44 adapters are stubs that refuse (DeferralRequired) until a wave owner designates a test location; only in-memory fakes have ever executed these contracts, inside tests. Any wording that reads as if the presentations pipeline builds live forms or workflows through this skill automatically is wrong; the contracts are plans until a delegated agent executes them here.
+- The run-level seam (FIX-PLAN Item 33a): presentations also emits working/ghl/ghl-ops-request.json at install and at delivery (scripts/ghl_ops.py), listing the GHL operations a run needs (form creation and attachment, workflow trigger coverage, product and order-form binding on the sandbox path, test-submission proof, booking-calendar verification), each with the Wiring Gate read-back checks the receipt must answer. The executing agent returns working/ghl/ghl-ops-receipt.json with per-object read-backs. The presentations reader judges an entry claiming success without its read-back as unverified, never success.
+- The VSL gate spec (presentations scripts/vsl-gate-form-spec.json) is a contract document for the gate form object. The VSL page the pipeline ships today (vsl_builder.py) carries a native HTML gate form whose submit unlocks playback client-side; wiring that submit to a live GHL endpoint is a deployment-time step, and the Skill 44 gate form exists only when the P-U-FORM-GATE plan above is executed.
+
+### Skill 38: 38-conversational-ai-system (TRINITY counterparty)
+
+- Not a request consumer. For conversational workflow builds the TRINITY ships together: this skill builds the workflow structure and Skill 38 authors the playbook and the Build-with-AI prompt (see the TRINITY rule below). The coupling is enforced mechanically on this side: qc-built-workflow.sh --conversational executes Skill 38's scripts/qc-trinity-registry.sh, and the WF-19 gate fails the build on any non-zero exit. Without the flag, WF-19 stays a human-review item.
+
+### Skill 50: 50-email-engine (deploy rail)
+
+- On its P4 deploy step, Skill 50 emits a DRAFT-ONLY workflow build plan (tools/emit_build_plan.py, validated against its build-plan schema) covering email plus wait steps only. Skill 50 never sends anything. The plan enters this skill's PLAN MODE (Step 0.5 boards the build), a human approves before any send, and the built draft faces this skill's QC gate (score 8.5 or better).
+
+### Explicit non-consumers
+
+- Skill 46 (46-kie-callback-relay) does not consume this skill and does not use the GHL Firebase token. The daily token liveness check is owned here (tools/check-ghl-token-liveness.sh); Skill 46's SKILL.md cross-references it for discoverability only.
+- Skill 71 (71-blackceo-signature-page) hands nothing to this skill at this version: no automation-handoff producer exists in that folder (checked 2026-10-14). Skill 71 consumes presentations page briefs, a different seam.
+
+---
+
 ## Credential model
 
 | Env var | Required for | Canonical name |

@@ -95,3 +95,19 @@ Add:
 ---
 
 ## SOUL.md - NO UPDATE NEEDED
+
+---
+
+## AGENTS.md - UPDATE REQUIRED (2026-10-13: engine default change)
+
+Operator decision, 2026-10-13: the OpenClaw Chrome extension is now Skill 6's
+default browser engine. In the `## GHL Page Deployment [PRIORITY: HIGH]` block,
+REPLACE the existing "- Engine:" line with:
+
+```
+- Engine: OpenClaw Chrome extension (PRIMARY — the OpenClaw browser extension driver on the operator's paired, already signed-in Chrome; version-gated by 06-ghl-install-pages/scripts/check-openclaw-extension-version.sh, which must exit 0 before any install run). agent-browser is the FALLBACK lane (headless, isolated `--session <client>`, gateway-only via tools/browser_manager.sh). Playwright is the escape hatch only and uses launchPersistentContext (NEVER launch()).
+```
+
+The SINGLETON POOLED BROWSER paragraph and both GHL-AUTH-DOCTRINE sentinels are
+unchanged: the singleton/gateway discipline now scopes to the fallback lane, and
+token-only auth is untouched.

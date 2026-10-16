@@ -48,7 +48,7 @@ All sixteen are binary. Checks 1 to 11, 15, and 16 are deterministic string and 
 15. PURE DELIVERABLE: no delivery-report or checklist or rubric metadata bleeds into the script.
 16. NO INTAKE CONTAMINATION: no contact email or phone, no consent or SMIQ language, and no visual-brief text in the script.
 
-Checks 12 (no fabrication), 13 (mode perspective), and 14 (pronoun correctness) are SEMANTIC. They are never deterministic and are run on the CHEAP judge tier (Gemini 3.1 Flash Lite or GLM 5.2 on Ollama Cloud), never on the writer model and never on a build-time reasoning model. `qc-tier1-mechanical.py` reports checks 12 to 14 as DEFERRED so no caller ever mistakes a green mechanical result for a fully cleared Tier 1. A green mechanical result means the deterministic subset is clean; the three semantic checks and the ten-dimension rubric still gate deliverability.
+Checks 12 (no fabrication), 13 (mode perspective), and 14 (pronoun correctness) are SEMANTIC. They are never deterministic and are run on the CHEAP judge tier (the client's chosen judge model, or the client's configured default model for judging), never on the writer model and never on a build-time reasoning model. Recommendation: a low-cost model for the judge tier, because these semantic checks run on every episode and the cost repeats. `qc-tier1-mechanical.py` reports checks 12 to 14 as DEFERRED so no caller ever mistakes a green mechanical result for a fully cleared Tier 1. A green mechanical result means the deterministic subset is clean; the three semantic checks and the ten-dimension rubric still gate deliverability.
 
 ## 3. TIER 2: THE TEN-DIMENSION RUBRIC (EIGHT OR HIGHER, NO AVERAGING)
 

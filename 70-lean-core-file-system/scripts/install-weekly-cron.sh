@@ -11,22 +11,28 @@
 #   delivery  --no-deliver (quiet: the run writes a report file; the prompt
 #             tells the agent to message the owner only when a human decision
 #             is needed)
-#   model     primary  = DeepSeek V4.1 Flash on Ollama Cloud
-#             fallback = DeepSeek V4.1 Flash on OpenRouter (used only when the
-#                        primary fails: full, rate-limited or unavailable); when
-#                        the box lacks that twin, the box's own
-#                        agents.defaults.model.fallbacks (listed, non-Claude)
+#   model     the client's choice, or their configured default model.
+#             primary  = the model the client chose with --primary; with no
+#                        override, the configured default model of the box
+#                        (agents.defaults.model.primary in its openclaw.json,
+#                        or the model tagged "default" in its own model list)
+#             fallback = the model the client chose with --fallback; with no
+#                        override, the box's own
+#                        agents.defaults.model.fallbacks entries that are on
+#                        the box's list (used only when the primary fails:
+#                        full, rate-limited or unavailable)
 #             Never an Anthropic or Claude model.
+#             Recommendation: a low-cost or subscription-billed model, because
+#             this is a weekly maintenance audit, not a reasoning showcase;
+#             the client's configured default normally fits.
 #
 # MODEL IDENTIFIERS ARE NEVER GUESSED. They are discovered from THIS box's own
 # configured model list (`openclaw models list --json`, which is also the
-# allowlist a cron model must be on). Primary must match
-#   ollama/deepseek-v4.1-flash[:cloud]  or  ollama-cloud/deepseek-v4.1-flash[:cloud]
-# and fallback must equal
-#   openrouter/deepseek/deepseek-v4.1-flash
-# If either is absent, or the primary is ambiguous, the job is NOT created
-# (exit 4) and the message names what is missing. --primary / --fallback
-# override the choice, but the value must still be on the box's list.
+# allowlist a cron model must be on). --primary / --fallback are the client's
+# explicit choice, but the value must still be on the box's list. If no
+# primary can be proven (no override, and no usable configured default on the
+# list), the job is NOT created (exit 4) and the message names what is
+# missing.
 #
 # FLAGS ARE NEVER GUESSED EITHER. Every `cron add` / `cron edit` flag used here
 # is first confirmed in that subcommand's own --help (exit 5 names any missing).
@@ -116,7 +122,7 @@ if ! "$OPENCLAW_BIN" models list --json > "$TMP/models.json" 2> "$TMP/models.err
   tail -3 "$TMP/models.err" >&2
   exit 2
 fi
-SEL="$(PRIMARY_OVERRIDE="$PRIMARY_OVERRIDE" FALLBACK_OVERRIDE="$FALLBACK_OVERRIDE" python3 - "$TMP/models.json" <<'PY'
+SEL="$(PRIMARY_OVERRIDE="$PRIMARY_OVERRIDE" FALLBACK_OVERRIDE="$FALLBACK_OVERRIDE" OC_JSON="$(pr_ocroot)/openclaw.json" python3 - "$TMP/models.json" <<'PY'
 import json, os, re, sys
 try:
     data = json.load(open(sys.argv[1]))
@@ -145,41 +151,57 @@ def walk(o):
         ids.add(o.strip())
 walk(data)
 banned = re.compile(r"anthropic|claude", re.I)
-def pick(override, pattern, label):
-    if override:
-        if banned.search(override):
-            return "REFUSED_%s=%s is an Anthropic or Claude model, which this job must never use" % (label, override)
-        if override not in ids:
-            return "MISSING_%s=%s (not on this box's configured model list)" % (label, override)
-        return "%s=%s" % (label, override)
-    hits = sorted(i for i in ids if re.fullmatch(pattern, i) and not banned.search(i))
-    if len(hits) > 1:
-        cloud = [h for h in hits if h.endswith(":cloud")]
-        hits = cloud if cloud else hits
-    if len(hits) == 1:
-        return "%s=%s" % (label, hits[0])
-    if not hits:
-        return "MISSING_%s=no id matching %s" % (label, pattern)
-    return "AMBIGUOUS_%s=%s" % (label, ",".join(hits))
-print(pick(os.environ.get("PRIMARY_OVERRIDE", ""),
-           r"(ollama|ollama-cloud)/deepseek-v4\.1-flash(:cloud)?", "PRIMARY"))
-print(pick(os.environ.get("FALLBACK_OVERRIDE", ""),
-           r"openrouter/deepseek/deepseek-v4\.1-flash", "FALLBACK"))
-if default_id[0] and not banned.search(default_id[0]):
-    print("DEFAULT=" + default_id[0])
+def pick_override(override, label):
+    # The explicit client choice (--primary / --fallback). Still validated:
+    # never an Anthropic or Claude model, and it must be on the configured
+    # model list of this box.
+    if banned.search(override):
+        return "REFUSED_%s=%s is an Anthropic or Claude model, which this job must never use" % (label, override)
+    if override not in ids:
+        return "MISSING_%s=%s (not on this box's configured model list)" % (label, override)
+    return "%s=%s" % (label, override)
+def cfg_default_model():
+    # The configured default model of this box, read from its own
+    # openclaw.json (agents.defaults.model.primary, or the plain-string
+    # agents.defaults.model). Empty when the box configures none.
+    try:
+        cfg = json.load(open(os.environ.get("OC_JSON", "")))
+        m = ((cfg.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(m, dict):
+            m = m.get("primary")
+        if isinstance(m, str) and m.strip():
+            return m.strip()
+    except Exception:
+        pass
+    return ""
+primary_override = os.environ.get("PRIMARY_OVERRIDE", "")
+fallback_override = os.environ.get("FALLBACK_OVERRIDE", "")
+configured = cfg_default_model()
+if primary_override:
+    print(pick_override(primary_override, "PRIMARY"))
+elif configured:
+    if banned.search(configured):
+        print("MISSING_PRIMARY=the configured default model of this box (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % configured)
+    elif configured not in ids:
+        print("MISSING_PRIMARY=the configured default model of this box (%s) is not on its configured model list; pass --primary with an id on the list, or configure a default model that is on the list" % configured)
+    else:
+        print("PRIMARY=" + configured)
+elif default_id[0]:
+    if banned.search(default_id[0]):
+        print("MISSING_PRIMARY=the configured default model of this box (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % default_id[0])
+    else:
+        print("PRIMARY=" + default_id[0])
+else:
+    print("MISSING_PRIMARY=no configured default model on this box (no agents.defaults.model.primary in openclaw.json and no model tagged as default in its configured model list); pass --primary with an id on the list, or configure a default model")
+if fallback_override:
+    print(pick_override(fallback_override, "FALLBACK"))
+# With no fallback override, nothing is printed here: the shell resolves the
+# fallback from the agents.defaults.model.fallbacks of this box below.
 PY
 )"
 PRIMARY="$(printf '%s\n' "$SEL" | sed -n 's/^PRIMARY=//p')"
 FALLBACK="$(printf '%s\n' "$SEL" | sed -n 's/^FALLBACK=//p')"
-# UPF002/U3: client boxes rarely carry the exact DeepSeek pair (they run their own
-# providers), which made this installer exit 4 on every box and withheld .wired.
-# With no explicit override, degrade to the box's own default model (never an
-# Anthropic/Claude id; filtered above) and drop the fallback instead of refusing.
-DEFAULT_M="$(printf '%s\n' "$SEL" | sed -n 's/^DEFAULT=//p')"
-if [ -z "$PRIMARY" ] && [ -z "$PRIMARY_OVERRIDE" ] && [ -n "$DEFAULT_M" ]; then
-  PRIMARY="$DEFAULT_M"; echo "[$PROG] DeepSeek V4.1 Flash not on this box's list; using the box default model $PRIMARY"
-fi
-# D20: with no OpenRouter twin, use the box's own agents.defaults.model.fallbacks
+# D20: with no --fallback override, use the box's own agents.defaults.model.fallbacks
 # (only ids that are on this box's model list, never Anthropic/Claude, never the
 # primary) instead of leaving the job with no fallback at all.
 if [ -z "$FALLBACK" ] && [ -z "$FALLBACK_OVERRIDE" ] && [ -n "$PRIMARY" ]; then
@@ -198,7 +220,7 @@ except Exception:
     pass
 PY
 )"
-  if [ -n "$FALLBACK" ]; then echo "[$PROG] no OpenRouter twin on this box; using the box's own default fallbacks: $FALLBACK"
+  if [ -n "$FALLBACK" ]; then echo "[$PROG] using the box's own configured default fallbacks: $FALLBACK"
   else FB_NONE=1; echo "[$PROG] no fallback model provable on this box; job created without --fallbacks"; fi
 fi
 if [ -z "$PRIMARY" ] || { [ -z "$FALLBACK" ] && [ -z "${FB_NONE:-}" ]; }; then

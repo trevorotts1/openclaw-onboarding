@@ -1,5 +1,5 @@
 {
-  "manifest_version": 70,
+  "manifest_version": 75,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -714,7 +714,8 @@
         "working/copy/arc_allocation.json",
         "working/research/research_map.json",
         "working/research/brief-*.md"
-      ]
+      ],
+      "workers": 5
     },
     {
       "id": "P-SP-STRUCTURE",
@@ -789,7 +790,7 @@
     {
       "id": "P-U-DESIGN-SALES",
       "order": 4.2,
-      "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
+      "name": "Upsell Sales Page Design (each design prompt inside the KIE rule 12 length band, 95 to 100 percent of the model max)",
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
@@ -813,7 +814,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/sales.fragment.md"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-U-DESIGN-RENDER-SALES",
@@ -919,7 +921,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/checkout.fragment.md"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-U-DESIGN-RENDER-CHECKOUT",
@@ -942,6 +945,38 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "prompts/checkout.design.txt"
+      ]
+    },
+    {
+      "id": "P-U-BRIEF-SALES",
+      "order": 4.32,
+      "name": "Upsell Sales + Checkout Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": [
+        "working/pages/page-brief-sales.v*.json",
+        "working/pages/page-brief-checkout.v*.json"
+      ],
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/page_brief.py --run-dir {run_dir} --page sales --page checkout"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20,
+      "consumes": [
+        "working/copy/intake.json",
+        "working/upsell/copy/sales.fragment.md",
+        "working/upsell/copy/checkout.fragment.md",
+        "prompts/sales.design.txt",
+        "prompts/checkout.design.txt",
+        "design/sales-design.png",
+        "design/checkout-design.png"
       ]
     },
     {
@@ -971,7 +1006,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/vsl.fragment.md"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-U-DESIGN-RENDER-VSL",
@@ -994,6 +1030,33 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "prompts/vsl.design.txt"
+      ]
+    },
+    {
+      "id": "P-U-BRIEF-VSL",
+      "order": 4.42,
+      "name": "Upsell VSL Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "working/pages/page-brief-vsl.v*.json",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/page_brief.py --run-dir {run_dir} --page vsl"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20,
+      "consumes": [
+        "working/copy/intake.json",
+        "working/upsell/copy/vsl.fragment.md",
+        "working/upsell/vsl-research.md",
+        "prompts/vsl.design.txt",
+        "design/vsl-design.png"
       ]
     },
     {
@@ -1127,7 +1190,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/slide-*.txt"
-      ]
+      ],
+      "workers": 12
     },
     {
       "id": "P-STYLE-PREVIEW",
@@ -1192,7 +1256,8 @@
         "working/copy/slides.json",
         "working/copy/arc_allocation.json",
         "working/copy/intake.json"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-STYLE-PICK",
@@ -1307,7 +1372,8 @@
       "heartbeat_minutes": 30,
       "consumes": [
         "renders/slide-*.png"
-      ]
+      ],
+      "workers": 12
     },
     {
       "id": "P-U-HTML-SALES",
@@ -1561,6 +1627,39 @@
       ]
     },
     {
+      "id": "P8.15-MOTION",
+      "order": 8.15,
+      "name": "Governed Motion Audit (Skill 72 MG-036)",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": [
+        "working/checkpoints/motion.json",
+        "working/checkpoints/slide_media_manifest.json"
+      ],
+      "gate_codes": [],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_motion_media",
+        "label": "governed motion plan: every declared motion slide is authenticated against its Skill 72 package or degraded to static with a reason code in working/checkpoints/motion.json (Skill 72 MG-036)"
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/motion_phase.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10,
+      "consumes": [
+        "working/copy/slides.json",
+        "*-FINAL.pptx"
+      ]
+    },
+    {
       "id": "P8.2-GUIDE",
       "order": 8.2,
       "name": "Presenter Guide PDF",
@@ -1685,7 +1784,8 @@
         "working/copy/intake.json",
         "working/copy/slides_copy.md",
         "working/copy/arc_allocation.json"
-      ]
+      ],
+      "workers": 1
     },
     {
       "id": "P8.4-FISH-TAG",
@@ -2029,13 +2129,14 @@
       "heartbeat_minutes": 120,
       "consumes": [
         "renders/slide-*.png",
-        "working/deliverables/PRESENTERS-SPEECH.md"
+        "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/checkpoints/slide_media_manifest.json"
       ]
     },
     {
       "id": "P-U-VSL-BUILD",
       "order": 8.93,
-      "name": "Upsell VSL Page Build (video sales letter -> kie design -> HTML -> GHL funnel push; depends on P9.6 webinar video)",
+      "name": "Upsell VSL Page Build (video sales letter -> kie design -> HTML; funnel install is P-U-GHL-VSL; depends on P9.6 webinar video)",
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
@@ -2045,7 +2146,7 @@
         "AF-U-VSL-BUILD"
       ],
       "preflight": null,
-      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_vsl_page, default NO -- a VSL page requires the video to exist). DEFERS (resolve_vsl_gate exits 0, writes nothing new) unless intake.json pre_presentation_capture.WANT_VSL_PAGE == 'yes'. A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.VSL_PAGE_DECLINED_REASON, verbatim, non-empty) and gates the phase OUT entirely. VIDEO DEPENDENCY: order 8.93 is deliberately AFTER P9.6-WEBINAR-VIDEO (order 8.92) -- vsl_builder.py's verify_video_dependency() resolves working/delivery/{deck_slug}-WEBINAR.mp4 via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE and fails closed (AF-VSL-NO-VIDEO) if it is absent, so this phase must never run before P9.6. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
+      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_vsl_page, default NO -- a VSL page requires the video to exist). DEFERS (resolve_vsl_gate exits 0, writes nothing new) unless intake.json pre_presentation_capture.WANT_VSL_PAGE == 'yes'. A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.VSL_PAGE_DECLINED_REASON, verbatim, non-empty) and gates the phase OUT entirely. VIDEO DEPENDENCY: order 8.93 is deliberately AFTER P9.6-WEBINAR-VIDEO (order 8.92) -- vsl_builder.py's verify_video_dependency() resolves working/delivery/{deck_slug}-WEBINAR.mp4 via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE and fails closed (AF-VSL-NO-VIDEO) if it is absent, so this phase must never run before P9.6. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md. SINGLE VSL DESIGN (FIX-PLAN Item 23, 2026-10-14): vsl_builder.py builds the whole page itself (copy, Kie hero, HTML+gate) and reads ONLY the inputs declared in this entry's consumes; the Path A agent phases' artifacts (working/upsell/copy/vsl.fragment.md, design/vsl-design.png, pages/vsl.fragment.html) are NOT inputs to this build and were never read by the executor (verified against vsl_builder.py at the resolution); the earlier consumes declaration claiming them was false and is corrected in manifest_version 71. The executor also reads working/checkpoints/webinar_timing.json for the gate timestamp, an undeclared checkpoint produced inside P9.6's executor, not a manifest artifact. The funnel install is P-U-GHL-VSL's, not this phase's; the builder-side push plan and build_receipt.json retired with the Gauntlet design.",
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
@@ -2058,8 +2159,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/delivery/{deck_slug}-WEBINAR.mp4",
-        "working/upsell/copy/vsl.fragment.md",
-        "design/vsl-design.png"
+        "working/copy/intake.json",
+        "working/checkpoints/media_library.json"
       ]
     },
     {
@@ -3258,6 +3359,15 @@
       "py_symbol": "_spelling_lock_present"
     },
     {
+      "code": "AF-P24",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt casts a Black / African-descended subject (named directly, or via a SOP-GIP-01 v2.0 skin-tone library label) but its negative block does not name one or more of the five BlackCEO classes adopted under the Item 26 GIP doctrine weave (skin chromatic depth, hair strand integrity, skin microtexture, hairstyle fidelity, skin-tone direction lock). Prompts with no Black subject are not bound by this code; the 8 base classes under AF-P13 still bind every prompt.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_blackceo_negative_class_problems"
+    },
+    {
       "code": "AF-P-DENSITY",
       "stage": "Prompt",
       "level": "slide",
@@ -4032,7 +4142,7 @@
       "stage": "0",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the engine was dispatched (or an execution plan was built) without a capacity measurement for THIS client's account. capacity.probe() detects the client's provider and plan in a fixed order -- (a) a declared capacity_override.json in the department config dir, (b) the 9Router configuration, (c) the OpenClaw agent model configuration, (d) provider known but plan undeclared, which PARKS behind a one-time interview question whose answer persists to capacity_override.json, (e) nothing found, which reports UNDETERMINED and falls back to DEFAULT_CONSERVATIVE = 3 -- and the cap table is exact: ollama-cloud $20/month = 3 concurrent agents (the governor's max_concurrent_agents, presentation_job/governor.py, is set from this cap table and every fanout width is clamped by it), ollama-cloud $100/month = 10, deepseek-direct v4-pro = 500, deepseek-direct v4-flash = 2500. An unknown provider or plan is NEVER guessed upward. The governor (presentation_job/governor.py -- the same per-provider governor that halts a run on DISPATCH_CAPACITY_REFUSED, presentation_job/capacity.py::probe + launcher.dispatch) fires when the probe cannot produce a dispatchable number at all (status PARKED or FAILED): launcher.dispatch refuses before any engine process is created and exits non-zero, and execution_plan.build_execution_plan refuses rather than substituting a constant wave width. Wave width is min(ready phases, measured available) -- never a hard-coded per-workflow number, which on a small client plan would over-dispatch by orders of magnitude. Detection is read-only and never reads a credential VALUE, only which provider is configured. Repair: answer the capacity interview question (the answer is stored once), or fix/remove the malformed capacity_override.json named in the refusal payload.",
+      "trigger": "the engine was dispatched (or an execution plan was built) without a capacity measurement for THIS client's account. capacity.probe() detects the client's provider and plan in a fixed order -- (a) a declared capacity_override.json in the department config dir, (b) the 9Router configuration, (c) the OpenClaw agent model configuration, (d) provider known but plan undeclared, which PARKS behind a one-time interview question whose answer persists to capacity_override.json, (e) nothing found, which reports UNDETERMINED and falls back to DEFAULT_CONSERVATIVE = 3 -- and the cap table is exact: ollama-cloud $20/month = 3 concurrent agents (the governor's max_concurrent_agents, presentation_job/governor.py, is set from this cap table and every fanout width is clamped by it), ollama-cloud $100/month = 8 (the raw seat limit is 10; the 2026-09-04 operator ruling reserves 2 for other work, and capacity.py carries the row as limit 10 minus reserve 2), deepseek-direct v4-pro = 500, deepseek-direct v4-flash = 2500. An unknown provider or plan is NEVER guessed upward. The governor (presentation_job/governor.py -- the same per-provider governor that halts a run on DISPATCH_CAPACITY_REFUSED, presentation_job/capacity.py::probe + launcher.dispatch) fires when the probe cannot produce a dispatchable number at all (status PARKED or FAILED): launcher.dispatch refuses before any engine process is created and exits non-zero, and execution_plan.build_execution_plan refuses rather than substituting a constant wave width. Wave width is min(ready phases, measured available) -- never a hard-coded per-workflow number, which on a small client plan would over-dispatch by orders of magnitude. Detection is read-only and never reads a credential VALUE, only which provider is configured. Repair: answer the capacity interview question (the answer is stored once), or fix/remove the malformed capacity_override.json named in the refusal payload.",
       "enforced_by": "launcher",
       "py_symbol": null,
       "check_script": "scripts/presentation_job/capacity.py::probe"
@@ -4072,10 +4182,10 @@
       "stage": "8.93",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the upsell VSL page (P-U-VSL-BUILD) was elected (pre_presentation_capture.WANT_VSL_PAGE == 'yes') but working/vsl/html/vsl.html is absent/empty, verify_video_dependency() cannot resolve the P9.6-produced working/delivery/{deck_slug}-WEBINAR.mp4 (AF-VSL-NO-VIDEO in the executor's own exit-code contract), or working/vsl/build_receipt.json fails verify_push_receipt (no real preview_urls/funnel_id).",
+      "trigger": "the upsell VSL page (P-U-VSL-BUILD) was elected (pre_presentation_capture.WANT_VSL_PAGE == 'yes') but working/vsl/html/vsl.html is absent/empty, verify_video_dependency() cannot resolve the P9.6-produced working/delivery/{deck_slug}-WEBINAR.mp4 (AF-VSL-NO-VIDEO in the executor's own exit-code contract).",
       "enforced_by": "vsl_builder",
       "py_symbol": null,
-      "check_script": "scripts/vsl_builder.py::verify_video_dependency,verify_push_receipt"
+      "check_script": "scripts/vsl_builder.py::verify_video_dependency"
     },
     {
       "code": "AF-SLIDE-CRAFT-LOADER",
@@ -4261,7 +4371,7 @@
     },
     {
       "id": "media-librarian-ghl-updater",
-      "owns_phase": null
+      "owns_phase": "P9.2-GHL-UPLOAD"
     },
     {
       "id": "offer-price-strategist",

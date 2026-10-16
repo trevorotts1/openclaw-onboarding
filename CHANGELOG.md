@@ -1,3 +1,45 @@
+## [v27.1.28]  -  2026-10-15  -  Upgrade Skill 72 with dual-engine visual storytelling and four delivery modes
+
+###### What Changed
+- Skill 72 (72-motion-video-plus) rebuilt as V2 (skill version 1.0.0 to 2.0.0): one canonical, schema-validated job package (contracts V2) drives every production; the V1 `__setTime` pipeline survives only as an explicit compatibility adapter.
+- Dual engines as first-class production renderers: Hyperframes 0.8.155 (default for image-led, editorial, product/UI, and spatial work) and Remotion 4.0.535 (default for data-heavy charts and parameterized diagrams), behind one adapter interface (probe, validate, still, preview, final, motion inspection, cancel) with capability-based routing; neither engine is nested inside the other.
+- Visual storytelling and chart capability: a twelve-component catalog (C01-C09 registered with closed schemas, proof contracts, and decoded-frame proof; C10-C12 recorded unavailable with reasons), storyboard planning with non-text explanatory coverage enforced, chart data contracts with a zero-baseline rule, motion proof that rejects fake motion (a plausible-looking static subject fails as MG_FAKE_MOTION), complete-runtime review coverage, an evidence-bound creative rubric, and a visual reference suite whose owner calibration states are recorded honestly (CALIBRATION_PENDING and ENGINEERING_FIXTURE_ONLY until the owner reviews).
+- Four delivery modes from the same governed pipeline: `powerpoint_graphic` (16:9 deck component with a governed poster rule and real OOXML media embedding through the presentations pipeline, P01-P08), `vsl_desktop` (16:9 insert landed at the parent's spoken-word cue through the Skill 47 handoff), `vsl_mobile` (9:16 genuinely recomposed, never cropped, proven numerically against crop and scale derivations), and `standalone_video` (narrated and silent examples pass end to end with coverage, QC, poster, and hash-verified delivery records).
+- Reliability fixes: the legacy assembler's defects replaced by a governed assembler (single input-index authority, no `-shortest` concealment, music-bed reset closed with before/after measurement); fail-closed technical QC (a pass requires zero failures and zero mandatory not-run checks); content-addressed render cache wired into the production dispatcher with a kill-and-resume proof; cross-process resource budgets and runtime isolation; deterministic rendering verification by decoded-pixel comparison; approval gates bound to an immutable job-revision fingerprint; status, recovery, and delivery integration with Skill 47 in the parent's own attestation shape.
+- Migration: install, upgrade, and rollback run as one transaction with named exit codes; existing client files are vaulted by copy and hash-verified before any change; the still-only presentation path is byte-identical to the pre-upgrade pipeline on the regression corpus, and legacy jobs migrate through the shipped manifest migrator.
+- Provider independence: authoring-model freedom is the documented rule (the client selects their model, or their configured default applies; recommendations are guidance only, never a hidden prescription). The categorical vendor prohibition is removed inside Skill 72's files only; the repository-level rule in AGENTS.md is unchanged by this batch.
+- Tested platforms: Linux x64 on the build host (Node v24.20.0, Python 3.12.3, FFmpeg 8.1.2, Chromium 157.0.8080.0) with the full integrated regression on the release candidate. PowerPoint playback inside Microsoft PowerPoint is UNVERIFIED on every platform and is not claimed. The provisioning apt step is UNVERIFIED (runs used MOTION_RUNTIME_SKIP_APT=1).
+- Compatibility caveats: non-C05 components reach their adapters through the catalog layer plus the direct adapter lane; the canonical contracts scene definition stays closed on C05 in this release, and the layered contract surfaces (planner fields, asset provenance, dataset extensions, timeline sidecar, and the layer-owned schemas for proof, review, QC, packaging, handoff, mobile, and delivery) stand as the shipped contract. Promoting them into the canonical schema is a future contracts item. Rights questions ORQ-02, ORQ-03, ORQ-04, and ORQ-10 are answered in the provenance record to the extent the license texts support; no runtime redistribution claim is made beyond those answers.
+
+## [v27.1.27]  -  2026-10-14  -  Merge train: #2005 Land SOP-GIP-01 v2.0 + SOP-GIP-02 v2.0 (BlackCEO integration) with…; #2016 model-cleanup: Skill 06, client-choice model doctrine + router…; #2067 fix: verify-routing default-agent sources, skill 47 Step 6 venv…; #2069 fix(presentations): port the signature payload path into the…; #2071 README correction: S8 signature deferral discharged by PR #2069
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #2005 — [v27.1.27]  -  2026-10-14  -  Land SOP-GIP-01 v2.0 and SOP-GIP-02 v2.0 (BlackCEO image-style integration, stranded branch dd57f2e) with rule-12 band reconciliation (FIX-PLAN Item 24)
+
+###### What Changed
+- `SOP-GIP-01-PROMPT-ANATOMY.md` v1.1 to v2.0: merges the BlackCEO Signature Image Intelligence system (Skill 71) into the prompt anatomy (image philosophy, Lighting and Representation Intelligence in Elements 6 and 7, 13-class negative block, Color Grading, Camera/Lens/Aperture/Framing, Style System Libraries, Secret Super Sauce, Art Direction Router, Fashion and Wardrobe, Image Purpose, Pixel QC, Typography-as-Image, Set-Diversity Register, teaching examples EX-01 and EX-05, fill-in template, mandatory post-generation verification).
+- `SOP-GIP-02-IMAGE-QC.md` v1.0 to v2.0: AF-G7 expanded with the five BlackCEO skin/hair fidelity sub-checks.
+- Reconciliations at landing: rule 12 (`07-kie-setup/references/kie-common-rules.md`, enforced by `shared-utils/kie_prompt_enforcer.py`) is the single prompt-length source; the v2.0 draft's hard-number band table and its 9,000+ post-generation check are removed. Skill 71 library citations repointed from Mac Mini paths to in-repo `71-blackceo-signature-page/references/` paths, and the visual-artist listing completed to the guide's 50 systems (149 total). Universal scope amended: presentation slides are covered as doctrine adopted inside the Presentations pipeline, not as routing of audience decks through the GIP pipeline (FIX-PLAN Item 25; owner input OI-2 default). GK-20 conformed to prompt-bands.json v3 (no `text_bearing_medium` band; quote-card/text-led social posts declare `text_bearing_long`; Ideogram V3 only via the `medium` specialty band); header pin updated to prompt-bands.json v3.
+- Main-side changes preserved: the rule-12 band paragraph, the `prompt-budget --check` gate paragraph, and the AF-G8 `_local/receipts/{receipt-id}.json` operator-receipt wording.
+- Role-library `_index.json` content hashes restamped (SOP-GIP-01 content_version 1.0.7, SOP-GIP-02 content_version 1.0.3).
+
+### #2016 — model-cleanup: Skill 06, client-choice model doctrine + router resolution hooks
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #2067 — fix: verify-routing default-agent sources, skill 47 Step 6 venv python, skill 47/48 QC path resolution
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #2069 — fix(presentations): port the signature payload path into the interview-app builder (FIX-PLAN Item 13, S8)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #2071 — README correction: S8 signature deferral discharged by PR #2069
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v27.1.26]  -  2026-10-13  -  D26c: every reader of the Telegram bot token resolves it like OpenClaw (accounts.default first, then top-level, then env) so boxes repaired by D26 keep working
 
 ##### What Changed

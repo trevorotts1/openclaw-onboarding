@@ -88,6 +88,10 @@ ANSWER_TEXT_FIELDS = ("q1_answer", "q2_answer", "q3_answer", "q4_answer", "q5_an
                       "q6_answer", "q7_answer", "transparency_answer", "additional_info")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+# Provisioning-time placeholders (e.g. a custom value that was never filled in
+# after the snapshot was installed) must never reach canonical output: they would
+# otherwise pass every shape check as plausible free text.
+_PLACEHOLDER_RE = re.compile(r"SET[-_ ]?AT[-_ ]?PROVISIONING", re.I)
 _DEFAULT_TENANT_ENV = "PODCAST_CLIENT_LOCATION_ID"
 
 _TS_FORMATS = (
@@ -306,6 +310,9 @@ def validate_and_normalize(raw, tables):
     warnings = []
     for field, value in raw.items():
         if value is None or (isinstance(value, str) and value.strip() == "" and field not in BOOL_FIELDS):
+            continue
+        if isinstance(value, str) and _PLACEHOLDER_RE.search(value):
+            warnings.append("field %s carries an unfilled provisioning placeholder; dropped" % field)
             continue
         if field in ENUM_FIELDS:
             token = normalize_enum(field, value, tables)
@@ -945,6 +952,32 @@ def self_test():
     ki, _ = _jk.compute_job_key(rpe_i["canonical"])
     check("R-09: preset is hash-excluded (solo vs interview collide)",
           ks is not None and ki is not None and ks == ki)
+
+    # Unfilled provisioning placeholders: a custom value still carrying
+    # SET_AT_PROVISIONING (or its dash/space spellings) is dropped by value-shape
+    # validation, so the required-field gate names the field instead of letting the
+    # literal placeholder travel into an episode or a Podbean id.
+    ph = {"customData": {"production_mode": "Personal Podcast Style",
+                         "presentation_style": "Vulnerable",
+                         "podcast_id": "SET_AT_PROVISIONING",
+                         "show_name": "SET_AT_PROVISIONING",
+                         "host_name": "Set-At-Provisioning",
+                         "question_1": "Placeholder probe answer."},
+          "contact": {"id": "CNTplaceholderprobe001", "first_name": "Pia"},
+          "location": {"id": loc}}
+    rph = map_payload(ph, tables, expected_location_id=loc)
+    check("placeholder: SET_AT_PROVISIONING dropped -> needs_input naming podcast_id",
+          rph["status"] == "needs_input" and "podcast_id" in rph["missing"]
+          and "SET_AT_PROVISIONING" not in json.dumps(rph["canonical"]))
+
+    # visual_description: the Convert and Flow quick-visual-description survey field
+    # carries through to canonical (it is deliberately NOT in HASH_FIELDS, so it can
+    # never change a job key).
+    vdp = dict(ghl); vdp["customData"] = dict(ghl["customData"])
+    vdp["customData"]["visual_description"] = "sunset"
+    rvd = map_payload(vdp, tables, expected_location_id=loc)
+    check("visual_description carried into canonical",
+          rvd["canonical"].get("visual_description") == "sunset")
 
     print("== mapper self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1

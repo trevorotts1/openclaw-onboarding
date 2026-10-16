@@ -26,12 +26,20 @@
       "satisfy": "Install Skill 02 (02-back-yourself-up-protocol) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'Backup Protocol must be learned first (skill 02)'. It is in the same onboarding package; re-run the installer or install Skill 02 on its own."
     },
     {
+      "id": "tool-openclaw-chrome-extension",
+      "type": "manual",
+      "label": "OpenClaw Chrome extension, installed and current (PRIMARY browser engine)",
+      "check": { "note": "Run: bash scripts/check-openclaw-extension-version.sh — exit 0 means installed and current; exit 2 names the update path." },
+      "severity": "optional",
+      "satisfy": "Install the OpenClaw extension from the Chrome Web Store (offered by the OpenClaw Foundation) into the Chrome profile OpenClaw is paired with, and keep it current. SKILL.md declares it the PRIMARY engine (operator decision 2026-10-13): the OpenClaw browser's extension driver on the operator's paired, already signed-in Chrome. Verify before every install run with scripts/check-openclaw-extension-version.sh. A host where the extension cannot be installed or kept current builds on the agent-browser fallback lane instead; the capability probe selects the lane and warns — it never silently treats a stale extension as the default."
+    },
+    {
       "id": "skill-03-agent-browser",
       "type": "skill",
-      "label": "Skill 03 - agent-browser (PRIMARY browser engine)",
+      "label": "Skill 03 - agent-browser (FALLBACK browser engine)",
       "check": { "skill": "03-agent-browser" },
       "severity": "required",
-      "satisfy": "Install Skill 03 (03-agent-browser) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'agent-browser must be installed (skill 03) - PRIMARY browser engine'. Required for the PRIMARY lane. The documented degraded exception is an explicit Playwright-only mode with a MEMORY warning (lane 3 escape hatch) - it must be an explicit operator choice, never a silent fallback. Without Skill 03 every page build falls back to the Playwright engine, which SKILL.md documents as the fallback for known-hard flows only, and cross-origin iframe drag/drop stops."
+      "satisfy": "Install Skill 03 (03-agent-browser) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'agent-browser must be installed (skill 03) - FALLBACK browser engine'. Required for the FALLBACK lane (Lane 2), which carries hosts without a current OpenClaw Chrome extension and the Playwright hybrid drag path. The documented degraded exception is an explicit Playwright-only mode with a MEMORY warning (lane 3 escape hatch) - it must be an explicit operator choice, never a silent fallback. Without Skill 03, a host whose extension lane is unavailable has no full browser lane, and cross-origin iframe drag/drop stops."
     },
     {
       "id": "cred-firebase-refresh-token",
@@ -61,17 +69,17 @@
       "id": "runtime-capability-probe",
       "type": "manual",
       "label": "Browser capability probe run before first build",
-      "check": { "note": "Advisory: no offline check can prove a browser lane works on this host. browser_manager bm_ensure proves the PRIMARY lane at build time." },
+      "check": { "note": "Advisory: no offline check can prove a browser lane works on this host. the extension version preflight (scripts/check-openclaw-extension-version.sh) plus the probe prove the PRIMARY lane before build time." },
       "severity": "optional",
-      "satisfy": "Run the capability probe (run_probe) before the first build: it classifies the host lanes (agent-browser, OpenClaw managed browser, Playwright, CUA) and writes working/skill6-capability.json with selectedLane and the fallback chain. bash tools/browser_manager.sh ensure is the mandatory gateway that proves the selected lane. Re-run after any OpenClaw/browser upgrade."
+      "satisfy": "Run the capability probe (run_probe) before the first build: it classifies the host lanes (OpenClaw browser/extension, agent-browser, Playwright, CUA) and writes working/skill6-capability.json with selectedLane and the fallback chain. bash tools/browser_manager.sh ensure is the mandatory gateway that proves the fallback lane. Re-run after any OpenClaw/browser upgrade."
     },
     {
       "id": "runtime-openclaw-2-browser",
       "type": "manual",
-      "label": "OpenClaw 2.x managed browser (optimizes iframe_heavy)",
-      "check": { "note": "Advisory: requires OpenClaw >= 2026.8.1 with the browser plugin enabled; verified with 'openclaw browser --browser-profile openclaw status'." },
+      "label": "OpenClaw browser + Chrome extension (PRIMARY lane runtime)",
+      "check": { "note": "Advisory: requires OpenClaw >= 2026.8.1 with the browser plugin enabled AND the OpenClaw Chrome extension installed and current; verified with 'openclaw browser status' on the extension-driver profile and bash scripts/check-openclaw-extension-version.sh." },
       "severity": "optional",
-      "satisfy": "Optional upgrade lane: OpenClaw >= 2026.8.1 managed browser with frame-scoped snapshots ('openclaw browser snapshot --frame'). Optimizes iframe_heavy builds - never required for Skill 6 to be installed or to pass QC. Do not remove the agent-browser pin until this lane is proven equivalent on GHL."
+      "satisfy": "The PRIMARY lane runtime (operator decision 2026-10-13): OpenClaw >= 2026.8.1 with the browser plugin enabled, driving the operator's paired Chrome through the OpenClaw Chrome extension, with frame-scoped snapshots ('openclaw browser snapshot --frame'). Required for Lane 1. A host that cannot run this lane builds on the agent-browser fallback lane (Lane 2); the capability probe selects and warns. Do not remove the agent-browser pin: it carries the fallback lane."
     },
     {
       "id": "runtime-cua",

@@ -131,7 +131,7 @@ This skill enables the AI agent to use browser automation to:
 - Save, preview, and publish pages
 - Update existing pages with new code
 
-**Browser automation tier:** agent-browser (Vercel Labs, Skill 03) is PRIMARY; Playwright is the FALLBACK. Access is always established through the Firebase refresh-token seed path — the builder never renders a login form and never encounters a 2FA prompt under normal operation.
+**Browser automation tier:** the OpenClaw Chrome extension (the OpenClaw browser's extension driver, on the operator's paired, already signed-in Chrome) is PRIMARY; agent-browser (Vercel Labs, Skill 03) is the FALLBACK lane; Playwright is the scripted escape hatch. On the fallback lane, access is established through the Firebase refresh-token seed path; on the extension lane the session is the operator's signed-in Chrome session. On every lane the builder never renders a login form and never encounters a 2FA prompt under normal operation.
 
 
 ## Client Resource Matrix
@@ -140,10 +140,10 @@ Skill 6 does NOT require every host to match the operator's stack. The capabilit
 
 | Client resource | Build quality | What to enable |
 |---|---|---|
-| agent-browser ≥ the Skill 03 pin (0.27.0) | Full (Lane 1, PRIMARY) | The default path — no other requirement; cross-origin iframe drag additionally needs the Playwright CDP hybrid |
-| OpenClaw ≥ 2026.8.1 + browser plugin + Playwright | Full (alt-PRIMARY) | Prefer for iframe-heavy pages (frame-scoped `--frame` snapshots); an experimental upgrade — not yet wired as Skill 6 PRIMARY |
-| OpenClaw ≥ 2026.8.1, no Playwright | Partial | ARIA/role snapshot inspection with limited act — pair with agent-browser |
-| Pre-2.0 OpenClaw + agent-browser | Full (Lane 1) | No managed-browser features needed — an old OpenClaw does NOT block Skill 6 |
+| OpenClaw ≥ 2026.8.1 + browser plugin + OpenClaw Chrome extension installed and current | Full (Lane 1, PRIMARY) | The default path: the extension drives the operator's paired signed-in Chrome; cross-origin iframe drag additionally needs the Playwright CDP hybrid |
+| agent-browser ≥ the Skill 03 pin (0.27.0) | Full (Lane 2, FALLBACK) | The fallback lane when the extension channel is unavailable; runs through the `tools/browser_manager.sh` gateway |
+| OpenClaw ≥ 2026.8.1 + extension, no Playwright | Partial | Snapshot inspection with limited act on the extension lane; cross-origin drag gated |
+| Pre-2.0 OpenClaw + agent-browser | Full (Lane 2) | No extension-lane features needed — an old OpenClaw does NOT block Skill 6; it builds on the fallback lane |
 | CUA enabled | Optional last resort | Hard-UI / cross-origin pixel path ONLY. Do NOT document or require "everyone must install CUA" |
 | No Firebase refresh token | Tier-2/Tier-3 auth only | Gated Tier-2 bootstrap only if policy allows; fail loud (Tier-3) when unattended |
 | VPS headless | Per the ENV contract | Headless-only rules + durable-root paths: follow `ENV-MATRIX.md` |
@@ -153,7 +153,7 @@ Skill 6 does NOT require every host to match the operator's stack. The capabilit
 
 The agent must verify ALL of these are in place before proceeding:
 
-1. [ ] Browser automation is available: agent-browser (Vercel Labs, Skill 03) PRIMARY; Playwright FALLBACK — at least one must be installed and working
+1. [ ] Browser automation is available: the OpenClaw Chrome extension is installed and CURRENT (`bash scripts/check-openclaw-extension-version.sh` exits 0) for the PRIMARY lane; agent-browser (Vercel Labs, Skill 03) installed for the FALLBACK lane — at least one lane must be installed and working
 2. [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (TOKEN-ONLY, D7) — OR a persistent Playwright browser session exists at `~/.openclaw/playwright-data/ghl-install-pages` (Playwright fallback only)
 3. [ ] Finished HTML code is ready to paste (all CSS must be inline or in style tags, no React, no external dependencies)
 4. [ ] Page requirements are documented (page names, URL paths, which HTML code goes where)
@@ -161,11 +161,19 @@ The agent must verify ALL of these are in place before proceeding:
 6. [ ] Target SUB-ACCOUNT is identified (see Sub-Account Selection below)
 
 
-## Step 1: Set Up the Browser Lane — agent-browser (PRIMARY) + Capability Probe
+## Step 1: Set Up the Browser Lane — OpenClaw Chrome Extension (PRIMARY) + Capability Probe
 
-agent-browser (Vercel Labs) is the PRIMARY engine. It comes from Skill 03 (`03-agent-browser/` in this onboarding repo); **Skill 03 (Wave 1) must be complete BEFORE Skill 06 starts** — 06 is not parallel-safe with 03.
+The OpenClaw Chrome extension is the PRIMARY engine (operator decision, 2026-10-13): the OpenClaw browser's extension driver on the operator's paired, already signed-in Chrome, driven via `openclaw browser`. agent-browser (Vercel Labs, Skill 03) is the FALLBACK lane; **Skill 03 (Wave 1) must be complete BEFORE Skill 06 starts** — 06 is not parallel-safe with 03.
 
-**1. Install / verify the agent-browser CLI.** Follow the 03-agent-browser skill, then verify the CLI resolves and matches the repo pin:
+**1. Install / verify the OpenClaw Chrome extension (PRIMARY).** Install the OpenClaw extension from the Chrome Web Store into the Chrome profile OpenClaw is paired with, then run the standing version preflight. It compares the installed version against the newest the box can prove (the operator pin, else the extension source bundled with the local OpenClaw install) and STOPs with the update path when the extension is missing or behind:
+
+```bash
+bash scripts/check-openclaw-extension-version.sh
+```
+
+Expected: `OK: OpenClaw Chrome extension vX.Y.Z is installed and current`. Any STOP output means no install run starts until the extension is installed or updated and the check passes.
+
+**2. Install / verify the agent-browser CLI (FALLBACK lane).** Follow the 03-agent-browser skill, then verify the CLI resolves and matches the repo pin:
 
 ```bash
 agent-browser --version
@@ -173,7 +181,7 @@ agent-browser --version
 
 The version is **pinned to 0.27.0** — the single source of truth is `tools/gates.json` → `agent_browser_version_pin` (mirrored in `03-agent-browser/agent-browser-cli.pin`). The pin is enforced at runtime: `tools/browser_manager.py::assert_agent_browser_version()` fires at `browser_session()` entry, and `tools/inject-ghl-auth.sh` hard-fails with exit 70 on drift. A deliberate upgrade requires re-capturing the gates, then re-pinning via `GHL_AB_PINNED_VERSION`; `GHL_AB_ALLOW_VERSION_DRIFT=1` downgrades drift to a WARN — it is an operator acknowledgment, never a silent pass.
 
-**2. Run the capability probe (MANDATORY — never skip).** The probe classifies which browser lanes this host actually has (agent-browser, OpenClaw managed browser, Playwright, CUA), which secrets resolve, and which lane to use:
+**3. Run the capability probe (MANDATORY — never skip).** The probe classifies which browser lanes this host actually has (OpenClaw browser/extension, agent-browser, Playwright, CUA), which secrets resolve, and which lane to use. It selects the extension lane first, and only when the extension is installed and current:
 
 ```bash
 bash tools/browser_manager.sh probe
@@ -181,9 +189,9 @@ bash tools/browser_manager.sh probe
 python3 tools/capability_probe.py
 ```
 
-It writes `working/skill6-capability.json` (the run-evidence root, never inside the skill dir) with `selectedLane` and the fallback chain. **`selectedLane != null` is the Day-0 acceptance** — a host with zero browser lanes is not installable (fail closed). Do NOT require OpenClaw 2.0 or CUA for this install to pass when Lane 1 (agent-browser) works; a pre-2.0 OpenClaw host with agent-browser has full Skill 6 capability.
+It writes `working/skill6-capability.json` (the run-evidence root, never inside the skill dir) with `selectedLane` and the fallback chain. **`selectedLane != null` is the Day-0 acceptance** — a host with zero browser lanes is not installable (fail closed). Do NOT require the extension lane or CUA for this install to pass when the fallback lane (agent-browser) works; a pre-2.0 OpenClaw host with agent-browser has full Skill 6 capability on Lane 2.
 
-**3. Prove the lane through the gateway:**
+**4. Prove the fallback lane through the gateway (skip when the probe selected the extension lane and it answers):**
 
 ```bash
 bash tools/browser_manager.sh ensure
@@ -192,9 +200,9 @@ bash tools/browser_manager.sh ensure
 Expected output ends with: `ENSURED: session=... lock=held ttl=... — teardown trap installed.` NEVER invoke `agent-browser` directly and NEVER invent a per-iteration session name — every call routes through `tools/browser_manager.sh` (Step 7).
 
 
-## Step 2: Playwright — FALLBACK-ONLY Lane (never Step 1)
+## Step 2: Playwright — ESCAPE-HATCH Lane (never the default)
 
-Self-hosted Playwright is the FALLBACK engine for known-hard flows only (for example the cross-origin iframe drag). Install it **only when the capability probe says so** — i.e. `selectedLane` in `working/skill6-capability.json` names a Playwright-dependent lane, or a Playwright-hybrid flow (cross-origin drag/drop) is required on a standard-class host. **Playwright is never Step 1 and never the default engine.**
+Self-hosted Playwright is the escape-hatch engine for known-hard flows only (for example the cross-origin iframe drag, via the hybrid lane). Install it **only when the capability probe says so** — i.e. `selectedLane` in `working/skill6-capability.json` names a Playwright-dependent lane, or a Playwright-hybrid flow (cross-origin drag/drop) is required on a standard-class host. **Playwright is never the default engine.**
 
 ⚠️ **INTERPRETER TRAP (live 2026-07-08):** a bare `pip` or `playwright` on PATH
 can belong to a DIFFERENT python than the `python3` that will run this skill's
@@ -391,7 +399,7 @@ SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reap
 
 **Add to AGENTS.md** — copy the block `## GHL Page Deployment [PRIORITY: HIGH]` EXACTLY from CORE_UPDATES.md ("AGENTS.md - UPDATE REQUIRED"). It carries, verbatim:
 - Full guide: `[MASTER_FILES_FOLDER]/OpenClaw Onboarding/06-ghl-install-pages/ghl-browser-builder-full.md`
-- The engine line: agent-browser (PRIMARY, headless, isolated `--session <client>`); Playwright is FALLBACK only and uses launchPersistentContext (NEVER launch())
+- The engine line: OpenClaw Chrome extension (PRIMARY, the OpenClaw browser extension driver on the paired signed-in Chrome, version-gated by `scripts/check-openclaw-extension-version.sh`); agent-browser is the FALLBACK lane (headless, isolated `--session <client>`, gateway-only); Playwright is the escape hatch only and uses launchPersistentContext (NEVER launch())
 - The SINGLETON POOLED BROWSER gateway paragraph (tools/browser_manager.sh owns the ONE session `ghl-skill6-<location-id>`, the box-wide lock, lease, TTL, circuit-breaker, teardown trap; reaper cron `13 * * * *`)
 - The TOKEN-ONLY (D7) doctrine block + HARD RULE (never ask for/type/fall back to login/email/password/2FA; token failure = STOP and report; re-grab via the Token Grabber)
 - The TIER-2 EMAIL-2FA FALLBACK block (gated A/B/C/D, bounded, self-heals to TOKEN-ONLY; all login/2FA code in tools/ghl_auth_fallback.py + tools/ghl_login_browser.py; CI guard scripts/guard-ghl-auth-fallback.sh)

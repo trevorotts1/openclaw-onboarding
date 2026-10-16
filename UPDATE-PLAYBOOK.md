@@ -104,17 +104,9 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
 **4d. Model allow list:**
 - These model entries go under `agents.defaults.models` in openclaw.json. NOT under the top-level `models` key.
 - Exact JSON path: `config.agents.defaults.models`
-- Check openclaw.json for the model allow list. It should have these 8 models:
-  - moonshot/kimi-k2.6
-  - openrouter/moonshot/kimi-k2.6
-  - openrouter/xiaomi/mimo-v2-pro
-  - openrouter/xiaomi/mimo-v2-omni
-  - openrouter/minimax/minimax-m2.7
-  - openrouter/google/gemini-3.1-flash-lite-preview
-  - openrouter/google/gemini-3-flash-preview
-  - openai-codex/gpt-5.4
-- If any are missing, add them (follow config backup protocol first)
-- The canonical model list and deprecated model replacements are maintained in scripts/deprecated-models.json. When models change, update that file.
+- The allow list is built from the models the CLIENT selected, plus the client's configured default model. There is no fleet-wide mandated list: check openclaw.json and confirm every model the client selected is present, and that the client's configured default model (`config.agents.defaults.model`) is on the list.
+- If a client-selected model is missing, add it (follow config backup protocol first). Never add a model the client did not select.
+- Deprecated model data (which models are retired, and when) is maintained in scripts/deprecated-models.json. When a model on the client's list is deprecated, the replacement is the client's choice or their configured default model, never a prescribed name.
 - Check the official OpenClaw docs (https://docs.openclaw.ai) for the correct config format before editing
 
 **4e. Sub-agent configuration:**

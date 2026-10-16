@@ -2,12 +2,14 @@
  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
  "section": "deck-intake-upsell",
  "version": "1.0.0",
- "description": "The Presentation Upsell intake questions -- Q1 sales page + checkout page, Q2 VSL (video sales letter) page, plus the two conditional declined-reason follow-ups. Loaded by deck-intake-driver.py in signature mode and appended to the standard deck-intake question bank. These questions mirror the want_teleprompter / teleprompter_declined_reason waiver pattern EXACTLY: required, block_gate, conditional_on for the declined-reason follow-ups, storeOn under pre_presentation_capture.*, flowing into working/copy/intake.json at --complete. The SAME definitions live in deck-intake-questions.json (orders 7.6, 7.61, 7.7, 7.71); this file is the standalone upsell-questions.json the design's §10.3 specifies for signature-mode loading.",
+ "description": "The Presentation Upsell intake questions -- Q1 sales page + checkout page, Q2 VSL (video sales letter) page, Q3 Skill 50 email sequences (an election-gated delivery option: draft-only, human approval before anything deploys), plus the conditional declined-reason follow-ups. Loaded by deck-intake-driver.py in signature mode and appended to the standard deck-intake question bank. These questions mirror the want_teleprompter / teleprompter_declined_reason waiver pattern EXACTLY: required, block_gate, conditional_on for the declined-reason follow-ups, storeOn under pre_presentation_capture.*, flowing into working/copy/intake.json at --complete. The SAME definitions live in deck-intake-questions.json (orders 7.6, 7.61, 7.7, 7.71, 7.9, 7.91); this file is the standalone upsell-questions.json the design's §10.3 specifies for signature-mode loading.",
  "storeTarget": {
   "WANT_SALES_CHECKOUT": "pre_presentation_capture.WANT_SALES_CHECKOUT",
   "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
   "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
-  "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON"
+  "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+  "WANT_EMAIL_SEQUENCES": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+  "EMAIL_SEQUENCES_DECLINED_REASON": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON"
  },
  "questions": [
   {
@@ -83,6 +85,43 @@
     "equals": "no"
    },
    "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+  },
+  {
+   "id": "want_email_sequences",
+   "section": "deck-intake-upsell",
+   "order": 7.9,
+   "prompt": "Would you like email follow-up sequences prepared for this launch? (yes / no) A 'yes' elects the Skill 50 (Email Engine) delivery option: its 10-email promo sequence for the page launch and its 12-email appointment follow-up sequence, prepared as DRAFTS at delivery time and deployed draft-only through Skill 44 after a human approves them. Nothing is ever sent or armed automatically.",
+   "help": "Default NO -- the email sequences are an opt-in delivery option, not a standard deliverable, and only an explicit 'yes' opens the branch. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the email branch entirely: nothing is prepared at delivery.",
+   "kind": "text",
+   "allowed_values": [
+    "yes",
+    "no"
+   ],
+   "value_labels": {
+    "yes": "Yes, prepare the email sequences as drafts",
+    "no": "No thank you"
+   },
+   "default": "no",
+   "storeOn": "WANT_EMAIL_SEQUENCES",
+   "required": true,
+   "block_gate": true,
+   "resolverHint": "Default 'no'. Only an explicit 'yes' elects the Skill 50 delivery option; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' carries the election into the delivery phase, where scripts/email_followup.py prepares the draft package (email-brief.json + the Skill 44 handoff) and records the outcome in working/checkpoints/email.json; a human approves at Skill 44's operator surface before Skill 50 runs, and the sequence stays DRAFT-ONLY until then."
+  },
+  {
+   "id": "email_sequences_declined_reason",
+   "section": "deck-intake-upsell",
+   "order": 7.91,
+   "prompt": "Understood -- no email sequences. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
+   "help": "Asked ONLY when want_email_sequences is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+   "kind": "text",
+   "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
+   "required": true,
+   "block_gate": true,
+   "conditional_on": {
+    "id": "want_email_sequences",
+    "equals": "no"
+   },
+   "resolverHint": "Auto-skipped whenever want_email_sequences is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
   }
  ],
  "waiver_field_mapping": {
@@ -94,6 +133,10 @@
   "vsl_page": {
    "toggle": "want_vsl_page",
    "reason": "vsl_page_declined_reason"
+  },
+  "email_sequences": {
+   "toggle": "want_email_sequences",
+   "reason": "email_sequences_declined_reason"
   }
  }
 }

@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
   "spec": "VSL Email/Phone Gate — Skill-44 FORM object contract",
-  "design_source": "DESIGN-OPUS.md §6.2 / §6.5 (Presentation Collateral Gauntlet)",
+  "design_source": "VSL-BUILDER-SOP.md §4 (live authority); originally DESIGN-OPUS.md §6.2 / §6.5 (Presentation Collateral Gauntlet, retired 2026-10-14, FIX-PLAN Item 23)",
   "owner_skill": "44-convert-and-flow-operator",
   "cli": "caf (PIT-authenticated)",
   "mechanism": "SKILL44_WIDGET -> FORM",
-  "status": "REAL GHL object contract — NOT a stub. Skill 44 builds a live form, live custom fields, and a live Form-Submitted -> Add-Contact-Tag workflow; every creation is receipted (status:201, re-GET 200).",
+  "status": "REAL GHL object contract -- NOT a stub. PLAN contract: a delegated Skill 44 execution builds the live form, live custom fields, and the live Form-Submitted -> Add-Contact-Tag workflow under Skill 44's own gates; every creation is then receipted (status:201, re-GET 200) into ecosystem/gate-form.json. Until the P-U-FORM-GATE plan is executed, that receipt reads pending_external_execution and no live object exists.",
   "form": {
     "name": "ZHC <SLUG> VSL Gate",
     "name_note": "UPPERCASE 'ZHC ' prefix is the fleet container-NAME convention (ensure_zhc_prefix). <SLUG> is replaced at build time (lowercase, hyphens).",
@@ -172,7 +172,7 @@
     "verbatim": true,
     "sri": false,
     "sri_note": "Skill 6 hard rule: the GHL form embed snippet is spliced VERBATIM into the page blob with NO SRI attributes (DESIGN-OPUS §6.2; ghl_form_builder.py 'embed VERBATIM, NO SRI attrs'). The embed token is GHL-native and page-specific; SRI is deliberately NOT applied.",
-    "placement": "gate overlay div (vsl_gate_overlay.js integration contract)",
+    "placement": "gate overlay div in the VSL page built by vsl_builder.py; the embed is spliced into the page blob on the P-U-GHL-VSL install path (the retired vsl_gate_overlay.js runtime splice is not used)",
     "capture": ["embed_code_js", "form_link"],
     "verify": "render_check 200 + snippet tag present in RENDERED DOM (ghl_verify.render_check)"
   },

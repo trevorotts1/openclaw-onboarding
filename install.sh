@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.26"
+ONBOARDING_VERSION="v27.1.28"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -875,7 +875,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/77-... (72 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/82-... (74 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -3499,7 +3499,7 @@ sub['thinking'] = 'high'
 
 # PRESERVE model fallbacks if already set; only seed if missing
 #
-# PROVIDER-AWARE, ALLOWLIST-VALIDATED SEED (v21.4.47).
+# CLIENT-CHOICE, ALLOWLIST-VALIDATED SEED (v21.4.47; client-choice seeding added later).
 # The previous seed was hardcoded to
 #   ['ollama/kimi-k2.6:cloud', 'openrouter/xiaomi/mimo-v2.5-pro', 'deepseek/deepseek-v4.1-flash']
 # and silently bricked EVERY sub-agent spawn on any box that did not match it:
@@ -3515,49 +3515,75 @@ sub['thinking'] = 'high'
 # not doctor — so these sat invisible until a department was finally given real
 # work. Live incident 2026-07-31: a client's Web Development head died 2ms after
 # dispatch, twice, with zero work events, while the gateway reported healthy.
-# NEVER hardcode a pin again: derive the prefix from what THIS box registers,
-# keep only ids in this box's allowlist, and refuse to write an unresolvable pin.
+# NEVER hardcode a pin again: seed only from the client's own configuration
+# (their configured default model and their allowlist), keep only ids whose
+# provider THIS box registers and that are in this box's allowlist, and
+# refuse to write an unresolvable pin.
 model_block = sub.get('model')
 if not isinstance(model_block, dict) or 'fallbacks' not in model_block:
     _providers = (cfg.get('models') or {}).get('providers') or {}
     _allow = set((defaults.get('models') or {}).keys())
 
-    # Which Ollama-family provider id does THIS box actually register?
-    if 'ollama-cloud' in _providers:
-        _oll, _sfx = 'ollama-cloud', ''
-    elif 'ollama' in _providers:
-        _oll, _sfx = 'ollama', ':cloud'
-    else:
-        _oll, _sfx = None, ''
+    def _resolvable(mid):
+        """A model id THIS box can actually serve: a string whose provider is
+        registered on this box and, when an allowlist exists, an id on it.
+        The allowlist/provider validation from the incident above is kept in
+        full; only WHERE the candidates come from changed (see below)."""
+        if not isinstance(mid, str) or not mid:
+            return False
+        provider = mid.split('/', 1)[0] if '/' in mid else ''
+        if provider and _providers and provider not in _providers:
+            return False
+        if _allow and mid not in _allow:
+            return False
+        return True
 
-    def _pick(*cands):
-        """First candidate allowed on this box. On a fresh box with no allowlist
-        yet, accept the first candidate rather than seeding nothing."""
-        for c in cands:
-            if c in _allow:
-                return c
-        return cands[0] if (cands and not _allow) else None
-
+    # CLIENT-CHOICE SEED (D3). No model is prescribed by name here. The seed
+    # is built only from the client's own configuration:
+    #   1. the client's configured default model (agents.defaults.model:
+    #      its primary, then its own configured fallbacks), then
+    #   2. the other models the client put on their own allowlist
+    #      (agents.defaults.models, the models the client selected).
+    # If neither source yields a resolvable model, NOTHING is seeded and the
+    # operator is told to ask the client (below): a box is never left
+    # silently model-less, and never pinned to a model the client did not
+    # choose.
     _seed = []
-    if _oll:
-        _seed += [
-            _pick(f'{_oll}/kimi-k2.7-code{_sfx}', f'{_oll}/kimi-k2.6{_sfx}'),
-            _pick(f'{_oll}/minimax-m3{_sfx}'),
-            _pick(f'{_oll}/deepseek-v4.1-flash{_sfx}', f'{_oll}/deepseek-v4.1-flash{_sfx}'),
-        ]
-    # ALWAYS end on a NON-Ollama provider. An Ollama Cloud weekly cap / 429 is
-    # ACCOUNT-level, so an all-Ollama chain fails as a single unit and takes the
-    # client's entire company down at once.
-    _seed.append(_pick('openrouter/deepseek/deepseek-v4-flash', 'agnes/agnes-3.0-flash'))
+    _dflt = defaults.get('model')
+    _primary = _dflt.get('primary') if isinstance(_dflt, dict) else _dflt
+    if _resolvable(_primary):
+        _seed.append(_primary)
+        if isinstance(_dflt, dict):
+            for _fb in _dflt.get('fallbacks') or []:
+                if _resolvable(_fb):
+                    _seed.append(_fb)
+    for _m in (defaults.get('models') or {}).keys():
+        if _resolvable(_m):
+            _seed.append(_m)
 
     _seed = [m for i, m in enumerate(_seed) if m and m not in _seed[:i]]
 
+    # ALWAYS end on a NON-Ollama provider when the client's own models allow
+    # it. An Ollama Cloud weekly cap / 429 is ACCOUNT-level, so an all-Ollama
+    # chain fails as a single unit and takes the client's entire company down
+    # at once. This is a property of the client's selected models, not a
+    # named pin: if the seed ends on an Ollama route and the client has a
+    # non-Ollama model in the seed, that model moves to the end.
+    def _is_ollama_route(mid):
+        return mid.startswith('ollama/') or mid.startswith('ollama-cloud/')
+    if len(_seed) > 1 and _is_ollama_route(_seed[-1]):
+        for _i in range(len(_seed) - 1):
+            if not _is_ollama_route(_seed[_i]):
+                _seed.append(_seed.pop(_i))
+                break
+
     if _seed:
         sub['model'] = {'primary': _seed[0], 'fallbacks': _seed[1:]}
-        print(f"  ✓ subagents.model seeded provider-aware: primary={_seed[0]} fallbacks={_seed[1:]}")
+        print(f"  ✓ subagents.model seeded from client configuration: primary={_seed[0]} fallbacks={_seed[1:]}")
     else:
-        print("  ⚠  subagents.model NOT seeded — no resolvable provider/model on this box.")
+        print("  ⚠  subagents.model NOT seeded: the client has not configured a default model and no allowlist model resolves on this box.")
         print("     Refusing to write a pin that cannot resolve (this is the old silent-death bug).")
+        print("     Ask the client which model to use, or configure agents.defaults.model, then re-run.")
 else:
     print("  ℹ  subagents.model.fallbacks preserved (already customized)")
 
@@ -3650,14 +3676,15 @@ else
     note "scripts/wire-run-retries.sh not found — skipping runRetries ceiling wiring (older bundle)"
 fi
 
-# 0.4 — Model selection (advisory; agent picks at runtime based on what's available)
-note "Master orchestrator model priority (per INSTALL-CONTRACT.md Rule 10):"
-note "  1. Subscription / OAuth (no per-call cost): codex/gpt-5.5, openai-codex/gpt-5.5"
-note "  2. Ollama cloud (very low cost): ollama/kimi-k2.6:cloud (orchestrator), ollama/deepseek-v4.1-flash:cloud (sub-agents)"
-note "     NOTE: the ollama/ prefix above is correct ONLY if this box registers models.providers.ollama."
+# 0.4 — Model selection (advisory; the client selects, the agent resolves at runtime)
+note "Master orchestrator model selection (per INSTALL-CONTRACT.md Rule 10): the client's choice, or the client's configured default model."
+note "  Recommendation (cost): prefer the cheapest acceptable route among the client's available models:"
+note "  1. Subscription / OAuth routes (no per-call cost), recommended for orchestration, which runs continuously"
+note "  2. Ollama Cloud models (very low cost), recommended for sub-agents, which run at high volume under a 30-minute timeout"
+note "     NOTE: the ollama/ prefix is correct ONLY if this box registers models.providers.ollama."
 note "     A box onboarded with --auth-choice ollama-cloud must use ollama-cloud/<model> (no :cloud suffix)."
 note "     Wrong prefix = agent dies at launch with a misleading auth error. Run scripts/verify-model-pins.py."
-note "  3. OpenRouter (priced per token): openrouter/moonshot/kimi-k2.6 thinking=high"
+note "  3. OpenRouter (priced per token)"
 note "  FORBIDDEN by default: claude-opus-*, claude-sonnet-*, openai/* (too expensive — explicit owner consent required)"
 note "If the agent cannot determine available models, it must ASK the owner (per Rule 10)."
 
@@ -6319,7 +6346,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 72 active skills install in 6 dependency-aware waves, not by number order.
+The 74 active skills install in 6 dependency-aware waves, not by number order.
 The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
 gating 51 of the 72 active skills; the remaining 21 are copied to every box by the installer's
 [0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units

@@ -286,39 +286,47 @@ cat ~/.openclaw/openclaw.json
 
 Agent parses JSON to locate or create agents.defaults.models section.
 
-Agent adds the following model configuration. Agent merges into existing agents section
-if it already exists. Agent does NOT delete existing models or settings.
+STEP 6A: AGENT ASKS THE CLIENT WHICH MODELS TO CONFIGURE (MANDATORY)
 
-Agent adds this configuration:
+Model selection belongs to the client. Agent does NOT install a fixed model roster and does NOT prescribe a specific model by name.
+
+Agent asks the client:
+- "Which model do you want as your primary (the model used by default)?"
+- "Which models do you want as fallbacks, and in what order?"
+- "Are there any additional models you want available for switching?"
+
+Agent records the exact model slugs the client names, copied character for character from each model's OpenRouter page (https://openrouter.ai/models). The slug format is openrouter/<author>/<slug>.
+
+IF the client has already configured a default model in their config and does not name a different primary:
+- Agent uses the client's configured default model as the primary.
+- Agent does NOT overwrite an existing primary the client did not ask to change.
+
+IF the client names no primary and no default model is configured:
+- Agent STOPS.
+- Agent tells the client: "I cannot configure models until you choose a primary model, or configure a default model for me to use. Which model would you like as your primary?"
+- Agent does NOT proceed, and does NOT substitute a model of its own choosing.
+
+Recommendation the agent may offer (guidance only; never a default, and never written into the config unless the client picks it): for a primary model, recommend a model with reliable tool calling and reasoning support, because daily work mixes tool execution with multi-step tasks. For fallbacks, recommend models ordered by the client's preference. The client's selection always wins.
+
+STEP 6B: AGENT WRITES THE CLIENT'S CHOSEN MODELS
+
+Agent adds model configuration for EXACTLY the models the client chose in STEP 6A. Agent merges into the existing agents section if it already exists. Agent does NOT delete existing models or settings, and does NOT add any model the client did not choose.
+
+The configuration shape (replace the bracketed placeholders with the client's chosen slugs, in the client's chosen order):
 
 ```json
 {
-  "env": {
-    "OPENROUTER_API_KEY": "sk-or-YOUR-KEY-HERE"
-  },
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openrouter/minimax/minimax-m2.7",
+        "primary": "openrouter/<author>/<client-chosen-primary-model>",
         "fallbacks": [
-          "openrouter/xiaomi/mimo-v2-pro",
-          "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/openrouter/free",
-          "openrouter/minimax/minimax-m2.7",
-          "openrouter/moonshotai/kimi-k2.6",
-          "openrouter/google/gemini-3-flash-preview",
-          "openrouter/qwen/qwen3.5-plus-02-15",
-          "openrouter/z-ai/glm-5",
-          "openrouter/deepseek/deepseek-v3.2",
-          "openrouter/deepseek/deepseek-v3.2-speciale",
-          "openrouter/deepseek/deepseek-r1-0528:free",
-          "openrouter/xiaomi/mimo-v2-omni",
-          "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+          "openrouter/<author>/<client-chosen-fallback-model>"
         ]
       },
       "thinkingDefault": "medium",
       "models": {
-        "openrouter/google/gemini-3.1-pro-preview": {
+        "openrouter/<author>/<client-chosen-primary-model>": {
           "params": {
             "temperature": 0.3,
             "reasoning": {
@@ -326,86 +334,7 @@ Agent adds this configuration:
             }
           }
         },
-        "openrouter/google/gemini-3-flash-preview": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/google/gemini-3.1-flash-lite-preview": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/moonshotai/kimi-k2.6": {
-          "params": {
-            "temperature": 1.0
-          }
-        },
-        "openrouter/minimax/minimax-m2.7": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": true
-          }
-        },
-        "openrouter/qwen/qwen3.5-plus-02-15": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/z-ai/glm-5": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/deepseek/deepseek-v3.2": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/deepseek/deepseek-v3.2-speciale": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/deepseek/deepseek-r1-0528:free": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
-        },
-        "openrouter/xiaomi/mimo-v2-omni": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": true
-          }
-        },
-        "openrouter/xiaomi/mimo-v2-pro": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": true
-          }
-        },
-        "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+        "openrouter/<author>/<each-additional-model-the-client-chose>": {
           "params": {
             "temperature": 0.3,
             "reasoning": {
@@ -419,30 +348,26 @@ Agent adds this configuration:
 }
 ```
 
-Agent uses jq to ADDITIVELY MERGE new models into the existing config (preserving any existing models):
+Parameter rules for each model entry the client chose:
+- temperature: 0.3 by default. Use a different value only where the chosen model's own OpenRouter page or documentation requires it, and record that exception in the completion report.
+- reasoning: include it only where the chosen model supports it, in the form that model supports (an effort object, or reasoning: true for on/off models).
+- Valid keys ONLY: alias, params, streaming (see RULE 5).
+
+Agent uses jq to ADDITIVELY MERGE the client's chosen models into the existing config (preserving any existing models). CLIENT_PRIMARY and CLIENT_FALLBACKS_JSON hold the client's recorded choices from STEP 6A; NEW_MODELS holds one entry per model the client chose, built with the parameter rules above:
 
 ```bash
-# Define the new models as a separate JSON block
+# Example values, showing the shape only. Use the client's actual recorded choices.
+CLIENT_PRIMARY="openrouter/<author>/<client-chosen-primary-model>"
+CLIENT_FALLBACKS_JSON='["openrouter/<author>/<client-chosen-fallback-model>"]'
 NEW_MODELS='{
-  "openrouter/google/gemini-3.1-pro-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/google/gemini-3-flash-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/google/gemini-3.1-flash-lite-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/moonshotai/kimi-k2.6": {"params": {"temperature": 1.0}},
-  "openrouter/minimax/minimax-m2.7": {"params": {"temperature": 0.3, "reasoning": true}},
-  "openrouter/qwen/qwen3.5-plus-02-15": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/z-ai/glm-5": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/deepseek/deepseek-v3.2": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/deepseek/deepseek-v3.2-speciale": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/deepseek/deepseek-r1-0528:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/xiaomi/mimo-v2-omni": {"params": {"temperature": 0.3, "reasoning": true}},
-  "openrouter/xiaomi/mimo-v2-pro": {"params": {"temperature": 0.3, "reasoning": true}},
-  "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}}
+  "openrouter/<author>/<client-chosen-primary-model>": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+  "openrouter/<author>/<each-additional-model-the-client-chose>": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}}
 }'
 
-# Additive merge: existing models are preserved, new models are added/updated
-jq --argjson new "$NEW_MODELS" '
-  .agents.defaults.model.primary = "openrouter/minimax/minimax-m2.7" |
-  .agents.defaults.model.fallbacks = ["openrouter/xiaomi/mimo-v2-pro", "openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/openrouter/free", "openrouter/minimax/minimax-m2.7", "openrouter/moonshotai/kimi-k2.6", "openrouter/google/gemini-3-flash-preview", "openrouter/qwen/qwen3.5-plus-02-15", "openrouter/z-ai/glm-5", "openrouter/deepseek/deepseek-v3.2", "openrouter/deepseek/deepseek-v3.2-speciale", "openrouter/deepseek/deepseek-r1-0528:free", "openrouter/xiaomi/mimo-v2-omni", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] |
+# Additive merge: existing models are preserved, the client's chosen models are added/updated
+jq --arg primary "$CLIENT_PRIMARY" --argjson fallbacks "$CLIENT_FALLBACKS_JSON" --argjson new "$NEW_MODELS" '
+  .agents.defaults.model.primary = $primary |
+  .agents.defaults.model.fallbacks = $fallbacks |
   .agents.defaults.thinkingDefault = "medium" |
   .agents.defaults.models = ((.agents.defaults.models // {}) * $new)
 ' ~/.openclaw/openclaw.json > ~/.openclaw/openclaw.json.tmp && mv ~/.openclaw/openclaw.json.tmp ~/.openclaw/openclaw.json
@@ -450,13 +375,13 @@ jq --argjson new "$NEW_MODELS" '
 
 NOTE: The `* $new` operator merges new models INTO existing models. Any pre-existing models that are NOT in the new set remain untouched. Any models that exist in both are updated to the new config.
 
-Agent verifies models were added:
+Agent verifies the client's chosen primary model was written:
 
 ```bash
-grep -c "openrouter/xiaomi/mimo-v2-pro" ~/.openclaw/openclaw.json
+grep -c "$CLIENT_PRIMARY" ~/.openclaw/openclaw.json
 ```
 
-IF models are not found in config:
+IF the client's chosen models are not found in config:
 - Agent STOPS
 - Agent reports error to requester
 - Agent restores backup:
@@ -465,7 +390,7 @@ IF models are not found in config:
   ```
 - Agent does NOT proceed
 
-IF models are found in config:
+IF the client's chosen models are found in config:
 - Agent continues to STEP 7
 
 ### STEP 7: AGENT VALIDATES CONFIG
@@ -545,12 +470,9 @@ Agent creates summary for AGENTS.md:
 ## Intelligent Model Routing - THINK BEFORE YOU ACT
 Before executing ANY task, evaluate which model fits best and switch if needed.
 Key rules:
-- Kimi K2.5 CANNOT do tool calls. Never route tool tasks to Kimi.
-- MiniMax M2.7 is the daily workhorse (cheap + tools + opt-in reasoning). Pass reasoning: true.
-- MiMo V2 Pro for complex code/orchestration (TEXT ONLY, 1M context).
-- MiMo V2 Omni for multimodal tasks (images+video+audio).
-- Opus is the specialist (complex strategy, writing, client-facing).
-- Perplexity Sonar Pro Search for deep research, Perplexity Sonar for quick lookups.
+- Model: the client's choice for that kind of work, or the client's configured default model.
+- Never route a tool-call task to a model that does not support tool calls. Check the model's capabilities on its OpenRouter page before routing.
+- Recommendation: match the model to the task (reliable tool calling for tool-heavy work, a large context window for long documents, strong reasoning for planning and QC), because capability fit gives better results at lower cost. A recommendation is guidance only; the client's selection always wins.
 Full details: See ~/Downloads/openclaw-master-files/openrouter-setup/openrouter-setup-instructions.md
 ```
 
@@ -558,8 +480,8 @@ Agent creates summary for TOOLS.md:
 
 ```
 ## OpenRouter Model Configuration
-22 models configured via OpenRouter. Primary: MiniMax M2.7.
-Temperature: 0.3 for all models, 1.0 for Kimi K2.5 only.
+The models the client chose are configured via OpenRouter. Primary: the client's chosen primary model, exactly as recorded in the config at install.
+Temperature: 0.3 for all models by default; a different value only where a chosen model's own documentation requires it, recorded at install.
 Config file: ~/.openclaw/openclaw.json
 Always back up before editing. Always validate with openclaw doctor after.
 Full reference: ~/Downloads/openclaw-master-files/openrouter-setup/openrouter-setup-instructions.md
@@ -578,14 +500,14 @@ Actions completed:
 1. ✓ Verified or obtained OpenRouter API key
 2. ✓ Backed up config to ~/openclaw-backup-configs/
 3. ✓ Added OPENROUTER_API_KEY to ~/.openclaw/openclaw.json
-4. ✓ Configured 22 models in agents.defaults.models
+4. ✓ Configured the models the client chose in agents.defaults.models
 5. ✓ Validated config with openclaw doctor
 6. ✓ Restarted openclaw gateway
 7. ✓ Saved full documentation to ~/Downloads/openclaw-master-files/openrouter-setup/
 8. ✓ Added summaries to AGENTS.md and TOOLS.md
 
-Primary model: openrouter/minimax/minimax-m2.7
-Fallback models: openrouter/xiaomi/mimo-v2-pro, openrouter/google/gemini-3.1-flash-lite-preview, openrouter/openrouter/free, openrouter/minimax/minimax-m2.7, openrouter/moonshotai/kimi-k2.6, (+ 12 more)
+Primary model: [the client's chosen primary model slug, exactly as written to the config]
+Fallback models: [the fallback slugs the client chose, in the client's approved order]
 
 Config file: ~/.openclaw/openclaw.json
 Backup location: ~/openclaw-backup-configs/
@@ -595,60 +517,57 @@ Setup is complete and ready for use.
 
 ## Model Reference - What Each Model Is For
 
-| Model | Alias | Best For | Cost Level |
-|-------|-------|----------|------------|
-| Claude Opus 4.6 | opus | Complex strategy, architecture, critical work | High |
-| Claude Sonnet 4.6 | sonnet | Balanced quality and speed | Medium-High |
-| Claude Haiku 4.5 | haiku | Fast responses | Medium |
-| Gemini 3.1 Pro | gemini31 | Long document analysis | Medium |
-| Gemini 3 Flash | flash | Quick tasks, large context | Low-Medium |
-| Kimi K2.5 | kimi | Code generation, chat (NO tool calls) | Low |
-| MiniMax M2.7 | minimax | RECOMMENDED PRIMARY - daily tasks, tool calls | Low |
-| MiMo V2 Pro | mimo-pro | Complex code, orchestration (TEXT ONLY, 1M context) | Medium |
-| MiMo V2 Omni | mimo-omni | Multimodal (text+images+video+audio) | Low-Medium |
-| MiniMax M2.7 | Qwen 3.5 Plus | qwen | General purpose, large context | Low-Medium |
-| GLM-5 | glm5 | Systems design, agent workflows | Low-Medium |
-| DeepSeek V3.2 | deepseek | Value workhorse | Very Low |
-| DeepSeek V3.2 Speciale | speciale | High-compute reasoning | Low |
-| DeepSeek R1 Free | fallback | Emergency - zero credits | FREE |
-| Perplexity Sonar Pro | research | Deep research, multi-step, fact-checking | Medium |
-| Perplexity Sonar | sonar | Quick web lookups, single questions | Low |
-| Gemini 3.1 Flash Lite | flashlite | Cheapest option, fallback | Very Low |
-| DeepSeek V4.1 Flash | deepseek-v4 | High-capability reasoning, build-quality work (VERIFIED 2026-05-26) | Low-Medium |
+## Model Reference - Choosing What Each Model Is For
+
+There is no fixed model roster in this skill. The models on a client box are the models the client chose in STEP 6. When the client asks which model fits a job, answer from capabilities, and look up the live specs on each model's OpenRouter page before recommending: specs and prices change.
+
+Use this capability guide when helping the client choose (recommendations are guidance only; the client's selection always wins):
+
+| Job | Recommendation | Why |
+|-----|---------------|-----|
+| Primary / daily work | A model with reliable tool calling and reasoning support | Daily work mixes tool execution with multi-step tasks |
+| Complex strategy and critical work | The client's chosen high-capability reasoning model | Deep reasoning quality matters more than cost on critical work |
+| Long documents | A model with a large context window | The whole document has to fit in context at once |
+| Writing | The client's chosen writing model | Writing quality at a sustainable cost |
+| Research and fact-checking | A model with built-in web search | Current information cannot come from training data |
+| Emergency fallback | A fallback the client chose in STEP 6 (a free model if the client picked one) | Keeps work running when credits run out, without silently substituting a model the client did not choose |
+
+Record the client's actual choices, with each model's exact slug, the alias the client approved, and its live specs, in the completion report and the TOOLS.md summary.
+
 
 ---
 
-## Recommended High-Capability Reasoning Model: DeepSeek V4.1 Flash
+## Recommended Capability Profile: High-Capability Reasoning for Build-Quality Work
 
-`openrouter/deepseek/deepseek-v4.1-flash` is a recommended high-capability reasoning model for build-quality work. It was registered, validated, and live-tested working via OpenRouter on 2026-05-26 (returned MODEL_WORKS).
+For build-quality work, ask the client which high-capability reasoning model they want to use. If the client has already configured a default model, use the client's configured default model. Do not prescribe a specific model by name.
 
-Add it additively to the `agents.defaults.models` section (do NOT remove existing models):
+Recommendation: a high-capability reasoning model with strong tool support and a large output limit, because build-quality work runs long multi-step reasoning chains where weak reasoning or a small output cap truncates the result. This recommendation is guidance only: it is never wired into the config as a primary or a fallback value unless the client selects that model.
+
+If the client selects a high-capability reasoning model for build-quality work, add it additively to the `agents.defaults.models` section (do NOT remove existing models), using the exact slug from its OpenRouter page:
 
 ```json
 {
-"openrouter/deepseek/deepseek-v4.1-flash": {
-  "alias": "DeepSeek V4.1 Flash",
-  "params": { "temperature": 0.4, "reasoning": { "effort": "high" } }
+"[the client's chosen model slug]": {
+  "alias": "[an alias the client approves]",
+  "params": { "temperature": 0.3, "reasoning": { "effort": "high" } }
 }
 }
 ```
 
-For build-quality work, set it as the primary model and default thinking to high:
+Only if the client asks to make their chosen model the primary for build-quality work, set it as the primary and default thinking to high:
 
 ```json
 {
 "agents": {
   "defaults": {
-    "model": { "primary": "openrouter/deepseek/deepseek-v4.1-flash" },
+    "model": { "primary": "[the client's chosen model slug]" },
     "thinkingDefault": "high"
   }
 }
 }
 ```
 
-Verified working via OpenRouter 2026-05-26 with thinking=high, temperature 0.4.
-
----
+Verify the client's chosen model works through OpenRouter (a short test call) before relying on it, and record the verification in the completion report.
 
 ## 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY
 

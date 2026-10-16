@@ -1,0 +1,48 @@
+{
+  "id": "bar-01",
+  "semantic_motion_assertions": [
+    {
+      "id": "half-reveal",
+      "kind": "bar_widths",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "frame": 45,
+      "expected_values": [
+        240.0,
+        360.0,
+        600.0
+      ],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame",
+        "full_fps_clip"
+      ]
+    },
+    {
+      "id": "final-ratios",
+      "kind": "bar_widths",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "frame": 75,
+      "expected_values": [
+        480.0,
+        720.0,
+        1200
+      ],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

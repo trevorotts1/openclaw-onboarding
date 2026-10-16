@@ -1,0 +1,28 @@
+[
+  {
+    "schema_version": "2.0",
+    "approval_id": "fixture-design-approval-style-image",
+    "job_id": "fixture-style-image-led",
+    "company_id": "fixture-company",
+    "scope": "design",
+    "decision": "approved",
+    "subject_revision": "2336cafe22c2065543c8040a9e49bffd852fdfe8cdc6e0614da416001b2b756a",
+    "artifact_refs": [
+      {
+        "path": "style-frames/hero-01-first.png",
+        "sha256": "bcb8b7bc9f13c4ba7e559a47cc193fcbce153ebef68c55307639910249709811"
+      },
+      {
+        "path": "style-frames/hero-01-key_proof.png",
+        "sha256": "cfc312bb5698ba9a0c797afb19590c9b8a70c8e6f1c0b3810ca265c572902c3a"
+      },
+      {
+        "path": "style-frames/hero-01-final.png",
+        "sha256": "4daa047c581341fda87568971bf309d4c7e4c27319b0abc096d26c5182c00a9f"
+      }
+    ],
+    "actor_id": "fixture-test-issuer",
+    "source_event_ref": "fixture-event:mg010-style-frames-image-001",
+    "authority_status": "verified"
+  }
+]

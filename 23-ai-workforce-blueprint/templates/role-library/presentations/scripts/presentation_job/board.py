@@ -13,7 +13,8 @@ from __future__ import annotations
 #   - state.json (via store): persisted job state, holds board.task_id
 #   - process_manifest.json (via cc_board._read_manifest): holds cc_task_id
 #     from a prior successful ingest_deck_task
-#   - Environment: BOARD_URL, BOARD_API_TOKEN (via board_config)
+#   - Environment: COMMAND_CENTER_URL / MISSION_CONTROL_URL, CC_API_TOKEN /
+#     MC_API_TOKEN (via cc_board.board_config)
 #   - run_dir: the job's run directory
 #
 # Outputs:

@@ -49,6 +49,16 @@ BEST-EFFORT, ALWAYS. A sidecar that cannot be written is announced on stderr and
 never blocks a dispatch: the same contract launcher.dispatch gives its own
 sidecar writes. An audit record must not be the reason a client's deck does not
 get built.
+
+FIX 18 ADDENDUM. write_launch_plan() also writes `.route-honesty.json` -- the
+launch restatement record of the intake honesty block (the run's Ollama
+numbers, the speed warning, the recorded route decision) -- through
+route_honesty.write_launch_sidecar(), the same writer launcher.dispatch uses
+at its print site, so the non-interactive path leaves the identical record.
+This path is non-interactive: it RECORDS the summary, it never presents the
+block and never asks anything. It is deliberately NOT part of the FIX 11
+parity shape above (it is a third record, not a restatement of either FIX 11
+sidecar). B11's record-only freshness hook (its Hook C) rides this same call.
 """
 from __future__ import annotations
 
@@ -214,6 +224,39 @@ def write_launch_plan(run_dir: Path, explicit: Optional[str] = None,
     stamp = build_model_plan(run_path, mode, profile=profile)
     if stamp is not None and _write_json(run_path / MODEL_PLAN_SIDECAR, stamp):
         wrote.append(MODEL_PLAN_SIDECAR)
+    # FIX 18: the route-honesty launch record (records only on this
+    # non-interactive path; the block itself is an intake surface). Same
+    # writer the launcher uses, same best-effort contract: a route with
+    # no Ollama in it writes nothing, and a failed write never blocks.
+    try:
+        try:
+            from . import route_honesty as _rh
+        except ImportError:  # pragma: no cover -- flat-layout fallback
+            import route_honesty as _rh  # type: ignore[no-redef]
+        if _rh.write_launch_sidecar(run_path, profile=profile):
+            wrote.append(".route-honesty.json")
+    except Exception as exc:  # noqa: BLE001 -- best-effort, always
+        print(f"launch_plan: route honesty record unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+    # FIX 31: the model freshness launch record (B11's Hook C,
+    # record-only on this non-interactive path), riding the same call
+    # site as the route-honesty record above. It is the SAME
+    # launch_check() the launcher's dispatch runs, so both dispatch
+    # paths leave the same .model-freshness.json evidence (the FT-18
+    # parity shape): the check is recorded, pending offers are updated
+    # under the narrow launch rule, nothing is presented and nothing
+    # is applied. Best-effort, always: a failed record never blocks.
+    try:
+        try:
+            from . import model_freshness as _mf
+        except ImportError:  # pragma: no cover -- flat-layout fallback
+            import model_freshness as _mf  # type: ignore[no-redef]
+        if _mf.launch_check(run_path, mode=mode) is not None \
+                and (run_path / ".model-freshness.json").is_file():
+            wrote.append(".model-freshness.json")
+    except Exception as exc:  # noqa: BLE001 -- best-effort, always
+        print(f"launch_plan: model freshness record unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
     return {"mode": mode, "mode_source": mode_source, "declared": declared,
             "wrote": wrote}
 

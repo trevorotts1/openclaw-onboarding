@@ -1,0 +1,541 @@
+{
+  "item": "MG-006",
+  "section": "15.3 vertical slice + Section 17.2 proof states",
+  "generatedAt": "2026-10-14T23:41:06.599Z",
+  "runtime": {
+    "engineVersion": "4.0.535",
+    "runtimeLockId": "lock-314fc289b233ca9e",
+    "lockTimestamp": "2026-10-14T22:18:40.078Z",
+    "browserRevision": "157.0.8080.0",
+    "nodeVersion": "v24.20.0",
+    "platform": "linux x64"
+  },
+  "font": {
+    "requirementId": "font-fixture-sans",
+    "alias": "fixture-sans",
+    "family": "Liberation Sans",
+    "files": [
+      {
+        "weight": 400,
+        "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "sha256": "4659bc0c58c5028dd488ec928d41d9265db43d9b669fc14ca8b0832daca7b144"
+      },
+      {
+        "weight": 700,
+        "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "sha256": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582"
+      }
+    ]
+  },
+  "bundle": {
+    "bundleKeys": [
+      "c6421cf779ed860014ecad86-lock-314fc289b233ca9e"
+    ],
+    "note": "the single bundle key every render in the suite was served by"
+  },
+  "videos": {
+    "final": {
+      "path": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/final.mp4",
+      "sizeBytes": 62659,
+      "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+      "probe": {
+        "width": 1920,
+        "height": 1080,
+        "fpsNumerator": 30,
+        "fpsDenominator": 1,
+        "frameCount": 180,
+        "durationSeconds": 6
+      }
+    },
+    "poster": {
+      "path": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/poster-f150.png",
+      "sizeBytes": 101204,
+      "sha256": "8bd9efd480e36ecf6ddca0bd7299ce6e271c927546c42adb43123c573a756b4a"
+    },
+    "preview": {
+      "path": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/preview.mp4",
+      "sizeBytes": 62659,
+      "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+      "probe": {
+        "width": 1920,
+        "height": 1080,
+        "fpsNumerator": 30,
+        "fpsDenominator": 1,
+        "frameCount": 180,
+        "durationSeconds": 6
+      }
+    }
+  },
+  "proofStatesLandscape": [
+    {
+      "frame": 0,
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "instrumented": [
+        0,
+        0,
+        0
+      ],
+      "decodedFromStill": [
+        0,
+        0,
+        0
+      ],
+      "decodedFromVideo": [
+        0,
+        0,
+        0
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/still-landscape-f0.png"
+    },
+    {
+      "frame": 15,
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "instrumented": [
+        0,
+        0,
+        0
+      ],
+      "decodedFromStill": [
+        0,
+        0,
+        0
+      ],
+      "decodedFromVideo": [
+        0,
+        0,
+        0
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/still-landscape-f15.png"
+    },
+    {
+      "frame": 45,
+      "expected": [
+        240,
+        360,
+        600
+      ],
+      "instrumented": [
+        240,
+        360,
+        600
+      ],
+      "decodedFromStill": [
+        240,
+        360,
+        600
+      ],
+      "decodedFromVideo": [
+        240,
+        360,
+        600
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/still-landscape-f45.png"
+    },
+    {
+      "frame": 75,
+      "expected": [
+        480,
+        720,
+        1200
+      ],
+      "instrumented": [
+        480,
+        720,
+        1200
+      ],
+      "decodedFromStill": [
+        480,
+        720,
+        1200
+      ],
+      "decodedFromVideo": [
+        480,
+        720,
+        1200
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/still-landscape-f75.png"
+    },
+    {
+      "frame": 150,
+      "expected": [
+        480,
+        720,
+        1200
+      ],
+      "instrumented": [
+        480,
+        720,
+        1200
+      ],
+      "decodedFromStill": [
+        480,
+        720,
+        1200
+      ],
+      "decodedFromVideo": [
+        480,
+        720,
+        1200
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/still-landscape-f150.png"
+    },
+    {
+      "frame": 179,
+      "expected": [
+        480,
+        720,
+        1200
+      ],
+      "instrumented": [
+        480,
+        720,
+        1200
+      ],
+      "decodedFromStill": [
+        480,
+        720,
+        1200
+      ],
+      "decodedFromVideo": [
+        480,
+        720,
+        1200
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/landscape/renders/remotion/still-landscape-f179.png"
+    }
+  ],
+  "proofStatesPortrait": [
+    {
+      "frame": 0,
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "instrumented": [
+        0,
+        0,
+        0
+      ],
+      "decodedFromStill": [
+        0,
+        0,
+        0
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/portrait/renders/remotion/still-portrait-f0.png"
+    },
+    {
+      "frame": 15,
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "instrumented": [
+        0,
+        0,
+        0
+      ],
+      "decodedFromStill": [
+        0,
+        0,
+        0
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/portrait/renders/remotion/still-portrait-f15.png"
+    },
+    {
+      "frame": 45,
+      "expected": [
+        148,
+        222,
+        370
+      ],
+      "instrumented": [
+        148,
+        222,
+        370
+      ],
+      "decodedFromStill": [
+        148,
+        222,
+        370
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/portrait/renders/remotion/still-portrait-f45.png"
+    },
+    {
+      "frame": 75,
+      "expected": [
+        296,
+        444,
+        740
+      ],
+      "instrumented": [
+        296,
+        444,
+        740
+      ],
+      "decodedFromStill": [
+        296,
+        444,
+        740
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/portrait/renders/remotion/still-portrait-f75.png"
+    },
+    {
+      "frame": 150,
+      "expected": [
+        296,
+        444,
+        740
+      ],
+      "instrumented": [
+        296,
+        444,
+        740
+      ],
+      "decodedFromStill": [
+        296,
+        444,
+        740
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/portrait/renders/remotion/still-portrait-f150.png"
+    },
+    {
+      "frame": 179,
+      "expected": [
+        296,
+        444,
+        740
+      ],
+      "instrumented": [
+        296,
+        444,
+        740
+      ],
+      "decodedFromStill": [
+        296,
+        444,
+        740
+      ],
+      "stillPath": "/home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/portrait/renders/remotion/still-portrait-f179.png"
+    }
+  ],
+  "seekDeterminism": {
+    "order": [
+      179,
+      45,
+      0,
+      150,
+      75,
+      15
+    ],
+    "decodedByFrame": {
+      "0": [
+        0,
+        0,
+        0
+      ],
+      "15": [
+        0,
+        0,
+        0
+      ],
+      "45": [
+        240,
+        360,
+        600
+      ],
+      "75": [
+        480,
+        720,
+        1200
+      ],
+      "150": [
+        480,
+        720,
+        1200
+      ],
+      "179": [
+        480,
+        720,
+        1200
+      ]
+    },
+    "matchesForwardOrder": true
+  },
+  "secondDataset": {
+    "domain": [
+      0,
+      40
+    ],
+    "values": [
+      10,
+      20,
+      40
+    ],
+    "frames": {
+      "45": {
+        "expected": [
+          150,
+          300,
+          600
+        ],
+        "instrumented": [
+          150,
+          300,
+          600
+        ],
+        "decodedFromStill": [
+          150,
+          300,
+          600
+        ]
+      },
+      "75": {
+        "expected": [
+          300,
+          600,
+          1200
+        ],
+        "instrumented": [
+          300,
+          600,
+          1200
+        ],
+        "decodedFromStill": [
+          300,
+          600,
+          1200
+        ]
+      }
+    }
+  },
+  "fps60": {
+    "durationFrames": 360,
+    "frames": {
+      "30": {
+        "expected": [
+          0,
+          0,
+          0
+        ],
+        "instrumented": [
+          0,
+          0,
+          0
+        ],
+        "decodedFromStill": [
+          0,
+          0,
+          0
+        ]
+      },
+      "90": {
+        "expected": [
+          240,
+          360,
+          600
+        ],
+        "instrumented": [
+          240,
+          360,
+          600
+        ],
+        "decodedFromStill": [
+          240,
+          360,
+          600
+        ]
+      },
+      "150": {
+        "expected": [
+          480,
+          720,
+          1200
+        ],
+        "instrumented": [
+          480,
+          720,
+          1200
+        ],
+        "decodedFromStill": [
+          480,
+          720,
+          1200
+        ]
+      },
+      "359": {
+        "expected": [
+          480,
+          720,
+          1200
+        ],
+        "instrumented": [
+          480,
+          720,
+          1200
+        ],
+        "decodedFromStill": [
+          480,
+          720,
+          1200
+        ]
+      }
+    }
+  },
+  "inspectMotion": {
+    "observations": [
+      "assertion half-reveal at frame 45: instrumented widths [240, 360, 600], decoded widths [240, 360, 600], expected [240, 360, 600] (tolerance 1 instrumented, 2 decoded): PASS.",
+      "assertion final-ratios at frame 75: instrumented widths [480, 720, 1200], decoded widths [480, 720, 1200], expected [480, 720, 1200] (tolerance 1 instrumented, 2 decoded): PASS."
+    ]
+  },
+  "negatives": [
+    {
+      "case": "missing-dataset",
+      "category": "MG_SCHEMA_INVALID",
+      "exitClass": 2,
+      "message": "Job is missing its dataset file: data/bars.json (job directory /home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/staged-missing-dataset)."
+    },
+    {
+      "case": "wrong-mode-canvas",
+      "category": "MG_MODE_MISMATCH",
+      "exitClass": 2,
+      "message": "Job at /home/hatch/workspace/skill72-v2/wt-mg043/shared-utils/motion-render-runtime/.runtime/mg006-tests/staged-wrong-canvas failed contracts validation with 1 finding(s); first finding: Mode powerpoint_graphic requires a 16:9 canvas; got 1080x1920."
+    },
+    {
+      "case": "missing-font",
+      "category": "MG_SCHEMA_INVALID",
+      "exitClass": 2,
+      "message": "Font file for alias \"fixture-sans\" weight 400 (LiberationSans-Regular.ttf) was not found in any search directory: . The job forbids font substitution, so the render fails instead of silently using another font."
+    },
+    {
+      "case": "missing-prop",
+      "category": "MG_SCHEMA_INVALID",
+      "exitClass": 2,
+      "message": "Missing required prop: scene bar-01 copy.headline must be a non-empty string."
+    }
+  ],
+  "evidenceFiles": [
+    "still-landscape-f0.png",
+    "still-portrait-f0.png",
+    "still-landscape-f15.png",
+    "still-portrait-f15.png",
+    "still-landscape-f45.png",
+    "still-portrait-f45.png",
+    "still-landscape-f75.png",
+    "still-portrait-f75.png",
+    "still-landscape-f150.png",
+    "still-portrait-f150.png",
+    "still-landscape-f179.png",
+    "still-portrait-f179.png",
+    "poster-f150.png"
+  ]
+}

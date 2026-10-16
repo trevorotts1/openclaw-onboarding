@@ -331,6 +331,8 @@ def run_units(
     retry_cap: int = DEFAULT_RETRY_CAP,
     deadline_s: Optional[float] = None,
     progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+    swarm_plan: Optional[Dict[str, Any]] = None,
+    swarm_event_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
     prefetch: int = 0,
 ) -> List[UnitResult]:
     """Run `units` through `worker_fn` with at most `workers` concurrent
@@ -389,6 +391,37 @@ def run_units(
     an outer safety net for a `worker_fn` that raises, not a second retry
     layer on top of a `worker_fn` that already retries internally and
     returns a definitive verdict.
+
+    ITEM 15 (swarm FORCING) -- `swarm_plan` / `swarm_event_cb`:
+
+    `swarm_plan` is a width_controller.decide_width decision dict
+    ({planned_width, target_width, binding_constraint, binding_value,
+    caps, shortfall, ...}). When present, every progress snapshot gains a
+    "swarm" block carrying the plan beside the width the pool ACTUALLY
+    held: current_width / peak_width (concurrent worker invocations,
+    counted from the unit states this pool already maintains),
+    worker_deaths and workers_replaced. Without a plan the progress
+    artifact is byte-identical to the pre-Item-15 pool.
+
+    WORKER REPLACEMENT. In this module a "worker" IS one invocation of
+    worker_fn (module invariant 1: a worker is a callable). _run_one's
+    retry net catches `Exception` only, so a worker invocation that dies
+    by raising a BaseException (SystemExit, KeyboardInterrupt, a
+    BaseException subclass from a killed worker) used to escape its
+    future and re-raise on the admitting thread at fut.result(),
+    crashing run_units and quietly losing the whole pool mid-phase. The
+    guarded wrapper below contains that death: the admitting thread
+    records it (a "worker_died" swarm event), and REPLACES the worker --
+    the unit is resubmitted into the freed slot with a fresh admission
+    snapshot -- while the unit's death count stays within retry_cap and
+    the phase deadline has not passed. Past either bound the unit fails
+    VISIBLY with the death named. A runtime forcing_shortfall event
+    fires when worker loss kept the pool's peak below the width its
+    plan allowed; work that simply drained faster than the pool could
+    fill is not a shortfall and is not reported as one. (An OS thread
+    physically killed from outside cannot be detected or replaced from
+    inside the process; replacement covers worker invocations that die
+    by raising, which is every death this pool can observe.)
     """
     if not units:
         return []
@@ -406,6 +439,37 @@ def run_units(
     # The per-attempt timeout, as the worker_fn itself should observe it.
     unit_timeout_s = per_unit_timeout_s if (per_unit_timeout_s and
                                             per_unit_timeout_s > 0) else None
+
+    # ITEM 15: the swarm record. `swarm` rides inside every progress
+    # snapshot (the same dict _write_progress persists), so planned vs
+    # target vs actually-held width is readable from the artifact while
+    # the phase runs, not reconstructed afterwards. Deaths are counted on
+    # the admitting thread only (the drain/final collection loops), so
+    # swarm_deaths needs no lock of its own.
+    swarm: Optional[Dict[str, Any]] = None
+    if swarm_plan is not None:
+        swarm = {
+            "planned_width": swarm_plan.get("planned_width"),
+            "target_width": swarm_plan.get("target_width"),
+            "binding_constraint": swarm_plan.get("binding_constraint"),
+            "binding_value": swarm_plan.get("binding_value"),
+            "caps": swarm_plan.get("caps"),
+            "shortfall": bool(swarm_plan.get("shortfall")),
+            "current_width": 0,
+            "peak_width": 0,
+            "worker_deaths": 0,
+            "workers_replaced": 0,
+        }
+        progress["swarm"] = swarm
+    swarm_deaths: Dict[str, int] = {}
+
+    def _swarm_event(event: Dict[str, Any]) -> None:
+        if swarm_event_cb is None:
+            return
+        try:
+            swarm_event_cb(event)
+        except Exception:  # noqa: BLE001 -- an observer never breaks the pool
+            pass
 
     def _counts() -> Dict[str, int]:
         vals = list(progress["units"].values())
@@ -426,6 +490,18 @@ def run_units(
     def _emit(unit_key: str, state: str) -> None:
         with lock:
             progress["units"][unit_key] = state
+            if swarm is not None:
+                # Live width = units inside a worker invocation right now:
+                # admitted/dispatched/retrying/provider_running are the
+                # states a unit occupies between entering _run_one and
+                # leaving it. Every transition emits, so the peak sampled
+                # here is the true concurrency peak, not an estimate.
+                live = sum(1 for v in progress["units"].values()
+                           if v in (UNIT_STATES_ADMITTED, "dispatched",
+                                    "retrying", UNIT_STATES_PROVIDER_RUNNING))
+                swarm["current_width"] = live
+                if live > int(swarm.get("peak_width") or 0):
+                    swarm["peak_width"] = live
             snapshot = dict(progress, units=dict(progress["units"]), counts=_counts())
             # The file write is INSIDE the lock: snapshots are taken in
             # emission order, so the file must land in the same order --
@@ -614,6 +690,28 @@ def run_units(
                      "return within per_unit_timeout_s; unit is resumable, "
                      "no transport was left billed in flight"])
 
+    class _WorkerDied:
+        """ITEM 15 sentinel: one worker invocation DIED by raising a
+        BaseException that _run_one's `except Exception` net cannot catch
+        (SystemExit, KeyboardInterrupt, a BaseException subclass raised by
+        a killed worker). Pre-Item-15 that exception escaped the future
+        and re-raised on the admitting thread at fut.result(), crashing
+        run_units and losing the whole pool mid-phase with no record of
+        why the width collapsed. The guarded wrapper converts the death
+        into a VALUE the admitting thread handles: record it, then replace
+        the worker (see _collect inside the pool block)."""
+        __slots__ = ("exc",)
+
+        def __init__(self, exc: BaseException) -> None:
+            self.exc = exc
+
+    def _run_one_guarded(unit: Unit,
+                         deadline_snapshot: Optional[Dict[str, Any]]):
+        try:
+            return _run_one(unit, deadline_snapshot)
+        except BaseException as exc:  # noqa: BLE001 -- containment is the point
+            return _WorkerDied(exc)
+
     results: Dict[str, UnitResult] = {}
     # PRES-013 bounded admission: a ThreadPoolExecutor queue is UNBOUNDED --
     # submit-all-then-join is exactly the eager-submission defect. Admission
@@ -626,6 +724,65 @@ def run_units(
         futures: Dict[Any, Unit] = {}
         in_flight = 0
         queue_depth = workers + max(0, int(prefetch))
+
+        def _collect(fut, unit: Unit) -> Optional[UnitResult]:
+            """Collect one finished future (admitting thread only).
+
+            A _WorkerDied value is a worker REPLACEMENT event, not a unit
+            verdict: the death is recorded (swarm counters + a
+            "worker_died" event) and, while the unit's death count stays
+            within retry_cap and the phase deadline has not passed, the
+            unit is resubmitted into the freed slot with a fresh admission
+            snapshot and None is returned (the unit is still in flight).
+            Past either bound the unit gets a terminal verdict with the
+            death named -- the width loss is never silent. The deadline
+            read below happens ONLY on a death, so the PRES-013
+            scripted single-clock admission contract (one read per
+            admission, none on collection) is untouched on every
+            death-free path."""
+            res = fut.result()
+            if not isinstance(res, _WorkerDied):
+                return res
+            deaths = swarm_deaths.get(unit.key, 0) + 1
+            swarm_deaths[unit.key] = deaths
+            if swarm is not None:
+                with lock:
+                    swarm["worker_deaths"] = int(swarm.get("worker_deaths") or 0) + 1
+            _swarm_event({
+                "event": "worker_died", "phase_id": phase_id,
+                "unit": unit.key, "deaths": deaths,
+                "error": f"{type(res.exc).__name__}: {res.exc}",
+            })
+            if deaths > max(1, int(retry_cap)):
+                return UnitResult(
+                    key=unit.key, status="failed", attempts=deaths,
+                    reasons=[
+                        f"worker died mid-unit: {type(res.exc).__name__}: "
+                        f"{res.exc}",
+                        f"worker replacement budget exhausted (retry_cap "
+                        f"{max(1, int(retry_cap))}) -- the unit is resumable "
+                        f"and no transport was left billed in flight"])
+            now = time.monotonic() if deadline_at is not None else None
+            if deadline_at is not None and now is not None and now >= deadline_at:
+                _emit(unit.key, "skipped")
+                return UnitResult(
+                    key=unit.key, status="skipped", attempts=deaths,
+                    reasons=["phase deadline reached before worker replacement"])
+            if swarm is not None:
+                with lock:
+                    swarm["workers_replaced"] = int(swarm.get("workers_replaced") or 0) + 1
+            _swarm_event({
+                "event": "worker_replaced", "phase_id": phase_id,
+                "unit": unit.key, "deaths": deaths,
+            })
+            stamps = _stamp_deadline(
+                unit, (max(0.0, deadline_at - now)
+                       if deadline_at is not None and now is not None else None))
+            _emit(unit.key, UNIT_STATES_QUEUED)
+            futures[pool.submit(_run_one_guarded, unit,
+                                {"admitted": True, "stamps": stamps})] = unit
+            return None
+
         for unit in units:
             # Admission check 1: bounded queue. While the pool is full
             # (beyond the prefetch allowance) DRAIN one finished future
@@ -636,8 +793,11 @@ def run_units(
             while in_flight >= queue_depth:
                 done = next(as_completed(list(futures)))
                 finished_unit = futures.pop(done)
+                collected = _collect(done, finished_unit)
+                if collected is None:
+                    continue  # worker replaced: the unit is still in flight
                 in_flight -= 1
-                results[finished_unit.key] = done.result()
+                results[finished_unit.key] = collected
             # Admission check 2: the phase deadline, checked AT THE MOMENT
             # real work could start (slot free). ONE time.monotonic() read
             # per unit, in input order, on this thread -- the read is shared
@@ -655,16 +815,59 @@ def run_units(
                 unit, (max(0.0, deadline_at - now)
                        if deadline_at is not None else None))
             _emit(unit.key, UNIT_STATES_QUEUED)
-            futures[pool.submit(_run_one, unit,
+            futures[pool.submit(_run_one_guarded, unit,
                                 {"admitted": True, "stamps": stamps})] = unit
             in_flight += 1
         # S2.4: no fail-fast, no cancellation -- every ADMITTED unit runs to
         # its own conclusion even after the deadline has passed; the
         # deadline's job is to stop NEW work, and queued-not-admitted units
         # are already skipped above with zero transport.
-        for fut in as_completed(futures):
-            unit = futures[fut]
-            results[unit.key] = fut.result()
+        # The collection loop is a while-loop, not a single pass: a worker
+        # replacement resubmits INTO `futures` while collection is under
+        # way, and the replacement future must be collected too.
+        while futures:
+            for fut in as_completed(list(futures)):
+                unit = futures.pop(fut)
+                collected = _collect(fut, unit)
+                if collected is None:
+                    continue  # replaced; the next pass collects it
+                results[unit.key] = collected
+
+    if swarm is not None:
+        # ITEM 15: the final swarm record -- planned vs target vs the width
+        # actually held -- lands in the progress artifact before return,
+        # and a runtime shortfall (worker loss kept the peak below the
+        # width the plan allowed) is emitted as an event, never absorbed
+        # silently. Binding name "worker_loss" is
+        # width_controller.LIMITER_WORKER_LOSS, duplicated as a literal so
+        # this module gains no new import edge.
+        with lock:
+            swarm["current_width"] = 0
+            achieved = int(swarm.get("peak_width") or 0)
+            target = swarm_plan.get("target_width")
+            achievable = min(int(target), len(units)) \
+                if isinstance(target, int) else len(units)
+            runtime_shortfall = bool(
+                int(swarm.get("worker_deaths") or 0) > 0
+                and achieved < achievable)
+            swarm["achieved_width"] = achieved
+            swarm["runtime_shortfall"] = runtime_shortfall
+            final_snapshot = dict(progress, units=dict(progress["units"]),
+                                  counts=_counts())
+            _write_progress(run_dir, phase_id, final_snapshot)
+        if progress_cb:
+            progress_cb(final_snapshot)
+        if runtime_shortfall:
+            _swarm_event({
+                "event": "forcing_shortfall", "scope": "runtime",
+                "phase_id": phase_id,
+                "planned_width": swarm_plan.get("planned_width"),
+                "target_width": swarm_plan.get("target_width"),
+                "achieved_width": achieved,
+                "binding_constraint": "worker_loss",
+                "worker_deaths": swarm.get("worker_deaths"),
+                "workers_replaced": swarm.get("workers_replaced"),
+            })
 
     return [results[u.key] for u in units]
 

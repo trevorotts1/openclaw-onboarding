@@ -1,7 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
-version: v15.1.8
+version: v15.1.11
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -53,6 +53,7 @@ Autonomous, multi-pipeline video production driven by the OpenMontage engine —
 | Produces voice narration (primary: Fish Audio 2.1 Pro `s2.1-pro`; Gemini/OpenAI/MiniMax (Mimo) cloud fallbacks; Piper optional offline) or needs premium TTS | Skill 30 (`fish-audio-api-reference`) |
 | Output needs manual editorial cuts, color grade, or timeline work | Skill 27 (`video-editor`) |
 | Needs a storyboard authored before production starts | Skill 24 (`storyboard-writer`) |
+| Needs motion graphics for a VSL (animated chart, explainer, product piece) | Skill 72 (`motion-video-plus`) makes the insert; this skill stays the parent and owns the VSL, its narration, and its music. The insert returns through the shipped bridge (`scripts/vsl_handoff.py`), and its status rides this skill's board and attestation surfaces through `scripts/motion_status.py` under the contract in `72-motion-video-plus/references/status-and-delivery.md`. An insert never creates a task of its own. |
 
 ## AGPLv3 boundary (binding)
 
@@ -94,5 +95,8 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
   - `embed_kie_client.py` / `test_kie_embedded_client_hashlock.py`: generate and lock the embedded Skill 74 client and secret helper
   - `cc_board.py` — fail-soft Command Center board caller (5 phase cards; legal `review → done`)
   - `test_cc_board.py` — offline proof of the board caller's contract
+  - `vsl_handoff.py` — the Skill 47 side of the VSL motion-insert handoff (request, consume, assemble) against a Skill 72 insert; the contract is `72-motion-video-plus/references/vsl-desktop-handoff.md`
+  - `motion_status.py` — the Skill 47 side of the Skill 72 status integration: carries a motion job's status ledger onto this skill's attestation manifest (under `phase_attestations`, the key the parent's own readers consume) and board, with done gated on the filed delivery receipt; the contract is `72-motion-video-plus/references/status-and-delivery.md`
+  - `test_motion_status.py` — offline proof of the status bridge's fail-then-resume cycle (one campaign, no duplicated attestation, no illegal board jump, done only through review)
 - `test-fixtures/make-video-fixtures.sh` — GOOD/BAD run fixtures for the driver self-test
 - `render-proof/` — recorded ffprobe render proofs (free path + Kie path)

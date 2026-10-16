@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: v1.0.14
+version: v1.0.18
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -781,8 +781,10 @@ value.
 The resolver never guesses a channel id and never borrows the other show's
 channel: when the mode's channel env var is absent it refuses, naming the
 exact missing variable (a provisioning defect to fix, never something the
-engine works around). A podcast_id already carried on the payload wins
-as-is, which is how the controller hands its own resolution through.
+engine works around). Step 15 runs podbean_publish.sh --mode <mode>
+--show-name <show>, which resolves the channel from the box env by mode
+after loading the box secrets. A podcast_id carried on the intake payload
+is never used for routing.
 Provisioning (provision-podcast-client.sh, STEP 5.5 two-show channel
 capture) records both channel ids in the provision ledger and prints the
 box-side env contract for the operator to apply; it never invents a channel

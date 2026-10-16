@@ -1,0 +1,76 @@
+{
+  "item": "MG-017",
+  "section": "Section 6 causal diagrams; deliverable 4 render proof (C04 flow_through through Remotion)",
+  "runtime": {
+    "lockId": "lock-314fc289b233ca9e",
+    "remotionVersion": "4.0.535",
+    "bundleKey": "59ca5e622821e92fa7ff67fe-lock-314fc289b233ca9e"
+  },
+  "font": {
+    "family": "Liberation Sans",
+    "files": [
+      {
+        "weight": 400,
+        "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "sha256": "4659bc0c58c5028dd488ec928d41d9265db43d9b669fc14ca8b0832daca7b144"
+      },
+      {
+        "weight": 700,
+        "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "sha256": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582"
+      }
+    ]
+  },
+  "flow_fixture": {
+    "scene": "c04-flow-mechanism.json",
+    "subject_id": "lead-001",
+    "frames": {
+      "frame_30": {
+        "geometry_subject_position": {
+          "x": 581.3125,
+          "y": 540
+        },
+        "decoded_accent_centroid": {
+          "x": 580.1,
+          "y": 508.9,
+          "pixels": 2637
+        },
+        "centroid_distance_px": 31.1,
+        "still": "c04-flow-f30.png",
+        "sha256": "bf4cc01ffe332f7b61bbc7097cfeaeb6b0b63446ecce3b63454d58f276f4c075"
+      },
+      "frame_75": {
+        "geometry_subject_position": {
+          "x": 949.75,
+          "y": 540
+        },
+        "decoded_accent_centroid": {
+          "x": 948,
+          "y": 509,
+          "pixels": 2638
+        },
+        "centroid_distance_px": 31.1,
+        "still": "c04-flow-f75.png",
+        "sha256": "53c8f5e927dddd8df99aba28e1759e88e213dd6172ea477ab15b85c009e6b387"
+      },
+      "frame_170": {
+        "geometry_subject_position": {
+          "x": 1441,
+          "y": 540
+        },
+        "decoded_accent_centroid": {
+          "x": 1437.7,
+          "y": 509.1,
+          "pixels": 2632
+        },
+        "centroid_distance_px": 31.1,
+        "still": "c04-flow-f170.png",
+        "sha256": "0ea296b16a95a00b8a28ba651adda454e156caa48f798e0b3a0b6975ab6c9acc"
+      }
+    }
+  },
+  "cases": {
+    "passed": 22,
+    "failed": 0
+  }
+}

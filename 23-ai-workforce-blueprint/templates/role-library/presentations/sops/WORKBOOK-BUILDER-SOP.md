@@ -67,8 +67,10 @@ It produces:
    every `content_string` verbatim (mirrors `build_deck.py`'s AF-P-VERBATIM discipline).
 3. **DESIGN** (kie GPT Image 2.5 Sunburst, two-phase harmony-first) — page 1 is T2I (the brand-template
    page); every later page is I2I referencing page-1 + the real client logo + the deck render
-   record URLs in `input_urls` (max 16). Prompts are **9,000-18,000 stripped chars**
-   (the Presentations rich-prompt gate, NOT the lax 5,000-19,000 research band) and are
+   record URLs in `input_urls` (max 16). Prompts follow the Presentations rich-prompt gate
+   (KIE rule 12, enforced by the ONE shared enforcer shared-utils/kie_prompt_enforcer.py; the
+   floor for the current pin is the enforcer's current value, 16,000 stripped chars), NOT the
+   lax 5,000-19,000 research band, and are
    **content-bearing**: the page's real text is baked into the image, never left out.
    Submit all tasks first (20/10s token bucket), then poll + download each.
 4. **ASSEMBLE-REGULAR** (reportlab) — every PNG drawn full-bleed (center-crop-to-fill) onto US

@@ -27,7 +27,15 @@ agent invented.
    colors, composition, image slot placement, and heading scale must match the
    final mockup piece for that section. 10 = visually identical layout; below 8
    = any section whose structure, ordering, or visual weight drifts from the
-   mockup.
+   mockup. **Measured floor (Item 16):** `scripts/compare_sheet.py` runs a
+   structural drift pass beneath this score: it renders
+   `final-mockups/mockup.html` and `responsive-html/index.html` at 1440 and
+   390 and fails the validator if the section count differs, the section
+   order differs, any section's image-placement class changed, or any
+   heading-to-body font-size ratio drifts by more than 15% from the mockup.
+   The per-section drift table is in `responsive-html/compare/
+   compare-report.json`. Gross structural drift can no longer be scored an
+   8 by anyone; the reviewer's score sits on top of that floor.
 5. **Image crops and sizes match slots** — each image renders at ≥ 90% of its
    slot width from `image-map-upload/image-map.json` (`desktop_slot_px`), with
    the intended crop, no stretching, no distortion, no shrunken image floating
@@ -55,6 +63,25 @@ agent invented.
     card grids, purple/blue SaaS gradients, glassmorphism, emoji icons, every
     section centered, same image ratio everywhere, warm amber "cozy shop" stock
     look). 10 = none present; below 8 = any banned pattern present.
+    **Measured by code (Item 15):** six of these patterns are enforced
+    mechanically by `scripts/validate_page.py`'s layout metrics, with
+    thresholds in the brand file's `layout_thresholds` object: section
+    signature monotony (over 60% of sections sharing one signature of column
+    structure, image placement, alignment, and background fails), image
+    ratio monotony (all content images in one aspect-ratio class with 3 or
+    more images fails), centering monotony (over 70% fully center-aligned
+    sections fails), repeated card grids (3 or more near-identical sibling
+    elements fail unless allowlisted), empty width (a section whose content
+    spans under 60% of its width at 1440 fails), and CTA sameness (2 or more
+    CTAs with identical dimensions and background fail unless a single-CTA
+    design is declared). Declared style traits and declared series from the
+    run's selection record exempt the metrics they govern and print as
+    DECLARED lines (Amendment 6). The validator's measured values and
+    DECLARED lines appear in `validate-page.json` under `checks.layout`;
+    cite them in the review. The reviewer still judges the patterns code
+    cannot see: beige minimalism outside the Cream token, SaaS gradients,
+    glassmorphism, emoji icons, numbered black circles, and the warm amber
+    stock look.
 11. **No placeholders** — no visible bracket placeholders (`[LIKE_THIS]`), no
     "PLACEHOLDER", "NOT WIRED", "TODO", "lorem ipsum", `{{` templates, no empty
     image boxes. 10 = none anywhere; below 8 = any visible placeholder. (When

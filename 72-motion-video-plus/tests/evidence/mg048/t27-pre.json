@@ -1,0 +1,52 @@
+{
+  "test": "T27-PRE",
+  "status": "pass",
+  "candidate_head": "a73f6e47308a9db573a9ea870af742b2a337db9f",
+  "checks": [
+    {
+      "id": "no_duplicate_task",
+      "status": "pass",
+      "detail": "ledger holds 50 items, 50 unique"
+    },
+    {
+      "id": "required_artifacts_exist",
+      "status": "pass",
+      "detail": "all present"
+    },
+    {
+      "id": "version_changelog_agree",
+      "status": "pass",
+      "detail": "/version=v27.1.28, changelog head=v27.1.28"
+    },
+    {
+      "id": "bump_version_check",
+      "status": "pass",
+      "detail": "All 10 version markers agree."
+    },
+    {
+      "id": "skill_version_agree",
+      "status": "pass",
+      "detail": "skill-version.txt=2.0.0, SKILL.md frontmatter=2.0.0"
+    },
+    {
+      "id": "batch_prep_test",
+      "status": "pass",
+      "detail": "PASS: bump, SOP re-stamp, archived/blueprint ignored, second run no-op"
+    },
+    {
+      "id": "previous_release_tagged",
+      "status": "pass",
+      "detail": "local tag list for v27.1.27: 'v27.1.27' (fetched from origin)"
+    },
+    {
+      "id": "main_head_recorded",
+      "status": "pass",
+      "detail": "github/main=1e1c12dcc0ad336d24c13986973e885e58d95954"
+    },
+    {
+      "id": "release_plan_single_branch",
+      "status": "pass",
+      "detail": "candidate branch=skill72-mg048-candidate; publication is one draft PR; merge and tag wait for the owner's word (MG-049/MG-050)"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "cases": {
+    "active_render": {
+      "refusal_exit": 3,
+      "render_completed": true
+    },
+    "discover": {
+      "jobs": {
+        "job-legacy-01": "v1",
+        "job-v2-01": "v2"
+      },
+      "pointer": "versions/lock-aaaa1111"
+    },
+    "manual_rollback": {
+      "pointer_after_rollback": "versions/lock-aaaa1111",
+      "skill_version_after_rollback": "1.0.0"
+    },
+    "promote_rollback": {
+      "exit": 5,
+      "pointer_after_rollback": "versions/lock-aaaa1111",
+      "skill_version_after_rollback": "1.0.0"
+    },
+    "readiness_failure": {
+      "exit": 4,
+      "pointer": "versions/lock-aaaa1111"
+    },
+    "upgrade_twice": {
+      "brand_bible_sha256": "ca7062f68b13020f2dda0bf9c167ec36e94ff1404b8b6a43c73fc9232718f8b6",
+      "client_files_tracked": 20,
+      "migrated_scaffold": "job-legacy-01.v2",
+      "pointer_after": "versions/lock-cccc3333",
+      "v1_manifest_sha256": "669204a4fba8937d0dad64edb6a81819334c22cc1defcd3830fed825cf21d23f"
+    },
+    "wrapper": {
+      "wrapped": [
+        "scripts/qc.sh"
+      ],
+      "wrapper_exit": 3
+    }
+  },
+  "item": "MG-041"
+}

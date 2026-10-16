@@ -3,17 +3,16 @@
 vsl_builder.py — the VSL (video sales letter) page executor (Wave C, C3).
 
 TEMPLATES the Loop 2C flow (proven by hand 2026-08-07, render-verified):
-    kie.ai design  ->  agent copy  ->  HTML+gate  ->  GHL funnel push (Skill 6, REST)
+    kie.ai design  ->  agent copy  ->  HTML+gate  ->  GHL funnel install (Skill 6, via P-U-GHL-VSL)
 See GAUNTLET-LOOP-WORK/LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md and this department's own
 sops/VSL-BUILDER-SOP.md (written concurrently by C5 — read in full before this module
 was written; every section reference below is to that SOP). This module templates the
 FLOW ONLY — it carries no client name, no client copy, no funnel id, no branding. Every
 client-specific value is resolved at runtime from the run's own intake.json, exactly
 like sales_checkout_builder.py (C2, the closest sibling — this module deliberately
-mirrors its architecture line for line wherever the two executors overlap, per
-VSL-BUILDER-SOP.md §3 step 4: "Unit C3 must resolve [the GHL push] caveat the same way
-C2 does — ideally the SAME resolution, since both executors call the same push
-mechanism").
+mirrors its architecture line for line wherever the two executors overlap. The one
+deliberate divergence is the install: the VSL page's funnel install belongs to
+P-U-GHL-VSL (see THE FUNNEL INSTALL below), not to this module.
 
 THE GATE — WANT_VSL_PAGE (upsell-questions.json v1.0.0, U026 waiver mechanic)
 -------------------------------------------------------------------------------------
@@ -69,33 +68,32 @@ A "yes" that fails this dependency FAILS LOUD (exit 5) — it never silently bui
 page with a missing/broken video embed and never falls back to a placeholder video
 (VSL-BUILDER-SOP.md §2, §5).
 
-THE GHL PUSH — WHY THIS IS A DELEGATED RECEIPT, NOT A LIVE DRIVE
+THE FUNNEL INSTALL — NOT THIS MODULE (single install path, PRES-011)
 -------------------------------------------------------------------------------------
-Identical seam to sales_checkout_builder.py (read there for the full citation chain):
-06-ghl-install-pages/tools/ghl_rest_canvas.py is "THE GLUE, NOT THE CLICKER" — every
-/funnels/* route is Cloudflare-WAF-gated and MUST run inside a live agent-browser eval
-context; funnel_create()/step_create()/page_autosave() build the exact REST step but
-never make a network call themselves when called WITHOUT a `session` kwarg (as this
-offline builder does — 100% pure/local, no browser_manager import attempted). This
-module builds the funnel/step/page-autosave REST steps with ghl_rest_canvas's real
-functions (never reimplementing GHL REST), writes them as an ordered execution plan
-(`working/vsl/ghl_push_plan.json`) for an agent holding a live agent-browser session to
-execute, then verifies the resulting `working/vsl/build_receipt.json` before calling
-the phase pushed. Absence of a receipt is NOT a failure — "plan emitted, awaiting
-delegated execution" (exit 0); a PRESENT but placeholder/fabricated receipt IS a
-failure (exit 4). ADDITIONALLY (VSL-specific, not in the sales/checkout sibling):
-Loop 2C's real, proven build put sales+checkout+VSL as THREE PAGES inside ONE funnel
-(GAUNTLET-LOOP-WORK/LOOP2C…md §CURRENT STATE — funnel z20T0cPnEoh2kCep5u6I hosted all
-three). When this run's sales_checkout_builder.py ledger already recorded a verified
-push, this module reuses that SAME funnel_id (skips its own funnel_create) instead of
-creating a second funnel for one client — the closer-to-Loop-2C resolution, and it
-degrades safely to "create my own funnel" when no such record exists.
+This module builds the page; it does NOT install it into a GHL funnel. The one
+install path for the VSL page is P-U-GHL-VSL, executed by
+ghl_external_installer.py (PRES-011): it emits the install plan, a delegated
+Skill 6 execution lands it, and the phase completes only on the installer's own
+validate_receipt() (adapter funnel/page IDs + matching-location readback +
+ops-ledger provenance). The one-funnel rule lives there too: the installer
+reuses this run's verified sales funnel_id when one exists, so one client never
+gets a second funnel for the same run. This builder's hero image is hosted
+through ghl_media (a media upload, not a page install) so the built page can
+reference it.
+
+RETIRED 2026-10-14 (FIX-PLAN Item 23, VSL single-design resolution): this module
+used to ALSO emit its own delegated push plan (working/vsl/ghl_push_plan.json)
+and verify a second receipt (working/vsl/build_receipt.json) -- two install
+paths and two receipts for one page, the second enforced by no registered
+verifier. That path is removed; do not re-introduce it. The sales/checkout
+sibling keeps its own plan + receipt contract (its phases' verifiers bind it);
+the VSL page's install proof is the installer's receipt only.
 
 THE VIEWER GATE (VSL-BUILDER-SOP.md §4)
 -------------------------------------------------------------------------------------
-Loop 2C's proven design: a gate at roughly 3-8 minutes into the video ("after the
-first big revelation") that pauses playback and blocks further seeking until the
-viewer submits first name / email / cell. The SOP requires the timestamp be DERIVED
+Loop 2C's proven design: a gate at roughly 3-8 minutes into the video (the
+window-midpoint rule stated in VSL-BUILDER-SOP.md §4) that pauses playback and
+blocks further seeking until the viewer submits first name / email / cell. The SOP requires the timestamp be DERIVED
 from the run's own `working/checkpoints/webinar_timing.json` track, never hardcoded —
 `resolve_gate_timestamp()` below picks the real slide-boundary inside the [180s, 480s]
 window closest to its midpoint, falling back to a clamped/derived value when the
@@ -106,6 +104,14 @@ client-side JS mechanic (pause + seek-block + reveal-on-submit) that a governed 
 wires to the client's real GHL contact/workflow endpoint at deployment time; a fleet
 template cannot carry a client's live endpoint (documented TODO left in the emitted
 HTML, never fabricated as if wired).
+CONSENT ON THE GATE FORM (owner ruling 2026-10-13, superseding the 2026-09-27 D3
+optional posture): the gate form also carries Trevor's standing two consent
+statements (email; SMS + voice AI combined) as checkboxes whose text IS the consent
+sentence -- unchecked by default, ALL required: the gate's submit handler refuses to
+unlock playback until every box is checked, with a branded error + "Check here" tags
+on the unchecked boxes. The boxes are named form fields (consent_email /
+consent_sms_voice), so the deployment-time GHL wiring captures them with the rest of
+the submit (see resolve_gate_consent_copy()).
 
 NO CLIENT NAMES OR CLIENT-SPECIFIC CONTENT — this is a fleet-wide template. Loop 2C's
 real pages were built for one client and deliberately kept out of this repo.
@@ -118,11 +124,12 @@ USAGE
                   working/delivery/{deck_slug}-WEBINAR.mp4 + working/checkpoints/
                   webinar_timing.json + working/checkpoints/media_library.json).
     --skip-design Reuse an already-downloaded hero render (working/vsl/renders/)
-                  without a fresh kie.ai run. Copy + HTML + plan + receipt-check only.
-    --no-push     Skip the front-door-nonce requirement and the GHL push plan/receipt
-                  steps entirely (offline smoke build: copy + design + HTML only, no
-                  client GHL write, no push-plan artifact). The video dependency check
-                  still runs — a video-less page is never built, pushed or not.
+                  without a fresh kie.ai run. Copy + HTML only.
+    --no-push     Skip the front-door-nonce requirement and the hero-image GHL
+                  hosting (offline smoke build: copy + design + HTML only, no client
+                  GHL write of any kind). The video dependency check still runs — a
+                  video-less page is never built. (The flag name is historical: this
+                  module no longer pushes anything; the funnel install is P-U-GHL-VSL.)
     --selftest    Deterministic offline self-test (no network, no kie.ai spend, no GHL
                   call of any kind, no real video/audio — every ghl_rest_canvas call
                   below is made WITHOUT a session, which is pure/local by
@@ -132,7 +139,7 @@ FRONT-DOOR NONCE (mirrors build_deck.py / workbook_builder.py / build_webinar_vi
 / sales_checkout_builder.py)
     presentation-canonical-entry.sh mints OC_DECK_ENTRY_NONCE + the run-scoped 0600
     file <run-dir>/working/checkpoints/.canonical-entry-nonce. A hand-rolled invocation
-    that would spend kie.ai money or touch a client's GHL funnel is refused (exit 2,
+    that would spend kie.ai money or write to a client's GHL media library is refused (exit 2,
     AF-CANONICAL-RENDER-BYPASS) unless --no-push. --no-push offline smoke builds are
     exempt (no client GHL write is possible on that path).
 
@@ -150,17 +157,14 @@ RUN-DIR / ARTIFACT / STATE CONVENTIONS
 
 EXIT CODES
     0  — DEFERRED (flag absent -- nothing to do this run), or WAIVED (client declined
-         with a recorded reason -- correctly gated out), or BUILT (copy+design+
-         HTML+plan emitted, receipt not yet present -- awaiting delegated
-         agent-browser execution), or PUSHED (a valid delegated receipt was found and
-         verified)
+         with a recorded reason -- correctly gated out), or BUILT (copy+design+HTML
+         built and the phase ledger recorded; the funnel install is P-U-GHL-VSL's
+         own phase, proven by its own PRES-011 receipt)
     1  — kie.ai design/render failure
     2  — fatal configuration error (no API key, missing run-dir, refused nonce)
     3  — GATE BLOCKED: a bare "no" with no verbatim client reason, or an unrecognized
          WANT_VSL_PAGE value (AF-VSL-WAIVER-MISSING / AF-VSL-VALUE-UNRECOGNIZED)
-    4  — VERIFY FAILED: a present build_receipt.json is placeholder/fabricated (no real
-         preview_urls, or no funnel_id), or an assembled artifact failed its content
-         gate
+    4  — VERIFY FAILED: an assembled artifact failed its content gate
     5  — AF-VSL-NO-VIDEO: elected ("yes") but the P9.6 webinar video artifact is
          missing or fails ghl_media.verify_video()'s local probe -- fail-closed, never
          a placeholder video
@@ -228,14 +232,6 @@ DEFAULT_SECONDARY = "#B38456"
 DEFAULT_ACCENT = "#C49A70"
 DEFAULT_BASE = "#F2E6D7"
 DEFAULT_INK = "#1A1A1A"
-
-# Placeholder hosts a delegated receipt's preview_urls must never resolve to (mirrors
-# sales_checkout_builder.py's PLACEHOLDER_HOSTS, itself mirroring
-# 56-sales-page-assets/run_sales_page_assets.py's PLACEHOLDER_HOSTS).
-PLACEHOLDER_HOSTS = (
-    "example.com", "example.org", "example.net", "example.edu", "invalid",
-    "localhost", "127.0.0.1", "0.0.0.0", "test.com", "changeme.com", "todo.com",
-)
 
 WIREFRAME_BAN_PHRASES = (
     "background only", "background-only", "no text", "wireframe", "blank template",
@@ -508,7 +504,7 @@ def verify_video_dependency(run_dir: Path, deck_slug: str) -> Path:
     if not video_path.is_file():
         raise VslBuildError(
             f"{AF_NO_VIDEO}: webinar video artifact not found at {video_path!r}. "
-            "The VSL page embeds/links the P9.6 webinar video -- P-U-VSL-PAGE MUST run "
+            "The VSL page embeds/links the P9.6 webinar video -- P-U-VSL-BUILD MUST run "
             "AFTER P9.6-WEBINAR-VIDEO (build_webinar_video.py), never before. Run the "
             "webinar phase first, then re-run this builder."
         )
@@ -553,7 +549,8 @@ def resolve_gate_timestamp(run_dir: Path, *, min_sec: float = VSL_GATE_MIN_SEC,
     """Derive the VSL viewer-gate timestamp from the run's OWN webinar_timing.json
     track (P9.6's step 1 output) -- never a fixed hardcoded second count. Picks the
     slide-boundary (`audio_start`) closest to the window midpoint that falls inside
-    [min_sec, max_sec] ("after the first big revelation", Loop 2C's own spec). Falls
+    [min_sec, max_sec] (the single gate rule, VSL-BUILDER-SOP.md §4; the retired
+    Gauntlet R+20 rule survives only as a spec note and is never executed). Falls
     back to a clamped/derived value when the track is absent or the talk is shorter
     than the window, and to the window midpoint when nothing at all is known."""
     timing = _read_json(run_dir / "working" / "checkpoints" / "webinar_timing.json")
@@ -623,7 +620,8 @@ def build_vsl_copy(brief: Dict[str, Any], client_name: str) -> str:
         "",
         "## The Viewer Gate",
         "A lead-capture gate appears partway through the video, after the first big "
-        "revelation, requesting first name / email / cell before playback continues.",
+        "revelation, requesting first name / email / cell and the two required "
+        "consent statements (email; SMS + voice AI) before playback continues.",
         "",
         "## Objection Handled",
         str(objection),
@@ -857,6 +855,47 @@ page, so the full set reads as one designed system end to end.
 
 
 # ---------------------------------------------------------------------------
+# GATE-FORM CONSENT: resolve_gate_consent_copy() (owner ruling 2026-10-13)
+# ---------------------------------------------------------------------------
+def resolve_gate_consent_copy(client_name: str) -> List[dict]:
+    """The viewer gate form's two consent statements: Trevor's standing
+    two-statement pattern (1: email; 2: SMS + voice AI combined), adapted to
+    the brand name this builder already resolves for the page. Benefit-first
+    copy; the checkbox text IS the consent sentence (no separate label); at
+    most two uses of "AI" per statement. Both boxes render unchecked by
+    default and are REQUIRED -- owner ruling 2026-10-13 (his standing
+    client-delivery pattern; it supersedes the 2026-09-27 D3 optional
+    posture, which never applied here: this form previously carried NO
+    consent at all). The gate's submit handler refuses to unlock playback
+    until every box is checked."""
+    who = str(client_name or "").strip() or "this business"
+    return [
+        {
+            "kind": "email",
+            "name": "consent_email",
+            "text": (
+                f"Yes, keep me in the loop: {who} and its partners may use "
+                "AI to enhance service quality, and may send me follow-up "
+                "emails and marketing follow-up by email and other "
+                "platforms, so I never miss an update about this training."
+            ),
+        },
+        {
+            "kind": "sms_voice",
+            "name": "consent_sms_voice",
+            "text": (
+                f"Yes, reach me directly: {who} and its approved partners "
+                "may use AI to serve me excellently, including voice AI "
+                "calls and text messages with follow-up and marketing "
+                "about this training. Message frequency varies. Message "
+                "and data rates may apply. Reply STOP to opt out, HELP "
+                "for help."
+            ),
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
 # HTML — body-level fragment (ghl_rest_canvas.html_fragment-compatible: no
 # <!DOCTYPE>/<html>/<head>/<body> wrapper). Inline <style>/<script> are fine inside a
 # bare fragment (mirrors sales_checkout_builder.py's build_page_html; lint_ghl_fragment
@@ -890,6 +929,18 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
     )
     gate_id = f"zhc-vsl-gate-{deck_slug}"
     form_id = f"zhc-vsl-gate-form-{deck_slug}"
+    # Gate-form consent (owner ruling 2026-10-13): the two statements render
+    # as checkboxes whose text IS the consent sentence, unchecked by default,
+    # each carrying a hidden "Check here" tag the gate JS reveals on a submit
+    # attempt that leaves the box unchecked.
+    consent_html = "".join(
+        f'<label class="zhc-vsl-consent"><input type="checkbox" '
+        f'name="{c["name"]}" value="yes" required />'
+        f'{c["text"]}'
+        f'<span class="zhc-consent-check-tag" hidden>Check here</span>'
+        f"</label>"
+        for c in resolve_gate_consent_copy(client_name)
+    )
     return f"""<!-- ZHC-VSL-BUILDER marker={marker} deck_slug={deck_slug} -->
 <style>
   .zhc-vsl-page {{ font-family: 'Montserrat', Arial, sans-serif; background:{base}; color:{ink}; padding:32px 24px; }}
@@ -903,6 +954,13 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
   .zhc-vsl-gate-form {{ background:{base}; border:1px solid {sec}; border-radius:10px; padding:24px; width:90%; max-width:360px; }}
   .zhc-vsl-gate-form h3 {{ color:{ink}; margin:0 0 16px; font-size:1.1em; }}
   .zhc-vsl-gate-form input {{ display:block; width:100%; box-sizing:border-box; margin:0 0 12px; padding:10px; border:1px solid {sec}; border-radius:6px; }}
+  .zhc-vsl-gate-form label.zhc-vsl-consent {{ display:block; margin:0 0 12px; font-size:0.85em; line-height:1.5; color:{ink}; text-align:left; }}
+  .zhc-vsl-gate-form label.zhc-vsl-consent input {{ display:inline-block; width:auto; margin:0 6px 0 0; padding:0; border:0; }}
+  .zhc-vsl-gate-form label.zhc-consent-missing {{ outline:2px solid {prim}; outline-offset:2px; border-radius:6px; }}
+  .zhc-vsl-gate-form .zhc-consent-check-tag {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; font-size:0.85em; border-radius:4px; padding:1px 6px; margin-left:6px; }}
+  .zhc-vsl-gate-form .zhc-consent-check-tag[hidden] {{ display:none; }}
+  .zhc-vsl-gate-form .zhc-vsl-gate-consent-error {{ background:#fff; border:2px solid {prim}; color:{ink}; border-radius:6px; padding:10px; font-size:0.9em; font-weight:600; margin:0 0 12px; text-align:left; }}
+  .zhc-vsl-gate-form .zhc-vsl-gate-consent-error[hidden] {{ display:none; }}
   .zhc-vsl-gate-form button {{ display:block; width:100%; background:{prim}; color:#fff; font-weight:700; padding:12px; border:0; border-radius:6px; cursor:pointer; }}
 </style>
 <div class="zhc-vsl-page" id="zhc-vsl-{deck_slug}">
@@ -917,6 +975,8 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
         <input type="text" name="first_name" placeholder="First Name" required>
         <input type="email" name="email" placeholder="Email Address" required>
         <input type="tel" name="phone" placeholder="Cell Phone" required>
+        {consent_html}
+        <p class="zhc-vsl-gate-consent-error" id="{form_id}-consent-error" role="alert" hidden>Please check each box marked "Check here" above so we can keep you posted about this training, then tap Continue Watching.</p>
         <button type="submit">Continue Watching</button>
       </form>
     </div>
@@ -942,13 +1002,61 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
         video.currentTime = GATE_SEC;
       }}
     }});
+    /* Consent gate (owner ruling 2026-10-13): both consent boxes are
+       required. refreshConsentGate() tags each unchecked box "Check here",
+       shows the branded error, and reports whether the form may proceed;
+       the submit handler below refuses to unlock while any box is
+       unchecked. */
+    var consentBoxes = form.querySelectorAll('input[type="checkbox"][required]');
+    var consentError = document.getElementById('{form_id}-consent-error');
+    function refreshConsentGate() {{
+      var firstMissing = null;
+      var missing = 0;
+      for (var i = 0; i < consentBoxes.length; i++) {{
+        var box = consentBoxes[i];
+        var label = box.closest ? box.closest('label') : null;
+        var tag = label ? label.querySelector('.zhc-consent-check-tag') : null;
+        if (!box.checked) {{
+          missing++;
+          if (!firstMissing) {{ firstMissing = label || box; }}
+          if (label) {{ label.classList.add('zhc-consent-missing'); }}
+          if (tag) {{ tag.hidden = false; }}
+        }} else {{
+          if (label) {{ label.classList.remove('zhc-consent-missing'); }}
+          if (tag) {{ tag.hidden = true; }}
+        }}
+      }}
+      if (consentError) {{ consentError.hidden = missing === 0; }}
+      return {{ ok: missing === 0, firstMissing: firstMissing }};
+    }}
+    form.addEventListener('invalid', function(ev) {{
+      if (ev.target && ev.target.type === 'checkbox') {{
+        ev.preventDefault();
+        var res = refreshConsentGate();
+        if (res.firstMissing && res.firstMissing.scrollIntoView) {{
+          res.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+        }}
+      }}
+    }}, true);
+    for (var ci = 0; ci < consentBoxes.length; ci++) {{
+      consentBoxes[ci].addEventListener('change', function() {{ refreshConsentGate(); }});
+    }}
     form.addEventListener('submit', function(ev) {{
       ev.preventDefault();
+      var consent = refreshConsentGate();
+      if (!consent.ok) {{
+        if (consent.firstMissing && consent.firstMissing.scrollIntoView) {{
+          consent.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+        }}
+        return;
+      }}
       /* ZHC-VSL: wire this submit to the client's real GHL contact-upsert endpoint or
          native GHL form embed at deployment time -- a fleet template does not carry a
          client's live endpoint. This gate mechanic (pause + seek-block + reveal-on-
          submit) is fully functional client-side; only the lead-delivery wiring is a
-         deployment-time step, intentionally left unfabricated here. */
+         deployment-time step, intentionally left unfabricated here. The consent
+         boxes are named fields (consent_email / consent_sms_voice) on this same
+         form, so the deployment-time wiring captures them with the submit. */
       unlocked = true;
       overlay.classList.remove('zhc-vsl-gate-active');
       video.play();
@@ -1031,149 +1139,7 @@ def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[
 
 
 # ---------------------------------------------------------------------------
-# GHL push plan — real ghl_rest_canvas.py functions, called WITHOUT a `session`
-# kwarg so the calls are pure/local (no agent-browser, no network, no
-# browser_manager import at all -- mirrors sales_checkout_builder.py exactly).
-# ---------------------------------------------------------------------------
-def resolve_shared_funnel_id(run_dir: Path) -> Optional[str]:
-    """Loop 2C's real, proven build put sales+checkout+VSL as THREE PAGES inside ONE
-    funnel. When this run's sales_checkout_builder.py ledger already recorded a
-    verified push (status == 'built+verified+pushed', a real funnel_id in its
-    receipt), reuse that SAME funnel for the VSL page instead of creating a second
-    one. Returns None when no such record exists (this run creates its own funnel,
-    same as sales_checkout_builder.py does on a first run) -- never a hard failure."""
-    ledger = _read_json(run_dir / "working" / "checkpoints" / "sales_checkout.json")
-    if ledger.get("status") != "built+verified+pushed":
-        return None
-    receipt = ledger.get("receipt")
-    if not isinstance(receipt, dict):
-        return None
-    fid = receipt.get("funnel_id")
-    return str(fid).strip() if fid else None
 
-
-def build_ghl_push_plan(*, location_id: str, funnel_name: str, deck_slug: str,
-                        vsl_html: str, brand: Dict[str, str],
-                        shared_funnel_id: Optional[str] = None) -> Dict[str, Any]:
-    rc = _import_ghl_rest_canvas()
-
-    vsl_slug = f"{deck_slug}-vsl"
-    vsl_blob = rc.new_page_blob(
-        vsl_html, surface="funnel",
-        primary_color=brand.get("primary"), secondary_color=brand.get("secondary"),
-    )
-
-    sequence: List[Dict[str, Any]] = []
-    step_no = 1
-    if shared_funnel_id:
-        note_prefix = (
-            f"Reusing the sales/checkout funnel {shared_funnel_id!r} (Loop 2C's proven "
-            "one-funnel/three-page layout) -- no funnel_create step needed."
-        )
-        funnel_id_placeholder = shared_funnel_id
-    else:
-        funnel_step = rc.funnel_create(location_id, funnel_name, funnel_type="funnel")
-        sequence.append({
-            "step": step_no,
-            "call": "ghl_rest_canvas.funnel_create",
-            "args": {"location_id": location_id, "name": funnel_name, "funnel_type": "funnel"},
-            "precomputed_step": funnel_step,
-            "then": "run the eval; parse response body.id -> FUNNEL_ID",
-        })
-        step_no += 1
-        note_prefix = "No prior verified sales/checkout push found -- creating a new funnel."
-        funnel_id_placeholder = "FUNNEL_ID"
-
-    sequence.append({
-        "step": step_no,
-        "call": "ghl_rest_canvas.step_create",
-        "args": {"funnel_id": funnel_id_placeholder, "name": f"{funnel_name} — VSL", "slug": vsl_slug},
-        "then": "run the eval; created_page_id(response) -> VSL_PAGE_ID (new_page_version=1)",
-    })
-    step_no += 1
-    sequence.append({
-        "step": step_no,
-        "call": "ghl_rest_canvas.page_autosave",
-        "args": {"page_id": "VSL_PAGE_ID", "funnel_id": funnel_id_placeholder, "page_version": 1,
-                "page_data": vsl_blob},
-        "then": "run the eval; expect 201; live pointer unchanged (draft)",
-    })
-
-    return {
-        "note": note_prefix + " " + (
-            "Delegated GHL push plan -- ghl_rest_canvas.py's /funnels/* routes are "
-            "Cloudflare-WAF-gated and MUST run inside a live agent-browser eval context "
-            "(bare Python gets HTTP error 1010); this builder cannot drive a browser "
-            "itself. An agent holding a seeded, activated, GHL-origin-navigated "
-            "agent-browser session executes `sequence` below IN ORDER using the REAL "
-            "ghl_rest_canvas.py functions named (never reimplemented), then writes "
-            "working/vsl/build_receipt.json with the real resulting preview_urls + "
-            "funnel_id + a QC score >= 8.5 (mirrors sales_checkout_builder.py's "
-            "identical build_receipt contract). Re-running this builder after that "
-            "receipt lands verifies it and reports PUSHED."
-        ),
-        "location_id": location_id,
-        "funnel_name": funnel_name,
-        "shared_funnel_id": shared_funnel_id,
-        "sequence": sequence,
-        "page_data": {"vsl": vsl_blob},
-        "slugs": {"vsl": vsl_slug},
-    }
-
-
-def _url_host(url: Any) -> str:
-    from urllib.parse import urlparse
-    if not isinstance(url, str):
-        return ""
-    try:
-        return (urlparse(url.strip()).hostname or "").lower()
-    except (ValueError, TypeError):
-        return ""
-
-
-def _real_url(url: Any) -> Tuple[bool, str]:
-    """Mirrors sales_checkout_builder.py's _real_url exactly: an http(s) URL whose
-    host is not a placeholder host or a subdomain of one."""
-    if not isinstance(url, str) or not url.strip().lower().startswith(("http://", "https://")):
-        return False, f"{url!r} is not an http(s) URL"
-    host = _url_host(url)
-    if not host:
-        return False, f"{url!r} has no host"
-    if any(host == ph or host.endswith("." + ph) for ph in PLACEHOLDER_HOSTS):
-        return False, f"{url!r} resolves to placeholder host {host!r}"
-    return True, host
-
-
-def verify_push_receipt(run_dir: Path) -> Tuple[Optional[bool], str, dict]:
-    """Returns (status, detail, data). status: True = verified real push, False =
-    present-but-fabricated (a genuine failure), None = absent (not yet executed,
-    NOT a failure -- mirrors sales_checkout_builder.py's identical contract)."""
-    receipt_path = run_dir / "working" / "vsl" / "build_receipt.json"
-    if not receipt_path.is_file():
-        return None, "no build_receipt.json -- push plan emitted, awaiting a delegated agent-browser run", {}
-    try:
-        data = json.loads(receipt_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        return False, f"build_receipt.json unreadable: {exc}", {}
-    if not isinstance(data, dict):
-        return False, "build_receipt.json is not a JSON object", {}
-    urls = data.get("preview_urls")
-    if not (isinstance(urls, list) and [u for u in urls if str(u).strip()]):
-        return False, "build_receipt.json carries no non-empty preview_urls", data
-    bad = []
-    for u in urls:
-        ok, reason = _real_url(u)
-        if not ok:
-            bad.append(reason)
-    if bad:
-        return False, f"{len(bad)} preview URL(s) are not real: {bad[:2]}", data
-    funnel_id = data.get("funnel_id")
-    if not funnel_id or not str(funnel_id).strip():
-        return False, "build_receipt.json carries no funnel_id", data
-    return True, f"receipt verified ({len(urls)} real preview url(s), funnel_id={funnel_id})", data
-
-
-# ---------------------------------------------------------------------------
 # Front-door nonce (identical contract to workbook_builder.py / build_deck.py /
 # build_webinar_video.py / sales_checkout_builder.py)
 # ---------------------------------------------------------------------------
@@ -1250,7 +1216,7 @@ def _verify_entry_nonce(run_dir: Path) -> bool:
 # ---------------------------------------------------------------------------
 # Ledger (mirrors sales_checkout_builder.py's _record_ledger -- merged, never
 # clobbered). Its own file, working/checkpoints/vsl.json -- NOT the shared
-# sales_checkout.json this module only ever READS (resolve_shared_funnel_id).
+# sales_checkout.json, which this module never reads or writes.
 # ---------------------------------------------------------------------------
 def _now_iso() -> str:
     from datetime import datetime, timezone
@@ -1274,7 +1240,7 @@ def _record_ledger(run_dir: Path, record: dict) -> None:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
         description="Build the VSL (video sales letter) page (kie.ai design -> copy -> "
-                    "HTML+gate -> delegated GHL funnel push), gated on WANT_VSL_PAGE, "
+                    "HTML+gate; funnel install is P-U-GHL-VSL), gated on WANT_VSL_PAGE, "
                     "hard-gated on the P9.6 webinar video artifact."
     )
     ap.add_argument("--run-dir", default=None)
@@ -1282,7 +1248,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="reuse working/vsl/renders/ PNGs; skip a fresh kie.ai run")
     ap.add_argument("--no-push", action="store_true",
                     help="offline smoke build: copy+design+HTML only, no nonce required, "
-                         "no GHL push plan/receipt steps (the video dependency check "
+                         "no hero-image GHL hosting (the video dependency check "
                          "still runs)")
     ap.add_argument("--selftest", action="store_true", help="offline deterministic self-test")
     args = ap.parse_args(argv)
@@ -1332,7 +1298,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "FATAL [AF-CANONICAL-RENDER-BYPASS]: vsl_builder.py must run via "
                 "presentation-canonical-entry.sh, which mints the per-run front-door "
                 "nonce. Direct invocation is refused (a hand-rolled build cannot spend "
-                "kie.ai money or touch a client's GHL funnel). Use --no-push ONLY for "
+                "kie.ai money or write to a client's GHL media library). Use --no-push ONLY for "
                 "an operator offline smoke build (no client GHL write).",
                 file=sys.stderr,
             )
@@ -1387,7 +1353,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         video_src, video_hosted = video_path.name, False
 
-    # --- HOST the hero render (only when we intend to push) ---
+    # --- HOST the hero render (governed path only; --no-push stays fully offline) ---
     vsl_img_src = None
     if not args.no_push:
         try:
@@ -1399,8 +1365,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             vsl_img_src = up_vsl["url"]
         except Exception as exc:  # noqa: BLE001
             print(f"WARNING: hero image GHL hosting failed ({exc}); HTML will be built "
-                  "without a hosted hero image and the push plan step will fail its own "
-                  "images-as-media-links gate until re-run.", file=sys.stderr)
+                  "without a hosted hero image; the page will reference the local render "
+                  "file until a governed re-run hosts it.", file=sys.stderr)
 
     # --- HTML (with the gate) ---
     marker = f"ZHC-VSL-{deck_slug}"
@@ -1421,9 +1387,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not video_hosted and not args.no_push:
         print("WARNING: the P9.6 webinar video has no GHL ghl_url on record (P9.6 likely ran "
               "with --no-upload) -- the VSL page embeds a LOCAL file reference that will not "
-              "resolve once pushed. Push proceeds (the video EXISTS -- that is the hard gate; "
-              "hosting is a separate concern), but re-run P9.6 with its upload step before "
-              "going live.", file=sys.stderr)
+              "resolve once installed. The build proceeds (the video EXISTS -- that is the "
+              "hard gate; hosting is a separate concern), but re-run P9.6 with its upload "
+              "step before going live.", file=sys.stderr)
 
     record: Dict[str, Any] = {
         "deck_slug": deck_slug,
@@ -1443,56 +1409,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("\nVSL BUILD (offline, --no-push): DONE")
         return EXIT_OK
 
-    # --- GHL PUSH PLAN + delegated receipt check ---
-    try:
-        ghl_media = _import_ghl_media()
-        location_id = ghl_media.resolve_location_id()
-    except Exception as exc:  # noqa: BLE001
-        print(f"FATAL: could not resolve GHL location id for the push plan: {exc}", file=sys.stderr)
-        record["status"] = "push_plan_failed"
-        record["error"] = str(exc)
-        _record_ledger(run_dir, record)
-        return EXIT_USAGE
-
-    shared_funnel_id = resolve_shared_funnel_id(run_dir)
-    try:
-        plan = build_ghl_push_plan(
-            location_id=location_id, funnel_name=f"{client_name} — VSL",
-            deck_slug=deck_slug, vsl_html=html, brand=brand,
-            shared_funnel_id=shared_funnel_id,
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"FATAL: GHL push plan construction failed: {exc}", file=sys.stderr)
-        record["status"] = "push_plan_failed"
-        record["error"] = str(exc)
-        _record_ledger(run_dir, record)
-        return EXIT_VERIFY_FAILED
-
-    plan_path = vsl_dir / "ghl_push_plan.json"
-    plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
-    print(f"\n=== GHL push plan written -> {plan_path} ===")
-    print("Execute the plan's `sequence` inside a live agent-browser session, write "
-          "working/vsl/build_receipt.json, then re-run this builder to verify.")
-
-    status, detail, receipt_data = verify_push_receipt(run_dir)
-    print(f"\n=== push receipt: {detail} ===")
-    record["push_plan"] = str(plan_path)
-    if status is True:
-        record["status"] = "built+verified+pushed"
-        record["receipt"] = receipt_data
-        _record_ledger(run_dir, record)
-        print("\nVSL BUILD: PUSHED")
-        return EXIT_OK
-    if status is False:
-        record["status"] = "receipt_invalid"
-        record["receipt_error"] = detail
-        _record_ledger(run_dir, record)
-        print(f"FATAL [AF-VSL-RECEIPT-INVALID]: {detail}", file=sys.stderr)
-        return EXIT_VERIFY_FAILED
-
-    record["status"] = "built+verified+plan_emitted"
+    record["status"] = "built"
     _record_ledger(run_dir, record)
-    print("\nVSL BUILD: PLAN EMITTED (awaiting delegated agent-browser push)")
+    print("\nVSL BUILD: DONE (page built; the funnel install is P-U-GHL-VSL, run by "
+          "ghl_external_installer.py and proven by its PRES-011 receipt)")
     return EXIT_OK
 
 
@@ -1730,9 +1650,10 @@ def _selftest() -> int:
             fails.append(f"wireframe rejection did not name the AF code: {exc}")
 
     # 6) HTML — content strings present, ghl_rest_canvas.html_fragment compatible,
-    #    the gate JS/overlay markup is present, and (when importable) new_page_blob /
-    #    funnel_create / step_create / page_autosave / build_ghl_push_plan all work
-    #    purely offline.
+    #    the gate JS/overlay markup is present, and (when importable) the
+    #    ghl_rest_canvas pure constructors the installer relies on (new_page_blob /
+    #    funnel_create / step_create / page_autosave, all called WITHOUT a session)
+    #    work purely offline.
     marker = "ZHC-VSL-selftest"
     html = build_vsl_html(
         brand=brand, client_name="Test Client", fields=fields, hero_image_src=None,
@@ -1745,6 +1666,36 @@ def _selftest() -> int:
     for needle in ("zhc-vsl-gate-overlay", "timeupdate", "GATE_SEC = 300.0", "<video"):
         if needle not in html:
             fails.append(f"vsl HTML missing expected gate mechanic marker: {needle!r}")
+
+    # 6b) GATE-FORM CONSENT (owner ruling 2026-10-13): the two statements
+    #     (email; SMS + voice AI combined) render as named, unchecked,
+    #     REQUIRED checkboxes whose text IS the consent sentence and carries
+    #     the client/brand name, with the branded gate wired (error element,
+    #     "Check here" tags, refreshConsentGate gating the unlock).
+    gate_consent = resolve_gate_consent_copy("Test Client")
+    if [c["name"] for c in gate_consent] != ["consent_email", "consent_sms_voice"]:
+        fails.append(f"gate consent statements wrong: {gate_consent}")
+    for c in gate_consent:
+        if "Test Client" not in c["text"]:
+            fails.append(f"gate consent statement carries no client/brand "
+                         f"name: {c}")
+        if c["text"].count("AI") > 2:
+            fails.append(f"gate consent statement uses 'AI' more than twice: {c}")
+    vsl_boxes = re.findall(r'<input type="checkbox"[^>]*>', html)
+    if len(vsl_boxes) != 2:
+        fails.append(f"gate form consent: expected 2 checkboxes, got "
+                     f"{len(vsl_boxes)}: {vsl_boxes}")
+    for bx in vsl_boxes:
+        if "required" not in bx:
+            fails.append(f"gate consent box not required (owner ruling "
+                         f"2026-10-13): {bx}")
+        if "checked" in bx:
+            fails.append(f"gate consent box renders pre-checked: {bx}")
+    for needle in ('name="consent_email"', 'name="consent_sms_voice"',
+                   "Check here", "consent-error", "refreshConsentGate",
+                   "voice AI calls"):
+        if needle not in html:
+            fails.append(f"gate form consent missing marker: {needle!r}")
 
     try:
         rc = _import_ghl_rest_canvas()
@@ -1788,84 +1739,17 @@ def _selftest() -> int:
         except Exception as exc:  # noqa: BLE001
             fails.append(f"offline ghl_rest_canvas step construction raised: {exc}")
 
-        # build_ghl_push_plan — BOTH branches (own funnel vs shared funnel), pure/offline.
-        try:
-            plan_own = build_ghl_push_plan(
-                location_id="loc123", funnel_name="Test Client — VSL",
-                deck_slug="test-client", vsl_html=html, brand=brand, shared_funnel_id=None,
-            )
-            if len(plan_own.get("sequence", [])) != 3:
-                fails.append(f"build_ghl_push_plan(no shared funnel): expected 3 steps, "
-                            f"got {len(plan_own.get('sequence', []))}")
-            if plan_own["sequence"][0]["call"] != "ghl_rest_canvas.funnel_create":
-                fails.append("build_ghl_push_plan(no shared funnel): step 1 is not funnel_create")
 
-            plan_shared = build_ghl_push_plan(
-                location_id="loc123", funnel_name="Test Client — VSL",
-                deck_slug="test-client", vsl_html=html, brand=brand,
-                shared_funnel_id="z20T0shared",
-            )
-            if len(plan_shared.get("sequence", [])) != 2:
-                fails.append(f"build_ghl_push_plan(shared funnel): expected 2 steps, "
-                            f"got {len(plan_shared.get('sequence', []))}")
-            if plan_shared["sequence"][0]["call"] != "ghl_rest_canvas.step_create":
-                fails.append("build_ghl_push_plan(shared funnel): step 1 is not step_create "
-                            "(funnel_create should have been skipped)")
-            if plan_shared["sequence"][0]["args"]["funnel_id"] != "z20T0shared":
-                fails.append("build_ghl_push_plan(shared funnel): did not reuse the shared funnel_id")
-        except Exception as exc:  # noqa: BLE001
-            fails.append(f"build_ghl_push_plan() raised on valid input: {exc}")
-
-    # 7) resolve_shared_funnel_id — absent / not-yet-pushed / verified-pushed.
+    # 7) ledger round-trip.
     with tempfile.TemporaryDirectory() as td:
         rd = Path(td)
-        if resolve_shared_funnel_id(rd) is not None:
-            fails.append("resolve_shared_funnel_id(no ledger): expected None")
-        ck = rd / "working" / "checkpoints"
-        ck.mkdir(parents=True)
-        (ck / "sales_checkout.json").write_text(json.dumps({"status": "built+verified+plan_emitted"}))
-        if resolve_shared_funnel_id(rd) is not None:
-            fails.append("resolve_shared_funnel_id(plan_emitted, not pushed): expected None")
-        (ck / "sales_checkout.json").write_text(json.dumps({
-            "status": "built+verified+pushed", "receipt": {"funnel_id": "z20T0real"},
-        }))
-        if resolve_shared_funnel_id(rd) != "z20T0real":
-            fails.append(f"resolve_shared_funnel_id(pushed): expected 'z20T0real', "
-                        f"got {resolve_shared_funnel_id(rd)!r}")
-
-    # 8) receipt verification — absent / placeholder / real.
-    with tempfile.TemporaryDirectory() as td:
-        rd = Path(td)
-        status, detail, _ = verify_push_receipt(rd)
-        if status is not None:
-            fails.append(f"verify_push_receipt(absent) expected None (not-yet-executed), got {status}")
-
-        vsl_dir = rd / "working" / "vsl"
-        vsl_dir.mkdir(parents=True)
-        (vsl_dir / "build_receipt.json").write_text(json.dumps({
-            "preview_urls": ["https://example.com/preview/abc"],
-            "funnel_id": "f1",
-        }))
-        status, detail, _ = verify_push_receipt(rd)
-        if status is not False:
-            fails.append(f"verify_push_receipt(placeholder host) expected False, got {status}")
-
-        (vsl_dir / "build_receipt.json").write_text(json.dumps({
-            "preview_urls": ["https://app.convertandflow.com/preview/abc123"],
-            "funnel_id": "z20T0real",
-        }))
-        status, detail, _ = verify_push_receipt(rd)
-        if status is not True:
-            fails.append(f"verify_push_receipt(real) expected True, got {status} ({detail})")
-
-        # 9) ledger round-trip.
-        _record_ledger(rd, {"status": "built+verified+pushed", "a": 1})
+        _record_ledger(rd, {"status": "built", "a": 1})
         _record_ledger(rd, {"b": 2})
         ledger = json.loads((rd / "working" / "checkpoints" / "vsl.json").read_text())
         if ledger.get("a") != 1 or ledger.get("b") != 2:
             fails.append(f"ledger round-trip lost a field: {ledger}")
 
-    # 10) front-door nonce — no env var, wrong env var, matching pair.
+    # 8) front-door nonce — no env var, wrong env var, matching pair.
     with tempfile.TemporaryDirectory() as td:
         rd = Path(td)
         if _verify_entry_nonce(rd):
@@ -1899,10 +1783,10 @@ def _selftest() -> int:
           "dependency: missing/empty/bad-magic/valid + url cross-check; gate timestamp: "
           "no-track/in-window/short-talk; copy content; prompt band + content-gate "
           "pass/zero-content-refuse/wireframe-refuse; HTML content + gate markup + "
+          "gate-form consent (2 statements unchecked + required + branded gate) + "
           "ghl_rest_canvas.html_fragment/new_page_blob/funnel_create/step_create/"
-          "page_autosave (all offline, no session); push plan own-funnel/shared-funnel "
-          "branches; shared-funnel-id resolution; receipt absent/placeholder/real; "
-          "ledger round-trip; front-door nonce absent/mismatch/match)")
+          "page_autosave (all offline, no session); ledger round-trip; "
+          "front-door nonce absent/mismatch/match)")
     return 0
 
 

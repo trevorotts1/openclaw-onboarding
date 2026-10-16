@@ -56,17 +56,18 @@ loopback endpoint — this is the documented "Cloud + Local" hybrid flow.
            "api": "ollama",
            "apiKey": "ollama-local",
            "models": [
-             { "id": "kimi-k2.6:cloud",       "maxTokens": 64000 },
-             { "id": "deepseek-v4.1-flash:cloud", "maxTokens": 64000 },
-             { "id": "gemma4",                "maxTokens": 64000 }
+             { "id": "<model-the-client-selected>:cloud", "maxTokens": 64000 },
+             { "id": "<client-selected-local-model>",     "maxTokens": 64000 }
            ]
          }
        }
      }
    }
    ```
-   Mix local model ids (e.g. `gemma4`) and `:cloud` model ids (e.g.
-   `kimi-k2.6:cloud`) in this ONE provider. Both route through `127.0.0.1:11434`.
+   Register the model ids the client selected (their choices, or their
+   configured defaults): mix local model ids and `:cloud` model ids in this
+   ONE provider. Both route through `127.0.0.1:11434`. No model is prescribed
+   by name here; the client picks which models their box registers.
 
 3. **Verify the daemon actually replies** (config-valid is NOT enough — see "Live
    PONG" below).
@@ -104,8 +105,8 @@ Ollama Cloud with the client's own key.
            "api": "ollama",
            "apiKey": "{{OLLAMA_API_KEY}}",
            "models": [
-             { "id": "kimi-k2.6:cloud",       "maxTokens": 64000 },
-             { "id": "deepseek-v4.1-flash:cloud", "maxTokens": 64000 }
+             { "id": "<model-the-client-selected>:cloud",       "maxTokens": 64000 },
+             { "id": "<another-model-the-client-selected>:cloud", "maxTokens": 64000 }
            ]
          }
        }
@@ -133,10 +134,10 @@ the model replies. Always confirm a real round-trip after wiring:
 ```bash
 # Mac (local daemon must be up and signed in):
 curl -s http://127.0.0.1:11434/api/version           # daemon alive
-openclaw run --model ollama/kimi-k2.6:cloud "Reply with exactly: PONG"
+openclaw run --model ollama/<model-the-client-selected>:cloud "Reply with exactly: PONG"
 
 # VPS (cloud-direct):
-openclaw run --model ollama/kimi-k2.6:cloud "Reply with exactly: PONG"
+openclaw run --model ollama/<model-the-client-selected>:cloud "Reply with exactly: PONG"
 ```
 
 A box is only "done" when the model returns a live PONG — both a local model and a

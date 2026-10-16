@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "job_id": "fixture-style-image-led",
+  "scenes": [
+    {
+      "scene_id": "hero-01",
+      "representation": "image",
+      "frames": [
+        {
+          "kind": "first",
+          "path": "style-frames/hero-01-first.png",
+          "sha256": "bcb8b7bc9f13c4ba7e559a47cc193fcbce153ebef68c55307639910249709811",
+          "width": 1920,
+          "height": 1080,
+          "sequence": 1,
+          "design": {
+            "typography_hierarchy": [
+              {
+                "role": "kicker",
+                "weight": 700,
+                "size_px": 34,
+                "text": "MENTORING, IN PERSON"
+              }
+            ],
+            "focal_point": {
+              "x": 0.433,
+              "y": 0.36
+            },
+            "crop": {
+              "mode": "rect",
+              "source_asset_id": "mentor-desk-illustration",
+              "x": 380,
+              "y": 240,
+              "width": 460,
+              "height": 560
+            },
+            "layout": "Tight crop on the mentor at right; kicker and accent rule only at left; headline withheld until the crop opens.",
+            "colors": {
+              "background": "#FBF7EF",
+              "ink": "#1D2B36",
+              "accent": "#C75B27"
+            },
+            "reading_order": [
+              "kicker",
+              "image"
+            ]
+          },
+          "reference": {
+            "name": "VREF-01 image-led statement (directive Section 17.3)",
+            "kind": "directive_reference",
+            "state": "CALIBRATION_PENDING"
+          }
+        },
+        {
+          "kind": "key_proof",
+          "path": "style-frames/hero-01-key_proof.png",
+          "sha256": "cfc312bb5698ba9a0c797afb19590c9b8a70c8e6f1c0b3810ca265c572902c3a",
+          "width": 1920,
+          "height": 1080,
+          "sequence": 2,
+          "design": {
+            "typography_hierarchy": [
+              {
+                "role": "kicker",
+                "weight": 700,
+                "size_px": 34,
+                "text": "MENTORING, IN PERSON"
+              },
+              {
+                "role": "headline",
+                "weight": 700,
+                "size_px": 92,
+                "text": "Real mentors. Real rooms."
+              },
+              {
+                "role": "supporting_line",
+                "weight": 400,
+                "size_px": 40,
+                "text": "A first conversation, face to face."
+              }
+            ],
+            "focal_point": {
+              "x": 0.433,
+              "y": 0.36
+            },
+            "crop": {
+              "mode": "rect",
+              "source_asset_id": "mentor-desk-illustration",
+              "x": 240,
+              "y": 140,
+              "width": 760,
+              "height": 700
+            },
+            "layout": "Wider crop; headline settled at left; an accent ring marks the focal subject so the focal claim can be checked in the still.",
+            "colors": {
+              "background": "#FBF7EF",
+              "ink": "#1D2B36",
+              "accent": "#C75B27"
+            },
+            "reading_order": [
+              "kicker",
+              "headline",
+              "image",
+              "supporting line"
+            ]
+          },
+          "reference": {
+            "name": "VREF-01 image-led statement (directive Section 17.3)",
+            "kind": "directive_reference",
+            "state": "CALIBRATION_PENDING"
+          }
+        },
+        {
+          "kind": "final",
+          "path": "style-frames/hero-01-final.png",
+          "sha256": "4daa047c581341fda87568971bf309d4c7e4c27319b0abc096d26c5182c00a9f",
+          "width": 1920,
+          "height": 1080,
+          "sequence": 3,
+          "design": {
+            "typography_hierarchy": [
+              {
+                "role": "kicker",
+                "weight": 700,
+                "size_px": 34,
+                "text": "MENTORING, IN PERSON"
+              },
+              {
+                "role": "headline",
+                "weight": 700,
+                "size_px": 92,
+                "text": "Real mentors. Real rooms."
+              },
+              {
+                "role": "supporting_line",
+                "weight": 400,
+                "size_px": 40,
+                "text": "A first conversation, face to face."
+              },
+              {
+                "role": "disclosure",
+                "weight": 400,
+                "size_px": 28,
+                "text": "Fixture illustration drawn locally; no real person depicted."
+              }
+            ],
+            "focal_point": {
+              "x": 0.433,
+              "y": 0.36
+            },
+            "crop": {
+              "mode": "full_frame",
+              "source_asset_id": "mentor-desk-illustration"
+            },
+            "layout": "Full asset in the panel; headline and supporting line at left; fixture disclosure along the bottom.",
+            "colors": {
+              "background": "#FBF7EF",
+              "ink": "#1D2B36",
+              "accent": "#C75B27"
+            },
+            "reading_order": [
+              "kicker",
+              "headline",
+              "supporting line",
+              "image",
+              "disclosure"
+            ]
+          },
+          "reference": {
+            "name": "VREF-01 image-led statement (directive Section 17.3)",
+            "kind": "directive_reference",
+            "state": "CALIBRATION_PENDING"
+          }
+        }
+      ]
+    }
+  ],
+  "animation_artifacts": [
+    {
+      "scene_id": "hero-01",
+      "path": "animation/hero-01-source.json",
+      "sequence": 10
+    }
+  ]
+}

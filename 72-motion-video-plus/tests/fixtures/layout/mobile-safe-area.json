@@ -1,0 +1,367 @@
+{
+  "content": {
+    "schema_version": "1.0",
+    "id": "job-chart-groups",
+    "message": "Group C moves twice the items of Group A.",
+    "headline": "Compare the three groups",
+    "disclosure": "Illustrative example",
+    "chart": {
+      "datasetId": "bars-illustrative",
+      "datasetKind": "illustrative",
+      "units": "items",
+      "domain": [
+        0,
+        30
+      ],
+      "scaleType": "linear",
+      "displayRounding": {
+        "decimals": 0
+      },
+      "rows": [
+        {
+          "id": "a",
+          "label": "Group A",
+          "value": 12
+        },
+        {
+          "id": "b",
+          "label": "Group B",
+          "value": 18
+        },
+        {
+          "id": "c",
+          "label": "Group C",
+          "value": 30
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "schema_version": "1.0",
+      "id": "chart-desktop",
+      "contentId": "job-chart-groups",
+      "destination": "vsl_desktop",
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "exportAspect": {
+        "w": 16,
+        "h": 9
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1920x1080",
+      "arrangement": {
+        "kind": "rows",
+        "plot": {
+          "x": 420,
+          "y": 360,
+          "width": 1200,
+          "height": 440
+        },
+        "barThickness": 90,
+        "slots": [
+          {
+            "rowId": "a"
+          },
+          {
+            "rowId": "b"
+          },
+          {
+            "rowId": "c"
+          }
+        ]
+      },
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 112,
+          "box": {
+            "x": 120,
+            "y": 90,
+            "width": 1680,
+            "height": 170
+          }
+        },
+        {
+          "id": "label-a",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "a"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 120,
+            "y": 360,
+            "width": 300,
+            "height": 90
+          }
+        },
+        {
+          "id": "label-b",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "b"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 120,
+            "y": 520,
+            "width": 300,
+            "height": 90
+          }
+        },
+        {
+          "id": "label-c",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "c"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 120,
+            "y": 680,
+            "width": 300,
+            "height": 90
+          }
+        },
+        {
+          "id": "value-a",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "a"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 924,
+            "y": 360,
+            "width": 160,
+            "height": 90
+          }
+        },
+        {
+          "id": "value-b",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "b"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 1164,
+            "y": 520,
+            "width": 160,
+            "height": 90
+          }
+        },
+        {
+          "id": "value-c",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "c"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 1644,
+            "y": 680,
+            "width": 160,
+            "height": 90
+          }
+        },
+        {
+          "id": "disclosure",
+          "role": "disclosure",
+          "ref": {
+            "field": "disclosure"
+          },
+          "sizePx": 48,
+          "box": {
+            "x": 120,
+            "y": 980,
+            "width": 800,
+            "height": 60
+          },
+          "font": {
+            "family": "Liberation Sans",
+            "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "weight": 400
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "id": "chart-mobile-caption-band",
+      "contentId": "job-chart-groups",
+      "destination": "vsl_mobile",
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "exportAspect": {
+        "w": 9,
+        "h": 16
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "vsl-player-captions-1080x1920",
+      "arrangement": {
+        "kind": "rows",
+        "plot": {
+          "x": 200,
+          "y": 520,
+          "width": 740,
+          "height": 760
+        },
+        "barThickness": 100,
+        "slots": [
+          {
+            "rowId": "a"
+          },
+          {
+            "rowId": "b"
+          },
+          {
+            "rowId": "c"
+          }
+        ]
+      },
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 112,
+          "box": {
+            "x": 80,
+            "y": 120,
+            "width": 920,
+            "height": 280
+          }
+        },
+        {
+          "id": "label-a",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "a"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 200,
+            "y": 440,
+            "width": 500,
+            "height": 72
+          }
+        },
+        {
+          "id": "label-b",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "b"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 200,
+            "y": 740,
+            "width": 500,
+            "height": 72
+          }
+        },
+        {
+          "id": "label-c",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "c"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 200,
+            "y": 1040,
+            "width": 500,
+            "height": 72
+          }
+        },
+        {
+          "id": "value-a",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "a"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 516,
+            "y": 520,
+            "width": 160,
+            "height": 100
+          }
+        },
+        {
+          "id": "value-b",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "b"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 664,
+            "y": 820,
+            "width": 160,
+            "height": 100
+          }
+        },
+        {
+          "id": "value-c",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "c"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 960,
+            "y": 1120,
+            "width": 110,
+            "height": 100
+          }
+        },
+        {
+          "id": "disclosure",
+          "role": "disclosure",
+          "ref": {
+            "field": "disclosure"
+          },
+          "sizePx": 48,
+          "box": {
+            "x": 80,
+            "y": 1700,
+            "width": 800,
+            "height": 60
+          },
+          "font": {
+            "family": "Liberation Sans",
+            "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "weight": 400
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    }
+  ]
+}

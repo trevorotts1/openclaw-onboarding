@@ -1,0 +1,68 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-mechanism-flow",
+  "beats": [
+    {
+      "beat_id": "beat-traverse",
+      "idea": "One item travels three named stages",
+      "viewer_takeaway": "The item keeps its identity through the process",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C07",
+      "engine": "hyperframes",
+      "selection_reason": "Spatial mechanism; Hyperframes default for spatial compositions",
+      "reading_order": [
+        "work-item",
+        "stage labels"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "item-traverses-stages"
+      ]
+    },
+    {
+      "beat_id": "beat-branch",
+      "idea": "The gate routes the same item",
+      "viewer_takeaway": "The gate, not luck, decides the route",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C08",
+      "engine": "hyperframes",
+      "selection_reason": "Diagram in the same engine as the mechanism scene",
+      "reading_order": [
+        "decision-gate",
+        "work-item",
+        "path labels"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "gate-branch"
+      ]
+    },
+    {
+      "beat_id": "beat-close",
+      "idea": "One held closing line",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": null,
+      "component_id": "C07",
+      "engine": "hyperframes",
+      "selection_reason": "Emphasis card in the same engine as its scene",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": []
+    }
+  ]
+}

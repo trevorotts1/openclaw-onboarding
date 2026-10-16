@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stable presenter hold scene</title>
+<style>
+  html, body { margin: 0; background: #fdf6ec; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; color: #14213d; }
+  #card { position: absolute; left: 210px; top: 140px; width: 1500px; height: 800px;
+          background: #ffffff; border: 4px solid #14213d; }
+  #photo { position: absolute; left: 90px; top: 90px; width: 480px; height: 620px;
+           background: #f4a261; }
+  #name { position: absolute; left: 650px; top: 240px; font-size: 72px; }
+  #line { position: absolute; left: 650px; top: 360px; width: 700px; font-size: 44px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="card">
+    <div id="photo"></div>
+    <div id="name">Denise, founder</div>
+    <div id="line">Here is exactly how the onboarding call works, step by step.</div>
+  </div>
+</div>
+<script>
+window.__sceneDuration = 9;
+window.__choreography = {"intent": "stable_explanation", "behaviors": ["hold", "eased"]};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function easeOutCubic(p) { return 1 - Math.pow(1 - p, 3); }
+window.__setTime = function (t) {
+  var s = 1 + 0.03 * easeOutCubic(clamp01(t / 9));
+  document.getElementById("card").style.transform = "scale(" + s + ")";
+};
+window.__setTime(0);
+</script>
+</body>
+</html>

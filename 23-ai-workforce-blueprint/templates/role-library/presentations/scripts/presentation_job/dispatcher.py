@@ -89,6 +89,14 @@ from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
 from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
 from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
+# ITEM 15: the swarm width controller (forcing decisions, shortfall naming).
+# Same defensive pattern as the other optional imports here: a tree without
+# the module keeps the pre-Item-15 width folds byte-for-byte -- every
+# _swarm_* consumer below degrades to the legacy fold and records nothing.
+try:
+    from presentation_job import width_controller as _width_controller  # noqa: E402
+except ImportError:  # pragma: no cover - pre-Item-15 trees force nothing
+    _width_controller = None  # type: ignore[assignment]
 # PD-TEST-067: the ONE reader for the deck's slide-array shape, shared with
 # fanout, build_deck and craft_judgement. json/pathlib/typing only -- no cycle.
 from presentation_job import arc_slides as _arc_slides  # noqa: E402
@@ -3340,8 +3348,23 @@ def _append_sidecar(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> Non
     path.parent.mkdir(parents=True, exist_ok=True)
     record = dict(record)
     record["at"] = utcnow()
+    # Sidecar records routinely carry capacity-derived values (the routing
+    # stamp's capacity_raw_available): on a no-cap route that value is
+    # capacity's UNBOUNDED sentinel, so the dump routes through
+    # capacity.json_default -- the launcher's own pattern -- and the
+    # sentinel lands as the string "UNBOUNDED" instead of raising.
+    try:
+        from presentation_job import capacity as _cap_sidecar
+        _sidecar_default = _cap_sidecar.json_default
+    except ImportError:
+        try:
+            import capacity as _cap_sidecar  # type: ignore[no-redef]
+            _sidecar_default = _cap_sidecar.json_default
+        except ImportError:
+            _sidecar_default = None
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(record, ensure_ascii=False,
+                            default=_sidecar_default) + "\n")
 
 
 def _stamp_author(run_dir: Path, phase_id: str, target: Path, *,
@@ -4726,6 +4749,25 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # worker's validate_input. The contract validates BEFORE the file is
     # written or the worker is invoked -- a bad contract fails here, named.
     routing = _routing_stamp(run_dir=run_dir, phase_id=phase_id)
+    # ITEM 15 (swarm FORCING): the wave input carries the width decision --
+    # planned (the phase's declared workers) vs the target the stamp's hard
+    # caps allow, the binding limiter named -- so the wave path's run record
+    # answers "why this width" too, and a plan the caps refuse is a named
+    # shortfall in the sidecar, not a silent narrow. Record-only here: the
+    # worker subprocess receives measured_capacity exactly as before (it
+    # rides in RoutingStamp.extra, which the contract passes through).
+    if _width_controller is not None:
+        try:
+            _wave_decision = _width_controller.decision_from_stamp(
+                routing,
+                planned_width=_swarm_declared_width(phase_obj),
+                ready_work=len(slides_payload),
+                env_override=_swarm_env_override(phase_id),
+                phase_id=phase_id)
+            routing["swarm"] = _wave_decision
+            _swarm_record(run_dir, phase_id, worker_id, _wave_decision)
+        except Exception:  # noqa: BLE001 -- record-only; never block the wave
+            pass
     if _wave_contract is not None:
         contract = _wave_contract.WaveContract(
             run_id=run_dir.name,
@@ -4780,8 +4822,19 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         }
         input_path = run_dir / "working" / "checkpoints" / "prompt-wave-input.json"
         input_path.parent.mkdir(parents=True, exist_ok=True)
+        # The routing stamp can carry capacity's UNBOUNDED sentinel
+        # (capacity_raw_available on a no-cap route -- the common case
+        # since the 2026-10-15 DeepSeek no-cap ruling): route the dump
+        # through capacity.json_default, the launcher's own pattern, so it
+        # serializes as the string "UNBOUNDED" instead of raising.
+        try:
+            from presentation_job import capacity as _cap_dump
+            _dump_default = _cap_dump.json_default
+        except ImportError:
+            _dump_default = None
         input_path.write_text(
-            json.dumps(wave_input, indent=2, ensure_ascii=False) + "\n",
+            json.dumps(wave_input, indent=2, ensure_ascii=False,
+                       default=_dump_default) + "\n",
             encoding="utf-8")
 
     # --- invoke the worker ONCE. An unhandled WorkerUsageError (exit-2 class:
@@ -5490,8 +5543,41 @@ def _dispatch_prompt_phase_fanout(run_dir: Path, order: Dict[str, Any], *, dept_
         # manifest fan-out path below reads the same override an operator can
         # actually export from a shell.
         env_key = fanout.phase_worker_env_var(phase_id)
-        effective_workers = fanout.resolve_effective_workers(
-            phase_workers, len(units), env_var=env_key)
+        # ITEM 15 (swarm FORCING): this pool's width is a width-controller
+        # decision too -- planned = the manifest's declared workers for
+        # this phase, bounded by the MODE_OPERATOR_CEILING, the text-class
+        # hardware budget (hardware_budget's live memory-pressure verdict,
+        # when measured), the ready work and the operator env override.
+        # The routing stamp's capacity fold does not run on this rollback
+        # path (it never did -- the wave path owns the stamp), so no
+        # capacity term is claimed here; per-unit governor admission still
+        # gates every call fail-closed inside the pool.
+        swarm_decision: Optional[Dict[str, Any]] = None
+        if _width_controller is not None:
+            try:
+                _hw_budget: Optional[int] = None
+                try:
+                    from presentation_job import hardware_budget as _hb
+                    _snap = _hb.cached_snapshot()
+                    if str(_snap.get("status")) == "MEASURED":
+                        _hw_budget = _hb.budget_for_class("text", _snap)
+                except Exception:  # noqa: BLE001 -- unmeasured: no term
+                    _hw_budget = None
+                swarm_decision = _width_controller.decide_width(
+                    phase_workers,
+                    mode=_width_controller.active_mode(),
+                    hardware_budget=_hw_budget,
+                    ready_work=len(units),
+                    env_override=_swarm_env_override(phase_id),
+                    work_class="text", phase_id=phase_id)
+            except Exception:  # noqa: BLE001 -- degrade to the legacy fold
+                swarm_decision = None
+        if swarm_decision is not None:
+            effective_workers = max(1, int(swarm_decision["target_width"]))
+            _swarm_record(run_dir, phase_id, worker_id, swarm_decision)
+        else:
+            effective_workers = fanout.resolve_effective_workers(
+                phase_workers, len(units), env_var=env_key)
 
         deadline_s: Optional[float] = None
         if phase_obj is not None:
@@ -5505,6 +5591,9 @@ def _dispatch_prompt_phase_fanout(run_dir: Path, order: Dict[str, Any], *, dept_
             phase_id=phase_id, per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S,
             retry_cap=1,  # the worker above already owns its own internal retry loop
             deadline_s=deadline_s,
+            swarm_plan=swarm_decision,
+            swarm_event_cb=(_swarm_event_sink(run_dir, phase_id, worker_id)
+                            if swarm_decision is not None else None),
         )
         results.extend(pending_results)
 
@@ -7196,6 +7285,85 @@ def _empty_completion_detail(usage: Optional[Dict[str, Any]]) -> str:
             f"is billed INSIDE that budget)")
 
 
+# ---------------------------------------------------------------------------
+# ITEM 15 (swarm FORCING): width decisions at the fan-out call sites. The
+# width controller (presentation_job/width_controller.py) turns each pool's
+# width into a recorded decision -- planned vs target, every hard cap, and
+# the binding limiter named -- instead of a bare min() fold whose answer
+# no record could explain afterwards.
+# ---------------------------------------------------------------------------
+def _swarm_env_override(phase_id: str) -> Optional[int]:
+    """The operator's per-phase env override as an int (the same variable
+    fanout.resolve_effective_workers reads), or None when unset/invalid --
+    the width controller names it env_override when it binds."""
+    raw = os.environ.get(fanout.phase_worker_env_var(phase_id))
+    if not raw:
+        return None
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+def _swarm_declared_width(phase_obj: Optional[Phase]) -> Optional[int]:
+    """The phase's DECLARED plan width, when it declares one: the manifest
+    `workers` value when the phase carries an explicit declaration
+    (workers_declared, stamped by the Item 11 manifest work) or when the
+    value itself is a real declaration at this manifest version (workers
+    > 1 -- the field's default is 1, so a larger value was written by
+    someone). None means undeclared: the plan width is then the mode
+    ceiling headroom (Item 15's formula), NOT the field's serial default.
+    F6's lesson, preserved: an absent declaration must never read as a
+    cap of 1 on the manifest fan-out path."""
+    if phase_obj is None:
+        return None
+    try:
+        if getattr(phase_obj, "workers_declared", False):
+            return max(1, int(phase_obj.workers))
+        workers = int(getattr(phase_obj, "workers", 1) or 1)
+    except (TypeError, ValueError):
+        return None
+    return workers if workers > 1 else None
+
+
+def _swarm_record(run_dir: Path, phase_id: str, worker_id: str,
+                  decision: Dict[str, Any]) -> None:
+    """Write one width decision to the phase's durable record (the sidecar
+    stream): a swarm_width row always, plus a forcing_shortfall row naming
+    the binding limiter when a hard cap bound the swarm below its plan."""
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 0, "status": "swarm_width",
+        "swarm": decision,
+        "planned_width": decision.get("planned_width"),
+        "target_width": decision.get("target_width"),
+        "binding_constraint": decision.get("binding_constraint"),
+        "binding_value": decision.get("binding_value"),
+    })
+    if decision.get("shortfall"):
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "forcing_shortfall",
+            "swarm": decision,
+            "reason": _width_controller.shortfall_reason(decision),
+            "planned_width": decision.get("planned_width"),
+            "target_width": decision.get("target_width"),
+            "binding_constraint": decision.get("binding_constraint"),
+            "binding_value": decision.get("binding_value"),
+        })
+
+
+def _swarm_event_sink(run_dir: Path, phase_id: str, worker_id: str):
+    """fanout.run_units swarm_event_cb -> sidecar rows: worker deaths,
+    replacements and runtime shortfalls join the phase's event stream."""
+    def _sink(event: Dict[str, Any]) -> None:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": str(event.get("event") or "swarm_event"),
+            **{k: v for k, v in event.items() if k != "event"},
+        })
+    return _sink
+
+
 def _dispatch_phase_fanout_units(
         run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
         phase_obj: Optional[Phase], worker_id: str,
@@ -7642,9 +7810,52 @@ def _dispatch_phase_fanout_units(
         routed_width = DEFAULT_MAX_WORKERS
     if routed_width < 1:
         routed_width = DEFAULT_MAX_WORKERS
-    effective_workers = resolve_effective_workers(
-        routed_width, unit_count=len(items),
-        env_var=fanout.phase_worker_env_var(phase_id))
+    # ITEM 15 (swarm FORCING): the width is now a recorded DECISION, not a
+    # bare fold. The width controller takes the plan width (the phase's
+    # declared workers when it declares any; the mode-ceiling headroom when
+    # it does not) plus the stamp's own recorded caps, and returns the
+    # target the pool must reach and hold -- and, when a hard cap binds
+    # below the plan, a named shortfall. The target equals the legacy fold
+    # below whenever no declaration binds: the stamp already folded
+    # capacity/mode/admission and decision_from_stamp never double-cuts
+    # it, so pre-Item-15 widths are preserved exactly where the plan did
+    # not speak. The decision (and any shortfall) reaches the sidecar
+    # BEFORE the first batch runs; the pool reports the width it actually
+    # held back through the progress snapshots.
+    swarm_decision: Optional[Dict[str, Any]] = None
+    if _width_controller is not None:
+        try:
+            swarm_decision = _width_controller.decision_from_stamp(
+                routing,
+                planned_width=_swarm_declared_width(phase_obj),
+                ready_work=len(items),
+                env_override=_swarm_env_override(phase_id),
+                phase_id=phase_id)
+        except Exception:  # noqa: BLE001 -- a controller fault degrades to the fold
+            swarm_decision = None
+    _swarm_peak: Dict[str, int] = {"peak": 0}
+
+    def _swarm_progress(snapshot: Dict[str, Any]) -> None:
+        sw = snapshot.get("swarm") if isinstance(snapshot, dict) else None
+        if isinstance(sw, dict) and isinstance(sw.get("peak_width"), int):
+            _swarm_peak["peak"] = max(_swarm_peak["peak"],
+                                      int(sw["peak_width"]))
+
+    def _swarm_summary() -> Optional[Dict[str, Any]]:
+        if swarm_decision is None:
+            return None
+        return {"planned_width": swarm_decision.get("planned_width"),
+                "target_width": swarm_decision.get("target_width"),
+                "achieved_width": _swarm_peak["peak"] or None,
+                "binding_constraint": swarm_decision.get("binding_constraint")}
+
+    if swarm_decision is not None:
+        effective_workers = max(1, int(swarm_decision["target_width"]))
+        _swarm_record(run_dir, phase_id, worker_id, swarm_decision)
+    else:
+        effective_workers = resolve_effective_workers(
+            routed_width, unit_count=len(items),
+            env_var=fanout.phase_worker_env_var(phase_id))
 
     contract = _unit_contract_for(phase_id)
 
@@ -7818,7 +8029,12 @@ def _dispatch_phase_fanout_units(
             _batch, _unit_worker,
             workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
             per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
-            deadline_s=deadline_s)
+            deadline_s=deadline_s,
+            progress_cb=(_swarm_progress if swarm_decision is not None
+                         else None),
+            swarm_plan=swarm_decision,
+            swarm_event_cb=(_swarm_event_sink(run_dir, phase_id, worker_id)
+                            if swarm_decision is not None else None))
         # Durable per-unit records: append one transition per result, then
         # atomically update the state map. The scratch output is hash-stamped
         # at RECORD time (banked validation re-hashes at ADMISSION time) --
@@ -7922,6 +8138,7 @@ def _dispatch_phase_fanout_units(
             "reasons": reasons,
             "workers": effective_workers, "routed_width": routed_width,
             "capacity_status": routing.get("capacity_status"),
+            "swarm": _swarm_summary(),
             "reused_units": sorted(reuse),
             "batches": len(admission_batches),
         })
@@ -8011,6 +8228,7 @@ def _dispatch_phase_fanout_units(
         "verifier_reasons": reasons, "units": len(results),
         "workers": effective_workers, "routed_width": routed_width,
         "capacity_status": routing.get("capacity_status"),
+        "swarm": _swarm_summary(),
     })
     if ok:
         return DispatchResult(phase_id, "ok", len(results), [],
@@ -8457,9 +8675,10 @@ def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100,
     THE DEFECT (F4, MEASURED by Fable on this box 2026-09-07, scratch config
     dir, live profile md5 unchanged): this function hard-coded
     `{"provider": "deepseek-direct", "max_concurrent": N}`. deepseek-direct
-    JOINED THE STRUCTURAL CAP TABLE on 2026-09-04 (capacity.CAP_TABLE carries
-    ('deepseek-direct','v4-flash')=2500 and ('deepseek-direct','v4-pro')=500,
-    and capacity.NO_CAP_PROVIDERS shrank to {'openrouter'}). A cap-table
+    JOINED THE STRUCTURAL CAP TABLE on 2026-09-04 (capacity.CAP_TABLE then
+    carried ('deepseek-direct','v4-flash')=2500 and ('deepseek-direct',
+    'v4-pro')=500, and capacity.NO_CAP_PROVIDERS shrank to {'openrouter'};
+    the owner ruling of 2026-10-15 reversed that move). A cap-table
     provider declared WITHOUT a plan hits capacity._resolve_override case 2 --
     "the provider's real ceiling is a physical fact the operator cannot opt out
     of by typing a bigger number" -- and PARKS. So `--declare-capacity 100`,
@@ -8485,8 +8704,12 @@ def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100,
          refusal the operator can act on beats a file that silently drops the
          whole run to capacity.DEFAULT_CONSERVATIVE.
 
-    NO_CAP providers (openrouter) need no plan: _resolve_override case 0
-    honours a declared self-throttle verbatim, so they are never refused here.
+    NO_CAP providers (openrouter, and deepseek-direct since the owner ruling
+    of 2026-10-15 removed its provider cap and returned it to
+    NO_CAP_PROVIDERS) need no plan: _resolve_override case 0 honours a
+    declared self-throttle verbatim, so they are never refused here. The
+    PARK mechanism in the defect above remains the live behaviour for
+    ollama-cloud, the one structural cap-table provider left.
 
     Idempotent, as before: an existing capacity_override.json is NEVER
     overwritten -- it may be the client's own declaration, and this function is
@@ -11069,8 +11292,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--declare-provider", default=None,
                    help="the provider --declare-capacity is about (e.g. ollama-cloud, "
                         "deepseek-direct, openrouter). F4: this used to be hard-coded to "
-                        "deepseek-direct, which PARKS every run since deepseek-direct "
-                        "joined the structural cap table on 2026-09-04")
+                        "deepseek-direct, which PARKED every run while deepseek-direct "
+                        "stood on the structural cap table (2026-09-04 until the owner "
+                        "ruling of 2026-10-15 made it a no-cap provider)")
     p.add_argument("--declare-plan", default=None,
                    help="the plan tier of --declare-provider (e.g. v4-flash, $100/month) "
                         "when this box's detection and resource profile do not already "

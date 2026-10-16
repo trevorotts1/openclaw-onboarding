@@ -6,22 +6,111 @@
 <title>Good page fixture</title>
 <style>
   :root { --gold: #C9A227; --navy: #1A1A2E; --cream: #F5F0E8; }
+  * { box-sizing: border-box; }
   body { margin: 0; background: var(--navy); color: var(--cream); font-family: "Georgia", serif; }
-  .logo { display: block; margin: 16px auto; }
-  h1 { font-family: "Georgia", serif; color: var(--cream); margin: 24px 20px; font-size: 32px; }
-  p { margin: 16px 20px; font-size: 18px; line-height: 1.5; }
-  .cta { display: inline-block; margin: 8px 20px 24px; padding: 18px 32px; background: var(--gold);
-         color: var(--navy); font-size: 18px; border: none; font-family: "Georgia", serif; }
-  .hero { display: block; margin: 24px auto; width: 1180px; max-width: calc(100% - 40px); height: auto; }
-  .founder { display: block; margin: 24px auto; width: 600px; max-width: calc(100% - 40px); height: auto; }
+  a { color: var(--gold); }
+  .more { display: inline-block; padding: 19px 0; font-size: 18px; line-height: 1.2; }
+  .logo { display: block; margin: 12px auto; }
+  section { padding: 48px 100px; }
+  h1 { font-size: 40px; margin: 28px 0 16px; }
+  h2 { font-size: 32px; margin: 0 0 16px; }
+  h3 { font-size: 22px; margin: 16px 0 8px; }
+  p { font-size: 18px; line-height: 1.5; margin: 12px 0; }
+  .cta { display: inline-block; margin: 16px 0 8px; padding: 19px 32px; border: none;
+         font-family: "Georgia", serif; font-size: 18px; line-height: 1.2; cursor: pointer; }
+  .cta-gold { background: var(--gold); color: var(--navy); }
+  .cta-navy { background: var(--navy); color: var(--cream); padding: 19px 26px; }
+  .cta-final { background: var(--gold); color: var(--navy); padding: 22px 48px; font-size: 20px; }
+  .hero-img { display: block; margin: 0 auto; width: 1180px; max-width: 100%; height: auto; }
+  .lead { width: 900px; max-width: 100%; }
+  .row { display: flex; gap: 40px; align-items: center; }
+  .founder-sec { background: var(--cream); color: var(--navy); }
+  .founder-img { display: block; width: 600px; max-width: 100%; height: auto; }
+  .founder-text { width: 560px; max-width: 100%; }
+  .cards-sec { background: var(--navy); }
+  .cards { display: flex; gap: 24px; align-items: flex-start; }
+  .card { background: var(--cream); color: var(--navy); padding: 24px; }
+  .card-a { width: 380px; }
+  .card-b { width: 400px; }
+  .card-c { width: 320px; }
+  .card img { display: block; max-width: 100%; }
+  .card-a img { width: 332px; height: 332px; }
+  .card-c img { width: 272px; height: 181px; }
+  .type-sec { background: var(--cream); color: var(--navy); }
+  .type-sec p { width: 1100px; max-width: 100%; }
+  .quote-sec { background: var(--gold); color: var(--navy); }
+  .quote-text { width: 700px; max-width: 100%; }
+  .quote-body { font-size: 20px; }
+  .quote-img { display: block; width: 300px; height: 300px; max-width: 100%; object-fit: cover; }
+  .final-sec { background: var(--navy); text-align: center; }
+  .final-sec p { width: 800px; max-width: 100%; margin: 12px auto; }
+  @media (max-width: 1100px) {
+    section { padding: 40px; }
+    .row { flex-direction: column; align-items: flex-start; }
+    .cards { flex-direction: column; }
+    .card-a, .card-b, .card-c { width: 100%; max-width: 400px; }
+  }
+  @media (max-width: 700px) {
+    section { padding: 32px 20px; }
+  }
 </style>
 </head>
 <body>
 <img class="logo" src="logo.png" alt="BlackCEO logo" data-brand="logo" width="120" height="40">
-<h1>Turn Your Expertise Into a Signature Talk</h1>
-<p>This is the good page fixture body copy at the mobile baseline of eighteen pixels.</p>
-<button class="cta" type="button">Apply Now</button>
-<img class="hero" src="hero.png" alt="Section hero" data-image-slot="IMG-001" width="1180" height="400">
-<img class="founder" src="founder.png" alt="Trevor speaking" data-slot="founder" width="600" height="300">
+<section class="hero-sec">
+  <img class="hero-img" src="hero.png" alt="Section hero" data-image-slot="IMG-001" width="1180" height="400">
+  <h1>Turn Your Expertise Into a Signature Talk</h1>
+  <p class="lead">This is the good page fixture body copy at the mobile baseline of eighteen pixels.</p>
+  <button class="cta cta-gold" type="button">Apply Now</button>
+</section>
+<section class="founder-sec">
+  <div class="row">
+    <img class="founder-img" src="founder.png" alt="Trevor speaking" data-slot="founder" width="600" height="300">
+    <div class="founder-text">
+      <h2>Meet the Founder Who Built the Room</h2>
+      <p>The founder section pairs a real portrait with the story of the room he built for Black CEOs.</p>
+      <button class="cta cta-navy" type="button">Book a Call</button>
+    </div>
+  </div>
+</section>
+<section class="cards-sec">
+  <h2>Three Rooms, Three Outcomes</h2>
+  <div class="cards">
+    <div class="card card-a">
+      <img src="hero.png" alt="Strategy room session" width="332" height="332">
+      <h3>The Strategy Room</h3>
+      <p>A working session that turns one signature talk into a full calendar of stages.</p>
+    </div>
+    <div class="card card-b">
+      <h3>The Story Room</h3>
+      <p>Members rebuild their founder story until it lands in the first ninety seconds.</p>
+      <p>Every story is workshopped live with the cohort.</p>
+    </div>
+    <div class="card card-c">
+      <img src="hero.png" alt="Stage room lights" width="272" height="181">
+      <h3>The Stage Room</h3>
+      <p>A rehearsal room with real lights, real timing, and a real audience of peers.</p>
+      <a class="more" href="#">See the Stage Room</a>
+    </div>
+  </div>
+</section>
+<section class="type-sec">
+  <h2>The Standard Is the Strategy</h2>
+  <p>Every section of a Signature Page is its own piece of art, set to one standard: the reader should feel the room before they ever enter it. That is why the layout changes its rhythm from section to section instead of repeating one safe pattern.</p>
+</section>
+<section class="quote-sec">
+  <div class="row">
+    <div class="quote-text">
+      <p class="quote-body">"Working with Trevor changed how our whole team sells."</p>
+      <p>Operations Director, Member Company</p>
+    </div>
+    <img class="quote-img" src="hero.png" alt="Member audience" width="300" height="300">
+  </div>
+</section>
+<section class="final-sec">
+  <h2>Your Room Is Waiting</h2>
+  <p>Seats for the next cohort are limited to twenty founders.</p>
+  <button class="cta cta-final" type="button">Claim Your Seat</button>
+</section>
 </body>
 </html>

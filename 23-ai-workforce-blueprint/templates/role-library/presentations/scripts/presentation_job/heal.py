@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from .state import utcnow, EXIT_OK, EXIT_EXECUTOR_FAILED
@@ -100,6 +101,96 @@ def classify_failure(reason: Any) -> str:
 # Cap: ONE alternate-provider failover per phase per run (MASTER Fix 10 cap
 # table: "alternate provider x1, then quarantine with the written reason").
 HEAL_CAP_PROVIDER = 1
+
+
+# ---------------------------------------------------------------------------
+# ITEM 9(d) -- HEAL CAPS ARE CROSS-INVOCATION.
+#
+# Before this, every cap above was enforced only by a `range(1, CAP + 1)`
+# loop inside ONE engine invocation. A phase whose failure crash-looped
+# the engine was re-admitted on the next --resume with a FRESH budget, so
+# a poisoned phase healed forever in per-invocation slices and the caps
+# were decoration. The counter already existed: record_heal_event appends
+# every rung attempt to the phase record's `heal_events` in state.json,
+# which survives resumes (readmit_retryable_phases preserves it verbatim).
+# What was missing is the ladder CONSULTING it before spending.
+#
+# The window is auto_resume's precedent: a rolling 24h window over
+# timestamped attempt rows persisted in run state, counted the way
+# auto_resume._counted_rows counts its STATE_KEY ledger. The constant is
+# restated here rather than imported because auto_resume imports THIS
+# module (an import here would be a cycle); the two numbers must move
+# together. The rolling window is also the cooldown: a phase's budget
+# refills only as its spent attempts age out of the window, exactly the
+# way an auto-resume cap frees up.
+# ---------------------------------------------------------------------------
+HEAL_WINDOW_HOURS = 24
+
+
+def _parse_heal_at(value: Any) -> Optional[datetime]:
+    """Parse a heal_events `at` stamp the way auto_resume._parse_at parses
+    its attempt rows: tolerant of a trailing Z, a naive stamp read as UTC,
+    anything unparseable is None -- and a None row NEVER counts against a
+    cap. That can only make a budget more permissive by one row, never
+    less, and never crashes on a hand-edited state file."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def heal_attempts_in_window(phase_data: Optional[Dict[str, Any]], rung=None,
+                            failure_class: Optional[str] = None,
+                            exclude_failure_class: Optional[str] = None,
+                            now: Optional[datetime] = None) -> int:
+    """How many heal attempts this phase has ALREADY spent inside the
+    rolling HEAL_WINDOW_HOURS window, across every engine invocation.
+
+    Counts the phase record's own persisted `heal_events` (written by
+    record_heal_event and saved into state.json), optionally filtered to
+    one rung and/or one failure class. This is the cross-invocation
+    counter Item 9(d) requires: the events were always in run state; the
+    caps now read them before spending a fresh slice."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    floor = now - timedelta(hours=HEAL_WINDOW_HOURS)
+    used = 0
+    for ev in (phase_data or {}).get("heal_events") or []:
+        if not isinstance(ev, dict):
+            continue
+        if rung is not None and ev.get("rung") != rung:
+            continue
+        if failure_class is not None and ev.get("class") != failure_class:
+            continue
+        if (exclude_failure_class is not None
+                and ev.get("class") == exclude_failure_class):
+            continue
+        at = _parse_heal_at(ev.get("at"))
+        if at is None or at < floor:
+            continue
+        used += 1
+    return used
+
+
+def heal_budget_remaining(phase_data: Optional[Dict[str, Any]], rung, cap,
+                          failure_class: Optional[str] = None,
+                          exclude_failure_class: Optional[str] = None,
+                          now: Optional[datetime] = None) -> int:
+    """Attempts left for (rung, class) under `cap` in the current window:
+    the cap minus what previous invocations already spent. Zero means this
+    rung is exhausted for now and must refuse, not spend another slice."""
+    used = heal_attempts_in_window(
+        phase_data, rung=rung, failure_class=failure_class,
+        exclude_failure_class=exclude_failure_class, now=now)
+    return max(0, cap - used)
 
 
 class HealLedger:
@@ -324,7 +415,20 @@ def rung2_regenerate_agent(engine, phase, deficiency) -> int:
     # report/_checkpoint are free.
     with engine._state_lock:
         ps = engine._phase_state(phase.id)
-    for attempt in range(1, HEAL_CAP_REGENERATE + 1):
+    # ITEM 9(d): the regenerate budget is per phase per rolling window, not
+    # per engine invocation -- attempts a previous invocation already spent
+    # (persisted in this phase's heal_events) count against the same cap,
+    # and attempt numbers continue the persisted sequence.
+    prior = HEAL_CAP_REGENERATE - heal_budget_remaining(
+        ps, rung=2, cap=HEAL_CAP_REGENERATE,
+        exclude_failure_class=FAILURE_PROVIDER_ERROR)
+    if prior >= HEAL_CAP_REGENERATE:
+        _ledger(engine, phase=phase.id, rung=2, attempt=prior,
+                failure_class=classify_failure(deficiency), reason=deficiency,
+                route_change=False,
+                outcome="heal_budget_exhausted_cross_invocation")
+        return EXIT_EXECUTOR_FAILED
+    for attempt in range(prior + 1, HEAL_CAP_REGENERATE + 1):
         with engine._state_lock:
             record_heal_event(engine.state, phase.id, engine.store, ps,
                               rung=2, attempt=attempt, reason=deficiency)
@@ -416,6 +520,19 @@ def rung2_provider_failover(engine, phase, reason, child_env=None):
     """
     rc = EXIT_EXECUTOR_FAILED
     try:
+        # ITEM 9(d): one failover per phase per rolling window, across
+        # invocations -- a failover a previous invocation already spent
+        # (recorded as a rung-2 provider_error heal event in run state)
+        # exhausts this budget too, so a crash-looping provider failure
+        # cannot buy a fresh failover on every resume.
+        if heal_attempts_in_window(
+                engine._phase_state(phase.id), rung=2,
+                failure_class=FAILURE_PROVIDER_ERROR) >= HEAL_CAP_PROVIDER:
+            _ledger(engine, phase=phase.id, rung=2, attempt=HEAL_CAP_PROVIDER,
+                    failure_class=FAILURE_PROVIDER_ERROR, reason=reason,
+                    route_change=False,
+                    outcome="heal_budget_exhausted_cross_invocation")
+            return EXIT_EXECUTOR_FAILED
         from_provider = _last_routed_provider(engine, phase.id)
         decision = None
         try:
@@ -557,7 +674,19 @@ def rung2_regenerate(engine, phase, deficiency, child_env=None):
     argv = engine._build_executor_argv(phase.executor_cmd, phase.id)
     if not argv:
         return EXIT_EXECUTOR_FAILED
-    for attempt in range(1, HEAL_CAP_REGENERATE + 1):
+    # ITEM 9(d): same cross-invocation budget as the agent arm above --
+    # prior invocations' rung-2 attempts (persisted heal_events, provider
+    # failovers counted under their own cap) shrink this invocation's loop.
+    prior = HEAL_CAP_REGENERATE - heal_budget_remaining(
+        ps, rung=2, cap=HEAL_CAP_REGENERATE,
+        exclude_failure_class=FAILURE_PROVIDER_ERROR)
+    if prior >= HEAL_CAP_REGENERATE:
+        _ledger(engine, phase=phase.id, rung=2, attempt=prior,
+                failure_class=classify_failure(deficiency), reason=deficiency,
+                route_change=False,
+                outcome="heal_budget_exhausted_cross_invocation")
+        return EXIT_EXECUTOR_FAILED
+    for attempt in range(prior + 1, HEAL_CAP_REGENERATE + 1):
         record_heal_event(engine.state, phase.id, engine.store, ps,
                           rung=2, attempt=attempt, reason=deficiency)
         engine.report.to_requester(
@@ -600,9 +729,15 @@ def rung3_alt_route(engine, phase, child_env=None):
     if not argv:
         return EXIT_EXECUTOR_FAILED
     ps = engine._phase_state(phase.id)
+    # ITEM 9(d): the alternate-route budget persists across invocations
+    # like every other rung -- a rung-3 attempt a previous invocation
+    # recorded in this phase's heal_events spends the (single) budget.
+    prior = heal_attempts_in_window(ps, rung=3)
+    if prior >= HEAL_CAP_ALT_ROUTE:
+        return EXIT_EXECUTOR_FAILED
     # FIX 25 (MASTER Part 8): the alternate route runs the same guarded front
     # door, so it too must carry the per-invocation nonce env dict.
-    for attempt in range(1, HEAL_CAP_ALT_ROUTE + 1):
+    for attempt in range(prior + 1, HEAL_CAP_ALT_ROUTE + 1):
         record_heal_event(engine.state, phase.id, engine.store, ps,
                           rung=3, attempt=attempt, reason="alternate route")
         try:
@@ -628,6 +763,15 @@ def rung4_regate(engine, failed_keys):
     from .gates import Gates
     gates_obj = Gates(engine.run_dir, engine.state)
     result = {}
+    # ITEM 9(d): the regate budget persists across invocations like every
+    # other rung. A CLOSE that already spent it gets ONE read-only
+    # evaluation (no heal event recorded, nothing spent) instead of a
+    # fresh recorded attempt on every resume.
+    if heal_attempts_in_window(engine._phase_state("CLOSE"), rung=4) >= HEAL_CAP_REGATE:
+        all_gates = gates_obj.evaluate_all()
+        for k in failed_keys:
+            result[k] = all_gates.get(k, {"state": "fail", "reason": "not evaluated"})
+        return result
     for attempt in range(1, HEAL_CAP_REGATE + 1):
         ps = engine._phase_state("CLOSE")
         record_heal_event(engine.state, "CLOSE", engine.store, ps,

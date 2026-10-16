@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import types
@@ -65,6 +66,22 @@ _fake_aiohttp.ClientSession = _FakeClientSession
 _fake_aiohttp.ClientTimeout = _FakeClientTimeout
 _fake_aiohttp.TCPConnector = _FakeTCPConnector
 sys.modules["aiohttp"] = _fake_aiohttp
+
+# Post-doctrine fixture (2026-10-13 model-selection ruling): the
+# orchestrator resolves its phase models from the client's own
+# configuration (the shared selector, then agents.defaults.model in
+# openclaw.json) and refuses to run unconfigured, exiting 3 at the model
+# gate. This test verifies the phase5-outcome-to-exit-code mapping on a
+# CONFIGURED box, so the import below gets a fixture HOME holding an
+# openclaw.json whose configured default is the simulated client's
+# choice. Without it, module-level resolution (correctly) records
+# ModelNotConfiguredError and main() exits 3 before ever reaching the
+# phase5 tail this test exists to verify.
+_FIXTURE_HOME = Path(tempfile.mkdtemp(prefix="a-u8-home-"))
+(_FIXTURE_HOME / ".openclaw").mkdir(parents=True)
+(_FIXTURE_HOME / ".openclaw" / "openclaw.json").write_text(json.dumps(
+    {"agents": {"defaults": {"model": {"primary": "deepseek/deepseek-v4.1-flash"}}}}))
+os.environ["HOME"] = str(_FIXTURE_HOME)
 
 _spec = importlib.util.spec_from_file_location("orchestrator", _PIPE / "orchestrator.py")
 orch = importlib.util.module_from_spec(_spec)

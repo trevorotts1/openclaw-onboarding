@@ -82,8 +82,11 @@
 #         comments and only ever extracts route ids and two key values; a
 #         secret value is never parsed, stored, or printed. With no configured
 #         slugs this is a SKIP, not a failure.
-#     B5. the intake env secrets are PRESENT in this process environment, and
-#         NOTHING is polling. PODCAST_INTAKE_HOOK_SECRET is the route secret
+#     B5. the intake env secrets are PRESENT -- in this process environment
+#         OR declared as an env SecretRef in the box openclaw.json (labels
+#         and pointers only; the gateway resolves process.env[id] per
+#         request, so a bare-shell run need not inherit the gateway env to
+#         see them) -- and NOTHING is polling. PODCAST_INTAKE_HOOK_SECRET is the route secret
 #         (referenced by env SecretRef in openclaw.json; the gateway resolves
 #         process.env[id] on every request) and PODCAST_INTAKE_INBOUND_SECRET
 #         is the handler HMAC secret. The handler FAILS CLOSED when the HMAC
@@ -380,14 +383,26 @@ def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
                         % (", ".join(sorted(slugs)), config_path)))
 
     # B5: intake env secrets present AND no poller daemon (no-daemon design) ---
+    # Durable presence rule: SET in this process env, OR declared as an env
+    # SecretRef in the box openclaw.json (the gateway resolves
+    # process.env[id] per request, so the label+pointer in config IS the
+    # durable declaration). The guard runs in arbitrary shells that need
+    # not inherit the gateway env; NOT-SET still means genuinely absent
+    # from both this process env and the config.
+    config_path = _resolve_box_config()
+    declared_ids = _config_env_secretref_ids(config_path)
     parts = []
     for name, why in INTAKE_SECRETS:
         if os.environ.get(name):
             parts.append("%s SET (%s)" % (name, why))
+        elif name in declared_ids:
+            parts.append("%s SET (env SecretRef declared in %s; the "
+                         "gateway resolves it per request; %s)"
+                         % (name, config_path, why))
         else:
             parts.append("%s NOT-SET (%s)" % (name, why))
     set_count = sum(1 for name, _why in INTAKE_SECRETS
-                    if os.environ.get(name))
+                    if os.environ.get(name) or name in declared_ids)
     secrets_ok = set_count == len(INTAKE_SECRETS)
     daemon_line = _cron_daemon_line()
     if daemon_line is not None:
@@ -467,6 +482,30 @@ def _resolve_box_config():
         if cand.is_file():
             return cand
     return None
+
+def _config_env_secretref_ids(config_path):
+    """Env SecretRef ids declared anywhere in the box config: every object of
+    shape {"source": "env", "id": NAME} contributes NAME. Labels and pointers
+    only -- no config value is ever read into a secret slot, stored, or
+    printed. A missing or unparseable config yields the empty set, which is
+    the fail-closed answer (secrets then must be SET in this process env)."""
+    if config_path is None:
+        return set()
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return set()
+    ids = set()
+    stack = [data]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("source") == "env" and isinstance(node.get("id"), str):
+                ids.add(node["id"])
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return ids
 
 
 # Route objects live in a MAP keyed by routeId (route-template.json5). The box
@@ -882,6 +921,30 @@ def self_test():
             finally:
                 os.environ.pop("PODCAST_INTAKE_HOOK_SECRET", None)
                 os.environ.pop("PODCAST_INTAKE_INBOUND_SECRET", None)
+            # Durable rule: an env SecretRef declared in the box config
+            # counts as SET even when this process env has neither secret
+            # (the bare-shell case; the gateway resolves the label per
+            # request). Labels and pointers only in the fixture too.
+            cfg2 = root / "openclaw-secretref.json"
+            cfg2.write_text(json.dumps({
+                "plugins": {"entries": {"webhooks": {"config": {
+                    "podcastIntakeInboundSecret": {
+                        "source": "env", "provider": "default",
+                        "id": "PODCAST_INTAKE_INBOUND_SECRET"},
+                    "routes": {"podcast-intake-acme-media": {
+                        "secret": {"source": "env", "provider": "default",
+                                    "id": "PODCAST_INTAKE_HOOK_SECRET"}}}}}}}}))
+            os.environ["OPENCLAW_CONFIG"] = str(cfg2)
+            try:
+                res3 = box_checks(skill, str(root / "agents"),
+                                  "http://127.0.0.1:1", [], 1,
+                                  DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                                  DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
+                by_id3 = {r["id"]: r for r in res3}
+                check("B5-config-secretref-counts-as-set",
+                      by_id3["B5"]["status"] == PASS)
+            finally:
+                os.environ["OPENCLAW_CONFIG"] = str(root / "no-such-openclaw.json")
         finally:
             os.environ.pop("PODCAST_CRONTAB_BIN", None)
             os.environ.pop("PODCAST_LAUNCHD_DIR", None)

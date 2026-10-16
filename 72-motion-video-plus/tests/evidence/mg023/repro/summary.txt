@@ -1,0 +1,6 @@
+D-ASSEMBLE-MUSIC-RESET before/after (MG-023)
+old script: git 818ce42ee, three disclosed unmask patches (see script)
+job: synthesized score, no music_bed; window 1.5-2.4s is voiceover-free
+BEFORE: exit=0, script claimed synthesized=True, score.wav window max=28833, output window RMS=-120.0 dBFS, digital silence=True
+AFTER: exit=0, music in input registry=True, output window RMS=-30.42 dBFS, digital silence=False
+defect reproduced: True; fixed on the current assembler: True

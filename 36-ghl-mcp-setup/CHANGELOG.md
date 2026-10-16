@@ -4,6 +4,11 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.0.7] - 2026-10-13 - model doctrine cleanup
+
+- GHL lookup routing no longer prescribes a named model: lookups resolve through select_model.py against the client's own configured models. The low-cost lookup guidance survives as a recommendation with its reason (lookups are data retrieval, not reasoning). Metered `:cloud` cautions kept.
+- skill-version v2.0.6 -> v2.0.7.
+
 ## [2.0.4] - 2026-10-08 - INF002
 
 - Install QC uses the shared credential lookup (every store, every location id name, pit- token to its location through the GHL API); neither found installs with a note (INF002).

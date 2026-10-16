@@ -53,10 +53,13 @@ name: presentations-drift-gates
 #            GATE 3 (sync_check --json) and fails closed (class render_path).
 #
 # This job's path filter deliberately covers the exact files each gate reads,
-# since none of those files are in presentations-lockstep.yml's trigger list
-# (that job never fires on a fix_bundle_complete.py-only or
-# MANIFEST-SOURCE.txt-only change -- the precise blind spot both landmines
-# exploited).
+# since none of those files were in the trigger list of the former
+# presentations-lockstep.yml (deleted 2026-10-08 in the CIO002 CI
+# consolidation; its checks were folded into
+# scripts/ci/fast-guards.d/presentations-lockstep.sh, run by fast-guards.yml)
+# -- that job never fired on a fix_bundle_complete.py-only or
+# MANIFEST-SOURCE.txt-only change, the precise blind spot both landmines
+# exploited.
 #
 # FIX 74 (2026-09-02): the job is now a two-platform MATRIX -- both legs run the
 # same gates on GitHub's ubuntu runner, but with OPENCLAW_PLATFORM set to `mac`
@@ -67,7 +70,10 @@ name: presentations-drift-gates
 # reader now fails the matrix leg whose platform the old name only resolves on,
 # instead of passing a single-`mac`-flavored CI that never exercised the vps
 # resolution. The Skill 51 (Signature Presentation) verify.sh gate -- previously
-# only reachable via presentations-lockstep.yml -- runs here too, on BOTH legs.
+# reachable via the former presentations-lockstep.yml (deleted 2026-10-08 in
+# the CIO002 consolidation; the folded copy still runs in
+# scripts/ci/fast-guards.d/presentations-lockstep.sh) -- runs here too, on
+# BOTH legs.
 
 on:
   push:
@@ -267,7 +273,10 @@ jobs:
             exit 2
           fi
           chmod +x "$VERIFY_SH"
-          # Same gate presentations-lockstep.yml runs: five prover self-tests,
+          # Same gate the former presentations-lockstep.yml ran (deleted
+          # 2026-10-08 in the CIO002 consolidation; its folded copy runs in
+          # scripts/ci/fast-guards.d/presentations-lockstep.sh via
+          # fast-guards.yml): five prover self-tests,
           # sacred-structure pin, engine wire-presence, sync_check lockstep,
           # manifest P-SP phase + AF-SP floor, prover resolvability, register
           # --check, FIX-14 self-test, FIX-19 sliced read, FIX-18 self-test.

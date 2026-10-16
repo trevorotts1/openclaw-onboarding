@@ -824,6 +824,62 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0,
                           "a conflicting description must never reach the publish call")
 
+    # ------------------------------------- channel selected by mode (S58) ----
+    # The script sources the box secrets AFTER parsing the arguments, so that
+    # load can overwrite a channel the caller exported. These tests write a
+    # fixture secrets env under HOME=self.tmp (the same path the script reads)
+    # and prove the --mode channel wins over both the caller's env and the
+    # secrets load. Generic fixture show names only; no client name anywhere.
+    def _write_channel_secrets(self):
+        secrets_dir = os.path.join(self.tmp, ".openclaw", "secrets")
+        os.makedirs(secrets_dir, exist_ok=True)
+        with open(os.path.join(secrets_dir, ".env"), "w") as f:
+            f.write("PODBEAN_PODCAST_ID=chan-personal\n")
+            f.write("PODBEAN_PODCAST_ID_EDGE_TALK=chan-interview\n")
+
+    def _mode_args(self, mode, show_name, job_id):
+        return ["--audio-url", "https://media.example.test/a.mp3",
+                "--image-url", "https://media.example.test/i.jpg",
+                "--job-id", job_id, "--mode", mode, "--show-name", show_name]
+
+    def test_proxy_mode_interview_selects_the_interview_channel(self):
+        self._write_channel_secrets()
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        proc = self._run(
+            self._mode_args("interview_style_podcast", "Edge Talk", "pd-mode-interview"),
+            env_extra=self._proxy_env(),  # caller env carries PODBEAN_PODCAST_ID too
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        req = self.mock.hits("/webhook/podbean-publish")[0]["body"]
+        self.assertEqual(req["podcast_id"], "chan-interview",
+                         "interview mode must publish to PODBEAN_PODCAST_ID_EDGE_TALK, "
+                         "not to the personal channel the secrets load restores")
+
+    def test_proxy_mode_personal_selects_the_personal_channel(self):
+        self._write_channel_secrets()
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        proc = self._run(
+            self._mode_args("personal_podcast_style", "", "pd-mode-personal"),
+            env_extra=self._proxy_env(),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        req = self.mock.hits("/webhook/podbean-publish")[0]["body"]
+        self.assertEqual(req["podcast_id"], "chan-personal",
+                         "personal mode must publish to PODBEAN_PODCAST_ID")
+
+    def test_proxy_status_draft_is_refused_without_hitting_the_publish_endpoint(self):
+        # The publish-proxy payload has no status field, so a draft request
+        # would go LIVE on n8n. It must die before any HTTP call.
+        proc = self._run(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-draft-refused", "--status", "draft"],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0,
+                         "a draft request must never reach the publish call")
+
 
 # ---- png helpers (stdlib only, no PIL) ----
 def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:

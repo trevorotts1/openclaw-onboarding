@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture article: the title in head must not become claim text</title>
+  <script>
+    var trap = "this script line must never be extracted as claim text";
+    window.__nav = ["ignore", "me"];
+  </script>
+  <style>.body::before { content: "css content must never be extracted"; }</style>
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/guides">Guides</a>
+    <a href="/about">About</a>
+  </nav>
+  <article>
+    <h1>Evening routines for restless sleepers</h1>
+    <p>Chronic back pain keeps millions of adults awake at night, and most of them never mention it to a doctor.</p>
+    <p>This guide explains how a simple evening stretching routine can reduce morning stiffness within a few weeks, without any equipment and without a gym membership.</p>
+    <p>Readers who tried the routine for a month reported falling asleep faster and waking with less stiffness than before they started.</p>
+  </article>
+  <footer><p>Copyright example.invalid</p></footer>
+</body>
+</html>

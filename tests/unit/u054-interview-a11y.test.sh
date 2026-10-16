@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PAGE="$ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/pages/index.html"
+# S5 (FIX-PLAN Item 14): this gate guards the LIVE interview app's page.
+# It used to point at the deprecated intake-miniapp page, so the page
+# production actually serves was never checked by it.
+PAGE="$ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/pages/index.html"
 PASS=0; FAIL=0
 ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1" >&2; FAIL=$((FAIL+1)); }

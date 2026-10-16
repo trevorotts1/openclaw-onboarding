@@ -37,16 +37,17 @@ inline, and runs that upkeep weekly as a quiet OpenClaw cron job.
 - [ ] Re-running on an unchanged fixture gives identical output.
 
 ## 4. Cron installer battery (automated: tests/test-install-weekly-cron.sh)
-- [ ] Discovers `ollama/...:cloud` (or `ollama-cloud/...`) primary and
-      `openrouter/deepseek/deepseek-v4.1-flash` fallback from the model list,
-      including the provider-plus-id list shape.
+- [ ] Resolves the primary from the client's `--primary` choice, or the box's
+      configured default model from the model list (including the
+      provider-plus-id list shape), and the fallback from `--fallback` or the
+      box's own `agents.defaults.model.fallbacks`.
 - [ ] Apply creates exactly one job: isolated session, thinking high, delivery
       none, weekly schedule stored literally, message with every placeholder
       filled.
 - [ ] Re-apply makes no add or edit call; check passes.
 - [ ] A drifted job is edited in place, never duplicated; duplicates are
       reported (exit 1) and never deleted.
-- [ ] Missing, ambiguous, Anthropic or off-list model ids refuse with exit 4
+- [ ] Missing, Anthropic or off-list model ids refuse with exit 4
       and create nothing; a missing flag refuses with exit 5; a gateway failure
       is exit 2; a bad argument is exit 3.
 

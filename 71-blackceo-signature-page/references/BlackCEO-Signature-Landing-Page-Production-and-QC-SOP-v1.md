@@ -18,7 +18,7 @@ Choose the writing guide for the requested page. Do not build both standard and 
 
 Set for Life supplied lessons for this workflow. Its name, founder, free attendance, duration, palette, form, 22 images and assets are not universal defaults. Do not borrow one client's information or resources for another.
 
-**The governing order:** confirm the page and action -> write and QC/repair the copy -> font intelligence and action plan -> full desktop wireframe -> full mobile wireframe and tablet rules -> visual-direction mockups -> individual image prompts and QC/repair -> generate and QC/repair images -> upload and complete Image Map -> finalize the same mockups with real assets -> responsive HTML and QC/repair -> install/test in GHL -> publish when authorized and verify the public result.
+**The governing order:** confirm the page and action -> write and QC/repair the copy -> font intelligence and action plan -> full desktop wireframe -> full mobile wireframe and tablet rules -> visual-direction mockups -> individual image prompts and QC/repair -> generate and QC/repair images -> upload and complete Image Map -> finalize the same mockups with real assets -> responsive HTML and QC/repair -> install/test in GHL -> publish when authorized and verify the public result -> wire the follow-up automations when the intake's automation scope includes them (conditional Stage 15).
 
 The default deliverables for one selected page version are **one full desktop wireframe and one full mobile wireframe**, plus their mockups. Four wireframes apply when explicitly creating the reusable standard/long-form template set: standard desktop, standard mobile, long-form desktop, long-form mobile. Exporting a long wireframe in Parts A-M does not create thirteen different pages.
 
@@ -319,7 +319,7 @@ For sales, verify the intended product/price and supported checkout path using t
 
 A failed popup gets a popup repair plus checks of the affected buttons/scrolling. A font issue gets a font-loading/fit repair. Do not regenerate every image because one URL is wrong. If live GHL access is unavailable, report which test is outstanding and supply the minimum exact action required; do not fabricate a PASS.
 
-**Output:** installed current page/embed and actual preview/action result. **QC/repair:** complete usable experience on the selected route, not merely attractive code.
+**Output:** installed current page/embed and actual preview/action result, recorded as evidence, not prose: the install receipt carries the structured `install` block (target, per-CTA click results, the once-only form submission with its designated test contact, popup and mobile keyboard/scroll checks, test-mode sales check) verified by `scripts/validate_install.py`; desktop and mobile evidence screenshots under `ghl-install-test/evidence/`; and, on the GHL route, the funnel-completion sub-stage's per-object receipt `ghl-install-test/funnel-completion.json` with its live click-through record (see `references/funnel-completion-checklist.md`: funnel and steps in order, every step bound, forms attached, pop-ups wired, click actions clicked, order form bound, missing products created only after an existence check, payment presence as a boolean). At this stage's close the automation hand-off `handoff/automation-handoff.json` is recorded (IDs only, never credentials) for Stage 15. **QC/repair:** complete usable experience on the selected route, not merely attractive code.
 
 ## Stage 14 - Publish when authorized and check the public URL
 
@@ -335,7 +335,21 @@ Open the public GHL URL after publication and verify that it displays the intend
 
 Give the current code, maps, required assets/batches and install notes in a clear package. Keep prompts, source material, private framework notes and QC records out of the public site, but available in the authorized private handoff. State exactly what was tested, what was published and any genuine unresolved limitation. No completed declaration for an unfinished page.
 
-**Output:** working public page when authorized, current deliverable package and short internal release record. **QC/repair:** correct version live, main action usable, no truncation or private-label leakage. This check reuses the established design; it is not another creative stage.
+**Output:** working public page when authorized, current deliverable package and short internal release record. The public result is verified against the LIVE bytes, not the preview: `scripts/validate_install.py` fetches the receipt's `public_url` and writes `publish-verify/fetch-record.json` (status, final URL, byte count, checks run); a non-200, a final URL that differs from the recorded one, a private framework label, or a placeholder in the fetched HTML fails the stage, and a network that cannot be reached records the stage BLOCKED, never passed. On the Vercel-embed route the standalone fetch is only the first layer: the Stage 12-13 embedded-context checks (iframe sizing, popup visibility, scroll behavior inside the actual GHL embed) must also be on record, and the fetched page's build marker must agree with the deliverables provenance (Item 34). A test run never closes this stage as a production pass, derived fonts require an independent font-review record, and a production close is refused while the brand file's grade thresholds are uncalibrated (owner-ordered; waivers are recorded in the receipt and printed in REPORT.md). **QC/repair:** correct version live, main action usable, no truncation or private-label leakage. This check reuses the established design; it is not another creative stage.
+
+## Stage 15 - Wire the follow-up automations (conditional)
+
+### A. When this stage exists
+
+This stage runs only when the intake records a GHL publish target and `automation_scope: "workflows"`. In every other case the gate records it `not_applicable`, citing the intake values, in the run state and in REPORT.md. It is never silently skipped, and intake refuses a workflows scope on a non-GHL target.
+
+### B. Execute from the hand-off, with the operator skill
+
+Skill 44 (Convert and Flow Operator) builds the workflows from `handoff/automation-handoff.json`, which publish-verify carried forward unchanged (the gate verifies its hash). The Tier 0 `caf` CLI is the primary build path; the Tier 4 browser backstop is declared, never silent, and prints in REPORT.md whenever used. Every hand-off form ends trigger-covered by a recorded workflow or with an explicit `no_workflow_reason`. Each workflow carries Skill 44's own QC evidence (its `qc-built-workflow.sh` exit code and a filled WF checklist instance) and a read-back confirming it exists.
+
+The conversational layer rides the same stage: each trigger derived from the funnel (opt-in per form, purchase per bound order form, booking per booking step) maps to a workflow carrying a named Skill 38 playbook with SMS and email tracks, or a recorded owner override that prints in REPORT.md. Workflow writes use the Firebase refresh token; a run without it proceeds only under the intake's recorded choice (token supplied, backstop declared, or scope dropped).
+
+**Output:** the automation-wiring receipt with per-workflow build method, QC evidence and read-backs, the conversational coverage map, and the filled checklist instances under `automation-wiring/`. **QC/repair:** independent review of the wiring against the opt-in intent, through the standard review machinery. The full contract is `references/automation-handoff.md`.
 
 ## Do not repeat the failures from the Set for Life project
 

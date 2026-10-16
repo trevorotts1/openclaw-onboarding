@@ -1,0 +1,195 @@
+{
+  "layoutId": "mg044-negative-small-type",
+  "font": {
+    "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "sha256": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582",
+    "familyName": "Liberation Sans",
+    "weightClass": 700,
+    "unitsPerEm": 2048,
+    "capHeightRatio": 0.68798828125
+  },
+  "measurements": [
+    {
+      "elementId": "headline",
+      "role": "headline",
+      "declaredSizePx": 28,
+      "effectiveSizePx": 28,
+      "placementScale": 1,
+      "lineCount": 1,
+      "widestLinePx": 350.05,
+      "totalHeightPx": 32.2,
+      "capHeightPx": 19.26,
+      "capHeightRatio": 0.688
+    },
+    {
+      "elementId": "label-a",
+      "role": "chart_category_label",
+      "declaredSizePx": 20,
+      "effectiveSizePx": 20,
+      "placementScale": 1,
+      "lineCount": 1,
+      "widestLinePx": 79.99,
+      "totalHeightPx": 23,
+      "capHeightPx": 13.76,
+      "capHeightRatio": 0.688
+    },
+    {
+      "elementId": "value-a",
+      "role": "chart_value",
+      "declaredSizePx": 22,
+      "effectiveSizePx": 22,
+      "placementScale": 1,
+      "lineCount": 1,
+      "widestLinePx": 24.47,
+      "totalHeightPx": 25.3,
+      "capHeightPx": 15.14,
+      "capHeightRatio": 0.688
+    },
+    {
+      "elementId": "label-b",
+      "role": "chart_category_label",
+      "declaredSizePx": 20,
+      "effectiveSizePx": 20,
+      "placementScale": 1,
+      "lineCount": 1,
+      "widestLinePx": 79.99,
+      "totalHeightPx": 23,
+      "capHeightPx": 13.76,
+      "capHeightRatio": 0.688
+    },
+    {
+      "elementId": "value-b",
+      "role": "chart_value",
+      "declaredSizePx": 22,
+      "effectiveSizePx": 22,
+      "placementScale": 1,
+      "lineCount": 1,
+      "widestLinePx": 24.47,
+      "totalHeightPx": 25.3,
+      "capHeightPx": 15.14,
+      "capHeightRatio": 0.688
+    },
+    {
+      "elementId": "disclosure",
+      "role": "disclosure",
+      "declaredSizePx": 14,
+      "effectiveSizePx": 14,
+      "placementScale": 1,
+      "lineCount": 1,
+      "widestLinePx": 129.95,
+      "totalHeightPx": 16.1,
+      "capHeightPx": 9.63,
+      "capHeightRatio": 0.688
+    },
+    {
+      "elementId": "support-inset",
+      "role": "essential_support",
+      "declaredSizePx": 54,
+      "effectiveSizePx": 10.13,
+      "placementScale": 0.19,
+      "lineCount": 2,
+      "widestLinePx": 891.11,
+      "totalHeightPx": 124.19,
+      "capHeightPx": 37.15,
+      "capHeightRatio": 0.688
+    }
+  ],
+  "findings": [
+    {
+      "elementId": "headline",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"headline\" (headline) renders at an effective 28 px, below the role floor of 96 px. Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 28,
+        "floorPx": 96,
+        "declaredSizePx": 28,
+        "placementScale": 1
+      }
+    },
+    {
+      "elementId": "label-a",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"label-a\" (chart_category_label) renders at an effective 20 px, below the role floor of 54 px. Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 20,
+        "floorPx": 54,
+        "declaredSizePx": 20,
+        "placementScale": 1
+      }
+    },
+    {
+      "elementId": "value-a",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"value-a\" (chart_value) renders at an effective 22 px, below the role floor of 60 px. Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 22,
+        "floorPx": 60,
+        "declaredSizePx": 22,
+        "placementScale": 1
+      }
+    },
+    {
+      "elementId": "label-b",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"label-b\" (chart_category_label) renders at an effective 20 px, below the role floor of 54 px. Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 20,
+        "floorPx": 54,
+        "declaredSizePx": 20,
+        "placementScale": 1
+      }
+    },
+    {
+      "elementId": "value-b",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"value-b\" (chart_value) renders at an effective 22 px, below the role floor of 60 px. Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 22,
+        "floorPx": 60,
+        "declaredSizePx": 22,
+        "placementScale": 1
+      }
+    },
+    {
+      "elementId": "disclosure",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"disclosure\" (disclosure) renders at an effective 14 px, below the role floor of 40 px. Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 14,
+        "floorPx": 40,
+        "declaredSizePx": 14,
+        "placementScale": 1
+      }
+    },
+    {
+      "elementId": "support-inset",
+      "kind": "TYPO_BELOW_FLOOR",
+      "severity": "error",
+      "message": "Element \"support-inset\" (essential_support) renders at an effective 10.13 px, below the role floor of 54 px (authored 54 px at placement scale 0.19). Sizes are judged at the destination, not at the source.",
+      "measured": {
+        "effectiveSizePx": 10.13,
+        "floorPx": 54,
+        "declaredSizePx": 54,
+        "placementScale": 0.19
+      }
+    },
+    {
+      "elementId": "support-inset",
+      "kind": "TYPO_CLIPPING",
+      "severity": "error",
+      "message": "Element \"support-inset\" wraps to 2 lines needing 124.19 px of height in a box 60 px tall. The text overflows its box at its declared size.",
+      "measured": {
+        "totalHeightPx": 124.19,
+        "boxHeightPx": 60,
+        "lineCount": 2
+      }
+    }
+  ],
+  "pass": false
+}

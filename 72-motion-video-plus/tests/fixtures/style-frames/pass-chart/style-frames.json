@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "job_id": "fixture-style-chart",
+  "scenes": [
+    {
+      "scene_id": "bar-01",
+      "representation": "chart",
+      "frames": [
+        {
+          "kind": "first",
+          "path": "style-frames/bar-01-first.png",
+          "sha256": "64a57a53969d40c21c3f66a187eab0c75ab8a038a472db929f02e525fa01fd39",
+          "width": 1920,
+          "height": 1080,
+          "sequence": 1,
+          "design": {
+            "typography_hierarchy": [
+              {
+                "role": "headline",
+                "weight": 700,
+                "size_px": 112,
+                "text": "Compare the three groups"
+              },
+              {
+                "role": "row_label",
+                "weight": 400,
+                "size_px": 64,
+                "text": "Group A, Group B, Group C"
+              },
+              {
+                "role": "disclosure",
+                "weight": 400,
+                "size_px": 48,
+                "text": "Illustrative example"
+              }
+            ],
+            "focal_point": {
+              "x": 0.35,
+              "y": 0.5
+            },
+            "crop": {
+              "mode": "full_frame"
+            },
+            "layout": "Headline top-left; three labeled rows beside an empty plot with an axis but no bars and no values yet.",
+            "colors": {
+              "background": "#F7F4EE",
+              "ink": "#192A38",
+              "accent": "#C04A26"
+            },
+            "reading_order": [
+              "headline",
+              "row labels",
+              "empty plot",
+              "disclosure"
+            ]
+          },
+          "reference": {
+            "name": "VREF-02 C05 comparison fixture (directive Section 17.3), realized as the verified MG-006 Remotion render of this scene",
+            "kind": "internal_verified_render",
+            "state": "ENGINEERING_FIXTURE_ONLY"
+          }
+        },
+        {
+          "kind": "key_proof",
+          "path": "style-frames/bar-01-key_proof.png",
+          "sha256": "06a09482b938782f061b18b9a55abe5df6370c8fb87aab2bc3f10928378883d5",
+          "width": 1920,
+          "height": 1080,
+          "sequence": 2,
+          "design": {
+            "typography_hierarchy": [
+              {
+                "role": "headline",
+                "weight": 700,
+                "size_px": 112,
+                "text": "Compare the three groups"
+              },
+              {
+                "role": "row_label",
+                "weight": 400,
+                "size_px": 64,
+                "text": "Group A, Group B, Group C"
+              },
+              {
+                "role": "value",
+                "weight": 700,
+                "size_px": 72,
+                "text": "12, 18, 30"
+              },
+              {
+                "role": "disclosure",
+                "weight": 400,
+                "size_px": 48,
+                "text": "Illustrative example"
+              }
+            ],
+            "focal_point": {
+              "x": 0.47,
+              "y": 0.52
+            },
+            "crop": {
+              "mode": "full_frame"
+            },
+            "layout": "Half-reveal proof state: bars at 240, 360, and 600 px against the 1200 px plot, values printed right.",
+            "colors": {
+              "background": "#F7F4EE",
+              "ink": "#192A38",
+              "accent": "#C04A26"
+            },
+            "reading_order": [
+              "headline",
+              "row labels",
+              "bars",
+              "values",
+              "disclosure"
+            ]
+          },
+          "reference": {
+            "name": "VREF-02 C05 comparison fixture (directive Section 17.3), realized as the verified MG-006 Remotion render of this scene",
+            "kind": "internal_verified_render",
+            "state": "ENGINEERING_FIXTURE_ONLY"
+          }
+        },
+        {
+          "kind": "final",
+          "path": "style-frames/bar-01-final.png",
+          "sha256": "6813a262fede17c1aa4e3097490adbf994ec21a4dedbb70190671cf3a8c29f87",
+          "width": 1920,
+          "height": 1080,
+          "sequence": 3,
+          "design": {
+            "typography_hierarchy": [
+              {
+                "role": "headline",
+                "weight": 700,
+                "size_px": 112,
+                "text": "Compare the three groups"
+              },
+              {
+                "role": "row_label",
+                "weight": 400,
+                "size_px": 64,
+                "text": "Group A, Group B, Group C"
+              },
+              {
+                "role": "value",
+                "weight": 700,
+                "size_px": 72,
+                "text": "12, 18, 30"
+              },
+              {
+                "role": "disclosure",
+                "weight": 400,
+                "size_px": 48,
+                "text": "Illustrative example"
+              }
+            ],
+            "focal_point": {
+              "x": 0.55,
+              "y": 0.52
+            },
+            "crop": {
+              "mode": "full_frame"
+            },
+            "layout": "Settled state: bars at full scale (480, 720, 1200 px), values printed right, disclosure bottom-left.",
+            "colors": {
+              "background": "#F7F4EE",
+              "ink": "#192A38",
+              "accent": "#C04A26"
+            },
+            "reading_order": [
+              "headline",
+              "row labels",
+              "bars",
+              "values",
+              "disclosure"
+            ]
+          },
+          "reference": {
+            "name": "VREF-02 C05 comparison fixture (directive Section 17.3), realized as the verified MG-006 Remotion render of this scene",
+            "kind": "internal_verified_render",
+            "state": "ENGINEERING_FIXTURE_ONLY"
+          }
+        }
+      ]
+    }
+  ],
+  "animation_artifacts": [
+    {
+      "scene_id": "bar-01",
+      "path": "animation/bar-01-source.json",
+      "sequence": 10
+    }
+  ]
+}

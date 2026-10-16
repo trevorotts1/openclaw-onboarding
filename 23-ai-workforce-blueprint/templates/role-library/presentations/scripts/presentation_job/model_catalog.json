@@ -58,19 +58,14 @@
       }
     },
     "text.strong": {
-      "provider": "deepseek",
-      "model": "deepseek-v4.1-flash",
-      "note": "Reasoning-heavy authoring (FIX 7 routing table). Alias only; call sites never carry the literal.",
+      "provider": "client",
+      "model": null,
+      "note": "Reasoning-heavy authoring (FIX 7 routing table). This alias carries NO pinned model: it resolves to the client's choice (PRESENTATION_MODEL_TEXT_STRONG) or the client's configured default model (agents.defaults.model in openclaw.json), and resolution fails with an ask-the-client error when neither exists. Recommendation: a heavy-reasoning model with thinking set high, because authoring and long-synthesis quality is set here. Alias only; call sites never carry the literal.",
       "unit_costs": {
-        "per_million_tokens_in_usd": 0.66,
-        "per_million_tokens_out_usd": 1.98,
-        "status": "priced",
-        "basis": "R12: deepseek-v4.1-flash $0.66 in / $1.98 out per M (peak pricing; half off-peak)"
+        "status": "cost_unknown",
+        "basis": "client-resolved alias: no catalog price. The formerly pinned model's price (in 0.66 / out 1.98 per M, peak) is retired with the pin; FIX 12 prices the client's resolved model at runtime or excludes the phase as unpriced."
       },
-      "served_ids": {
-        "deepseek-direct": "deepseek-v4.1-flash",
-        "deepseek": "deepseek-v4.1-flash"
-      }
+      "resolution": "client-choice-or-configured-default"
     },
     "text.fast": {
       "provider": "deepseek",

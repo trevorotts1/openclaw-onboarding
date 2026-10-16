@@ -1,0 +1,8 @@
+{
+  "page_version": "standard",
+  "brand_owner": "blackceo",
+  "brand_file": "tests/fixtures/page_good/brand-fixture.json",
+  "creative_direction": "SECRET_SAUCE_ONLY",
+  "image_cap": 8,
+  "test_run": false
+}

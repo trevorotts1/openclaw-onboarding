@@ -222,6 +222,7 @@ from presentation_job.result import CheckResult
 from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
 from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases, never literal model IDs
 from presentation_job import arc_slides as _arc_slides  # PD-TEST-067: the ONE reader for the deck's slide-array shape
+from presentation_job import motion as _motion  # MG-036: the governed Skill 72 motion seam (election, run records, degrade codes)
 
 # FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
 # BUNDLE gate's guide_pdf/deck_pdf floors scale by THIS deck's slide count via
@@ -705,6 +706,54 @@ NEGATIVE_BLOCK_CLASS_TOKENS = {
         "times new roman", "system default", "ui artifact", "user-interface",
         "em dash", "pure-black", "pure black"],
 }
+
+# AF-P24: the FIVE BlackCEO negative classes (SOP-GIP-01 v2.0 Element 10, the
+# Graphics Image Protocol's mandatory representation classes), adopted into the
+# Presentations pipeline by the FIX-PLAN Item 26 doctrine weave (GIP v2.0 landed
+# as draft PR #2005). CONDITIONAL by design, exactly as SOP-GIP-01 v2.0 scopes
+# them: they bind only when the prompt carries a Black / African-descended
+# subject (BLACK_SUBJECT_TOKENS below). A prompt with no Black subject is judged
+# on the 8 base classes alone, so the base gate's verdicts on existing decks do
+# not move. Token sets are tolerant like AF-P13's (any one hit names the class);
+# the QC roles verify the semantics; this is the mechanical floor. IDENTICAL to
+# prompt_gate.py::BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS (the two gates share teeth).
+BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS = {
+    "BlackCEO skin chromatic depth": [
+        "melanated skin as gray", "melanated skin as grey",
+        "ashy, muddy", "gray, ashy, muddy", "grey, ashy, muddy",
+        "dull, or desaturated", "dull or desaturated"],
+    "BlackCEO hair strand integrity": [
+        "crush black hair", "featureless black", "individual strands"],
+    "BlackCEO skin microtexture": [
+        "smooth skin to plastic", "plastic/wax", "plastic, wax",
+        "fine microtexture"],
+    "BlackCEO hairstyle fidelity": [
+        "specified hairstyle with a generic", "replace a specified hairstyle",
+        "fuse braids"],
+    "BlackCEO skin-tone direction lock": [
+        "lighten deep skin in aspirational", "darken it for dramatic",
+        "darken deep skin for", "lighten deep skin for"],
+}
+
+# The mechanical half of SOP-GIP-01 v2.0 Element 10's applicability test ("when
+# the prompt includes Black / African-descended subjects"): the prompt names a
+# Black subject directly, or casts one using the GIP-01 v2.0 25-entry skin-tone
+# library (a library label in the people spec means a melanated subject was
+# cast from the library vocabulary SOP-CAST-01 now draws from). IDENTICAL to
+# prompt_gate.py::BLACK_SUBJECT_TOKENS.
+BLACK_SUBJECT_TOKENS = [
+    "black woman", "black women", "black man", "black men", "black subject",
+    "black person", "black people", "african american", "african-american",
+    "african descended", "african-descended", "melanated",
+    # SOP-GIP-01 v2.0 skin-tone library labels (the casting vocabulary)
+    "butter cream", "light caramel", "honey wheat", "cafe au lait",
+    "golden pecan", "cinnamon sugar", "butterscotch", "caramel bronze",
+    "toffee brown", "copper penny", "milk chocolate", "chestnut brown",
+    "cocoa powder", "burnt sienna", "coffee bean", "dark amber",
+    "mahogany wood", "espresso brown", "dark chocolate", "ebony wood",
+    "midnight brown", "charcoal velvet", "obsidian black", "onyx stone",
+    "jet black",
+]
 
 # AF-P14 — per-string SPELLING-LOCK. A real rich prompt pins the EXACT spelling of every
 # on-slide word with a per-line spelling-lock directive (SOP 9.9 "HEADLINE VERBATIM +
@@ -1367,6 +1416,28 @@ def _negative_block_class_problems(prompt_lc: str) -> list:
     return missing
 
 
+def _black_subject_present(prompt_lc: str) -> bool:
+    """AF-P24 applicability: True iff the prompt carries a Black / African-descended
+    subject (direct naming, or a SOP-GIP-01 v2.0 skin-tone library label).
+    Identical to prompt_gate.py::_black_subject_present."""
+    return any(t in prompt_lc for t in BLACK_SUBJECT_TOKENS)
+
+
+def _blackceo_negative_class_problems(prompt_lc: str) -> list:
+    """AF-P24 mechanical half: return the names of any of the FIVE BlackCEO
+    negative classes (SOP-GIP-01 v2.0 Element 10) missing from a prompt that
+    carries a Black subject. Empty list = not applicable (no Black subject) or
+    all five named. Identical to prompt_gate.py::_blackceo_negative_class_problems
+    (registered in PIPELINE-MANIFEST.json with this py_symbol)."""
+    if not _black_subject_present(prompt_lc):
+        return []
+    missing = []
+    for cls, tokens in BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS.items():
+        if not any(t in prompt_lc for t in tokens):
+            missing.append(cls)
+    return missing
+
+
 def _spelling_lock_present(prompt_lc: str) -> bool:
     """AF-P14 mechanical half: True iff the prompt carries a per-string spelling-lock
     directive marker."""
@@ -1422,7 +1493,8 @@ def _verbatim_copy_problems(prompt_text: str, copy_val) -> list:
 def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> list:
     """The QUALITY-LAYER teeth on a single rich prompt (on top of the char floor +
     REQUIRED_STRUCTURAL_BLOCKS already enforced by the caller): AF-P13 (eight-class
-    negative block), AF-P14 (spelling-lock), AF-P-DENSITY (hex/size/composition/distinct
+    negative block), AF-P24 (five BlackCEO classes on Black-subject prompts, Item 26
+    GIP weave), AF-P14 (spelling-lock), AF-P-DENSITY (hex/size/composition/distinct
     words), and VERBATIM-WORDS-BAKED (the slide's exact copy is in the prompt). Returns a
     list of fatal problem strings (empty = the prompt clears every quality gate). Shared
     by load_rich_prompt (render-time, raises) and _chk_rich_prompts / the Prompt-QC teeth
@@ -1436,6 +1508,15 @@ def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> list:
             + ", ".join(missing_classes)
             + " — the 8-class paired negative block (SOP 9.8) is mandatory; a "
             "one-line 'no text' AVOID stub does not satisfy it")
+    missing_bc = _blackceo_negative_class_problems(prompt_lc)
+    if missing_bc:
+        problems.append(
+            "AF-P24: prompt casts a Black / African-descended subject but its "
+            "negative block does not name BlackCEO defect class(es): "
+            + ", ".join(missing_bc)
+            + ": the five SOP-GIP-01 v2.0 BlackCEO classes are mandatory when "
+            "a prompt includes Black subjects (the 13-class block: 8 base + 5 "
+            "BlackCEO; slide-image-creator SOP 9.8 / SOP 9.12)")
     if not _spelling_lock_present(prompt_lc):
         problems.append(
             "AF-P14: no per-string spelling-lock directive (e.g. 'render this exact "
@@ -2801,8 +2882,805 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# MG-036 — GOVERNED MOTION MEDIA (Skill 72 Motion Graphics V2, directive
+# Section 14 patch points P02/P03/P04; seam semantics from the item 34 /
+# B14 reconciliation in the build ledger).
+#
+# A slide may declare a typed media choice in slides.json (P01: the
+# nested media object in slides.schema.json). Absent media is
+# {"kind": "still"} and takes the exact still path this file has always
+# run. A motion slide names a Skill 72 component by its job manifest,
+# its approved render receipt, and its poster; the component itself
+# ships as a governed MG-035 package inside the slide's motion
+# workspace (working/motion/slide-NN/package/package-record.json +
+# component.mp4 + poster.png + final-qc.json).
+#
+# Nothing here waves a motion slide through. validate_motion_slide_
+# artifacts authenticates the package in the current run (election,
+# slot, package record, the MG-034 QC verdict it binds, poster parity,
+# receipt binding, artifact hashes, the B14 clip limits, playback
+# parity, webinar policy, the temporal copy inventory, and the motion
+# copy-density policy) and the slide is embedded ONLY when every check
+# passes. Every failure degrades the slide to its static render with a
+# MOTION_* reason code recorded in working/checkpoints/motion.json
+# (presentation_job.motion owns the record and the code vocabulary).
+# The election is deck-level: intake want_motion_graphics, default NO,
+# hard cap 2 pieces per deck, Slot A slide 1, Slot B a section
+# divider. Still slides keep every image-generation and copy-QC gate
+# exactly as before; the ONLY new allowance is the narrow one Section
+# 14.2 grants a complete, authenticated motion composition.
+# ---------------------------------------------------------------------------
+
+_MOTION_PLAYBACK_VALUES = {
+    "start": ("on_click", "automatic"),
+    "repeat": ("once", "loop"),
+    "end": ("hold_final", "loop"),
+}
+_MOTION_FIT_VALUES = ("exact_slot", "hold_final", "approved_loop")
+_MOTION_RECEIPT_OK_STATUSES = {
+    "approved", "complete", "completed", "passed", "pass", "ok",
+    "rendered", "final",
+}
+
+
+def resolve_slide_media(slides: list, run_dir: Path) -> dict:
+    """P02: resolve each slide's typed media choice (Section 14.2).
+
+    Returns {slide_ordinal: media_dict}. Absent media resolves to
+    {"kind": "still"} (the schema default). A present-but-malformed
+    media value (not an object, no usable kind) is carried through
+    verbatim so validate_motion_slide_artifacts can refuse it by name
+    (MOTION_MEDIA_MALFORMED) instead of the resolver guessing."""
+    out = {}
+    for s in slides or []:
+        if not isinstance(s, dict) or not isinstance(s.get("slide"), int):
+            continue
+        media = s.get("media")
+        if media is None:
+            out[s["slide"]] = {"kind": "still"}
+        elif isinstance(media, dict):
+            out[s["slide"]] = media
+        else:
+            out[s["slide"]] = {"kind": "motion", "_malformed": True,
+                               "_raw": repr(media)}
+    return out
+
+
+def _motion_norm_text(value) -> str:
+    return " ".join(str(value).split()).strip()
+
+
+def _motion_temporal_inventory(package_dir: Path, record: dict) -> set:
+    """The temporal copy inventory of a motion component: every string
+    the component may legitimately show over time. Sources: the package
+    record's final-state essential text (the MG-035 placement audit)
+    plus every string in the job package records the package carries
+    under source/ (storyboard, datasets, design), which is where the
+    validated dynamic chart labels and values live."""
+    inv = set()
+    placement = record.get("placement") or {}
+    for t in placement.get("essential_text") or []:
+        if isinstance(t, str) and _motion_norm_text(t):
+            inv.add(_motion_norm_text(t))
+    source_dir = package_dir / "source"
+    if source_dir.is_dir():
+        for p in sorted(source_dir.rglob("*.json")):
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8",
+                                             errors="replace"))
+            except Exception:  # noqa: BLE001 -- an unreadable source
+                continue          # record adds nothing to the inventory
+            stack = [obj]
+            while stack:
+                cur = stack.pop()
+                if isinstance(cur, str):
+                    if _motion_norm_text(cur):
+                        inv.add(_motion_norm_text(cur))
+                elif isinstance(cur, dict):
+                    stack.extend(cur.values())
+                elif isinstance(cur, list):
+                    stack.extend(cur)
+    return inv
+
+
+def _motion_receipt_job_id(receipt: dict):
+    for k in ("job_id", "jobId"):
+        v = receipt.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    job = receipt.get("job")
+    if isinstance(job, dict):
+        for k in ("id", "job_id"):
+            v = job.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+    return None
+
+
+def _motion_receipt_artifact_hash(receipt: dict):
+    keys = ("artifact_sha256", "final_artifact_sha256", "artifact_hash",
+            "sha256")
+    for k in keys:
+        v = receipt.get(k)
+        if isinstance(v, str) and len(v) == 64:
+            return v
+    for v in receipt.values():
+        if isinstance(v, dict):
+            for k in keys:
+                vv = v.get(k)
+                if isinstance(vv, str) and len(vv) == 64:
+                    return vv
+    return None
+
+
+def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
+                                    media: dict, *, election: dict,
+                                    arc_tag_blob: str = "",
+                                    copy_lines: Optional[list] = None
+                                    ) -> dict:
+    """P02: authenticate ONE declared motion slide against its governed
+    MG-035 package. Returns an outcome dict:
+
+      {"slide": n, "kind": "motion", "status": "validated"|"degraded",
+       "reason_code": None | MOTION_* code, "detail": str, "slot": ...,
+       "job_id": ..., "clip_path": <run-relative>, "poster_path": ...,
+       "artifact_sha256": ..., "poster_sha256": ..., "placement": ...,
+       "playback": ..., "webinar_policy": ..., "_embed": {...}}
+
+    "_embed" (absolute paths for assemble_pptx) is present only when
+    validated and is stripped before the outcome is recorded. NEVER
+    raises: every failure is a named degrade, per the B14 seam rule
+    that every motion failure degrades to static with a reason code."""
+    run_dir = Path(run_dir)
+    outcome = {"slide": slide_ord, "kind": "motion", "status": "degraded",
+               "reason_code": None, "detail": "", "slot": None,
+               "job_id": None, "clip_path": None, "poster_path": None,
+               "artifact_sha256": None, "poster_sha256": None,
+               "placement": None, "playback": None, "webinar_policy": None}
+
+    def refuse(code, detail):
+        outcome["reason_code"] = code
+        outcome["detail"] = detail
+        return outcome
+
+    # -- shape (P01 contract; the schema enforces it too, but slides
+    #    reach this code from files that may never have been validated)
+    if not isinstance(media, dict) or media.get("_malformed") \
+            or media.get("kind") != "motion":
+        return refuse(_motion.MOTION_MEDIA_MALFORMED,
+                      "media is not a well-formed motion object")
+    for field in ("motion_manifest_path", "approved_render_receipt_path",
+                  "poster_path"):
+        if not isinstance(media.get(field), str) \
+                or not media[field].strip():
+            return refuse(_motion.MOTION_MEDIA_MALFORMED,
+                          f"media.{field} is missing or not a string")
+    placement = media.get("placement")
+    playback = media.get("playback")
+    webinar_policy = media.get("webinar_policy")
+    if not isinstance(placement, dict) or not isinstance(playback, dict) \
+            or not isinstance(webinar_policy, dict):
+        return refuse(_motion.MOTION_MEDIA_MALFORMED,
+                      "media.placement, media.playback and "
+                      "media.webinar_policy must all be objects")
+
+    # -- election (B14: default NO; a motion declaration on an
+    #    unelected deck is not an error, it degrades like every
+    #    other motion failure)
+    if not election.get("elected"):
+        return refuse(_motion.MOTION_NOT_ELECTED,
+                      "the deck did not elect motion graphics "
+                      "(intake want_motion_graphics is not yes)")
+
+    # -- slot (B14: Slot A slide 1, Slot B a section divider)
+    slot = _motion.slot_for_slide(slide_ord, arc_tag_blob)
+    if slot is None:
+        return refuse(_motion.MOTION_SLOT_INVALID,
+                      f"slide {slide_ord} is neither slide 1 (Slot A) "
+                      f"nor a section divider (Slot B)")
+    outcome["slot"] = slot
+
+    # -- placement (Section 14.2: normalized to the slide, positive,
+    #    inside [0,1], preserves the component's 16:9)
+    try:
+        px = float(placement["x"]); py = float(placement["y"])
+        pw = float(placement["width"]); ph = float(placement["height"])
+    except (KeyError, TypeError, ValueError):
+        return refuse(_motion.MOTION_PLACEMENT_INVALID,
+                      "placement must carry numeric x, y, width, height")
+    if not (0.0 <= px <= 1.0 and 0.0 <= py <= 1.0
+            and 0.0 < pw <= 1.0 and 0.0 < ph <= 1.0
+            and px + pw <= 1.0 + 1e-9 and py + ph <= 1.0 + 1e-9):
+        return refuse(_motion.MOTION_PLACEMENT_INVALID,
+                      f"placement rectangle x={px} y={py} width={pw} "
+                      f"height={ph} escapes the slide")
+    if ph <= 0 or abs((pw / ph) - (16.0 / 9.0)) > 0.02 * (16.0 / 9.0):
+        return refuse(_motion.MOTION_PLACEMENT_INVALID,
+                      f"placement aspect {pw / ph:.4f} does not preserve "
+                      f"the component's 16:9")
+    outcome["placement"] = {"x": px, "y": py, "width": pw, "height": ph}
+
+    # -- playback + webinar policy shape (values re-checked against
+    #    the package record below)
+    for key, allowed in _MOTION_PLAYBACK_VALUES.items():
+        if playback.get(key) not in allowed:
+            return refuse(_motion.MOTION_MEDIA_MALFORMED,
+                          f"playback.{key}={playback.get(key)!r} is not "
+                          f"one of {list(allowed)}")
+    outcome["playback"] = {k: playback[k]
+                            for k in ("start", "repeat", "end")}
+    if webinar_policy.get("fit") not in _MOTION_FIT_VALUES:
+        return refuse(_motion.MOTION_WEBINAR_POLICY_INVALID,
+                      f"webinar_policy.fit={webinar_policy.get('fit')!r} "
+                      f"is not one of {list(_MOTION_FIT_VALUES)}")
+    if webinar_policy.get("duplicate_audio") is not False:
+        return refuse(_motion.MOTION_WEBINAR_POLICY_INVALID,
+                      "webinar_policy.duplicate_audio must be false: the "
+                      "component is silent and the parent narration owns "
+                      "the audio (no second audio branch)")
+    outcome["webinar_policy"] = {
+        "fit": webinar_policy["fit"], "duplicate_audio": False}
+
+    # -- paths (Section 14.2: run-relative, symlinks resolved BEFORE
+    #    containment; escapes rejected)
+    manifest_path = _motion.resolve_contained(
+        run_dir, media["motion_manifest_path"])
+    receipt_path = _motion.resolve_contained(
+        run_dir, media["approved_render_receipt_path"])
+    poster_path = _motion.resolve_contained(run_dir, media["poster_path"])
+    if manifest_path is None or receipt_path is None or poster_path is None:
+        return refuse(_motion.MOTION_PATH_ESCAPE,
+                      "a media path escapes the run root after symlink "
+                      "resolution")
+    for label, p in (("job manifest", manifest_path),
+                     ("render receipt", receipt_path),
+                     ("poster", poster_path)):
+        if not p.is_file():
+            return refuse(_motion.MOTION_PACKAGE_MISSING,
+                          f"the declared {label} is not on disk at {p}")
+    outcome["poster_path"] = media["poster_path"]
+
+    # -- the governed package (MG-035)
+    workspace = manifest_path.parent
+    package_dir = workspace / _motion.MOTION_PACKAGE_DIR_NAME
+    record_path = package_dir / _motion.MOTION_PACKAGE_RECORD_NAME
+    if not record_path.is_file():
+        return refuse(_motion.MOTION_PACKAGE_MISSING,
+                      f"no MG-035 package record at {record_path}: the "
+                      f"component was not packaged for delivery")
+    record = _motion.read_json_file(record_path)
+    if record is None:
+        return refuse(_motion.MOTION_PACKAGE_INVALID,
+                      f"package record {record_path} is unreadable")
+    if record.get("item") != "MG-035" \
+            or record.get("mode") != "powerpoint_graphic":
+        return refuse(_motion.MOTION_PACKAGE_INVALID,
+                      "package record is not an MG-035 powerpoint_graphic "
+                      "package")
+    job_id = record.get("job_id")
+    if not isinstance(job_id, str) or not job_id.strip():
+        return refuse(_motion.MOTION_PACKAGE_INVALID,
+                      "package record carries no job_id")
+    outcome["job_id"] = job_id
+    artifact = record.get("artifact") or {}
+    probe = artifact.get("probe") or {}
+    poster_rec = record.get("poster") or {}
+    qc_rec = record.get("qc") or {}
+    playback_rec = record.get("playback") or {}
+    checks_rec = record.get("checks") or {}
+    source_job = record.get("source_job") or {}
+    for label, value in (("artifact.sha256", artifact.get("sha256")),
+                         ("artifact.probe", probe),
+                         ("poster.sha256", poster_rec.get("sha256")),
+                         ("qc", qc_rec),
+                         ("playback", playback_rec),
+                         ("source_job.manifest_sha256",
+                          source_job.get("manifest_sha256"))):
+        if value in (None, "", {}):
+            return refuse(_motion.MOTION_PACKAGE_INVALID,
+                          f"package record is missing {label}")
+
+    # The package must have been built from THIS slide's declared job
+    # manifest (hash binding, not a name match).
+    if source_job["manifest_sha256"] != _motion.sha256_file(manifest_path):
+        return refuse(_motion.MOTION_HASH_MISMATCH,
+                      "the package was built from a different job "
+                      "manifest than the one slides.json declares "
+                      "(source_job.manifest_sha256 mismatch)")
+
+    # -- the MG-034 QC gate, consumed by record (never re-run here):
+    #    the packaged final-qc.json must be the record the package
+    #    record binds, its verdict must be pass, and it must bind the
+    #    same artifact.
+    packaged_qc = package_dir / "final-qc.json"
+    if not packaged_qc.is_file():
+        return refuse(_motion.MOTION_PACKAGE_MISSING,
+                      "the package carries no final-qc.json: its MG-034 "
+                      "gate evidence is absent")
+    if _motion.sha256_file(packaged_qc) != qc_rec.get("record_sha256"):
+        return refuse(_motion.MOTION_HASH_MISMATCH,
+                      "the packaged final-qc.json is not the QC record "
+                      "the package record binds (record_sha256 mismatch)")
+    if qc_rec.get("verdict") != "pass" \
+            or int(qc_rec.get("checks_failed") or 0) != 0:
+        return refuse(_motion.MOTION_QC_FAILED,
+                      f"the MG-034 final QC verdict for this component "
+                      f"is {qc_rec.get('verdict')!r} with "
+                      f"{qc_rec.get('checks_failed')} failed check(s); "
+                      f"a failed-QC component is never embedded")
+    if qc_rec.get("artifact_sha256") != artifact.get("sha256"):
+        return refuse(_motion.MOTION_HASH_MISMATCH,
+                      "the QC record binds a different artifact than "
+                      "the package record (qc.artifact_sha256 mismatch)")
+
+    # -- the artifact itself: present, hash-true, and inside the B14
+    #    fixture limits, judged on the package record's own probe.
+    clip_path = (package_dir / str(artifact.get("file") or "")).resolve()
+    try:
+        clip_path.relative_to(package_dir.resolve())
+    except ValueError:
+        return refuse(_motion.MOTION_PATH_ESCAPE,
+                      "the package record's artifact file escapes the "
+                      "package directory")
+    if not clip_path.is_file():
+        return refuse(_motion.MOTION_PACKAGE_MISSING,
+                      f"the packaged component {clip_path} is not on disk")
+    artifact_sha = _motion.sha256_file(clip_path)
+    if artifact_sha != artifact["sha256"]:
+        return refuse(_motion.MOTION_HASH_MISMATCH,
+                      "the component bytes do not hash to the package "
+                      "record's artifact.sha256")
+    outcome["artifact_sha256"] = artifact_sha
+    outcome["clip_path"] = str(clip_path.relative_to(run_dir.resolve()))
+    artifact_bytes = clip_path.stat().st_size
+    if artifact_bytes > _motion.MOTION_CLIP_MAX_BYTES:
+        return refuse(_motion.MOTION_CLIP_TOO_LARGE,
+                      f"the component is {artifact_bytes:,} bytes, over "
+                      f"the B14 {_motion.MOTION_CLIP_MAX_BYTES:,}-byte cap")
+    if probe.get("codec") != "h264" \
+            or probe.get("pixel_format") != "yuv420p" \
+            or probe.get("width") != _motion.MOTION_CLIP_WIDTH \
+            or probe.get("height") != _motion.MOTION_CLIP_HEIGHT \
+            or abs(float(probe.get("fps") or 0)
+                   - _motion.MOTION_CLIP_FPS) > 0.01:
+        return refuse(_motion.MOTION_CLIP_FORMAT,
+                      f"the component probes as codec={probe.get('codec')} "
+                      f"pix_fmt={probe.get('pixel_format')} "
+                      f"{probe.get('width')}x{probe.get('height')} at "
+                      f"{probe.get('fps')} fps; the B14 fixture requires "
+                      f"h264 yuv420p 1920x1080 at 30 fps")
+    duration = float(probe.get("duration_seconds") or 0)
+    if duration < _motion.MOTION_CLIP_MIN_SECONDS - 0.05 \
+            or duration > _motion.MOTION_CLIP_MAX_SECONDS + 0.05:
+        return refuse(_motion.MOTION_CLIP_DURATION,
+                      f"the component runs {duration:.3f}s; the B14 "
+                      f"fixture requires 4.0 to 8.0 seconds")
+    if int(probe.get("audio_streams") or 0) != 0:
+        return refuse(_motion.MOTION_CLIP_NOT_SILENT,
+                      "the component carries an audio stream; a deck "
+                      "motion piece is silent (the presenter narrates)")
+
+    # -- the approved render receipt binds this artifact and this job
+    receipt = _motion.read_json_file(receipt_path)
+    if receipt is None:
+        return refuse(_motion.MOTION_RECEIPT_UNREADABLE,
+                      f"the render receipt {receipt_path} is unreadable")
+    receipt_job = _motion_receipt_job_id(receipt)
+    if receipt_job is None:
+        return refuse(_motion.MOTION_RECEIPT_UNREADABLE,
+                      "the render receipt carries no job identity")
+    if receipt_job != job_id:
+        return refuse(_motion.MOTION_RECEIPT_MISMATCH,
+                      f"the render receipt is for job {receipt_job!r}, "
+                      f"not this package's job {job_id!r}")
+    receipt_hash = _motion_receipt_artifact_hash(receipt)
+    if receipt_hash is None:
+        return refuse(_motion.MOTION_RECEIPT_UNREADABLE,
+                      "the render receipt declares no artifact hash")
+    if receipt_hash != artifact_sha:
+        return refuse(_motion.MOTION_RECEIPT_MISMATCH,
+                      "the render receipt approves a different artifact "
+                      "than the package carries")
+    status = receipt.get("status")
+    if isinstance(status, str) \
+            and status.strip().lower() not in _MOTION_RECEIPT_OK_STATUSES:
+        return refuse(_motion.MOTION_RECEIPT_MISMATCH,
+                      f"the render receipt's status is {status!r}, not "
+                      f"an approved render")
+
+    # -- poster parity (B14: the poster is byte-identical to the
+    #    package poster and to the slide's QC PNG when that render
+    #    exists; parity is judged on bytes, never on names)
+    poster_sha = _motion.sha256_file(poster_path)
+    if poster_sha != poster_rec["sha256"]:
+        return refuse(_motion.MOTION_POSTER_MISMATCH,
+                      "the declared poster is not the package poster "
+                      "(sha256 mismatch with the package record)")
+    packaged_poster = (package_dir
+                       / str(poster_rec.get("file") or "")).resolve()
+    try:
+        packaged_poster.relative_to(package_dir.resolve())
+    except ValueError:
+        return refuse(_motion.MOTION_PATH_ESCAPE,
+                      "the package record's poster file escapes the "
+                      "package directory")
+    if not packaged_poster.is_file() \
+            or _motion.sha256_file(packaged_poster) != poster_rec["sha256"]:
+        return refuse(_motion.MOTION_POSTER_MISMATCH,
+                      "the package's own poster file does not hash to "
+                      "the package record's poster.sha256")
+    slide_png = run_dir / "renders" / (slide_name(slide_ord) + ".png")
+    if slide_png.is_file() \
+            and _motion.sha256_file(slide_png) != poster_rec["sha256"]:
+        return refuse(_motion.MOTION_POSTER_MISMATCH,
+                      "renders/" + slide_png.name + " is not "
+                      "byte-identical to the package poster; the B14 "
+                      "seam requires the poster to BE the slide's QC PNG")
+    outcome["poster_sha256"] = poster_rec["sha256"]
+
+    # -- playback parity with the package record (the slides.json
+    #    declaration may not quietly rewrite the governed playback)
+    for key in ("start", "repeat", "end"):
+        if playback_rec.get(key) != outcome["playback"][key]:
+            return refuse(_motion.MOTION_PLAYBACK_MISMATCH,
+                          f"playback.{key} is {outcome['playback'][key]!r} "
+                          f"in slides.json but {playback_rec.get(key)!r} "
+                          f"in the package record")
+
+    # -- webinar fit qualifications (Section 14.2)
+    fit = outcome["webinar_policy"]["fit"]
+    if fit == "approved_loop":
+        loop_seam = (checks_rec.get("loop_seam") or {}).get("status")
+        if playback_rec.get("repeat") != "loop" or loop_seam != "pass":
+            return refuse(_motion.MOTION_LOOP_UNQUALIFIED,
+                          "approved_loop requires a loop-qualified "
+                          "component (package playback.repeat is loop "
+                          "and its loop-seam check passed); this package "
+                          "is not loop-qualified")
+    if fit == "hold_final":
+        hold = (checks_rec.get("hold_final") or {}).get("status")
+        if hold != "pass":
+            return refuse(_motion.MOTION_HOLD_UNPROVEN,
+                          "hold_final requires the package's approved "
+                          "stable final frame (hold_final check passed); "
+                          "this package does not prove one")
+
+    # -- temporal copy inventory (Section 14.2): the approved copy
+    #    stays authoritative; every approved line must be a state the
+    #    component actually shows (its final-state essential text or
+    #    the validated dynamic labels/values in its job records).
+    if copy_lines:
+        inventory = _motion_temporal_inventory(package_dir, record)
+        for line in copy_lines:
+            norm = _motion_norm_text(line)
+            if not norm:
+                continue
+            if not any(norm == inv or norm in inv for inv in inventory):
+                return refuse(
+                    _motion.MOTION_COPY_INVENTORY_INCOMPLETE,
+                    f"approved copy line {line!r} appears in no state "
+                    f"of the component (not in its temporal text "
+                    f"inventory); the component may not drop or "
+                    f"rewrite approved copy")
+
+    # -- motion copy-density policy (declared in
+    #    presentation_job.motion): the final readable state may not be
+    #    denser than a still slide under the deck's own copy band.
+    essential = (record.get("placement") or {}).get("essential_text") or []
+    final_state_chars = sum(len(t) for t in essential
+                            if isinstance(t, str))
+    if final_state_chars > _motion.MOTION_COPY_FINAL_STATE_CHAR_CEILING:
+        return refuse(_motion.MOTION_COPY_DENSITY,
+                      f"the component's final readable state carries "
+                      f"{final_state_chars} characters of essential "
+                      f"text, over the motion copy-density ceiling of "
+                      f"{_motion.MOTION_COPY_FINAL_STATE_CHAR_CEILING} "
+                      f"(the still-slide copy band ceiling)")
+
+    outcome["status"] = "validated"
+    outcome["_embed"] = {
+        "clip_path": clip_path,
+        "poster_path": poster_path,
+        "placement": outcome["placement"],
+        "playback": outcome["playback"],
+    }
+    return outcome
+
+
+def _load_slides_list(run_dir: Path,
+                      slides_path: Optional[Path] = None) -> Optional[list]:
+    """The deck's slides list from the positional slides.json when
+    threaded in, else the canonical working/copy/slides.json (the same
+    candidate order _load_slide_copy_map uses). None when no readable
+    slides file exists yet (callers defer)."""
+    candidates = []
+    if slides_path is not None:
+        candidates.append(slides_path)
+    candidates += [run_dir / "working" / "copy" / "slides.json",
+                   run_dir / "slides.json",
+                   run_dir / "working" / "slides.json"]
+    for p in candidates:
+        if not p.exists():
+            continue
+        obj = _read_json(p)
+        if isinstance(obj, dict) and "__parse_error__" in obj:
+            continue
+        slides = obj if isinstance(obj, list) else (
+            obj.get("slides") if isinstance(obj, dict) else None)
+        if isinstance(slides, list) and slides:
+            return slides
+    return None
+
+
+def plan_motion_media(run_dir: Path, slides: list) -> tuple:
+    """Plan the deck's governed motion path and WRITE the run record
+    (working/checkpoints/motion.json) plus the slide-media manifest.
+
+    Returns (record, motion_media): motion_media maps slide ordinal to
+    the validated embed instructions assemble_pptx consumes. Still
+    slides never enter the map; a still-only deck writes a record with
+    an empty slides list and returns an empty map, leaving the still
+    path byte-for-byte the behavior it has always been. The B14 hard
+    cap is enforced here, in slide order: validated pieces beyond the
+    cap degrade with MOTION_CAP_EXCEEDED."""
+    run_dir = Path(run_dir)
+    election = _motion.election_for_run(run_dir)
+    record = _motion.empty_motion_record(election)
+    media_map = resolve_slide_media(slides, run_dir)
+    arc_tags = _load_slide_arc_tags(run_dir)
+    copy_map = {}
+    for s in slides or []:
+        if isinstance(s, dict) and isinstance(s.get("slide"), int):
+            copy_map[s["slide"]] = s.get("copy")
+    motion_media = {}
+    validated = 0
+    for ord_ in sorted(media_map):
+        media = media_map[ord_]
+        if media.get("kind") != "motion":
+            continue
+        outcome = validate_motion_slide_artifacts(
+            run_dir, ord_, media, election=election,
+            arc_tag_blob=arc_tags.get(ord_, ""),
+            copy_lines=copy_map.get(ord_))
+        if outcome["status"] == "validated":
+            validated += 1
+            if validated > _motion.MOTION_MAX_PIECES_PER_DECK:
+                outcome["status"] = "degraded"
+                outcome["reason_code"] = _motion.MOTION_CAP_EXCEEDED
+                outcome["detail"] = (
+                    f"the deck already carries "
+                    f"{_motion.MOTION_MAX_PIECES_PER_DECK} validated "
+                    f"motion pieces (the B14 hard cap); this piece "
+                    f"degrades to static")
+                outcome.pop("_embed", None)
+            else:
+                motion_media[ord_] = outcome.pop("_embed")
+        record["slides"].append(
+            {k: v for k, v in outcome.items() if not k.startswith("_")})
+    _motion.write_motion_record(run_dir, record)
+    _motion.write_slide_media_manifest(run_dir, record)
+    return record, motion_media
+
+
+def _chk_motion_media(run_dir: Path,
+                      slides_path: Optional[Path] = None) -> str:
+    """Preflight: run the motion planner so motion.json exists from
+    preflight on and every degrade is visible before render.
+
+    NEVER returns a fatal string. That is deliberate, not softness:
+    the B14 seam rule is that every motion failure degrades its slide
+    to static with a reason code, and the teeth are structural (an
+    unauthenticated package is never embedded, and phase
+    P8.15-MOTION's verifier fails the phase when the record and the
+    delivered deck disagree). Defers silently when no slides.json can
+    be read yet; the absence is owned by the copy/arc gates."""
+    slides = _load_slides_list(run_dir, slides_path)
+    if slides is None:
+        return ""
+    try:
+        record, _media = plan_motion_media(run_dir, slides)
+    except Exception as exc:  # noqa: BLE001 -- the planner must never
+        print(f"  WARN  motion plan failed ({exc!r}); any declared "
+              f"motion slides degrade to static.", file=sys.stderr)
+        return ""
+    for entry in record.get("slides", []):
+        if entry.get("status") == "degraded":
+            print(f"  MOTION  slide {entry.get('slide')}: degraded to "
+                  f"static ({entry.get('reason_code')}: "
+                  f"{entry.get('detail')})", file=sys.stderr)
+    return ""
+
+
+def finalize_motion_record(run_dir: Path, deck_path: Path) -> Optional[dict]:
+    """Post-assembly embed proof: reopen the assembled deck, hash its
+    media parts, and mark every planned-validated slide embedded when
+    its authenticated artifact bytes are inside the deck, or degraded
+    MOTION_EMBED_MISSING when they are not. Rewrites motion.json and
+    the slide-media manifest. Never raises; returns the record (or
+    None when no record exists)."""
+    run_dir = Path(run_dir)
+    record = _motion.read_motion_record(run_dir)
+    if record is None:
+        return None
+    media_hashes = {}
+    try:
+        import zipfile
+        with zipfile.ZipFile(deck_path) as zf:
+            for name in zf.namelist():
+                if name.startswith("ppt/media/") and name.lower() \
+                        .endswith((".mp4", ".mov", ".m4v", ".webm")):
+                    media_hashes[hashlib.sha256(zf.read(name))
+                                 .hexdigest()] = name
+    except Exception:  # noqa: BLE001 -- an unreadable deck proves no
+        media_hashes = {}  # embed; entries degrade below, by name
+    for entry in record.get("slides", []):
+        if entry.get("status") != _motion.MOTION_STATUS_VALIDATED:
+            continue
+        part = media_hashes.get(entry.get("artifact_sha256") or "")
+        if part:
+            entry["status"] = _motion.MOTION_STATUS_EMBEDDED
+            entry["embed"] = {"media_part": part,
+                              "deck": str(deck_path)}
+        else:
+            entry["status"] = _motion.MOTION_STATUS_DEGRADED
+            entry["reason_code"] = _motion.MOTION_EMBED_MISSING
+            entry["detail"] = ("the assembled deck carries no media "
+                               "part byte-identical to the "
+                               "authenticated component")
+    _motion.write_motion_record(run_dir, record)
+    _motion.write_slide_media_manifest(run_dir, record)
+    return record
+
+
+def _apply_motion_playback_timing(slide, playback: dict) -> dict:
+    """Apply the declared playback to the media timing node that
+    python-pptx's add_movie wrote (Section 14.3: playback settings via
+    the tested OOXML mechanism, never an invented python-pptx setter;
+    the written shape is the one MG-035's adapter documents element
+    for element). start=on_click keeps the library's indefinite start
+    condition; start=automatic sets the condition delay to 0;
+    repeat=loop sets repeatCount=indefinite on the media node's cTn;
+    end=hold_final is the fill="hold" the library already writes.
+    Returns what was written."""
+    from pptx.oxml.ns import qn
+    written = {"start": playback.get("start"),
+               "repeat": playback.get("repeat"),
+               "end": playback.get("end"),
+               "timing_node_found": False}
+    ctn = None
+    for node in slide._element.iter(qn("p:cMediaNode")):
+        found = node.find(qn("p:cTn"))
+        if found is not None:
+            ctn = found  # the node add_movie just wrote is the last one
+    if ctn is None:
+        return written
+    written["timing_node_found"] = True
+    cond_lst = ctn.find(qn("p:stCondLst"))
+    if cond_lst is not None:
+        cond = cond_lst.find(qn("p:cond"))
+        if cond is not None:
+            cond.set("delay", "0" if playback.get("start") == "automatic"
+                     else "indefinite")
+            written["start_condition_delay"] = cond.get("delay")
+    if playback.get("repeat") == "loop":
+        ctn.set("repeatCount", "indefinite")
+        written["repeat_count"] = "indefinite"
+    return written
+
+
+def add_motion_media(slide, media: dict) -> dict:
+    """P04: embed ONE validated motion component into an assembled
+    slide through python-pptx's movie primitive. This is the governed
+    producer that replaces MG-035's package-level adapter mechanism:
+    the same parts and relationships (the MP4 as a media part under
+    ppt/media/, the officeDocument video relationship consumed by
+    a:videoFile, the Microsoft media relationship consumed by
+    p14:media, the poster as the picture's blip), created by the
+    library inside the deck pipeline. Placement is converted from the
+    media block's normalized rectangle with the deck's actual
+    dimensions; the API does not auto-size or extract a poster, so
+    both are given explicitly, with mime_type="video/mp4". Playback
+    rides _apply_motion_playback_timing. Returns the embed record."""
+    from pptx.util import Inches
+    placement = media["placement"]
+    movie = slide.shapes.add_movie(
+        str(media["clip_path"]), Inches(placement["x"] * SLIDE_WIDTH_IN),
+        Inches(placement["y"] * SLIDE_HEIGHT_IN),
+        width=Inches(placement["width"] * SLIDE_WIDTH_IN),
+        height=Inches(placement["height"] * SLIDE_HEIGHT_IN),
+        poster_frame_image=str(media["poster_path"]),
+        mime_type="video/mp4")
+    timing = _apply_motion_playback_timing(slide, media["playback"])
+    return {"shape_id": int(movie.shape_id), "shape_name": movie.name,
+            "placement": dict(placement), "playback_written": timing}
+
+
+def _authenticated_motion_outcomes(run_dir: Path,
+                                   slides_path: Optional[Path] = None
+                                   ) -> dict:
+    """Recompute, RIGHT NOW, which declared motion slides authenticate
+    (full validate_motion_slide_artifacts). Returns {ordinal: outcome}
+    for validated slides only. The P03 checks consult this rather than
+    trusting motion.json, so a stale or forged record can bless
+    nothing: authentication is a live recomputation plus, for the
+    poster exemption, a live hash comparison."""
+    slides = _load_slides_list(run_dir, slides_path)
+    if not slides:
+        return {}
+    election = _motion.election_for_run(run_dir)
+    arc_tags = _load_slide_arc_tags(run_dir)
+    copy_map = {}
+    for s in slides:
+        if isinstance(s, dict) and isinstance(s.get("slide"), int):
+            copy_map[s["slide"]] = s.get("copy")
+    out = {}
+    for ord_, media in resolve_slide_media(slides, run_dir).items():
+        if media.get("kind") != "motion":
+            continue
+        outcome = validate_motion_slide_artifacts(
+            run_dir, ord_, media, election=election,
+            arc_tag_blob=arc_tags.get(ord_, ""),
+            copy_lines=copy_map.get(ord_))
+        if outcome["status"] == "validated":
+            out[ord_] = outcome
+    return out
+
+
+def _authenticated_motion_posters(run_dir: Path,
+                                  slides_path: Optional[Path] = None
+                                  ) -> set:
+    """Resolved paths of renders/slide-NN.png files that are, right
+    now, the authenticated poster derivative of a validated motion
+    slide (package validates AND the PNG's bytes hash to the package
+    poster). Consumed by check_image_qc_vision (P03)."""
+    out = set()
+    for ord_, outcome in _authenticated_motion_outcomes(
+            run_dir, slides_path).items():
+        png = run_dir / "renders" / (slide_name(ord_) + ".png")
+        if png.is_file() \
+                and _motion.sha256_file(png) == outcome["poster_sha256"]:
+            out.add(png.resolve())
+    return out
+
+
+def _authenticated_motion_package_dirs(run_dir: Path,
+                                       slides_path: Optional[Path] = None
+                                       ) -> set:
+    """Resolved workspace directories of validated motion slides.
+    Consumed by check_canonical_render_path (P03): files inside an
+    authenticated Skill 72 job workspace are the governed package's
+    own records, not a hand-rolled per-deck renderer. Only the
+    workspace of a slide whose package validates RIGHT NOW earns the
+    exemption; an unauthenticated working/motion tree earns nothing."""
+    out = set()
+    validated = _authenticated_motion_outcomes(run_dir, slides_path)
+    slides = _load_slides_list(run_dir, slides_path) or []
+    media_map = resolve_slide_media(slides, run_dir)
+    for ord_ in validated:
+        media = media_map.get(ord_) or {}
+        manifest = _motion.resolve_contained(
+            run_dir, media.get("motion_manifest_path") or "")
+        if manifest is not None:
+            out.add(manifest.parent.resolve())
+    return out
+
+
 def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = None,
-                  speech_chunks: Optional[dict] = None) -> None:
+                  speech_chunks: Optional[dict] = None,
+                  motion_media: Optional[dict] = None) -> None:
+    """Assemble the deck. Still slides take the full-bleed picture path
+    they always have. A slide whose ordinal appears in motion_media
+    (the validated embed instructions from plan_motion_media, MG-036
+    P04) additionally gets its motion component embedded through
+    add_motion_media ON TOP of its still: the still is the component's
+    poster derivative (byte-identical by the B14 seam), so the movie
+    is never obscured by an opaque poster layer, and the poster shows
+    wherever the video does not play. The Presentation is built fresh
+    from the template on every call and saved atomically, so
+    re-running assembly on the same inputs can never duplicate media:
+    idempotency is structural, and finalize_motion_record proves the
+    embed landed exactly once per validated slide."""
     try:
         from pptx import Presentation
         from pptx.util import Inches
@@ -2840,6 +3718,15 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
                 Inches(left_in), Inches(top_in),
                 width=Inches(w_in), height=Inches(h_in),
             )
+
+        # MG-036 (P04): a validated motion slide gets its component
+        # embedded through add_motion_media. Only slides present in
+        # motion_media take this branch; every other slide's shape
+        # tree is exactly what the still path has always produced.
+        if motion_media:
+            _media = motion_media.get(item["slide"])
+            if _media is not None:
+                add_motion_media(slide, _media)
 
         # PER-SLIDE SPEAKER NOTES: if a parsed speech chunk exists for this slide
         # ordinal, write the spoken text into the slide's notes pane. None/{} =>
@@ -7839,6 +8726,17 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
            per-slide observation) — a self-typed number is refused;
          * the eliminated typography-overlay-readiness rubric may not appear.
 
+    MG-036 (P03) — the narrow authenticated Skill 72 artifact path: a rendered
+    PNG that IS the authenticated poster derivative of a validated motion
+    slide is exempt from the flat-fill sub-check ONLY (never the byte floor).
+    A data chart on a light ground is the component's subject, judged by the
+    motion path's own proofs (motion proof + the MG-034 QC bound into its
+    package record), not by the photographic-noise expectation this check
+    applies to KIE bakes. Authentication is recomputed live
+    (_authenticated_motion_posters): the package must validate in full AND
+    the PNG's bytes must hash to the package poster. A filename, a slide
+    declaration, or a stale motion.json record earns NOTHING here.
+
     It DEFERS (returns "") ONLY when there is nothing to inspect yet — no rendered PNGs
     AND no report (the genuine pre-render state). Once renders OR a report exist it does
     NOT defer-to-pass: the legacy 'no renders/manifest -> pass' escape is closed. A
@@ -7861,6 +8759,11 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
     if not pngs and report_obj is None:
         return ""
 
+    # MG-036 (P03): live-authenticated motion poster derivatives (see
+    # the docstring). Computed only when PNGs exist to judge.
+    motion_posters = _authenticated_motion_posters(run_dir, slides_path) \
+        if pngs else set()
+
     problems = []
 
     # --- A. PIXEL cross-check over every rendered PNG ---
@@ -7876,6 +8779,17 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
                 f"kie-bake floor — a flat/native-rendered card, not a real gpt-image-2.5 "
                 f"bake (AF-LOCAL-CANVAS signature)")
             continue
+        if motion_posters:
+            try:
+                _resolved_png = png.resolve()
+            except OSError:
+                _resolved_png = png
+            if _resolved_png in motion_posters:
+                # MG-036 (P03): authenticated motion poster. The byte
+                # floor above already applied; the flat-fill judgment
+                # does not apply to a governed component's poster
+                # (its subject is data, proven by the motion path).
+                continue
         frac, rgb = _png_flatfill_fraction(png)
         if frac is None:
             continue  # PIL unavailable / unreadable — byte floor already covered it.
@@ -8022,7 +8936,18 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
     canonical scripts dir (by resolved path), and virtual-env directories are
     exempt. Returns "" when the run dir carries
     no hand-rolled renderer. A failure may be waived ONLY by a logged
-    owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS)."""
+    owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS).
+
+    MG-036 (P03) — the narrow authenticated Skill 72 artifact path: files
+    inside the motion workspace of a slide whose Skill 72 package
+    authenticates RIGHT NOW (validate_motion_slide_artifacts passes in
+    full) are the governed package's own records, not a hand-rolled
+    per-deck renderer, and are exempt from this scan. The exemption is
+    earned per workspace by live validation, never by directory name:
+    a working/motion tree whose package is missing, forged, or failed
+    earns nothing and is scanned like everything else. This does NOT
+    globally allow local canvases: the exemption covers only the
+    authenticated package tree of a validated motion slide."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
             or _owner_skip_approved(run_dir, AF_LOCAL_CANVAS))
     if skip is not None:
@@ -8037,6 +8962,10 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
     # working/scripts/. Skip only the canonical scripts dir, by resolved path
     # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
     _canonical_scripts_dir = Path(__file__).resolve().parent
+    # MG-036 (P03): authenticated Skill 72 motion workspaces (live
+    # validation, see the docstring).
+    _motion_pkg_dirs = _authenticated_motion_package_dirs(run_dir,
+                                                          slides_path)
     offenders = []
     try:
         candidates = sorted(run_dir.rglob("*.py"))
@@ -8056,6 +8985,9 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             continue  # inside the canonical scripts home — exempt
         except ValueError:
             pass
+        if _motion_pkg_dirs and any(
+                _rp == _d or _d in _rp.parents for _d in _motion_pkg_dirs):
+            continue  # inside an authenticated Skill 72 motion workspace
         try:
             text = py.read_text(errors="replace")
         except OSError:
@@ -8635,6 +9567,7 @@ def _engine_name_for_code(code: str) -> str:
         "AF-METHOD-FABRICATED": "Pricing",
         "AF-NO-TIME-TO-RESULT": "Pricing",
         "AF-P13": "Negative-Block",
+        "AF-P24": "Negative-Block",
         "AF-P14": "Typography/Spelling-Lock",
         "AF-P-VERBATIM": "Typography/Verbatim",
         "AF-P-DENSITY": "Density",
@@ -9063,7 +9996,8 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
       LENGTH gate  — C1 >= the rule 12 floor (AF-P1, fatal); C2 <= the model maxLength (AF-P2).
       QUALITY gate — C4 structural blocks; C5 perceptual INTELLIGENCE engines (Facial/
         Lighting/World/Hair + per-slide harmony + image-side Hook via iec.check_prompts);
-        C6 8-class negative block (AF-P13); C7 per-string spelling-lock (AF-P14); C8 verbatim
+        C6 8-class negative block (AF-P13); C6b BlackCEO classes on Black-subject prompts
+        (AF-P24); C7 per-string spelling-lock (AF-P14); C8 verbatim
         copy baked (AF-P-VERBATIM); C9 density + demographic-landmine (AF-P-DENSITY/AF-R3);
         C10 EXCELLENCE (AF-EXCELLENCE). Length alone never passes; engines alone never pass.
 
@@ -9167,6 +10101,14 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
             deficiencies.append(_pdef(
                 "AF-P13", "reauthor", "class not named", cls, "Negative-Block",
                 f"Name the '{cls}' defect class in the 8-class paired negative block (SOP 9.8)."))
+
+        # --- C6b BlackCEO negative classes (AF-P24, Item 26 GIP weave) ---
+        for cls in _blackceo_negative_class_problems(lc):
+            deficiencies.append(_pdef(
+                "AF-P24", "reauthor", "BlackCEO class not named", cls, "Negative-Block",
+                f"Name the '{cls}' BlackCEO defect class in the negative block: this prompt "
+                f"casts a Black / African-descended subject, so the five SOP-GIP-01 v2.0 "
+                f"BlackCEO classes are mandatory alongside the 8 base classes (SOP 9.8 / SOP 9.12)."))
 
         # --- C7 per-string spelling-lock (AF-P14) ---
         if not _spelling_lock_present(lc):
@@ -10934,6 +11876,22 @@ PREFLIGHT_REQUIRED = [
      "native on-slide text instead of a composed gpt-image-2.5 image",
      "Phase 5/6/Postflight — render + PPTX assembly (AF-OVERLAY-DELIVERED)",
      _chk_no_overlay),
+    # MG-036 — GOVERNED MOTION PLAN. Runs the motion planner so
+    # working/checkpoints/motion.json exists from preflight on: every
+    # declared motion slide is authenticated against its Skill 72
+    # package (election, slot, cap, package record, QC verdict, poster
+    # parity, receipt, hashes) or degraded to static with a MOTION_*
+    # reason code. Never fatal by design (the B14 degrade rule); the
+    # embed teeth live in the planner and in phase P8.15-MOTION's
+    # verifier. Placed BEFORE the two FIX-2 checks below so their
+    # authenticated-artifact paths see this run's plan inputs.
+    # Run-dir-scoped (None sentinel).
+    (None,
+     "governed motion plan — every declared motion slide is authenticated "
+     "against its Skill 72 package or degraded to static with a reason code "
+     "in working/checkpoints/motion.json (Skill 72 MG-036)",
+     "Phase 4/8 — governed motion media (Skill 72 MG-036, P8.15-MOTION)",
+     _chk_motion_media),
     # FIX-2 — CANONICAL-RENDER-PATH guard (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS).
     # The canonical render path is build_deck.py / run_signature_deck.py ONLY. This
     # scans the run dir for a hand-rolled renderer/assembler (a local Image.new
@@ -13761,11 +14719,22 @@ def main():
     # not matched to any slide; deck slides with no chunk get no notes part.
     speech_chunks = discover_speech_chunks(run_dir, bundle_dir)
 
+    # MG-036 (P02/P04): plan the governed motion path for THIS deck and
+    # embed only authenticated packages. Recomputed here, never trusted
+    # from the preflight write, so poster parity is judged against the
+    # renders that now exist. A still-only deck gets an empty map and
+    # the assembly below is the unchanged still path.
+    motion_record, motion_media = plan_motion_media(run_dir, slides)
+    if motion_media:
+        print(f"=== MOTION: {len(motion_media)} validated motion slide(s) "
+              f"will embed (record: working/checkpoints/motion.json) ===",
+              flush=True)
+
     # Assemble.
     try:
         # When image-to-image baked the logo in (logo_url), do NOT also overlay it.
         assemble_pptx(rendered, out_path, logo_path=(None if logo_url else logo_path),
-                      speech_chunks=speech_chunks)
+                      speech_chunks=speech_chunks, motion_media=motion_media)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -13778,6 +14747,12 @@ def main():
         }
         print(json.dumps(summary, indent=2))
         sys.exit(1)
+
+    # MG-036: prove the embeds landed in the assembled deck (media part
+    # bytes hash to the authenticated artifacts) and finalize the run
+    # record BEFORE the bundle copy below carries the deck onward.
+    if motion_media:
+        finalize_motion_record(run_dir, out_path)
 
     # Timestamp: caller-supplied --timestamp wins (lets the orchestrator pin a
     # consistent run clock); else stamp now. This is a plain Python script, so

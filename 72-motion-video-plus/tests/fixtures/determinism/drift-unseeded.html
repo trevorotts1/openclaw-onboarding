@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MG-026 determinism fixture: unseeded randomness scene</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           background: #F7F4EE; font-family: sans-serif; color: #192A38; }
+  #headline { position: absolute; left: 120px; top: 90px; font-size: 96px; font-weight: 700; }
+  #bar { position: absolute; left: 420px; top: 520px; height: 90px; background: #C04A26; }
+  .dot { position: absolute; width: 26px; height: 26px; border-radius: 13px; background: #192A38; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="headline">Unseeded randomness scene</div>
+  <div id="bar"></div>
+  <div id="dots"></div>
+</div>
+<script>
+  // MG-026 verifier fixture: a DELIBERATELY non-seek-safe scene. The
+  // bar is honest arithmetic on t, but the dot scatter is drawn from
+  // Math.random() with no seed, so every __setTime call, even repeated
+  // calls at the same t in the same page, scatters the dots somewhere
+  // new. The verifier must FAIL this scene: unseeded changes are
+  // drift. Fixture only: shipped scenes seed randomness off the frame
+  // number, as the control fixture does
+  // (references/animation-contract.md).
+  window.__sceneDuration = 6;
+  const bar = document.getElementById("bar");
+  const dots = document.getElementById("dots");
+  window.__setTime = function (t) {
+    const progress = Math.min(Math.max(t / 3, 0), 1);
+    bar.style.width = Math.round(progress * 1200) + "px";
+    dots.innerHTML = "";
+    for (let i = 0; i < 24; i += 1) {
+      const d = document.createElement("div");
+      d.className = "dot";
+      d.style.left = (120 + Math.floor(Math.random() * 1600)) + "px";
+      d.style.top = (700 + Math.floor(Math.random() * 280)) + "px";
+      dots.appendChild(d);
+    }
+  };
+  window.__setTime(0);
+</script>
+</body>
+</html>

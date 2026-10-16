@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v27.1.26 - Batch MGB018: skill 75 parity and test hygiene (Skill 75 v2.9.8).** Skill 75 matches the 999 copy, the U15 guards no longer abort the whole test tree, and batch bookkeeping runs before the first CI run. Paired Command Center: **v7.6.112**.
+> **v27.1.28 - Batch MGB018: skill 75 parity and test hygiene (Skill 75 v2.9.8).** Skill 75 matches the 999 copy, the U15 guards no longer abort the whole test tree, and batch bookkeeping runs before the first CI run. Paired Command Center: **v7.6.112**.
 >
 > **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
 >
@@ -21,13 +21,13 @@
 > **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v27.1.26.
+> **Version:** see `/version` - this repo at v27.1.28.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v27.1.26
+## Current release: v27.1.28
 
 ### Standard company placeholder (v26.4.9)
 If a client's AI Workforce interview is still incomplete 14 days after onboarding started
@@ -199,14 +199,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v27.1.26** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v27.1.28** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **77 numbered skill folders (01–77)**: 72 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **79 numbered skill folders (01–82)**: 74 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -333,8 +333,10 @@ That file is the master instruction file. It contains:
 | 75-drama-song-ad-factory | **Drama Song Ad Factory (v1.0.0)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
 | 76-local-embedder | **Local Embedder (v1.3.0)**: client Macs only. Free local embeddings for OpenClaw memory search: reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in place only when idle, or installs the checksum-verified headless Ollama CLI 0.40.0 under the LaunchAgent `com.blackceo.ollama-serve` (no GUI, no sudo). Pulls `embeddinggemma-2:740m`, pins `num_ctx 8192` on that same tag, then (after every guard passes) writes only `memory.search.*` with fallback `none` and re-indexes each agent once, time-bounded. Ollama Cloud sign-in, cloud tags, key files, `OLLAMA_*` env and chat-model config are verified unchanged (fail closed). VPS and Contabo boxes skip it. |
 | 77-council-of-wise-elders | **Council of Wise Elders (v1.0.0)**: nine fixed advisory seats (Simon Sinek, T. D. Jakes, Oprah Winfrey, Tiffany Aliche, Russell Brunson, Michelle Obama, Brené Brown, Dr. Dennis Kimbro, Les Brown) deliberate on consequential decisions through the AI CEO front door and return one recommendation with its conditions, the strongest objection, and the next useful step; every seat is an AI perspective and is labeled exactly as one. Company-level capability, registered as platform-owned in the skill-department map. Scaffold stage: the package, installer registration, and update-flow safety are complete, while the deliberation runtime and the nine advisor packs are built by their own units and are not yet built, so the front door reports the council as not ready rather than simulating a session. No council state is stored inside the skill folder, so update sync can replace the folder without touching sessions. |
+| 78-signature-product-selection | **Signature Product Selection (v0.1.0)** — builds the Product Selection page for a Signature Launch with multiple meaningful packages or tiers: normalizes the approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, an accessible selection UI model, and a validated `selection.json` intent that preserves the native product/price mapping into Skill 79 checkout. Invoked only when the approved launch has multiple meaningful choices; one simple offer skips this skill and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity or savings claims. |
+| 82-signature-thank-you | **Signature Thank-You (v0.1.0)** — the terminal Signature Launch thank-you / confirmation page skill: builds the post-purchase confirmation and access experience showing exactly what the customer actually purchased (verified against the normalized purchase snapshot and Skill 44 entitlement state), its actual charges and terms, and what happens next. No new pitch, no new offer, no new-charge CTA; fulfillment authority is Skill 44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching the page. |
 
-**Total: 77 numbered skill folders** (01–77): **72 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 79 numbered skill folders** (01–82): **74 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

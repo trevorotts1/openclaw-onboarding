@@ -1,0 +1,91 @@
+{
+  "example": "narration",
+  "mode": "plan",
+  "output": "tests/evidence/mg022/outputs/narration.mp4",
+  "expected_frames": 105,
+  "probe_frames": 105,
+  "recount_frames": 105,
+  "duration_seconds": 3.5,
+  "expected_duration_seconds": 3.5,
+  "stream_map": [
+    {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 320,
+      "height": 180,
+      "sample_rate": null
+    },
+    {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "48000"
+    }
+  ],
+  "last_frame_sha256": "c3c238a28879246eea50e122d0e285b3e5aaa6f9c7d2304fe0fddd212321d2a9",
+  "inputs": [
+    [
+      "scene",
+      "a",
+      0
+    ],
+    [
+      "scene",
+      "b",
+      1
+    ],
+    [
+      "narration",
+      "n1",
+      2
+    ],
+    [
+      "narration",
+      "n2",
+      3
+    ],
+    [
+      "canvas",
+      "silence",
+      4
+    ]
+  ],
+  "media_provenance": {
+    "syntheticSegments": false,
+    "engines": {
+      "a": null,
+      "b": null
+    }
+  },
+  "narration_segment_presence": [
+    {
+      "id": "n1",
+      "toneHz": 440,
+      "planned_window_seconds": [
+        0.0,
+        1.667
+      ],
+      "mid_segment_band_amplitude": 8173.7,
+      "final_quarter_band_amplitude": 8179.6,
+      "present_mid": true,
+      "present_at_planned_end": true,
+      "proof_kind": "tone segment presence, not speech intelligibility"
+    },
+    {
+      "id": "n2",
+      "toneHz": 660,
+      "planned_window_seconds": [
+        1.667,
+        3.5
+      ],
+      "mid_segment_band_amplitude": 8189.2,
+      "final_quarter_band_amplitude": 8191.9,
+      "present_mid": true,
+      "present_at_planned_end": true,
+      "proof_kind": "tone segment presence, not speech intelligibility"
+    }
+  ]
+}

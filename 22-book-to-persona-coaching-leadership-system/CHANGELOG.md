@@ -4,6 +4,10 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v7.0.3 - 2026-10-13 - model doctrine: client choice or configured default, no prescribed models
+
+Removed every named-model prescription from the skill's doctrine and code. All three phases now run on the model the client selected, or the client's configured default model, resolved at runtime via shared-utils/select_model.py. Where the old text carried a genuine rationale (large context for whole-book extraction, subscription billing, extraction quality), it is now stated as a recommendation with its reason, never as a prescription or a hidden default. In pipeline/orchestrator.py, the hardcoded fallback model constant and the last-resort fallback were deleted: when the selector returns nothing, the pipeline resolves the client's configured default model from openclaw.json, and when neither exists it stops with a clear ask-the-client error (ModelNotConfiguredError) instead of silently substituting another model. The deprecated Moonshot-direct helper no longer hardcodes a model either. INSTALL.md connectivity smoke tests are parameterized to the client's resolved model instead of pinned model IDs. book-to-persona.skill was repackaged from the corrected source (the old package prescribed retired models throughout).
+
 ## v7.0.1 - 2026-09-17 - fix(shell): scripts/add-persona-from-source.sh re-execs under bash 4+ on macOS
 
 The script used the bash-4-only case modifier `${s,,}` behind a hard `#!/bin/bash`

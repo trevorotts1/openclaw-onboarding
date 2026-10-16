@@ -27,16 +27,26 @@ requested_alias, selected_provider, selected_model, reason} per the fix spec
 CATALOG ALIASES (FIX 13 boundary)
 ---------------------------------
 The labels below are catalog aliases, NEVER duplicated literal model ids at
-call sites (fix spec). Resolution order:
+call sites (fix spec). presentation_job.model_catalog (FIX 13's live
+catalog) is authoritative when it exposes resolve_alias(); the built-in
+DEFAULT_ALIAS_REGISTRY here is the fallback for the labels the catalog does
+not name, never a second source of truth for the ones it does.
 
-    1. presentation_job.model_catalog (FIX 13's live catalog) when it
-       exposes resolve_alias() -- FIX 13 is authoritative and this module
-       defers to it;
-    2. the built-in DEFAULT_ALIAS_REGISTRY here, which pins only the ids
-       this box has LIVE-CONFIRMED (deepseek-v4.1-flash / deepseek-flash on
-       the native DeepSeek endpoint) plus the GLM/Ollama/Kie labels from the
-       fix-spec table, to be superseded by FIX 13's live catalog the moment
-       that module lands.
+ROUTE RESOLUTION ORDER (the model doctrine: the client selects, or their
+configured default applies; a recommendation is guidance, never a silent
+prescription):
+
+    1. the client's declared model plan (profile["model_plan"]) -- the
+       client's explicit choice for the capability class;
+    2. the client's configured default model (a default recorded on the
+       resource profile, or agents.defaults.model in openclaw.json);
+    3. the department capability RECOMMENDATION (CAPABILITY_CANDIDATES,
+       resolved through the catalog): surfaced on every decision as a
+       recommendation with its capability reason, and selectable only
+       among providers the client's own profile owns, consents to and
+       wires. When nothing the client owns can serve, the phase parks
+       with the recommendation and an ask-the-client reason rather than
+       silently selecting a named model.
 
 PROFILE CONTRACT (FIX 8/9)
 --------------------------
@@ -107,13 +117,16 @@ def flag_enabled() -> bool:
 # ---------------------------------------------------------------------------
 # One registry, consulted by resolve_alias(); no call site ever hardcodes a
 # literal model id. `live_confirmed` marks ids proven against a real endpoint
-# on this box (the DeepSeek native pair); the rest carry the fix-spec table's
-# labels until FIX 13's live catalog lands and resolves them authoritatively.
+# on this box; the rest carry the fix-spec table's labels until FIX 13's live
+# catalog lands and resolves them authoritatively.
+#
+# The text.strong id is NOT here anymore: that catalog alias is
+# client-resolved (the client's choice or their configured default), so this
+# registry must never resurrect it as a fallback pin when the catalog
+# declines to name a model. Its capability metadata survives in
+# MODEL_CAPABILITY_META below, which judges client-declared models against
+# class floors and can never be selected as a route.
 DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "deepseek-v4.1-flash": {"provider": "deepseek-direct",
-                        "model": "deepseek-v4.1-flash",
-                        "modality": "text", "context_class": "long",
-                        "live_confirmed": True},
     "deepseek-flash": {"provider": "deepseek-direct",
                       "model": "deepseek-flash",
                       "modality": "text", "context_class": "standard",
@@ -138,6 +151,16 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "model": "gpt-image-2",
                     "modality": "image", "context_class": "standard",
                     "note": "Kie image render (fix-spec render column)"},
+}
+
+
+#: Capability metadata for ids no catalog alias pins anymore (text.strong
+#: is client-resolved): modality/context_class ONLY, consulted by
+#: _registry_capability_meta when judging a client-declared or
+#: configured-default model against a class floor. Capability data, never
+#: a route: no provider, no served id, nothing selectable.
+MODEL_CAPABILITY_META: Dict[str, Dict[str, str]] = {
+    "deepseek-v4.1-flash": {"modality": "text", "context_class": "long"},
 }
 
 
@@ -350,12 +373,21 @@ DEFAULT_CAPABILITY = "authoring"
 # Ordered (alias, allow) candidates per capability class, straight from the
 # fix-spec table's Default + Ordered-fallback columns. The fallback rule is
 # the modality doctrine: reasoning/long classes never drop to Flash.
+#
+# This table is rung 3 of the resolution order, the department
+# RECOMMENDATION: consulted only after the client's declared plan and the
+# client's configured default, surfaced on every decision as a
+# recommendation with its source named, and selectable only among
+# providers the client's own profile owns, consents to and wires.
 CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
-    # OPERATOR RULING 2026-09-04: Flash leads on authoring work. Flash's
-    # DeepSeek Direct ceiling is 2500 concurrent vs Pro's 500, so a wide
-    # per-slide fan-out is only reachable on Flash; Pro remains the fallback
-    # for anything Flash cannot serve. reasoning_long and long_synthesis are
-    # deliberately NOT changed -- those classes still never see Flash.
+    # OPERATOR RULING 2026-09-04: Flash leads on authoring work; Pro remains
+    # the fallback for anything Flash cannot serve. reasoning_long and
+    # long_synthesis are deliberately NOT changed -- those classes still
+    # never see Flash. The 2026-09-04 note justified this order by DeepSeek
+    # Direct's per-tier ceilings (Flash 2500 concurrent vs Pro's 500); the
+    # owner ruling of 2026-10-15 removed DeepSeek Direct's provider cap, so
+    # that justification is retired and the order stands as the department
+    # recommendation on its own.
     #
     # NOTE: "allow_flash_fallback" below is INERT. It is declared here and
     # read NOWHERE in this tree (2 occurrences, both declarations, zero
@@ -433,8 +465,11 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 #    forced to do anything. So as a client should be able to choose whatever
 #    they want to be their primary workhorse or authoring model."
 #
-# CAPABILITY_CANDIDATES above is therefore the DEFAULT for a client who
-# declares NOTHING -- it stopped being the only answer. A client's declaration
+# CAPABILITY_CANDIDATES above is therefore the RECOMMENDATION layer: what
+# the department suggests for a client who declares nothing and has no
+# configured default -- it stopped being the only answer, and it is never
+# applied silently (every decision names its source: client-plan,
+# configured-default, or recommendation). A client's declaration
 # lives in the resource profile (resource_profile.record_model_plan ->
 # profile["model_plan"]), which is the ONE store every consumer already reads:
 # resolve_route() loads it on every call, and the P4-PROMPT fan-out children
@@ -604,6 +639,9 @@ def _registry_capability_meta(model_id: str) -> Dict[str, Any]:
     who types the alias ("glm-5.3"). Returns {} when nothing declares it --
     and {} means UNKNOWN, which never clears a long floor."""
     key = str(model_id or "").strip()
+    meta = MODEL_CAPABILITY_META.get(key)
+    if isinstance(meta, dict):
+        return dict(meta)
     row = DEFAULT_ALIAS_REGISTRY.get(key)
     if not isinstance(row, dict):
         nm = _norm_model_id(key)
@@ -705,6 +743,110 @@ def client_plan_for(capability: str,
     }
 
 
+def _parse_default_value(raw: Any) -> Optional[Dict[str, str]]:
+    """One configured-default value -> {provider, model}, or None.
+
+    Accepts a {provider, model} dict, a "model@provider" string (the model
+    plan's own spelling), or a "provider/model" string (the openclaw.json
+    spelling). A bare id rides the fleet's primary transport (ollama-cloud),
+    the same convention llm_score's resolver uses. A half-declared value is
+    NOT a declaration: None, never a guess."""
+    if isinstance(raw, dict):
+        provider = _norm_provider(raw.get("provider"))
+        model = str(raw.get("model") or "").strip()
+        if provider and model:
+            return {"provider": provider, "model": model}
+        return None
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if "@" in text:
+        model, _, provider = text.partition("@")
+        provider = _norm_provider(provider)
+        model = model.strip()
+        if provider and model:
+            return {"provider": provider, "model": model}
+        return None
+    if "/" in text:
+        provider, _, model = text.partition("/")
+        provider = _norm_provider(provider)
+        model = model.strip()
+        if provider and model:
+            return {"provider": provider, "model": model}
+        return None
+    return {"provider": "ollama-cloud", "model": text}
+
+
+def configured_default_for(capability: str,
+                           profile: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Rung 2 of the resolution order: the client's configured default
+    model as a candidate for one capability class, or None.
+
+    Sources, in order: a default recorded on the resource profile
+    (profile["configured_default"], then profile["default_model"]), then
+    agents.defaults.model in openclaw.json (via model_catalog, the same
+    authority the catalog's client-resolved aliases read). The result is
+    shaped like client_plan_for's pick and judged by the SAME class floor;
+    a configured default is the client's standing choice, so it is never
+    waived and never re-ordered behind the capability recommendation."""
+    declared: Optional[Dict[str, str]] = None
+    if isinstance(profile, dict):
+        for key in ("configured_default", "default_model"):
+            declared = _parse_default_value(profile.get(key))
+            if declared is not None:
+                break
+    if declared is None:
+        raw_default = ""
+        try:  # the catalog module owns the openclaw.json read
+            from presentation_job import model_catalog as _catalog  # type: ignore
+            fn = getattr(_catalog, "client_configured_default_model", None)
+            if callable(fn):
+                raw_default = fn()
+        except Exception:  # noqa: BLE001 -- absence never breaks routing
+            raw_default = ""
+        declared = _parse_default_value(raw_default)
+    if declared is None:
+        return None
+    alias_def, alias_source = declared_alias_def(declared)
+    floor = floor_verdict(alias_def, capability)
+    return {
+        "capability": capability,
+        "slot": "configured-default",
+        "via": "configured-default",
+        "declared": dict(declared),
+        "alias": f"{CLIENT_ALIAS_PREFIX}configured-default",
+        "alias_def": alias_def,
+        "alias_source": alias_source,
+        "floor": floor,
+        "waived": False,
+    }
+
+
+def _recommendation_for(capability: str) -> Dict[str, Any]:
+    """The department capability recommendation for one class, as data.
+
+    The first CAPABILITY_CANDIDATES row resolved through the catalog, with
+    the class floor as its stated reason (a heavy-reasoning, long-context
+    model for the reasoning classes; a fast, cheap model for the mechanical
+    text classes). Guidance only: a recommendation is surfaced on the
+    decision, never disguised as a client choice."""
+    floor = class_floor(capability)
+    basis = (f"capability data: {capability} requires modality "
+             f"{floor['modality']} and context_class {floor['context_class']}")
+    for row in (CAPABILITY_CANDIDATES.get(capability) or []):
+        alias = str(row.get("alias") or "")
+        if not alias:
+            continue
+        resolved = resolve_alias(alias)
+        if resolved and resolved.get("provider") and resolved.get("model"):
+            return {"alias": alias, "provider": resolved["provider"],
+                    "model": _served_model(resolved, resolved["provider"]),
+                    "basis": basis}
+    first = (CAPABILITY_CANDIDATES.get(capability) or [{}])[0]
+    return {"alias": str(first.get("alias") or ""), "provider": None,
+            "model": None, "basis": basis}
+
+
 def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """The per-class table the launcher banner and the client report print.
 
@@ -721,11 +863,32 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             (CAPABILITY_CANDIDATES.get(capability) or [{}])[0].get("alias") or "")
         pick = client_plan_for(capability, profile)
         if pick is None:
+            dpick = configured_default_for(capability, profile)
+            if dpick is not None and dpick["floor"]["ok"]:
+                rows.append({
+                    "capability": capability, "slot": "configured-default",
+                    "via": "configured-default",
+                    "source": "configured-default",
+                    "provider": dpick["declared"]["provider"],
+                    "model": dpick["declared"]["model"],
+                    "default_alias": default_alias, "floor": "ok",
+                    "detail": "the client's configured default model serves "
+                              "this class (no slot declared for it)",
+                })
+                continue
+            detail = ("no client declaration or configured default covers "
+                      "this class; the capability recommendation applies "
+                      "until the client declares a model or configures a "
+                      "default")
+            if dpick is not None:
+                detail = ("the client's configured default does not meet "
+                          "this class floor (" + dpick["floor"]["reason"]
+                          + "); the capability recommendation applies")
             rows.append({
                 "capability": capability, "slot": None, "via": None,
-                "source": "department-default", "provider": None, "model": None,
+                "source": "recommendation", "provider": None, "model": None,
                 "default_alias": default_alias, "floor": None,
-                "detail": "no client declaration covers this class",
+                "detail": detail,
             })
             continue
         applied = pick["floor"]["ok"] or pick["waived"]
@@ -733,7 +896,7 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             "capability": capability,
             "slot": pick["slot"],
             "via": pick["via"],
-            "source": "client-plan" if applied else "department-default",
+            "source": "client-plan" if applied else "recommendation",
             "provider": pick["declared"]["provider"],
             "model": pick["declared"]["model"],
             "default_alias": default_alias,
@@ -757,7 +920,7 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # FIX 11: Ultra / Standard / Economy modes -- measured-capacity concurrency
 # ---------------------------------------------------------------------------
 # DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 100
-# concurrent tasks -- even when DeepSeek advertises 500 / 2,500. It is never
+# concurrent tasks -- even when a provider advertises a larger number. It is never
 # raised by provider advertising, never "learned", and only revisited through
 # an explicit config revision with Trevor approval, gated on a REAL 7-day
 # wall-clock operator-box stability window (>=95% of eligible Ultra runs
@@ -782,14 +945,16 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 #        was measured the axis is inert and SAYS SO -- see
 #        mode_operator_ceiling() and _unmeasured_notice().
 #
-# U3 (2026-09-07) -- F16's 25 IS UNDONE; F15 STAYS. STANDARD_MODE_CEILING is
-#        back at the operator's 100. The 25 was a review SUGGESTION whose own
-#        text said "Trevor's call", shipped without that call and applied
-#        wider than the suggestion proposed (every width, not just the
-#        fan-out QC phases). F15's honesty -- the plan reporting the width
-#        that will actually be applied -- is untouched and must stay.
-#        FIX 61.5: ultra is 400, standard is 25 -- the axis is REAL, not
-#        cosmetic. Unmeasured clients get their mode's ceiling.
+# U3 (2026-09-07) undid F16's 25 at the time and put STANDARD_MODE_CEILING
+#        back at 100; F15 stayed. THAT STATE NO LONGER HOLDS. FIX 61.5
+#        (2026-09-27 fix orders, the operator's own decision this time)
+#        settled the numbers the other way: ultra 400, standard 25,
+#        economy 100 -- see MODE_OPERATOR_CEILING below. The axis is REAL
+#        and enforced, not cosmetic: mode_operator_ceiling() reads the
+#        table on every run, ultra never routes ollama-cloud (FIX 61.1 --
+#        it substitutes the OpenRouter served_id or is ineligible), and
+#        aliases resolve through served_ids matching. Unmeasured clients
+#        get their mode's own ceiling, not the ultra 400 (FIX 61.5).
 
 MODE_FLAG_ENV = "PRESENTATION_MODES"
 MODE_FLAG_DEFAULT = "1"
@@ -799,40 +964,23 @@ MODE_FLAG_DEFAULT = "1"
 #: FIX 48: per-department on purpose -- the social department's shared-utils/social_execution_policy.py uses ULTRA_APP_CEILING = 50.
 ULTRA_OPERATOR_CEILING = 400
 
-#: STANDARD's share of the operator ceiling.
+#: STANDARD's share of the operator ceiling: 25.
 #:
-#: U3 (2026-09-07) -- RESTORED TO 100. THIS IS AN UNDO, NOT A NEW DECISION.
+#: History, because this constant has been flipped twice and the record
+#: matters: FIX 16 set it to 25; U3 (2026-09-07) restored it to 100 on the
+#: grounds that the 25 had shipped without the operator's call; FIX 61.5
+#: (2026-09-27 fix orders) then set it back to 25 AS the operator's call,
+#: in the same orders that put ultra at 400 and kept economy at 100. The
+#: enforced truth today is the table below: ultra 400, standard 25,
+#: economy 100. The axis differentiates and is load-bearing:
+#: _mode_axis_differentiates() computes True from the table, and
+#: mode_operator_ceiling() applies each mode's own ceiling on measured
+#: and unmeasured clients alike (FIX 61.5). Any older text in this repo
+#: calling the axis COSMETIC or standard "restored to 100" describes the
+#: U3 interlude, not the current code.
 #:
-#: Standard reached 100 in every version of this module until FIX 16 (commit
-#: 86662bb67, 2026-09-06 20:50, on the operator box at 07:07 the next
-#: morning) set it to 25. That commit justified the 25 as "the review's own
-#: recommendation". The review's own words at that item are "Make ultra mean
-#: something, or delete it (Trevor's call; my recommendation below)" -- and
-#: that call was never made. The review also proposed the smaller share for
-#: the fan-out QC phases; the constant was wired into mode_ceiling() ->
-#: capped_width(), which cuts EVERY width decision including the P4-PROMPT
-#: wave. So it was applied both without approval and more broadly than the
-#: suggestion said. Narrowing standard was never a requirement of any fix: it
-#: was invented to make ultra look different from standard. The operator's
-#: number is 100 and it is restored here.
-#:
-#: FIX 15 IS DELIBERATELY KEPT. The other half of 86662bb67 -- the mode plan
-#: and the launcher banner reporting the width that will actually be applied,
-#: instead of printing "concurrency plan 8" next to a wave running 100 -- was
-#: a real fix and is untouched by this undo. Only the number changed.
-#:
-#: THE CONSEQUENCE, STATED INSTEAD OF ENGINEERED AROUND: with standard ==
-#: ultra == 100 the per-mode WIDTH axis differentiates nothing again, which
-#: is the very defect FIX 16 was written to remove. It is NOT fixed here.
-#: Both honest ways to fix it -- raise ultra above the human-ratified
-#: ULTRA_OPERATOR_CEILING, or let the operator set both numbers -- change a
-#: number the operator owns, and neither may be picked on his behalf; that is
-#: exactly how the 25 got here. What this module does instead is SAY SO,
-#: every time: _mode_axis_differentiates() reports the axis as NOT in force
-#: while the table is uniform, and the reason string that every record and
-#: the launcher banner print carries the word COSMETIC. A switch that does
-#: nothing may exist here only for as long as every record admits that it
-#: does nothing.
+#: FIX 15 IS DELIBERATELY KEPT throughout: the mode plan and the launcher
+#: banner report the width that will actually be applied.
 STANDARD_MODE_CEILING = 25
 
 #: FIX 16 -- the per-mode share of the operator ceiling, one table, read by
@@ -841,11 +989,10 @@ STANDARD_MODE_CEILING = 25
 #: (mode_concurrency's economy branch), not by a capacity allowance, and the
 #: review's instruction was "Economy stays as is".
 #:
-#: U3: the table is CURRENTLY UNIFORM (100/100/100) because standard was
-#: restored. The table is KEPT rather than deleted -- it is the one place an
-#: operator would set two different numbers, and deleting it would be a
-#: second unapproved decision -- but nothing pretends it is load-bearing
-#: while it is not: see _mode_axis_differentiates().
+#: FIX 61.5: the table is NOT uniform -- ultra 400, standard 25, economy
+#: 100 -- and it is load-bearing: mode_operator_ceiling() reads it on every
+#: run and _mode_axis_differentiates() computes True from it. (U3 had made
+#: it uniform at 100/100/100; the 2026-09-27 fix orders superseded that.)
 MODE_OPERATOR_CEILING: Dict[str, int] = {
     "ultra": ULTRA_OPERATOR_CEILING,
     "standard": STANDARD_MODE_CEILING,
@@ -1054,31 +1201,33 @@ def measured_client_ceiling(profile: Optional[Dict[str, Any]],
 
 
 def _mode_axis_differentiates() -> bool:
-    """U3: does the per-mode ceiling table actually produce different widths?
+    """Does the per-mode ceiling table actually produce different widths?
 
-    capped_width() is a min(). If every mode reads the same number out of
-    MODE_OPERATOR_CEILING it cannot tell the modes apart, and declaring
-    "ultra" changes nothing in the engine. Since U3 restored
-    STANDARD_MODE_CEILING to the operator's 100 that is once again the case,
-    and it is the state FIX 16 was written to remove -- reported here rather
-    than removed, because removing it means changing a number only the
-    operator may change.
+    capped_width() is a min(). If every mode read the same number out of
+    MODE_OPERATOR_CEILING it could not tell the modes apart, and declaring
+    "ultra" would change nothing in the engine. That WAS the state under
+    U3 (standard restored to 100, table uniform). It is not the state now:
+    FIX 61.5 set the table to ultra 400, standard 25, economy 100, so this
+    returns True.
 
-    COMPUTED from the table, never hard-coded: the day an operator ratifies
-    two different numbers, every "in force" flag and every reason string
-    below flips to the truth with no further edit to this module."""
+    COMPUTED from the table, never hard-coded: if the numbers ever go
+    uniform again, every "in force" flag and every reason string below
+    flips back to saying so with no further edit to this module."""
     return len({MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING)
                 for m in MODES}) > 1
 
 
 def _cosmetic_axis_notice() -> str:
-    """U3: the sentence a run gets when its capacity WAS measured but the mode
-    axis still buys nothing, because every mode shares one ceiling.
+    """The sentence a run gets when the mode axis buys nothing because every
+    mode shares one ceiling.
 
+    Retained for the uniform-table case only: since FIX 61.5 made the table
+    differentiate (ultra 400, standard 25, economy 100), both call sites
+    guard on _mode_axis_differentiates() and this notice is not emitted.
     It rides the same `reason` string the launcher banner already prints
     verbatim and `.mode-plan.json` already records, so no caller had to
-    change. F15's rule, applied to F16's undo: a record that cannot state a
-    difference must not imply one."""
+    change. F15's rule: a record that cannot state a difference must not
+    imply one."""
     return (f" MODE WIDTH AXIS: ultra runs at {ULTRA_OPERATOR_CEILING}, "
             f"standard at {STANDARD_MODE_CEILING} "
             f"(ULTRA_OPERATOR_CEILING {ULTRA_OPERATOR_CEILING}, "
@@ -1095,30 +1244,19 @@ def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
     """FIX 16: the per-mode share of the operator ceiling, and whether the
     mode axis is IN FORCE at all. Returns (ceiling, in_force).
 
-    U3: "in force" now requires BOTH a determined client ceiling AND a table
-    that actually differentiates (_mode_axis_differentiates()). With standard
-    restored to 100 the table is uniform, so in_force is False on every run
-    and the records say so. Reporting True while the axis changes no width
-    would be exactly the K3 lie F15 exists to prevent, reintroduced through
-    the back door by this undo.
+    "In force" requires BOTH a determined client ceiling AND a table that
+    actually differentiates (_mode_axis_differentiates()). Under FIX 61.5
+    the table differentiates (ultra 400, standard 25, economy 100), so on a
+    measured client in_force is True and each mode's own ceiling applies.
+    Reporting True while the axis changed no width would be exactly the K3
+    lie F15 exists to prevent.
 
-    A mode's own ceiling exists only once the client's concurrency ceiling is
-    a DETERMINED fact -- a measured integer, or the client's own UNBOUNDED
-    declaration (a bring-your-own client stating its capacity is a reading,
-    not an absence). On an UNMEASURED client every mode gets the full
-    ULTRA_OPERATOR_CEILING, for two reasons that point the same way:
-
-      1. narrowing standard there would cut a real width on the strength of
-         an ABSENCE -- and an absence of a reading is not evidence, any more
-         than it is a capability; and
-      2. it is the operator's 2026-09-04 ruling verbatim ("never re-clamp a
-         measured width down to a default", parallel_prompt_worker
-         ._workers_for's own comment): the wave on an unmeasured client runs
-         at whatever capacity.probe() reported, and no mode may shrink it.
-
-    So on an unmeasured client the mode axis is INERT -- ultra and standard
-    are the same run -- and every record this module writes says so out loud
-    rather than implying a mode was bought. See _unmeasured_notice()."""
+    FIX 61.5 settled the unmeasured case as well: on an UNMEASURED client
+    every mode gets its OWN ceiling from the table (ultra 400, standard 25,
+    economy 100), not the ultra 400 for all, and in_force is False because
+    no client ceiling was determined. _unmeasured_notice() says so out
+    loud in the banner and the plan rather than implying a measured width
+    was bought. See _unmeasured_notice()."""
     m = normalize_mode(mode)
     if measured is None:
         # FIX 61.5: unmeasured clients get the MODE's ceiling, not 400.
@@ -1156,8 +1294,9 @@ def _unmeasured_notice(mode: str) -> str:
                     "capacity probe that lands) and ultra becomes a real "
                     f"{ULTRA_OPERATOR_CEILING}-wide run against standard's "
                     f"{STANDARD_MODE_CEILING}.")
-        # U3: measuring would NOT buy anything either, and saying it would is
-        # the reassuring-direction lie all over again.
+        # Only reachable if the table ever goes uniform again: measuring
+        # would NOT buy anything either, and saying it would is the
+        # reassuring-direction lie all over again.
         return head + tail + _cosmetic_axis_notice()
     if m == "standard":
         if _mode_axis_differentiates():
@@ -1185,7 +1324,7 @@ def mode_concurrency(mode: str, *,
     min(what the probe measures, this) -- an upper bound, stated as one.
 
     Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (100) or
-    a lower measured client ceiling -- DeepSeek advertising 500/2,500 changes
+    a lower measured client ceiling -- provider advertising changes
     nothing. FIX 16 adds the per-mode share (ultra ULTRA_OPERATOR_CEILING /
     standard STANDARD_MODE_CEILING), which applies only where the client
     ceiling is a determined fact; an UNMEASURED client answers None
@@ -1214,8 +1353,8 @@ def mode_concurrency(mode: str, *,
             choose, reason = mode_op, (
                 f"client is UNBOUNDED: {m} runs at its share of the operator "
                 f"ceiling -- {mode_op} (ultra {ULTRA_OPERATOR_CEILING} / "
-                f"standard {STANDARD_MODE_CEILING}); provider-advertised "
-                "500/2500 never raises it")
+                f"standard {STANDARD_MODE_CEILING}); provider advertising "
+                "never raises it")
             if not axis_in_force:
                 reason += "." + _cosmetic_axis_notice()
         else:
@@ -1279,8 +1418,10 @@ def mode_ceiling(mode: str, *,
     """The HARD CAP a mode imposes on a concurrency width. A CAP -- never a
     floor, never a target.
 
-    The binding text, unchanged: "Ultra's operator ceiling is 100 concurrent
-    tasks -- even when DeepSeek advertises 500 / 2,500 ... Standard and Economy
+    The binding text, with the owner ruling of 2026-10-15 applied to its
+    DeepSeek example (DeepSeek Direct has no provider cap to advertise):
+    "Ultra's operator ceiling is 100 concurrent
+    tasks -- even when a provider advertises more ... Standard and Economy
     derive from the MEASURED client capacity/cost policy and may never exceed
     the same client/provider ceiling."
     min(the mode's share of ULTRA_OPERATOR_CEILING, the client's MEASURED
@@ -1998,8 +2139,15 @@ def resolve_route(phase_id: str, *,
     plan_pick = client_plan_for(capability, profile)
     client_governs = bool(plan_pick is not None
                           and (plan_pick["floor"]["ok"] or plan_pick["waived"]))
+    # Rung 2: the client's configured default model. Behind only the
+    # client's declared plan, ahead of the capability recommendation, and
+    # judged by the same floor + eligibility gates as everything else.
+    default_pick = None if client_governs else configured_default_for(
+        capability, profile)
+    default_governs = bool(default_pick is not None
+                           and default_pick["floor"]["ok"])
     cands: List[Dict[str, Any]] = _mode_candidates(
-        capability, mode, client_governed=client_governs)
+        capability, mode, client_governed=client_governs or default_governs)
     client_prepended = False
     if plan_pick is not None:
         if client_governs:
@@ -2038,6 +2186,34 @@ def resolve_route(phase_id: str, *,
                 "via": plan_pick["via"],
                 "declared": dict(plan_pick["declared"]),
                 "floor": plan_pick["floor"],
+                "fallback_alias": requested_alias or None,
+            }
+
+    default_prepended = False
+    if default_pick is not None:
+        if default_governs:
+            cands.insert(0, {**default_pick["alias_def"],
+                             "alias": default_pick["alias"]})
+            decision["requested_alias"] = default_pick["alias"]
+            default_prepended = True
+            decision["configured_default"] = {
+                "provider": default_pick["declared"]["provider"],
+                "model": default_pick["declared"]["model"],
+                "alias_source": default_pick["alias_source"],
+                "floor": "ok",
+                "detail": default_pick["floor"]["reason"],
+            }
+            if mode == "economy" and capability in ECONOMY_FLASH_REPOINT:
+                decision["configured_default"]["economy_repoint"] = (
+                    "suppressed -- the client's configured default serves "
+                    "this class, so Economy did not re-point it")
+        else:
+            # Configured but below this class's floor: the recommendation
+            # layer serves the class, and the shortfall is stamped, never
+            # a dispatch-time surprise (same doctrine as client_plan_floor).
+            decision["configured_default_floor"] = {
+                "declared": dict(default_pick["declared"]),
+                "floor": default_pick["floor"],
                 "fallback_alias": requested_alias or None,
             }
 
@@ -2108,6 +2284,12 @@ def resolve_route(phase_id: str, *,
         if not decision["client_plan"]["applied"]:
             decision["client_plan"]["rejected_reason"] = str(
                 (candidates[0] if candidates else {}).get("reason") or "")
+    if default_prepended:
+        decision["configured_default"]["applied"] = bool(
+            candidates and candidates[0].get("eligible"))
+        if not decision["configured_default"]["applied"]:
+            decision["configured_default"]["rejected_reason"] = str(
+                (candidates[0] if candidates else {}).get("reason") or "")
     if route is not None:
         first_eligible_idx = next(
             (i for i, c in enumerate(candidates) if c.get("eligible")), 0)
@@ -2117,10 +2299,36 @@ def resolve_route(phase_id: str, *,
                       f"{cp['provider']}/{cp['model']}"
                       + (" (floor waived by the client)"
                          if cp["floor"] == "waived" else ""))
+        elif default_prepended and first_eligible_idx == 0:
+            cd = decision["configured_default"]
+            reason = (f"client configured default model: "
+                      f"{cd['provider']}/{cd['model']} "
+                      f"(no client declaration governs this class)")
         else:
             reason = "primary" if first_eligible_idx == 0 else \
                 f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
         decision.update({"route": route, "reason": reason})
+        # THE SOURCE OF THE MODEL, NAMED ON EVERY DECISION. A route is a
+        # client choice, the client's configured default, or a department
+        # recommendation -- never an unnamed silent selection.
+        if client_prepended and first_eligible_idx == 0:
+            decision["model_source"] = "client-plan"
+        elif default_prepended and first_eligible_idx == 0:
+            decision["model_source"] = "configured-default"
+        else:
+            decision["model_source"] = "recommendation"
+            decision["recommendation"] = {
+                "provider": route["provider"], "model": route["model"],
+                "capability": capability,
+                "detail": "department capability recommendation: no client "
+                          "declaration and no configured default model "
+                          "covers this class, so the capability table's "
+                          "first eligible candidate serves, from the "
+                          "client's own owned, consented and wired "
+                          "providers. Recommendation only: the client can "
+                          "override it by declaring a model plan or "
+                          "configuring a default model.",
+            }
         if modes_enabled():
             # F3 -- THE CEILING IS RE-STAMPED FOR THE ROUTE THAT WON.
             # The provisional stamp above was the whole-client floor: min()
@@ -2145,10 +2353,19 @@ def resolve_route(phase_id: str, *,
     else:
         rejected = "; ".join(f"{c.get('alias')}: {c.get('reason')}"
                              for c in candidates)
+        rec = _recommendation_for(capability)
+        rec_text = (f"{rec['provider']}/{rec['model']}" if rec.get("model")
+                    else f"alias {rec['alias']!r}")
         decision.update({
             "route": None,
+            "recommendation": rec,
+            "model_source": None,
             "reason": f"no eligible route for capability '{capability}' "
-                      f"({rejected}) -- park/fail-closed",
+                      f"({rejected}) -- park/fail-closed. Recommendation "
+                      f"from capability data: {rec_text} ({rec['basis']}). "
+                      f"Ask the client which model they want to use for "
+                      f"this class, or have them configure a default model; "
+                      f"no model was selected for them.",
         })
     decision["candidates"] = candidates
     return decision

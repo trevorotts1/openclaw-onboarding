@@ -52,7 +52,7 @@ contact.my_preferred_pronoun governs how the speaker is referred to everywhere a
 
 Default output-type preset: solo (config/presets.json). Book teaser: NONE. Personal Podcast episodes never receive a book teaser; that bonus is exclusive to the Interview Style lead-generation path.
 
-Terminal action at Step 17 (Trigger and Enroll): append the finished episode as a new row to the client's running episode spreadsheet (the running document created once at onboarding), storing the episode links there. This mode HARD-REFUSES workflow enrollment: the two customer-notification workflows (06-Podcast_Episode_Is_Ready and 04-Podcast is Completed) are the Interview lead-generation path only and are never triggered here. The enrollment layer enforces this refusal in code; a Personal-mode job that reaches enrollment must no-op the workflows and update the spreadsheet instead.
+Terminal action at Step 17 (Trigger and Enroll): append the finished episode as a new row to the client's running episode spreadsheet (the running document created once at onboarding), storing the episode links there. This mode HARD-REFUSES workflow enrollment: the two customer-notification workflows (06-Podcast_Episode_Is_Ready and 04-Podcast is Completed) are the Interview lead-generation path only and are never triggered here. The enrollment layer enforces this refusal in code; a Personal-mode job that reaches enrollment must no-op the workflows and update the spreadsheet instead. Step 16 link-back is skipped in this mode, so the episode URL field that triggers 04-Podcast is Completed is never written; the episode links live in the running spreadsheet.
 
 Silence boundary: zero customer messages of any kind, no SMS and no email, are sent from the engine on this path, and on this path there is nothing to send. The engine stops at the running-document update. Convert and Flow owns all messaging on every path; it is never bypassed, and it is never invoked to message a Personal Podcast listener.
 
@@ -60,7 +60,7 @@ Scheduling: if contact.date_for_release is present and in the future, use it as 
 
 ### 8. What this mode does NOT change
 
-The Style Engine mechanics, the canonical 18-step pipeline order, both QC gates and their thresholds, the Fish Audio tag syntax, the sizing table (7 to 15 minutes at 140 words per minute, 10 minutes the default), and the runtime model routing all stay exactly as defined elsewhere in the skill. Content work routes to the client's own runtime models per the routing policy (Ollama Cloud Kimi 2.6, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite). This mode is perspective and terminal boundary only.
+The Style Engine mechanics, the canonical 18-step pipeline order, both QC gates and their thresholds, the Fish Audio tag syntax, the sizing table (7 to 15 minutes at 140 words per minute, 10 minutes the default), and the runtime model routing all stay exactly as defined elsewhere in the skill. Content work runs on the client's chosen model, or their configured default model, per the selection policy in config/models.json. This mode is perspective and terminal boundary only.
 
 ### 9. Gate hooks (Episode Gate and Part A checklist)
 

@@ -54,7 +54,9 @@
 #   token (Token Grabber); it does NOT cause an automatic UI login.
 #   GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only.
 #
-# PRIMARY ENGINE: agent-browser (Vercel Labs), headless, isolated --session.
+# FALLBACK-LANE ENGINE: agent-browser (Vercel Labs), headless, isolated --session.
+# (This seed path serves the fallback lane. The PRIMARY extension lane starts
+# logged in on the operator's paired Chrome and needs no seed.)
 # It must already have navigated to the GoHighLevel origin once (so cookies bind
 # to the right origin + the Firebase IndexedDB exists) — pass --pre-open here.
 #

@@ -1,7 +1,7 @@
 # SOP -- External GHL Installs (P-U-GHL-SALES / P-U-GHL-VSL / P-U-FORM-GATE) [PRES-011]
 
 **Status (PRES-011, 2026-09-09):** LANDED. Executor
-`DEPT/scripts/ghl_external_installer.py`; manifest v69 wires the three
+`DEPT/scripts/ghl_external_installer.py`; manifest v70 wires the three
 phases as script executors with explicit `executor.capability`
 (`ghl_page_install` / `ghl_workflow_install`, owning adapter skill06 /
 skill44); verifiers `phase_verifiers._verify_ghl_sales_install` /
@@ -68,7 +68,8 @@ wave (TODO PRES-011).
   sales_page_id + checkout_page_id + readback + bindings).
 - P-U-GHL-VSL (order 6.4, elected on WANT_VSL_PAGE=yes): vsl.html -> VSL
   page. Reuses this run's verified sales funnel_id when present (one
-  funnel per client, mirroring vsl_builder.resolve_shared_funnel_id).
+  funnel per client, via this installer's own shared_funnel_id(), proven
+  from the run's sales install receipt).
   Receipt `working/vsl/ghl_build_receipt.json`.
 - P-U-FORM-GATE (order 5.6, elected on WANT_VSL_PAGE=yes): gate form +
   tag workflow. Receipts `ecosystem/gate-form.json` +

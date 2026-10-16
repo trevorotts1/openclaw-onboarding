@@ -256,8 +256,12 @@ def url_field_is_set(contact: Dict[str, Any]) -> bool:
 # Workflow resolution (setup-time discovery; never guessed at runtime)
 # --------------------------------------------------------------------------- #
 
-def discover_workflows(runner: CafRunner) -> Dict[str, Dict[str, Any]]:
-    """List workflows via caf and return {name: {"id": ...}}."""
+def discover_workflows(runner: CafRunner) -> Dict[str, List[Dict[str, Any]]]:
+    """List workflows via caf and return {name: [{"id": ..., "status": ...}]}.
+
+    One name can match several workflows (a legacy copy and a template copy),
+    so every match is kept: the resolver, not this collector, picks one.
+    """
     result = caf_call(runner, ["workflows", "list"], "workflows list")
     data = result.data
     items: List[Any] = []
@@ -265,14 +269,16 @@ def discover_workflows(runner: CafRunner) -> Dict[str, Dict[str, Any]]:
         items = data
     elif isinstance(data, dict):
         items = data.get("workflows") or data.get("data") or []
-    out: Dict[str, Dict[str, Any]] = {}
+    out: Dict[str, List[Dict[str, Any]]] = {}
     for item in items:
         if not isinstance(item, dict):
             continue
         name = item.get("name")
         wid = item.get("id") or item.get("_id")
         if name and wid:
-            out[str(name)] = {"id": str(wid)}
+            out.setdefault(str(name), []).append(
+                {"id": str(wid), "status": str(item.get("status") or "").lower()}
+            )
     return out
 
 
@@ -283,17 +289,34 @@ def resolve_workflow(
 ) -> Dict[str, Any]:
     """Resolve a workflow to {"id", "trigger"} from state, or live discovery.
 
-    A workflow missing everywhere is a DiscoveryError: stop setup, surface to
-    the founder. Never guess an ID and never build a workflow at runtime.
+    State is authoritative when it pins an id. Otherwise live discovery must
+    yield exactly one published workflow of that name: a draft is never
+    enrolled into, and a name matching several copies is never guessed at.
+    Anything ambiguous or draft-only is a DiscoveryError: stop setup, surface
+    to the founder. Never guess an ID and never build a workflow at runtime.
     """
     workflows = (state or {}).get("workflows") or {}
     entry = workflows.get(name)
     if entry and entry.get("id"):
         return {"id": str(entry["id"]), "trigger": entry.get("trigger", "direct_add")}
     if runner is not None:
-        discovered = discover_workflows(runner)
-        if name in discovered:
-            return {"id": discovered[name]["id"], "trigger": "direct_add"}
+        cands = discover_workflows(runner).get(name, [])
+        published = [c for c in cands if c["status"] == "published"]
+        if len(published) == 1:
+            return {"id": published[0]["id"], "trigger": "direct_add"}
+        if len(published) > 1:
+            ids = ", ".join(c["id"] for c in published)
+            raise DiscoveryError(
+                f"Workflow '{name}' has {len(published)} published copies ({ids}). "
+                f"Pin one in ghl-state.json workflows[name] or draft the extra; "
+                f"never guess which copy enrolls the contact."
+            )
+        if cands:
+            ids = ", ".join(c["id"] for c in cands)
+            raise DiscoveryError(
+                f"Workflow '{name}' exists only as draft (ids {ids}); publish the "
+                f"client's customized copy first. Enrollment never targets a draft."
+            )
     raise DiscoveryError(
         f"Workflow '{name}' not found in state or via caf discovery. Stop setup "
         f"and surface to the founder; do not build it at runtime."

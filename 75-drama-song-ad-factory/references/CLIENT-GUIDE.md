@@ -486,9 +486,87 @@ Your video can open with a sweeping drone fly-in.
 
 ---
 
+# ACT 5: THE FIRST QUESTIONS
+
+These are the questions the studio asks first, before ACT 1, because the answer to the first one decides everything that follows: which questions come next, how long the video can be, and where it will run. You only see the questions that apply to what you chose, so nobody is ever asked about a choice they did not make.
+
+## STEP 18: Question 1, What Is This Video For?
+
+**What happens.** The very first question is what the video is for. You get four choices: grow your business with the full package, tell a client's success story, teach a lesson, or make a video for social media.
+
+**Why it matters.** What the video is for decides its shape, its length and where it goes. One answer tells the crew whether to build a full episode with trailers and ad clips around it, or a single video made to fit one app.
+
+**How to do it.** Pick the option that matches the result you want, not the way you imagine it being made. If you are not sure, take the full package: one production gives you an episode, two trailers that send people to it, and two ready-to-run ad clips.
+
+**Great answer:** "Grow my business." You want the whole package from one production.
+
+**What Maya said:** "Grow my business. My Saturday class needs a steady stream of bookings."
+
+## STEP 19: Question 2, How Long Is the Full Episode?
+
+**What happens.** Chosen "Grow my business" and you are asked how long the full episode should be: 3 minutes, 5 minutes, 7 minutes or 10 minutes. Your 60-second and 90-second trailers and ad clips are included at every length.
+
+**Why it matters.** The episode is the story people watch all the way through; the trailers and ad clips are what send them to it. Three minutes is the shortest episode that still earns two good trailers. The 7- and 10-minute episodes are made with KIE, not Agnes.
+
+**How to do it.** Pick the length that fits how much story you have. If this is your first one, take 3 minutes.
+
+**Great answer:** "3 minutes." The shortest episode that still earns two good trailers.
+
+**What Maya said:** "3 minutes. I want to see how it performs before I go longer."
+
+## STEP 20: Question 3, How Should Your Video Be Framed?
+
+**What happens.** You choose the shape: vertical for phones, Reels, Shorts and TikTok, or wide for YouTube on a TV or a computer.
+
+**Why it matters.** The shape decides how every shot is framed, so it has to be decided before the storyboard is drawn. Social video is watched upright; long-form video is often watched on a bigger screen.
+
+**How to do it.** If most people will watch on a phone, choose vertical. A paid ad and a free post are always made vertical, so this question only comes up for the other choices.
+
+**Great answer:** "Vertical." Your audience watches on a phone.
+
+**What Maya said:** "Vertical. Everyone watches me on their phone."
+
+## STEP 21: Question 2, Do You Have Permission?
+
+**What happens.** Told a client's success story, and you are asked one question: do you have your client's permission to use their testimonial? Yes, or no and the order pauses until you have it.
+
+**Why it matters.** A client's own words can only be used when they say so. Without permission nothing is generated and nothing is charged, so your money and your client's trust both stay safe.
+
+**How to do it.** Ask your client first, then answer. If the answer is no, we save your answers exactly as they are and pick the whole thing back up when you have it.
+
+**Great answer:** "Yes." Your client is happy to be quoted.
+
+**What Maya said:** "Yes. She asked me to share it."
+
+## STEP 22: Question 2, Where Will This Video Run?
+
+**What happens.** Chose a video for social media, and you are asked where it will run: Facebook or Instagram as a paid ad, TikTok, LinkedIn, or a free post.
+
+**Why it matters.** Each app has its own length and shape rules, so the video is made to fit the one you pick rather than resized afterwards and cropped badly.
+
+**How to do it.** Pick the app your audience actually uses. Facebook or Instagram is the widest reach for a vertical video.
+
+**Great answer:** "Facebook or Instagram - paid ad." One vertical video fits Reels, Stories and the feed there.
+
+**What Maya said:** "Facebook or Instagram - paid ad. That is where my students are."
+
+## STEP 23: Should Agnes Make Your Pictures and Clips?
+
+**What happens.** After you pick your video style, you are asked whether you have a paid Agnes subscription, and whether it should make this video's pictures and clips. If you told us before that you do not have one, this question is not asked again.
+
+**Why it matters.** If you pay for an Agnes plan, your pictures and video clips can be made with it at no extra cost. Agnes video is 720p, a little softer than the studio's standard models, and the song and the talking close-ups still use the studio's providers.
+
+**How to do it.** Answer yes if you have a plan and want it used. If Agnes cannot make something, we fall back to the studio's standard models and ask you first.
+
+**Great answer:** "Yes - use my Agnes plan." You have a plan and you want it used.
+
+**What Maya said:** "Yes. I pay for it every month anyway."
+
+---
+
 ## That's a Wrap!
 
-You did it, Executive Producer. Here is the whole story in one breath: you got ready, topped up the tanks, set up your team, answered eight questions, said "yes" to the recap, approved the script, picked your song, signed off on the storyboard, and the crew took it from there.
+You did it, Executive Producer. Here is the whole story in one breath: you said what the video is for, got ready, topped up the tanks, set up your team, answered your questions, said "yes" to the recap, approved the script, picked your song, signed off on the storyboard, and the crew took it from there.
 
 **You bring the story. Our Hollywood team brings it to life.**
 
@@ -513,7 +591,13 @@ You did it, Executive Producer. Here is the whole story in one breath: you got r
 | 15 | Approve the storyboard | A card and a picture per shot |
 | 16 | Wait while the crew works | Progress updates |
 | 17 | Premiere | Your finished video, plus clips for longer videos |
+| 18 | Question 1: what is this video for | Your purpose chosen |
+| 19 | Question 2: how long is the full episode | Your episode length (full package only) |
+| 20 | Question 3: how should it be framed | Your shape (not asked for a social video) |
+| 21 | Question 2: do you have permission? | Permission to use your client's words (success stories only) |
+| 22 | Question 2: where will it run? | Your app (social videos only) |
+| 23 | Should Agnes make your pictures and clips? | Your Agnes answer, remembered for next time |
 
-**[INFOGRAPHIC: flow diagram]** *Title: "From Your Answers to Your Premiere."* Data: a winding film-strip road with all 17 steps as stops, three gold "You approve" gates at Steps 13, 14 and 15, and a finish-line trophy labeled "Your finished video."
+**[INFOGRAPHIC: flow diagram]** *Title: "From Your Answers to Your Premiere."* Data: a winding film-strip road with all 23 steps as stops, three gold "You approve" gates at Steps 13, 14 and 15, and a finish-line trophy labeled "Your finished video."
 
 > **Top-up reminder:** Before your next video, check your KIE.ai and OpenRouter balances first so your video never stops halfway.

@@ -4,6 +4,167 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.62 - 2026-10-16 - BATCH-DSF-12: signature launch wave, skill-72 motion v2, skill-78 product selection, miniapp deletion
+
+Batch `BATCH-DSF-12` — four members merged together into ONE batch branch off
+`main` @ `0575636fd`, with one version bump and one entry for the whole batch,
+per the swarm plan.
+
+**The single bump is `v2.9.61` -> `v2.9.62`, and it is carried by member `#2119`
+inside this batch** (`skill-version.txt` and the `SKILL.md` frontmatter
+`version:` field moved together in that member's own commit). No second bump was
+applied: a second bump would have taken `v2.9.63` and skipped a patch. The batch
+diff against `main` therefore shows exactly one version move.
+
+- `#2137` (`s49/signature-launch-wave1` @ `efe25c46b`) — S49 Wave 1: the Signature Launch domain schemas (`shared-utils/signature_launch/domain/*.schema.json`, incl. `purchase-event.v1.0.schema.json` and `route-graph.schema.json`), the route compiler, the launch-plan validator (`49-signature-funnel/scripts/validate_launch_plan.py`) and its `signature-funnel-entry.sh` wiring. 45 files, +6114/-390.
+- `#2128` (`skill72-motion-v2` @ `c0f912c2b`) — Skill 72 Motion Graphics V2, the integrated release candidate, plus the `shared-utils/motion-render-runtime` provision/rollback/probe path and the `skill72-motion-graphics-tests` workflow.
+- `#2143` (`martin/s78-signature-product-selection` @ `9c163b679`) — Skill 78 Signature Product Selection (Signature Launch L1 checkpoint): the new skill folder, its registration in `23-ai-workforce-blueprint/skill-department-map.json`, the regenerated `role-library/_index.json`, and the Layer-B "Skills You Operate" / dept-guide restamps that make the repo-consistency gate pass.
+- `#2119` (`martin/pres-fix-d5-miniapp-deletion` @ `558e2f718`) — FIX-PLAN Item 13 / B10 S10-D5: the deprecated `templates/role-library/presentations/intake-miniapp/` tree and `deck-intake-turngate.py` are deleted (-7515 lines), with the `presentation-intake-guard` and `version-consistency` workflows, the refresh/repair scripts and `create_role_workspaces.py` updated to match. Also carries this batch's single version bump.
+
+**Conflict resolution on this batch head (real, not papered over).** Merging
+`#2143` produced content conflicts in the two generated manifests,
+`23-ai-workforce-blueprint/templates/role-library/_index.json` and
+`universal-sops/_content-manifest.json`. Both were resolved the only way they can
+be: the conflict sides were taken, then the files were **regenerated from the
+merged tree by their own generators** and verified clean —
+
+- `python3 scripts/hash-universal-sops-manifest.py` -> `--check` PASS (115 files, all sha256 match)
+- `python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py` -> `--check` PASS (538 roles + 148 sops + 19 personas)
+
+The same two files conflicted when `origin/main` was merged into `#2128` and were
+resolved and regenerated identically on that member branch.
+
+**One more merge-resolution defect, found and fixed on the same evidence.** Taking the
+incoming `_index.json` wholesale also took `main`'s `"version": "27.1.27"`, regressing the
+branch's own repo-release marker while every other marker stayed at `27.1.28`. The
+regenerator preserves `version`, so it survived regeneration and only the instrument caught
+it — `scripts/bump-version.sh --check` went red:
+
+```
+templates/role-library/_index.json [version]   27.1.27   <-- DRIFT
+DRIFT DETECTED — at least one file disagrees with /version.   (rc=1)
+```
+
+Restoring `27.1.28` on the `#2128` member branch (head `c0f912c2b`) and re-merging it here
+turns the instrument green: `bump-version.sh --check` -> "All 10 version markers agree"
+(rc=0), and `qc-assert-repo-consistency.py` -> rc=0, 10/10 dimensions OK.
+
+**Area regressions, run on this batch head (BUILD-PLAN.md "Regression commands per area"):**
+
+- Service: `node --test 75-drama-song-ad-factory/mini-app/service/test/*.test.mjs` -> 111/111 pass; `service/prove/prove_push_optional.mjs` and `prove_service_boundaries.mjs` -> ALL CASES PASSED.
+- Page: `bash 75-drama-song-ad-factory/mini-app/ui/checks/run-all.sh` -> all 6 present checks passed.
+- Approvals module: `node 75-drama-song-ad-factory/mini-app/approvals/prove/approvals.prove.mjs` -> C1-C5 ALL PASS.
+- Bridge: `python3 75-drama-song-ad-factory/shared-bridge/checks/run_checks.py` -> ALL PASS.
+- Timer: `install-timer.sh --platform mac --dry-run` -> rc=0. `--platform hostinger` and `--platform contabo` -> rc=1 "identity refused", **identical on `origin/main`** (control run in the same shell), so it is a pre-existing condition of the instrument, not a regression from this batch.
+- Skill 75 core: `python3 -m pytest -q 75-drama-song-ad-factory/scripts/core` -> 2272 passed, 4 skipped, 0 failed.
+- `retired-artifacts-ledger-guard` -> `OK: _retired.json in sync with git history (artifacts=54 sops=8 roles=46 departments=17)`, rc=0. `#2119`'s ledger entry records the **real** deleting commit `689404ca2` rather than a synthetic `refs/pull/N/merge` hash, which is why it is stable across merge refs.
+
+**Race recorded as fact — and how it ended.** The launchd merge train opened its
+own batch PR `#2155` (`batch/auto-merge`, head `d7881fd35`, "Merge train: 1 PR(s)
+— #2137") carrying exactly one member, `#2137`. At the time this batch was built,
+`#2137` was still `OPEN` with `mergedAt=null`, so this batch legitimately carried
+it: `git merge-base --is-ancestor efe25c46b HEAD` was YES and it went in as a
+normal `--no-ff` merge commit.
+
+**`#2137` then landed elsewhere first.** `#2155` was merged at 2026-10-16T10:19:33Z
+and `#2137` at 10:19:35Z, taking `main` to `8c3d1ce9a`. `#2137`'s head
+`efe25c46b` is now an ancestor of `main`, so this batch's copy of it is a no-op
+duplicate: the same commit, merged twice, with nothing to reconcile. `origin/main`
+was merged into this branch afterwards (clean, no conflicts) so the PR sits on the
+current `main`, and the remaining three members — `#2128`, `#2143`, `#2119` — are
+the only content this batch still contributes. `#2155` was never touched: not
+closed, not drafted, not commented, not forced.
+
+No behaviour outside SPEC.md was added and no bridge file was touched.
+
+## v2.9.61 - 2026-10-16 - BATCH-AGN-24H-O3: W4-proof-U2 accepted platform proof, privacy-repaired receipt
+
+Batch `BATCH-AGN-24H-O3` - the accepted `W4-proof-U2` platform proof lands on
+main with its receipt header privacy-repaired (one batch PR). Window:
+2026-10-15T23:54:34Z - 2026-10-16T23:54:34Z.
+
+- `unit/AGN-924-proof-REPAIR` (W4-proof-U2 privacy repair, AGN-924) -
+  `references/agnes-platform-proof.md`: the TEST-01 container-persistence
+  receipt (single-platform test, same-recipe parallel validation) and the three
+  sourced receipt claims from the accepted head reach main, and every
+  identifier site is swapped for a generic label: line 1's two identity
+  categories become "a client VPS", and the six box-label cells (Instrument,
+  Transport and the client-container rows) become "a client VPS box" and
+  "a-client-vps-box-openclaw-1". Every other byte stays put: capture pointers,
+  recipe wording, dates and every truthful output are preserved - the diff
+  against the accepted copy is exactly 7 lines (line 1 plus those six cells),
+  12 bytes shorter, 319 lines on both sides.
+
+Version `v2.9.60` -> `v2.9.61` (main already carries `v2.9.60` from #2146; this release takes the next patch. G3 gates a skill-content change on that bump). Both the
+`skill-version.txt` file and the `SKILL.md` frontmatter `version:` field carry
+`v2.9.61` in the same commit, so the frontmatter guard holds.
+
+## v2.9.59 - 2026-10-15 - BATCH-AGN-24H-O: last-24h leftover units
+
+Batch `BATCH-AGN-24H-O` — the four wave-1/wave-2 units that were still open
+against main after batch `#2130` merged, merged together (one version bump and
+one entry for the whole batch). Window: 2026-10-14T23:54:34Z -
+2026-10-15T23:54:34Z.
+
+- `#2099` (`unit/AGN-W1-agnes-core-U9`, W1-agnes-core-U9) — `agnes_transitions`:
+  chained segments, beat-aligned scene changes, crossfades and one soundtrack.
+- `#2089` (`unit/AGN-W1-method-story-U1`, W1-method-story-U1) — `method_plan`:
+  the Story Beat Blueprint and music-cue validator, the gates A-F record and the
+  pace order builder.
+- `#2080` (`unit/AGN-W1-method-trailer-U2`, W1-method-trailer-U2) —
+  `delivery_clips`: trailer file names, end-card trailers and per-trailer
+  destinations in the delivery receipt.
+- `#2108` (`unit/AGN-W2-wiring-U1`, W2-wiring-U1) — `factory next` reads
+  `method.json` and the Agnes answer: purpose routing, permission and platform
+  gates, the trailer stage, Agnes segment jobs as a background job and the
+  runbook rows.
+
+Version `v2.9.58` -> `v2.9.59` (G3 gates a skill-content change on that bump).
+Both the `skill-version.txt` file and the `SKILL.md` frontmatter `version:`
+field carry `v2.9.59` in the same commit, so the frontmatter guard holds.
+
+## v2.9.53 - 2026-10-14 - INTAKE-FIXES item 12: build hygiene never reaches the client
+
+`#2065` (`unit/SWI-202`, W2-item12-U1) — the doctrine half of SPEC.md item 12. A drift
+decision menu was put in front of a client mid-intake; clients never decide
+repo-drift questions. `SKILL.md`, inside the enforced flow ("Start here: the
+enforced flow", right after the no-skip-gate paragraph, not an appendix), now
+states that drift between the installed tree and its source is build hygiene
+and, during a client run, the drift report is OPERATOR-ONLY and SILENT: no
+decision menu, no numbered report / add-files / full-re-sync / type-your-own
+choice, no prompt that waits for an answer, nothing about drift in the client's
+chat; the sync continues non-interactively on its documented default and the
+drift is reported to the operator only, by named file and path. The decision
+menu stays available on the explicit operator path (a named flag or an
+operator-run sync outside a client run).
+
+No code emitter exists in this repository to change: the four menu phrases
+("Report only" / "Add 5 files" / "Full re-sync" / "Type something") are absent
+from onboarding `origin/main`, from 999-setup `origin/main`, from the client
+box's `~/.claude/tools`, `~/.claude/skills` and `~/.openclaw`, and from the
+installed OpenClaw package, so the menu was composed at run time by the agent.
+The fix that binds an agent is therefore the doctrine in the enforced flow.
+The 999 packaged twin carries the same paragraph, because
+`references/parity-contract.md` lists creative doctrine and the enforced flow
+among the items that must be identical across both distributions (trevorotts1/999-setup `#226`). Version
+`v2.9.52` -> `v2.9.53` (G3 gates a skill-content change on that bump); the 999
+copy bumps its own VERSION train with its SKILL.md frontmatter, as its
+parity-contract re-sync procedure requires.
+
+## v2.9.52 - 2026-10-14 - INTAKE-FIXES batch O-1: intake doctrine, count truth, sync manifest, keyless research gatherer
+
+Batch `BATCH-SWI-O-1` — four wave-1 units merged together (one version bump and
+one entry for the whole batch, per the swarm plan):
+
+- `#2051` (`unit/SWI-001`, W1-doctrine-U1) — the intake doctrine, the count truth and the overwork rule in prose in `SKILL.md`: dramatizations rather than true stories, no client fact-checking, the card's own total is the only number anyone may say, and the card's questions are the whole client load.
+- `#2053` (`unit/SWI-002`, W1-doctrine-U2) — the same count truth in the card strings (`choice_card/intake_card/__init__.py`, `intake_card.py`, `intake_preflight/factory.py` no longer say "six-question") plus the `test_intake_card_h9.py` companion test encoding 14.
+- `#2054` (`unit/SWI-006`, W1-recon-U1) — tree reconciliation: `references/sync-manifest.json` and `references/sync-manifest.md`, the per-file digest and disposition record the box roll consumes.
+- `#2055` (`unit/SWI-005`, W1-research-U1) — the keyless web-search gatherer wired into the research stage (7 files under `scripts/core/research_engine/`), same JSON envelope and exit contract as the validator it feeds.
+
+This single version bump satisfies G3 ("skill content change requires
+`skill-version.txt` bump") for `#2055`. No behaviour outside SPEC.md was added,
+and no older CHANGELOG entry was rewritten.
+
 ## v2.9.51 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #10 (R2-B): the studio page collects the story brief
 
 Batch `BATCH-DSF-10` — release group R2-B, one member merged in (one version

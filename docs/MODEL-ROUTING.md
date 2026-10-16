@@ -16,11 +16,13 @@ authoritative fleet-wide cascade policy is N35 (`AGENTS.md`) + `shared-utils/ass
 
 Three tiers, strict priority — every role, every rung, no exceptions:
 
-| Tier | Provider | Condition |
+| Tier | Resolution | Condition |
 |---|---|---|
-| **1 — Ollama Cloud** | `:cloud` suffix; `baseUrl=https://ollama.com/v1`; client's own `id_ed25519` device key | Always attempt first |
-| **2 — OpenRouter equivalent** | Same model family, OpenRouter open-weight route | Only if Ollama Cloud fails (capacity / key absent / ECONNREFUSED) |
-| **Last — OpenRouter `google/gemini-3.5-flash`** | OpenRouter; no probe gate | Appended to every ladder; fires only when both Tier 1 and Tier 2 fail and credits are live |
+| **1. The client's selected model** | The model the client chose for this role, on the client's own provider and keys | Always attempt first |
+| **2. The client's configured fallbacks** | The fallback chain in the client's own configuration, in the client's configured order | Only if the selected model fails (capacity / key absent / ECONNREFUSED) |
+| **Last. The final configured fallback** | The last entry of the client's configured fallback chain; no probe gate | Fires only when every earlier rung fails and credits are live |
+
+Recommendation: put a fast, low-cost model last in the fallback chain, because the last rung exists to keep the job moving when everything else has failed. The client still chooses which model that is.
 
 `thinking=high` is mandatory on every rung of every role — no exceptions, no silently-lower overrides.
 
@@ -28,36 +30,40 @@ Three tiers, strict priority — every role, every rung, no exceptions:
 
 ## 2. Skill 6 Role Map
 
-| Role | Alias | Tier 1 (Ollama Cloud slug) | Tier 2 (OpenRouter slug) | Notes |
-|---|---|---|---|---|
-| `content` | — | `kimi-k2.6:cloud` | `moonshotai/kimi-k2.6` | Copy writing, welcome slides, prompts |
-| `html` | `code` | `glm-5.2:cloud` | `z-ai/glm-5.2` | Code-block fix loop, HTML generation |
-| `reasoning` | `funnel` | `glm-5.2:cloud` then `deepseek-v4.1-flash:cloud` | `z-ai/glm-5.2` then `deepseek/deepseek-v4.1-flash` | Funnel structure and planning; two Ollama Cloud rungs precede OpenRouter rungs |
-| `execution` | — | `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud` | `minimax/minimax-m3` (probe-gated) → `deepseek/deepseek-v4.1-flash` | Browser-click drive loop; probe gate on M3 rungs only |
-| `qc` | — | `minimax-m3:cloud` (probe-gated, vision) | `minimax/minimax-m3` (probe-gated, vision) | Vision QC on screenshots and DOM; text-only models excluded from this ladder |
+Every role resolves the same way: ask the client which model they want to use for the role. If the client has already configured a default model, use the client's configured default model. Do not prescribe a specific model by name.
 
-**MiniMax M3 probe gate** (on `execution` and `qc`): a live tool-call (`echo_tool {ok:true}`)
-must PASS before the model dispatches. On fail, one backoff retry, then the ladder
-advances. DeepSeek is never probe-gated.
+| Role | Alias | Model | Notes |
+|---|---|---|---|
+| `content` | - | The client's choice, or the client's configured default model | Copy writing, welcome slides, prompts |
+| `html` | `code` | The client's choice, or the client's configured default model | Code-block fix loop, HTML generation |
+| `reasoning` | `funnel` | The client's choice, or the client's configured default model | Funnel structure and planning. Recommendation: a strong reasoning model, because this role is planning work |
+| `execution` | - | The client's choice, or the client's configured default model (probe-gated) | Browser-click drive loop. Recommendation: a model with reliable tool calling, because this role acts through tool calls |
+| `qc` | - | The client's choice, or the client's configured default model (probe-gated, vision) | Vision QC on screenshots and DOM; text-only models excluded from this ladder. Recommendation: a vision-capable model, because the role checks screenshots |
 
-**DeepSeek V4.1 Flash is the universal non-vision backup** appended to every ladder except `qc`.
-DeepSeek and GLM have no confirmed vision capability; the `qc` ladder must remain
-vision-capable throughout, so it runs only MiniMax M3 (probe-gated) and Gemini 3.5 Flash.
+**Tool-call probe gate** (on `execution` and `qc`): a live tool-call (`echo_tool {ok:true}`)
+must PASS before the model dispatches, because these roles act through tool calls.
+On fail, one backoff retry, then the ladder advances to the next configured fallback.
+
+**The client's configured fallback chain is the backup** for every ladder. The `qc`
+ladder must remain vision-capable throughout: every model the client configures for
+`qc` must accept image input, because the role checks screenshots and DOM.
 
 ---
 
 ## 3. Hard Rules
 
 **MiniMax M2 — BANNED everywhere.** MiniMax M2 is PURGED from every rung, table,
-recommendation, and doc. The execution role uses MiniMax M3 only, falling back to
-DeepSeek V4.1 Flash if the probe fails. The M2 hyphenated slug form must never appear in
+recommendation, and doc. The execution role uses the client's chosen model or their
+configured default, advancing to the client's next configured fallback if the probe
+fails. The M2 hyphenated slug form must never appear in
 code or markdown; the CI step (section 4a) fails the build on any occurrence,
 no exclusions.
 
-**ollama/kimi-k2.6:cloud and openrouter/moonshotai/kimi-k2.6 — the only valid routes.**
-The content model (ollama/kimi-k2.6:cloud on Tier 1; openrouter/moonshotai/kimi-k2.6
-on Tier 2) is NEVER referenced with a bare, provider-less id. Any reference without
-the `ollama/` or `openrouter/` prefix fails CI check (d).
+**No named model is the only valid route.** Every role resolves to the model the
+client selected, or the client's configured default model. Doctrine never
+prescribes a specific model by name. A model id is always written with its
+provider prefix (for example `provider/model-id`) so the route is unambiguous;
+a bare, provider-less id is never a valid reference.
 
 **No Anthropic models anywhere in the client path — explicitly forbidden at two
 independent gates.** `assert_model_sovereignty` (`shared-utils/assert_model_sovereignty.py`,
@@ -105,8 +111,8 @@ is authored to remain clean against all four checks.
 
 | Layer | File | What it enforces |
 |---|---|---|
-| Code (Skill 6) | `06-ghl-install-pages/tools/model_router.py` | Role-keyed ladders; `assert_no_anthropic()` at build-time; MiniMax M3 probe gate; `THINKING_EFFORT=high` |
+| Code (Skill 6) | `06-ghl-install-pages/tools/model_router.py` | Role-keyed resolution (client choice or configured default per role); `assert_no_anthropic()` at build-time; tool-call probe gate on execution and qc; `THINKING_EFFORT=high` |
 | Shared gate | `shared-utils/assert_model_sovereignty.py` | Per-slug block at dispatch-time — no Anthropic, no free literal, modality check (N35) |
 | CI | `.github/workflows/qc-static.yml` step "No banned model tokens..." | Banned token scan across code + markdown — checks (a)–(d) above; added in this branch |
-| Offline self-test | `06-ghl-install-pages/tests/test_model_router.py` | 14 assertions: role rung-1 families, Ollama-before-OpenRouter order, last-rung Gemini 3.5 Flash, probe-gate flags, M2 absent |
+| Offline self-test | `06-ghl-install-pages/tests/test_model_router.py` | Assertions on the role resolution: client choice and configured-default resolution order, probe-gate flags, no Anthropic ids, M2 absent |
 | Fleet doctrine | `AGENTS.md` N35 (AF-MODEL-SOVEREIGNTY) | Universal cascade; Anthropic ban; modality gate; fleet-wide application |

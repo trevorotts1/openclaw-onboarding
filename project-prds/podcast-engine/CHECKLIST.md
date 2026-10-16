@@ -50,7 +50,7 @@ QUALITY CONTROL
 - [ ] Attempt count recorded; three-strike cap honored if reached (stop, founder notified with failing checks and best draft).
 
 IMAGE
-- [ ] Cover art generated via Kie.ai GPT-Image-2.5 at 1K square from the visual description plus episode theme, within polling bounds.
+- [ ] Cover art generated via Kie.ai with the client's selected image model at 1K square from the visual description plus episode theme, within polling bounds.
 - [ ] Squared and compressed in-house with ffmpeg: JPEG, RGB, within 1400 to 3000, under 512 kilobytes, spec-valid filename. Never below 1400 square.
 
 AUDIO
@@ -71,7 +71,7 @@ SHOW NOTES (Step 12.5, the ONE source of the Podbean description)
 - [ ] Persisted via `podcast_state.py output --field episode_description`; Step 15 resolves it from the ledger.
 
 BOOK TEASER (Interview mode only; skipped entirely for Personal mode)
-- [ ] Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's voice, ending on a cliffhanger, on Kimi 2.6 or GLM 5.2.
+- [ ] Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's voice, ending on a cliffhanger, on the client's selected content-tier model (or their configured default).
 - [ ] Rendered as a book-typeset PDF, no font below 14 point, uploaded to Convert and Flow media storage, URL captured.
 - [ ] Link written to the book_teaser field, or the founder reminder surfaced if the field is absent (never silently created, never fails the episode).
 

@@ -1,0 +1,34 @@
+{
+  "schema_version": "2.0",
+  "id": "waterfall-revenue",
+  "kind": "illustrative",
+  "source_note": "Illustrative fixture data for engineering tests. Values are not client or business-performance evidence.",
+  "units": "USD thousands",
+  "domain": [
+    -50,
+    150
+  ],
+  "scale_type": "linear",
+  "missing_value_policy": "error",
+  "display_rounding": {
+    "decimals": 0
+  },
+  "rows": [
+    {
+      "id": "start",
+      "label": "Starting revenue",
+      "value": 100
+    },
+    {
+      "id": "growth",
+      "label": "New contracts",
+      "value": 25
+    },
+    {
+      "id": "churn",
+      "label": "Churn",
+      "value": -10
+    }
+  ],
+  "declared_total": 115
+}

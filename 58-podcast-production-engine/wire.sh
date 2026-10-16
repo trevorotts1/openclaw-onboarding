@@ -132,15 +132,18 @@ fi
 #    exported into this process only so the registrar's own SET check passes.
 # --------------------------------------------------------------------------- #
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
-SECRET_STATE="NOT SET"
-if [ -n "${PODCAST_INTAKE_HOOK_SECRET:-}" ]; then
-  SECRET_STATE="SET"
-elif [ -f "$SECRETS_ENV_FILE" ] && grep -qE '^[[:space:]]*(export[[:space:]]+)?PODCAST_INTAKE_HOOK_SECRET=.' "$SECRETS_ENV_FILE" 2>/dev/null; then
-  # shellcheck disable=SC2016  # single quotes intentional: the value is sourced inside the inner shell and never interpolated into this command string
-  _s="$(bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_SECRET:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
-  if [ -n "$_s" ]; then export PODCAST_INTAKE_HOOK_SECRET="$_s"; SECRET_STATE="SET"; fi
+for _label in PODCAST_INTAKE_HOOK_SECRET PODCAST_INTAKE_INBOUND_SECRET; do
+  [ -n "${!_label:-}" ] && continue
+  for _f in "$SECRETS_ENV_FILE" "$HOME/.openclaw/secrets/.env"; do
+    [ -f "$_f" ] && grep -qE "^[[:space:]]*(export[[:space:]]+)?${_label}=." "$_f" 2>/dev/null || continue
+    # shellcheck disable=SC2016  # single quotes intentional: the value is sourced inside the inner shell and never interpolated into this command string
+    _s="$(bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${!1:-}"' "$_f" "$_label" 2>/dev/null)"
+    if [ -n "$_s" ]; then export "$_label=$_s"; break; fi
+  done
   unset _s
-fi
+done
+SECRET_STATE="NOT SET"; [ -n "${PODCAST_INTAKE_HOOK_SECRET:-}" ] && SECRET_STATE="SET"
+INBOUND_STATE="NOT SET"; [ -n "${PODCAST_INTAKE_INBOUND_SECRET:-}" ] && INBOUND_STATE="SET"
 
 # --------------------------------------------------------------------------- #
 # Nothing to wire: say exactly what is missing, name the rescue SOP, exit 0.
@@ -162,7 +165,7 @@ if [ -z "$SLUG" ] || [ "$SECRET_STATE" != "SET" ]; then
   exit 0
 fi
 
-log "client slug: $SLUG (from $SLUG_SOURCE); PODCAST_INTAKE_HOOK_SECRET: SET (value never read or printed)"
+log "client slug: $SLUG (from $SLUG_SOURCE); PODCAST_INTAKE_HOOK_SECRET: SET (value never read or printed); PODCAST_INTAKE_INBOUND_SECRET: $INBOUND_STATE"
 if [ "$DRY_RUN" = "1" ]; then
   log "dry-run plan:"
   log "  1. $INSTALLER --client-slug $SLUG"

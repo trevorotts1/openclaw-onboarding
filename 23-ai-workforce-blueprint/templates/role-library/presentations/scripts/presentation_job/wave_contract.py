@@ -68,6 +68,25 @@ class WaveContractError(RuntimeError):
     the dispatcher maps it to a named phase error. Zero provider spend."""
 
 
+def _json_default(obj: Any) -> Any:
+    """json.dumps default for the wave input: capacity's UNBOUNDED sentinel
+    serializes as the literal string "UNBOUNDED" (capacity.json_default's
+    own contract for anything derived from a capacity result).
+
+    Duck-typed on the class name -- the check every consumer in this
+    package already relies on (width_controller._is_unbounded) -- because
+    this module is stdlib-only and must not import capacity. Since the
+    owner ruling of 2026-10-15 (DeepSeek Direct has NO provider cap), the
+    dispatcher's default route measures UNBOUNDED, so the stamp's
+    capacity_raw_available reaches this dump on the common path, not an
+    edge case. Anything else unserializable still raises TypeError,
+    exactly as a bare json.dumps would."""
+    if type(obj).__name__ == "_Unbounded":
+        return "UNBOUNDED"
+    raise TypeError(
+        f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 @dataclass(frozen=True)
 class RoutingStamp:
     """FIX 7 profile-driven routing stamp, shape owned HERE.
@@ -154,7 +173,8 @@ class WaveContract:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".partial")
         tmp.write_text(
-            json.dumps(self.wave_input(), indent=2, ensure_ascii=False) + "\n",
+            json.dumps(self.wave_input(), indent=2, ensure_ascii=False,
+                       default=_json_default) + "\n",
             encoding="utf-8")
         tmp.replace(target)
         return target

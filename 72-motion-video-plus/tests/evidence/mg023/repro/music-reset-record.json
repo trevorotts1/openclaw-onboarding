@@ -1,0 +1,47 @@
+{
+  "after": {
+    "exitCode": 0,
+    "musicInInputRegistry": true,
+    "output": {
+      "decodedSamples": 120832,
+      "digitalSilence": false,
+      "windowMaxAbs": 3540,
+      "windowRmsDbfs": -30.42,
+      "windowSamples": 43200
+    }
+  },
+  "baseCommitForOldScript": "818ce42ee",
+  "before": {
+    "exitCode": 0,
+    "output": {
+      "decodedSamples": 115712,
+      "digitalSilence": true,
+      "windowMaxAbs": 0,
+      "windowRmsDbfs": -120.0,
+      "windowSamples": 43200
+    },
+    "scoreFileExists": true,
+    "scoreWindow": {
+      "decodedSamples": 144000,
+      "digitalSilence": false,
+      "windowMaxAbs": 28833,
+      "windowRmsDbfs": -14.38,
+      "windowSamples": 43200
+    },
+    "scriptClaimedSynthesized": true
+  },
+  "defect": "D-ASSEMBLE-MUSIC-RESET",
+  "defectReproduced": true,
+  "fixedOnCurrentAssembler": true,
+  "item": "MG-023",
+  "job": "two 45-frame scenes (2.5s picture); voiceover 440 Hz tone 0-1.0s then silence to 2.4s; no sfx events; manifest music_bpm 120 music_seed 7 and NO music_bed",
+  "measurementWindowSeconds": [
+    1.5,
+    2.4
+  ],
+  "unmaskPatches": [
+    "P1 tuple p[1] (segment loop)",
+    "P2 video chain null[vout]",
+    "P3 audio indexes shifted by len(segs)"
+  ]
+}

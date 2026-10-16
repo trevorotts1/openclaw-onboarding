@@ -88,6 +88,36 @@ merge, so an engine save can neither clobber it nor be clobbered by it).
 ROLLBACK: `PRESENTATION_AUTO_RESUME=0` makes every decision a skip. The
 poller then behaves exactly as it did before F1 -- a BLOCKED run is passed
 over and counted as terminal.
+
+FIX-PLAN ITEM 10 -- PARK CLASSES, ONE LEDGER, A CLIENT-SAFE RECORD. Three
+additions on top of the bounds above, each detailed at its section below:
+
+  * Every park is classified into a PARK CLASS that names WHO MUST ACT
+    next -- transient_infra (nobody: the system retries on the bounded
+    cadence above), client_action (the client owes an answer, an asset or
+    a decision: never auto-resumed, the client is notified ONCE with
+    exactly what is needed), operator_action (a credential, a verdict, an
+    ambiguity only the operating team can resolve: never auto-resumed,
+    the operator is notified with the specific action). A park whose
+    record carries nothing classifiable defaults to operator_action --
+    the safest class, because it never auto-resumes and it puts a human
+    on the run. See `classify_park` and PARK_POLICY.
+  * The park ledger and the Fix 35 crash ledger are ONE event stream now:
+    new attempts from both paths are rows on state["auto_resume"] (crash
+    rows carry kind="crash") and BOTH caps count the merged stream over
+    the same rolling window, so a run can no longer be resumed by one
+    counter while the other believes it is capped. Rows a field run
+    still holds in the legacy state["auto_resume_crash"] key keep
+    counting until they age out or are refunded, so an upgrade hands no
+    capped run a fresh budget. This supersedes the Fix 35 two-ledger
+    split for the LEDGER only: the two paths still decide different
+    shapes (a classified park vs a dead engine), they just spend from
+    one budget. The window convention is the same rolling 24h the heal
+    budget (FIX-PLAN Item 9) counts its persisted heal_events over.
+  * Every refused evaluation stamps state["park_status"]: the park in
+    plain words (class label, what is needed from whom, since when), so
+    the board and client surfaces that already read state.json can show
+    the wait without ever showing the raw engineering reason.
 """
 from __future__ import annotations
 
@@ -100,12 +130,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 try:  # package context (python3 -m presentation_job.auto_resume)
-    from .heal import (classify_failure, FAILURE_OWNER_DECISION,
-                       FAILURE_PROVIDER_ERROR, FAILURE_TRANSIENT)
+    from .heal import (classify_failure, FAILURE_MISSING_INPUT,
+                       FAILURE_OWNER_DECISION, FAILURE_PROVIDER_ERROR,
+                       FAILURE_TRANSIENT, FAILURE_VERIFIER_SUBSTANCE)
     from .state import sha256_file, utcnow
 except ImportError:  # pragma: no cover -- direct-path import, tests and shims
-    from heal import (classify_failure, FAILURE_OWNER_DECISION,  # type: ignore[no-redef]
-                      FAILURE_PROVIDER_ERROR, FAILURE_TRANSIENT)
+    from heal import (classify_failure, FAILURE_MISSING_INPUT,  # type: ignore[no-redef]
+                      FAILURE_OWNER_DECISION, FAILURE_PROVIDER_ERROR,
+                      FAILURE_TRANSIENT, FAILURE_VERIFIER_SUBSTANCE)
     from state import sha256_file, utcnow  # type: ignore[no-redef]
 
 
@@ -259,12 +291,27 @@ STATE_KEY = "auto_resume"
 #: park never consumes the crash budget -- the two failure shapes are
 #: different (a park is a decision the engine made; a crash is the engine
 #: dying) and their bounds are not fungible.
+#:
+#: ITEM 10 SUPERSEDES THE SPLIT FOR THE LEDGER. The two-caps-on-two-ledgers
+#: shape had a race: each counter measured only its own stream, so a run
+#: could be resumed by one path while the other path's counter said the
+#: run still had budget -- up to six automatic engine starts in a window
+#: under two caps that each claimed three. New attempts from BOTH paths
+#: are now rows on ONE ledger (STATE_KEY; crash rows carry kind="crash")
+#: and both caps count the merged stream (see `_unified_counted_rows`).
+#: This key remains as the LEGACY ledger: rows a field run already holds
+#: here keep counting toward the unified cap and stay refundable until
+#: they age out of the window, so an upgrade hands no capped run a fresh
+#: budget. Nothing new is written here.
 CRASH_STATE_KEY = "auto_resume_crash"
 
 #: Automatic CRASH resumes allowed per run per rolling window (Fix 35).
 #: Three, like the BLOCKED cap, for the same reason: no run has ever been
 #: observed needing a fourth consecutive automatic restart, and a run whose
 #: engine dies four times in a day needs a human, not a fifth fork.
+#: ITEM 10: retained at the same value for readers that resolve it, but it
+#: no longer gates anything on its own -- the crash path enforces the one
+#: unified cap (AUTO_RESUME_CAP) over the merged park+crash stream.
 AUTO_RESUME_CRASH_CAP = 3
 
 #: state.json key holding the "cap exhausted" alert stamp, so the operator is
@@ -351,6 +398,16 @@ DECISION_CONFIGURATION_PENDING = "CONFIGURATION-PENDING"
 #     next action named, nothing re-asked.
 DECISION_KNOWN_PLAN = "KNOWN-PLAN"
 
+# FIX-PLAN Item 10: the park-class gate's own verdicts. A client_action
+# park (BOUND 2b) and an operator_action park that reaches the gate (in
+# practice the unclassifiable default) each get a code naming the class,
+# so the log says WHO the run is waiting on, not just that it was skipped.
+# The older codes above still fire for the shapes they already named
+# (OWNER-DECISION, CLOSE-TIME-GATE, CONFIGURATION-PENDING): the class is
+# carried on the Decision as `park_class` alongside the code.
+DECISION_CLIENT_ACTION = "CLIENT-ACTION"
+DECISION_OPERATOR_ACTION = "OPERATOR-ACTION"
+
 #: Fix 35 verdicts, for the crash path (engine dead, run nonterminal) --
 #: separate codes so a crash-cap exhaustion never reads as a BLOCKED-park
 #: cap exhaustion in the log.
@@ -375,14 +432,15 @@ class Decision:
     naming what was checked -- a bare verdict in a log is not evidence."""
 
     __slots__ = ("resume", "why", "code", "exit_code", "failure_class",
-                 "phase", "attempt", "counted", "cap")
+                 "phase", "attempt", "counted", "cap", "park_class")
 
     def __init__(self, resume: bool, why: str, code: str, exit_code: int,
                  failure_class: Optional[str] = None,
                  phase: Optional[str] = None,
                  attempt: Optional[int] = None,
                  counted: Optional[int] = None,
-                 cap: int = AUTO_RESUME_CAP) -> None:
+                 cap: int = AUTO_RESUME_CAP,
+                 park_class: str = "") -> None:
         self.resume = resume
         self.why = why
         self.code = code
@@ -392,6 +450,10 @@ class Decision:
         self.attempt = attempt
         self.counted = counted
         self.cap = cap
+        # Item 10: the park class this verdict belongs to ("" when the
+        # verdict is not about a park at all: the crash path, a disabled
+        # rollback, an unreadable state).
+        self.park_class = park_class
 
     def __repr__(self) -> str:  # pragma: no cover -- diagnostics only
         return (f"Decision(resume={self.resume!r}, code={self.code!r}, "
@@ -450,7 +512,12 @@ def _counted_rows(state: Dict[str, Any], now: datetime,
     and not refunded. A refunded row is one this module later proved bought no
     running engine (see `_refund_manifest_pin_attempts`). `key` selects the
     ledger: STATE_KEY for BLOCKED parks, CRASH_STATE_KEY for crash resumes
-    (Fix 35) -- the two caps are always counted separately."""
+    (Fix 35) -- the two caps are always counted separately.
+
+    ITEM 10: the per-key count above is retained for the refund machinery
+    and for readers that ask about ONE ledger. The caps themselves no
+    longer use it: both decision paths count `_unified_counted_rows`, the
+    merged stream, so the two counters can never disagree again."""
     floor = now - timedelta(hours=AUTO_RESUME_WINDOW_HOURS)
     out = []
     for row in _rows(state, key):
@@ -461,6 +528,325 @@ def _counted_rows(state: Dict[str, Any], now: datetime,
             continue
         out.append(row)
     return out
+
+
+def _unified_counted_rows(state: Dict[str, Any],
+                          now: datetime) -> List[Dict[str, Any]]:
+    """ITEM 10: THE ONE EVENT STREAM both caps count.
+
+    Every counted attempt row in the rolling window, from the unified
+    ledger (STATE_KEY, which now carries park rows AND crash rows) PLUS
+    any rows a field run still holds in the legacy crash ledger
+    (CRASH_STATE_KEY) from before the unification. Merged and sorted
+    oldest-first, so `len()` is the spend against the one cap and the
+    last row is the most recent attempt either path made. Counting the
+    legacy rows is load-bearing: ignoring them would hand a run that
+    spent its crash budget yesterday a fresh budget on upgrade day,
+    which is the two-cap race wearing a migration costume."""
+    merged = (_counted_rows(state, now, STATE_KEY)
+              + _counted_rows(state, now, CRASH_STATE_KEY))
+    floor = now - timedelta(hours=AUTO_RESUME_WINDOW_HOURS)
+    merged.sort(key=lambda r: _parse_at(r.get("at")) or floor)
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# FIX-PLAN ITEM 10 -- PARK CLASSES.
+#
+# A park class names WHO MUST ACT before the run can move, and carries the
+# bounded auto-resume policy for that class:
+#
+#   transient_infra   -- a provider outage, a network failure, a transient
+#                        executor failure: nobody must act. The system
+#                        auto-resumes on the existing bounded cadence
+#                        (AUTO_RESUME_CAP over the rolling window, the
+#                        AUTO_RESUME_BACKOFF_MINUTES ladder).
+#   client_action     -- a missing asset, an unanswered question, a
+#                        decision only the client can make: NEVER
+#                        auto-resumed. The client is notified ONCE per
+#                        park with exactly what is needed (see
+#                        `notify_park_wait`), and the park waits on the
+#                        client. Item 33b's conversational layer plugs
+#                        in at this class and at the notification record;
+#                        this module builds the class and the record, not
+#                        the conversation.
+#   operator_action   -- a credential, a close-time verdict, an ambiguity
+#                        only a human on the operating team can resolve:
+#                        NEVER auto-resumed. The operator is notified once
+#                        per park with the specific action needed.
+#
+# WHERE THE CLASS IS WRITTEN. The engine writes the park itself
+# (phases.Engine._block and the close-time writers in phases.py). This
+# module classifies at its FIRST EVALUATION of the recorded park -- the
+# poller tick immediately after the park lands -- and persists the class
+# on the run record (state["park_status"], plus `park_class` on every
+# attempt row), derived deterministically from the recorded reason by
+# the ONE classifier below, which itself rides on heal.classify_failure
+# so the failure vocabulary still has a single definition. The
+# classification of a recorded park is therefore identical to what a
+# write-time stamp in the engine would say for every park shape the
+# classifier covers; the engine-side stamp at the literal write point is
+# sequenced separately (phases.py is owned by the Item 9 stream).
+#
+# THE DEFAULT. A park whose record carries nothing classifiable (no
+# blocked record, no reason text) defaults to operator_action: the
+# safest class, because it never auto-resumes and it puts a human on
+# the run. heal.classify_failure calls an empty reason transient; Item
+# 10 does not let an unclassifiable park inherit the retry class by
+# that accident.
+# ---------------------------------------------------------------------------
+
+PARK_CLASS_TRANSIENT_INFRA = "transient_infra"
+PARK_CLASS_CLIENT_ACTION = "client_action"
+PARK_CLASS_OPERATOR_ACTION = "operator_action"
+
+#: THE documented default for an unclassifiable park (see the section
+#: header): never auto-resume, a human looks.
+DEFAULT_PARK_CLASS = PARK_CLASS_OPERATOR_ACTION
+
+#: state.json key holding the client-safe park status record (Item 10
+#: work item 3). state.json is the run record the board and the client
+#: surfaces already read; configuration_pending is the precedent.
+PARK_STATUS_KEY = "park_status"
+
+#: state.json key holding the once-per-park notification record.
+PARK_NOTIFY_KEY = "park_notification"
+
+#: The per-class policy, in one place: whether the class auto-resumes,
+#: who the run waits on, and the plain-words label the client record
+#: carries. The bounds for the auto-resuming class are the module's
+#: existing AUTO_RESUME_CAP / AUTO_RESUME_WINDOW_HOURS /
+#: AUTO_RESUME_BACKOFF_MINUTES; the policy table names the policy, the
+#: constants keep the numbers.
+PARK_POLICY: Dict[str, Dict[str, Any]] = {
+    PARK_CLASS_TRANSIENT_INFRA: {
+        "auto_resume": True,
+        "waiting_on": "system",
+        "label": "Paused by a temporary problem, retrying on its own",
+    },
+    PARK_CLASS_CLIENT_ACTION: {
+        "auto_resume": False,
+        "waiting_on": "client",
+        "label": "Waiting for you",
+    },
+    PARK_CLASS_OPERATOR_ACTION: {
+        "auto_resume": False,
+        "waiting_on": "operator",
+        "label": "Waiting for our team",
+    },
+}
+
+#: The subset of heal's missing-input vocabulary that names something
+#: only the CLIENT can supply. heal's own comment defines its
+#: missing-input class as "an artifact another unit should have
+#: produced", and every other marker in it names an engine-produced
+#: artifact a resume re-creates; "missing intake" is the one that names
+#: the client's own answers.
+CLIENT_MISSING_MARKERS: Tuple[str, ...] = ("missing intake",)
+
+#: The configuration markers split by who must act, mirroring the owner
+#: split `_configuration_pending_decision` already makes: credential
+#: markers are the box owner's (operator) action; the rest are the
+#: resource-plan answer the client owes.
+_CREDENTIAL_MARKERS: Tuple[str, ...] = (
+    "has no resolvable key",
+    "no store carries a plausible credential",
+)
+_PLAN_MARKERS: Tuple[str, ...] = tuple(
+    m for m in CONFIGURATION_PENDING_MARKERS if m not in _CREDENTIAL_MARKERS)
+
+# Plain-words "what is needed" lines for the client record and the
+# notifications. Written for the reader named in each: no phase ids
+# beyond the one human gate, no error text, no internal vocabulary. The
+# raw blocked reason is NEVER copied into the client record.
+_NEEDED_TRANSIENT = (
+    "Nothing is needed from you. A temporary problem stopped this step "
+    "and the system is retrying on its own.")
+_NEEDED_CREDENTIAL = (
+    "Our team needs to add a provider credential to the box's credential "
+    "store. Nothing is needed from you.")
+_NEEDED_PLAN = (
+    "We need one answer from you: the resource plan for this run. Once "
+    "you answer, the run continues on its own.")
+_NEEDED_PLAN_DECLINED = (
+    "Nothing new is needed. A no-metering choice is already on record "
+    "for this run, so it stays paused until you tell us to continue "
+    "another way.")
+_NEEDED_STYLE_PICK = (
+    "We need your style pick: reply A, B or C for the style samples you "
+    "were sent. The deck continues as soon as you pick.")
+_NEEDED_OWNER_DECISION = (
+    "We need a decision from you on this step. Reply with your decision "
+    "and the run continues.")
+_NEEDED_MISSING_INTAKE = (
+    "We are missing part of your intake. Send the missing item and the "
+    "run continues.")
+_NEEDED_CLOSE_VERDICT = (
+    "A final quality check did not pass, so our team needs to review it "
+    "before anything is handed over. Nothing is needed from you.")
+_NEEDED_UNCLASSIFIABLE = (
+    "Our team needs to look at this run and decide the next step. "
+    "Nothing is needed from you.")
+
+
+def classify_park(state: Dict[str, Any],
+                  failure_class: Optional[str] = None) -> Dict[str, Any]:
+    """Derive the Item 10 park class for the run's recorded park.
+
+    Returns {"park_class", "waiting_on", "label", "auto_resume",
+    "needed", "basis"}: the class, the policy view of it, the
+    plain-words line naming what is needed from whom, and the basis the
+    classification rests on (kept for logs and tests; the client record
+    carries the plain fields, never the basis or the raw reason).
+
+    Pure: reads `state` only. The order is load-bearing and mirrors the
+    bounds in `evaluate`: configuration markers first (a credential park
+    classifies provider_error to heal, because the gate that names it
+    talks about providers, and it is NOT a retryable provider blip),
+    then heal's failure class, with two documented refinements: an owner
+    decision waits on the run's owner (the client), and heal's
+    missing-input class splits on whether the missing thing is the
+    client's own input or an artifact the engine re-creates on a resume.
+    """
+    blocked = state.get("blocked") if isinstance(state, dict) else None
+    blocked = blocked if isinstance(blocked, dict) else {}
+    reason = str(blocked.get("reason") or "")
+    phase = str(blocked.get("phase") or "")
+    text = reason.lower()
+
+    def _result(park_class: str, needed: str, basis: str) -> Dict[str, Any]:
+        policy = PARK_POLICY[park_class]
+        return {"park_class": park_class,
+                "waiting_on": policy["waiting_on"],
+                "label": policy["label"],
+                "auto_resume": policy["auto_resume"],
+                "needed": needed,
+                "basis": basis}
+
+    if not text.strip():
+        return _result(
+            DEFAULT_PARK_CLASS, _NEEDED_UNCLASSIFIABLE,
+            "unclassifiable: the park record carries no reason text, so "
+            "no class can be derived; the documented default applies "
+            "(operator_action, the safest class)")
+
+    if any(m in text for m in _CREDENTIAL_MARKERS):
+        return _result(
+            PARK_CLASS_OPERATOR_ACTION, _NEEDED_CREDENTIAL,
+            "configuration park: a provider credential is missing, which "
+            "only the operating team can supply")
+
+    if any(m in text for m in _PLAN_MARKERS):
+        stamp = state.get("configuration_pending")
+        known_plan = (stamp.get("known_plan") if isinstance(stamp, dict)
+                      else None)
+        if isinstance(known_plan, dict) and known_plan.get("declined"):
+            return _result(
+                PARK_CLASS_CLIENT_ACTION, _NEEDED_PLAN_DECLINED,
+                "configuration park: the resource-plan answer is already "
+                "recorded as a decline; nothing is re-asked")
+        return _result(
+            PARK_CLASS_CLIENT_ACTION, _NEEDED_PLAN,
+            "configuration park: a one-time resource-plan answer is owed "
+            "by the client")
+
+    fclass = failure_class or classify_failure(reason)
+    if fclass == FAILURE_OWNER_DECISION:
+        needed = (_NEEDED_STYLE_PICK if phase == "P-STYLE-PICK"
+                  else _NEEDED_OWNER_DECISION)
+        return _result(
+            PARK_CLASS_CLIENT_ACTION, needed,
+            "owner decision: in this system the deciding party is the "
+            "run's owner (the client) -- a style pick, a waiver, a gate "
+            "decline -- so the run waits on the client")
+    if fclass == FAILURE_PROVIDER_ERROR:
+        return _result(PARK_CLASS_TRANSIENT_INFRA, _NEEDED_TRANSIENT,
+                       "provider error: something outside this system "
+                       "failed and a bounded retry is the cure")
+    if fclass == FAILURE_MISSING_INPUT:
+        if any(m in text for m in CLIENT_MISSING_MARKERS):
+            return _result(
+                PARK_CLASS_CLIENT_ACTION, _NEEDED_MISSING_INTAKE,
+                "missing input only the client can supply (their intake)")
+        return _result(
+            PARK_CLASS_TRANSIENT_INFRA, _NEEDED_TRANSIENT,
+            "missing input the engine itself produces: a resume re-runs "
+            "the producing phase")
+    if fclass == FAILURE_VERIFIER_SUBSTANCE:
+        if phase in CLOSE_TIME_PHASES:
+            return _result(
+                PARK_CLASS_OPERATOR_ACTION, _NEEDED_CLOSE_VERDICT,
+                "close-time gate verdict: a gate judged the artifacts "
+                "and said no; the operating team reviews it")
+        return _result(
+            PARK_CLASS_TRANSIENT_INFRA, _NEEDED_TRANSIENT,
+            "verifier substance at an authoring phase: a resume "
+            "re-authors with the verifier's notes (the behaviour "
+            "test_auto_resume pins)")
+    if fclass == FAILURE_TRANSIENT:
+        return _result(PARK_CLASS_TRANSIENT_INFRA, _NEEDED_TRANSIENT,
+                       "transient failure: the classifier's retry class, "
+                       "positively matched or its documented fallback "
+                       "for a reason with classifiable text")
+    return _result(
+        DEFAULT_PARK_CLASS, _NEEDED_UNCLASSIFIABLE,
+        f"unclassifiable: failure class {fclass!r} has no park-class "
+        "mapping; the documented default applies (operator_action, the "
+        "safest class)")
+
+
+def park_status_record(state: Dict[str, Any],
+                       decision: Optional[Decision] = None
+                       ) -> Dict[str, Any]:
+    """The client-safe park status record (Item 10 work item 3).
+
+    Built from the classification of the CURRENT recorded park, never
+    from the raw reason: the reason string appears nowhere in the
+    record. `since` is the park's own stamp (state["blocked"]["at"]);
+    the close-time writers that record no `at` fall back to the moment
+    of this record, which `recorded_at` always carries. Attempt figures
+    ride along only when the decision that prompted the record counted
+    them (the cap and backoff refusals of the transient class)."""
+    park = classify_park(
+        state, decision.failure_class if decision is not None else None)
+    blocked = state.get("blocked")
+    blocked = blocked if isinstance(blocked, dict) else {}
+    record: Dict[str, Any] = {
+        "park_class": park["park_class"],
+        "label": park["label"],
+        "waiting_on": park["waiting_on"],
+        "needed": park["needed"],
+        "auto_resume": park["auto_resume"],
+        "since": str(blocked.get("at") or "") or utcnow(),
+        "recorded_at": utcnow(),
+        "by": "presentation_job.auto_resume",
+    }
+    if blocked.get("phase"):
+        record["phase"] = str(blocked["phase"])
+    if (park["park_class"] == PARK_CLASS_TRANSIENT_INFRA
+            and decision is not None and decision.counted is not None):
+        record["attempts_used"] = decision.counted
+        record["attempts_cap"] = decision.cap
+    return record
+
+
+def _stamp_park_status(run_path: Path, decision: Decision) -> bool:
+    """Write state["park_status"] for a park that is STAYING parked.
+
+    Called on the refusal paths of `evaluate` only: a resume decision
+    ends the park, so it stamps nothing (a record describing a wait is
+    written when the wait is real). Re-reads state fresh, because the
+    configuration paths stamp state["configuration_pending"] during the
+    same evaluation and the client record must agree with it (the
+    known-plan decline wording depends on it). Fail-soft like the
+    configuration stamp: a failed merge loses the record, never the
+    verdict."""
+    state, _why = _read_state(run_path)
+    if state is None or str(state.get("terminal") or "") != "BLOCKED":
+        return False
+    record = park_status_record(state, decision)
+    return _merge(run_path,
+                  lambda st: st.__setitem__(PARK_STATUS_KEY, record))
 
 
 def _scripts_dir() -> Path:
@@ -768,7 +1154,14 @@ def _known_plan_decision(run_path: Path, phase: Optional[str],
 
 
 def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
-    """The full verdict for one run dir. PURE: reads only, writes nothing.
+    """The full verdict for one run dir.
+
+    Reads only, with two long-standing write exceptions that are part of
+    the verdict's contract, plus one Item 10 addition: the PRES-019
+    configuration stamp (written by the decision helpers), and -- on
+    refusal paths only -- the Item 10 park_status stamp (see
+    `_stamp_park_status`). It never records an attempt and never
+    notifies: those belong to `main`, after the verdict.
 
     Ordered so the strongest refusal is checked first and so no bound can be
     reached past a bound that already said no.
@@ -800,6 +1193,12 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
     phase = str(blocked.get("phase") or "") or None
     reason = blocked.get("reason")
     fclass = classify_failure(reason)
+
+    # --- ITEM 10: the park class, derived ONCE from the recorded park.
+    # Every verdict below carries it, every refusal below stamps the
+    # client-safe record from it, and BOUND 2b enforces the two
+    # never-auto-resume classes as a gate in their own right.
+    park = classify_park(state, fclass)
 
     # --- PRES-019 BOUND 0: missing CONFIGURATION is not a retryable failure.
     # Checked BEFORE the class bound: a park like "provider X has no
@@ -836,39 +1235,85 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
             known = _known_plan_decision(run_path, phase, reason_text,
                                          fclass, plan_provider, plan_entry)
             if not known.resume:
+                known.park_class = park["park_class"]
+                _stamp_park_status(run_path, known)
                 return known
             # fall through: the cap/backoff bounds decide whether this
             # known-plan resume may actually proceed.
             known_plan_reason = known.why
         else:
-            return _configuration_pending_decision(run_path, phase,
-                                                   reason_text, fclass)
+            pending = _configuration_pending_decision(run_path, phase,
+                                                      reason_text, fclass)
+            pending.park_class = park["park_class"]
+            _stamp_park_status(run_path, pending)
+            return pending
     else:
         known_plan_reason = None
 
     # --- BOUND 1: class. The heal ladder's own classifier, not a second one.
     if fclass == FAILURE_OWNER_DECISION:
-        return Decision(False,
-                        f"the park at {phase or 'an unrecorded phase'} "
-                        f"classifies as {FAILURE_OWNER_DECISION} "
-                        f"({str(reason)[:180]!r}) -- an owner decision is "
-                        "never auto-healed and never auto-resumed; a person "
-                        "has to decide",
-                        DECISION_OWNER, EXIT_SKIP, failure_class=fclass,
-                        phase=phase)
+        decision = Decision(False,
+                            f"the park at {phase or 'an unrecorded phase'} "
+                            f"classifies as {FAILURE_OWNER_DECISION} "
+                            f"({str(reason)[:180]!r}) -- an owner decision is "
+                            "never auto-healed and never auto-resumed; a person "
+                            "has to decide",
+                            DECISION_OWNER, EXIT_SKIP, failure_class=fclass,
+                            phase=phase, park_class=park["park_class"])
+        _stamp_park_status(run_path, decision)
+        return decision
 
     # --- BOUND 2: close-time gates, unless nothing actually got judged.
     if phase in CLOSE_TIME_PHASES and fclass not in RETRYABLE_AT_CLOSE:
-        return Decision(False,
-                        f"the park is at the close-time sentinel {phase} with "
-                        f"class {fclass} -- a gate, the certificate integrity "
-                        "check, curation or the self-audit judged the "
-                        "artifacts and said no. Asking it again with the same "
-                        "artifacts gets the same answer, so no attempt is "
-                        f"spent. (Only {'/'.join(RETRYABLE_AT_CLOSE)} pass "
-                        "here, because those mean nothing was judged at all.)",
-                        DECISION_CLOSE_GATE, EXIT_SKIP, failure_class=fclass,
-                        phase=phase)
+        decision = Decision(False,
+                            f"the park is at the close-time sentinel {phase} with "
+                            f"class {fclass} -- a gate, the certificate integrity "
+                            "check, curation or the self-audit judged the "
+                            "artifacts and said no. Asking it again with the same "
+                            "artifacts gets the same answer, so no attempt is "
+                            f"spent. (Only {'/'.join(RETRYABLE_AT_CLOSE)} pass "
+                            "here, because those mean nothing was judged at all.)",
+                            DECISION_CLOSE_GATE, EXIT_SKIP,
+                            failure_class=fclass, phase=phase,
+                            park_class=park["park_class"])
+        _stamp_park_status(run_path, decision)
+        return decision
+
+    # --- BOUND 2b (ITEM 10): the park-class gate. The classes that wait
+    # on a person are refused HERE, as a policy of the class itself, not
+    # as a side effect of the older bounds: a client_action park that no
+    # older bound happened to catch (a missing intake was the measured
+    # shape: it fell through every bound and burned attempts on resumes
+    # that could not fix it) still never auto-resumes, and an
+    # unclassifiable park lands on the documented default. The one
+    # exception is a known-plan fall-through from BOUND 0: the client
+    # already answered, so the park is no longer waiting on them and the
+    # ordinary bounds decide.
+    if not known_plan_reason:
+        if park["park_class"] == PARK_CLASS_CLIENT_ACTION:
+            decision = Decision(
+                False,
+                f"the park at {phase or 'an unrecorded phase'} is park "
+                f"class CLIENT-ACTION ({park['basis']}) -- it is never "
+                "auto-resumed, because only the client can clear it. The "
+                "client is notified once with exactly what is needed; "
+                "the park waits on the client.",
+                DECISION_CLIENT_ACTION, EXIT_SKIP, failure_class=fclass,
+                phase=phase, park_class=park["park_class"])
+            _stamp_park_status(run_path, decision)
+            return decision
+        if park["park_class"] == PARK_CLASS_OPERATOR_ACTION:
+            decision = Decision(
+                False,
+                f"the park at {phase or 'an unrecorded phase'} is park "
+                f"class OPERATOR-ACTION ({park['basis']}) -- it is never "
+                "auto-resumed, because only a human on the operating "
+                "team can clear it. The operator is notified once with "
+                "the specific action needed.",
+                DECISION_OPERATOR_ACTION, EXIT_SKIP, failure_class=fclass,
+                phase=phase, park_class=park["park_class"])
+            _stamp_park_status(run_path, decision)
+            return decision
 
     # --- THE F2 DEPENDENCY: never spend an attempt on a death we can predict.
     status, mwhy = _manifest_status(state, run_path)
@@ -876,7 +1321,7 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
         repin, rwhy = _auto_repin_available()
         if repin is not True:
             entry = _scripts_dir() / "presentation_job.py"
-            return Decision(
+            decision = Decision(
                 False,
                 "the manifest moved under this run and this resume would die "
                 f"EXIT_MANIFEST_MISMATCH in about one second: {mwhy}. "
@@ -885,29 +1330,39 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
                 "budget once the pin is cured, so NO attempt was spent. "
                 f"Cure it with: {entry} --repin --run-dir {run_path}",
                 DECISION_MANIFEST_PIN, EXIT_UNDETERMINED,
-                failure_class=fclass, phase=phase)
+                failure_class=fclass, phase=phase,
+                park_class=park["park_class"])
+            _stamp_park_status(run_path, decision)
+            return decision
         # F2 is present: the launcher re-pins before it spawns, so the
         # mismatch is not an obstacle -- say so rather than staying silent.
         print(f"auto-resume: {mwhy}; {rwhy} -- the resume will re-pin itself "
               "before the engine starts", flush=True)
 
     # --- BOUND 3: the cap, counted over a rolling window, refunds honoured.
-    counted = _counted_rows(state, now)
+    # ITEM 10: counted over the UNIFIED stream (park rows and crash rows
+    # together, legacy crash rows included), so this cap and the crash
+    # cap are the same fact measured once, never two counters that can
+    # disagree about the same run.
+    counted = _unified_counted_rows(state, now)
     if len(counted) >= AUTO_RESUME_CAP:
         newest = max((_parse_at(r.get("at")) for r in counted
                       if _parse_at(r.get("at"))), default=None)
-        return Decision(False,
-                        f"{len(counted)} automatic resume(s) have already been "
-                        f"spent on this run in the last "
-                        f"{AUTO_RESUME_WINDOW_HOURS}h (cap {AUTO_RESUME_CAP}; "
-                        f"most recent {newest.isoformat() if newest else 'unknown'}). "
-                        "This run is now parked for a HUMAN -- three automatic "
-                        "attempts did not clear it, so it is not the kind of "
-                        f"failure another attempt fixes. "
-                        + (f"(The plan is already known -- {known_plan_reason}"
-                           if known_plan_reason else ""),
-                        DECISION_CAP, EXIT_SKIP, failure_class=fclass,
-                        phase=phase, counted=len(counted))
+        decision = Decision(False,
+                            f"{len(counted)} automatic resume(s) have already been "
+                            f"spent on this run in the last "
+                            f"{AUTO_RESUME_WINDOW_HOURS}h (cap {AUTO_RESUME_CAP}; "
+                            f"most recent {newest.isoformat() if newest else 'unknown'}). "
+                            "This run is now parked for a HUMAN -- three automatic "
+                            "attempts did not clear it, so it is not the kind of "
+                            f"failure another attempt fixes. "
+                            + (f"(The plan is already known -- {known_plan_reason}"
+                               if known_plan_reason else ""),
+                            DECISION_CAP, EXIT_SKIP, failure_class=fclass,
+                            phase=phase, counted=len(counted),
+                            park_class=park["park_class"])
+        _stamp_park_status(run_path, decision)
+        return decision
 
     # --- BOUND 4: backoff since the previous automatic resume.
     attempt = len(counted) + 1
@@ -919,7 +1374,7 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
         if last is not None:
             elapsed = (now - last).total_seconds() / 60.0
             if elapsed < wait_minutes:
-                return Decision(
+                decision = Decision(
                     False,
                     f"attempt {attempt} of {AUTO_RESUME_CAP} must wait "
                     f"{wait_minutes} minute(s) after the previous automatic "
@@ -927,7 +1382,10 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
                     "passed. Backoff is what stops a broken run from spending "
                     "its whole cap inside three poller ticks.",
                     DECISION_BACKOFF, EXIT_SKIP, failure_class=fclass,
-                    phase=phase, counted=len(counted), attempt=attempt)
+                    phase=phase, counted=len(counted), attempt=attempt,
+                    park_class=park["park_class"])
+                _stamp_park_status(run_path, decision)
+                return decision
 
     if known_plan_reason:
         # PRES-019 QC4: the bounds allowed this resume and the plan is
@@ -939,7 +1397,8 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
             f"(bounded as always: {len(counted)} attempt(s) spent in the "
             f"last {AUTO_RESUME_WINDOW_HOURS}h, manifest pin {status}).",
             DECISION_KNOWN_PLAN, EXIT_RESUME, failure_class=fclass,
-            phase=phase, attempt=attempt, counted=len(counted))
+            phase=phase, attempt=attempt, counted=len(counted),
+            park_class=park["park_class"])
 
     return Decision(
         True,
@@ -949,7 +1408,8 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
         f"{len(counted)} attempt(s) spent in the last "
         f"{AUTO_RESUME_WINDOW_HOURS}h, manifest pin {status}.",
         DECISION_RESUME, EXIT_RESUME, failure_class=fclass, phase=phase,
-        attempt=attempt, counted=len(counted))
+        attempt=attempt, counted=len(counted),
+        park_class=park["park_class"])
 
 
 def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
@@ -964,12 +1424,15 @@ def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
 
     The bound is the same SHAPE as the BLOCKED path (a cap over a rolling
     window, backoff between attempts, never spending an attempt on a death
-    the manifest pin makes certain) but a SEPARATE cap
-    (AUTO_RESUME_CRASH_CAP) in a SEPARATE ledger (state[CRASH_STATE_KEY]):
-    crash retries must never eat the BLOCKED park budget and BLOCKED retries
-    must never eat the crash budget. The two failure shapes are different --
-    a park is a decision the engine made, a crash is the engine dying -- and
-    their bounds are not fungible.
+    the manifest pin makes certain). Fix 35 originally gave it a SEPARATE
+    cap (AUTO_RESUME_CRASH_CAP) in a SEPARATE ledger
+    (state[CRASH_STATE_KEY]); FIX-PLAN Item 10 unified the ledger: both
+    paths now spend from ONE stream under ONE cap (AUTO_RESUME_CAP), so a
+    run at its cap is refused by whichever path asks. The two failure
+    shapes are still different -- a park is a decision the engine made, a
+    crash is the engine dying -- and they still get separate verdicts and
+    separate decision codes; what they no longer get is separate budgets
+    that can disagree.
 
     No operator chat alert on crash-cap exhaustion (unlike the BLOCKED path):
     the poller logs the decider's reason on every tick it leaves the run
@@ -984,14 +1447,14 @@ def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
                                "-- this crashed run is left dead for a human, "
                                "which is the pre-Fix-35 behaviour",
                         DECISION_DISABLED, EXIT_SKIP,
-                        cap=AUTO_RESUME_CRASH_CAP)
+                        cap=AUTO_RESUME_CAP)
 
     state, why = _read_state(run_path)
     if state is None:
         return Decision(False, f"cannot decide: {why}. Nothing was resumed "
                                "and no crash attempt was spent.",
                         DECISION_UNREADABLE, EXIT_UNDETERMINED,
-                        cap=AUTO_RESUME_CRASH_CAP)
+                        cap=AUTO_RESUME_CAP)
 
     terminal = str(state.get("terminal") or "")
     if terminal in ("DONE", "ABANDONED"):
@@ -999,13 +1462,13 @@ def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
                                "never resumed by anything, crash path "
                                "included",
                         DECISION_CRASH_WRONG_SHAPE, EXIT_SKIP,
-                        cap=AUTO_RESUME_CRASH_CAP)
+                        cap=AUTO_RESUME_CAP)
     if terminal == "BLOCKED":
         return Decision(False, "terminal is 'BLOCKED' -- a parked run belongs "
                                "to the normal auto-resume path, not the crash "
                                "path (call without --crash)",
                         DECISION_CRASH_WRONG_SHAPE, EXIT_SKIP,
-                        cap=AUTO_RESUME_CRASH_CAP)
+                        cap=AUTO_RESUME_CAP)
 
     # --- The F2 dependency: never spend an attempt on a death we can predict.
     status, mwhy = _manifest_status(state, run_path)
@@ -1016,31 +1479,33 @@ def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
                 False,
                 "the manifest moved under this run and this resume would die "
                 f"EXIT_MANIFEST_MISMATCH in about one second: {mwhy}. "
-                f"{rwhy}. Spending one of {AUTO_RESUME_CRASH_CAP} crash "
-                "attempts on a death that is certain would leave a fixable "
+                f"{rwhy}. Spending one of {AUTO_RESUME_CAP} attempts on a "
+                "death that is certain would leave a fixable "
                 "run with no budget once the pin is cured, so NO attempt was "
                 "spent.",
                 DECISION_MANIFEST_PIN, EXIT_UNDETERMINED,
-                cap=AUTO_RESUME_CRASH_CAP)
+                cap=AUTO_RESUME_CAP)
 
-    # --- The crash cap, counted over a rolling window, refunds honoured --
-    # in the SEPARATE crash ledger, never the BLOCKED one.
-    counted = _counted_rows(state, now, CRASH_STATE_KEY)
-    if len(counted) >= AUTO_RESUME_CRASH_CAP:
+    # --- The cap, counted over a rolling window, refunds honoured --
+    # ITEM 10: over the UNIFIED stream. A run that spent its budget on
+    # park resumes has none left for crash resumes, and vice versa.
+    counted = _unified_counted_rows(state, now)
+    if len(counted) >= AUTO_RESUME_CAP:
         newest = max((_parse_at(r.get("at")) for r in counted
                       if _parse_at(r.get("at"))), default=None)
         return Decision(False,
-                        f"{len(counted)} automatic crash resume(s) have "
+                        f"{len(counted)} automatic resume(s) have "
                         f"already been spent on this run in the last "
-                        f"{AUTO_RESUME_WINDOW_HOURS}h (crash cap "
-                        f"{AUTO_RESUME_CRASH_CAP}; most recent "
+                        f"{AUTO_RESUME_WINDOW_HOURS}h (unified cap "
+                        f"{AUTO_RESUME_CAP} over park and crash attempts "
+                        f"together; most recent "
                         f"{newest.isoformat() if newest else 'unknown'}). "
                         "This run is now left dead for a HUMAN -- three "
                         "automatic restarts did not keep an engine alive, "
                         "so it is not the kind of failure another fork "
                         "fixes.",
                         DECISION_CRASH_CAP, EXIT_SKIP,
-                        counted=len(counted), cap=AUTO_RESUME_CRASH_CAP)
+                        counted=len(counted), cap=AUTO_RESUME_CAP)
 
     # --- Backoff since the previous automatic crash resume (same schedule as
     # the BLOCKED path: the first retry is immediate, the 2nd and 3rd wait).
@@ -1055,24 +1520,24 @@ def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
             if elapsed < wait_minutes:
                 return Decision(
                     False,
-                    f"crash attempt {attempt} of {AUTO_RESUME_CRASH_CAP} must "
+                    f"crash attempt {attempt} of {AUTO_RESUME_CAP} must "
                     f"wait {wait_minutes} minute(s) after the previous "
-                    f"automatic crash resume ({last.isoformat()}); only "
+                    f"automatic resume ({last.isoformat()}); only "
                     f"{elapsed:.1f} have passed. Backoff is what stops a run "
                     "whose engine dies on startup from spending its whole "
-                    "crash cap inside three poller ticks.",
+                    "cap inside three poller ticks.",
                     DECISION_BACKOFF, EXIT_SKIP,
                     counted=len(counted), attempt=attempt,
-                    cap=AUTO_RESUME_CRASH_CAP)
+                    cap=AUTO_RESUME_CAP)
 
     return Decision(
         True,
-        f"crash attempt {attempt} of {AUTO_RESUME_CRASH_CAP}: the engine is "
+        f"crash attempt {attempt} of {AUTO_RESUME_CAP}: the engine is "
         f"dead and the run is nonterminal (terminal {terminal or 'unset'!r}) "
-        f"-- {len(counted)} crash attempt(s) spent in the last "
-        f"{AUTO_RESUME_WINDOW_HOURS}h, manifest pin {status}.",
+        f"-- {len(counted)} automatic attempt(s) of either kind spent in "
+        f"the last {AUTO_RESUME_WINDOW_HOURS}h, manifest pin {status}.",
         DECISION_CRASH_RESUME, EXIT_RESUME,
-        attempt=attempt, counted=len(counted), cap=AUTO_RESUME_CRASH_CAP)
+        attempt=attempt, counted=len(counted), cap=AUTO_RESUME_CAP)
 
 
 def decide(run_dir) -> Tuple[bool, str]:
@@ -1130,6 +1595,11 @@ def record_attempt(run_dir, decision: Decision) -> bool:
         "window_hours": AUTO_RESUME_WINDOW_HOURS,
         "by": "presentation_job.auto_resume",
         "why": decision.why,
+        # Item 10: rows on the ONE ledger say which path spent them and
+        # which park class the spend answered, so the next diagnostic can
+        # measure park time and spend by class honestly.
+        "kind": "park",
+        "park_class": decision.park_class,
     }
 
     def _mutate(state: Dict[str, Any]) -> None:
@@ -1185,6 +1655,11 @@ def refund_last_attempt(run_dir, reason: str) -> bool:
                 continue
             if row.get("by") != "presentation_job.auto_resume":
                 continue
+            # Item 10: refunds are kind-scoped on the unified ledger. A
+            # crash row is the crash path's charge to give back, never
+            # this function's (see refund_last_crash_attempt).
+            if row.get("kind") == "crash":
+                continue
             row["refunded"] = "no-engine-started"
             row["refunded_at"] = utcnow()
             row["refunded_why"] = str(reason)[:400]
@@ -1208,7 +1683,12 @@ def refund_last_attempt(run_dir, reason: str) -> bool:
 
 
 def record_crash_attempt(run_dir, decision: Decision) -> bool:
-    """Append one attempt row to state[CRASH_STATE_KEY], and say whether it landed.
+    """Append one attempt row to the ONE ledger, and say whether it landed.
+
+    ITEM 10: the row lands on state[STATE_KEY] with kind="crash", not on
+    the legacy crash key -- one event stream, counted once by both caps.
+    (Fix 35 wrote state[CRASH_STATE_KEY]; rows already there keep
+    counting and stay refundable, but nothing new is written there.)
 
     RECORDED BEFORE THE DISPATCH, deliberately, for the same reason as
     `record_attempt`. And the return value is load-bearing in the same way:
@@ -1223,7 +1703,7 @@ def record_crash_attempt(run_dir, decision: Decision) -> bool:
         "phase": decision.phase,
         "class": decision.failure_class,
         "attempt": decision.attempt,
-        "cap": AUTO_RESUME_CRASH_CAP,
+        "cap": AUTO_RESUME_CAP,
         "window_hours": AUTO_RESUME_WINDOW_HOURS,
         "by": "presentation_job.auto_resume",
         "kind": "crash",
@@ -1236,9 +1716,12 @@ def record_crash_attempt(run_dir, decision: Decision) -> bool:
         pin = state.get("manifest_sha256")
         if isinstance(pin, str) and pin:
             row["manifest_sha256"] = pin
-        rows = state.setdefault(CRASH_STATE_KEY, [])
+        rows = state.setdefault(STATE_KEY, [])
         if isinstance(rows, list):
             rows.append(row)
+        # A fresh attempt reopens the alert, exactly as a park attempt
+        # does: both spend from the one budget the alert reports on.
+        state.pop(ALERT_KEY, None)
 
     ok = _merge(run_path, _mutate)
     if not ok:
@@ -1256,18 +1739,22 @@ def refund_last_crash_attempt(run_dir, reason: str) -> bool:
 
     The crash twin of `refund_last_attempt`: the cap counts ENGINE STARTS,
     and a crash attempt whose dispatch produced nothing (the launcher
-    refused, or the running-engine proof came back negative) must not eat the
-    crash budget. Marks at most ONE row, the newest un-refunded one, and only
-    a row this module wrote into the CRASH ledger -- it can never touch the
-    BLOCKED ledger, add an attempt, or un-refund one.
+    refused, or the running-engine proof came back negative) must not eat
+    the budget. Marks at most ONE row, the newest un-refunded crash row,
+    and only a row this module wrote -- it can never touch a PARK row, add
+    an attempt, or un-refund one.
+
+    ITEM 10: crash rows live on the unified ledger now, so the search
+    order is the unified ledger first (kind="crash" rows there), then the
+    LEGACY crash ledger, whose pre-unification rows stay refundable
+    until they age out.
     """
     run_path = Path(run_dir).expanduser()
     marked = {"done": False}
 
-    def _mutate(state: Dict[str, Any]) -> None:
-        rows_ = state.get(CRASH_STATE_KEY)
+    def _refund_in(rows_: Any) -> bool:
         if not isinstance(rows_, list):
-            return
+            return False
         for row in reversed(rows_):
             if not isinstance(row, dict) or row.get("refunded"):
                 continue
@@ -1278,12 +1765,19 @@ def refund_last_crash_attempt(run_dir, reason: str) -> bool:
             row["refunded"] = "no-engine-started"
             row["refunded_at"] = utcnow()
             row["refunded_why"] = str(reason)[:400]
+            return True
+        return False
+
+    def _mutate(state: Dict[str, Any]) -> None:
+        if _refund_in(state.get(STATE_KEY)):
             marked["done"] = True
             return
+        if _refund_in(state.get(CRASH_STATE_KEY)):
+            marked["done"] = True
 
     if not _merge(run_path, _mutate):
         print("auto-resume: could not refund the last crash attempt in "
-              f"{run_path}/state.json -- it stays counted against the crash "
+              f"{run_path}/state.json -- it stays counted against the "
               "cap", file=sys.stderr)
         return False
     if marked["done"]:
@@ -1325,7 +1819,9 @@ def notify_cap_exhausted(run_dir, decision: Decision) -> Optional[bool]:
     state, _why = _read_state(run_path)
     if state is None:
         return None
-    counted = _counted_rows(state, datetime.now(timezone.utc))
+    # Item 10: the exhaustion is a fact about the UNIFIED stream, so the
+    # once-only key is the newest counted row of either kind.
+    counted = _unified_counted_rows(state, datetime.now(timezone.utc))
     key = str(max((str(r.get("at") or "") for r in counted), default=""))
     prior = state.get(ALERT_KEY)
     if isinstance(prior, dict) and prior.get("for_attempt_at") == key:
@@ -1365,6 +1861,139 @@ def notify_cap_exhausted(run_dir, decision: Decision) -> Optional[bool]:
     return sent
 
 
+def _requester_chat_id(run_path: Path,
+                       state: Dict[str, Any]) -> Optional[str]:
+    """The requester's chat id as the run itself records it: state.json's
+    requester block first (the shape report.Reporter reads), then the
+    intake ledger's requester_chat_id (the shape the hosted bridge and
+    the poller carry). None when the run records neither -- the caller
+    then records the notification as undeliverable rather than inventing
+    an address."""
+    requester = state.get("requester")
+    if isinstance(requester, dict):
+        chat_id = requester.get("chat_id")
+        if chat_id:
+            return str(chat_id)
+    ledger_path = (run_path / "working" / "interview"
+                   / "intake_ledger.json")
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return None
+    if isinstance(ledger, dict) and ledger.get("requester_chat_id"):
+        return str(ledger["requester_chat_id"])
+    return None
+
+
+def notify_park_wait(run_dir, decision: Decision) -> Optional[bool]:
+    """ITEM 10: the once-per-park notification for a park that waits on a
+    person, and the record that proves it happened.
+
+    client_action parks notify the CLIENT, once, with exactly what is
+    needed (the classification's plain-words `needed` line, never the raw
+    park reason). operator_action parks notify the OPERATOR, once, with
+    the specific action needed. "Once" is per PARK INSTANCE (phase +
+    park stamp): the record lands in state[PARK_NOTIFY_KEY] keyed to the
+    park, and a later tick on the same park sends nothing. A new park at
+    the same phase is a new instance and is news again.
+
+    The RECORD is the deliverable this stream owns: it is written whether
+    or not a transport exists, with the delivery outcome stated. Item
+    33b's conversational layer reads this record (and the class) later;
+    the conversation itself is not built here.
+
+    Returns True (sent and confirmed), False (attempted, not confirmed,
+    or no address/transport), or None (already notified for this park --
+    nothing sent).
+    """
+    run_path = Path(run_dir).expanduser()
+    state, _why = _read_state(run_path)
+    if state is None:
+        return None
+    blocked = state.get("blocked")
+    blocked = blocked if isinstance(blocked, dict) else {}
+    park_key = f"{blocked.get('phase') or ''}|{blocked.get('at') or ''}"
+    prior = state.get(PARK_NOTIFY_KEY)
+    if isinstance(prior, dict) and prior.get("park") == park_key:
+        return None
+
+    park = classify_park(state, decision.failure_class)
+    record: Dict[str, Any] = {
+        "park": park_key,
+        "park_class": park["park_class"],
+        "at": utcnow(),
+        "needed": park["needed"],
+        "by": "presentation_job.auto_resume",
+    }
+
+    try:
+        try:
+            from .report import dispatch as _dispatch
+        except ImportError:
+            from report import dispatch as _dispatch  # type: ignore[no-redef]
+    except Exception:  # noqa: BLE001 -- no transport import, record says so
+        _dispatch = None
+
+    sent = False
+    if park["park_class"] == PARK_CLASS_CLIENT_ACTION:
+        record["to"] = "client"
+        chat_id = _requester_chat_id(run_path, state)
+        if chat_id is None:
+            record["delivered"] = False
+            record["outcome"] = ("no requester chat id recorded for this "
+                                 "run; the need is recorded here and in "
+                                 "park_status for any surface that reads "
+                                 "the run")
+        else:
+            message = (
+                f"Your presentation is paused. {park['needed']} "
+                "Everything you already sent us is saved, and the work "
+                "done so far is kept.")
+            if _dispatch is not None:
+                try:
+                    sent = bool(_dispatch(chat_id, "blocked", message))
+                except Exception:  # noqa: BLE001 -- never break a tick
+                    sent = False
+            record["delivered"] = sent
+            record["outcome"] = ("delivered" if sent else
+                                 "transport did not confirm delivery")
+    else:
+        record["to"] = "operator"
+        entry = _scripts_dir() / "presentation_job.py"
+        message = (
+            f"Presentation run {run_path.name} is parked at "
+            f"{decision.phase or 'an unrecorded phase'} and will NOT "
+            f"auto-resume (park class: {park['park_class']}). Action "
+            f"needed: {park['needed']} Inspect with: {entry} --status "
+            f"--run-dir {run_path}")
+        if _dispatch is not None:
+            try:
+                sent = bool(_dispatch(ALERT_CHAT_LABEL, "blocked", message))
+            except Exception:  # noqa: BLE001 -- never break a tick
+                sent = False
+        record["delivered"] = sent
+        record["outcome"] = ("delivered" if sent else
+                             "transport did not confirm delivery")
+
+    stamped = _merge(run_path,
+                     lambda st: st.__setitem__(PARK_NOTIFY_KEY, record))
+    if not stamped:
+        # The record is what makes this ONE notification instead of one
+        # every five minutes. Losing it is loud for the same reason the
+        # cap-alert stamp loss is loud (see notify_cap_exhausted).
+        print(f"auto-resume: WARNING -- the park notification for "
+              f"{run_path.name} was attempted but its once-only record "
+              "could not be written to state.json; until it can be, the "
+              "notification may repeat on a later tick.", file=sys.stderr)
+    if not record["delivered"]:
+        print(f"auto-resume: the park notification for {run_path.name} "
+              f"(park class {park['park_class']}) was NOT confirmed "
+              f"delivered: {record['outcome']}. The need is recorded in "
+              "state.json under park_status and park_notification.",
+              file=sys.stderr)
+    return sent
+
+
 # ---------------------------------------------------------------------------
 # CLI -- what presentation-intake-poll.sh calls in place of its old
 # `TERMINAL = BLOCKED -> continue`.
@@ -1393,10 +2022,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "outcome into a second, unrelated failure."))
     p.add_argument("--crash", action="store_true",
                    help=("decide a CRASH resume instead of a BLOCKED one: the "
-                         "engine is dead and the run is nonterminal. Uses the "
-                         "separate crash cap (AUTO_RESUME_CRASH_CAP) and the "
-                         "separate crash ledger "
-                         '(state["auto_resume_crash"]). With --refund, gives '
+                         "engine is dead and the run is nonterminal. Since "
+                         "FIX-PLAN Item 10 the crash path spends from the "
+                         "ONE unified attempt ledger "
+                         '(state["auto_resume"], crash rows carry '
+                         'kind="crash") under the ONE cap (AUTO_RESUME_CAP) '
+                         "the BLOCKED path uses. With --refund, gives "
                          "back the last crash attempt instead of the last "
                          "BLOCKED attempt."))
     return p
@@ -1410,8 +2041,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         # A bookkeeping correction, not a decision. Exit 0 unconditionally:
         # the caller is already inside its dispatch-failure path, and a
         # non-zero here would only add a second failure to that log.
-        # --crash refunds out of the crash ledger, so a refunded crash
-        # attempt never touches the BLOCKED budget (and vice versa).
+        # The refund stays kind-scoped on the one ledger (Item 10): the
+        # --crash refund gives back a crash row, the plain refund a park
+        # row, and neither can forgive the other kind's charge.
         if args.crash:
             refund_last_crash_attempt(run_path, args.refund)
         else:
@@ -1425,7 +2057,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # path -- a crash attempt spent under a still-stale pin bought a one-second
     # EXIT_MANIFEST_MISMATCH death, not an engine start, so it must not count
     # against the crash cap either.
-    ledger_key = CRASH_STATE_KEY if args.crash else STATE_KEY
+    # Item 10: the pin refund sweeps BOTH keys on either path -- rows of
+    # both kinds live on the one ledger now, and legacy crash rows can
+    # carry a stale pin too.
+    ledger_keys = (STATE_KEY, CRASH_STATE_KEY)
     if not args.check:
         state, _why = _read_state(run_path)
         if state is not None and (str(state.get("terminal") or "") == "BLOCKED"
@@ -1435,9 +2070,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             if status == "mismatch" and repin is not True:
                 now = datetime.now(timezone.utc)
                 probe = json.loads(json.dumps(state))  # cheap deep copy
-                if _refund_manifest_pin_attempts(probe, now, ledger_key):
+                if any(_refund_manifest_pin_attempts(probe, now, key)
+                       for key in ledger_keys):
                     def _refund(live: Dict[str, Any]) -> None:
-                        _refund_manifest_pin_attempts(live, now, ledger_key)
+                        for key in ledger_keys:
+                            _refund_manifest_pin_attempts(live, now, key)
                     if _merge(run_path, _refund):
                         print("auto-resume: refunded the attempt(s) spent "
                               f"under the still-stale pin ({mwhy}) -- they "
@@ -1452,6 +2089,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not decision.resume:
         if decision.code == DECISION_CAP and not args.check:
             notify_cap_exhausted(run_path, decision)
+        elif (not args.check and not args.crash
+                and decision.park_class in (PARK_CLASS_CLIENT_ACTION,
+                                            PARK_CLASS_OPERATOR_ACTION)
+                and decision.code != DECISION_KNOWN_PLAN):
+            # Item 10: a park that waits on a person notifies that person
+            # ONCE per park, with what is needed, and records it. The
+            # known-plan decline is the one exclusion: the client already
+            # answered, and notifying them that an answer is needed
+            # would be the re-ask PRES-019 QC4 forbids.
+            notify_park_wait(run_path, decision)
         return decision.exit_code
 
     if args.check:

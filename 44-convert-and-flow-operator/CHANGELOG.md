@@ -1,5 +1,26 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [2.1.6] - 2026-10-14 - docs(skill44): Consumers section states verified handoffs only
+
+SKILL.md gains a Consumers section (FIX-PLAN Item 27) stating, for each
+consumer, what that consumer actually does today, verified from the
+consumer's own code and docs: Skill 6's routing/skill44-handoff.json and
+routing/form-dependency-plan.json file handoffs, the presentations
+department's plan contracts and the Item 33a ghl-ops-request /
+ghl-ops-receipt seam, Skill 38 as the TRINITY counterparty gated
+mechanically by WF-19, and Skill 50's draft-only deploy rail. Skill 46
+and Skill 71 are named as explicit non-consumers so the record cannot be
+read as claiming integrations that do not exist. No behavior changes.
+Note: entries for 2.1.3 and 2.1.4 were never written (pre-existing gap).
+This content was drafted as a 2.1.5 entry on its branch; 2.1.5 was taken
+on main by the model doctrine cleanup entry below, so the lockstep
+advances to 2.1.6 and the entry is recorded here.
+
+## [2.1.5] - 2026-10-13 - model doctrine cleanup
+
+- The Step 0 owner recommendation and the Step 9.2 independent QC spawn no longer name models: work runs on the client's selected model or configured default, and the QC agent resolves to a different model than the build agent (independence is the requirement, kept as a recommendation with its reason).
+- skill-version v2.1.4 -> v2.1.5.
+
 ## [2.1.2] - 2026-09-17 - fix(shell): qc-built-workflow.sh re-execs under bash 4+ on macOS
 
 The QC script used four `declare -A` tables and two `${VAR^^}` case modifiers, all

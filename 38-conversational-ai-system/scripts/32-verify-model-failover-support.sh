@@ -26,8 +26,8 @@
 #
 # Usage:
 #   bash scripts/32-verify-model-failover-support.sh
-#   bash scripts/32-verify-model-failover-support.sh --primary "ollama/deepseek-v4.1-flash:cloud" \
-#        --fallback "openrouter/kimi" --fallback "<provider/model>"
+#   bash scripts/32-verify-model-failover-support.sh --primary "<the client's chosen model>" \
+#        --fallback "<a fallback model the client configured>" --fallback "<provider/model>"
 #   bash scripts/32-verify-model-failover-support.sh --mode degraded   # force (testing/override)
 #   bash scripts/32-verify-model-failover-support.sh --json
 

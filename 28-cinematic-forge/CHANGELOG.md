@@ -1,5 +1,10 @@
 # Changelog — Skill 28: Cinematic Forge
 
+## v7.0.5 - 2026-10-13 - model doctrine cleanup: client choice or configured default
+
+- SKILL.md and INSTALL.md no longer prescribe or ban named models. The agent model for this skill is the client's choice, or the client's configured default model. The tool-calling requirement survives as a recommendation with its reason: use a model that supports tool calls, because this skill executes through API calls.
+- skill-version v7.0.4 -> v7.0.5.
+
 ## v7.0.3 - 2026-10-06 - model-choice wording defers to Skills 66 and 68; changelog order
 
 - Removed the parenthetical that spelled out the retired audio ids; Skill 68 is the only authority for audio model ids.

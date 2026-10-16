@@ -4,6 +4,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [7.1.7] - 2026-10-13
+
+### Changed - model doctrine cleanup
+
+- Cost strategy and the tier chains no longer prescribe named models. Each tier resolves to the model the client selected for that tier, or the client's configured default model. Recommendations survive as guidance where a genuine rationale exists (a heavyweight model for hard reasoning, a fast model for quick tasks). Runtime resolution through select_model.py is unchanged.
+- skill-version v7.1.6 -> v7.1.7.
+
 ## [7.1.6] - 2026-10-12
 
 ### Fixed - REMOTE RESCUE WORKSPACE SEED (RRS001)

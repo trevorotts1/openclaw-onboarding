@@ -277,20 +277,34 @@ Engine-side companion (NOT part of this GHL build): E1 = extend the webhook mapp
 
 ## SECTION J - WORKFLOW BUILD STATE (LIVE, verified 2026-07-10)
 
-All four required workflows exist in the TEMPLATE sub-account `CjxATjhv9Gt21qSqURIt`, each `status=published` with its trigger COMMITTED (non-null `triggersFilePath`) and `active=true`. Verified by live re-GET on the internal rail. Re-run the gate any time: `scripts/verify-podcast-ghl-workflows.py` (exit 0 = all four PASS).
+All four required workflows exist in the TEMPLATE sub-account `CjxATjhv9Gt21qSqURIt`, each with its trigger COMMITTED (non-null `triggersFilePath`). 01 and 02 are published. 04 and 06 ship DRAFT by design since 2026-09-19 (commit 27608e182, placeholder copy); each client's copies are customized and published at onboarding (SECTION J step 2.9 below). Verified by live re-GET on the internal rail. Re-run the gate any time: `scripts/verify-podcast-ghl-workflows.py` (exit 0 = all four PASS, 04/06 expected draft in the template; add `--notification-status published` once a client has published its own 04/06).
 
 | WF | Live workflow id | Trigger type | Trigger condition | active | steps |
 |---|---|---|---|---|---|
 | 01-Podcast Intake Submitted (Interview) | `e008e027-3505-4fa2-87c0-a624357f53a6` | `survey_submission` | survey = `ExAPmAV3Llo0tREenfJy` (ZHC Podcast Intake - Interview Style) | true | 1 (webhook -> box) |
 | 02-Podcast Intake Submitted (Personal) | `55d7f054-757e-43c1-933a-0faf34c60f69` | `survey_submission` | survey = `vX5BuhxSeucMHrcKOwEn` (ZHC Podcast Intake - Personal Podcast) | true | 1 (webhook -> box) |
-| 04-Podcast is Completed | `912d7ac7-ff26-4a5e-810c-a0957d70dfb0` | `contact_changed` | `has-changed` on `contact.podcast_survey_episode_url` (field id `UQUZa9x80H4JWq52RbmI`) | true | 3 (tag, email, sms) |
-| 06-Podcast_Episode_Is_Ready | `91c0c5a4-3dcb-4a6e-b8e1-73d8b812148f` | `contact_tag` | tag added = `podcast episode is ready` | true | 2 (email, sms) |
+| 04-Podcast is Completed | `912d7ac7-ff26-4a5e-810c-a0957d70dfb0` | `contact_changed` | `has-changed` on `contact.podcast_survey_episode_url` (field id `UQUZa9x80H4JWq52RbmI`) | false (draft) | 3 (tag, email, sms) |
+| 06-Podcast_Episode_Is_Ready | `91c0c5a4-3dcb-4a6e-b8e1-73d8b812148f` | `contact_tag` | tag added = `podcast episode is ready` | false (draft) | 2 (email, sms) |
 
 **Recreation mechanism (PROVEN, supported rail).** Workflows/triggers are built via the GHL INTERNAL API at `backend.leadconnectorhq.com` (Firebase-JWT `token-id` header, agency/owner refresh token) — the SAME rail Skill-44 `caf` uses. There is NO public create-workflow API; the public `/workflows/` endpoint is read-only and the agency PIT 403s on sub reads. Endpoints used: list `GET /workflow/{loc}/list`, read steps `GET /workflow/{loc}/{wf}`, read triggers `GET /workflow/{loc}/trigger?workflowId={wf}`, create trigger `POST /workflow/{loc}/trigger`, link trigger `PUT /workflow/{loc}/trigger/{tr}` (sets `targetActionId`), commit+activate `PUT /workflow/{loc}/{wf}`.
 
 **ACTIVATION MODEL (the subtlety that caused the original "inactive shell" failure).** A trigger is only live when BOTH are true: (a) it is committed into the workflow's trigger file, and (b) the workflow doc carries `status:"published"`. Committing is a `PUT /workflow/{loc}/{wf}` that includes `triggersChanged:true` + `oldTriggers`/`newTriggers` (the trigger objects, `active:true`) AND re-asserts `status:"published"` and the current `version` and the EXISTING `workflowData.templates`. Omitting `status` on that PUT silently demotes the workflow to draft and de-activates every trigger — so the commit PUT must always carry `status:"published"`. A bare `POST /workflow/{loc}/trigger` (or a `PUT /workflow/{loc}/trigger/{tr}` alone) creates the trigger row but leaves it `active:false` and uncommitted — this is exactly what shipped the first time.
 
 **PER-CLIENT / POST-SNAPSHOT CAVEAT (verify after each provision).** GHL snapshot imports frequently land workflows in DRAFT with triggers inactive in the destination sub-account. Provisioning edits 0 workflows by design (§B/§I), so after cutting the snapshot AND after each `provision-podcast-client.sh` run, re-run `scripts/verify-podcast-ghl-workflows.py --location <client-loc> --token-env <client-refresh-var>` and, if any workflow is draft/inactive, re-publish it (toggle Publish in the builder, or re-assert `status:"published"` via the commit PUT above). This gate is the fail-loud check the first build lacked.
+
+### 2.9 - Per-client onboarding step: fill the consent tokens, then publish 04/06
+
+Recorded here rather than in `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` (that SOP is outside Skill 58 scope and still ends at 2.8). Without this step a new client installs with draft notification workflows, so its guests are never notified, and with another business's consent text on its surveys. Both parts run once per client, right after `provision-podcast-client.sh`.
+
+**2.9a - Fill the survey consent tokens (both surveys, per client).** The template surveys carry the plain tokens `CLIENT_LEGAL_NAME` and `CLIENT_HELP_PHONE` in their terms-and-conditions block instead of any business's registered name or number. For each of `ExAPmAV3Llo0tREenfJy` and `vX5BuhxSeucMHrcKOwEn` on the client's location: `GET https://services.leadconnectorhq.com/surveys/<id>`, replace both tokens (placeholder and preview) with the client's own registered legal name and help number, leave `formData.form.fbPixelId` empty unless the client supplies its own pixel, then `POST https://services.leadconnectorhq.com/surveys/<id>` with body `{"name": <survey name>, "formData": <formData>}` and the `token-id` header (`channel: APP`, `source: WEB_USER`, `version: 2021-07-28`). An install that still shows a raw token is an unfilled install and must be filled before intake opens.
+
+**2.9b - Publish the guest notifications (Interview mode).** In the client's `04-Podcast is Completed` and `06-Podcast_Episode_Is_Ready`: replace the placeholder email/SMS copy and sender (reuse the client's own prior notifier wording and sender when one exists), add the tag trigger filter to 04, and — in the same change window — set any older same-named or same-purpose notifier to draft (never delete) so a guest gets exactly one sequence. Then publish both workflows. Remember the activation model above: any commit `PUT` must re-assert `status:"published"`.
+
+**Verification (all four PASS):**
+
+~~~ text
+python3 58-podcast-production-engine/scripts/verify-podcast-ghl-workflows.py --location <client location> --notification-status published
+~~~
 
 ---
 

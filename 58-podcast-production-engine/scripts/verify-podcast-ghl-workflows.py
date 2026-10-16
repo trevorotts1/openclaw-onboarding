@@ -87,6 +87,21 @@ def _get(tok, path):
         return -1, {"_exc": str(e)[:200]}
 
 
+def _list_workflows(tok, loc):
+    """Page /workflow/{loc}/list -- one GET only returns 200 rows, and real
+    sub-accounts hold more (341 rows has been observed), which silently hid
+    workflows from this gate.  Returns (http_code_of_last_page, workflow_rows)."""
+    rows, off = [], 0
+    while off < 10000:  # ponytail: 10k-row ceiling; raise it only if a sub-account grows past that
+        code, page = _get(tok, f"/workflow/{loc}/list?limit=100&offset={off}&type=workflow")
+        page_rows = page.get("rows", []) if code == 200 and isinstance(page, dict) else []
+        rows.extend(r for r in page_rows if r.get("type") == "workflow")
+        if code != 200 or len(page_rows) < 100:
+            break
+        off += 100
+    return code, rows
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--location", default=os.environ.get("GHL_LOCATION_ID") or os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or "")
@@ -115,28 +130,32 @@ def main() -> int:
         print("FAIL: minted empty id_token", file=sys.stderr)
         return 1
 
-    code, listing = _get(tok, f"/workflow/{loc}/list?limit=200")
-    if code != 200 or not isinstance(listing, dict):
-        print(f"FAIL: workflow list http={code} {listing}", file=sys.stderr)
+    code, rows = _list_workflows(tok, loc)
+    if code != 200:
+        print(f"FAIL: workflow list http={code}", file=sys.stderr)
         return 1
-    rows = [r for r in listing.get("rows", []) if r.get("type") == "workflow"]
-    by_name = {r.get("name", ""): r for r in rows}
+    by_name = {}
+    for r in rows:
+        by_name.setdefault(r.get("name", ""), []).append(r)
 
     print(f"== LIVE podcast-workflow QC -- location {loc} ({len(rows)} workflows) ==")
     all_ok = True
     for name_sub, exp_type, label, expected_status in EXPECTED:
-        match = next((r for n, r in by_name.items() if name_sub in n), None)
-        if not match:
+        expected_status = args.notification_status if expected_status == "notification" else expected_status
+        candidates = [r for n, matches in by_name.items() if name_sub in n for r in matches]
+        if not candidates:
             print(f"[FAIL] missing workflow: {name_sub!r}")
             all_ok = False
             continue
+        if len(candidates) > 1:
+            print(f"WARN: {len(candidates)} workflows named {candidates[0].get('name')!r}")
+        match = next((c for c in candidates if c.get("status") == expected_status), candidates[0])
         wid = match.get("id")
         _, wf = _get(tok, f"/workflow/{loc}/{wid}")
         steps = (wf.get("workflowData") or {}).get("templates", []) if isinstance(wf, dict) else []
         _, trigs = _get(tok, f"/workflow/{loc}/trigger?workflowId={wid}")
         trigs = trigs if isinstance(trigs, list) else []
         t = trigs[0] if trigs else {}
-        expected_status = args.notification_status if expected_status == "notification" else expected_status
         expected_active = expected_status == "published"
         ok = (wf.get("status") == expected_status and len(trigs) >= 1
               and t.get("active") is expected_active and t.get("type") == exp_type and len(steps) >= 1)

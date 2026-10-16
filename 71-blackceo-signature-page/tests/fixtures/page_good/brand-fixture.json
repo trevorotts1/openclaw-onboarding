@@ -35,5 +35,17 @@
   "founder_photos": [
     "sha256:7f923975006e736ad6adf85ffbfbc69952a94e43fbfcf536bb37fa50f9605d78"
   ],
+  "layout_thresholds": {
+    "signature_monotony_max_share": 0.60,
+    "image_ratio_same_class_tolerance": 0.05,
+    "image_ratio_min_images": 3,
+    "centering_max_share": 0.70,
+    "card_grid_min_repetitions": 3,
+    "card_grid_size_tolerance": 0.02,
+    "empty_width_min_span": 0.60,
+    "cta_size_tolerance_px": 2,
+    "single_cta_design": false,
+    "card_grid_allowlist": []
+  },
   "is_blackceo": true
 }

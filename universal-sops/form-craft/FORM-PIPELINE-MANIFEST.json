@@ -4,7 +4,7 @@
   "authoritative_engine": {
     "skill": "06-ghl-install-pages",
     "engine_tool": "06-ghl-install-pages/tools/ghl_form_builder.py",
-    "engine_note": "THINK/DO two-layer split. SMART/THINK (this Python, run under a client reasoning model) decides WHAT form to build, resolves every field property, pre-plans the zhc_ dependencies, and emits a fully-explicit click list. DUMB/DO (agent-browser, MiniMax M3 probe-gated) executes the click list verbatim and makes NO decisions.",
+    "engine_note": "THINK/DO two-layer split. SMART/THINK (this Python, run under a client reasoning model) decides WHAT form to build, resolves every field property, pre-plans the zhc_ dependencies, and emits a fully-explicit click list. DUMB/DO (agent-browser, running the client's chosen vision-capable model, probe-gated, or the client's configured default model) executes the click list verbatim and makes NO decisions.",
     "think_layer": [
       "_resolve_fields",
       "plan_dependencies",
@@ -88,6 +88,6 @@
     "type_enum": ["brief", "fields", "deps", "embed", "preview"],
     "note": "Every form deliverable (locked brief, resolved field list, dependency plan, embed snippet + host-page splice, preview) is labeled; vNN is a zero-padded version (v01, v02, ...). Mirrors the funnel-craft grammar shape."
   },
-  "client_runtime_rule": "On a client box the engine uses the CLIENT's OWN configured providers + keys. NEVER Anthropic / claude-* models or operator keys. The deterministic gates (_run_preflight, qc-built-form.sh, render_check) are provider-neutral stdlib Python and run identically everywhere. Browser control + vision QC use MiniMax M3 (probe-gated) -> DeepSeek V4.1 Flash; reasoning uses Ollama-Cloud -> OpenRouter -> Gemini last-resort; MiniMax M2 is BANNED. Publishing is human-approved.",
+  "client_runtime_rule": "On a client box the engine uses the CLIENT's OWN configured providers + keys. NEVER Anthropic / claude-* models or operator keys. The deterministic gates (_run_preflight, qc-built-form.sh, render_check) are provider-neutral stdlib Python and run identically everywhere. Browser control + vision QC use the client's chosen vision-capable model (probe-gated), or the client's configured default model; reasoning uses the client's own configured providers in their configured order (Ollama-Cloud, then OpenRouter, then Gemini last-resort) with the client's chosen reasoning model, or the client's configured default model; MiniMax M2 is BANNED. Publishing is human-approved.",
   "flexibility": "guide-not-rule: honor an explicit owner choice about fields / tags / styling / embed target. But the zhc_ marker, required-XOR-hidden exclusivity, custom-via-object-fields, embed-verbatim (no SRI), and render-200 + marker-in-DOM are prover/QC-enforced hard AF-FORM-* auto-fails, not opinions."
 }

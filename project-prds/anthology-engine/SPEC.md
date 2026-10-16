@@ -152,7 +152,7 @@ The engine is the PRD Section 4 four-layer system. This section fixes the runtim
         pdf_render.py                deterministic HTML-to-PDF (WeasyPrint-class)
         caf_delivery.py              Convert and Flow media upload plus exact-key
                                      custom-field writes plus byte-for-byte read-back
-        cover_render.py              Kie.ai GPT-Image-2.5 via Skills 07/46 callback
+        cover_render.py              Kie.ai, the client's selected image model, via Skills 07/46 callback
         qc-tier1-anthology.py        Gate B Tier 1 (per-piece and assembly modes)
         qc-strike-gate.py            both counters: rewrite budget 2, QC attempts 3
         judge_harness.py             Tier 1 semantic checks 13 to 15 plus Tier 2
@@ -208,7 +208,7 @@ The engine is the PRD Section 4 four-layer system. This section fixes the runtim
 | 10 | drive-tree-provision.py | Idempotent Producer/Anthology/Participant tree under the EXISTING configured root; never creates a new root | 0 tree verified or created; 2 configured root unreachable; 3 API unreachable |
 | 11 | pdf_render.py | Deterministic WeasyPrint-class HTML-to-PDF from the house templates, all font tokens at or above 14 point | 0 rendered; 1 render error; 2 template token below floor |
 | 12 | caf_delivery.py | Convert and Flow media upload, exact-key field writes by contact_id, byte-for-byte read-back, control fields | 0 delivered and verified; 2 tenant mismatch; 3 API unreachable; 5 read-back mismatch |
-| 13 | cover_render.py | Kie.ai GPT-Image-2.5 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive | 0 PNG landed; 3 callback lost after re-poll (held) |
+| 13 | cover_render.py | Kie.ai, the client's selected image model, via Skills 07 and 46, callback with bounded re-poll, PNG to Drive | 0 PNG landed; 3 callback lost after re-poll (held) |
 | 14 | qc-tier1-anthology.py | Gate B Tier 1 deterministic checks, per-piece and assembly modes | 0 all pass; 2 bad invocation; 4 one or more failures (list emitted) |
 | 15 | qc-strike-gate.py | Both counters: participant rewrite budget 2 with gate re-entry, internal QC attempts 3, hold-and-alert | 0 within budgets; 4 budget or attempt exhaustion (hold path) |
 | 16 | judge_harness.py | Tier 1 semantic checks 13 to 15 plus the Tier 2 ten-dimension rubric on the JUDGE tier | 0 pass; 2 judge tier equals writer tier (independence violation); 4 any dimension below 8 |
@@ -283,7 +283,7 @@ S6 CHAPTER REWRITE (optional, budget 2, re-enters the S5 gate)
 
 S7 COVER IMAGE
 - INPUTS: locked title and subtitle, author name, blurb.
-- PROCESS: pin aw-11 (cover prompt generator, structured output: an image prompt object) on MID-WRITER; render via the client's own Kie.ai account, model GPT-Image-2.5, PORTRAIT 1024x1536, through Skill 07 setup and Skill 46 callback relay, against the Kie TEXT-TO-IMAGE portrait endpoint VERIFIED at Wave 0 (the 16:9 presentation image recipe is a different endpoint shape and is NEVER reused here); bounded re-poll on a lost callback, then hold plus alert.
+- PROCESS: pin aw-11 (cover prompt generator, structured output: an image prompt object) on MID-WRITER; render via the client's own Kie.ai account, the client's selected image model, PORTRAIT 1024x1536, through Skill 07 setup and Skill 46 callback relay, against the Kie TEXT-TO-IMAGE portrait endpoint VERIFIED at Wave 0 (the 16:9 presentation image recipe is a different endpoint shape and is NEVER reused here); bounded re-poll on a lost callback, then hold plus alert.
 - ARTIFACTS: cover PNG in the participant's Drive folder; both link fields captured.
 
 S8 PACKAGE AND DELIVER (runs per deliverable as each stage completes, and as a full sweep at participant completion)
@@ -385,7 +385,7 @@ Every meaningful node or node cluster of the eight live workflows, mapped to its
 | # | Node(s) | Legacy function | Engine equivalent | Disposition |
 |---|---|---|---|---|
 | C1 | When Executed by Another Workflow + Edit Fields5 (Write Chapter prompt: user 773, system 6,025, assistant 49,756; already captured verbatim in the inline companion) | Entry plus prompt staging | stage_s5_chapter.py with Skill 54 pin aw-09 via P5 | REUSE (Skill 54) |
-| C2 | Write Chapter (chainLlm, legacy Anthropic id) + HTTP Suggested Titles (raw path) | The chapter generation | HEAVY-WRITER (GLM 5.2 chain); prove_aw_chapter.py measures the band | REPLACE / DELETE (raw) |
+| C2 | Write Chapter (chainLlm, legacy Anthropic id) + HTTP Suggested Titles (raw path) | The chapter generation | HEAVY-WRITER; prove_aw_chapter.py measures the band | REPLACE / DELETE (raw) |
 | C3 | Edit Fields6 (Chapter HTML formatter: system 4,987, assistant 10,262) + HTML Outline (chainLlm; the node is misnamed in the live graph, it formats the chapter) + HTTP Suggested Titles2 | LLM HTML formatting | Retired; chapter house template | HARVEST then RETIRE |
 | C4 | Edit Fields13 + Code4 + Google Drive17 + HTTP Request15 + Google Drive18 | HTML-to-Doc dance | drive_adapter.py plus pdf_render.py | REPLACE |
 | C5 | Edit Fields (chapter, chapter_doc) | Return | Artifact row, frozen on approval | REPLACE |
@@ -407,7 +407,7 @@ Every meaningful node or node cluster of the eight live workflows, mapped to its
 | V1 | When Executed by Another Workflow + Edit Fields2 (cover prompt generator: system 2,135, assistant 11,904; Wave 0 rescue target) | Entry plus prompt staging | stage_s7_cover.py with pin aw-11 | HARVEST then REPLACE |
 | V2 | Prompt Writer 2 (chainLlm, legacy gpt-4.1) + Structured Output Parser + OpenRouter Chat Model, OpenRouter Chat Model21 | Image-prompt generation, structured | MID-WRITER with structured output contract (image prompt object) | REPLACE |
 | V3 | HTTP Write Tone Style 3 (raw key-in-payload path) | Second model path | model_router.py only | DELETE |
-| V4 | Image Generation (OpenAI Image 1) (httpRequest to the legacy image API with a LITERAL authorization header, the Gap 3 exposed key; legacy gpt-image-1 portrait 1024x1536) | Cover render | Client's own Kie.ai, GPT-Image-2.5, portrait, via Skills 07 and 46 callback pattern; the exposed key ROTATED at Wave 0; caf_credential_gate.py forbids literal headers | DELETE (node and key) then REPLACE |
+| V4 | Image Generation (OpenAI Image 1) (httpRequest to the legacy image API with a LITERAL authorization header, the Gap 3 exposed key; legacy gpt-image-1 portrait 1024x1536) | Cover render | Client's own Kie.ai, the client's selected image model, portrait, via Skills 07 and 46 callback pattern; the exposed key ROTATED at Wave 0; caf_credential_gate.py forbids literal headers | DELETE (node and key) then REPLACE |
 | V5 | Convert to File + Google Drive1 | PNG to Drive | drive_adapter.py PNG landing in the participant folder | REPLACE |
 | V6 | Edit Fields (image_prompt, image_file) | Return | Artifact row (type cover), both link fields | REPLACE |
 
@@ -505,11 +505,11 @@ EXCEPTIONS: exception_id [primary], raw_submission [multilineText json], reason 
 
 | Tier | Work | Resolution chain (in order) | Parameters |
 |---|---|---|---|
-| HEAVY-WRITER | S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter | (1) GLM 5.2 on Ollama Cloud, provider id ollama-cloud, which REQUIRES baseUrl slotting (not apiKey slotting) and maxTokens 65536; (2) OpenRouter GLM 5.2; (3) Gemini 3.5 Flash (operator-confirmed final fallback for THIS project; the Gemini key resolves under any of its three alias names); (4) chain exhausted: durable HOLD plus ONE deduped founder Telegram alert through the OpenClaw gateway, never bypassed | thinking high, temperature 0.3 |
-| LIGHT | Extraction (aw-12), classification, routing-adjacent text chores | Minimax V3 on Ollama Cloud, then its OpenRouter counterpart, then Gemini 3.5 Flash | defaults |
-| JUDGE | Gate B semantic checks and the Tier 2 rubric | Minimax V3 or Gemini 3.5 Flash, ALWAYS a different resolution than the tier that drafted the piece | temperature 0 |
-| LONGCTX (optional) | S9 whole-manuscript compile | DeepSeek V4.1 Flash or Kimi 2.6 (about 1M context), ONLY when the client has configured a key; otherwise S9 chunks on HEAVY-WRITER | thinking high |
-| IMAGE | S7 cover | Client's own Kie.ai, GPT-Image-2.5, portrait 1024x1536 via the Wave-0-verified text-to-image portrait endpoint (never the 16:9 presentation recipe), via Skills 07 and 46 | per Skill 07 |
+| HEAVY-WRITER | S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter | The client's selected model for this tier, or the client's configured default model; then the client's configured fallback chain in order; chain exhausted: durable HOLD plus ONE deduped founder Telegram alert through the OpenClaw gateway, never bypassed. Provider wiring (slotting, keys, token caps) follows the client's own provider configuration | thinking high, temperature 0.3 |
+| LIGHT | Extraction (aw-12), classification, routing-adjacent text chores | The client's selected light-task model, or their configured default model; then the client's configured fallback chain | defaults |
+| JUDGE | Gate B semantic checks and the Tier 2 rubric | The client's selected judge model, or their configured default, ALWAYS a different resolution than the tier that drafted the piece (QC independence) | temperature 0 |
+| LONGCTX (optional) | S9 whole-manuscript compile | A model with about 1M context that the client selected, ONLY when the client has configured a key; otherwise S9 chunks on HEAVY-WRITER. Recommendation: a long-context model, because S9 compiles the whole manuscript in one window | thinking high |
+| IMAGE | S7 cover | Client's own Kie.ai, the client's selected image model, portrait 1024x1536 via the Wave-0-verified text-to-image portrait endpoint (never the 16:9 presentation recipe), via Skills 07 and 46 | per Skill 07 |
 
 8.2 ROUTER SEMANTICS (model_router.py): one call site for every model turn; per-call pre-meter and post-meter through anthology-cost-ledger.py (per-deliverable token budgets shared across QC attempts); typed error classification (insufficient_credits, auth, rate_limit, timeout, refusal) with chain advance on retryable classes and durable hold on credits; DENY PATTERNS refuse any request whose resolved model matches Anthropic identifier shapes (claude-*, anthropic/*, and vendor-prefixed variants) at call time, mirroring Skill 54's AF-AW-ANTHROPIC ledger gate; the model actually used is recorded honestly on the Artifact row and the run ledger. guard-no-anthropic-runtime.py enforces the same law statically over every shipped file including the dashboard at merge. Prompts never name models (pipeline-design.md Section 2); tiers are the only vocabulary above the router.
 
@@ -517,7 +517,7 @@ EXCEPTIONS: exception_id [primary], raw_submission [multilineText json], reason 
 
 ## 9. WEB-SEARCH DETECTION LADDER (AVATAR QUESTIONS 31 AND 32)
 
-search_detect.py runs once per box, caches to client state, and re-detects on preflight: (1) enumerate the enabled OpenClaw web-search tools on the installed gateway (live-verified at W0.4 because tool-registration schemas drift between gateway versions); (2) prefer Perplexity when present; (3) else the best available enabled search tool (Ollama Cloud web search and the client's other enabled options rank by recency and quota state); (4) else NO TOOL: S1 produces the avatar from Questions 1 to 30 with an honest limitation note in the operator run report, the participant run CONTINUES, and ONE deduped Telegram flag goes to the founder. The search pass is a Layer 2 tool step whose findings inject into pin aa-02 as context; GLM 5.2 does not search natively and the engine never asks it to fabricate links; fabricated-link detection is Gate B Tier 1 check 10 (research claims must trace to the search pass output).
+search_detect.py runs once per box, caches to client state, and re-detects on preflight: (1) enumerate the enabled OpenClaw web-search tools on the installed gateway (live-verified at W0.4 because tool-registration schemas drift between gateway versions); (2) prefer Perplexity when present; (3) else the best available enabled search tool (Ollama Cloud web search and the client's other enabled options rank by recency and quota state); (4) else NO TOOL: S1 produces the avatar from Questions 1 to 30 with an honest limitation note in the operator run report, the participant run CONTINUES, and ONE deduped Telegram flag goes to the founder. The search pass is a Layer 2 tool step whose findings inject into pin aa-02 as context; the writing model does not search natively and the engine never asks it to fabricate links; fabricated-link detection is Gate B Tier 1 check 10 (research claims must trace to the search pass output).
 
 ## 10. DELIVERY ADAPTERS
 
@@ -604,14 +604,14 @@ The twelve-chapter full-book prompts and the 4x3x3 tables (Skill 53 territory); 
 
 | Legacy model id (node evidence) | Where it ran | Replaced by tier |
 |---|---|---|
-| anthropic/claude-sonnet-4.5 | Avatar Questions 1 to 30, Rewrite Avatar | HEAVY-WRITER (GLM 5.2 chain) |
+| anthropic/claude-sonnet-4.5 | Avatar Questions 1 to 30, Rewrite Avatar | HEAVY-WRITER |
 | anthropic/claude-sonnet-4.6 | Tone Style 1, Blended Tone | HEAVY-WRITER |
 | anthropic/claude-sonnet-4 | Tone Styles 2 to 4, Suggested Titles, Book Blurb | HEAVY-WRITER |
 | anthropic/claude-opus-4 | Create Outline, Write Chapter, Chapter Re-Writer | HEAVY-WRITER |
 | google/gemini-2.5-pro, google/gemini-3.1-pro-preview | The five HTML formatters | RETIRED (deterministic rendering) |
-| openai/gpt-4.1 | Primary Goal extraction, cover Prompt Writer | LIGHT / MID work on the GLM chain and Minimax V3 |
+| openai/gpt-4.1 | Primary Goal extraction, cover Prompt Writer | LIGHT / MID work on the client-selected tiers |
 | gpt-4o-search-preview | Avatar Questions 31 to 32 | Detection-ladder search tool step |
-| gpt-image-1 (legacy image API, hardcoded key) | Cover render | Client Kie.ai GPT-Image-2.5 via Skills 07 and 46 |
+| gpt-image-1 (legacy image API, hardcoded key) | Cover render | Client Kie.ai, the client's selected image model, via Skills 07 and 46 |
 
 ## APPENDIX B: CANONICAL PARTICIPANT DATA DICTIONARY (the single vocabulary every prompt slot, ledger column, form field, and dashboard label resolves to)
 

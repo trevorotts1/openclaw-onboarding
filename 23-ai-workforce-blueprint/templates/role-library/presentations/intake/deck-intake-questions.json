@@ -1,8 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.12.0",
-  "description": "Deck intake v1.12.0 (Flash route correction): identical 23 merged turns, 20 required, 48 physical rows, same prompts (order-9 workhorse example now deepseek-flash@deepseek-direct, legacy deepseek-v4-flash still accepted), enums, required flags, storeTarget and waiver contract as v1.11.0. New stage metadata groups stage-1 into five beats (purpose/audience, existing materials, desired outputs, deadline/CTA, provider/resource preference) with a review-and-edit summary, conditions later turns on selected deliverables plus missing stage inputs, reuses locked client preferences without re-interview, and sets UX targets (new-client valid brief at most 11 interactions, repeat-client at most 6, preference reuse 100%). 23 turns is the CEILING, never the norm.",
+  "version": "1.13.0",
+  "description": "Deck intake v1.13.0 (Skill 50 email election, FIX-PLAN Item 33c): identical 23 merged turns, 20 required, 50 physical rows (two alias rows added: want_email_sequences at 20.03, email_sequences_declined_reason at 22.07). The email election rides the EXISTING turns (no new turn, per the 23-turn ceiling): growth_assets gains the want_email_sequences subfield (default no, boolish, same shape as its sales/VSL siblings) and its prompt names the option; decline_context gains the conditional email_sequences_declined_reason subfield and its prompt names the item. storeTarget and waiver_field_mapping gain the email_sequences pair; the waiver discipline is identical to the other elections (explicit no plus the client's verbatim reason, or --complete cannot pass). Otherwise identical prompts, enums, required flags, storeTarget and waiver contract as v1.12.0. Deck intake v1.12.0 (Flash route correction): identical 23 merged turns, 20 required, 48 physical rows, same prompts (order-9 workhorse example now deepseek-flash@deepseek-direct, legacy deepseek-v4-flash still accepted), enums, required flags, storeTarget and waiver contract as v1.11.0. New stage metadata groups stage-1 into five beats (purpose/audience, existing materials, desired outputs, deadline/CTA, provider/resource preference) with a review-and-edit summary, conditions later turns on selected deliverables plus missing stage inputs, reuses locked client preferences without re-interview, and sets UX targets (new-client valid brief at most 11 interactions, repeat-client at most 6, preference reuse 100%). 23 turns is the CEILING, never the norm.",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
     "from_scratch": {
@@ -95,6 +95,8 @@
     "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
     "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
     "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+    "WANT_EMAIL_SEQUENCES": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+    "EMAIL_SEQUENCES_DECLINED_REASON": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
     "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE",
     "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN",
     "STYLE_PICK_AUTO": "pre_presentation_capture.STYLE_PICK_AUTO"
@@ -469,7 +471,7 @@
           "note": "FIX 62: client picks their Ollama Cloud plan tier ($20/month = 3 concurrent, $100/month = 8 concurrent). Recorded via resource_profile.record_plan_answer into the provider's cap-table entry; governs concurrency on Ollama-routed steps. Tier names match capacity.PLANS_BY_PROVIDER exactly."
         }
       },
-      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- the resource profile is THE store for this answer, and after it is recorded there the provider entry is marked locked and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator.",
+      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- the resource profile is THE store for this answer, and after it is recorded there the provider entry is marked locked and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator. ROUTE HONESTY (FIX 18): when the client's route involves Ollama, this turn ALSO presents the numeric honesty block, rendered live by presentation_job.route_honesty from capacity.py's own tables -- never from numbers typed into this bank. It is shown ONCE per account-level answer set and carries, in plain terms: the concurrency their Ollama tier actually buys (CAP_TABLE today: $20/month -> 3 at a time; $100/month -> 8 at a time of the account's 10, with 2 kept in reserve), what that means in rounds of work for a deck of their size, the standing warning that Ollama routes, local or cloud, are materially slower for this workload than direct API routes (no multiplier is quoted, ever), and the standing recommendation: for best results, use OpenRouter or DeepSeek Direct, because neither route holds a deck back with a provider concurrency cap and on those routes the machine is the only limit. The engine has no measured per-slide time for the client's setup, so no minutes estimate is quoted -- say so plainly rather than inventing one. The client's decision is recorded in the resource profile either way (accepted or declined); declining is just keeping their Ollama selection in this same answer, it changes nothing about how the deck is handled, and the block is not shown again unless the client changes their selection.",
       "resolverHint": "Feeds resource_profile.record_plan_answer(provider, plan) -- scripts/presentation_job/resource_profile.py IS the store for the plan tier, holding the tier, the cap-table ceiling and the ask-once lock in one per-provider entry (never in-repo, never printed verbatim -- redaction contract). The production writer is deck-intake-driver.py's _record_plan_tier() on THIS turn: it matches the tier against capacity.PLANS_BY_PROVIDER for each provider the probe still reports as owed an answer, records it per provider, and REFUSES the turn (naming the accepted tiers) rather than accepting a tier it cannot record. ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock. The model subfields feed resource_profile.record_model_plan(plan, source='interview') -> profile['model_plan'] + profile['interview']['model_plan'] audit rows. They are deliberately NOT in storeTarget: the model plan lives in the secrets-adjacent profile store, never in the run directory's intake.json.",
       "stage": 1,
       "stage_beat": "provider/resource preference"
@@ -737,7 +739,7 @@
       "section": "deck-intake",
       "order": 20,
       "kind": "merged",
-      "prompt": "Do you want the sales/checkout page and a VSL page built alongside the deck?",
+      "prompt": "Do you want the sales/checkout page and a VSL page built alongside the deck, and email follow-up sequences (Skill 50) prepared as drafts for the launch?",
       "required": true,
       "block_gate": true,
       "subfields": {
@@ -748,6 +750,11 @@
         },
         "want_vsl_page": {
           "storeOn": "WANT_VSL_PAGE",
+          "boolish": true,
+          "default": "no"
+        },
+        "want_email_sequences": {
+          "storeOn": "WANT_EMAIL_SEQUENCES",
           "boolish": true,
           "default": "no"
         }
@@ -803,7 +810,7 @@
       "section": "deck-intake",
       "order": 22,
       "kind": "merged",
-      "prompt": "For anything you said no to above (teleprompter, speech script, GHL upload, audio deliverable, sales/checkout, VSL page), give the reason in one sentence each, or say 'no note' per item.",
+      "prompt": "For anything you said no to above (teleprompter, speech script, GHL upload, audio deliverable, sales/checkout, VSL page, email sequences), give the reason in one sentence each, or say 'no note' per item.",
       "required": false,
       "block_gate": false,
       "subfields": {
@@ -851,6 +858,14 @@
           "storeOn": "VSL_PAGE_DECLINED_REASON",
           "conditional_on": {
             "id": "want_vsl_page",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "email_sequences_declined_reason": {
+          "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_email_sequences",
             "equals": "no"
           },
           "no_note": true
@@ -1153,6 +1168,28 @@
       "alias": true
     },
     {
+      "id": "want_email_sequences",
+      "section": "deck-intake",
+      "order": 20.03,
+      "prompt": "Would you like email follow-up sequences prepared for this launch? (yes / no) A 'yes' elects the Skill 50 (Email Engine) delivery option: its 10-email promo sequence for the page launch and its 12-email appointment follow-up sequence, prepared as DRAFTS at delivery time and deployed draft-only through Skill 44 after a human approves them. Nothing is ever sent or armed automatically.",
+      "help": "Default NO -- the email sequences are an opt-in delivery option, not a standard deliverable, and only an explicit 'yes' opens the branch. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the email branch entirely: nothing is prepared at delivery. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, prepare the email sequences as drafts",
+        "no": "No thank you"
+      },
+      "default": "no",
+      "storeOn": "WANT_EMAIL_SEQUENCES",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'no'. Only an explicit 'yes' elects the Skill 50 delivery option; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' carries the election into the delivery phase, where scripts/email_followup.py prepares the draft package (email-brief.json + the Skill 44 handoff) and records the outcome in working/checkpoints/email.json; a human approves at Skill 44's operator surface before Skill 50 runs, and the sequence stays DRAFT-ONLY until then.",
+      "alias": true
+    },
+    {
       "id": "speech_speed_preference",
       "section": "deck-intake",
       "order": 21.01,
@@ -1275,6 +1312,23 @@
       },
       "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
       "alias": true
+    },
+    {
+      "id": "email_sequences_declined_reason",
+      "section": "deck-intake",
+      "order": 22.07,
+      "prompt": "Understood -- no email sequences. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_email_sequences is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_email_sequences",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_email_sequences is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "alias": true
     }
   ],
   "waiver_field_mapping": {
@@ -1302,6 +1356,10 @@
     "vsl_page": {
       "toggle": "want_vsl_page",
       "reason": "vsl_page_declined_reason"
+    },
+    "email_sequences": {
+      "toggle": "want_email_sequences",
+      "reason": "email_sequences_declined_reason"
     }
   },
   "intake_v2": {
@@ -1335,6 +1393,8 @@
       "sales_checkout_declined_reason": "captured:turn 23 (sales_checkout_declined_reason)",
       "want_vsl_page": "captured:turn 21 (want_vsl_page)",
       "vsl_page_declined_reason": "captured:turn 23 (vsl_page_declined_reason)",
+      "want_email_sequences": "captured:turn 21 (want_email_sequences)",
+      "email_sequences_declined_reason": "captured:turn 23 (email_sequences_declined_reason)",
       "want_audio_demo": "conditional:turn 22 (asked only when audio wanted)",
       "target_wpm": "derived:turn 22 (from speech_speed_preference)",
       "style_source": "captured:turn 16 (style_source)",

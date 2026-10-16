@@ -596,7 +596,8 @@ def build_form_schema(*, offer: dict, intent: str, deck_slug: str) -> List[dict]
     return fields
 
 
-# --- Fix 1 (D3): SMS consent wording -------------------------------------------
+# --- SMS consent wording (Fix 1, as amended by the owner ruling of
+# 2026-10-13) ---------------------------------------------------------------
 # GHL's kept "Terms & Conditions" element carries two SMS consent checkboxes
 # (transactional + marketing). The DEFAULT TEMPLATE below is used when the
 # intake carries no confirmed business name. Trevor's lawyer reviews this
@@ -605,8 +606,13 @@ def build_form_schema(*, offer: dict, intent: str, deck_slug: str) -> List[dict]
 # seeded placeholders ([BUSINESS NAME] / [USE_CASE_FROM_CAMPAIGN_-
 # DESCRIPTION]) are NEVER shipped -- the wording always comes from confirmed
 # intake values or this template. Both boxes are unchecked by default and
-# OPTIONAL; consent is never a condition of purchase (TCPA), so neither box
-# may be required to submit or to buy.
+# REQUIRED to submit: the 2026-09-27 decision D3 (boxes optional, consent
+# never a condition of purchase) is SUPERSEDED by Trevor's 2026-10-13 ruling
+# that every consent box on every form this system ships is required to
+# proceed (his standing client-delivery pattern). Because the boxes are
+# required, the marketing wording below no longer claims consent is "not a
+# condition of purchase" -- a form never gates on a box while calling that
+# box optional.
 _CONSENT_DEFAULT_WHO = "this business"
 
 
@@ -614,8 +620,9 @@ def resolve_consent_copy(intake: dict, brief: dict) -> dict:
     """Resolve the two SMS consent checkbox wordings for the checkout form.
 
     Returns {"element", "source", "boxes": [...]}. Each box carries its kind,
-    label, text, default_unchecked=True and required=False. Never returns
-    GHL's seeded placeholders.
+    label, text, default_unchecked=True and required=True (owner ruling
+    2026-10-13: every consent box is required to proceed; D3's optional
+    posture is superseded). Never returns GHL's seeded placeholders.
     """
     business = ""
     for src in (intake or {}, brief or {}):
@@ -646,7 +653,7 @@ def resolve_consent_copy(intake: dict, brief: dict) -> dict:
                     "Terms of Service."
                 ),
                 "default_unchecked": True,
-                "required": False,
+                "required": True,
             },
             {
                 "kind": "marketing_sms",
@@ -655,11 +662,10 @@ def resolve_consent_copy(intake: dict, brief: dict) -> dict:
                     f"Yes, {who} may send me marketing text messages about "
                     "offers and updates. Message frequency varies. Message "
                     "and data rates may apply. Reply STOP to opt out, HELP "
-                    "for help. Consent is not a condition of purchase. See "
-                    "our Privacy Policy and Terms of Service."
+                    "for help. See our Privacy Policy and Terms of Service."
                 ),
                 "default_unchecked": True,
-                "required": False,
+                "required": True,
             },
         ],
     }
@@ -672,8 +678,8 @@ def build_skill44_contract(*, offer: dict, intent: str, scope: dict,
     live form + live custom fields + Form-Submitted -> Add-Contact-Tag
     workflow (DRAFT only). IDs are filled at execution; None until then."""
     if consent is None:
-        # Fix 1 (D3): every contract carries the consent wording; callers
-        # without intake values get the default template (lawyer-reviewed).
+        # Every contract carries the consent wording; callers without intake
+        # values get the default template (lawyer-reviewed).
         consent = resolve_consent_copy({}, {})
     slug = _slug(scope["deck_slug"])
     custom_fields = []
@@ -698,9 +704,13 @@ def build_skill44_contract(*, offer: dict, intent: str, scope: dict,
         "owner_skill": "44-convert-and-flow-operator",
         "cli": "caf (PIT-authenticated)",
         "mechanism": "SKILL44_WIDGET -> FORM",
-        "status": ("REAL GHL object contract -- NOT a stub. Skill 44 builds a "
-                   "live form, live custom fields, and a live Form-Submitted "
-                   "workflow; every creation is receipted."),
+        "status": ("REAL GHL object contract -- NOT a stub. PLAN contract: "
+                   "a delegated Skill 44 execution builds the live form, "
+                   "live custom fields, and the live Form-Submitted "
+                   "workflow under Skill 44's own gates; every creation is "
+                   "then receipted with live ids. Until execution this "
+                   "phase's receipt reads plan_emitted and no live object "
+                   "exists."),
         "scope": scope,
         "offer": {k: offer.get(k) for k in
                   ("name", "price_display", "amount_minor", "currency", "price_mode")},
@@ -709,18 +719,19 @@ def build_skill44_contract(*, offer: dict, intent: str, scope: dict,
             "name": f"ZHC {scope['deck_slug']} Checkout",
             "start_from": "scratch",
             "default_fields_keep": [],
-            # Fix 1 (D3): "Terms & Conditions" is KEPT, never deleted. It is
-            # GHL's own element carrying the two SMS consent checkboxes
-            # (transactional + marketing). Both are unchecked by default and
-            # optional; buying never requires either one (TCPA).
+            # "Terms & Conditions" is KEPT, never deleted. It is GHL's own
+            # element carrying the two SMS consent checkboxes (transactional
+            # + marketing). Both are unchecked by default and REQUIRED to
+            # submit (owner ruling 2026-10-13, superseding D3's optional
+            # posture).
             "default_fields_delete": ["First Name", "Last Name", "Email",
                                       "Phone"],
             "fields": fields,
             "form_id": None,
             "action": None,
-            # Fix 1 (D3): wording for the kept "Terms & Conditions" element's
-            # two SMS consent boxes (transactional + marketing), each
-            # unchecked by default and optional, never required.
+            # Wording for the kept "Terms & Conditions" element's two SMS
+            # consent boxes (transactional + marketing), each unchecked by
+            # default and required to submit (owner ruling 2026-10-13).
             "consent": consent,
         },
         "dependency_plan": {
@@ -1727,6 +1738,35 @@ def _selftest() -> int:
         if "W3 WF10 wave owner" not in msg or "designate" not in msg:
             fails.append(f"live deferral names no owner/action: {msg}")
 
+    # 10) consent posture (owner ruling 2026-10-13, superseding D3): both SMS
+    #     boxes are unchecked by default AND required to submit, in the
+    #     resolver (default template AND intake-named) and in the emitted
+    #     Skill 44 contract; no seeded placeholder ships and the wording no
+    #     longer claims consent is optional ("not a condition of purchase").
+    for csrc in (resolve_consent_copy({}, {}),
+                 resolve_consent_copy({"company": "Acme Coaching"}, {})):
+        boxes = csrc.get("boxes") or []
+        if len(boxes) != 2:
+            fails.append(f"consent copy must carry exactly 2 boxes: {csrc}")
+        for b in boxes:
+            if b.get("default_unchecked") is not True:
+                fails.append(f"consent box {b.get('kind')} not unchecked by "
+                             f"default: {b}")
+            if b.get("required") is not True:
+                fails.append(f"consent box {b.get('kind')} not required "
+                             f"(owner ruling 2026-10-13): {b}")
+            txt = b.get("text", "")
+            if "[BUSINESS NAME]" in txt or "[USE_CASE" in txt:
+                fails.append(f"consent box {b.get('kind')} ships a seeded "
+                             f"GHL placeholder: {txt!r}")
+            if "not a condition of purchase" in txt:
+                fails.append(f"consent box {b.get('kind')} still claims an "
+                             f"optional posture while required: {txt!r}")
+    for b in ((c44.get("form") or {}).get("consent") or {}).get("boxes") or []:
+        if b.get("required") is not True or b.get("default_unchecked") is not True:
+            fails.append(f"Skill 44 contract consent box {b.get('kind')} lost "
+                         f"the required/unchecked posture: {b}")
+
     if fails:
         print("checkout_form_builder selftest -> FAIL")
         for f in fails:
@@ -1735,7 +1775,9 @@ def _selftest() -> int:
     print("checkout_form_builder selftest -> PASS (allowlist, escaping, CTA "
           "audit, offer/intent/scope, lead proof incl. duplicates, sandbox "
           "mapping with zero real charge, blockers, approved-URL reuse, "
-          "product persist-before-retry, readiness, live-stub deferrals x7)")
+          "product persist-before-retry, readiness, live-stub deferrals x7, "
+          "consent posture: both SMS boxes unchecked by default + required "
+          "in resolver and Skill 44 contract)")
     return 0
 
 

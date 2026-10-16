@@ -1,0 +1,54 @@
+{
+  "negative": "decorative_substitution",
+  "gate": "MG-009 storyboard planner validator (scripts/validate_storyboard.py)",
+  "command": "python3 scripts/validate_storyboard.py validate negatives/decorative-substitution/storyboard.json",
+  "artifact": "storyboard.json",
+  "expected": "fail",
+  "validator_exit_code": 2,
+  "valid": false,
+  "coverage": {
+    "explanatory_beats": 3,
+    "non_text_beats": 0,
+    "typography_beats": 3,
+    "required_non_text": 2,
+    "passes": false
+  },
+  "findings": [
+    {
+      "category": "MG_PLANNER_COVERAGE",
+      "path": "storyboard.json:beats",
+      "message": "Section 1.1 coverage fails: 0 of 3 explanatory beats are information-bearing non-text, but at least 2 are required (two-thirds, rounding up). Typography beats count as text even when they carry a typography_only_exception."
+    },
+    {
+      "category": "MG_PLANNER_EXCEPTION_MISSING",
+      "path": "storyboard.json:beats[beat-mechanism-as-bullets]",
+      "message": "explanatory typography beat 'beat-mechanism-as-bullets' carries no typography_only_exception rationale; a text-dominant beat must record its approved reason, and the exception never changes the coverage count"
+    },
+    {
+      "category": "MG_PLANNER_EXCEPTION_MISSING",
+      "path": "storyboard.json:beats[beat-comparison-as-text]",
+      "message": "explanatory typography beat 'beat-comparison-as-text' carries no typography_only_exception rationale; a text-dominant beat must record its approved reason, and the exception never changes the coverage count"
+    },
+    {
+      "category": "MG_PLANNER_EXCEPTION_MISSING",
+      "path": "storyboard.json:beats[beat-total-as-text]",
+      "message": "explanatory typography beat 'beat-total-as-text' carries no typography_only_exception rationale; a text-dominant beat must record its approved reason, and the exception never changes the coverage count"
+    },
+    {
+      "category": "MG_PLANNER_ASSERTION_UNRESOLVED",
+      "path": "storyboard.json:beats[beat-mechanism-as-bullets]",
+      "message": "beat 'beat-mechanism-as-bullets' references scene 'bullet-card-01', which is not among the job's scene files, so its assertions cannot be resolved"
+    },
+    {
+      "category": "MG_PLANNER_ASSERTION_UNRESOLVED",
+      "path": "storyboard.json:beats[beat-comparison-as-text]",
+      "message": "beat 'beat-comparison-as-text' references scene 'bullet-card-02', which is not among the job's scene files, so its assertions cannot be resolved"
+    },
+    {
+      "category": "MG_PLANNER_ASSERTION_UNRESOLVED",
+      "path": "storyboard.json:beats[beat-total-as-text]",
+      "message": "beat 'beat-total-as-text' references scene 'bullet-card-03', which is not among the job's scene files, so its assertions cannot be resolved"
+    }
+  ],
+  "reason_it_fails": "The mechanism beat is replaced by a bullet-list text card and the other explanatory beats are text cards whose motion is decorative (a sweeping band and a sliding headline), so the storyboard fails the per-beat representation rules and the Section 1.1 rule that at least two-thirds of explanatory beats are information-bearing non-text."
+}

@@ -37,6 +37,18 @@ import capability_probe as cp
 
 NOW = "2026-09-07T00:00:00Z"
 
+# Fake Chrome user-data root carrying the OpenClaw Chrome extension at
+# v2.3.0 (tests/fixtures/fake-chrome/Default/Secure Preferences). Since
+# 2026-10-13 the OpenClaw lane is PRIMARY and requires the extension to be
+# installed + current, so OC-lane tests inject this root + the expected
+# version instead of depending on the machine running the tests.
+FIXTURE_CHROME_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures", "fake-chrome")
+EXT_ENV = {
+    "GHL_SKILL6_CHROME_PROFILE_ROOTS": FIXTURE_CHROME_ROOT,
+    "SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION": "2.3.0",
+}
+
 
 # ── fake runner plumbing ──────────────────────────────────────────────────────
 
@@ -125,13 +137,14 @@ def runner_nothing():
 
 @pytest.mark.parametrize("runner_factory,expected_lane", [
     (runner_ab_only, "agent_browser"),
-    (runner_ab_plus_playwright, "agent_browser"),           # 1b = same lane
+    (runner_ab_plus_playwright, "agent_browser"),           # 2b = same lane
     (runner_oc2_managed, "openclaw_managed_browser"),
     (runner_playwright_only, "playwright_direct"),
     (runner_nothing, None),
 ])
 def test_lane_selection_priority_9_6(runner_factory, expected_lane):
-    res = cp.run_probe(runner=runner_factory(), env={}, now=NOW)
+    env = dict(EXT_ENV) if expected_lane == "openclaw_managed_browser" else {}
+    res = cp.run_probe(runner=runner_factory(), env=env, now=NOW)
     assert res["selectedLane"] == expected_lane
 
 
@@ -151,7 +164,7 @@ def test_agent_browser_only_box_is_qc_passable():
 
 
 def test_oc_2x_plugin_playwright_managed_lane_available():
-    res = cp.run_probe(runner=runner_oc2_managed(), env={}, now=NOW)
+    res = cp.run_probe(runner=runner_oc2_managed(), env=dict(EXT_ENV), now=NOW)
     lane = res["lanes"]["openclaw_managed_browser"]
     assert lane["pluginEnabled"] is True
     assert lane["cliWorks"] is True
@@ -161,6 +174,21 @@ def test_oc_2x_plugin_playwright_managed_lane_available():
     assert res["openclaw"]["semver"] == [2026, 9, 2]
     # agent-browser absent -> lane 2 selected
     assert res["selectedLane"] == "openclaw_managed_browser"
+
+
+def test_oc_extension_behind_blocks_primary_lane():
+    """2026-10-13 engine default: plugin + CLI healthy is NOT enough — an
+    out-of-date OpenClaw Chrome extension makes the PRIMARY lane ineligible
+    and the probe falls back with a warning naming the preflight."""
+    env = dict(EXT_ENV)
+    env["SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION"] = "9.9.9"
+    res = cp.run_probe(runner=runner_oc2_managed(), env=env, now=NOW)
+    lane = res["lanes"]["openclaw_managed_browser"]
+    assert lane["extension"]["installed"] is True
+    assert lane["extension"]["current"] is False
+    assert res["selectedLane"] == "playwright_direct"
+    assert "openclaw_managed_browser" not in res["fallbackChain"]
+    assert any("behind" in w for w in res["warnings"])
 
 
 def test_oc_pre_2x_managed_lane_not_eligible():

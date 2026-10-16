@@ -90,3 +90,11 @@ byte-for-byte from
 In `SECRET_SAUCE_ONLY`, every image prompt embeds it verbatim. Until the grade thresholds
 (`grade.min_mean_saturation`, `grade.min_luma_std`) are calibrated by Trevor-approved
 images, they stay `null` and grade checks run as uncalibrated WARN.
+
+**Ruling 6 conformance (owner ruling, 2026-10-14):** the block's saturation prose was
+conformed to selective saturation, the doctrine of the Secret Super Sauce in Image Guide
+v5 (sections 2, 3, 23.2, 23.10) and Guide section 8: hero colors are pushed hard while
+skin, neutrals, whites, blacks, and shadow detail stay protected. The byte-for-byte
+extraction note above records the block's historical provenance in the archived
+framework; where the archived prose instructed a global saturation push, the Sauce
+governs and the archived wording is superseded.

@@ -11,8 +11,17 @@ for on 2026-09-21:
     2. openrouter       minimax/minimax-m3
     3. agnes            agnes-3.0-flash  -> agnes-2.5-flash on 400/404
     4. deepseek-direct  deepseek-flash
-    5. ollama-cloud     deepseek-v4.1-flash            measured 1.5s
+    5. ollama-cloud     the box's own scoring model    measured 1.5s
     6. openrouter       google/gemini-3.1-flash-lite
+
+Step 5's id is NOT a code constant (client-choice doctrine): it resolves
+from the client's configuration, OLLAMA_CLOUD_SCORING_MODEL first, else an
+ollama/ configured default model, and on the operator's box that resolves
+to deepseek-v4.1-flash. With nothing configured the step is omitted
+outright -- that omission is pinned by
+test_ollama_cloud_endpoint_and_key.py. The legs below that pin the full
+six-step table therefore configure the client's step-5 choice first
+(configure_step5), exactly as a provisioned box carries it.
 
 WHAT IS PINNED HERE:
 
@@ -125,11 +134,26 @@ def all_keys(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", K_DEEPSEEK)
 
 
-def write_openclaw(home: Path, providers) -> Path:
+def write_openclaw(home: Path, providers, default_model=None) -> Path:
+    """Write the scratch box's openclaw.json: models.providers, plus the
+    client's configured default model (agents.defaults.model) when one is
+    given. Step-5 resolution reads the default from this same file."""
+    doc = {"models": {"providers": providers}}
+    if default_model is not None:
+        doc["agents"] = {"defaults": {"model": default_model}}
     path = home / ".openclaw" / "openclaw.json"
-    path.write_text(json.dumps({"models": {"providers": providers}}),
-                    encoding="utf-8")
+    path.write_text(json.dumps(doc), encoding="utf-8")
     return path
+
+
+def configure_step5(monkeypatch, tag="deepseek-v4.1-flash"):
+    """Configure this box's step-5 scoring model the way a client's box
+    carries it: the explicit scoring choice, OLLAMA_CLOUD_SCORING_MODEL.
+    Without any configuration the default chain omits step 5 entirely
+    (client-choice doctrine), so the legs that pin the full six-step
+    table set the choice first. The tag is the operator's measured one,
+    the same value EXPECTED_DEFAULT_CHAIN records."""
+    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", tag)
 
 
 def capture_posts(monkeypatch, replies):
@@ -178,7 +202,12 @@ def test_the_box_fixture_cannot_reach_another_installation(box):
 # 1. ORDER
 # ---------------------------------------------------------------------------
 
-def test_the_default_chain_is_the_operators_order(box):
+def test_the_default_chain_is_the_operators_order(box, monkeypatch):
+    """The default table, literally. Steps 1-4 and 6 are pinned ids;
+    step 5 is this box's own scoring model (no named constant, per the
+    client-choice doctrine), so the leg first configures the client's
+    explicit choice, the tag EXPECTED_DEFAULT_CHAIN records."""
+    configure_step5(monkeypatch)
     assert llm_score.scoring_chain() == EXPECTED_DEFAULT_CHAIN
 
 
@@ -193,7 +222,14 @@ def test_the_ollama_backstop_follows_the_boxs_configured_tag(box, monkeypatch):
 def test_the_backstop_tag_is_read_per_call_not_at_import(box, monkeypatch):
     """CONTROL for building the table in a function: a module constant would
     freeze whatever the environment held at import, which under launchd and
-    the openclaw cron is nothing at all."""
+    the openclaw cron is nothing at all.
+
+    Before the leg speaks, step 5 resolves from the box's configured
+    default model (agents.defaults.model, an ollama/ id). Setting the
+    client's explicit scoring choice mid-flight must change the very
+    next call's table: the choice outranks the default, and nothing is
+    cached from the earlier read."""
+    write_openclaw(box, {}, default_model="ollama/deepseek-v4.1-flash")
     before = llm_score.scoring_chain()[4]
     monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4.1-flash:cloud")
     after = llm_score.scoring_chain()[4]
@@ -209,6 +245,7 @@ def test_every_step_is_attempted_in_order_when_each_one_fails(box, monkeypatch):
     retry, which has its own leg below.
     """
     all_keys(monkeypatch)
+    configure_step5(monkeypatch)
     calls = capture_posts(monkeypatch, [http_error(500, "Server Error")])
 
     result = score()
@@ -288,6 +325,7 @@ def test_an_http_error_is_never_recorded_as_a_transport_failure(box, monkeypatch
     killed the 401 and 400/404 paths.
     """
     all_keys(monkeypatch)
+    configure_step5(monkeypatch)
     calls = capture_posts(monkeypatch, [http_error(500, "Server Error")])
 
     result = score()
@@ -321,6 +359,7 @@ def test_every_transport_error_returns_a_dict_rather_than_raising(box, monkeypat
     ConnectionResetError and OSError are OSErrors that are not TimeoutErrors
     on ANY version — they were never caught before this fix.
     """
+    configure_step5(monkeypatch)
     for exc in (socket.timeout("timed out"),
                 ConnectionResetError("peer reset"),
                 OSError("transport went away"),
@@ -621,10 +660,15 @@ def test_the_per_step_http_timeout_is_twenty_seconds():
 
 def test_the_back_compat_attempt_helpers_still_exist(box, monkeypatch):
     """verify-persona-adherence.py imports both of these at module level and
-    switches its whole LLM path off on ImportError."""
+    switches its whole LLM path off on ImportError. The helpers resolve
+    their models from the client's own configuration (nothing is pinned),
+    so the leg sets the explicit per-surface scoring choices a configured
+    box carries."""
     from llm_score import _attempt_ollama_cloud, _attempt_openrouter  # noqa: F401
 
     all_keys(monkeypatch)
+    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4.1-flash")
+    monkeypatch.setenv("OPENROUTER_SCORING_MODEL", "google/gemini-3.1-flash-lite")
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
 
     ollama = _attempt_ollama_cloud("score this")

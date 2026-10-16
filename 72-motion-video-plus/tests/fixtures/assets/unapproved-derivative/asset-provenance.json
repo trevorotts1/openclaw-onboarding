@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "assets": {
+    "hero-image": {
+      "source": "client_supplied",
+      "rights_status": "client_supplied",
+      "role": "hero_image"
+    },
+    "poster-derivative": {
+      "source": "derived_in_house",
+      "rights_status": "owned",
+      "role": "poster_frame",
+      "derived_from": "hero-image"
+    }
+  }
+}

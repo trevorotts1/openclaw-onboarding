@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.26"
+ONBOARDING_VERSION="v27.1.28"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1227,14 +1227,30 @@ oc_remove_tree_guarded() {
 # folder, is copied out before the wipe and put back after the copy. The
 # wiring pass then re-runs the skill's own re-resolve (preflight.sh), which
 # honors the pins and refreshes every non-pinned tier. A path the new release
-# SHIPS is never overwritten: a shipped default always beats stale box state.
+# SHIPS is never overwritten: a shipped default always beats stale box state --
+# except for the paths listed by oc_skill_box_state_overrides_shipped.
 # ----------------------------------------------------------
 # >>> SKILL-BOX-STATE-BEGIN  (extracted verbatim by tests/unit/updater-preserves-skill-box-state.test.sh)
 # One relative path per line. Consumers read it line by line, so a path may
 # contain spaces.
 oc_skill_box_state_paths() {
   case "${1:-}" in
-    59-anthology-engine) echo "model-map.json" ;;
+    59-anthology-engine) printf '%s\n' "model-map.json" "config/field-map.json" ;;
+  esac
+  return 0
+}
+
+# Subset of the allow-list whose box copy wins over a file the release SHIPS.
+# 59's config/field-map.json is the provisioner's stamp target:
+# anthology_registry.py provision-fields writes field_key / field_id /
+# verified_at / location_masked into it in place, and verify-fields exits 1 on
+# a template-state file. The repo ships the pristine template, so the default
+# "shipped beats stale box state" rule re-templated every stamped box on every
+# roll (the recurring 2026-10 wound). For these paths only, the saved box copy
+# is put back OVER the shipped file; every other path keeps the default rule.
+oc_skill_box_state_overrides_shipped() {
+  case "${1:-}" in
+    59-anthology-engine) echo "config/field-map.json" ;;
   esac
   return 0
 }
@@ -1270,6 +1286,8 @@ EOF
 # Put the stash back into skill dir $2 wherever the file is missing, then drop
 # the stash. An existing file is never overwritten: after a normal copy it is
 # one the release ships; after a refused removal it is the untouched original.
+# EXCEPTION: a path listed by oc_skill_box_state_overrides_shipped is restored
+# OVER the shipped file (see that function for why).
 # The stash is kept ONLY when a copy back failed, because it is then the last
 # copy of the owner's state, and the log names where it is.
 oc_skill_box_state_restore() {
@@ -1279,6 +1297,15 @@ oc_skill_box_state_restore() {
     [ -n "$_rel" ] || continue
     [ -f "$_OC_BOXSTATE_STASH/$_rel" ] || continue
     if [ -e "$_live/$_rel" ]; then
+      if oc_skill_box_state_overrides_shipped "$_name" | grep -qxF "$_rel"; then
+        if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel" 2>/dev/null; then
+          echo "    box state preserved over the shipped template: $_name/$_rel"
+        else
+          echo "    ! box state NOT restored (copy failed): $_name/$_rel -- saved copy kept at $_OC_BOXSTATE_STASH/$_rel" >&2
+          _keep=1
+        fi
+        continue
+      fi
       echo "    box state NOT restored over an existing file: $_name/$_rel"
       continue
     fi
@@ -2024,7 +2051,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.26 - safe_json_edit
+# v27.1.28 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
