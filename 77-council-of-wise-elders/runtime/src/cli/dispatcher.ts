@@ -363,8 +363,37 @@ export async function runCli(
           detail:
             'grant service composed (CWE-049, composed by CWE-050): authorization preview/approve/status/revoke are live and session starts resolve grants through the authorization store',
         });
+        // Offline structural checks are not evidence of an installed,
+        // runnable Council. Preserve the legacy `ok` field as the
+        // non-network core diagnostic, while refusing to advertise the
+        // full product as usable without every live acceptance layer.
+        const executableReady = existsSync(
+          join(skillRoot, 'runtime', 'dist', 'blackceo-council.mjs'),
+        );
+        const readinessBlockers = [
+          ...(!executableReady
+            ? ['compiled Council CLI is missing; install and build the runtime']
+            : []),
+          ...(routes.length === 0
+            ? ['no usable configured model route; inspect the models command']
+            : []),
+          'installed advisor-source qualification has not been verified',
+          'a supervised durable Council worker has not been verified',
+          'the authenticated Council browser UI has not been verified',
+          'a full paid Council session has not been independently verified',
+        ];
         const data = {
           ok: checks.every((c) => c.ok || c.name === 'live_routes_composed' || c.name === 'run_authorization_service'),
+          usable: false,
+          readiness: {
+            compiled_cli: executableReady ? 'present' : 'missing',
+            live_route: routes.length > 0 ? 'composed_not_probed' : 'unavailable',
+            advisor_sources: 'unverified',
+            durable_worker: 'unverified',
+            browser_ui: 'unverified',
+            completed_live_council: 'unverified',
+          },
+          readiness_blockers: readinessBlockers,
           contracts: CONTRACT_PACKAGE_VERSION,
           data_dir: dir,
           settings: {
@@ -382,6 +411,8 @@ export async function runCli(
             `Contracts: ${CONTRACT_PACKAGE_VERSION}`,
             `Data directory: ${dir ?? 'unresolved'}`,
             ...checks.map((c) => `  [${c.ok ? 'ok' : 'not ready'}] ${c.name}: ${c.detail}`),
+            '  [not ready] full Council usability: offline doctor cannot certify the live worker, source quality, browser and real end-to-end result.',
+            ...readinessBlockers.map((reason) => `    next: ${reason}`),
           ].join('\n'),
           data,
         );
