@@ -244,13 +244,15 @@ class LandingBridgeCase(unittest.TestCase):
         return result
 
     def run_bridge_directly(self, request_path: Path, run_dir: Path,
-                            env_extra: dict = None):
+                            env_extra: dict = None,
+                            bridge_path: Path = None):
         result_path = self.td / "direct-result.json"
         env = dict(os.environ)
         if env_extra:
             env.update(env_extra)
         proc = subprocess.run(
-            [PY, str(BRIDGE), "--request", str(request_path),
+            [PY, str(bridge_path or BRIDGE), "--request",
+             str(request_path),
              "--result", str(result_path), "--work-dir", str(self.td),
              "--bridge-config", str(self.bridge_config_path)],
             capture_output=True, text=True, env=env)
@@ -412,10 +414,10 @@ class TestSchemaFallback(LandingBridgeCase):
         self.assertEqual(result["status"], "authored")
 
 
-def load_bridge_module():
+def load_bridge_module(bridge_path=None):
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "landing_bridge_under_test", BRIDGE)
+        "landing_bridge_under_test", bridge_path or BRIDGE)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -505,12 +507,42 @@ class TestReceiptsFallbackRules(LandingBridgeCase):
         empty.mkdir(exist_ok=True)
         return empty
 
+    def isolated_bridge(self) -> Path:
+        # Harness anchor (assembly cure, coordinator-authorized
+        # under S49-DEC-S4908-01): the two tests in this class force
+        # the vendored-schema fallback by making
+        # collect_launch_receipts.py undiscoverable. In the staging
+        # topology (the bridge outside any 49-signature-funnel/
+        # scripts ancestor) pointing S49_SCRIPTS_DIR at an empty
+        # directory did exactly that. In the shipped layout the
+        # bridge sits inside 49-signature-funnel/scripts/, so its
+        # ancestor walk always finds the real receipts module beside
+        # it and the fallback can never be forced in place. The
+        # fallback exists for out-of-tree execution, so these tests
+        # run a copy of the bridge placed in an isolated directory
+        # with no 49-signature-funnel/scripts ancestor, with the
+        # shipped vendor schemas beside it exactly as the staging
+        # layout had them. The copy is taken from the shipped
+        # in-repo file at runtime, so it is byte-identical by
+        # construction; every assertion in the two tests is
+        # unchanged.
+        iso = self.td / "isolated-bridge"
+        (iso / "vendor").mkdir(parents=True, exist_ok=True)
+        target = iso / "landing_bridge.py"
+        shutil.copyfile(BRIDGE, target)
+        for name in ("page-result.schema.json",
+                     "page-request.schema.json"):
+            shutil.copyfile(BRIDGE_DIR / "vendor" / name,
+                            iso / "vendor" / name)
+        return target
+
     def test_fallback_announced_in_summary_and_stderr(self):
         self.write_bridge_config()
         req_path = self.make_request()
         proc, result_path = self.run_bridge_directly(
             req_path, self.run_dir,
-            env_extra={"S49_SCRIPTS_DIR": str(self.empty_scripts_dir())})
+            env_extra={"S49_SCRIPTS_DIR": str(self.empty_scripts_dir())},
+            bridge_path=self.isolated_bridge())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertTrue(result_path.exists())
         # The downgrade is announced on stderr...
@@ -528,7 +560,7 @@ class TestReceiptsFallbackRules(LandingBridgeCase):
         request = json.loads((out / "request-landing.json")
                              .read_text(encoding="utf-8"))
         self.assertTrue(result["author_session"])
-        mod = load_bridge_module()
+        mod = load_bridge_module(self.isolated_bridge())
         env = {"S49_SCRIPTS_DIR": str(self.empty_scripts_dir())}
         # reviewer == author under a claimed independent review.
         bad = dict(result)
