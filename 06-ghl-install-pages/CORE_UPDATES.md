@@ -76,7 +76,7 @@ Add:
 ```
 ## GHL Page Deployment Skill - Installed [DATE]
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/06-ghl-install-pages/ghl-browser-builder-full.md
-- GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA. Builds seed a logged-in session from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN; on token failure STOP + re-grab via Token Grabber. NEVER fall back to GHL login/password/2FA.
+- GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA. Builds seed a logged-in session from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN; on token failure STOP + re-grab via Token Grabber. NEVER fall back to GHL login/password/2FA (builds never log in; the sole exception is the gated Tier-2 bootstrap in tools/ghl_auth.py, never silent).
 - Covers: funnel creation, multi-page deploy, existing page updates, agent-browser engine, runtime snapshot-gates, sub-account gate, deployment reporting.
 ```
 

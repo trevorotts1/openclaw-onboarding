@@ -207,5 +207,129 @@ class TestGuardCorpusMode:
         assert result.returncode != 0
 
 
+# ── guard-ghl-method-decision.sh --run-dir: widget vocabulary (S06-02) ───────
+#
+# The classifier (ghl_method.classify_page) can emit the WIDGET method for a
+# page's form/calendar blocks, but the guard historically validated ONLY
+# "direct"/"vercel" — a narrower vocabulary than the classifier's outputs.
+# These tests pin the widened vocabulary: a well-formed widget record passes,
+# a malformed one fails, and direct/vercel behavior is unchanged. They also
+# pin the guard's recognition of the S06-02 unified per-run record
+# (routing/method-decision.json, schema skill6-method-decision/1), which the
+# run-dir glob would otherwise mistake for a per-page record.
+
+_REASON = "Deliberate fixture justification for this method decision."
+
+
+def _write_run_dir(tmp_path, files: dict) -> str:
+    routing = tmp_path / "run" / "routing"
+    routing.mkdir(parents=True)
+    for name, payload in files.items():
+        (routing / name).write_text(json.dumps(payload, indent=2))
+    return str(tmp_path / "run")
+
+
+def _guard_run_dir(run_dir: str):
+    return subprocess.run(
+        ["bash", GUARD_SCRIPT, "--run-dir", run_dir],
+        capture_output=True, text=True,
+    )
+
+
+class TestGuardRunDirWidgetRecords:
+    def test_valid_widget_record_passes(self, tmp_path):
+        run_dir = _write_run_dir(tmp_path, {
+            "method-decision-booking.json": {
+                "method": "widget",
+                "reason": _REASON,
+                "widgets": [
+                    {"kind": "booking", "block_key": "discovery_call",
+                     "object_id": "", "location_id": ""},
+                ],
+            },
+        })
+        result = _guard_run_dir(run_dir)
+        assert result.returncode == 0, (
+            f"a valid widget record must PASS.\nstdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+
+    def test_widget_record_missing_widgets_fails(self, tmp_path):
+        run_dir = _write_run_dir(tmp_path, {
+            "method-decision-booking.json": {
+                "method": "widget",
+                "reason": _REASON,
+            },
+        })
+        result = _guard_run_dir(run_dir)
+        assert result.returncode != 0
+        assert "widgets" in result.stdout
+
+    def test_widget_record_bad_kind_fails(self, tmp_path):
+        run_dir = _write_run_dir(tmp_path, {
+            "method-decision-video.json": {
+                "method": "widget",
+                "reason": _REASON,
+                "widgets": [{"kind": "video", "block_key": "promo"}],
+            },
+        })
+        result = _guard_run_dir(run_dir)
+        assert result.returncode != 0
+
+    def test_widget_record_empty_block_key_fails(self, tmp_path):
+        run_dir = _write_run_dir(tmp_path, {
+            "method-decision-form.json": {
+                "method": "widget",
+                "reason": _REASON,
+                "widgets": [{"kind": "form", "block_key": ""}],
+            },
+        })
+        result = _guard_run_dir(run_dir)
+        assert result.returncode != 0
+
+    def test_direct_and_vercel_behavior_unchanged(self, tmp_path):
+        ok_dir = _write_run_dir(tmp_path / "ok", {
+            "method-decision-home.json": {"method": "direct", "reason": _REASON},
+            "method-decision-app.json": {
+                "method": "vercel", "reason": _REASON,
+                "vercel_url": "https://fixture.example/app",
+            },
+        })
+        assert _guard_run_dir(ok_dir).returncode == 0
+
+        bad_dir = _write_run_dir(tmp_path / "bad", {
+            "method-decision-app.json": {"method": "vercel", "reason": _REASON},
+        })
+        assert _guard_run_dir(bad_dir).returncode != 0, (
+            "vercel without vercel_url must still FAIL (pre-S06-02 behavior)"
+        )
+
+    def test_unified_record_is_recognized_not_mistaken_for_a_page(self, tmp_path):
+        run_dir = _write_run_dir(tmp_path, {
+            "method-decision-home.json": {"method": "direct", "reason": _REASON},
+            "method-decision.json": {
+                "schema": "skill6-method-decision/1",
+                "runId": "fixture-run",
+                "operations": [],
+            },
+        })
+        result = _guard_run_dir(run_dir)
+        assert result.returncode == 0, (
+            f"the unified record must be recognized by the guard.\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    def test_unified_record_without_operations_fails(self, tmp_path):
+        run_dir = _write_run_dir(tmp_path, {
+            "method-decision-home.json": {"method": "direct", "reason": _REASON},
+            "method-decision.json": {
+                "schema": "skill6-method-decision/1",
+                "runId": "fixture-run",
+            },
+        })
+        result = _guard_run_dir(run_dir)
+        assert result.returncode != 0
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

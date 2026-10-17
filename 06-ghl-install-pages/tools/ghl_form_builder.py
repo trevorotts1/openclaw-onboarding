@@ -360,6 +360,13 @@ def _find_quick_add_category(element: str) -> Optional[str]:
     return None
 
 
+def _is_payments_tile(element: str) -> bool:
+    """S06-06: True when ``element`` is one of the Payments Quick-Add tiles
+    ("Sell Products" / "Collect Payment") - the native ORDER elements. Every
+    other Quick-Add tile is an ordinary form field."""
+    return element in QUICK_ADD_TAXONOMY.get("Payments", [])
+
+
 def _resolve_fields(task: dict) -> List[dict]:
     """Normalize task['form_fields'] into fully-specified field dicts.
 
@@ -397,6 +404,18 @@ def _resolve_fields(task: dict) -> List[dict]:
         if entry["required"] and entry["hidden"]:
             entry["hidden"] = False
             entry["_warning"] = "required+hidden both set → forced hidden=False (not both)"
+        # S06-06 order-element carve-out: the Payments Quick-Add tiles are
+        # native ORDER elements, not ordinary fields. Stamp them so
+        # preflight (F-P10) and the F5 walk treat them as order elements
+        # that REQUIRE a product binding (task["order_binding"], supplied
+        # by ghl_order_elements.build_order_plan) instead of dragging them
+        # as unbound standard fields.
+        if entry.get("quick_add_category") == "Payments":
+            entry["order_element"] = True
+            binding = task.get("order_binding") or {}
+            entry["order_product_ref"] = binding.get("product_ref") or None
+            entry["order_binding_source"] = (
+                binding.get("source") or binding.get("binding_source") or None)
         if source == "standard":
             # query key (URL param) — lowercase, no spaces/special (05:56–06:48)
             entry["query_key"] = f.get("query_key") or _slug(label)
@@ -777,6 +796,31 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
         chk("F-P9:playwright_interpreter", True,
             pw_detail if pw_ok else
             f"WARNING (dry-run, soft): {pw_detail}", hard=False)
+
+    # F-P10 (S06-06): a Payments tile in the field list is a native ORDER
+    # element and REQUIRES an order product binding (task["order_binding"],
+    # built by ghl_order_elements.build_order_plan). Without one, the
+    # generic F5 machinery would drag the tile as an ordinary unbound
+    # field - exactly the gap S06-06 closes. FAIL CLOSED here, in THINK,
+    # before any browser step is emitted.
+    order_fields = [f for f in fields if f.get("order_element")]
+    if order_fields:
+        binding = task.get("order_binding") or {}
+        bound = bool(binding.get("product_ref")) and all(
+            f.get("order_product_ref") for f in order_fields)
+        if bound:
+            detail = (f"Payments tile(s) {[f['element'] for f in order_fields]} "
+                      f"bound to product_ref {binding.get('product_ref')!r} "
+                      "via task['order_binding']")
+        else:
+            detail = ("Payments tile(s) "
+                      f"{[f['element'] for f in order_fields]} require "
+                      "task['order_binding'] with a product_ref from "
+                      "ghl_order_elements.build_order_plan (fail closed: "
+                      "no binding, no order element)")
+        chk("F-P10:order_binding", bound, detail)
+    else:
+        chk("F-P10:order_binding", True, "no Payments tiles in this form")
 
     out = {"pass": stop is None, "checks": checks, "ts": _ts()}
     if stop:
@@ -2185,6 +2229,16 @@ def _place_quick_add_field(session: str, field: dict, evidence_root: str,
     live 2026-07-07: ``City`` under ``Address``). The authoritative locate is the
     frame-scoped one inside ``_perform_iframe_drag`` — it has REAL access to the
     cross-origin frame and fails closed honestly."""
+    # S06-06 defense in depth: a Payments tile may only be dragged as a
+    # BOUND order element. Preflight F-P10 is the THINK-layer gate; this is
+    # the DO-layer guard for any caller that reaches placement directly.
+    if _is_payments_tile(field.get("element", "")) \
+            and not field.get("order_product_ref"):
+        raise StopAndReport(
+            "F5.order-binding",
+            f"Payments tile {field.get('element')!r} has no order product "
+            "binding (order_product_ref) - refusing to place it as an "
+            "ordinary field; bind it via ghl_order_elements first")
     tile = field["element"]
     label = field["label"]
     category = field.get("quick_add_category") or _find_quick_add_category(tile) or ""

@@ -171,6 +171,12 @@ import time
 import urllib.error
 import urllib.request
 
+# The seed resolves its refresh token through the ONE shared resolver
+# (tools/ghl_secret_resolver.py) — same module, same precedence as
+# ghl_auth.py and ghl_media.py (S06-04).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ghl_secret_resolver as _resolver  # noqa: E402
+
 # PRESERVED EXACTLY from Skill 44 transport.py — same key, same endpoint.
 # This is the GoHighLevel/Convert-and-Flow Firebase web API key (hardcoded in
 # transport.py; verified accepted by Google in the live-capture pass). It is NOT
@@ -186,6 +192,10 @@ REFRESH_ENV_VARS = (
     "CAF_FIREBASE_REFRESH_TOKEN",
     "GHL_FIREBASE_REFRESH_TOKEN",
 )
+
+# *_FILE indirection for the refresh token (packet spec 05 section 6): when
+# set, the named file's CONTENTS are the token (highest precedence layer).
+REFRESH_TOKEN_FILE_VAR = "GHL_REFRESH_TOKEN_FILE"
 
 # IndexedDB target (Firebase JS SDK source: indexed_db.ts + persistence DB name,
 # persistence_user_manager.ts _persistenceKeyName key format).
@@ -253,15 +263,31 @@ _MINT_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 _MINT_HARD_AUTH_MARKERS = ("INVALID_REFRESH_TOKEN", "TOKEN_EXPIRED", "USER_DISABLED")
 
 
-def _resolve_refresh_token() -> tuple[str, str]:
-    """Return (token, env_var_name) for the first non-empty refresh-token var,
-    or ("", "") if none set. Same precedence as Skill 44 transport.py."""
-    for name in REFRESH_ENV_VARS:
-        val = os.environ.get(name, "").strip()
-        if val:
-            return val, name
-    return "", ""
+def _resolve_refresh_token_detailed() -> _resolver.Resolution:
+    """Resolve the refresh token through the ONE shared resolver
+    (ghl_secret_resolver): (1) the *_FILE indirection
+    GHL_REFRESH_TOKEN_FILE, (2) the env alias chain REFRESH_ENV_VARS,
+    (3) the canonical env stores — dummy-literal placeholder candidates
+    (is_placeholder_shape) skipped at every layer. This process always resolves its OWN process environment
+    in full (it is shelled by the orchestrator and by the shell delegates,
+    each time with the caller's environment). A set-but-broken *_FILE
+    variable raises ghl_secret_resolver.SecretFileError (precise,
+    value-free); main() reports it and exits 2."""
+    return _resolver.attempt_resolution(
+        None,
+        file_vars=(REFRESH_TOKEN_FILE_VAR,),
+        aliases=REFRESH_ENV_VARS,
+        search_stores=True,
+        placeholder_check=_resolver.is_placeholder_shape,
+    )
 
+
+def _resolve_refresh_token() -> tuple[str, str]:
+    """Return (token, source_name) for the first usable refresh-token
+    source, or ("", "") if none. Same precedence as ghl_auth.py — both
+    delegate to ghl_secret_resolver (S06-04)."""
+    res = _resolve_refresh_token_detailed()
+    return res.value, res.source
 
 def _exchange(refresh_token: str) -> dict:
     """Exchange a Firebase refresh token for a fresh ID token.
@@ -474,7 +500,13 @@ def main() -> int:
                     help="IndexedDB fbase_key value (default: Firebase [DEFAULT] app convention)")
     args = ap.parse_args()
 
-    token, env_name = _resolve_refresh_token()
+    try:
+        resolution = _resolve_refresh_token_detailed()
+    except _resolver.SecretFileError as exc:
+        # A set-but-broken *_FILE indirection: precise, value-free, exit 2.
+        sys.stderr.write(str(exc) + "\n")
+        return 2
+    token, env_name = resolution.value, resolution.source
 
     if args.check:
         if token:
@@ -483,6 +515,11 @@ def main() -> int:
         # The token-seed is the ONLY automatic auth path. Manual creds, if
         # present, are reported for the operator's awareness ONLY — they are
         # NOT an auto-invokable fallback. No refresh token => builder STOPS.
+        if resolution.placeholder_seen:
+            sys.stderr.write(
+                "Note: refresh-token candidate(s) were PLACEHOLDER-shaped and "
+                "were skipped — a placeholder is not a credential.\n"
+            )
         has_manual = bool(os.environ.get("GHL_AGENCY_EMAIL") or os.environ.get("GHL_EMAIL"))
         print(json.dumps({
             "auth_path": "none",
@@ -495,14 +532,23 @@ def main() -> int:
 
     if not token:
         sys.stderr.write(
-            "No Firebase refresh token set (checked "
+            "No Firebase refresh token found (checked _FILE variable "
+            + REFRESH_TOKEN_FILE_VAR
+            + "; env vars "
             + ", ".join(REFRESH_ENV_VARS)
+            + "; stores "
+            + ", ".join(_resolver.ENV_STORES)
             + "). STOP: the token-seed is the ONLY automatic auth path — do NOT "
             "auto-open the Sign-in form or any two-factor prompt. The operator "
             "must supply a fresh refresh token (re-grab via the Convert and Flow "
             "Token Grabber Chrome extension). GHL_AGENCY_EMAIL/PASSWORD is a "
             "MANUAL last resort only, never auto-invoked.\n"
         )
+        if resolution.placeholder_seen:
+            sys.stderr.write(
+                "Note: refresh-token candidate(s) were PLACEHOLDER-shaped and "
+                "were skipped — a placeholder is not a credential.\n"
+            )
         return 2
 
     try:
