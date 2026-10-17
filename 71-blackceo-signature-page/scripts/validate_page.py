@@ -312,6 +312,7 @@ MOBILE_BUTTONS_JS = """() => {
   for (const el of document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]')) {
     const st = getComputedStyle(el);
     if (st.display === 'none' || st.visibility === 'hidden') continue;
+    if (el.tagName === 'A' && st.display === 'inline') continue;
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) continue;
     let s = el.tagName.toLowerCase();
@@ -903,7 +904,7 @@ def compute_layout_metrics(data, thresholds, reference_width=1440, exemptions=No
                     "LAYOUT: repeated card grid: {} near-identical sibling "
                     "elements under {} share structure {} and size {:.0f}x"
                     "{:.0f}px ({} or more is a banned repeated card grid "
-                    "unless allowlisted)".format(
+                    "unless allowlisted; declare mandated editorial structures in the brand file at layout_thresholds.card_grid_allowlist — parent selector, structure signature, or the pair joined by a space)".format(
                         len(cluster), group.get("parent"), structure,
                         cluster[0]["width"], cluster[0]["height"],
                         th["card_grid_min_repetitions"]))
@@ -1215,7 +1216,7 @@ def copy_candidates(md_text):
         line = re.sub(r"^[-*+]\s+", "", line)
         for match in re.finditer(r"\[([^\]]+)\]\([^)]*\)", line):
             found.append(match.group(1))
-        text = re.sub(r"\[([^\]]+)\]\([^)]*\)", " ", line)
+        text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line)
         text = text.replace("**", " ")
         text = re.sub(r"\s+", " ", text).strip()
         if text:
@@ -1351,6 +1352,34 @@ def resolve_image_bytes(page, src, page_url_dir):
     return path.read_bytes()
 
 
+FOUNDER_PHOTO_FORMS = (
+    "a bare 64-character hex SHA-256",
+    "a 'sha256:' value",
+    "the path of an existing file",
+)
+
+
+def founder_photo_entry_form(entry, path_exists=None):
+    """Classify one brand founder_photos entry by the forms founder_allowed_hashes
+    accepts. Returns "unsupplied", "sha256", "hash", "path", or None when the
+    entry is in none of the accepted forms. This function is the single source
+    of the acceptance forms: write_intake.py's intake check (update plan
+    Item 10) classifies with it too, so intake and this validator cannot
+    drift. path_exists, when given, decides whether a path candidate names an
+    existing file (intake probes several bases); by default it is
+    Path(text).exists() from the caller's working directory, exactly as
+    founder_allowed_hashes has always resolved it."""
+    text = str(entry).strip()
+    if any(marker in text for marker in UNSUPPLIED):
+        return "unsupplied"
+    if text.lower().startswith("sha256:"):
+        return "sha256"
+    if re.fullmatch(r"[0-9a-fA-F]{64}", text):
+        return "hash"
+    exists = Path(text).exists() if path_exists is None else bool(path_exists(text))
+    return "path" if exists else None
+
+
 def founder_allowed_hashes(brand):
     photos = brand.get("founder_photos")
     if photos is None:
@@ -1360,18 +1389,17 @@ def founder_allowed_hashes(brand):
     hashes = set()
     for entry in photos:
         text = str(entry).strip()
-        if any(marker in text for marker in UNSUPPLIED):
+        form = founder_photo_entry_form(entry)
+        if form == "unsupplied":
             die2(f"brand founder_photos is not supplied yet ({text}); fail-closed per order 0.5")
-        if text.lower().startswith("sha256:"):
+        if form == "sha256":
             hashes.add(text.split(":", 1)[1].strip().lower())
-        elif re.fullmatch(r"[0-9a-fA-F]{64}", text):
+        elif form == "hash":
             hashes.add(text.lower())
+        elif form == "path":
+            hashes.add(hashlib.sha256(Path(text).read_bytes()).hexdigest())
         else:
-            path = Path(text)
-            if path.exists():
-                hashes.add(hashlib.sha256(path.read_bytes()).hexdigest())
-            else:
-                die2(f"brand founder_photos entry is neither a sha256 value nor a file: {text}")
+            die2(f"brand founder_photos entry is neither a sha256 value nor a file: {text}")
     return hashes
 
 
