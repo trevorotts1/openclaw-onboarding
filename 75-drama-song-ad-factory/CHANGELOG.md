@@ -4,6 +4,38 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.65 - 2026-10-17 - hook plan upstreamed, strict request duration, pace gap closed
+
+The remaining defects from the same 48 s run. Both changes ADD gating; no gate,
+threshold or refusal was weakened and no paid call is made by any check.
+
+- `song_dispatch.validate_request` takes `hook_plan` and, when none is passed,
+  reads the request's internal `_hook_plan` -- the SAME source the judge reads
+  at `run_takes` -- and hands it to `suno_recipe.check_lyric_sheet`. Before
+  this the hook-count gate was blind to the plan at the pre-spend seam: a
+  request carrying a plan was validated with none.
+- `song_choices.build_requests` attaches `_hook_plan` to the request BEFORE
+  the pre-spend validation (it used to attach it after, so the pre-spend call
+  never saw it). The plan still never reaches KIE: `run_takes` moves it into
+  the judge's plan and strips it from the payload.
+- `run_takes` now admits ONLY a request duration EQUAL to the plan's delivered
+  seconds. The bare 15 percent Suno headroom is refused before any spend
+  unless the plan carries the owner's explicit `duration_headroom_approved`,
+  and then the override and its record are written into the returned
+  `duration` block (`mode: headroom_override`). Nothing trims a raw take before
+  judging and the length gate refuses audio over the delivered seconds, so the
+  old silent headroom admission bought audio the judge would refuse. The
+  headroom FORMULA is unchanged.
+- The pace-direction guard from v2.9.64 is now covered by a self-check that
+  also proves a removal is caught when the order rides only on the request's
+  `_pace_plan`, and that the audio thresholds (0.30 onset share, 3.0 dB) are
+  the same numbers.
+
+New check: `scripts/core/song_dispatch/test_remaining_defects_r1_r2_r4.py`.
+Updated: `music_director/test_prompt_limits_u6.py` (strict duration + owner
+override), `sung_hook/test_three_walls.py` (bare headroom now refused; override
+recorded).
+
 ## v2.9.64 - 2026-10-17 - hook placement without section headers, pace direction guard, duration record
 
 A real 48 s run judged 34 paid takes: 0 accepted. Three causes were measurement

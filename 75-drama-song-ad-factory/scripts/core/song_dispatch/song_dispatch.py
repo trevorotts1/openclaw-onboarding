@@ -148,8 +148,15 @@ def refuse_asr(engine):
     return e
 
 
-def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_plan=None):
+def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_plan=None,
+                     hook_plan=None):
     """List of refusals for ONE KIE createTask music request; [] = send it.
+
+    ``hook_plan``: the approved hook plan (judging metadata, never a provider
+    field); else the request's internal ``_hook_plan`` -- the SAME source the
+    judge reads at ``run_takes``. It reaches ``suno_recipe.check_lyric_sheet``,
+    so the hook-count and story-beat gates run BEFORE any spend instead of
+    only at judging time.
 
     ``pace_plan``: the approved pace order (judging metadata, never a provider
     field); else the request's internal ``_pace_plan``. When one is known, a
@@ -171,6 +178,10 @@ def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_
     an envelope is refused up front and nothing below is measured on it.
     """
     errs = _R.check_envelope(req)
+    # FU-HOOK-PLACEMENT: honor a plan ridden on the request as _hook_plan
+    # (same source the judge reads at run_takes), unless one was passed in.
+    if hook_plan is None and isinstance(req, dict):
+        hook_plan = req.get("_hook_plan")
     inp = _R.envelope_input(req)
     if inp is None:
         return errs
@@ -190,7 +201,8 @@ def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_
     d = d if isinstance(d, (int, float)) and not isinstance(d, bool) else None
     # FU-RNBFLOW-SONG: the style reaches the sheet check (rap is judged as rap,
     # never refused as "no style"), and the style's own contract runs.
-    errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id)
+    errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id,
+                                 hook_plan=hook_plan)
     # WW-16: the declared opening vocalise cue must satisfy the ceiling.
     errs += _SC.check_sheet(_lyrics_of(req), style_id, delivered_s, inp.get("style"))["reasons"]
     errs += _SCM.check_pace_style(inp.get("style"), pace_plan or req.get("_pace_plan"))
@@ -1004,7 +1016,9 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     request draws from the 20-per-10-s bucket and a 429 is resubmitted.
     ``script_approval`` is the run's script-approval record; left out, it is read from ``run_dir`` (or request["run_dir"]):
     required and not approved for these lyrics = refused before any generation.
-    Returns {delivered, verdict, receipt, receipts, spent_cents}.
+    Returns {delivered, verdict, receipt, receipts, spent_cents, duration};
+    ``duration`` records the admitted request seconds, the delivered target and
+    the mode ("exact" or "headroom_override") with the owner's approval.
     WW-18: only a take whose REQUIRED gate set all PASSes is delivered; every
     other take (FAIL, FLAG, UNMEASURED, UNAVAILABLE, UNKNOWN) is judged and its
     paid stem kept, but never delivered.
@@ -1024,23 +1038,36 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     refusal = _SA.check_script_approval(script_approval, _lyrics_of(request))
     if refusal:
         raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
-    # G9 (FU-U6, plan E.2 default): the request asks for the delivered seconds
-    # (the builders' default) or, when a caller set it, the >=15 percent Suno
-    # headroom (words_fit.max_suno_duration); never a patch/short duration.
-    # Nothing trims the raw take before judging (master_length only plans and
-    # checks), and the length gate refuses audio over the delivered seconds, so
-    # a headroom request is RECORDED and FLAGGED here, before any spend.
-    allowed = _WF.max_suno_duration(plan["delivered_s"])
-    if inp.get("duration") not in (plan["delivered_s"], allowed):
-        raise DispatchError("whole tracks only: request duration %r != planned %r (or its %r s "
-                            "Suno headroom; never a patch)"
-                            % (inp.get("duration"), plan["delivered_s"], allowed))
-    duration = {"requested_s": inp.get("duration"), "delivered_target_s": plan["delivered_s"],
-                "mode": "exact" if inp.get("duration") == plan["delivered_s"] else "headroom"}
-    if duration["mode"] == "headroom":
-        sys.stderr.write("DURATION_HEADROOM_REQUESTED: the request asks Suno for %r s; the length "
-                         "gate refuses any take longer than the %r s delivered target and no "
-                         "trim runs before judging\n" % (inp.get("duration"), plan["delivered_s"]))
+    # G9 / CPR-R2: the request asks for the DELIVERED seconds, exactly. The old
+    # admission also took the >=15 percent Suno headroom, but nothing trims the
+    # raw take before judging (master_length only plans and checks) and the
+    # length gate refuses any take longer than the delivered target -- so a
+    # headroom request bought audio the judge would refuse. The headroom is now
+    # admitted ONLY when the OWNER explicitly selected it on the plan
+    # (``duration_headroom_approved``), and the choice plus its record is
+    # written into the returned ``duration`` block, never dropped silently.
+    # Never a patch/short duration.
+    target = plan["delivered_s"]
+    headroom = _WF.max_suno_duration(target)
+    approval = plan.get("duration_headroom_approved")
+    requested = inp.get("duration")
+    if requested == target:
+        mode = "exact"
+    elif approval and requested == headroom:
+        mode = "headroom_override"
+    else:
+        raise DispatchError("whole tracks only: request duration %r != planned delivered %r; "
+                            "the %r s Suno headroom is refused unless the plan carries the "
+                            "owner's explicit duration_headroom_approved (never a silent "
+                            "allowance, never a patch)"
+                            % (requested, target, headroom))
+    duration = {"requested_s": requested, "delivered_target_s": target, "mode": mode}
+    if mode == "headroom_override":
+        duration["headroom_approved"] = approval
+        sys.stderr.write("DURATION_HEADROOM_OVERRIDE: the owner approved a %r s request for the "
+                         "%r s delivered target; the length gate still refuses any take longer "
+                         "than the delivered target and no trim runs before judging\n"
+                         % (requested, target))
     # FU-HOOK-PLACEMENT: the director's hook_plan rides the request as
     # _hook_plan; it moves into the judge's plan and never reaches KIE.
     plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
