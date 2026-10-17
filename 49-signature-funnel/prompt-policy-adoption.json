@@ -1,0 +1,54 @@
+{
+  "schema": "signature-launch-prompt-policy-adoption/v1",
+  "roles": {
+    "landing": {
+      "state": "not_ready",
+      "consumer_skill": 71,
+      "evidence_ref": null,
+      "verified_against_main": null,
+      "flipped_at": null
+    },
+    "product_selection": {
+      "state": "not_ready",
+      "consumer_skill": 78,
+      "evidence_ref": null,
+      "verified_against_main": null,
+      "flipped_at": null
+    },
+    "checkout": {
+      "state": "never_by_design",
+      "consumer_skill": 79,
+      "evidence_ref": "CR-S49-003 Path B (checkout not dispatch-wired)",
+      "verified_against_main": null,
+      "flipped_at": null
+    },
+    "upsell_1": {
+      "state": "not_ready",
+      "consumer_skill": 80,
+      "evidence_ref": null,
+      "verified_against_main": null,
+      "flipped_at": null
+    },
+    "downsell_1": {
+      "state": "blocked_no_consumer",
+      "consumer_skill": 81,
+      "evidence_ref": "no 81-* directory on main",
+      "verified_against_main": null,
+      "flipped_at": null
+    },
+    "upsell_2": {
+      "state": "not_ready",
+      "consumer_skill": 80,
+      "evidence_ref": null,
+      "verified_against_main": null,
+      "flipped_at": null
+    },
+    "thank_you": {
+      "state": "not_ready",
+      "consumer_skill": 82,
+      "evidence_ref": null,
+      "verified_against_main": null,
+      "flipped_at": null
+    }
+  }
+}
