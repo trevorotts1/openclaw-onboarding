@@ -1,0 +1,32 @@
+name: Council installed advisor pack contract
+
+on:
+  pull_request:
+    paths:
+      - "77-council-of-wise-elders/**"
+      - ".github/workflows/council-installed-pack-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pack-loading:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install locked Council build dependencies
+        working-directory: 77-council-of-wise-elders/runtime
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck, bundle, and run installed pack tests
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          npm run build
+          node --import tsx --test tests/installed-seat-pack.test.ts tests/cli.test.ts
