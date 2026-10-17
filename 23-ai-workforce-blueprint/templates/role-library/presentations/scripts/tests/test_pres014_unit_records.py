@@ -372,15 +372,16 @@ def test_deployed_manifest_is_migrated():
     m = json.loads(CLUSTER_MANIFEST.read_text())
     fanouts = [(p["id"], p["fanout"]) for p in m["phases"]
                if isinstance(p.get("fanout"), dict)]
-    assert len(fanouts) == 9, [pid for pid, _ in fanouts]
+    # 9 fanout phases before the Path A retirement (owner ruling 2026-10-15);
+    # the three P-U-DESIGN-* fanouts retired with their chains, leaving 6.
+    assert len(fanouts) == 6, [pid for pid, _ in fanouts]
     for pid, f in fanouts:
         assert "max_units" not in f, \
             f"{pid} still carries the ambiguous max_units field"
         assert isinstance(f.get("batch_width"), int) and f["batch_width"] >= 1, \
             f"{pid} has no batch_width"
     for pid, f in fanouts:
-        if pid in ("P-STYLE-SPEC", "P-U-DESIGN-SALES",
-                   "P-U-DESIGN-CHECKOUT", "P-U-DESIGN-VSL"):
+        if pid in ("P-STYLE-SPEC",):
             assert f.get("desired_count") == 3, (pid, f)
     # QC phases keep full coverage: no desired_count narrowing.
     for pid in ("P-PROMPT-QC", "P-IMAGE-QC", "P4-PROMPT", "P9-SPEECH"):

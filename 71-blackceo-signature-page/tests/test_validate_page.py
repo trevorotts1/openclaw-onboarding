@@ -17,7 +17,9 @@ and the 1.1.1 font fallback: MUST_SUPPLY brand fonts under a
 derive-document font_policy degrade the font checks to WARN (derived) —
 never FAIL — while banned fonts and every other check still FAIL.
 """
+import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "validate_page.py"
 GOOD = ROOT / "tests" / "fixtures" / "page_good"
 BAD = ROOT / "tests" / "fixtures" / "page_bad"
+LETTER = ROOT / "tests" / "fixtures" / "page_letter"
 PY = sys.executable
 
 REQUIRED_BAD_REASONS = [
@@ -62,6 +65,45 @@ def report_from(run_dir, sub="responsive-html"):
     path = Path(run_dir) / sub / "validate-page.json"
     assert path.exists(), f"missing report: {path}"
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_validator():
+    spec = importlib.util.spec_from_file_location("validate_page", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# Item 2's end-to-end tests drive the real validator against the
+# page_letter fixture in a real browser. Where Playwright + Chromium
+# are unavailable they SKIP with the reason named; the module runner
+# prints SKIP and never counts a skip as a pass.
+class SkipTest(Exception):
+    """A test whose runtime is unavailable SKIPs; a skip is never a pass."""
+
+
+def _require_playwright():
+    """Probe for a working Playwright + Chromium by launching a real
+    persistent context (a bare import check proves nothing). Raises
+    SkipTest when the browser layer is unavailable in this environment,
+    so browser tests report SKIP instead of failing or silently passing.
+    The probe launches a persistent context and closes it, the same gate
+    tests/test_layout_metrics.py uses, so a SKIP here means the browser
+    layer genuinely cannot run in this environment."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:
+        raise SkipTest("Playwright + Chromium not available") from exc
+    probe_dir = tempfile.mkdtemp(prefix="skill71-probe-")
+    try:
+        with sync_playwright() as p:
+            probe = p.chromium.launch_persistent_context(
+                probe_dir, headless=True)
+            probe.close()
+    except Exception as exc:
+        raise SkipTest("Playwright + Chromium not available") from exc
+    finally:
+        shutil.rmtree(probe_dir, ignore_errors=True)
 
 
 def test_bad_fails_with_each_reason():
@@ -231,8 +273,128 @@ def test_derived_font_policy_warns_not_fails():
             f"errors: {report['errors']}\nwarnings: {report['warnings']}")
 
 
+def test_copy_candidates_mid_sentence_link_uses_label():
+    """Item 1 regression: the copy-parity sentence candidate for a line
+    carrying a mid-sentence Markdown link is built from the link's label
+    (the words the reader sees), never from a blank where the link stood."""
+    vp = _load_validator()
+    line = ("So here is my invitation, owner to owner: join the "
+            "[BlackCEO School of AI](#join). Bring the work that lands "
+            "on you every day.")
+    cands = vp.copy_candidates(line)
+    assert "BlackCEO School of AI" in cands, cands
+    sentence = ("So here is my invitation, owner to owner: join the "
+                "BlackCEO School of AI. Bring the work that lands on "
+                "you every day.")
+    assert sentence in cands, cands
+    assert not any("join the ." in c for c in cands), cands
+    page_text = vp.norm_text(sentence)
+    missing = [c for c in cands if vp.norm_text(c) not in page_text]
+    assert missing == [], f"parity must pass on the rendered sentence: {missing}"
+    removed = "Seats for the next cohort are limited to twenty founders."
+    still_missing = [c for c in vp.copy_candidates(removed)
+                     if vp.norm_text(c) not in page_text]
+    assert still_missing, "a copy line the page lacks must still fail parity"
+    altered = vp.norm_text(sentence.replace("invitation", "summons"))
+    word_missing = [c for c in cands if vp.norm_text(c) not in altered]
+    assert sentence in word_missing, "every candidate stays required verbatim"
+
+
+def test_copy_candidates_standalone_link_line_unchanged():
+    """Standalone CTA link line: the sentence candidate becomes the label,
+    which the label candidate already covers (a duplicate; parity uses
+    membership, so it is inert)."""
+    vp = _load_validator()
+    cands = vp.copy_candidates("[Apply Now](#join)")
+    assert cands == ["Apply Now", "Apply Now"], cands
+
+
+def test_letter_fixture_passes():
+    """Item 2 regression (pass case): the page_letter fixture carries the
+    Section 12 pattern - an inline prose link (a.inv-link, no display
+    styling of its own) inside the founder letter, real buttons at or
+    above the 56px floor, and the letter sentence in the public copy with
+    its mid-sentence Markdown link. Under the fixed sweep the whole page
+    validates: the inline link is not measured as a button, and copy
+    parity passes on the label-built sentence candidate. The fixture is
+    the page_good page plus the letter section, so every other check
+    (palette, fonts, logo, founder hash, layout metrics) is held to the
+    same standard the good fixture already meets."""
+    _require_playwright()
+    with tempfile.TemporaryDirectory() as td:
+        run_dir = Path(td) / "run"
+        run_dir.mkdir()
+        proc = validate(
+            LETTER / "index.html",
+            LETTER / "brand-fixture.json",
+            ["--mode", "page", "--run-dir", run_dir,
+             "--image-map", LETTER / "image-map.json",
+             "--copy", LETTER / "public-copy.md",
+             "--intake", LETTER / "intake.json"],
+        )
+        assert proc.returncode == 0, (
+            f"letter fixture must pass; got {proc.returncode}\n"
+            f"{proc.stdout}\n{proc.stderr}"
+        )
+        report = report_from(run_dir)
+        assert report["passed"] is True
+        assert report["errors"] == []
+        assert report["checks"]["copy_parity_checked"] > 0
+        layout = report["checks"]["layout"]
+        assert layout["measured"]["section_count"] == 7, layout["measured"]
+
+
+def test_letter_fixture_short_inline_block_anchor_fails():
+    """Item 2 regression (guard case): a short button-styled anchor
+    (computed display inline-block) injected into the letter page must
+    still fail the 56px floor by name, while the inline prose link stays
+    unflagged and copy parity stays clean. The exemption covers computed
+    display inline only; it is not a hole for short anchors generally.
+    The unmodified fixture passes whole (test_letter_fixture_passes), so
+    the injected anchor must be the page's only failure here."""
+    _require_playwright()
+    with tempfile.TemporaryDirectory() as td:
+        run_dir = Path(td) / "run"
+        shutil.copytree(LETTER, run_dir / "page")
+        page_dir = run_dir / "page"
+        html = (page_dir / "index.html").read_text(encoding="utf-8")
+        injected = ('<a class="promo-link" href="#join" '
+                    'style="display: inline-block; padding: 4px 10px;">'
+                    "Short Promo</a>")
+        html = html.replace("</body>", f"  {injected}\n</body>")
+        assert "promo-link" in html
+        (page_dir / "index.html").write_text(html, encoding="utf-8")
+        proc = validate(
+            page_dir / "index.html",
+            page_dir / "brand-fixture.json",
+            ["--mode", "page", "--run-dir", run_dir,
+             "--image-map", page_dir / "image-map.json",
+             "--copy", page_dir / "public-copy.md",
+             "--intake", page_dir / "intake.json"],
+        )
+        assert proc.returncode == 1, (
+            f"short inline-block anchor must fail; got {proc.returncode}\n"
+            f"{proc.stdout}\n{proc.stderr}"
+        )
+        report = report_from(run_dir)
+        assert report["passed"] is False
+        blob = "\n".join(report["errors"])
+        assert "mobile button: a.promo-link" in blob, blob
+        assert "below the 56px floor at 390px" in blob, blob
+        assert "inv-link" not in blob, blob
+        assert "copy parity" not in blob, blob
+        mobile_errors = [e for e in report["errors"] if "mobile button" in e]
+        assert len(mobile_errors) == 1, mobile_errors
+        assert report["errors"] == mobile_errors, report["errors"]
+        assert report["checks"]["copy_parity_checked"] > 0
+
+
 def main():
     tests = [
+        test_copy_candidates_mid_sentence_link_uses_label,
+        test_copy_candidates_standalone_link_line_unchanged,
+        test_letter_fixture_passes,
+        test_letter_fixture_short_inline_block_anchor_fails,
         test_bad_fails_with_each_reason,
         test_good_passes,
         test_good_fixture_brand_is_not_real_blackceo_brand,
@@ -248,6 +410,8 @@ def main():
         try:
             test()
             print(f"PASS {test.__name__}")
+        except SkipTest as exc:
+            print(f"SKIP {test.__name__}: {exc}")
         except AssertionError as exc:
             failed += 1
             print(f"FAIL {test.__name__}: {exc}")

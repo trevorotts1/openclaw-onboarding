@@ -1,0 +1,34 @@
+{
+  "page_version": "standard",
+  "brand_owner": "Fixture",
+  "brand_file": "brand-fixture.json",
+  "brand_id": "fixture-brand",
+  "page_name": "R71H joint dry-run fixture (fictional)",
+  "client": "FIXTURE",
+  "creative_direction": null,
+  "image_cap": 5,
+  "image_engine": "kie",
+  "test_run": false,
+  "layout_waivers": [
+    {
+      "gate": "layout-references",
+      "reason": "fixture run: no layout stage closes in this fixture; recorded for intake-shape parity with the P1/P2 fixtures"
+    }
+  ],
+  "publish_target": "ghl",
+  "automation_scope": "workflows",
+  "credentials": {
+    "pit": {
+      "variable": "GHL_PRIVATE_INTEGRATION_TOKEN",
+      "present": true
+    },
+    "location_id": {
+      "variable": "GHL_LOCATION_ID",
+      "present": true
+    },
+    "firebase_refresh_token": {
+      "variable": "GHL_FIREBASE_REFRESH_TOKEN",
+      "present": true
+    }
+  }
+}

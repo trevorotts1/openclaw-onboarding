@@ -440,6 +440,50 @@ export const INTAKE_CONTRACT = {
       }
     },
     {
+      id: "want_motion_graphics",
+      canonical_path: "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+      section: "pre_presentation_capture",
+      kind: "enum",
+      required: true,
+      block_gate: true,
+      allowed_values: ["yes", "no"],
+      legacy_aliases: ["deck_brief.WANT_MOTION_GRAPHICS", "WANT_MOTION_GRAPHICS"],
+      question: {
+        id: "want_motion_graphics",
+        order: 11.4,
+        kind: "enum",
+        prompt: "Would you like <span class=\"emph\">motion graphics</span> in this deck: short video pieces embedded in the deck file for up to two slides?",
+        help: "Default no. A yes elects motion: each piece is embedded in the deck file itself, with the designed slide as that piece's still image, and the webinar video uses the same pieces. Playback inside PowerPoint is not promised.",
+        label: "Motion graphics",
+        required: true,
+        storeOn: "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+        allowed_values: ["yes", "no"],
+        value_labels: { "yes": "Yes, add motion graphics to the deck", "no": "No thank you" }
+      }
+    },
+    {
+      id: "motion_graphics_declined_reason",
+      canonical_path: "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
+      section: "pre_presentation_capture",
+      kind: "text",
+      required: true,
+      block_gate: true,
+      conditional_on: { id: "want_motion_graphics", equals: "no" },
+      legacy_aliases: ["deck_brief.MOTION_GRAPHICS_DECLINED_REASON", "MOTION_GRAPHICS_DECLINED_REASON"],
+      question: {
+        id: "motion_graphics_declined_reason",
+        order: 11.45,
+        kind: "text",
+        prompt: "Understood, no motion graphics. In your own words, why not? (I record this verbatim so nobody later has to guess.)",
+        help: "Asked only when you declined motion graphics. Stored word-for-word as your waiver, an empty answer cannot be accepted.",
+        label: "Why no motion graphics",
+        placeholder: "e.g. still slides are fine for this talk",
+        required: true,
+        storeOn: "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
+        conditional_on: { id: "want_motion_graphics", equals: "no" }
+      }
+    },
+    {
       id: "run_mode",
       canonical_path: "pre_presentation_capture.RUN_MODE",
       section: "pre_presentation_capture",
@@ -588,7 +632,8 @@ export const INTAKE_CONTRACT = {
     "pre_presentation_capture.PRESENTATION_TYPE",
     "pre_presentation_capture.WANT_SALES_CHECKOUT",
     "pre_presentation_capture.WANT_VSL_PAGE",
-    "pre_presentation_capture.WANT_EMAIL_SEQUENCES"
+    "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+    "pre_presentation_capture.WANT_MOTION_GRAPHICS"
   ],
 
   // --- version-aware legacy migration ---------------------------------------

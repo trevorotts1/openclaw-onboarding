@@ -28,6 +28,15 @@ checks them against references/funnel-completion-checklist.md:
 
 The forms array in funnel-completion.json is the SOLE source of the form
 IDs Item 31's hand-off carries; the gate enforces that equality at close.
+
+Page-side proof lines (update plan Item 32): when intake.json records the
+funnel handoff form (funnel_handoff.form), the receipt must carry that
+form in its forms array, the click-through must record the primary CTA
+opening that named form (clickthrough.primary_cta with opened_form_id
+and ok), and the form's landed test submission must record routed_to_step,
+the funnel step the submission routes to (in the standard step order, the
+product selection step after the signature page's step). A handoff the
+page side cannot prove does not close.
 """
 import json
 import sys
@@ -81,6 +90,10 @@ def validate(run_dir):
     failures = []
     intake = load_json(run_dir / "intake.json") or {}
     publish_target = intake.get("publish_target")
+    handoff = intake.get("funnel_handoff")
+    handoff_form = handoff.get("form") if isinstance(handoff, dict) else None
+    handoff_form_id = handoff_form.get("form_id") \
+        if isinstance(handoff_form, dict) else None
     fc_path = run_dir / "ghl-install-test" / "funnel-completion.json"
     fc = load_json(fc_path)
     if fc is None:
@@ -149,6 +162,11 @@ def validate(run_dir):
         if f.get("attached_to_step") not in step_names:
             failures.append(f"{label}: attached_to_step {f.get('attached_to_step')!r} "
                             f"is not one of the funnel steps")
+    if handoff_form_id and handoff_form_id not in form_ids:
+        failures.append(f"intake records the funnel handoff form "
+                        f"{handoff_form_id!r} but the receipt's forms array "
+                        f"does not carry it: the form the page pops is the "
+                        f"form this receipt must prove")
 
     for p in fc.get("popups") or []:
         label = f"popup {p.get('name')!r}"
@@ -210,11 +228,11 @@ def validate(run_dir):
         failures.append("the funnel sells through an order step but "
                         "payment.provider_present is false")
 
-    failures.extend(check_clickthrough(run_dir, fc, steps))
+    failures.extend(check_clickthrough(run_dir, fc, steps, handoff_form_id))
     return failures
 
 
-def check_clickthrough(run_dir, fc, steps):
+def check_clickthrough(run_dir, fc, steps, handoff_form_id=None):
     failures = []
     ct = load_json(run_dir / "ghl-install-test" / "clickthrough.json")
     if ct is None:
@@ -265,6 +283,58 @@ def check_clickthrough(run_dir, fc, steps):
                 failures.append(f"form {form.get('name')!r} ({fid}): test submission "
                                 f"made a live charge; SOP Stage 13: verify sales in "
                                 f"test mode only, never by an unauthorized live charge")
+    # Page-side proof lines (update plan Item 32): when intake records
+    # the funnel handoff form, the journey must show the primary CTA
+    # opening that named form, and the form's landed submission must
+    # record where it routed (the next step in the recorded order: the
+    # product selection step in the standard funnel).
+    if handoff_form_id:
+        form = next((f for f in fc.get("forms") or []
+                     if f.get("form_id") == handoff_form_id), None)
+        primary = ct.get("primary_cta")
+        if not isinstance(primary, dict):
+            failures.append(
+                f"clickthrough.primary_cta is missing: when intake records "
+                f"the funnel handoff form ({handoff_form_id}), the journey "
+                f"records the primary CTA opening that named form "
+                f"(primary_cta with opened_form_id and ok)")
+        else:
+            if primary.get("opened_form_id") != handoff_form_id:
+                failures.append(
+                    f"clickthrough.primary_cta.opened_form_id is "
+                    f"{primary.get('opened_form_id')!r}; the primary CTA "
+                    f"must open the named form {handoff_form_id!r} recorded "
+                    f"at intake")
+            if not is_true(primary.get("ok")):
+                failures.append(
+                    "clickthrough.primary_cta.ok is not true: the button "
+                    "opens the named form is a proof line, not a claim")
+        if form is not None:
+            step_names_in_order = [s.get("name") for s in steps
+                                   if isinstance(s, dict)]
+            attached = form.get("attached_to_step")
+            if attached in step_names_in_order:
+                idx = step_names_in_order.index(attached)
+                if idx + 1 >= len(step_names_in_order):
+                    failures.append(
+                        f"form {form.get('name')!r} ({handoff_form_id}) is "
+                        f"attached to step {attached!r}, the funnel's last "
+                        f"step: the standard step order routes its "
+                        f"submission onward to the product selection page, "
+                        f"so the funnel must carry a step after it")
+                else:
+                    expected = step_names_in_order[idx + 1]
+                    for rec in landed_by_form.get(handoff_form_id) or []:
+                        if rec.get("routed_to_step") != expected:
+                            failures.append(
+                                f"form {form.get('name')!r} "
+                                f"({handoff_form_id}): landed test "
+                                f"submission records routed_to_step "
+                                f"{rec.get('routed_to_step')!r}; the "
+                                f"submission must land and route to the "
+                                f"product selection step {expected!r} (the "
+                                f"step after {attached!r} in the recorded "
+                                f"step order)")
     if ct.get("live_charge_made") is True:
         failures.append("clickthrough.live_charge_made is true; SOP Stage 13: "
                         "verify sales in test mode only, never by an unauthorized "

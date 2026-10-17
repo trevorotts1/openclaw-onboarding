@@ -1,0 +1,1 @@
+Fixture install steps: the fictional page was installed into the fixture funnel F-100 as page P-200; the three steps were bound and the click-through recorded. This file is a fixture record for the R71H joint dry-run.

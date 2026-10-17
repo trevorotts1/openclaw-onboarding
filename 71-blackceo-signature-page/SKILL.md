@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.9
+version: 1.2.12
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -56,7 +56,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 
 ## Read only what the current stage needs
 
-- **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages). Brand fonts are the one fail-open key: when they are still MUST_SUPPLY, `font_policy` says derive-document — derive the best display/body/accent for the job, document the rationale in the bible (`fonts_source: "derived"` + `font_rationale` + `font_reviewer`), reviewer approves. Never blocked on fonts; every other MUST_SUPPLY value still blocks.
+- **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages). Brand fonts are the one fail-open key: when they are still MUST_SUPPLY, `font_policy` says derive-document — derive the best display/body/accent for the job, document the rationale in the bible (`fonts_source: "derived"` + `font_rationale` + `font_reviewer`), reviewer approves. Never blocked on fonts; every other MUST_SUPPLY value still blocks. At intake, declare the brand's mandated editorial structures (full-width rows separated by rules, ordinary letter prose) in the brand file at `layout_thresholds.card_grid_allowlist`, so the card-grid metric passes them by declaration instead of discovering them by failure.
 - Production order / gates: `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md`
 - Standard copy: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
 - Long-Form copy: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
@@ -81,7 +81,9 @@ Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Be
 
 Stage IDs (canonical, from `references/stage-contract.json`):
 
-`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify`
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
+
+The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
 
 Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages. For itemized stages the gate also exposes the item commands `check-item` / `close-item` / `block-item` (see `references/item-gate-spec.md`): an item closes only from its own validators and reviews, and a stage close fans in its items by name. Review scores are Review Receipt v2 records: they live in `private/reviews/<stage>/<item-id>.review.json`, written by `scripts/write_review.py` from the reviewing session, and the gate validates them at close. A browser-using stage cannot close with unaccounted sessions; REPORT.md carries the hygiene line (see `references/browser-hygiene.md`).
 
@@ -95,10 +97,17 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Use `scripts/validate_public_copy.py` before public HTML/handoff.
 - Repair only failed criteria. Maximum three focused repair attempts for failed work; passing work advances immediately.
 
+### Funnel handoff (the page's own contract)
+
+- Intake records the handoff (`scripts/write_intake.py --handoff-form-name/--handoff-form-id`, or `--handoff-missing-reason` when no form identity exists): the Convert and Flow form's name and object id, the pop behavior, and the step order (signature page, then product selection page, then order form page). A placeholder destination is never a handoff; it is the recorded missing input or a defect.
+- The copy manifest's CTA entries carry each button's handoff type (`form_pop`, `in_page_anchor`, `external_link`); the primary CTA's type is `form_pop`. `scripts/validate_handoff.py` verifies the built page against the record at the responsive-html stage, and the funnel-completion receipt proves the pop live at install.
+
 ### Design / wireframes / mockups
 
 - Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
 - The `desktop-wireframe` and `mobile-tablet` stages must produce `section-plan.json` as a required output.
+- The `visual-mockup` stage produces the page visual bible and an internal layout proof only. The layout proof is never presented to the client as the mockup and is never client-judged.
+- Image generation (prompts, generation/QC, image map) completes before the mockup stage opens. `final-mockups` is the single client-judged mockup: produced per section with real photography in every slot, with supplied assets placed as files and never generated.
 - Build complete desktop first, then intentionally reflow mobile/tablet; do not merely shrink desktop.
 - Resist generic AI-page patterns: repetitive cards, identical section geometry, generic SaaS gradients, sterile stock-office scenes, repeated center alignment, and same-ratio imagery everywhere.
 - Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
@@ -126,7 +135,7 @@ Read only what the stage contract's `reads` field names for image stages (the v5
 Non-negotiables:
 
 - one image-map entry -> one complete prompt -> one independently generated asset -> one correctly named file;
-- production prompt length is governed by element completeness: a production prompt carries every applicable element in full. Length is telemetry, recorded per prompt, and never a target: no percentage of any maximum is required and no floor applies. A model's VERIFIED character cap is a hard ceiling only. A prompt under 2,000 characters is flagged for manual re-inspection (a tripwire, not a failure). Padding a prompt to reach a length is itself a failure (padding detection in `validate_prompt.py`);
+- production prompts are authored to the model's rule 12 band (owner Decision 1, 2026-10-15): 95 to 100 percent of the model's live prompt field maximum, never below the 80 percent floor, reached by genuine specification only; a production prompt also carries every applicable element in full. `validate_prompt.py` renders the band verdict per prompt (below the floor fails naming the exact characters to ADD and the count to the 95 percent target; above the maximum fails naming the exact characters to CUT), and the prompt stage gate records the budget block on the item's close entry. The model's recorded maximum is the ceiling; cap status is provenance only. For a model with no recorded maximum, a prompt under 2,000 characters is flagged for manual re-inspection (a tripwire, not a failure). Padding a prompt to reach the band is itself a failure (padding detection in `validate_prompt.py`);
 - never silently truncate a prompt or disable validation; fix a completeness failure by completing the missing elements in full;
 - in `SECRET_SAUCE_ONLY`, the prompt's color-grade element starts with the Signature Grade Block from `assets/brand/signature-grade-block.txt`, verbatim (`scripts/validate_prompt.py --sauce-only` enforces it);
 - use camera, lens, aperture/depth, composition, subject placement, lighting, posture/expression, fashion, skin/hair, color-grade, typography-as-image, and negative-space intelligence where applicable;
@@ -135,7 +144,7 @@ Non-negotiables:
 - keep one page-level Art Direction coherent while varying shot/view scale, ratio, environment, posture, scene type, and intensity;
 - never pass human research-lineage names downstream when a style library requires branded, descriptive execution grammar.
 
-Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages; it checks anatomy, placeholders, padding and the grade block) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map. Length is telemetry: `validate_prompt.py` records it and applies only the VERIFIED-cap ceiling; element completeness, not length, gates the stage.
+Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages; it checks anatomy, the rule 12 budget band, placeholders, padding and the grade block) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map. Length is governed by the rule 12 band (Decision 1): `validate_prompt.py` renders the band verdict per prompt (below the floor fails naming the characters to ADD and the count to the 95 percent target; above the maximum fails naming the characters to CUT), and the prompt stage gate records the budget block on the item's close entry; element completeness and the band together gate the stage.
 
 ### Image and video engine routing
 

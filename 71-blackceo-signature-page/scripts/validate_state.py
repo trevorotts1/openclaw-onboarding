@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
-ORDER = [
-    "intake",
-    "copy",
-    "font-action-plan",
-    "desktop-wireframe",
-    "mobile-tablet",
-    "visual-mockup",
-    "image-inventory-prompts",
-    "image-generation-qc",
-    "image-map-upload",
-    "final-mockups",
-    "responsive-html",
-    "ghl-install-test",
-    "publish-verify",
-]
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+CONTRACT_PATH = Path(os.environ.get(
+    "STAGE_GATE_CONTRACT",
+    str(SKILL_ROOT / "references" / "stage-contract.json"),
+))
+# The stage list comes from the manifest (references/stage-contract.json),
+# the same source scripts/stage_gate.py enforces: all FOURTEEN stage IDs,
+# including the conditional automation-wiring stage. The workflow-state
+# file always carries every stage (a conditional stage is never silently
+# absent); whether the stage applies to a run is gate state, not this
+# file's vocabulary.
+ORDER = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))["stage_order"]
 STATUSES = {"blocked", "working", "qc_failed", "ready"}
 VERSIONS = {"standard", "long-form"}
 

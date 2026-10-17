@@ -134,14 +134,16 @@ PHASE_TO_PAGES = {
     "P-U-FORM-GATE": ("vsl",),
 }
 
-# Emitting phase ids recorded in provenance: the copy + design phases whose
-# outputs complete this page's inputs (manifest v70, verified by parse).
+# Emitting phase ids recorded in provenance: the copy phases whose outputs
+# complete this page's inputs (manifest v70, verified by parse). The design
+# phases that used to be listed here retired with the Path A fragment chains
+# (owner ruling 2026-10-15); the design block below still reports design
+# artifacts when a run folder actually holds them, but no live phase emits
+# them, so they no longer belong in provenance.
 EMITTING_PHASES = {
-    "sales": ("P-U-SALES-COPY", "P-U-DESIGN-SALES", "P-U-DESIGN-RENDER-SALES"),
-    "checkout": ("P-U-CHECKOUT-COPY", "P-U-DESIGN-CHECKOUT",
-                 "P-U-DESIGN-RENDER-CHECKOUT"),
-    "vsl": ("P-U-VSL-RESEARCH", "P-U-VSL-COPY", "P-U-DESIGN-VSL",
-            "P-U-DESIGN-RENDER-VSL"),
+    "sales": ("P-U-SALES-COPY",),
+    "checkout": ("P-U-CHECKOUT-COPY",),
+    "vsl": ("P-U-VSL-RESEARCH", "P-U-VSL-COPY"),
 }
 
 CONSENT_RULING = (

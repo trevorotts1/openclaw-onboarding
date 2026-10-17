@@ -189,15 +189,22 @@ def _nested_string(mapping: Dict[str, Any], containers: Tuple[str, ...], *keys: 
 
 
 def _resolve_identity(
-    state: Dict[str, Any], zhc_config: Dict[str, Any]
+    state: Dict[str, Any], zhc_config: Dict[str, Any], enforce_conflict: bool = True
 ) -> Dict[str, str]:
     state_name = _real_name(state.get("companyName") or state.get("company_name"))
     zhc_name = _real_name(
         zhc_config.get("companyName") or zhc_config.get("company_name") or zhc_config.get("name")
     )
     if state_name and zhc_name and state_name != zhc_name:
-        raise ReconcileError(
-            "provisioning identity conflicts with the matching ZHC company identity; refusing overwrite"
+        if enforce_conflict:
+            raise ReconcileError(
+                "provisioning identity conflicts with the matching ZHC company identity; refusing overwrite"
+            )
+        print(
+            "[cc-runtime] WARN: provisioning identity "
+            f"{state_name!r} differs from the matching ZHC company identity {zhc_name!r}; "
+            "no company name is being written, so the stored name is preserved.",
+            file=sys.stderr,
         )
     name = state_name or zhc_name
 
@@ -380,7 +387,14 @@ def reconcile(
             "past department selection)"
         )
 
-    identity = _resolve_identity(state_payload, zhc_config)
+    # The identity guard is fail-closed ONLY where it protects a write: when
+    # `needs_name` is true the reconciler would overwrite company-config.json's
+    # name, so a conflict with the matching ZHC identity must still refuse the
+    # overwrite. When `needs_name` is false nothing about the name is written,
+    # so a stored/ZHC mismatch is reported as a warning and never aborts the
+    # run — aborting here would skip the version stamp for a name we aren't
+    # touching, contradicting this script's contract.
+    identity = _resolve_identity(state_payload, zhc_config, enforce_conflict=needs_name)
     # Company NAME is a CONTENT-integrity check: an unresolved real company name
     # (the exact "Your Company" placeholder still standing) must still fail loud.
     # A LOGO, by contrast, is a BRANDING nicety — an empty/missing logoUrl is a

@@ -108,6 +108,15 @@ Two SOP Stage 13 rules ride in this record BY NAME:
 - **No live charge:** sales are verified in test mode only
   (`live_charge_made` must be false). Never make an unauthorized live
   charge to prove a checkout works.
+- **Page-side proof lines (update plan Item 32):** when intake records
+  the funnel handoff form (`intake.json`'s `funnel_handoff.form`), the
+  receipt's `forms` array must carry that form, the click-through must
+  record the primary CTA opening it (`primary_cta` with `opened_form_id`
+  and `ok: true`), and the form's landed test submission must record
+  `routed_to_step`: the step the submission routes to, which in the
+  standard step order is the product selection step after the signature
+  page's step. The page side of the handoff is proved here, not assumed
+  from the page build.
 
 ## Outputs
 

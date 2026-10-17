@@ -43,7 +43,7 @@ def _agent_phases():
 
 def test_every_agent_phase_declares_resolvable_resources():
     phases = _agent_phases()
-    assert len(phases) >= 30
+    assert len(phases) >= 29
     failures = []
     for phase in phases:
         role = phase.get("owning_role") or ""

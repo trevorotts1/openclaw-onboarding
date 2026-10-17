@@ -199,6 +199,78 @@ class TestSixMetrics(unittest.TestCase):
         self.assertTrue(any("CTA sameness" in d for d in res2["declared"]))
 
 
+class TestCardGridAllowlistDocs(unittest.TestCase):
+    """Item 9: the card_grid_allowlist relief is documented in the brand
+    schema and seeded in the intake template, so mandated editorial
+    structures are declared deliberately, not discovered by failure.
+    No metric behavior and no threshold values change in this item."""
+
+    def _editorial_groups(self):
+        # The run's four flagged clusters, in synthetic form: persona
+        # rows, inclusion rows, step rows, and letter paragraphs.
+        def group(parent, structure, width, height):
+            kid = {"selector": "div", "width": width, "height": height,
+                   "structure": structure}
+            return {"parent": parent,
+                    "children": [dict(kid) for _ in range(4)]}
+        return [
+            group("section.persona-rows", "div(img,h3,p)", 1240, 160),
+            group("section.inclusion-rows", "div(h3,p)", 1240, 140),
+            group("section.step-rows", "div(span,h3,p)", 1240, 150),
+            group("section.letter-body", "div(p)", 1100, 96),
+        ]
+
+    def test_undeclared_editorial_structures_fail(self):
+        res = metrics(layout_data([make_section()],
+                                  groups=self._editorial_groups()))
+        grid_failures = [f for f in res["failures"]
+                         if "repeated card grid" in f]
+        self.assertEqual(len(grid_failures), 4, res["failures"])
+        self.assertEqual(res["measured"]["card_grid_failures"], 4)
+        self.assertTrue(all("banned repeated card grid" in f
+                            for f in grid_failures), grid_failures)
+
+    def test_pair_form_declarations_pass(self):
+        allow = ["section.persona-rows div(img,h3,p)",
+                 "section.inclusion-rows div(h3,p)",
+                 "section.step-rows div(span,h3,p)",
+                 "section.letter-body div(p)"]
+        res = metrics(layout_data([make_section()],
+                                  groups=self._editorial_groups()),
+                      thresholds={"card_grid_allowlist": allow})
+        self.assertFalse(any("card grid" in f for f in res["failures"]),
+                         res)
+        self.assertEqual(res["measured"]["card_grid_failures"], 0)
+        self.assertTrue(any("card grid allowlisted" in p
+                            for p in res["passes"]), res["passes"])
+
+    def test_failure_message_names_brand_key(self):
+        res = metrics(layout_data([make_section()],
+                                  groups=self._editorial_groups()))
+        blob = "\n".join(res["failures"])
+        self.assertIn("layout_thresholds.card_grid_allowlist", blob)
+
+    def test_schema_documents_allowlist_key(self):
+        schema = json.loads(
+            (ROOT / "assets" / "brand" / "brand.schema.json").read_text(
+                encoding="utf-8"))
+        thresholds = schema["properties"]["layout_thresholds"]
+        self.assertIn("card_grid_allowlist", thresholds["properties"])
+        self.assertIn("parent selector", thresholds["description"])
+        self.assertIn("structure signature", thresholds["description"])
+        self.assertEqual(thresholds["properties"]
+                         ["card_grid_min_repetitions"]["minimum"], 1)
+
+    def test_template_seeds_allowlist(self):
+        template = json.loads(
+            (ROOT / "assets" / "brand" /
+             "client-brand.template.json").read_text(encoding="utf-8"))
+        seeded = template["layout_thresholds"]
+        self.assertEqual(seeded["card_grid_allowlist"], [])
+        for key, value in vp.DEFAULT_LAYOUT_THRESHOLDS.items():
+            self.assertEqual(seeded[key], value, key)
+
+
 class TestDeclaredExemptions(unittest.TestCase):
     def test_centered_and_sparse_traits_exempt(self):
         secs = [make_section(align="center", content_span=0.4,

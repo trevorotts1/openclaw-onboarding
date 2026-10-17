@@ -82,12 +82,6 @@ def test_no_artifact_has_more_than_one_declared_producer():
 def test_the_five_repaired_artifacts_have_their_true_single_producer():
     producers = _producers_by_artifact()
     expected = {
-        # The render script executor is the PNG producer; the agent phase
-        # authors the prompt only (already stated verbatim in each render
-        # phase's own manifest `name`: "FIX 28: the PNG producer").
-        "design/sales-design.png":    ["P-U-DESIGN-RENDER-SALES"],
-        "design/checkout-design.png": ["P-U-DESIGN-RENDER-CHECKOUT"],
-        "design/vsl-design.png":      ["P-U-DESIGN-RENDER-VSL"],
         # phase_verifiers._verify_converter: "P-CONVERTER produces a source
         # brief, per its own SOP 9.8 ... P0A-INTAKE ... is what actually
         # writes intake.json".
@@ -109,6 +103,18 @@ def test_the_five_repaired_artifacts_have_their_true_single_producer():
     assert "build_receipt.json" not in producers, (
         "the bare, un-namespaced build_receipt.json is back: two funnels "
         "writing one path is the collision this repair removed")
+    # Path A retirement (owner ruling 2026-10-15): the three design PNGs lost
+    # their producers on purpose. The v67 repair above pinned
+    # P-U-DESIGN-RENDER-* as their single producers; those phases are retired
+    # (their outputs had no consumer outside the retired chains), so the
+    # artifacts must now have NO producer at all. If one reappears here, the
+    # retirement was reverted silently.
+    for artifact in ("design/sales-design.png", "design/checkout-design.png",
+                     "design/vsl-design.png"):
+        assert artifact not in producers, (
+            f"{artifact} has a producer again ({producers.get(artifact)}): "
+            "the Path A design-render phases were retired on the owner's "
+            "2026-10-15 ruling and must not come back silently")
 
 
 # ---------------------------------------------------------------------------

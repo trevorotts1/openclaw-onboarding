@@ -1,0 +1,10 @@
+{
+  "emitted_at": "2026-10-16T13:51:35+00:00",
+  "handoff": "handoff/automation-handoff.json",
+  "handoff_sha256": "5ea1502da48cf5c46317c865cfa06ef4f772cede6bba2026852a28809afb2325",
+  "handoff_origin": "emitted",
+  "envelope": "handoff/automation-request.json",
+  "envelope_note": null,
+  "request_id": "gxo_9327e9ecc215",
+  "request_version": 1
+}

@@ -52,6 +52,7 @@ specification is written on the item-level side of it.
 | responsive-html | 1 builder item, then validator, drift, and reviewer items | The three check items run in parallel after the builder |
 | ghl-install-test | 1 item | Single; Item 5's evidence rules govern what counts as proof |
 | publish-verify | 1 item | Single; Item 5's evidence rules govern |
+| automation-wiring | 1 item, then 1 reviewer item | Single; conditional stage (Item 31): it runs only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`; when it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values |
 | report | No agents | The gate writes REPORT.md; the runner only records the outcome |
 
 Implementation note, stated plainly: the runner's DAG itemizes the two

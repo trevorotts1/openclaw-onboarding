@@ -17,8 +17,27 @@
   "founder_photos": "TREVOR_MUST_SUPPLY",
   "people_rule": "All people depicted are Black.",
   "default_creative_direction": "SECRET_SAUCE_ONLY",
-  "grade": {"block_file": "assets/brand/signature-grade-block.txt",
-            "min_mean_saturation": null, "min_luma_std": null},
+  "grade": {
+    "block_file": "assets/brand/signature-grade-block.txt",
+    "min_mean_saturation": 0.4137,
+    "min_luma_std": 23.82,
+    "min_sharpness": 414.05,
+    "min_colorfulness": 60.39,
+    "floors": {
+      "photographic": {
+        "full": {"min_mean_saturation": 0.4137, "min_colorfulness": 60.39, "max_protected_saturation": 0.3660},
+        "adapt": {"min_mean_saturation": 0.0508, "max_mean_saturation": 0.4176, "min_colorfulness": 5.58, "max_colorfulness": 48.61, "min_luma_std": 41.13, "provisional": false},
+        "noncolor": {"min_luma_std": 23.82, "min_sharpness": 414.05}
+      }
+    },
+    "calibration": {
+      "date": "2026-10-15",
+      "gold_set_manifest_sha256": "9511afeb1e3785095116daca9028f5dea60cc4757d8ccd3b412fd3a0ce2d9930",
+      "approved_by": "Trevor Otts",
+      "families_calibrated": ["photographic"],
+      "note": "Photographic-only scoped calibration (approved_scope, owner Decision 14, Skill 71 update plan, 2026-10-15); source run: calibration-run-scoped-2026-10-15 on the enlarged 16-anchor designated photographic set (pools: FULL 6, ADAPT 7 binding, SUPPRESS 3). The gold_set_manifest_sha256 above hashes the producing run manifest (calibration-run-scoped-2026-10-15/gold/gold-set.json), not the assets/brand/gold-set/gold-set.json placeholder named in the schema description, which still holds 0 images and produced nothing. Approved scope carried here because the calibration record admits no approved_scope key: family-scoped: photographic only (Decision 14). Owner adjustment (Trevor Otts, 2026-10-15): the two non-color floors are set just below the lowest designated anchors so every designated anchor passes the standard it defines, where just below = the binding anchor's measured value minus 1 percent: noncolor.min_sharpness = 414.05 (GOLD-026 measured 418.23 x 0.99; computed value was 425.64) and noncolor.min_luma_std = 23.82 (GOLD-029 measured 24.06 x 0.99; computed value was 24.58); every other value stands exactly as computed. Legacy flat mirrors written alongside the nested floors: min_mean_saturation 0.4137 and min_colorfulness 60.39 mirror floors.photographic.full; min_luma_std 23.82 mirrors floors.photographic.noncolor.min_luma_std; min_sharpness 414.05 mirrors floors.photographic.noncolor.min_sharpness. The brand-wide max_protected_saturation is deliberately NOT set: the Option B ceiling lives at floors.photographic.full.max_protected_saturation (0.3660), and a brand-wide key would extend it to families this calibration does not cover; grade.families_used is likewise not set in the brand file (the scope declaration lives in the run manifest). Option B provenance (Ruling 3): the ceiling remains WARN-only, writing the value does not change its enforcement status, and the Item 12 judgment gate remains the enforcement of record for selective saturation. Owner-ruled exceptions (Trevor Otts, 2026-10-15: leave the ADAPT band as computed and record the two exceptions): GOLD-008's mean saturation 0.4592 sits above the ADAPT band ceiling 0.4176 (it is the pool maximum; the band top is p95 x 1.05 by the band's percentile design), and GOLD-031's luma_std 39.24 sits below the ADAPT tonal floor 41.13 (the floor followed the class as designated). The band stands as computed; these two designated anchors sit outside it on one check each, ruled exceptions, not errors."
+    }
+  },
   "page_design_rules": [
     "High-contrast color use: alternate Navy and Cream grounds; Gold is the accent and CTA color.",
     "Each section is its own piece of art, like a fashion show: no two consecutive sections share a composition.",
