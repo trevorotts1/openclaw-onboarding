@@ -33,6 +33,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build
+          node --import tsx --test tests/cli.test.ts tests/cli-doctor-readiness.test.ts tests/cli-composition.test.ts tests/cli-route-composition.test.ts
       - name: Built artifacts do not alter source manifest
         working-directory: 77-council-of-wise-elders
         run: |
