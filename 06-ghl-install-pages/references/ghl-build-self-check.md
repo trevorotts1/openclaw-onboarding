@@ -46,7 +46,7 @@ checkbox is a self-check, the sealed verifier is the verdict.
 **Done when:** full width is ON (rendered full-bleed), the blob asserts renderable, and BOTH saves (code then page) are recorded — the re-opened code element is non-empty.
 
 ## Phase 4 — SEO / AI-search "Content" panel
-- [ ] **Description set (≤160) and title (≤60)** — Verify: `ghl_builder.build_seo_meta` HALTs over the caps (SOP §2.07).
+- [ ] **Description set (≤155 save-time cap; 160 is a display-truncation heuristic only) and title (≤60)** - Verify: `ghl_builder.build_seo_meta` HALTs over the caps (SOP §2.07).
 - [ ] **≥3 distinct researched keywords, and EACH keyword actually appears in the page body copy [H1]** — Verify: `ghl_builder.assert_keywords_in_copy(seo_meta, page_copy)` (or `assert_seo_populated(seo_meta, page_copy=<body text>)`) — any keyword present only in the meta panel and absent from the copy is a **HARD FAIL** (mirrors the copy-fidelity gate P1-4, in the keyword→copy direction) (SOP §2.07 + §9.2a).
 - [ ] **Author == the FOUNDER's personal name (never the brand, never blank)** — Verify: `ghl_builder.validate_founder_name(author, brand=...)` (SOP §2.07; P0/P1 step 1.1).
 - [ ] **Canonical (when set) absolute `https` on the page's OWN domain (never a Firebase/storage host) + language explicitly `en`** — Verify: the `_validate_canonical` + language gates inside `build_seo_meta` (SOP §2.07).

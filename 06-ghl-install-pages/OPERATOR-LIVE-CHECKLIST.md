@@ -67,6 +67,15 @@ Ground rules for every step:
       ```
       Expected evidence: `<EVIDENCE_ROOT>/routing/vps-mount-receipt.json` with the
       live mount assertions PASS.
+      The same live recreate also proves the S06-05 persistence path set
+      (agent-browser state, evidence base, run-state root, Playwright data
+      dir, secrets dir): run
+      `python3 06-ghl-install-pages/tools/ghl_vps_mount_proof.py pre-pathset --path agent_browser_state=<dir> --path evidence_base=<dir> --path run_state_root=<dir> --path playwright_data_dir=<dir> --path secrets_dir=<dir> --run-id <RUN_ID> --evidence-root <EVIDENCE_ROOT> --box-label <box-name>`
+      before the recreate and the matching `post-pathset` command after it.
+      Expected additional evidence:
+      `<EVIDENCE_ROOT>/routing/vps-mount-pathset-receipt.json` with every
+      path's survival recorded (a path reporting survived=false is a
+      finding, not a pass).
 
 - [ ] **5. ENV ground-truth parity (Mac + VPS).**
       ```bash
@@ -74,8 +83,10 @@ Ground rules for every step:
       ```
       Run the same command on the VPS box (its own `--box-label`), then compare:
       ```bash
-      python3 06-ghl-install-pages/tools/ghl_env_matrix_ground_truth.py compare <EVIDENCE_ROOT>/routing/env-matrix-mac-receipt.json <EVIDENCE_ROOT>/routing/env-matrix-<box>-receipt.json
+      python3 06-ghl-install-pages/tools/ghl_env_matrix_ground_truth.py compare <MAC_EVIDENCE_ROOT>/routing/env-matrix-ground-truth-receipt.json <VPS_EVIDENCE_ROOT>/routing/env-matrix-ground-truth-receipt.json
       ```
+      (The emitter writes ONE receipt per box at that same single path under
+      that box's own evidence root — there is no per-box filename variant.)
       Expected evidence: `<EVIDENCE_ROOT>/routing/env-matrix-ground-truth-receipt.json`
       with parity verdict PASS (or an explicit drift list — that is a finding, not a pass).
 

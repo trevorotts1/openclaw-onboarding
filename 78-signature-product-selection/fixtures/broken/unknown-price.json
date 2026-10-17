@@ -1,0 +1,80 @@
+{
+  "case": "unknown-price",
+  "launch": {
+    "tenant_id": "TEST-TENANT",
+    "location_id": "TEST-LOCATION",
+    "launch_id": "TEST-LAUNCH",
+    "revision": 1,
+    "journey_mode": "multiple_options",
+    "offers": [
+      {
+        "offer_id": "MAIN-A",
+        "slot": "main",
+        "display_name": "TEST ONLY A",
+        "deliverables": [
+          "base-a"
+        ],
+        "exclusions": [
+          "No private reviews"
+        ],
+        "entitlement_ids": [
+          "base-a"
+        ],
+        "requires": [],
+        "excludes": [],
+        "native_product_id": "TEST-PROD-A",
+        "prices": [
+          {
+            "price_choice_id": "MAIN-A-USD",
+            "currency": "USD",
+            "amount_minor": null,
+            "billing_type": "one_time",
+            "native_price_id": "TEST-PRICE-A",
+            "schedule": [],
+            "terms_source": null,
+            "approval_status": "unknown"
+          }
+        ],
+        "source_kind": "test_fixture",
+        "source_ref": "self-test",
+        "test_only": true
+      },
+      {
+        "offer_id": "MAIN-B",
+        "slot": "main",
+        "display_name": "TEST ONLY B",
+        "deliverables": [
+          "base-a",
+          "Two private review sessions"
+        ],
+        "exclusions": [],
+        "entitlement_ids": [
+          "base-a",
+          "reviews"
+        ],
+        "requires": [],
+        "excludes": [],
+        "native_product_id": "TEST-PROD-B",
+        "prices": [
+          {
+            "price_choice_id": "MAIN-B-USD",
+            "currency": "USD",
+            "amount_minor": 19700,
+            "billing_type": "one_time",
+            "native_price_id": "TEST-PRICE-B",
+            "schedule": [],
+            "terms_source": null,
+            "approval_status": "approved"
+          }
+        ],
+        "source_kind": "test_fixture",
+        "source_ref": "self-test",
+        "test_only": true
+      }
+    ]
+  },
+  "via": "catalog",
+  "expect": {
+    "violation_code": "S78-UNKNOWN-PRICE"
+  }
+}

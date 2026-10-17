@@ -44,6 +44,21 @@ CLI
 ---
     python3 ghl_receipts.py --summarize <evidence_root>   # reduce + print JSON
     python3 ghl_receipts.py --selftest                     # no network, no I/O outside tmp
+
+S06-08 (tenant-safe read-back + no-secret evidence)
+---------------------------------------------------
+Receipts carry the read-back contract fields additively (see
+``tools/ghl_evidence.py``): ``expected_location_id`` /
+``observed_location_id`` / ``tenant_binding`` (+ ``run_id`` when known).
+``write_receipt`` is a no-secret sink: the receipt's free-form fields pass
+through the evidence scrubber before write, the redaction count is stamped
+as ``redactions``, and the file is written mode 0600 (Q4) with the mode set
+on the temp file before the rename. ``reduce_receipts`` groups and flags
+receipts by tenant binding in a ``tenant`` section (present whenever at
+least one readable receipt exists; the empty-root reduction keeps its
+exact historical shape). ``assert_consistent`` refuses a summary whose
+declared tenant disagrees with a stamped receipt (cross-tenant receipt =
+contradiction) and refuses an undeclared mixed-tenant reduction.
 """
 
 from __future__ import annotations
@@ -56,6 +71,12 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 tenant contract + evidence scrubber)
 
 RECEIPTS_VERSION = "v1.0.0"
 
@@ -89,12 +110,20 @@ def make_receipt(
     verify: Optional[dict] = None,
     disclosures: Optional[List[str]] = None,
     error: Optional[str] = None,
+    expected_location_id: Optional[str] = None,
+    observed_location_id: Optional[str] = None,
+    run_id: Optional[str] = None,
 ) -> dict:
     """Build one F6 per-object receipt dict — the ONLY thing a summary may reduce.
 
     ``action`` MUST be one of ``VALID_ACTIONS``. ``created``/``reused`` receipts
     with no ``verify.get("ok")`` truthy are still written (an honest attempt
     record) but ``reduce_receipts`` will NOT count them as verified.
+
+    S06-08: ``expected_location_id`` / ``observed_location_id`` / ``run_id``
+    stamp the tenant read-back contract fields additively (derived
+    ``tenant_binding`` included); omitting them leaves the receipt
+    tenant-unbound, which the reducer flags, never silently bound (Q2).
     """
     if action not in VALID_ACTIONS:
         raise ValueError(f"invalid receipt action {action!r}; must be one of {VALID_ACTIONS}")
@@ -114,6 +143,8 @@ def make_receipt(
         "error": error,                  # honest failure record (None on success)
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "receipts_version": RECEIPTS_VERSION,
+        **ghl_evidence.tenant_fields(
+            expected_location_id, observed_location_id, run_id=run_id),
     }
 
 
@@ -128,16 +159,26 @@ def receipt_path(evidence_root: str, object_type: str, slug: str) -> str:
     return os.path.join(evidence_root, "ecosystem", f"{safe_type}-{safe}.json")
 
 
-def write_receipt(evidence_root: str, receipt: dict) -> str:
+def write_receipt(evidence_root: str, receipt: dict, *, secret_values: Any = None) -> str:
     """Write one receipt to disk (atomic-enough for this use: write-then-rename
     avoids a reader ever seeing a half-written JSON file if a process is killed
-    mid-write — important because F6's whole point is trusting what's on disk)."""
+    mid-write: important because F6's whole point is trusting what's on disk).
+
+    S06-08: this is a no-secret sink. The receipt passes through the evidence
+    scrubber before write (its free-form fields: ``verify``, ``disclosures``,
+    ``error``, are caller-shaped text), the redaction count is stamped on
+    the written receipt as ``redactions``, and the file mode is set to 0600
+    explicitly on the temp file before the rename (Q4 interim default);
+    the ecosystem dir is created 0700. The caller's dict is not mutated."""
     path = receipt_path(evidence_root, receipt["object_type"], receipt["slug"])
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    to_write, redactions = ghl_evidence.EvidenceScrubber(secret_values).scrub_obj(receipt)
+    to_write["redactions"] = int(to_write.get("redactions") or 0) + redactions
+    ghl_evidence.ensure_private_dir(os.path.dirname(path))
     tmp_path = f"{path}.tmp-{os.getpid()}"
     with open(tmp_path, "w", encoding="utf-8") as fh:
-        json.dump(receipt, fh, indent=2)
+        json.dump(to_write, fh, indent=2)
         fh.flush()
+        os.chmod(tmp_path, ghl_evidence.FILE_MODE)
         os.fsync(fh.fileno())
     os.replace(tmp_path, path)
     return path
@@ -195,6 +236,11 @@ def reduce_receipts(evidence_root: str, *, strict: bool = False) -> dict:
     verified: List[str] = []
     unverified: List[str] = []
     seen_response_id: Dict[str, str] = {}
+    # S06-08: tenant grouping over the same disk read (never memory).
+    tenant_bound: List[str] = []
+    tenant_unbound: List[str] = []
+    tenant_mismatch: List[str] = []
+    tenant_expected_ids: set = set()
 
     for r in receipts:
         tag = f"{r.get('object_type')}:{r.get('slug')}"
@@ -205,6 +251,16 @@ def reduce_receipts(evidence_root: str, *, strict: bool = False) -> dict:
         if action not in VALID_ACTIONS:
             unreadable.append(tag)
             continue
+
+        binding = ghl_evidence.effective_binding(r)
+        if binding == ghl_evidence.BINDING_BOUND:
+            tenant_bound.append(tag)
+        elif binding == ghl_evidence.BINDING_MISMATCH:
+            tenant_mismatch.append(tag)
+        else:
+            tenant_unbound.append(tag)
+        if r.get("expected_location_id"):
+            tenant_expected_ids.add(r["expected_location_id"])
 
         if action == "created":
             created.append(tag)
@@ -231,7 +287,7 @@ def reduce_receipts(evidence_root: str, *, strict: bool = False) -> dict:
                     raise ReceiptContradiction(msg)
             seen_response_id[key] = rid
 
-    return {
+    summary = {
         "created": created,
         "reused": reused,
         "failed": failed,
@@ -241,6 +297,20 @@ def reduce_receipts(evidence_root: str, *, strict: bool = False) -> dict:
         "total": len(created) + len(reused) + len(failed) + len(unreadable),
         "all_verified": not failed and not unreadable and not unverified,
     }
+    # S06-08 tenant section: present whenever at least one READABLE receipt
+    # exists on disk, so tenant state is always flagged on real runs (legacy
+    # unstamped receipts land in "unbound", flagged, never silently bound).
+    # The empty-root reduction keeps its exact historical shape (pinned by
+    # tests/test_ghl_receipts.py's exact-equality assertion).
+    if created or reused or failed:
+        summary["tenant"] = {
+            "bound": tenant_bound,
+            "unbound": tenant_unbound,
+            "mismatch": tenant_mismatch,
+            "expected_location_ids": sorted(tenant_expected_ids),
+            "mixed_tenant": len(tenant_expected_ids) > 1,
+        }
+    return summary
 
 
 def assert_consistent(summary: dict, evidence_root: str) -> None:
@@ -284,6 +354,91 @@ def assert_consistent(summary: dict, evidence_root: str) -> None:
             f"summary total={claimed_total} exceeds receipts-on-disk total="
             f"{truth['total']} under {evidence_root!r}"
         )
+
+    # S06-08 tenant guard. Four refusals, all contradiction-class:
+    #  (a) the summary declares an expected location and a receipt on disk is
+    #      stamped for a DIFFERENT tenant: a cross-tenant page receipt or a
+    #      cross-tenant result receipt is a contradiction, never a pass;
+    #  (b) the receipts on disk span multiple tenants and the summary does
+    #      not declare the mixed-tenant reduction;
+    #  (c) the summary carries a tenant section that OMITS a mismatched
+    #      receipt present on disk (over-claiming binding quality);
+    #  (d) invariant-7 mirror (S06-08 cure): the summary declares an
+    #      expected location and a VERIFIED created/reused receipt stamped
+    #      for that same expected location is not tenant-bound (its
+    #      read-back obtained no observation, or a different one): a
+    #      verified success in a declared-expected run must be bound, the
+    #      same trigger as ghl_verify's invariant 7. Receipts carrying no
+    #      expected stamp (pure legacy) are skipped, exactly as in (a).
+    # Legacy summaries (no tenant fields) over legacy receipts (no stamps)
+    # trigger none of these: Q2 grandfathering.
+    disk_tenant = truth.get("tenant") or {}
+    declared_expected = summary.get("expected_location_id")
+    if declared_expected:
+        foreign = [
+            e for e in (disk_tenant.get("expected_location_ids") or [])
+            if e != declared_expected
+        ]
+        if foreign:
+            raise ReceiptContradiction(
+                f"cross-tenant receipt(s) on disk under {evidence_root!r}: "
+                f"receipts stamped expected_location_id in {sorted(foreign)} "
+                f"while the summary declares {declared_expected!r}"
+            )
+    if disk_tenant.get("mixed_tenant"):
+        summary_tenant = summary.get("tenant") or {}
+        declares_mixed = (
+            summary_tenant.get("mixed_tenant") is True
+            or summary.get("mixed_tenant") is True
+            or set(summary_tenant.get("expected_location_ids") or [])
+            == set(disk_tenant.get("expected_location_ids") or [])
+        )
+        if not declares_mixed:
+            raise ReceiptContradiction(
+                "receipts on disk span multiple tenants "
+                f"({sorted(disk_tenant.get('expected_location_ids') or [])}) "
+                "but the summary does not declare the mixed-tenant reduction"
+            )
+    summary_tenant = summary.get("tenant") or {}
+    if "mismatch" in summary_tenant:
+        omitted = _as_set(disk_tenant.get("mismatch")) - _as_set(
+            summary_tenant.get("mismatch"))
+        if omitted:
+            raise ReceiptContradiction(
+                f"summary tenant section omits tenant-mismatched receipt(s) "
+                f"{sorted(omitted)} present on disk under {evidence_root!r}"
+            )
+    # (d) invariant-7 mirror. The declared set comes from the summary's own
+    # declaration surfaces: its top-level expected_location_id and/or its
+    # tenant section's expected_location_ids. Only receipts stamped for one
+    # of those declared locations are judged; unstamped legacy receipts are
+    # skipped (Q2 grandfathering), and a summary declaring nothing is
+    # judged on nothing.
+    declared_ids = set()
+    if declared_expected:
+        declared_ids.add(declared_expected)
+    declared_ids.update(summary_tenant.get("expected_location_ids") or [])
+    if declared_ids:
+        verified_tags = _as_set(truth["verified"])
+        not_bound = set()
+        for r in list_receipts(evidence_root):
+            tag = f"{r.get('object_type')}:{r.get('slug')}"
+            if tag not in verified_tags:
+                continue
+            stamped_expected = r.get("expected_location_id")
+            if not stamped_expected or stamped_expected not in declared_ids:
+                continue
+            if ghl_evidence.effective_binding(r) != ghl_evidence.BINDING_BOUND:
+                not_bound.add(tag)
+        if not_bound:
+            raise ReceiptContradiction(
+                f"summary declares expected location(s) "
+                f"{sorted(declared_ids)} but verified receipt(s) "
+                f"{sorted(not_bound)} under {evidence_root!r} are not "
+                f"tenant-bound to a declared location (invariant-7 mirror: "
+                f"a verified success in a declared-expected run must carry "
+                f"tenant_binding 'bound')"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +570,52 @@ def _selftest() -> int:
             reduce_receipts(tmp2, strict=False)
         except ReceiptContradiction:
             errors.append("non-strict reduce_receipts must not raise on conflicts")
+
+    # 13. S06-08: tenant-stamped receipts group by binding in the reduction;
+    # an unstamped (legacy) receipt flags as unbound, never silently bound.
+    with tempfile.TemporaryDirectory() as tmp3:
+        write_receipt(tmp3, make_receipt(
+            "page", "zhc_bound", "created", response_id="p1",
+            verify={"ok": True}, expected_location_id="locA",
+            observed_location_id="locA", run_id="run-t"))
+        write_receipt(tmp3, make_receipt(
+            "page", "zhc_legacy", "created", response_id="p2",
+            verify={"ok": True}))
+        summ3 = reduce_receipts(tmp3)
+        tenant3 = summ3.get("tenant") or {}
+        if tenant3.get("bound") != ["page:zhc_bound"]:
+            errors.append(f"bound receipt must group as bound: {tenant3}")
+        if tenant3.get("unbound") != ["page:zhc_legacy"]:
+            errors.append(f"legacy receipt must flag as unbound: {tenant3}")
+        if tenant3.get("mixed_tenant") is not False:
+            errors.append(f"one expected tenant is not mixed: {tenant3}")
+        # A truthful reduce-produced summary stays consistent.
+        try:
+            assert_consistent(summ3, tmp3)
+        except ReceiptContradiction as exc:
+            errors.append(f"truthful tenant summary must be consistent: {exc}")
+        # A summary declaring tenant A over a receipt stamped tenant B is a
+        # cross-tenant contradiction.
+        write_receipt(tmp3, make_receipt(
+            "page", "zhc_foreign", "created", response_id="p3",
+            verify={"ok": True}, expected_location_id="locB",
+            observed_location_id="locB"))
+        foreign_summary = dict(reduce_receipts(tmp3))
+        foreign_summary["expected_location_id"] = "locA"
+        try:
+            assert_consistent(foreign_summary, tmp3)
+            errors.append("cross-tenant receipt must contradict a locA summary")
+        except ReceiptContradiction:
+            pass
+        # And the mixed-tenant disk state must be DECLARED: the same summary
+        # without its tenant section refuses.
+        undeclared = dict(reduce_receipts(tmp3))
+        undeclared.pop("tenant", None)
+        try:
+            assert_consistent(undeclared, tmp3)
+            errors.append("undeclared mixed-tenant reduction must be refused")
+        except ReceiptContradiction:
+            pass
 
     if errors:
         for e in errors:

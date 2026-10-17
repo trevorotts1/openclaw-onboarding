@@ -1109,6 +1109,76 @@ def _agnes_selected(run_dir):
 
 
 # ---------------------------------------------------------------------------
+# A23 per-provider branch (reconciled matrix Q10, action 9; fixtures
+# F-A23-1..F-A23-4). The transport-block requirement is per provider:
+#
+# - KIE (Skill 74 route, incl. the claude-nine alias): the real KIE task
+#   ID is required per task, backed by its receipts/kie74 result file,
+#   with preflight / budget / model / N43 checks (unchanged; enforced in
+#   check_transport / check_item_transport below).
+# - Agnes (Skill 63 route): generation is SYNCHRONOUS and the provider
+#   issues no task ID. The honest Agnes task shape is: task_id explicit
+#   null or the key omitted, request_id recorded only if the provider
+#   returned one, mode "sync" when a mode is declared, and no polling
+#   artefacts. Parity target: S63's provider_receipt.validate_receipt
+#   (PR #2157) — it refuses any non-null task_id on an Agnes receipt,
+#   refuses any non-null KIE-named field on an Agnes receipt, and
+#   requires the real task ID on a KIE receipt.
+#
+# This validation only READS the receipt. No code path here mints,
+# defaults, or back-fills a task ID for Agnes: an absent identifier is
+# recorded as absent, never repaired into an invented one.
+
+AGNES_SYNC_MODE = "sync"
+
+
+def _agnes_task_problems(who, task):
+    """Per-task Agnes-branch problems for one transport task entry."""
+    problems = []
+    if "task_id" in task and task["task_id"] is not None:
+        problems.append(
+            f"{who}: Agnes task_id must be null (synchronous Agnes results "
+            f"have no task ID; do not attach one), got {task['task_id']!r} "
+            f"(A23: no false KIE task IDs for Agnes)")
+    for key in task:
+        lowered = str(key).lower()
+        if "kie" in lowered and task[key] is not None:
+            problems.append(
+                f"{who}: Agnes receipt must not carry a KIE identifier "
+                f"field {key!r} with a value (A23)")
+        if "poll" in lowered and task[key] is not None:
+            problems.append(
+                f"{who}: Agnes receipt carries polling artefact {key!r}; "
+                f"a synchronous result has no polling evidence (A23, "
+                f"F-A23-4)")
+    mode = task.get("mode")
+    if mode is not None and mode != AGNES_SYNC_MODE:
+        problems.append(
+            f"{who}: Agnes task mode must be 'sync' (synchronous "
+            f"provider), got {mode!r} (A23)")
+    if task.get("model_id") is not None and not _real_id(task.get("model_id")):
+        problems.append(
+            f"{who}: Agnes model_id {task.get('model_id')!r} is missing "
+            f"or a placeholder")
+    if task.get("request_id") is not None and not _real_id(task.get("request_id")):
+        problems.append(
+            f"{who}: Agnes request_id {task.get('request_id')!r} is a "
+            f"placeholder; record the provider-returned request ID or "
+            f"omit it (A23)")
+    return problems
+
+
+def _agnes_transport_problems(stage, transport):
+    """Transport-level Agnes-branch problems (the declared mode)."""
+    mode = transport.get("mode")
+    if mode is not None and mode != AGNES_SYNC_MODE:
+        return [f"stage {stage}: Agnes transport.mode must be 'sync' "
+                f"(synchronous provider; 'active' is the Skill 74 mode "
+                f"system), got {mode!r} (A23)"]
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Launch profile wiring (S71-02): under the signature_launch_landing
 # profile, the copy stage's public-copy validation runs with S71-03's
 # no-offer-pricing gate engaged (packet doc 07 section 3: no offer
@@ -1512,6 +1582,8 @@ def check_transport(run_dir, stage, receipt):
                         f"(the client must have selected Agnes)")
     if skill == "74-kie-live-adapter" and t.get("mode") != "active":
         problems.append(f"stage {stage}: transport.mode must be 'active' (shadow never dispatches), got {t.get('mode')!r}")
+    if skill == "63-agnes-image":
+        problems.extend(_agnes_transport_problems(stage, t))
     files = sorted(str(p.relative_to(run_dir)) for p in run_dir.glob(spec.get("per_file_glob", "")) if p.is_file())
     tasks = t.get("tasks")
     if not isinstance(tasks, list) or not tasks:
@@ -1542,6 +1614,10 @@ def check_transport(run_dir, stage, receipt):
             problems.extend(_supplied_transport_problems(
                 run_dir, stage, supplied_here[str(x.get("file"))],
                 str(x.get("file")), x))
+            continue
+        if skill == "63-agnes-image":
+            # A23 Agnes branch: honest absence, never a KIE task ID.
+            problems.extend(_agnes_task_problems(who, x))
             continue
         if not kie_like:
             continue
@@ -1999,6 +2075,8 @@ def check_item_transport(run_dir, stage, item_id, receipt):
     if skill == "74-kie-live-adapter" and t.get("mode") != "active":
         problems.append(f"stage {stage}: transport.mode must be 'active' "
                         f"(shadow never dispatches), got {t.get('mode')!r}")
+    if skill == "63-agnes-image":
+        problems.extend(_agnes_transport_problems(stage, t))
     tasks = t.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         return problems + [f"stage {stage}: transport.tasks must list one "
@@ -2016,6 +2094,9 @@ def check_item_transport(run_dir, stage, item_id, receipt):
         # never by a generation task.
         return problems + _supplied_transport_problems(
             run_dir, stage, item_id, artifact_rel, x)
+    if skill == "63-agnes-image":
+        # A23 Agnes branch, per-item slice: same rules as the stage check.
+        problems.extend(_agnes_task_problems(who, x))
     if kie_alias and x.get("model_source") == "user-pin":
         # Validation-time vocabulary mapping (see check_transport).
         x = {**x, "model_source": "department-pin"}

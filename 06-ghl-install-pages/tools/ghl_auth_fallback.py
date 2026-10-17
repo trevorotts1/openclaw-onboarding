@@ -41,6 +41,8 @@ from typing import Any, Mapping, Optional
 
 from ghl_gmail_probe import NoFreshCodeError
 
+import ghl_secret_resolver as _resolver  # shared store-line parser (S06-04)
+
 # ── TIER TAGS (re-exported via the orchestrator) ──────────────────────────────
 TIER2 = "tier2-fallback"
 TIER3 = "tier3-failloud"
@@ -147,7 +149,19 @@ class SecretStore:
         self.written: dict[str, str] = {}
 
     def read_secret(self, key: str) -> str:
-        return (self._env.get(key, "") or "").strip()
+        """Read a secret: the live env snapshot first, then the client store
+        file (self._secrets_path) parsed with the shared line rules
+        (ghl_secret_resolver.parse_store_file). This class has always
+        documented 'live env then ~/.openclaw/secrets/.env'; before S06-04
+        only the env half was implemented, so a value the self-heal wrote
+        to the store (write_secret persists it there) could not be read
+        back by a fresh process — the read/write asymmetry. The store file
+        is re-read on every call, so a heal written by another process is
+        visible immediately. Never prints the value."""
+        value = (self._env.get(key, "") or "").strip()
+        if value:
+            return value
+        return _resolver.parse_store_file(self._secrets_path, key)
 
     def _first(self, keys: tuple[str, ...]) -> str:
         for k in keys:

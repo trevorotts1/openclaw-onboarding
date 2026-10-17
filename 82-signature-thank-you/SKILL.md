@@ -1,7 +1,7 @@
 ---
 name: signature-thank-you
 description: Builds the terminal Signature Launch thank-you / confirmation page — the final purchase-confirmation and access experience that shows exactly what the customer actually purchased (verified against the normalized purchase snapshot and S44 entitlement state), its actual charges and terms, and what happens next. This is NOT an upsell page and carries NO new pitch, new offer, or new-charge CTA; a page that says "thank you" while selling something is an upsell page owned by Skill 80. Purchased product names, amounts, totals, order numbers, and billing schedules are allowed and required here because they identify completed purchases. Fulfillment authority is S44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching this page.
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Signature Thank-You and Fulfillment (Skill 82)
@@ -67,7 +67,8 @@ survives tab close and extra-offer failure).
   every action carrying its allowed `data-cta-class`.
 - `schemas/thank-you-request.schema.json`,
   `schemas/thank-you-result.schema.json`,
-  `schemas/order-view.schema.json` — the input/output contracts (S82-02).
+  `schemas/order-view.schema.json`,
+  `schemas/run-manifest.schema.json` — the input/output contracts (S82-02).
 - `scripts/thank_you_resolver.py` — the one authoritative
   entitlement-to-block resolver: verified purchase snapshot in, order view
   out (S82-03). No page-local duplicate ledger.
@@ -81,6 +82,11 @@ survives tab close and extra-offer failure).
 - `scripts/confirmation_observation.py` — builds the deterministic
   `confirmation_shown` dedupe observation (page render emits no send;
   S44 owns the single onboarding send) (S82-08).
+- `scripts/run_manifest.py` — builds the run manifest emitted
+  alongside (never inside) each thank-you result document: the run's
+  `independent_review` facts and the `native_bindings_ref` /
+  `provenance` of the inputs consumed, stated honestly or null,
+  never fabricated (CR-S49-004 Path B companion contract).
 - `scripts/semantic_scan.py` — the A14 semantic PRE-SCREEN (explicitly
   not the review itself): flags candidate pitch phrases in rendered
   copy for the independent reviewer (S82-09).
@@ -145,6 +151,7 @@ python3 scripts/validate_thank_you.py --view order-view.json --snapshot snapshot
 python3 scripts/validate_entitlements.py --view order-view.json --snapshot snapshot.json [--fulfillment fulfillment.json]
 python3 scripts/validate_access.py --view order-view.json --links link-manifest.json
 python3 scripts/confirmation_observation.py --view order-view.json
+python3 scripts/run_manifest.py --view order-view.json [--snapshot snapshot.json] [--fulfillment fulfillment.json]
 python3 scripts/purchase_event_adapter.py --events purchase-events.json [--require-live-evidence]
 python3 scripts/semantic_scan.py rendered-thank-you.html
 python3 -m unittest discover -s tests -v

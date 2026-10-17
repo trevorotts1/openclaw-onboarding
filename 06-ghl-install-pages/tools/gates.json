@@ -372,14 +372,15 @@
   },
 
   "method_decision_per_page": {
-    "_doc": "PLAN-3 — Method-decision architecture gate. Every built page must have a routing/method-decision-<page>.json file with a non-empty 'method' field ('direct' or 'vercel') and a non-empty 'reason' field (>=20 chars) justifying the choice. A build cannot be marked done without this file. Enforced by 06-ghl-install-pages/scripts/guard-ghl-method-decision.sh.",
+    "_doc": "PLAN-3 — Method-decision architecture gate. Every built page must have a routing/method-decision-<page>.json file with a non-empty 'method' field ('direct', 'vercel' or 'widget') and a non-empty 'reason' field (>=20 chars) justifying the choice. A build cannot be marked done without this file. Enforced by 06-ghl-install-pages/scripts/guard-ghl-method-decision.sh.",
     "required": true,
     "guard_script": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
     "checked_by": "guard-ghl-method-decision.sh (--static for CI; --run-dir <path> for live runs)",
-    "valid_methods": ["direct", "vercel"],
+    "valid_methods": ["direct", "vercel", "widget"],
     "method_rules": {
       "direct": "Native GoHighLevel page: HTML FRAGMENT (not a full <!DOCTYPE html> document) inside a Custom Code element. Saved via ghl_rest_canvas / ghl_builder. Use when the page is simple enough that GoHighLevel's renderer will not conflict with the markup. The page blob MUST include a populated defaultSettings.colors theme object and a full section->row->column->element nesting; an empty settings:{} blob causes HTTP 500 on every page load.",
-      "vercel": "Vercel-hosted page embedded into GoHighLevel via a responsive <iframe> in a Custom Code element (Skill 06 Mode 2, gate 26). Use ONLY when the page is rich or complex enough that GoHighLevel's styling conflicts with the markup. REQUIREMENTS: the Vercel deployment must be public (deployment protection disabled), must carry permissive frame-ancestors headers (no X-Frame-Options: DENY), and the vercel_url field in the method-decision file must be populated. Verify headers with curl -D- before building. Default to 'direct'; escalate to 'vercel' only when necessary."
+      "vercel": "Vercel-hosted page embedded into GoHighLevel via a responsive <iframe> in a Custom Code element (Skill 06 Mode 2, gate 26). Use ONLY when the page is rich or complex enough that GoHighLevel's styling conflicts with the markup. REQUIREMENTS: the Vercel deployment must be public (deployment protection disabled), must carry permissive frame-ancestors headers (no X-Frame-Options: DENY), and the vercel_url field in the method-decision file must be populated. Verify headers with curl -D- before building. Default to 'direct'; escalate to 'vercel' only when necessary.",
+      "widget": "The page's form/calendar blocks route to GoHighLevel's own native widget embeds, built from real Skill-44-created objects (form id / calendar id). Faking a form or calendar as static HTML is FORBIDDEN. The method-decision file must carry the classifier's 'widgets' list (the ghl_method.classify_page output shape): every entry with kind 'form' or 'booking' and a non-empty block_key naming the page_spec block the widget replaces. object_id may be empty at decision time (it is filled once the Skill-44 create resolves it)."
     },
     "non_gate": "A missing routing/method-decision-<page>.json is not a warn — it is a hard build block. The gate cannot be satisfied by a hand-written ledger or a build summary; the file must be on disk in the run's routing/ directory.",
     "ci_mode": "In hermetic CI (--static), this gate checks only that gates.json contains this entry with required:true. The per-page file check only runs in --run-dir mode (live builds)."

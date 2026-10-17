@@ -57,23 +57,31 @@ deliberately NOT exercised by CI — they need a real seeded agent-browser
 session, same discipline as `ghl_selector_drift_probe.live_finder_over_browser_
 manager`.
 
-**THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
-SET of funnel ids for a location. Neither the official GHL public API (no
-Funnels endpoint exists there at all — checked against Skill 44's own
-`endpoints.py`) nor the proven internal SPA-canvas REST family
-(`ghl_rest_canvas.py`, which only proves fetch-a-known-funnel-by-id and
-list-pages-within-a-known-funnel) documents a "list every funnel for a
-location" call. `run_canary.py`-style DOM discovery (a live browser snapshot
-of the Sites -> Funnels list) is the most likely live route but has never
-been probed. `funnel_lister` is therefore a REQUIRED caller-supplied
-dependency with no default live implementation — wiring + proving it is a
-live leg owed to the operator (parallel to U22), never fabricated here.
+**THE FORMER LIVE GAP IS CLOSED AT BUILD TIER (S06-07, doc 19 W3)**:
+discovering the SET of funnel ids for a location. Doc 19 (W3) corrects the
+claim this block used to carry: the official GHL public API DOES document
+funnel/page READ endpoints (`GET /funnels/funnel/list` and
+`GET /funnels/page`), captured from the public documentation in S06-07
+step 1. The supported public reads are implemented in
+`tools/ghl_funnels_read.py` (services origin, Bearer LOCATION PIT via the
+shared resolver, fail-closed pagination) and wired below as
+`live_funnel_lister_over_public_api` / `live_page_lister_over_public_api`,
+the defaults behind the operator entry point (`--enumerate`). NO public
+WRITE API for funnels/pages is documented or claimed: create stays on the
+internal canvas / browser rails, and the internal routes stay labeled
+internal. `live_funnel_lister_over_browser_manager` remains below as the
+still-unproven BROWSER route sketch (it still raises
+`NotImplementedError`): it is no longer the only route, just not a proven
+one. LIVE PROOF of the public reads is still owed (LIVE_PROOF_PENDING: no
+approved test location for these reads), so the live enumeration leg
+remains deferred to the operator, parallel to U22.
 
 CLI
 ---
     python3 ghl_inventory.py --selftest
     python3 ghl_inventory.py --advisory --inventory-json <path> --flags-json <path>
     python3 ghl_inventory.py --prune --base-dir <dir> [--keep-n N]
+    python3 ghl_inventory.py --enumerate --base-dir <dir> [--location-id <id>]
 """
 
 from __future__ import annotations
@@ -94,6 +102,7 @@ if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
 import cc_board  # noqa: E402 -- reuse resolve_evidence_base / list_evidence_runs
+import ghl_evidence  # noqa: E402 -- S06-08 tenant contract + evidence scrubber
 import ghl_method  # noqa: E402 -- reuse resolve_install_target / InstallTargetError
 
 INVENTORY_VERSION = "v1.0.0"
@@ -165,12 +174,18 @@ def _slugify(name: str) -> str:
 
 def _atomic_write_json(path: str, payload: Any) -> str:
     """write-then-rename — a reader can never observe a half-written file
-    (same discipline as ghl_receipts.write_receipt)."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    (same discipline as ghl_receipts.write_receipt).
+
+    S06-08: mode-explicit per the Q4 interim default: parent dirs are
+    created 0700 and the file lands 0600 (mode set on the temp file before
+    the rename), for every payload this helper writes (inventory exports,
+    the card ledger, delete exports, delete receipts)."""
+    ghl_evidence.ensure_private_dir(os.path.dirname(path))
     tmp = f"{path}.tmp-{os.getpid()}"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, sort_keys=True)
         fh.flush()
+        os.chmod(tmp, ghl_evidence.FILE_MODE)
         os.fsync(fh.fileno())
     os.replace(tmp, path)
     return path
@@ -217,6 +232,16 @@ class InventoryReport:
     generated_at: str
     pages: List[PageRecord] = field(default_factory=list)
     inventory_version: str = INVENTORY_VERSION
+    # S06-08 tenant derivation (prep gap 11, additive): ``location_id`` above
+    # remains the location the enumeration was ASKED for. These fields record
+    # what the listers' rows actually showed: the single distinct location id
+    # carried by the rows (None when rows carry none, the canvas listers'
+    # truth today), the derived binding, and how many rows were EXCLUDED
+    # because they named a different tenant (never fabricated into this
+    # location's inventory).
+    observed_location_id: Optional[str] = None
+    tenant_binding: str = "unbound"
+    tenant_mismatch_rows: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -240,6 +265,9 @@ class InventoryReport:
             generated_at=data.get("generated_at", ""),
             pages=pages,
             inventory_version=data.get("inventory_version", INVENTORY_VERSION),
+            observed_location_id=data.get("observed_location_id"),
+            tenant_binding=data.get("tenant_binding", "unbound"),
+            tenant_mismatch_rows=int(data.get("tenant_mismatch_rows") or 0),
         )
 
 
@@ -265,10 +293,22 @@ def enumerate_zhc_inventory(
     Never raises on a single bad record: a funnel/page dict missing its id
     is skipped (not fabricated), so one malformed record can never abort the
     whole enumeration.
+
+    S06-08 TENANT DERIVATION (gap 11): rows may carry their own location id
+    (the public listers' rows carry the documented ``locationId`` field).
+    A row naming a DIFFERENT location than the one asked for is EXCLUDED
+    and counted in ``tenant_mismatch_rows``: another tenant's page is
+    never fabricated into this location's inventory. When rows carry the
+    asked-for id, the report binds (``tenant_binding == "bound"``); when no
+    row carries any location id, the report is honestly ``"unbound"``:
+    enumerate records the asked-for id and, for such listers, verifies
+    nothing about lister tenant.
     """
     pattern = zhc_prefix_re or ZHC_PREFIX_RE
     ts = (now or _now)()
     pages: List[PageRecord] = []
+    observed_ids: set = set()
+    mismatch_rows = 0
 
     for f in funnel_lister(location_id) or []:
         if not isinstance(f, dict):
@@ -277,6 +317,12 @@ def enumerate_zhc_inventory(
         fid = str(f.get("id") or f.get("funnel_id") or "")
         if not fid or not _is_zhc(fname, pattern):
             continue
+        f_loc = str(f.get("locationId") or f.get("location_id") or "")
+        if f_loc and f_loc != location_id:
+            mismatch_rows += 1
+            continue
+        if f_loc:
+            observed_ids.add(f_loc)
         for p in page_lister(fid, location_id) or []:
             if not isinstance(p, dict):
                 continue
@@ -284,6 +330,12 @@ def enumerate_zhc_inventory(
             pname = str(p.get("name") or "")
             if not pid:
                 continue
+            p_loc = str(p.get("locationId") or p.get("location_id") or "")
+            if p_loc and p_loc != location_id:
+                mismatch_rows += 1
+                continue
+            if p_loc:
+                observed_ids.add(p_loc)
             status = str(p.get("status") or STATUS_DRAFT).strip().lower()
             if status not in VALID_STATUSES:
                 status = STATUS_PUBLISHED if p.get("published") else STATUS_DRAFT
@@ -299,15 +351,36 @@ def enumerate_zhc_inventory(
                 page_name=pname,
             ))
 
-    return InventoryReport(location_id=location_id, generated_at=ts, pages=pages)
+    observed = next(iter(observed_ids)) if len(observed_ids) == 1 else None
+    if mismatch_rows:
+        binding = ghl_evidence.BINDING_MISMATCH
+    else:
+        binding = ghl_evidence.tenant_binding(location_id, observed)
+    return InventoryReport(
+        location_id=location_id, generated_at=ts, pages=pages,
+        observed_location_id=observed, tenant_binding=binding,
+        tenant_mismatch_rows=mismatch_rows,
+    )
 
 
-def write_inventory(evidence_base: str, report: InventoryReport) -> str:
-    """Write `<evidence_base>/page-lifecycle/inventory-<location>.json`."""
+def write_inventory(evidence_base: str, report: InventoryReport, *,
+                    secret_values: Any = None) -> str:
+    """Write `<evidence_base>/page-lifecycle/inventory-<location>.json`.
+
+    S06-08: the export is a no-secret sink: the report dict passes through
+    the evidence scrubber before write (generic shapes plus the run's
+    resolved secret values when the caller supplies them), and the
+    redaction count is recorded as ``redactions`` in the written file (a
+    write-level stamp, not a report field, so InventoryReport.from_dict
+    is unaffected)."""
     path = os.path.join(
         evidence_base, _LIFECYCLE_SUBDIR, f"inventory-{report.location_id}.json"
     )
-    return _atomic_write_json(path, report.to_dict())
+    payload, redactions = ghl_evidence.EvidenceScrubber(
+        secret_values).scrub_obj(report.to_dict())
+    if redactions:
+        payload["redactions"] = redactions
+    return _atomic_write_json(path, payload)
 
 
 def load_inventory(path: str) -> Optional[InventoryReport]:
@@ -551,6 +624,7 @@ def execute_approved_deletes(
     prober: Callable[[str], bool],
     evidence_base: str,
     now: Optional[Callable[[], str]] = None,
+    secret_values: Any = None,
 ) -> ExecuteReport:
     """FAIL-CLOSED delete execution — the ONLY function in this module that
     may ever call `deleter`. Guarantees:
@@ -605,6 +679,14 @@ def execute_approved_deletes(
                 entry["status"] = "skipped-not-present"
             else:
                 export = exporter(obj_id)
+                # S06-08: the restorable export is a no-secret sink: the
+                # exporter's payload is caller-shaped page data, scrubbed
+                # before write, the count recorded on the receipt entry.
+                export, export_redactions = ghl_evidence.EvidenceScrubber(
+                    secret_values).scrub_obj(export)
+                if export_redactions:
+                    entry["redactions"] = (
+                        int(entry.get("redactions") or 0) + export_redactions)
                 export_path = os.path.join(
                     evidence_base, _LIFECYCLE_SUBDIR, "exports", f"{obj_id}-{ts}.json"
                 )
@@ -623,7 +705,15 @@ def execute_approved_deletes(
         receipt_path = os.path.join(
             evidence_base, _LIFECYCLE_SUBDIR, "receipts", f"{obj_id}-{ts}.json"
         )
-        _atomic_write_json(receipt_path, entry)
+        # S06-08: the delete receipt is a no-secret sink too (its error field
+        # is free-form exception text), scrubbed copy on disk; the in-memory
+        # entry keeps the caller's exact values.
+        receipt_entry, receipt_redactions = ghl_evidence.EvidenceScrubber(
+            secret_values).scrub_obj(entry)
+        if receipt_redactions:
+            receipt_entry["redactions"] = (
+                int(receipt_entry.get("redactions") or 0) + receipt_redactions)
+        _atomic_write_json(receipt_path, receipt_entry)
         entry["receipt_path"] = receipt_path
         results.append(entry)
 
@@ -825,21 +915,75 @@ def live_page_lister_over_rest_canvas(
 def live_funnel_lister_over_browser_manager(
     session: str, ab_eval: Callable[[str, str], Any]
 ) -> Callable[[str], List[Dict[str, Any]]]:
-    """UNPROVEN sketch — see the module docstring's "ONE LIVE GAP" note. No
-    confirmed route exists yet (public API: none; internal SPA-canvas
-    family: only fetch-by-known-id). Raises `NotImplementedError` if ever
-    actually called, so a caller can never silently get an empty/fabricated
-    funnel list mistaken for "this location truly has zero ZHC funnels" —
-    the live-proof pass MUST either confirm a `/funnels/funnel/list` REST
-    route or wire a DOM-snapshot walk before this can return real data."""
+    """UNPROVEN BROWSER-route sketch. This is no longer the only route:
+    the official public API documents funnel/page READS (doc 19 W3), and
+    the wired default is `live_funnel_lister_over_public_api` (backed by
+    `tools/ghl_funnels_read.py`). This browser-manager route itself was
+    never proven, so it still raises `NotImplementedError` if ever
+    actually called: a caller must never silently get an empty or
+    fabricated funnel list mistaken for "this location truly has zero ZHC
+    funnels". Kept for the day a browser-side discovery route is proven;
+    live proof of the PUBLIC reads is a separate leg still owed
+    (LIVE_PROOF_PENDING)."""
 
     def _lister(location_id: str) -> List[Dict[str, Any]]:
         raise NotImplementedError(
-            "live_funnel_lister_over_browser_manager: no proven live route "
-            "for 'list every funnel for a location' exists yet in this repo "
-            "— wiring + proving this is a live leg owed to the operator "
-            "(parallel to U22), never fabricated. Inject a real "
-            "funnel_lister once that route is confirmed."
+            "live_funnel_lister_over_browser_manager: this BROWSER route "
+            "is unproven and returns nothing, never a fabricated list. "
+            "The wired public read is live_funnel_lister_over_public_api "
+            "(tools/ghl_funnels_read.py); inject a proven funnel_lister "
+            "instead."
+        )
+
+    return _lister
+
+
+# ---------------------------------------------------------------------------
+# Public-API wiring (S06-07): the wired defaults behind the seams.
+# The transport itself lives in ghl_funnels_read.py, imported lazily (the
+# same discipline as the canvas sketch above), so this module still
+# performs no GHL I/O of its own at import or construction time.
+# LIVE_PROOF_PENDING: proven against fixtures only; no approved test
+# location exists for these reads.
+# ---------------------------------------------------------------------------
+def live_funnel_lister_over_public_api(
+    *, pit: Optional[str] = None,
+    opener: Optional[Callable[..., Any]] = None,
+    **read_kwargs: Any,
+) -> Callable[[str], List[Dict[str, Any]]]:
+    """Return a `funnel_lister(location_id)` backed by the SUPPORTED
+    PUBLIC read `GET /funnels/funnel/list` (doc 19 W3) via
+    `tools/ghl_funnels_read`. Pagination there is fail-closed: a read
+    that cannot be proven complete raises instead of returning a partial
+    list. When `pit` is omitted, the LOCATION PIT is resolved through
+    the shared resolver at call time. Extra keyword arguments (limit,
+    max_pages, timeout) forward to `ghl_funnels_read.list_funnels`."""
+    import ghl_funnels_read  # noqa: WPS433 (intentional local import)
+
+    def _lister(location_id: str) -> List[Dict[str, Any]]:
+        return ghl_funnels_read.list_funnels(
+            location_id, pit=pit, opener=opener, **read_kwargs
+        )
+
+    return _lister
+
+
+def live_page_lister_over_public_api(
+    *, pit: Optional[str] = None,
+    opener: Optional[Callable[..., Any]] = None,
+    **read_kwargs: Any,
+) -> Callable[[str, str], List[Dict[str, Any]]]:
+    """Return a `page_lister(funnel_id, location_id)` backed by the
+    SUPPORTED PUBLIC read `GET /funnels/page` (doc 19 W3) via
+    `tools/ghl_funnels_read`. Same fail-closed pagination and shared-
+    resolver discipline as `live_funnel_lister_over_public_api`. The
+    internal canvas sketch above remains available and labeled internal;
+    this is the public default."""
+    import ghl_funnels_read  # noqa: WPS433 (intentional local import)
+
+    def _lister(funnel_id: str, location_id: str) -> List[Dict[str, Any]]:
+        return ghl_funnels_read.list_pages(
+            funnel_id, location_id, pit=pit, opener=opener, **read_kwargs
         )
 
     return _lister
@@ -1169,6 +1313,42 @@ def _selftest() -> int:
     if not seen or "funnelId=f1" not in seen[-1]:
         errors.append("live_page_lister_over_rest_canvas must emit the real page_list eval")
 
+    # ---- live listers over the PUBLIC API (S06-07): fixture opener --------
+    import urllib.parse as _urlparse
+
+    class _FakeResp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def getcode(self):
+            return 200
+
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+    def _fake_pub_opener(req, timeout):
+        q = _urlparse.parse_qs(_urlparse.urlsplit(req.full_url).query)
+        if "/funnels/funnel/list" in req.full_url:
+            if int(q["offset"][0]) == 0:
+                return _FakeResp({"funnels": [{"id": "pf1", "name": "ZHC Pub One"},
+                                              {"id": "pf2", "name": "ZHC Pub Two"}],
+                                  "count": 3, "traceId": "t"})
+            return _FakeResp({"funnels": [{"id": "pf3", "name": "ZHC Pub Three"}],
+                              "count": 3, "traceId": "t"})
+        return _FakeResp({"pages": [{"_id": "pp1", "name": "ZHC Pub Page",
+                                     "status": "published"}]})
+
+    _pub_funnels = live_funnel_lister_over_public_api(
+        pit="pit-selftest-placeholder-value", opener=_fake_pub_opener, limit=2,
+    )("loc1")
+    if [f["id"] for f in _pub_funnels] != ["pf1", "pf2", "pf3"]:
+        errors.append(f"public funnel lister pagination broken: {_pub_funnels}")
+    _pub_pages = live_page_lister_over_public_api(
+        pit="pit-selftest-placeholder-value", opener=_fake_pub_opener,
+    )("pf1", "loc1")
+    if [p["id"] for p in _pub_pages] != ["pp1"]:
+        errors.append(f"public page lister broken: {_pub_pages}")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -1194,6 +1374,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                      "cc_board.resolve_evidence_base()")
     ap.add_argument("--keep-n", type=int, default=DEFAULT_RETENTION_KEEP_N,
                      help="roots to keep per funnel-slug group (with --prune)")
+    ap.add_argument("--enumerate", action="store_true",
+                     help="run the READ-ONLY public inventory enumeration (S06-07: "
+                     "GET /funnels/funnel/list + /funnels/page over the public API) "
+                     "and write the inventory under --base-dir")
+    ap.add_argument("--location-id", default=None,
+                     help="location id for --enumerate; defaults to the shared "
+                     "resolver (ghl_media.resolve_location_id)")
     args = ap.parse_args(argv)
 
     if args.selftest:
@@ -1219,6 +1406,40 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         report = prune_evidence_roots(base_dir, keep_n=args.keep_n)
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        return 0
+
+    if args.enumerate:
+        import tempfile
+
+        base_dir = args.base_dir or cc_board.resolve_evidence_base()
+        if not base_dir:
+            print("ERROR: --enumerate requires an evidence base dir (pass --base-dir "
+                  "or set the evidence base); run evidence belongs under a durable "
+                  "root, never /tmp", file=sys.stderr)
+            return 2
+        if os.path.abspath(base_dir).startswith(tempfile.gettempdir() + os.sep):
+            print("WARNING: --enumerate evidence base is inside the OS temp dir; "
+                  "SKILL.md doctrine: /tmp is ephemeral scratch, never a run-evidence "
+                  "root. Writing there only because it was explicitly chosen.",
+                  file=sys.stderr)
+        import ghl_media  # noqa: WPS433 (intentional local import)
+        try:
+            location_id = args.location_id or ghl_media.resolve_location_id()
+            report = enumerate_zhc_inventory(
+                location_id,
+                funnel_lister=live_funnel_lister_over_public_api(),
+                page_lister=live_page_lister_over_public_api(),
+            )
+        except Exception as exc:  # noqa: BLE001 (CLI boundary: honest failure)
+            print(f"ERROR: public inventory enumeration failed: {exc}", file=sys.stderr)
+            return 1
+        path = write_inventory(base_dir, report)
+        print(json.dumps({
+            "location_id": report.location_id,
+            "generated_at": report.generated_at,
+            "pages_total": len(report.pages),
+            "inventory_path": path,
+        }, indent=2, sort_keys=True))
         return 0
 
     ap.print_help()
