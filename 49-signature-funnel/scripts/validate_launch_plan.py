@@ -38,6 +38,17 @@ the DOMAIN law a shape cannot express:
     uniform across the record (a live plan never mixes fixture offers in).
 
 Deterministic, stdlib only. Exit 0 = valid, 2 = violation, 3 = usage.
+
+Q12 REVISION (launch schema 1.1, S49): validate_launch accepts record
+schema_version "1.0" and "1.1" (dual-version acceptance, all other checks
+retained). A 1.1 record may carry prompt_policy_id, the governing prompt
+policy's registry-minted name, top level beside brand_ref/brand_hash. When
+the key is present its value must be a non-empty string: null or blank is
+refused, and absence is the only encoding of "no policy" (absent, null,
+and a value are three different plan hashes). The field is OPTIONAL and
+stays out of REQUIRED_LAUNCH_FIELDS; plan_document_hash is unchanged and
+binds the field automatically, since it excludes only status and
+plan_approval_ref.
 """
 
 from __future__ import annotations
@@ -98,8 +109,16 @@ def validate_launch(launch: Any) -> List[str]:
             fail(f"launch record is missing required field {f!r}")
     if fails:
         return fails
-    if launch["schema_version"] != "1.0":
-        fail(f"schema_version is {launch['schema_version']!r}, expected '1.0'")
+    if launch["schema_version"] not in ("1.0", "1.1"):
+        fail(f"schema_version is {launch['schema_version']!r}, expected "
+             "'1.0' or '1.1'")
+    if "prompt_policy_id" in launch:
+        pid = launch["prompt_policy_id"]
+        if not isinstance(pid, str) or not pid.strip():
+            fail("prompt_policy_id, when present, must be a non-empty "
+                 "string — null or blank is refused; omit the key entirely "
+                 "when no policy governs (absence is the only encoding of "
+                 "'no policy')")
     for f in ("tenant_id", "location_id", "launch_id", "brand_ref", "brand_hash",
               "route_graph_ref", "route_graph_hash"):
         if not isinstance(launch[f], str) or not launch[f].strip():
