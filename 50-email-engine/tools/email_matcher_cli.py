@@ -26,6 +26,7 @@ DEFAULT_BUILT = os.path.join(_SKILL_DIR, "email-library", "catalog-built-index.j
 _SELFTEST_CASES = [
     ("problem agitate solution email for cart recovery", "framework", "framework-pas"),
     ("write a 10 email promo sequence for my landing page", "sequence", "sequence-landing-page-10-promo"),
+    ("signature launch ten email promo sequence for the landing page", "sequence", "sequence-signature-launch-landing-10"),
     ("12 email high ticket appointment strategy session sequence", "sequence", "sequence-high-ticket-appointment"),
     ("features to benefit email tying each feature to a benefit", "framework", "framework-features-to-benefit"),
     ("before after bridge email showing the transformation", "framework", "framework-before-after-bridge"),
