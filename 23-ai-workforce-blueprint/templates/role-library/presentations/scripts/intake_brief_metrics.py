@@ -48,7 +48,11 @@ from typing import Any, Dict, List, Optional, Tuple
 METRICS_VERSION = 1
 
 BASELINE_TURNS = 23
-BANK_PHYSICAL_ROWS = 50
+# Physical bank rows: 48 at FIX 30, 50 after Item 33c added the email
+# election's two alias rows, 52 after Item 34 added the motion election's
+# two alias rows (want_motion_graphics 20.04, motion_graphics_declined_
+# reason 22.08). Merged turns stay 23; required turns stay 20.
+BANK_PHYSICAL_ROWS = 52
 BANK_REQUIRED_FIELDS = 20
 NEW_CLIENT_TARGET = 11
 REPEAT_CLIENT_TARGET = 6
@@ -125,7 +129,7 @@ def read_bank_targets(bank_file: Optional[Path] = None) -> Dict[str, Any]:
 
 def verify_bank_shape(bank_file: Optional[Path] = None) -> Dict[str, Any]:
     """Confirm the bank the targets were designed against is still the bank:
-    23 merged turns, 50 physical rows, 20 required, ceiling 23. Reports
+    23 merged turns, 52 physical rows, 20 required, ceiling 23. Reports
     mismatches -- never raises, never gates (callers decide)."""
     got = read_bank_targets(bank_file)
     expect = {"merged_turns": BASELINE_TURNS,

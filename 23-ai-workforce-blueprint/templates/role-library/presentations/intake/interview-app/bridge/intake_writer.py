@@ -263,6 +263,11 @@ ID_TO_FIELD = {
     "vsl_page_declined_reason": "VSL_PAGE_DECLINED_REASON",
     "want_email_sequences": "WANT_EMAIL_SEQUENCES",
     "email_sequences_declined_reason": "EMAIL_SEQUENCES_DECLINED_REASON",
+    # Item 34 motion graphics election + its verbatim declined-reason
+    # waiver: same discipline as the pairs above (canonical home
+    # pre_presentation_capture.*, value stored byte-for-byte).
+    "want_motion_graphics": "WANT_MOTION_GRAPHICS",
+    "motion_graphics_declined_reason": "MOTION_GRAPHICS_DECLINED_REASON",
     # speech speed lives flat on the intake record (not deck_brief)
     "speech_speed_preference": "speech_speed_preference",
     # FIX 11 (hosted path): the client's run-mode declaration. Mapped
@@ -281,7 +286,8 @@ ID_TO_FIELD = {
 # a location presentation-intake-poll.sh's read_run_mode() already reads
 # (candidate 2), so this routing costs the poller no change.
 # The DECLINED_REASON fields ride with their toggles (the two U026 upsell
-# waivers, FIX-PLAN Item 12, and the Skill 50 email election pair, Item 33c):
+# waivers, FIX-PLAN Item 12, the Skill 50 email election pair, Item 33c,
+# and the Item 34 motion graphics election pair):
 # pre_presentation_capture.* is their canonical home per
 # upsell-questions.json's storeTarget and the PRES-006 contract, and it is
 # the first location both builder gates read.
@@ -289,7 +295,9 @@ PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE", "RUN_MODE",
                       "SALES_CHECKOUT_DECLINED_REASON",
                       "VSL_PAGE_DECLINED_REASON",
                       "WANT_EMAIL_SEQUENCES",
-                      "EMAIL_SEQUENCES_DECLINED_REASON"}
+                      "EMAIL_SEQUENCES_DECLINED_REASON",
+                      "WANT_MOTION_GRAPHICS",
+                      "MOTION_GRAPHICS_DECLINED_REASON"}
 
 
 # ===========================================================================
@@ -333,6 +341,9 @@ CANONICAL_FIELD_PATHS = {
     "want_email_sequences": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
     "email_sequences_declined_reason":
         "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
+    "want_motion_graphics": "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+    "motion_graphics_declined_reason":
+        "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
     "run_mode": "pre_presentation_capture.RUN_MODE",
     "client_notes": "deck_brief.CLIENT_NOTES",
 }
@@ -354,6 +365,7 @@ REQUIRED_CANONICAL_FIELDS = (
     "pre_presentation_capture.WANT_SALES_CHECKOUT",
     "pre_presentation_capture.WANT_VSL_PAGE",
     "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+    "pre_presentation_capture.WANT_MOTION_GRAPHICS",
 )
 
 #: Version-aware legacy migration: version-1 records stored the upsell flags,
@@ -376,6 +388,10 @@ LEGACY_ALIASES = {
     "email_sequences_declined_reason": (
         "deck_brief.EMAIL_SEQUENCES_DECLINED_REASON",
         "EMAIL_SEQUENCES_DECLINED_REASON"),
+    "want_motion_graphics": ("deck_brief.WANT_MOTION_GRAPHICS", "WANT_MOTION_GRAPHICS"),
+    "motion_graphics_declined_reason": (
+        "deck_brief.MOTION_GRAPHICS_DECLINED_REASON",
+        "MOTION_GRAPHICS_DECLINED_REASON"),
     "run_mode": ("deck_brief.RUN_MODE", "RUN_MODE", "run_mode"),
     "presentation_type": ("deck_brief.PRESENTATION_TYPE", "PRESENTATION_TYPE"),
 }

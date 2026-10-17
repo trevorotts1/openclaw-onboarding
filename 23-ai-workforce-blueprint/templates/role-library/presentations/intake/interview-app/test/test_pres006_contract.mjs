@@ -43,6 +43,7 @@ function completeIntake() {
       WANT_SALES_CHECKOUT: "yes",
       WANT_VSL_PAGE: "no",
       WANT_EMAIL_SEQUENCES: "no",
+      WANT_MOTION_GRAPHICS: "no",
     },
     intake: { speech_speed_preference: "default" },
     answers: {},
@@ -88,7 +89,7 @@ test("missing is missing: absent/None/blank are named specifically", () => {
 
 test("legacy deck_brief.WANT_SALES_CHECKOUT migrates to pre_presentation_capture", () => {
   const legacy = {
-    deck_brief: { WANT_SALES_CHECKOUT: "yes", WANT_VSL_PAGE: "no", WANT_EMAIL_SEQUENCES: "no", OFFER_NAME: "X" },
+    deck_brief: { WANT_SALES_CHECKOUT: "yes", WANT_VSL_PAGE: "no", WANT_EMAIL_SEQUENCES: "no", WANT_MOTION_GRAPHICS: "no", OFFER_NAME: "X" },
     pre_presentation_capture: { PRESENTATION_TYPE: "from_scratch" },
     intake: { speech_speed_preference: "default" },
   };
@@ -102,6 +103,7 @@ test("legacy deck_brief.WANT_SALES_CHECKOUT migrates to pre_presentation_capture
   assert.equal(legacy.pre_presentation_capture.WANT_SALES_CHECKOUT, "yes");
   assert.equal(legacy.pre_presentation_capture.WANT_VSL_PAGE, "no");
   assert.equal(legacy.pre_presentation_capture.WANT_EMAIL_SEQUENCES, "no");
+  assert.equal(legacy.pre_presentation_capture.WANT_MOTION_GRAPHICS, "no");
   assert.equal(legacy.deck_brief.WANT_SALES_CHECKOUT, undefined);
   assert.equal(legacy.schema_version, 2);
 });
