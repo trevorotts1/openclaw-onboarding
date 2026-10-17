@@ -43,10 +43,13 @@ _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key",
                 "refuse_values", "refuse_message")
 
-# The curated core set the Presentation Interview app asks. Cap 20 binds the
+# The curated core set the Presentation Interview app asks. Cap 21 binds the
 # set excluding the declined-reason waiver follow-ups; a follow-up (asked
 # only when its toggle is answered "no") rides on its toggle and does not
 # count against the cap -- the selftest pins that shape per follow-up.
+# (The counted set stood at exactly 20 before Item 34; the motion toggle
+# is a required election asked on every run, so it counts, and its reason
+# follow-up rides excluded like every other follow-up. Cap is 21.)
 # Every id must exist in deck-intake-questions.json, upsell-questions.json, or
 # APP_ONLY_QUESTIONS below.
 DEFAULT_CURATED = [
@@ -78,6 +81,8 @@ DEFAULT_CURATED = [
                                    # conditional_on want_vsl_page = "no"; same
                                    # verbatim discipline as the sales/checkout
                                    # reason above.
+    "want_motion_graphics",       # Item 34 motion election yes-no (order 7.8)
+    "motion_graphics_declined_reason",  # its conditional waiver follow-up (7.81)
     "want_email_sequences",       # Skill 50 email election yes-no (order 7.9)
     "email_sequences_declined_reason",  # its conditional waiver follow-up (7.91)
     "run_mode",                   # FIX 11 run mode (projected from the bank's
@@ -423,15 +428,15 @@ def selftest() -> int:
     if specs.get("questions"):
         payload = build_curated_payload("RUNTEST", specs, DEFAULT_CURATED, store_target)
         ids = [q["id"] for q in payload["questions"]]
-        # Cap 20 binds the set WITHOUT the declined-reason waiver follow-ups.
+        # Cap 21 binds the set WITHOUT the declined-reason waiver follow-ups.
         # A waiver follow-up rides on its toggle (asked only on a "no") and
         # is pinned individually below instead of counted against the cap.
         # (Other conditional questions, e.g. the pitch_included pair, are
         # ordinary curated questions and stay inside the count, as before.)
         waiver_followups = [q for q in payload["questions"]
                             if q["id"].endswith("_declined_reason")]
-        assert len(ids) - len(waiver_followups) <= 20, \
-            "curated set must respect cap 20 (excluding waiver follow-ups)"
+        assert len(ids) - len(waiver_followups) <= 21, \
+            "curated set must respect cap 21 (excluding waiver follow-ups)"
         for q in waiver_followups:
             assert q.get("conditional_on", {}).get("equals") == "no", q
             assert str(q.get("storeOn", "")).startswith("pre_presentation_capture."), q
@@ -462,6 +467,13 @@ def selftest() -> int:
         emr = next(q for q in payload["questions"] if q["id"] == "email_sequences_declined_reason")
         assert emr.get("storeOn") == "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON", f"email reason storeOn not qualified: {emr.get('storeOn')}"
         assert emr.get("conditional_on") == {"id": "want_email_sequences", "equals": "no"}, emr
+        assert "want_motion_graphics" in ids, "Item 34 motion election yes-no must be included"
+        mg = next(q for q in payload["questions"] if q["id"] == "want_motion_graphics")
+        assert mg.get("storeOn") == "pre_presentation_capture.WANT_MOTION_GRAPHICS", f"motion toggle storeOn not qualified: {mg.get('storeOn')}"
+        assert mg.get("default") == "no", "the motion election defaults to NO (opt-in only)"
+        mgr = next(q for q in payload["questions"] if q["id"] == "motion_graphics_declined_reason")
+        assert mgr.get("storeOn") == "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON", f"motion reason storeOn not qualified: {mgr.get('storeOn')}"
+        assert mgr.get("conditional_on") == {"id": "want_motion_graphics", "equals": "no"}, mgr
         assert "run_mode" in ids, "FIX 11 run-mode question must be included"
         rm = next(q for q in payload["questions"] if q["id"] == "run_mode")
         assert rm["allowed_values"] == ["ultra", "standard", "economy"], rm
