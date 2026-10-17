@@ -1,37 +1,46 @@
-# Extra-offer action/disclosure interface (S79/S06 shared): CONFIRMED
+# Extra-offer action/disclosure interface (S79/S06 shared): CONFIRMED, revision 2
 
-Status: CONFIRMED. This document is the confirmed contract of record for
-the S79/S06 shared extra-offer action/disclosure component.
+Status: CONFIRMED, revision 2. This document is the confirmed
+contract of record for the S79/S06 shared extra-offer
+action/disclosure component: how an extra offer (an upsell, a
+downsell) is presented, accepted and declined,
+routed, charged, recorded as an event, and audited for disclosure on
+the native order form S06 installs.
 
-- Confirmed by: S49 (Signature Launch Coordinator), contract owner for
-  the launch domain contracts, under MAIN's assignment of 2026-10-17.
-  The S79 room closed at 100/100 with this revision outstanding; MAIN
-  assigned S49 to finalize it from the existing draft, working from the
-  filed record.
-- Date of confirmation: 2026-10-17.
-- Supersedes: the DRAFT of this interface (MD5
-  5858ceb23e0dc341a9cf7a7d9b9d3415, 8,492 bytes), which shipped in
-  Skill 79's candidate (PR #2151, merged 2026-10-16) and sits on main
-  at `79-signature-order-form/references/extra_offer_interface.md` in
-  DRAFT form. Identical draft copies of record:
-  `rooms/S79/work/binding/extra_offer_interface.md` and
-  `rooms/S79/candidate/79-signature-order-form/references/extra_offer_interface.md`.
-- What confirmation carries: sections 1 to 6 are the confirmed contract
-  substance, carried verbatim from the draft; every statement there is
-  cited to the packet by document and section. Section 7 dispositions
-  the draft's nine open interface questions from the filed record, one
-  disposition each. Section 8 expressly dispositions CR-S81-001..009.
-  Section 9 lists the open gaps that remain, each with its owner.
-  Section 10 retains the draft's proof boundary.
-- S06 concurrence state, stated plainly: S06 concurred on the interface
-  positions on 2026-10-16
-  (`rooms/S79/handoffs/concurrence/from-s06-interface-concurrence.md`),
-  and the S06 answers in section 7 rest on that concurrence. S06 has
-  NOT recorded concurrence on this revised contract text itself; that
-  remains an open item (section 9, G-5). This confirmation does not
-  claim it.
-- Dependent consumer: S81 (Skill 81, Signature Downsell) reconciles
-  S81-05 against this revision.
+Revision: 2
+Date: 2026-10-17
+Base: revision 1 of this contract, extra_offer_interface-CONFIRMED.md
+as confirmed by S49 on 2026-10-17, SHA-256
+cb2a15f7af367432824c70b5f4c287cdb65336668cd3f6e18328612797402a0b.
+Purpose: to close gap G-7 (the eight interface-text completions S79
+accepted under CR-S81-001..009 on 2026-10-17 and never wrote), to
+record the contract owner's ruling closing gap G-4, and to record
+the closure of gap G-5 by S06's concurrence filing.
+
+What this revision changes, and what it does not:
+
+- Sections 1 to 6 are byte-identical to revision 1. The identity was
+  verified mechanically by the authoring lane; the check and the
+  hashes are recorded in the lane's build report
+  (followon-g7/BUILD-REPORT.md).
+- Sections 7 and 10 are carried unchanged.
+- Section 8 carries the confirmation-time dispositions unchanged,
+  plus a revision note and one pointer per affected entry to the
+  text written in section 8A.
+- Section 8A is new: the eight completions, written by S49 as
+  contract owner.
+- Section 9 records the resulting gap state: G-4 CLOSED BY RULING,
+  G-5 CLOSED, G-7 CLOSED BY THIS REVISION; G-1, G-2, G-3, and G-6
+  are carried unchanged.
+
+Confirmation of record: S49 confirmed this contract on 2026-10-17
+(the confirmation record stands beside the base file). S06 concurred
+on the interface positions on 2026-10-16 and on the confirmed
+revision 1 text on 2026-10-17
+(rooms/S06/evidence/S06-concurrence-extra-offer-interface-confirmed.md,
+SHA-256 d33d93695c4126b44b4036a3cafeb11136ad3e48a24395242207a2595869bc37).
+Revision 2's new text is S49's, written under contract ownership; it
+claims no concurrence from any other room.
 
 ## 1. What this interface is
 
@@ -397,6 +406,14 @@ Disposition: ANSWERED BY S49 RECORD.
 
 ## 8. Disposition of CR-S81-001..009 against this revision
 
+Revision 2 note (2026-10-17). The dispositions below are the
+confirmation-time record and are carried unchanged. The accepted
+text they record as unwritten is written in this revision at
+section 8A; each affected entry carries a pointer to its
+subsection. Gap G-7 is closed by this revision; gap G-4 is closed
+by the ruling at section 8A.5; gap G-5 is closed by S06's
+concurrence filing. Section 9 records the resulting gap state.
+
 S81 filed nine change requests against the draft on 2026-10-16
 (CR-S81-001..009). S79 answered all nine on 2026-10-17
 (`handoffs/change-requests/S79-REPLY-CR-S81-001-009.md`), accepting
@@ -421,7 +438,7 @@ section 9 (G-7), never silently assumed.
   transaction per recorded payment on an invoice). The
   deduplication/idempotency KEY is named in no filed record: G-4. The
   express interface-text carry of the lockout was among S79's accepted
-  changes and was never written: G-7.
+  changes and was never written: G-7. Revision 2: the accepted lockout text is written at section 8A.5, which also records the ruling closing G-4.
 - CR-S81-002 (unknown outcome and reconciliation): the naming position
   is settled on the record. No separate `unknown_outcome` state name
   exists, and none is invented: doc 09 section 8's vocabulary is fixed
@@ -435,13 +452,13 @@ section 9 (G-7), never silently assumed.
   section 6 law above. The express carry of the state representation
   and the reconciliation operation (inputs, outputs,
   no-retry-until-resolved rule) into the interface text for extra
-  offers was accepted by S79 and never written: G-7.
+  offers was accepted by S79 and never written: G-7. Revision 2: the accepted reconciliation operation text is written at section 8A.4.
 - CR-S81-003 (entry-guard eligibility): the underlying approval
   question is Q9, answered above. The eligibility OPERATION definition
   (an allow/refuse result over: verified parent purchase; explicit U1
   decline, with failed/pending expressly not satisfying it; D1 enabled
   in the approved launch record; U1 not accepted) was accepted by S79
-  and never written: G-7.
+  and never written: G-7. Revision 2: the accepted eligibility operation is written at section 8A.1.
 - CR-S81-004 (decline operation and no-charge guarantee): carried in
   part by sections 5 and 6 (decline is a normal routed outcome, not an
   error; a decline never rolls back the base purchase; base
@@ -449,13 +466,13 @@ section 9 (G-7), never silently assumed.
   OPERATION, its result record (kept permanently distinct from
   `failed`), and the express statement that invoking decline performs
   no charge action and removes no access were accepted by S79 and
-  never written: G-7.
+  never written: G-7. Revision 2: the accepted decline operation and result record are written at section 8A.2.
 - CR-S81-005 (abandonment semantics): the governing principle is on
   the record: a decline exists only on the visitor's explicit decline
   action (Q6 disposition; section 6), so abandonment, including
   closing the page, is never a decline, and no decline event may be
   fabricated from it. The express abandonment/decline/cancelled
-  distinction text was accepted by S79 and never written: G-7.
+  distinction text was accepted by S79 and never written: G-7. Revision 2: the accepted abandonment distinction text is written at section 8A.3.
 - CR-S81-006 (expired or unsupported context): disposed as Q6 above.
   Behavior and mapping are confirmed; the platform fact is G-3,
   expressly gated on S06's live capture at the first live one-click
@@ -464,7 +481,7 @@ section 9 (G-7), never silently assumed.
   The route-result output (the target identity actually routed to; for
   D1 paid, the canonical U2 identity from S49's route graph; and the
   entry context, `from_downsell_1`) was accepted by S79 and never
-  written: G-7.
+  written: G-7. Revision 2: the accepted route-result output is written at section 8A.6.
 - CR-S81-008 (billing display audit criteria): carried in part by
   sections 3 and 4 (the disclosure data set is an interface input; a
   billing display audit result is an interface output, under the
@@ -473,7 +490,7 @@ section 9 (G-7), never silently assumed.
   accepted by S79 and never written: G-7. S79's recorded
   recommendation, stated as a recommendation and not a ruling: values
   are audit-checked against the binding; placement is a page-layer
-  responsibility; the interface should say exactly that.
+  responsibility; the interface should say exactly that. Revision 2: the accepted audit criteria and the express placement ruling are written at section 8A.7.
 - CR-S81-009 (tenant/location binding read-back): carried for the
   initial checkout in shipped code (S79's `selection_flow` validates a
   selection's tenant and location against the live catalog read-back
@@ -481,12 +498,290 @@ section 9 (G-7), never silently assumed.
   read-back output and its mismatch failure signal (read-back from the
   installed configuration, never echoed from the request; a mismatch
   is a reported failure with no charge path proceeding) were accepted
-  by S79 and never written: G-7.
+  by S79 and never written: G-7. Revision 2: the accepted read-back output and mismatch signal are written at section 8A.8.
+
+## 8A. Interface text completions for extra offers (revision 2)
+
+This section is new in revision 2. It writes, as contract text, the
+interface-text completions S79 accepted on 2026-10-17 in its reply to
+CR-S81-001..009 and never wrote, carried open at confirmation as gap
+G-7. It is written by S49 as contract owner of this contract. Each
+subsection names the change request it discharges and the position of
+record it implements. Where a subsection states operational detail
+that no filed position supplies, the detail is the minimal text the
+accepted position and sections 1 to 6 imply, written under the same
+contract ownership; the authoring lane's build report marks each such
+passage. Nothing in this section changes sections 1 to 6, and every
+rule here is read subject to section 6 (no rollback) and section 4
+(only a verified native success counts as paid).
+
+### 8A.1 Eligibility operation (CR-S81-003)
+
+The eligibility operation decides, before an extra offer is
+presented or its action enabled, whether the visitor may be offered
+that extra offer at all. It is an interface operation: the caller
+invokes it with the facts below and gates rendering on its result.
+The facts are the facts Skill 81's shipped entry guard
+(check_entry_guard) consumes; this subsection is the interface
+definition of that check.
+
+Inputs: (a) the parent order reference, with the parent purchase's
+verified status from native read-back; (b) the recorded outcome of
+the preceding upsell offer (U1) for the same parent purchase,
+carried in the field u1_event of the journey entry evidence the
+operation consumes; (c) the approved launch record for the launch,
+from which the extra offer's enabled state is read (the record's
+extras, under route law, with the approval read of section 7, Q9:
+the route graph bound into the approved launch record, checked three
+ways); and (d) whether U1 was accepted (u1_accepted).
+
+Rule: the operation returns ALLOW only when all four hold: (1) a
+verified parent purchase exists for this buyer and this session;
+(2) U1 was explicitly declined: u1_event carries the literal value
+"explicit_decline" (a failed or pending U1 payment expressly does
+not satisfy this condition, and neither does the absence of a U1
+outcome); (3) the extra offer (D1) is enabled in the approved launch
+record; and (4) U1 was not accepted.
+
+Output: an allow or refuse result. A refusal is a normal reported
+outcome, not an error state and not a silent absence: the result
+identifies which condition or conditions failed. On a refusal, the
+extra offer is not presented, no extra-offer action is enabled, and
+no charge path is opened. A reference to the entry evidence is a
+name, never evidence: the operation computes the result from the
+evidence record itself, per the entry_guard_ref definition recorded
+in Skill 81's references/native-action-states.md and accepted under
+CR-S49-005.
+
+### 8A.2 Decline operation and decline result record (CR-S81-004)
+
+The decline operation records the visitor's explicit refusal of an
+extra offer. Its inputs name which offer is declined and which
+parent order the decline belongs to.
+
+Express statement: invoking decline performs no charge action. It
+removes no existing access, and it leaves the original order and any
+bump purchase valid. Decline is not a submission: no charge attempt
+is created by it, the lockout and reconciliation operations do not
+apply to it, and it cannot be charged under any retry.
+
+Result record: every completed decline produces a decline result
+record carrying the outcome as declined, the identity of the offer
+declined, the parent order reference, the record that no charge was
+attempted, and the route taken (the decline target from the approved
+route plan). The decline result record is kept permanently distinct
+from a failed payment outcome: declined and failed are different
+records, neither is ever relabeled as the other, and a failed
+extra-offer payment is never recorded as a decline. The decline
+action is a separate action from the purchase action: invoking one
+never invokes the other. On a completed decline the visitor routes
+per the approved route plan's decline route for the step (for D1,
+the final thank-you step).
+
+### 8A.3 Abandonment (CR-S81-005)
+
+Abandonment is the visitor leaving or closing the page, or the
+session ending, without acting on the extra offer. It is distinct
+from both of its neighbours: it is not an explicit decline (no
+decline action was invoked, so no decline result record under
+section 8A.2 exists), and it is not a cancelled purchase attempt
+(the cancelled state of section 4 covers an explicit pre-submission
+cancel and a customer abandoning a required action step after a
+submission).
+
+Rule: abandonment records no outcome for the extra offer. No decline
+event is created from it, no decline result record is produced, and
+no downstream record may treat abandonment as a decline. The extra
+offer simply remains unpurchased, and base-order fulfillment
+proceeds independently of it (section 6). A decline exists under
+this interface only where the visitor's explicit decline action
+produced one.
+
+### 8A.4 Reconciliation operation (CR-S81-002)
+
+Trigger and state representation: when an extra-offer attempt's
+outcome is unknown (the submission timed out, the connection
+dropped, or the browser context was lost while the attempt was
+submitting or awaiting confirmation), the attempt stands in state
+pending_confirmation with reconcile_required set. That pair, state
+plus flag, is this interface's named carrier of an unknown outcome.
+No unknown_outcome state name exists in the interface vocabulary or
+is added by this revision; the vocabulary remains the eight states
+of section 4 (doc 09 section 8).
+
+Operation: reconcile the attempt against native records before any
+retry. Inputs: the parent order reference, the attempt reference, or
+the equivalent identity the caller holds for the attempt under
+reconciliation. The operation reads the native records for that
+attempt (native read-back, sections 2 and 4: only a verified native
+success counts as paid) and records the reconciliation outcome on
+the attempt.
+
+Outputs, exactly one per completed reconciliation: (a) resolved
+paid: a verified native success exists for the attempt; the attempt
+moves to paid, carrying the native transaction and order references
+read back from native records, and paid routing may proceed;
+(b) resolved failed: the native records show the attempt was not
+paid; the attempt is a known failure, its reconcile_required is
+cleared, and only from this resolution may a fresh submission be
+made; (c) still unknown: the native records do not yet resolve the
+attempt; the attempt remains in pending_confirmation with
+reconcile_required set, and the operation may be run again.
+
+Rules: no retry of the submission is accepted while reconciliation
+is outstanding; a retry is refused until the caller records the
+reconciliation of the earlier attempt. Paid routing is held while
+reconciliation is outstanding: no paid route edge is traversed for
+the attempt until it resolves paid. An attempt restored after a lost
+browser context carries the same reconciliation requirement as a
+timed-out attempt: restore does not clear the hold, and a
+context-free restore can never claim an existing paid order. This
+operation is the interface text of the discipline section 6 states
+in prose; its record shape follows the shipped carrier (the shared
+component's attempt record: record_reconciliation(found_paid)).
+
+### 8A.5 Submission lockout operation (CR-S81-001)
+
+Operation: submit an extra-offer attempt. One attempt has exactly
+one submission path. While an attempt's outcome is pending (state
+submitting or state pending_confirmation), a repeat submission of
+the same attempt is rejected: it does not reach the native side, it
+creates no second charge attempt, and the standing attempt is
+unaffected. Guarantee: one pending attempt can produce at most one
+charge. A submission offered for an attempt that has already reached
+verified success (paid) is likewise refused: the attempt is
+complete. A failed attempt with a known outcome may be submitted
+afresh only as section 8A.4 allows (after reconciliation, where
+reconciliation was required).
+
+The lockout is behavior of the shared action under this interface
+for extra offers, as it is for the initial purchase (doc 09
+section 8, carried by the shipped purchase-state machine). It does
+not depend on any native lockout or deduplication, none being known
+on the native side (section 8, CR-S81-001); attempt integrity under
+this contract is carried by the ruling that follows.
+
+Attempt-integrity carrier: ruling of the contract owner (closes
+G-4). Ruling of the contract owner (S49), recorded in revision 2.
+The attempt-integrity carrier is this contract's attempt-key
+position. The carrier is a named discipline, not a key: (1) the
+pending lockout of section 8A.5, under which a repeat submission
+while an attempt's outcome is pending is rejected, so one pending
+attempt can produce at most one charge; (2) the reconciliation
+operation of section 8A.4, under which no retry is accepted until
+an unknown outcome is reconciled against native records; and (3)
+the decline rule of section 8A.2, under which invoking decline
+never charges. Where an interface of this kind would name an
+idempotency key, this contract names the attempt-integrity carrier
+instead. The reason is stated on the face of the ruling: S06's filed
+position is that no native deduplication exists to key on, so a
+coined key name would misdescribe the native side. The discipline
+is what actually prevents a duplicate charge, and it is the carrier
+S81's reconciliation evidence cites for CR-S81-001: the discipline
+recorded in S81's reply to CR-S49-005, item 7. Supersession: if S06
+later ships native deduplication for extra-offer attempts, a later
+revision of this contract names that key and supersedes this
+ruling; until then no key name is coined anywhere under this
+contract, and the interim discipline recorded at gap G-4 in
+revision 1 is no longer interim: it is the contract's position.
+Residual evidence: CR-S81-001's acceptance-evidence fixture, a
+fixture or test result from the owning side showing two submissions
+during one pending attempt producing exactly one charge attempt,
+remains outstanding, owned as the record states. It is an evidence
+item, not an open contract position; gap G-4 is closed by this
+ruling with that single residual noted.
+
+### 8A.6 Route-result output (CR-S81-007)
+
+On a completed extra-offer outcome, the action returns a
+route-result output carrying the target identity actually routed to
+and the entry context under which that target was entered.
+
+For a paid D1 outcome with U2 enabled, the target is the canonical
+U2 identity from S49's route graph: the same U2 that follows a U1
+acceptance, never a D1-specific duplicate; the entry context is
+from_downsell_1. For a paid outcome where the next step is not
+enabled, the target is the destination the approved route plan names
+(for D1, the final thank-you step). For a declined outcome, the
+output carries the decline target actually routed to (for D1, the
+final thank-you step). For a failed outcome, no paid edge is
+traversed: the output records the error destination the approved
+route plan names for the step (for D1, remaining on the D1 step in a
+recoverable state), and never a paid target.
+
+The route result is the record of the route actually taken. The
+approved route plan is the plan-side truth: a route result that
+contradicts the plan (including a success target that differs from
+the compiled graph's paid edge for the step) is a reported failure,
+not a routing choice.
+
+### 8A.7 Billing display audit: criteria and placement ruling (CR-S81-008)
+
+The billing display audit result named in section 4 is produced for
+the extra offer's displayed terms, checked against the price
+disclosure data set of section 3 (the binding). The audit criteria
+are enumerated; each criterion is reported pass or fail by name in
+the audit result:
+
+1. Amount due: the amount due now is displayed, and the displayed
+   value equals the binding's amount due for the offer.
+2. Currency: the currency is displayed, and equals the binding's
+   currency.
+3. Terms as bound: the displayed billing terms match the binding's
+   billing type: one-time (a single charge, with no recurring
+   obligation stated or implied beyond it), recurring (amount,
+   interval, and renewal terms), trial (the trial period, and the
+   renewal amount and the renewal date or rule that follows it), or
+   installment (the installment schedule and the full total
+   obligation).
+4. No understated total: a lower installment or a trial entry amount
+   is never presented as a lower total price; the full obligation
+   is displayed.
+5. Policy data: the discount, tax, and shipping treatment is
+   displayed as it applies to the offer, matching the binding's
+   policy data.
+6. Cancellation terms: for a trial, recurring, or installment
+   offer, the cancellation terms are present in the displayed
+   terms.
+7. Shown before authorization: the actual charge and any recurring
+   obligation are displayed before the buyer authorizes the extra
+   offer (section 5), and no charge is hidden or prechecked.
+
+Placement ruling (contract owner, revision 2): the audit checks
+values against the binding; it does not audit placement. Where the
+terms sit on the page (adjacency to the action, type size, and the
+like) is a page-layer responsibility, governed by the page skill's
+own rules, and is not an interface audit criterion. This ruling
+adopts as the contract's position the recommendation recorded in
+S79's reply to CR-S81-008. The audit result itself lives with the
+action's outputs: it is returned as an output of the extra-offer
+action for the attempt (section 4) and recorded with the attempt's
+other outputs; it is not a page artifact.
+
+### 8A.8 Tenant and location binding read-back (CR-S81-009)
+
+For an extra offer, the interface returns a binding read-back output
+carrying the tenant and the location the extra-offer action is
+actually bound to. The values are read back from the installed
+configuration (S06 is the installed binding source, section 2).
+They are never echoed from the request:
+a read-back value that merely repeats the request's tenant or
+location is not a read-back.
+
+Mismatch signal: if the read-back tenant or location differs from
+the tenant and location the request carries (section 3, from the
+approved launch plan), the interface reports a binding mismatch
+failure for the attempt, and no charge path proceeds: under a
+mismatched binding the extra-offer action is neither offered nor
+submitted. The same rule already governs the initial checkout (the
+shipped selection flow validates against live catalog read-back and
+refuses cross-tenant use); this subsection carries the output and
+the signal for extra offers.
 
 ## 9. Open gaps
 
 Each gap below is named, owned, and carried on this contract's face.
-Nothing in this section authorizes any room to assume the missing item.
+Nothing in this section authorizes any room to assume the missing item. Items closed since confirmation are recorded in place below, marked CLOSED, so the gap numbering of record does not move.
 
 - G-1 (from Q1): the exact native element and event names for the
   one-click extra-offer action in the current Skill 06 builder.
@@ -501,45 +796,45 @@ Nothing in this section authorizes any room to assume the missing item.
   signals it. Owner: S06. Class: LIVE_PROOF_PENDING; capturable only
   at the first live one-click extra-offer run; S06's supplement is
   owed the cycle that run's evidence exists.
-- G-4 (from CR-S81-001): naming of the deduplication/idempotency KEY
-  for extra-offer purchase attempts. Owners of record: S79 (key
-  definition, per its accepted change in CR-S81-001) and S06
-  (native-side deduplication confirmation). No filed record names a
-  key, and S06's filed position is that no native deduplication exists
-  to key on. INTERIM CONTRACT POSITION, binding until a key is named:
-  the adapter discipline recorded in S81's reply to CR-S49-005, item 7
-  (pending lockout; unknown-outcome reconciliation before any retry;
-  decline never charges) is this interface's required behavior. S49,
-  as contract owner, records the key in this contract when the owning
-  parties supply it. CR-S81-001's acceptance evidence (a fixture or
-  test result from the owning side showing two submissions during one
-  pending attempt producing exactly one charge attempt) also remains
-  outstanding with the same owners.
-- G-5: S06 concurrence on this confirmed revision text. S06's
-  concurrence of record (2026-10-16) covers the interface positions
-  and is the source of the Q1 to Q6 answers in section 7; S06 has not
-  recorded concurrence on this revised text itself. Owner: S06. This
-  confirmation by S49 does not substitute for that concurrence and
-  does not claim it.
+- G-4 (from CR-S81-001): CLOSED BY RULING in revision 2. The
+  naming of the deduplication/idempotency key for extra-offer
+  purchase attempts is dispositioned by the contract owner's ruling
+  at section 8A.5: the attempt-integrity carrier (pending lockout;
+  unknown-outcome reconciliation before any retry; decline never
+  charges) is this contract's attempt-key position, and no key name
+  is coined, for the reason the ruling states on its face (S06's
+  filed position: no native deduplication exists to key on). The
+  interim contract position recorded here in revision 1 is
+  superseded by that ruling. One residual evidence item remains
+  outstanding and is not an open contract position: CR-S81-001's
+  acceptance evidence (a fixture or test result from the owning side
+  showing two submissions during one pending attempt producing
+  exactly one charge attempt), owned as the record states.
+- G-5: CLOSED in revision 2. S06 filed its one-shot concurrence
+  on this confirmed text on 2026-10-17
+  (rooms/S06/evidence/S06-concurrence-extra-offer-interface-confirmed.md,
+  SHA-256 d33d93695c4126b44b4036a3cafeb11136ad3e48a24395242207a2595869bc37),
+  concurring with no objection to any passage, and stating that the
+  S81-05 reconciliation may cite the filing as its S06 evidence leg.
+  The concurrence covers the confirmed (revision 1) text; revision
+  2's completions at section 8A are written by S49 as contract owner
+  and state no S06 position beyond S06's filed record.
 - G-6 (from Q8): cancellation-shaped native kinds are quarantined by
   S44's normalizer pending S44's adapter addendum (recorded, not
   dropped; entitlement effect follows the approved policy once the
   addendum lands). Owner: S44.
-- G-7 (from CR-S81-002/003/004/005/007/008/009 and the text half of
-  CR-S81-001): the interface-text completions S79 accepted for this
-  revision on 2026-10-17 but never wrote, the S79 room having closed:
-  the lockout text carry and the reconciliation operation text for
-  extra offers; the entry-guard eligibility operation definition; the
-  decline operation and its result record with the express no-charge,
-  no-access-removal statement; the abandonment/decline/cancelled
-  distinction text; the route-result output definition; the enumerated
-  billing-display audit criteria with the express placement ruling;
-  and the extra-offer tenant/location binding read-back output with
-  its mismatch failure signal. Owner: S49, as contract owner under
-  MAIN's 2026-10-17 assignment (successor to S79 for this contract's
-  text), to be written as a numbered revision of this contract through
-  the batch process. Until written, sections 7 and 8 of this contract
-  are the record of what is settled and what is not.
+- G-7 (from CR-S81-002/003/004/005/007/008/009 and the text half
+  of CR-S81-001): CLOSED BY THIS REVISION. The interface-text
+  completions S79 accepted on 2026-10-17 and never wrote are written
+  at section 8A: 8A.1 eligibility operation; 8A.2 decline operation
+  and result record, with the express no-charge, no-access-removal
+  statement; 8A.3 abandonment distinction; 8A.4 reconciliation
+  operation; 8A.5 submission lockout operation (with the G-4
+  ruling); 8A.6 route-result output; 8A.7 enumerated billing-display
+  audit criteria with the express placement ruling; 8A.8
+  tenant/location binding read-back output with its mismatch failure
+  signal. Sections 7 and 8 remain the record of what was settled at
+  confirmation; this section records the resulting gap state.
 
 ## 10. Proof boundary
 
