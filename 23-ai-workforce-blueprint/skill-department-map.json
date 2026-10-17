@@ -1646,6 +1646,49 @@
    ]
   },
   {
+   "skill": "81",
+   "slug": "signature-downsell",
+   "name": "signature-downsell",
+   "client_facing": true,
+   "description": "Builds the Signature Downsell page (Downsell 1) of a Signature Launch: the reshaped alternative offer shown only after an explicit Upsell 1 decline, never after a failed or pending payment. Derives an exact eight-section page from the 12-section landing format (sections 8-11 removed, section 12 replaced by the renumbered 'When Time Runs Out' section listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, and the same guarded native one-click action as checkout, with the exact amount and terms disclosed adjacent. Downsell 1 paid routes to the same Upsell 2 when enabled, else the final thank-you; Downsell 1 declined routes to the final thank-you with the original order valid and untouched.",
+   "departments": [
+    "web-development",
+    "marketing",
+    "funnels"
+   ],
+   "roles": [
+    {
+     "dept": "web-development",
+     "primary": true,
+     "slug": "funnel-builder-specialist"
+    },
+    {
+     "dept": "funnels",
+     "primary": false,
+     "slug": "ghl-funnel-build-specialist"
+    },
+    {
+     "dept": "marketing",
+     "primary": false,
+     "slug": "conversion-copywriter"
+    },
+    {
+     "dept": "funnels",
+     "primary": false,
+     "slug": "funnel-qa-conversion-verification-specialist"
+    }
+   ],
+   "intent_triggers": [
+    "build my downsell page",
+    "add a downsell to my launch",
+    "build the downsell flow for my launch",
+    "downsell page after a declined upsell"
+   ],
+   "execution_sops": [
+    "funnel-craft"
+   ]
+  },
+  {
    "skill": "82",
    "slug": "signature-thank-you",
    "name": "signature-thank-you",
