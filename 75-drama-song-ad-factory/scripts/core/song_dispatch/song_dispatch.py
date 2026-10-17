@@ -148,8 +148,14 @@ def refuse_asr(engine):
     return e
 
 
-def validate_request(req, style_id=None, client_text="", delivered_s=None):
+def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_plan=None):
     """List of refusals for ONE KIE createTask music request; [] = send it.
+
+    ``pace_plan``: the approved pace order (judging metadata, never a provider
+    field); else the request's internal ``_pace_plan``. When one is known, a
+    final ``input.style`` missing either direction is refused here
+    (song_contract.check_pace_style). Seam completeness and the no-order
+    refusal stay in run_takes.
 
     ``delivered_s`` is the plan's delivered seconds (plan["delivered_s"]),
     never the request duration, which carries Suno's 15% headroom: the
@@ -187,6 +193,7 @@ def validate_request(req, style_id=None, client_text="", delivered_s=None):
     errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id)
     # WW-16: the declared opening vocalise cue must satisfy the ceiling.
     errs += _SC.check_sheet(_lyrics_of(req), style_id, delivered_s, inp.get("style"))["reasons"]
+    errs += _SCM.check_pace_style(inp.get("style"), pace_plan or req.get("_pace_plan"))
     return errs
 
 
@@ -553,7 +560,10 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
     # FU-HOOK-PLACEMENT rule 4: always on; a missing input is a FAIL, never a skip
     sheet = sheet_text or plan.get("sheet_text")
     sid = style_id or plan.get("style_id")
-    hp = _HP.check_returned(sheet, take.get("aligned_words") or [], sid, D, plan.get("hook_plan"))
+    # no section headers (local transcription): the hook is read from its words
+    # on the measured times, confirmed sung on the detector's measured segments
+    hp = _HP.check_returned(sheet, take.get("aligned_words") or [], sid, D, plan.get("hook_plan"),
+                            segments=hook_segs)
     put("hook_placement", hp["verdict"], "; ".join(hp["reasons"]) or
         "first hook %s s (window %s s)" % (hp["first_hook_s"], hp["min_first_hook_s"]))
     # WW-02/WW-08: the story gate (check_returned_story) is CALLED here, in the
@@ -1014,15 +1024,23 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     refusal = _SA.check_script_approval(script_approval, _lyrics_of(request))
     if refusal:
         raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
-    # G9 (FU-U6, plan E.2 default): the request carries the planned time plus the
-    # >=15 percent Suno headroom; the master is still trimmed to L-2 by
-    # master_length, so "whole tracks only" is judged against that headroom
-    # (words_fit.max_suno_duration), never a patch/short duration.
+    # G9 (FU-U6, plan E.2 default): the request asks for the delivered seconds
+    # (the builders' default) or, when a caller set it, the >=15 percent Suno
+    # headroom (words_fit.max_suno_duration); never a patch/short duration.
+    # Nothing trims the raw take before judging (master_length only plans and
+    # checks), and the length gate refuses audio over the delivered seconds, so
+    # a headroom request is RECORDED and FLAGGED here, before any spend.
     allowed = _WF.max_suno_duration(plan["delivered_s"])
     if inp.get("duration") not in (plan["delivered_s"], allowed):
         raise DispatchError("whole tracks only: request duration %r != planned %r (or its %r s "
                             "Suno headroom; never a patch)"
                             % (inp.get("duration"), plan["delivered_s"], allowed))
+    duration = {"requested_s": inp.get("duration"), "delivered_target_s": plan["delivered_s"],
+                "mode": "exact" if inp.get("duration") == plan["delivered_s"] else "headroom"}
+    if duration["mode"] == "headroom":
+        sys.stderr.write("DURATION_HEADROOM_REQUESTED: the request asks Suno for %r s; the length "
+                         "gate refuses any take longer than the %r s delivered target and no "
+                         "trim runs before judging\n" % (inp.get("duration"), plan["delivered_s"]))
     # FU-HOOK-PLACEMENT: the director's hook_plan rides the request as
     # _hook_plan; it moves into the judge's plan and never reaches KIE.
     plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
@@ -1054,10 +1072,13 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # The order is read the SAME two keys the judge reads (``judge_plan_pace``):
     # ``pace_change`` (merged from the request's _pace_plan above) or a plan
     # that carries the runner's own ``_pace_plan`` key (song_choices.cmd_generate).
-    if not (plan.get("pace_change") or plan.get("_pace_plan")):
+    order = plan.get("pace_change") or plan.get("_pace_plan")
+    if not order:
         raise DispatchError(_pace_turns_required_detail())
-    pace_errs = _PC.check_pace_plan(plan["pace_change"])
-    pace_errs += _SCM.check_pace_style(inp.get("style"), plan["pace_change"])
+    # The order checked is the SAME one the judge reads (pace_change, else
+    # _pace_plan). Checking only pace_change let a plan carrying the order as
+    # _pace_plan send a style with neither direction.
+    pace_errs = _PC.check_pace_plan(order) + _SCM.check_pace_style(inp.get("style"), order)
     if _PC.pace_provider_leak(request):
         pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
                          "_pace_plan judging metadata reaches a provider field")
@@ -1084,5 +1105,6 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
             if take_accepted(rcpt)[0]:
                 return {"delivered": take, "verdict": rcpt["verdict"],
                         "receipt": constituent_receipt(take, rcpt, plan),
-                        "receipts": receipts, "spent_cents": spent}
-    return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent}
+                        "receipts": receipts, "spent_cents": spent, "duration": duration}
+    return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent,
+            "duration": duration}

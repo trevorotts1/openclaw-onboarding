@@ -236,7 +236,8 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
                                      sheet, vocal_gender, pace_plan,
                                      tail_clause=v["brief"]["arrangement"])
         req = dict(req, input=dict(req["input"], style=style))
-        errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
+        errs = _SD.validate_request(req, style_id, client_text, length_s,   # 1758: delivered_s required
+                                    pace_plan=pace_plan)
         if errs:
             raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))
         # The judge needs the style and the hook plan (FU-RNBFLOW-SONG song_contract,
