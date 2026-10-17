@@ -105,6 +105,13 @@ function checkedFile(
   return bytes.toString('utf8');
 }
 
+/** Do not inject private-scope commentary into shared advisor prompts. */
+function sharedOnlyBriefing(text: string): string {
+  return text.split(/\\n\\n+/)
+    .filter((paragraph) => !/user_private|private_scope|private-scope/i.test(paragraph))
+    .join('\\n\\n');
+}
+
 function sharedEvidenceLines(sources: JsonObject): string[] {
   const lines: string[] = [];
   let included = 0;
@@ -189,7 +196,7 @@ export function loadInstalledSeatPack(skillRoot: string, seatId: SeatId): Instal
     `Council advisor: ${string(profile.name) ?? seatId}; seat_id=${seatId}; pack_identity=${version}`,
     'Attribution: AI perspective inspired by published work, not the real individual or an endorsement.',
     `Source qualification: ${string(profile.qualification) ?? 'unverified'}. Bibliographic/quality-unverified materials do NOT establish verified quotations or full-work coverage.`,
-    'ADVISOR BRIEFING (installed source):\n' + briefing,
+    'ADVISOR BRIEFING (installed source):\n' + sharedOnlyBriefing(briefing),
     'COMMUNICATION RULES (installed source):\n' + communication,
     'TRACEABLE, PARAPHRASE-ONLY SOURCE REFERENCES (not certified against original works):\n' + (sharedEvidenceLines(sources).join('\n') || 'No qualified shared-source paraphrase records are available.'),
   ];
