@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "test_only": true,
+  "copy_id": "TEST-ONLY-neg-u2-renamed-u1",
+  "instance": "upsell_2",
+  "visibility": "public",
+  "source_note": "TEST ONLY negative fixture: U2 that is merely U1 with its name replaced. Never production copy.",
+  "offer_name": "TEST ONLY Implementation Studio",
+  "inspiring_phrase": "Focused",
+  "accept_action_ref": "native-one-click:TEST-ONLY-U2",
+  "verified_scarcity_evidence": [],
+  "sections": [
+    {
+      "number": 1,
+      "key": "big_bold_claim",
+      "heading": "Go further with the TEST ONLY Implementation Studio",
+      "body": "Your core programme is confirmed. The TEST ONLY Implementation Studio adds the full on-demand lesson studio, printable planners and bonus sessions, so every idea from the core programme can be revisited and applied at your own pace.",
+      "cta": {
+        "text": "Yes, add the Deep Work Studio to my order",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 2,
+      "key": "big_bold_pain_1",
+      "heading": "When a lesson ends, the follow-up questions begin",
+      "body": "A live session moves quickly, and the questions usually arrive afterwards, when you sit down to apply the material alone and realise a key step was only covered once.",
+      "cta": {
+        "text": "Keep every lesson within reach - add the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 3,
+      "key": "big_bold_pain_2",
+      "heading": "Notes scattered across notebooks slow every review",
+      "body": "Handwritten notes, screenshots and half-remembered timestamps make revision slow. Without a structured workbook for each lesson, reviewing what matters takes longer than the work itself.",
+      "cta": {
+        "text": "Get the structured workbooks - add the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 4,
+      "key": "big_bold_pain_3",
+      "heading": "Momentum fades when replays are out of reach",
+      "body": "When you cannot rewatch a session, a busy week quietly becomes a missed week, and the thread of the programme is hard to pick back up without starting over.",
+      "cta": {
+        "text": "Protect your momentum - add the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 5,
+      "key": "big_bold_why",
+      "heading": "Why the Studio exists",
+      "body": "We built the Studio because the core programme was designed to be used, not just attended. On-demand access turns each live lesson into a permanent working reference you can return to whenever a real project demands it.",
+      "cta": {
+        "text": "Make the programme a permanent reference - add the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 6,
+      "key": "big_bold_who",
+      "heading": "Made for learners who apply as they go",
+      "body": "The Studio suits members who implement between sessions, who revisit material before big decisions, and who want planners that turn watching into doing. If you prefer live sessions only, your core programme remains complete without it.",
+      "cta": {
+        "text": "If that sounds like you, add the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      },
+      "bullets": [
+        "You implement between sessions and want the material at hand",
+        "You revisit lessons before important decisions",
+        "You learn best with a workbook open beside you"
+      ]
+    },
+    {
+      "number": 7,
+      "key": "big_bold_what",
+      "heading": "Exactly what the Studio adds",
+      "body": "The Studio adds on-demand access to the recorded lesson studio, one printable workbook per lesson, and the bonus session recordings. It does not change your core programme, your live session access, or your existing materials, which you keep in full either way.",
+      "cta": {
+        "text": "Add the Studio and get the full archive",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      },
+      "bullets": [
+        "On-demand recorded lesson archive",
+        "One printable workbook per lesson",
+        "Bonus session recordings",
+        "Material limitation: recordings are for your own study use"
+      ]
+    },
+    {
+      "number": 8,
+      "key": "seven_reasons",
+      "heading": "7 Reasons To Commit To Your Focused Future",
+      "body": "Seven reasons the Studio earns its place beside your core programme.",
+      "cta": {
+        "text": "Commit to your Focused Future - add the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      },
+      "reasons": [
+        "Your future self will thank you: every lesson stays available on the days when a real project needs that exact idea again.",
+        "Review at your own speed: pause, rewind and revisit difficult steps until the method is fully yours, not half remembered.",
+        "Planners turn watching into doing: each lesson ends with structured exercises that convert ideas into finished work.",
+        "A busy week stops being a lost week: the studio lets you catch up completely instead of returning to find gaps.",
+        "Bonus sessions deepen the core material: extra recordings explore the advanced applications the live schedule cannot fit.",
+        "One organised studio replaces scattered notes: everything lives in a single place you can search in seconds.",
+        "You already committed to the core programme: the Studio makes sure that commitment keeps paying you back for years."
+      ]
+    }
+  ]
+}

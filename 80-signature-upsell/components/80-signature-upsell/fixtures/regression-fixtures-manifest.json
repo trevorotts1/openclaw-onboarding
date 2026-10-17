@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "source": "Independent review S80-01-03, reviewer session e25cbf65-f0b0-4b31-8855-0b5411453764; adversarial fixtures from /tmp/s80adv/",
+  "note": "Every entry escaped validation (exit 0) at review time. After the D-01..D-05 repairs each must exit 2 with its expected code.",
+  "fixtures": [
+    {
+      "file": "copy-regression-a1-near-duplicate-reasons.json",
+      "defect": "D-04",
+      "expected_code": "U80-REASON-DISTINCT",
+      "expected_exit": 2,
+      "source": "review adversarial fixture a1-near-duplicate-reasons"
+    },
+    {
+      "file": "copy-regression-a2-self-declared-action.json",
+      "defect": "D-03",
+      "expected_code": "U80-CTA-BINDING",
+      "expected_exit": 2,
+      "source": "review adversarial fixture a2-self-declared-action"
+    },
+    {
+      "file": "copy-regression-a2b-embedded-unbound-cta.json",
+      "defect": "D-05",
+      "expected_code": "U80-UNBOUND-CTA",
+      "expected_exit": 2,
+      "source": "review adversarial fixture a2b-embedded-unbound-cta"
+    },
+    {
+      "file": "copy-regression-a3-offlist-scarcity.json",
+      "defect": "D-01",
+      "expected_code": "U80-INVENTED-SCARCITY",
+      "expected_exit": 2,
+      "source": "review adversarial fixture a3-offlist-scarcity"
+    },
+    {
+      "file": "copy-regression-a4-offlist-testimonial.json",
+      "defect": "D-02",
+      "expected_code": "U80-INVENTED-TESTIMONIAL",
+      "expected_exit": 2,
+      "source": "review adversarial fixture a4-offlist-testimonial"
+    }
+  ]
+}
