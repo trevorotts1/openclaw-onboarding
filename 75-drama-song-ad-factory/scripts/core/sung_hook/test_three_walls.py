@@ -142,8 +142,20 @@ print("D1 exact:", out["duration"])
 assert out["duration"] == {"requested_s": 48, "delivered_target_s": 48, "mode": "exact"}
 err = io.StringIO()
 with redirect_stderr(err):
-    out = SD.run_takes(dict(pace_req, input=dict(pace_req["input"], duration=56)), plan,
+    try:
+        SD.run_takes(dict(pace_req, input=dict(pace_req["input"], duration=56)), plan,
+                     lambda rq: [], lambda t: {}, lambda t, r: None, SHEET, "x", cap_cents=6)
+        raise AssertionError("D2 the bare 15 percent headroom was admitted with no owner approval")
+    except SD.DispatchError as e:
+        print("D2 bare headroom refused:", str(e)[:90])
+        assert "duration_headroom_approved" in str(e), e
+# CPR-R2: an owner-selected headroom request is still honored, and RECORDED.
+approved = dict(plan, duration_headroom_approved={"owner": "trevor", "reason": "self-check"})
+err = io.StringIO()
+with redirect_stderr(err):
+    out = SD.run_takes(dict(pace_req, input=dict(pace_req["input"], duration=56)), approved,
                        lambda rq: [], lambda t: {}, lambda t, r: None, SHEET, "x", cap_cents=6)
-print("D2 headroom:", out["duration"], "|", err.getvalue().strip()[:60])
-assert out["duration"]["mode"] == "headroom" and "DURATION_HEADROOM_REQUESTED" in err.getvalue()
+print("D3 owner override:", out["duration"], "|", err.getvalue().strip()[:60])
+assert out["duration"]["mode"] == "headroom_override" and "DURATION_HEADROOM_OVERRIDE" in err.getvalue()
+assert out["duration"]["headroom_approved"] == approved["duration_headroom_approved"]
 print("PASS three walls self-check")
