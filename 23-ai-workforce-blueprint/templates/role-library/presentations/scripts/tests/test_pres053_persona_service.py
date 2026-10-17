@@ -131,7 +131,7 @@ def test_policy_covers_all_manifest_phases():
          / "universal-sops" / "presentation-slide-craft"
          / "PIPELINE-MANIFEST.json").read_text(encoding="utf-8"))
     phase_ids = [p["id"] for p in manifest["phases"]]
-    assert len(phase_ids) == 62
+    assert len(phase_ids) == 56
     assert unresolved_phases(phase_ids) == []
     kinds = {policy_for_phase(p)["kind"] for p in phase_ids}
     assert {"governed-blend", "execution-only", "qc-independent",

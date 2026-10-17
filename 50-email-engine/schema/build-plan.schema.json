@@ -16,8 +16,112 @@
     },
     "_meta": {
       "type": "object",
-      "description": "Optional provenance: source brief/sequence ids, deploy_mode='draft-only', generated_at, generator.",
-      "additionalProperties": true
+      "description": "Optional provenance: source brief/sequence ids, deploy_mode='draft-only', generated_at, generator. When 'profile' names the Signature Launch profile (signature_launch_landing_10), the extended handoff fields below are REQUIRED (spec 13 section 7): approved content hashes, variant strategy, source/target ids, enrollment conditions, timing anchors, lifecycle stop/suppression rules and sender configuration references. Credential values must never appear in a plan; sender configuration is carried as named references only.",
+      "additionalProperties": true,
+      "properties": {
+        "deploy_mode": { "type": "string", "enum": ["draft-only"] },
+        "draft_only": { "type": "boolean", "enum": [true], "description": "Always true. The plan builds DRAFT workflows only; nothing sends." },
+        "profile": { "type": "string", "description": "Named email profile, e.g. signature_launch_landing_10. Absent on legacy plans." },
+        "sequence_id": { "type": "string" },
+        "content_hashes": {
+          "type": "object",
+          "required": ["algorithm", "per_email", "sequence"],
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": { "type": "string", "enum": ["sha256"] },
+            "canonical_fields": {
+              "type": "array", "items": { "type": "string" },
+              "description": "The email fields the per-email hash covers, in canonical form (JSON, sorted keys, authored list order)."
+            },
+            "per_email": {
+              "type": "object",
+              "description": "Map of 'E<slot>' to the sha256 hex digest of that email's approved content.",
+              "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            },
+            "sequence": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 over the ordered per-email hashes." }
+          }
+        },
+        "variant_strategy": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "mode": { "type": "string", "enum": ["explicit_pairs"] },
+            "pairs": { "type": "array", "items": { "type": "string" }, "minItems": 2 }
+          },
+          "description": "How subject/preview variants travel: explicit pairs (A with A, B with B), never a flattened unpaired list. Testing uses a verified native split-test capability or an approved alternative; unsupported testing is a reported gap, never a dropped pair."
+        },
+        "source_ids": { "type": "object", "additionalProperties": true, "description": "Producer-side ids: sequence id, profile, brief sequence position." },
+        "target_ids": { "type": "object", "additionalProperties": true, "description": "Consumer-side ids: Skill 44 workflow slug/name and draft mode." },
+        "enrollment_conditions": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "required": ["rule"], "additionalProperties": true,
+            "properties": { "rule": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "timing_anchors": {
+          "type": "object",
+          "required": ["anchor_event", "steps"],
+          "additionalProperties": true,
+          "properties": {
+            "anchor_event": { "type": "string", "minLength": 1, "description": "The event every offset is measured from (e.g. enrollment), never chained off a previous send." },
+            "timezone_ref": { "type": "string", "description": "Named reference to the consumer's location timezone; not a credential." },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object", "additionalProperties": true,
+                "properties": {
+                  "after_email_slot": { "type": "integer" },
+                  "wait_value": { "type": "integer", "minimum": 0 },
+                  "wait_unit": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "required": ["stop_rules", "suppression_rules"],
+          "additionalProperties": true,
+          "properties": {
+            "stop_rules": {
+              "type": "array", "minItems": 1,
+              "items": { "type": "object", "required": ["rule"], "additionalProperties": true,
+                         "properties": { "rule": { "type": "string", "minLength": 1 } } }
+            },
+            "suppression_rules": {
+              "type": "array", "minItems": 1,
+              "description": "Must include promotion suppression after a verified purchase and an eligibility recheck immediately before each scheduled send. Skill 44 owns enforcement.",
+              "items": { "type": "object", "required": ["rule"], "additionalProperties": true,
+                         "properties": { "rule": { "type": "string", "minLength": 1 } } }
+            }
+          }
+        },
+        "sender_config_refs": {
+          "type": "object",
+          "required": ["sender_profile_ref"],
+          "additionalProperties": { "type": "string" },
+          "description": "Named sender configuration REFERENCES only (for example 'sender-config:default'), resolved by Skill 44 against its own configuration. Credential values are forbidden anywhere in the plan.",
+          "properties": {
+            "sender_profile_ref": { "type": "string", "minLength": 1 },
+            "reply_to_ref": { "type": "string" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "profile": { "const": "signature_launch_landing_10" } },
+            "required": ["profile"]
+          },
+          "then": {
+            "required": ["draft_only", "profile", "sequence_id", "content_hashes",
+                         "variant_strategy", "source_ids", "target_ids",
+                         "enrollment_conditions", "timing_anchors", "lifecycle",
+                         "sender_config_refs"]
+          }
+        }
+      ]
     }
   },
   "$defs": {
@@ -50,7 +154,31 @@
         "type": { "type": "string", "enum": ["email", "wait"] },
         "name": { "type": "string", "minLength": 1 },
         "order": { "type": "integer", "minimum": 0 },
-        "attributes": { "type": "object" }
+        "attributes": { "type": "object" },
+        "slot": { "type": "integer", "minimum": 1, "description": "Email steps only, Signature Launch profile: the email's slot in its sequence." },
+        "content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Email steps only, Signature Launch profile: sha256 of the email's approved content (subjects, previews, body, ctas); must equal _meta.content_hashes.per_email for this slot." },
+        "variant_pairs": {
+          "type": "object",
+          "required": ["A", "B"],
+          "additionalProperties": false,
+          "description": "Email steps only, Signature Launch profile: EXPLICIT subject/preview pairs. Pair A is subject A + preview A; Pair B is subject B + preview B. Two testable pairs, never a flattened unpaired preview list; the legacy flat 'ab' block must not appear on a paired step.",
+          "properties": {
+            "A": {
+              "type": "object", "required": ["subject", "preview"], "additionalProperties": false,
+              "properties": {
+                "subject": { "type": "string", "minLength": 1 },
+                "preview": { "type": "string", "minLength": 1 }
+              }
+            },
+            "B": {
+              "type": "object", "required": ["subject", "preview"], "additionalProperties": false,
+              "properties": {
+                "subject": { "type": "string", "minLength": 1 },
+                "preview": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
       },
       "allOf": [
         {

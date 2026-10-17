@@ -1,25 +1,43 @@
-# Page-layout reference files: BUNDLED, REQUIRED READS
+# Page-layout reference files: REQUIRED READS, RESOLVED IN ORDER
 
-Standard v6 cites three page-layout reference files by exact name. They ship
-with the skill in this folder and are REQUIRED reads for the
-desktop-wireframe, mobile-tablet, and visual-mockup stages (Item 13 wires
-them into those stages' `reads` arrays in `references/stage-contract.json`).
-Do not substitute similar-but-different files.
+Standard v6 cites three page-layout reference files by exact name. They are
+REQUIRED reads for the desktop-wireframe, mobile-tablet, and visual-mockup
+stages (Item 13 wires them into those stages' `reads` arrays in
+`references/stage-contract.json`).
 
-## The bundled files
+## How each reference resolves (Item 17, ruled 2026-10-15)
+
+Each reference resolves in this order:
+
+1. The supplied or bundled original file in this folder.
+2. The approved house default recorded for it in the standing registry,
+   `substitutions.json` in this folder (per reference: the approved
+   default and its owner ruling).
+3. A recorded owner waiver in the run's `intake.json`
+   (`layout_references_waived: true` with a non-empty
+   `layout_references_waiver_reason`, or a `layout_waivers` entry for
+   `layout-references` with a reason), kept for true exceptions.
+
+Only a reference with none of the three stops the stage, and the stage
+gate names it. Every run records per reference which source it used,
+and REPORT.md prints it (original file, house default by name, or
+waiver): a fallback is visible, never silent. No agent may fabricate,
+generate, or substitute a reference or a default; a default counts
+only when the owner has ruled on it and the ruling is recorded in the
+registry.
+
+## The three references
 
 1. `Sales Page - Elevation Conference - Desktop(1).jpg`
+   Bundled in this folder: the ruled live-preview capture
+   (2026-10-15, Update Plan Decision 4; provenance below).
 2. `screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07.png`
+   The original PNG is not bundled; the approved house default is the
+   GoFullPage va PDF capture (Ruling 5; see the registry).
 3. `screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png`
-
-Supply status: Trevor supplies the three originals (order section G3); no
-agent may fabricate, generate, or substitute them. If any of the three is
-missing from an installed copy of the skill, the stage gate refuses to open
-desktop-wireframe, mobile-tablet, or visual-mockup unless `intake.json`
-carries `layout_references_waived: true` with a non-empty
-`layout_references_waiver_reason` typed by Trevor himself. A missing file
-with no recorded waiver is a hard stop, never a silent fallback to SOP
-structure rules alone.
+   The original PNG is not bundled; the approved house default is the
+   same va PDF capture, whose full-page stack contains this file's
+   continuation content (Ruling 5; see the registry).
 
 ## What these files are (Standard v6's own framing)
 
@@ -64,8 +82,8 @@ only. It is not a page-layout or page-color reference.
 
 ## Owner substitution recorded 2026-10-14 (Ruling 5)
 
-This section qualifies the supply-status text above. It is the one
-recorded exception to "Do not substitute similar-but-different files":
+This section qualifies the resolution text above. It is a recorded
+exception to "Do not substitute similar-but-different files":
 a substitution counts only when the owner has ruled on it and the
 ruling is recorded here and in the machine-readable record,
 `substitutions.json` in this folder, which the stage gate reads.
@@ -105,10 +123,40 @@ them into the skill is a separate owner-visible step awaiting
 Trevor's word. The stage gate satisfies files 2 and 3 from
 `substitutions.json`, not from the binaries.
 
-**Still outstanding.** Named file 1,
-`Sales Page - Elevation Conference - Desktop(1).jpg`, is NOT
-substituted and NOT waived. It remains a required original, and the
-stage gate still refuses to open desktop-wireframe, mobile-tablet, or
-visual-mockup for any run whose intake carries no recorded
-layout-references waiver, naming this file. A waiver excuses it for
-one run only; it does not retire the requirement.
+**File 1 status at the close of the Ruling 5 record.** Named file 1,
+`Sales Page - Elevation Conference - Desktop(1).jpg`, was NOT
+substituted and NOT waived under Ruling 5. It has since been satisfied
+by the ruled capture recorded in the next section (2026-10-15).
+
+## Owner substitution recorded 2026-10-15 (Update Plan Decision 4)
+
+**The ruling.** Trevor Otts, 2026-10-15 (Skill 71 Update Plan
+Decision 4): a capture of the Elevation Conference sales page, taken
+from its live Convert and Flow preview, STANDS as named file 1,
+`Sales Page - Elevation Conference - Desktop(1).jpg` (Standard v6
+substitution). Update Plan Item 18 executed the capture and this
+placement.
+
+**The file.** The capture is bundled in this folder under the cited
+filename itself: a full-page JPEG, 2,880 x 27,010 px (1440 CSS px
+desktop width at device scale factor 2), 7,108,476 bytes, SHA-256
+e35b45939e99634c4302366cf23f1f262af0dc91ead3cbeb440d8f77a5ccab4b
+(the hash is also recorded in `substitutions.json`). It was captured
+on 2026-10-15 from the live Convert and Flow preview of the Elevation
+Conference sales page (preview code n1ZoDWZ0csqYm5q4oaZe), stitched
+from per-viewport screenshots taken after a full scroll-through, so
+every scroll-triggered section background renders as a visitor sees
+it. The diagnostic-side record is
+`skill-71-diagnostic/owner-examples/CAPTURE-NOTE.md`.
+
+**Verification at capture.** Section-by-section visual comparison
+against the live preview: all 12 sections present in order (big
+claim, three pain movements, invitation, who it is for, what to
+expect, the H.E.R. sessions and keynote, transformation panels, next
+steps, founder letter); the founder letter from Mary H. Davis
+present in full; no pricing anywhere on the page.
+
+**Scope of the exception.** This substitution covers file 1 only.
+The non-substitutes warning above stands for everything else: no
+other file may be fabricated, generated, or substituted without its
+own recorded owner ruling.

@@ -265,8 +265,19 @@ class StageGateTest(unittest.TestCase):
         write(run / "responsive-html" / "index.html", "<html></html>")
         write(run / "responsive-html" / "page.txt", "code-only")
         write(run / "responsive-html" / "compare" / "compare-1440-01.png", png_bytes())
+        # Update Plan Item 16: close requires the parity evidence at
+        # both widths and the drift table with status "pass".
+        write(run / "responsive-html" / "compare" / "compare-390-01.png", png_bytes())
+        write(run / "responsive-html" / "compare" / "compare-report.json",
+              json.dumps({"tool": "compare_sheet.py",
+                          "drift": {"status": "pass",
+                                    "widths": {"1440": {"failures": [], "table": []},
+                                               "390": {"failures": [], "table": []}}}}))
         put_receipt(run, "responsive-html", author="html-builder", reviewer="visual-reviewer")
         write_review(run, "responsive-html", "compare-1440-01",
+                     {"brand_palette_fidelity": 9, "section_match": 8},
+                     "html-builder-session", "visual-reviewer-session", self.env)
+        write_review(run, "responsive-html", "compare-390-01",
                      {"brand_palette_fidelity": 9, "section_match": 8},
                      "html-builder-session", "visual-reviewer-session", self.env)
         gate("close", str(run), "responsive-html", expect=0)
@@ -350,7 +361,14 @@ class StageGateTest(unittest.TestCase):
         write(run / "private" / "brand.json", json.dumps({
             "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
             "logo": {"files": "test.png", "masthead_files": "test.png"},
-            "founder_photos": "test.png",
+            # Update plan Item 10 (record corrected on rebuild): this chain
+            # writes intake.json itself and never routes this brand file
+            # through write_intake, so the Item 10 intake check never sees
+            # it. The old "test.png" value is corrected for consistency
+            # only: it names no existing file, a form the skill's own
+            # validator would reject if the file were ever consumed, so
+            # the fixture carries a form-valid dummy (a bare 64-hex hash).
+            "founder_photos": "f" * 64,
             # Assembly fix (S8): the real brand file carries a grade
             # object (thresholds null until Item 8 calibration);
             # validate_image_grade.py fails a brand file with no grade
@@ -373,8 +391,13 @@ class StageGateTest(unittest.TestCase):
         write(run / "copy" / "copy-manifest.json", "{}")
         write(run / "font-action-plan" / "font-map.json", json.dumps({"fonts": {}}))
         write(run / "font-action-plan" / "action-plan.md", "plan")
-        for i in range(1, images + 1):
-            write(run / "desktop-wireframe" / f"part-{i:02d}.png", "stub")
+        # Update Plan Item 11: the wireframe stages deliver the spec
+        # image set (section slices, stitched full-page PNG, combined
+        # PDF); the retired part-*.png exports no longer satisfy the
+        # contract, so this fixture writes the new deliverables.
+        write(run / "desktop-wireframe" / "section-01.png", "stub")
+        write(run / "desktop-wireframe" / "wireframe-full.png", "stub")
+        write(run / "desktop-wireframe" / "wireframe.pdf", "stub")
         write(run / "desktop-wireframe" / "image-inventory.json",
               json.dumps({"images": [{"id": f"IMG-{i:03d}"} for i in range(1, images + 1)]}))
         # Assembly fix (S8): the delta contract's desktop-wireframe
@@ -383,7 +406,9 @@ class StageGateTest(unittest.TestCase):
         write(run / "desktop-wireframe" / "section-plan.json", "{}")
         write(run / "desktop-wireframe" / "mockup.html", "<html></html>")
         write(run / "desktop-wireframe" / "bible.md", "# bible")
-        write(run / "mobile-tablet" / "part-01.png", "stub")
+        write(run / "mobile-tablet" / "section-01.png", "stub")
+        write(run / "mobile-tablet" / "wireframe-full.png", "stub")
+        write(run / "mobile-tablet" / "wireframe.pdf", "stub")
         write(run / "mobile-tablet" / "tablet-rules.md", "rules")
         # Assembly fix (S8): the assembled contract also requires
         # mobile-tablet/section-plan.json (S3 Request 1 contract reads).
@@ -655,7 +680,13 @@ class StageGateTest(unittest.TestCase):
         env = {**os.environ, "STAGE_GATE_CONTRACT": str(ROOT / "references" / "stage-contract.json")}
         run = self.td / "intake-gate"
         write(run / "private" / "brand.json", json.dumps({"fonts": {"display": "T", "body": "T", "accent": "T"},
-              "logo": {"files": "t.png", "masthead_files": "t.png"}, "founder_photos": "t.png"}))
+              "logo": {"files": "t.png", "masthead_files": "t.png"},
+              # Update plan Item 10: this fixture's own write_intake
+              # invocation refuses the old "t.png" value (a founder_photos
+              # entry naming no existing file; the independent review's
+              # revert probe exits 2 on it), so the fixture carries a
+              # form-valid dummy hash instead.
+              "founder_photos": "f" * 64}))
         write(run / "intake.json", json.dumps({"page_version": "standard", "brand_file": "private/brand.json"}))
         run_gate("init", str(run), expect=0, env=env)
         put_receipt(run, "intake", author="intake-agent")
@@ -722,7 +753,13 @@ class StageGateTest(unittest.TestCase):
         write(run / "private" / "brand.json", json.dumps({
             "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
             "logo": {"files": "test.png", "masthead_files": "test.png"},
-            "founder_photos": "test.png",
+            # Record repair (post-review observation): same latent-trap
+            # class as the Item 10 fixture corrections. This brand file
+            # also never reaches write_intake or founder_allowed_hashes in
+            # tests (test_a/test_d), so this change is consistency only:
+            # the fixture carries a form-valid dummy instead of a
+            # nonexistent path the validator would reject if consumed.
+            "founder_photos": "f" * 64,
         }))
         write(run / "intake.json", json.dumps({
             "page_version": "standard", "brand_owner": "blackceo",
@@ -742,8 +779,14 @@ class StageGateTest(unittest.TestCase):
         write(run / "copy" / "copy-manifest.json", "{}")
         write(run / "font-action-plan" / "font-map.json", json.dumps({"fonts": {}}))
         write(run / "font-action-plan" / "action-plan.md", "plan")
+        # Update Plan Item 11: the wireframe stages deliver the spec
+        # image set (one section slice per planned section, stitched
+        # full-page PNG, combined PDF); the retired part-*.png exports
+        # no longer satisfy the contract.
         for i in (1, 2):
-            write(run / "desktop-wireframe" / f"part-{i:02d}.png", "stub")
+            write(run / "desktop-wireframe" / f"section-{i:02d}.png", "stub")
+        write(run / "desktop-wireframe" / "wireframe-full.png", "stub")
+        write(run / "desktop-wireframe" / "wireframe.pdf", "stub")
         write(run / "desktop-wireframe" / "image-inventory.json",
               json.dumps({"images": [{"id": "IMG-001"}, {"id": "IMG-002"}]}))
         write(run / "desktop-wireframe" / "section-plan.json", json.dumps([
@@ -752,7 +795,10 @@ class StageGateTest(unittest.TestCase):
             {"section_id": "offer", "copy_block_ids": ["offer-copy"],
              "image_slot_ids": ["IMG-002"], "reference_traits": []},
         ]))
-        write(run / "mobile-tablet" / "part-01.png", "stub")
+        write(run / "mobile-tablet" / "section-01.png", "stub")
+        write(run / "mobile-tablet" / "section-02.png", "stub")
+        write(run / "mobile-tablet" / "wireframe-full.png", "stub")
+        write(run / "mobile-tablet" / "wireframe.pdf", "stub")
         write(run / "mobile-tablet" / "tablet-rules.md", "rules")
         write(run / "mobile-tablet" / "section-plan.json", json.dumps([
             {"section_id": "hero", "copy_block_ids": ["hero-copy"],
@@ -782,6 +828,20 @@ class StageGateTest(unittest.TestCase):
         write(run / "final-mockups" / "mockup.html", "<html></html>")
         write(run / "final-mockups" / "desktop" / "part-01.png", "stub")
         write(run / "final-mockups" / "mobile" / "part-01.png", "stub")
+        # Item 12: the hybrid board is a closing deliverable of the stage.
+        write(run / "final-mockups" / "hybrid-board.png", "stub")
+        write(run / "final-mockups" / "hybrid-board.json", "{}")
+        # Update Plan Item 15: the final-mockups stage carries its
+        # section generation record; every slot traces to its generated
+        # file (written above under image-generation-qc/).
+        write(run / "final-mockups" / "generation-record.json", json.dumps(
+            {"stage": "final-mockups", "sections": [
+                {"section_id": "hero", "slots": [
+                    {"slot_id": "IMG-001", "source": "generated",
+                     "file": "image-generation-qc/Image-001.png"}]},
+                {"section_id": "offer", "slots": [
+                    {"slot_id": "IMG-002", "source": "generated",
+                     "file": "image-generation-qc/Image-002.png"}]}]}))
 
         def gate(*args, expect=None):
             return run_gate(*args, expect=expect, env=self.env)
@@ -817,6 +877,7 @@ class StageGateTest(unittest.TestCase):
                                     ("Image-002", {"grade": 9})],
             "final-mockups": [("desktop-part-01", {"composition_fidelity": 9}),
                               ("mobile-part-01", {"composition_fidelity": 9}),
+                              ("hybrid-board", {"composition_fidelity": 9}),
                               ("mockup", {"composition_fidelity": 9})],
         }
         review_sessions = {

@@ -1,0 +1,34 @@
+{
+  "location_id": "fixture-location-001",
+  "funnel_id": "F-100",
+  "page_id": "P-200",
+  "forms": [
+    {
+      "form_id": "FORM-1",
+      "form_name": "Opt-in form",
+      "page_section": "Opt-in",
+      "optin_fields": [
+        "name",
+        "email",
+        "phone"
+      ]
+    },
+    {
+      "form_id": "FORM-2",
+      "form_name": "Order form",
+      "page_section": "Order"
+    },
+    {
+      "form_id": "FORM-3",
+      "form_name": "Booking form",
+      "page_section": "Book"
+    }
+  ],
+  "conversational_requirements": {
+    "triggers": [
+      "opt-in",
+      "purchase",
+      "booking"
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "accessibility": "Emits no markup.",
+  "dependencies": [
+    {
+      "component": "design-tokens",
+      "file": "tokens/tokens.py",
+      "sha256": "33e0f77a6525121b2fffba0666d9ab1397575070a95ca0e0459449fe4b92c356"
+    }
+  ],
+  "doc": "16_SHARED_COMPONENTS_BRAND_AND_QC.md",
+  "doc_sections": [
+    "1",
+    "2"
+  ],
+  "events": [],
+  "files": {
+    "README.md": "1ce2713efc7a11e457d0a2b5454d3a6966f395cbcdd22ad77e412f7fb6f5ce7c",
+    "brand_loader.py": "4a757812ce04ed3637ced2a9622cc19df5a38d9a737b95649d41ab7e7ad32ba2",
+    "test_brand_loader.py": "38e763c8fc03aaadc7631c4ba1cefeab81ca17827daefc660d5a562f0ba666d4"
+  },
+  "inputs": "Path to a client brand file in the Skill 71 brand file form.",
+  "name": "brand-loader",
+  "outputs": "load_brand() -> validated brand dict; load_brand_tokens() -> token resolution document. Failures raise BrandLoadError with a problems list.",
+  "owner": "S71",
+  "version": "1.0.0"
+}

@@ -72,6 +72,18 @@ def make_run(td: Path, intake_extra=None, grade=None):
     intake.update(intake_extra or {})
     write_json(run / "intake.json", intake)
     write(run / "founder.jpg", FOUNDER_BYTES)
+    # Update Plan Item 16: stage_gate.check_parity_evidence (gate code,
+    # not the fixture contract) refuses a responsive-html close without
+    # the parity sheets at 1440 and 390 and a compare-report.json whose
+    # drift status is "pass"; fixture runs carry that evidence, as a
+    # real run whose page matched its approved mockup would.
+    write(run / "responsive-html" / "compare" / "compare-1440-01.png", PNG_BYTES)
+    write(run / "responsive-html" / "compare" / "compare-390-01.png", PNG_BYTES)
+    write_json(run / "responsive-html" / "compare" / "compare-report.json",
+               {"tool": "compare_sheet.py",
+                "drift": {"status": "pass",
+                          "widths": {"1440": {"failures": [], "table": []},
+                                     "390": {"failures": [], "table": []}}}})
     return run
 
 
@@ -483,6 +495,103 @@ class FunnelCompletionTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
 
 
+HANDOFF_INTAKE = {"funnel_handoff": {
+    "form": {"name": "Opt-in form", "form_id": "FORM-1"},
+    "behavior": "form_pop",
+    "step_order": ["signature_page", "product_selection_page",
+                   "order_form_page"]}}
+
+
+def good_handoff_clickthrough():
+    ct = good_clickthrough()
+    ct["form_submission"]["routed_to_step"] = "Order"
+    ct["primary_cta"] = {"element": "hero-cta", "opened_form_id": "FORM-1",
+                         "ok": True}
+    return ct
+
+
+class FunnelHandoffProofTest(unittest.TestCase):
+    """Update plan Item 32: the receipt's page-side proof lines, required
+    when intake records the funnel handoff form."""
+
+    def setUp(self):
+        self.td = Path(tempfile.mkdtemp(prefix="s71-handoff-funnel-"))
+        self.run = make_run(self.td, intake_extra={
+            "publish_target": "ghl", **HANDOFF_INTAKE})
+
+    def put_funnel(self, fc=None, ct=None):
+        write_json(self.run / "ghl-install-test" / "funnel-completion.json",
+                   fc if fc is not None else good_funnel_completion())
+        write_json(self.run / "ghl-install-test" / "clickthrough.json",
+                   ct if ct is not None else good_handoff_clickthrough())
+        write(self.run / "ghl-install-test" / "evidence" / "desktop.png",
+              PNG_BYTES)
+
+    def validate(self):
+        return run_cli(VALIDATE_FUNNEL, self.run)
+
+    def test_proven_handoff_passes(self):
+        self.put_funnel()
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    def test_receipt_must_carry_the_named_form(self):
+        write_json(self.run / "intake.json",
+                   {**json.loads((self.run / "intake.json").read_text()),
+                    "funnel_handoff": {
+                        "form": {"name": "Other form", "form_id": "FORM-9"},
+                        "behavior": "form_pop",
+                        "step_order": HANDOFF_INTAKE["funnel_handoff"]
+                        ["step_order"]}})
+        self.put_funnel()
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("FORM-9", proc.stdout)
+        self.assertIn("does not carry it", proc.stdout)
+
+    def test_primary_cta_record_missing_fails(self):
+        ct = good_handoff_clickthrough()
+        del ct["primary_cta"]
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("primary_cta is missing", proc.stdout)
+
+    def test_primary_cta_opening_another_form_fails(self):
+        ct = good_handoff_clickthrough()
+        ct["primary_cta"]["opened_form_id"] = "FORM-2"
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("opened_form_id", proc.stdout)
+        self.assertIn("FORM-1", proc.stdout)
+
+    def test_primary_cta_not_ok_fails(self):
+        ct = good_handoff_clickthrough()
+        ct["primary_cta"]["ok"] = False
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("primary_cta.ok is not true", proc.stdout)
+
+    def test_submission_must_route_to_the_next_step(self):
+        ct = good_handoff_clickthrough()
+        ct["form_submission"]["routed_to_step"] = "Book"
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("routed_to_step", proc.stdout)
+        self.assertIn("'Order'", proc.stdout)
+
+    def test_submission_without_route_record_fails(self):
+        ct = good_handoff_clickthrough()
+        del ct["form_submission"]["routed_to_step"]
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("routed_to_step", proc.stdout)
+
+
 class WriteIntakeDeliveryTest(unittest.TestCase):
     def setUp(self):
         self.td = Path(tempfile.mkdtemp(prefix="s5-intake-"))
@@ -540,6 +649,79 @@ class WriteIntakeDeliveryTest(unittest.TestCase):
         data = json.loads((self.run / "intake.json").read_text())
         self.assertEqual(data["automation_scope"], "none")
         self.assertIn("automation_scope_dropped", data)
+
+
+class WriteIntakeHandoffTest(unittest.TestCase):
+    """Update plan Item 32: the intake funnel-handoff record."""
+
+    def setUp(self):
+        self.td = Path(tempfile.mkdtemp(prefix="s71-handoff-intake-"))
+        self.run = self.td / "run"
+        self.run.mkdir(parents=True)
+
+    def intake(self, *extra):
+        return run_cli(WRITE_INTAKE, self.run, "--page-version", "standard",
+                       "--brand-owner", "Fixture", "--creative-direction", "x",
+                       "--image-cap", "5", *extra)
+
+    def test_no_handoff_flags_records_no_handoff(self):
+        proc = self.intake()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        data = json.loads((self.run / "intake.json").read_text())
+        self.assertNotIn("funnel_handoff", data)
+
+    def test_form_identity_records_the_handoff_contract(self):
+        proc = self.intake("--handoff-form-name", "Elevation Registration",
+                           "--handoff-form-id", "FORM-1")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        data = json.loads((self.run / "intake.json").read_text())
+        self.assertEqual(data["funnel_handoff"], {
+            "form": {"name": "Elevation Registration", "form_id": "FORM-1"},
+            "behavior": "form_pop",
+            "step_order": ["signature_page", "product_selection_page",
+                           "order_form_page"]})
+
+    def test_missing_input_is_recorded_explicitly(self):
+        proc = self.intake("--handoff-missing-reason",
+                           "client has not created the form yet")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        data = json.loads((self.run / "intake.json").read_text())
+        handoff = data["funnel_handoff"]
+        self.assertEqual(handoff["status"], "missing_input")
+        self.assertEqual(handoff["missing"], "form_identity")
+        self.assertEqual(handoff["reason"],
+                         "client has not created the form yet")
+        self.assertEqual(handoff["behavior"], "form_pop")
+        self.assertEqual(handoff["step_order"],
+                         ["signature_page", "product_selection_page",
+                          "order_form_page"])
+
+    def test_name_without_object_id_is_refused(self):
+        proc = self.intake("--handoff-form-name", "Elevation Registration")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("REFUSED", proc.stdout)
+        self.assertIn("name AND an object id", proc.stdout)
+        self.assertFalse((self.run / "intake.json").exists())
+
+    def test_object_id_without_name_is_refused(self):
+        proc = self.intake("--handoff-form-id", "FORM-1")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("REFUSED", proc.stdout)
+        self.assertFalse((self.run / "intake.json").exists())
+
+    def test_identity_and_missing_input_together_is_refused(self):
+        proc = self.intake("--handoff-form-name", "Elevation Registration",
+                           "--handoff-form-id", "FORM-1",
+                           "--handoff-missing-reason", "not created yet")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("REFUSED", proc.stdout)
+        self.assertFalse((self.run / "intake.json").exists())
+
+    def test_blank_missing_reason_is_refused(self):
+        proc = self.intake("--handoff-missing-reason", "  ")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("REFUSED", proc.stdout)
+        self.assertFalse((self.run / "intake.json").exists())
 
 
 def fixture_contract(td: Path) -> Path:

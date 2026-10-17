@@ -270,9 +270,10 @@ OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_FETCH_TIMEOUT_S = 10
 
 # The live list, cached for the run: {model_id: {"in_usd_per_mtok": float,
-# "out_usd_per_mtok": float}}. {} means "fetched and failed, or empty" --
-# the static catalog then answers as fallback for the rest of the run.
-_openrouter_pricing_cache: Optional[Dict[str, Dict[str, float]]] = None
+# "out_usd_per_mtok": float, "expiration_date": str (only when the API
+# sends one)}}. {} means "fetched and failed, or empty" -- the static
+# catalog then answers as fallback for the rest of the run.
+_openrouter_pricing_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 def _reset_openrouter_pricing_cache() -> None:
@@ -281,18 +282,21 @@ def _reset_openrouter_pricing_cache() -> None:
     _openrouter_pricing_cache = None
 
 
-def _openrouter_live_pricing() -> Dict[str, Dict[str, float]]:
+def _openrouter_live_pricing() -> Dict[str, Dict[str, Any]]:
     """OpenRouter's live model list as {id: per-million-token USD rates}.
 
     Prices come from each entry's `pricing` field (prompt/completion are USD
-    per token on the wire). Cached for the run. Any fetch or parse failure
-    yields {} so the caller falls back to the static catalog -- never a
-    guess, never an exception.
+    per token on the wire). Each entry also carries the item's raw
+    `expiration_date` when the API sends one, so check_openrouter_model's
+    retired-model check (FIX 61.3) can actually fire on data THIS fetcher
+    produced -- capacity._extract_model_pricing keeps it the same way.
+    Cached for the run. Any fetch or parse failure yields {} so the caller
+    falls back to the static catalog -- never a guess, never an exception.
     """
     global _openrouter_pricing_cache
     if _openrouter_pricing_cache is not None:
         return _openrouter_pricing_cache
-    table: Dict[str, Dict[str, float]] = {}
+    table: Dict[str, Dict[str, Any]] = {}
     try:
         req = urllib.request.Request(
             OPENROUTER_MODELS_URL,
@@ -314,8 +318,15 @@ def _openrouter_live_pricing() -> Dict[str, Dict[str, float]]:
                 out_usd = float(pricing.get("completion")) * 1_000_000
             except (TypeError, ValueError):
                 continue
-            table[model_id] = {"in_usd_per_mtok": in_usd,
-                               "out_usd_per_mtok": out_usd}
+            entry = {"in_usd_per_mtok": in_usd,
+                     "out_usd_per_mtok": out_usd}
+            # Keep the raw expiration for the retired-model check. Without
+            # this, check_openrouter_model's expiration_date read always
+            # missed on entries built here and the FIX 61.3 retired-model
+            # refusal was unreachable through this module's own fetcher.
+            if item.get("expiration_date"):
+                entry["expiration_date"] = item["expiration_date"]
+            table[model_id] = entry
     except Exception:  # noqa: BLE001 -- fetch/parse failure -> catalog fallback
         pass
     _openrouter_pricing_cache = table
