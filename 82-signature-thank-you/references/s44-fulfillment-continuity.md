@@ -37,6 +37,36 @@ entitlement ID:
 }
 ```
 
+S44's producer emits that map inside an order-level envelope
+(CR-S82-002), which also carries S44's entitlement version for the
+buyer:
+
+```json
+{
+  "tenant_id": "…",
+  "launch_id": "…",
+  "contact_ref": "…",
+  "entitlement_version": "ev1:<64 lowercase hex>",
+  "entitlements": { "<entitlement_id>": { "state": "…",
+                    "delivery_url": null, "next_action": "…" } }
+}
+```
+
+- The resolver accepts either the bare map or the producer envelope.
+  On the envelope it reads `entitlements` as the map above and carries
+  the order-level `entitlement_version` through to the view's
+  `entitlement_version` field (order-view schema); the same value may
+  be supplied as the resolver's explicit version input, which then
+  takes precedence. An envelope whose `tenant_id`/`launch_id` differ
+  from the verified snapshot fails closed, and a version that is not a
+  well-formed `ev1:` value (the item-5 shape: `ev1:` plus the
+  lowercase sha256 hex of S44's canonical book-state string) fails
+  closed in the resolver and fails order-view schema validation — a
+  mismatched or forged version never reaches the dedupe key.
+- With no version supplied, the view carries no `entitlement_version`
+  field and behavior is unchanged: the confirmation observation
+  derives its deterministic fingerprint fallback (section 3).
+
 - Only a **paid** item whose fulfillment state is `granted` produces
   an access block in the view (resolver rule; A13).
 - A `pending` state renders the item as pending — never as "You are
@@ -95,7 +125,14 @@ state shown, when S44 supplies one on the view; otherwise the page
 derives a deterministic version from the view's entitlement state
 (sorted entitlement/state pairs, sha256-prefixed `derived-sha256:`),
 so the same state always yields the same version and any entitlement
-change yields a new one. The record carries **no PII**: no email, no
+change yields a new one. The supplied value reaches the view through
+the resolver's carry-through from the producer envelope (section 2):
+the view's order-level `entitlement_version` field holds S44's ev1
+value, so the page-side key above can equal the worker-side key the
+S44 event worker computes over the same ev1 value. (Before the gap-I6
+repair, no schema-valid resolver-produced view could carry the field
+and the derived fallback always fired on the page side, so the two
+keys could never match.) The record carries **no PII**: no email, no
 buyer name, no payment data — entitlement IDs are product
 identifiers, not personal data.
 
@@ -124,8 +161,10 @@ the page is re-resolved from it — the page never edits the ledger.
 ## 6. Evidence S82 needs back from S44 to close A20 at L4
 
 A20's minimum evidence in doc 18 is **L4** (authorized native
-sandbox payment/workflow behavior). Nothing below exists yet; each
-item is **pending live proof — named here, not faked**:
+sandbox payment/workflow behavior). The five items below are the
+contract's asks; their filed status as of 2026-10-16 is recorded
+after the list — all five were filed by S44 at L4 and
+independently reviewed by S82 (verdicts cited there).
 
 1. **Native event read-back:** for an authorized sandbox purchase,
    the actual S44 workflow/event record showing the base entitlement
@@ -146,5 +185,24 @@ item is **pending live proof — named here, not faked**:
    exports/read-backs with tenant identity — a plan file, a stub ID,
    or a fixture run does not close any of them (doc 14 section 1/12).
 
-Until those arrive, A20 stands at its L1 evidence level (resolver and
-renderer behavior under fixtures), and S82 reports it that way.
+**Status (2026-10-16):** all five items were filed by S44 at L4
+under Trevor's sandbox-only test-payments ruling
+(`handoffs/change-requests/CR-S82-002-L4-COMPLETION-S44.md`;
+full evidence `rooms/S44/work/l4/L4-COMPLETION-2026-10-16.md`)
+and independently reviewed by S82
+(`work/review-cr-s82-002-l4-completion.md`). Per-item verdicts:
+item 1 SUPPORTED for A20's tab-close half; item 2 SUPPORTED with
+its failure-form limitation carried verbatim (payment never
+completed — a draft unpaid invoice with no transaction — not a
+declined charge; the sandbox has no payment provider); item 3
+SUPPORTED as exactly one send proven on a clean re-run, with
+run 1's disclosed operator-caused duplicate send (2 native sends
+against 1 claim; the pipeline never re-sent) carried with it;
+item 4 SUPPORTED (the strongest leg — trace IDs for every native
+read-back); item 5 SUPPORTED (values recomputed bit-for-bit by
+the reviewer). Cross-cutting caveat: the native leg is CLAIMED
+(S44 firsthand read-backs, no raw native payloads on file)
+pending SWARM's re-read of the cited native IDs. A20 is READY
+to present to SWARM; the unit stays `planned` in the ledger
+until SWARM verifies and INTEGRATION records — S82 reports it
+that way.

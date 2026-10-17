@@ -1,0 +1,496 @@
+{
+ "$id": "80-signature-upsell/schemas/upsell-result.schema.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "additionalProperties": false,
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "independent_review": {
+      "const": true
+     }
+    },
+    "required": [
+     "independent_review"
+    ]
+   },
+   "then": {
+    "properties": {
+     "reviewer_session": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "reviewer_session"
+    ]
+   }
+  }
+ ],
+ "description": "Skill 80 upsell-result.json (spec 10 section 7). Extends the reference page-result.schema.json fields and adds the upsell-specific handoff: approved offer mapping, native action binding, CTA map, disclosure audit, eligibility check, copy validation and hashes. A pretty local button does not prove a charge route: native_action fields stay null and disclosure_audit stays pending_native_binding until S80-06 / Skill 6 evidence exists.",
+ "properties": {
+  "approved_offer_mapping": {
+   "additionalProperties": false,
+   "properties": {
+    "amount_minor": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "billing_type": {
+     "enum": [
+      "one_time",
+      "recurring",
+      "installment",
+      "trial"
+     ]
+    },
+    "currency": {
+     "pattern": "^[A-Z]{3}$",
+     "type": "string"
+    },
+    "native_price_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "native_product_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "offer_id": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "slot": {
+     "enum": [
+      "upsell_1",
+      "upsell_2"
+     ]
+    }
+   },
+   "required": [
+    "offer_id",
+    "slot",
+    "native_product_id",
+    "native_price_id",
+    "amount_minor",
+    "currency",
+    "billing_type"
+   ],
+   "type": "object"
+  },
+  "artifacts": {
+   "items": {
+    "additionalProperties": false,
+    "properties": {
+     "path": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path",
+     "sha256"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "author_session": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "blockers": {
+   "items": {
+    "type": "string"
+   },
+   "type": "array"
+  },
+  "copy_validation": {
+   "additionalProperties": false,
+   "properties": {
+    "copy_sha256": {
+     "pattern": "^[a-f0-9]{64}$",
+     "type": "string"
+    },
+    "exit_code": {
+     "enum": [
+      0,
+      2,
+      3
+     ]
+    },
+    "profile_id": {
+     "const": "signature-upsell-eight-section"
+    },
+    "validator": {
+     "const": "scripts/validate_upsell_copy.py"
+    },
+    "verdict": {
+     "enum": [
+      "pass",
+      "violation",
+      "fail_closed",
+      "not_run"
+     ]
+    }
+   },
+   "required": [
+    "validator",
+    "profile_id",
+    "exit_code",
+    "verdict",
+    "copy_sha256"
+   ],
+   "type": "object"
+  },
+  "cta_map": {
+   "description": "Exactly one mapped CTA per section, all bound to the same guarded native action.",
+   "items": {
+    "additionalProperties": false,
+    "properties": {
+     "action_ref": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "cta_text": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "section_number": {
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "section_number",
+     "cta_text",
+     "action_ref"
+    ],
+    "type": "object"
+   },
+   "maxItems": 8,
+   "minItems": 8,
+   "type": "array"
+  },
+  "disclosure_audit": {
+   "additionalProperties": false,
+   "properties": {
+    "adjacent_to_cta": {
+     "type": "boolean"
+    },
+    "amount_matches_native": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "currency_present": {
+     "type": "boolean"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "recurring_terms_disclosed": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "verdict": {
+     "enum": [
+      "pass",
+      "fail",
+      "pending_native_binding"
+     ]
+    }
+   },
+   "required": [
+    "amount_matches_native",
+    "currency_present",
+    "recurring_terms_disclosed",
+    "adjacent_to_cta",
+    "verdict",
+    "notes"
+   ],
+   "type": "object"
+  },
+  "eligibility_check": {
+   "additionalProperties": false,
+   "properties": {
+    "entry_context": {
+     "enum": [
+      "from_upsell_1",
+      "from_downsell_1",
+      null
+     ],
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "original_purchase_verified": {
+     "type": "boolean"
+    },
+    "qualifying_purchase_slot": {
+     "enum": [
+      "upsell_1",
+      "downsell_1",
+      null
+     ],
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verdict": {
+     "enum": [
+      "eligible",
+      "not_eligible",
+      "blocked_unverified"
+     ]
+    }
+   },
+   "required": [
+    "original_purchase_verified",
+    "qualifying_purchase_slot",
+    "entry_context",
+    "verdict"
+   ],
+   "type": "object"
+  },
+  "hashes": {
+   "additionalProperties": false,
+   "properties": {
+    "asset_sha256": {
+     "items": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "copy_sha256": {
+     "pattern": "^[a-f0-9]{64}$",
+     "type": "string"
+    },
+    "ui_sha256": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "copy_sha256",
+    "ui_sha256",
+    "asset_sha256"
+   ],
+   "type": "object"
+  },
+  "independent_review": {
+   "type": "boolean"
+  },
+  "input_hash": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "instance": {
+   "enum": [
+    "upsell_1",
+    "upsell_2"
+   ]
+  },
+  "launch_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "location_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "native_action": {
+   "additionalProperties": false,
+   "description": "Native product-bound one-click action provisioned by Skill 6 (S80-06). Both upsell slots may surface natively as an 'Upsell' submission type; no distinct vendor event names are invented (spec 10 section 7).",
+   "properties": {
+    "action_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "binding_screenshot_ref": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "settings_ref": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verified_by": {
+     "description": "Who stands behind the native_action record. 's80_06_binding' (added by the S80-06 binding integration, 2026-10-16): the bundle's extra-offer binding is integrated and interface-conformant at fixture level, with action_id still null pending S06's installed binding; it does NOT claim Skill 6 has provisioned or verified a live action (that remains 'skill_06', L3). 'pending_s80_06' remains valid for pre-integration records.",
+     "enum": [
+      "skill_06",
+      "pending_s80_06",
+      "s80_06_binding"
+     ]
+    }
+   },
+   "required": [
+    "action_id",
+    "settings_ref",
+    "binding_screenshot_ref",
+    "verified_by"
+   ],
+   "type": "object"
+  },
+  "native_bindings_ref": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "page_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "proof_class": {
+   "enum": [
+    "L0",
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5"
+   ]
+  },
+  "request_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "reviewer_session": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "revision": {
+   "minimum": 1,
+   "type": "integer"
+  },
+  "schema_version": {
+   "const": "1.0"
+  },
+  "source_hash": {
+   "pattern": "^[a-f0-9]{64}$",
+   "type": "string"
+  },
+  "status": {
+   "enum": [
+    "authored",
+    "locally_verified",
+    "installed_test_verified",
+    "ready_for_activation",
+    "live_verified",
+    "blocked"
+   ]
+  },
+  "tenant_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "test_only": {
+   "type": "boolean"
+  },
+  "test_outcomes": {
+   "items": {
+    "additionalProperties": false,
+    "properties": {
+     "evidence_ref": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "level": {
+      "enum": [
+       "L0",
+       "L1",
+       "L2",
+       "L3",
+       "L4",
+       "L5"
+      ]
+     },
+     "outcome": {
+      "enum": [
+       "pass",
+       "fail",
+       "pending",
+       "not_run"
+      ]
+     },
+     "test_id": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "test_id",
+     "level",
+     "outcome",
+     "evidence_ref"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  }
+ },
+ "required": [
+  "schema_version",
+  "tenant_id",
+  "location_id",
+  "launch_id",
+  "revision",
+  "request_id",
+  "input_hash",
+  "page_id",
+  "status",
+  "artifacts",
+  "author_session",
+  "reviewer_session",
+  "independent_review",
+  "proof_class",
+  "blockers",
+  "native_bindings_ref",
+  "test_only",
+  "instance",
+  "source_hash",
+  "approved_offer_mapping",
+  "native_action",
+  "cta_map",
+  "disclosure_audit",
+  "eligibility_check",
+  "copy_validation",
+  "hashes",
+  "test_outcomes"
+ ],
+ "title": "Skill 80 upsell result (extends reference page-result)",
+ "type": "object"
+}

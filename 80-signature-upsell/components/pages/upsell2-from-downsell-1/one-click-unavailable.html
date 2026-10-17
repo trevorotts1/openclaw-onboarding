@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEST ONLY Implementation Studio - TEST-UPSELL_2 (one-click-unavailable)</title>
+<style>
+:root{
+  --ink:#212631; --paper:#fffdf8; --tint:#eef3fd; --accent:#2456c8;
+  --accent-dark:#1a4199; --amber:#ffb340; --line:#d9dee9; --muted:#4d5566;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f2ec;color:var(--ink);
+  font-family:Georgia,'Times New Roman',serif;line-height:1.55}
+main{max-width:46rem;margin:0 auto;padding:0 1rem 3rem}
+.test-banner{background:var(--amber);color:#231a00;text-align:center;
+  font-family:Verdana,sans-serif;font-size:.8rem;font-weight:bold;
+  letter-spacing:.04em;padding:.5rem 1rem}
+.state-banner{background:#fff3d6;border:1px solid #d9a72e;border-radius:.5rem;
+  padding:.8rem 1rem;margin:1rem 0;font-size:1rem}
+.ack{background:#eaf6ec;border:1px solid #9cc7a2;border-radius:.5rem;
+  padding:.8rem 1rem;margin:1rem 0}
+section{background:var(--paper);border:1px solid var(--line);
+  border-radius:.75rem;padding:1.4rem 1.4rem 1.2rem;margin:1.1rem 0}
+section.alt{background:var(--tint)}
+section.hero{border-top:.45rem solid var(--accent)}
+section.hero h2{font-size:1.9rem;line-height:1.2;margin:.2rem 0 .6rem}
+h2{font-size:1.35rem;margin:.2rem 0 .5rem;line-height:1.3}
+.entry-tag{font-family:Verdana,sans-serif;font-size:.75rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.08em;margin:0}
+.cta-block{margin-top:1rem}
+button.cta{display:block;width:100%;background:var(--accent);color:#fff;
+  border:0;border-radius:.6rem;padding:.95rem 1rem;font-size:1.05rem;
+  font-family:Verdana,sans-serif;font-weight:bold;cursor:pointer}
+button.cta:hover{background:var(--accent-dark)}
+button.cta[disabled]{background:#9aa3b2;cursor:not-allowed}
+p.disclosure{font-size:.95rem;color:var(--muted);margin:.45rem 0 0;
+  font-family:Verdana,sans-serif}
+ul{padding-left:1.2rem}
+ol.reasons{padding-left:1.4rem}
+ol.reasons li{margin:.55rem 0}
+.spinner{display:inline-block;width:1rem;height:1rem;border:.2rem solid #c8cfdd;
+  border-top-color:var(--accent);border-radius:50%;vertical-align:-.15rem;
+  margin-right:.5rem;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+footer{border-top:1px solid var(--line);margin-top:1.5rem;padding-top:1rem;
+  text-align:center}
+a.decline{font-family:Verdana,sans-serif;font-size:1rem;color:var(--accent-dark)}
+a.decline.disabled{color:var(--muted);pointer-events:none}
+a.secondary{font-family:Verdana,sans-serif}
+.thanks{text-align:center;padding:2.5rem 1rem}
+.thanks a.continue{display:inline-block;background:var(--accent);color:#fff;
+  text-decoration:none;border-radius:.6rem;padding:.9rem 1.4rem;
+  font-family:Verdana,sans-serif;font-weight:bold}
+@media (max-width:640px){
+  section{padding:1.1rem 1rem 1rem}
+  section.hero h2{font-size:1.55rem}
+  button.cta{font-size:1rem;padding:1rem}
+  p.disclosure{font-size:.95rem}
+}
+@media (prefers-reduced-motion: reduce){
+  .spinner{animation:none}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="test-banner">TEST ONLY - local rendered proof (L2). The accept buttons bind through the S80-06 extra-offer binding, interface-conformant with the S79/S06 draft interface; native install is pending S06 confirmation, no live native action exists yet, and this page cannot charge anything.</div>
+<main>
+<div class="state-banner" data-state="one-click-unavailable" role="status">One-click purchase is not available for this offer right now, so the paid action is blocked rather than replaced with a different checkout. You have not been charged. You can continue without the extra below.</div>
+<div class="ack" data-ack-condition="verified_original_purchase">Your original purchase is confirmed. This page offers one further optional extra; everything you already bought stays yours either way.</div>
+<div class="ack" data-ack-condition="from_downsell_1">Your downsell choice is confirmed (TEST ONLY Lite Start Pass) at its own terms. You chose that alternative instead of the full first-upgrade package, and nothing about that changes here. This page offers the same further extra that first-upgrade buyers see.</div>
+<section data-section-number="1" data-section-key="big_bold_claim" class="hero">
+<p class="entry-tag">Optional extra - step 1 of 8</p>
+<h2>Finish the build with the TEST ONLY Implementation Studio</h2>
+<p>Your upgrade is confirmed. The TEST ONLY Implementation Studio adds guided working sessions where you build your launch assets live, with an expert reviewing each piece before you leave the room.</p>
+<div class="cta-block"><button class="cta primary" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" id="primary-cta" disabled aria-disabled="true">Yes, reserve my Studio working sessions</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="2" data-section-key="big_bold_pain_1" class="alt">
+<p class="entry-tag">Optional extra - step 2 of 8</p>
+<h2>Knowing the steps is not the same as finishing them</h2>
+<p>Many members understand exactly what to build and still stall at the blank page, because turning a method into finished pages, emails and assets is a different job from learning it.</p>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">Get guided build time - join the Studio</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="3" data-section-key="big_bold_pain_2" class="">
+<p class="entry-tag">Optional extra - step 3 of 8</p>
+<h2>Small mistakes compound when nobody reviews the work</h2>
+<p>A unclear headline, a miswired form or a broken checkout step can sit unnoticed for weeks when you build alone, quietly costing the launch you worked to prepare.</p>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">Have every piece reviewed - join the Studio</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="4" data-section-key="big_bold_pain_3" class="alt">
+<p class="entry-tag">Optional extra - step 4 of 8</p>
+<h2>Accountability disappears when the calendar is empty</h2>
+<p>Without scheduled working sessions, implementation slips behind client work and daily demands, and the plan that felt clear in training slowly turns into a folder of intentions.</p>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">Put build sessions on the calendar - join the Studio</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="5" data-section-key="big_bold_why" class="">
+<p class="entry-tag">Optional extra - step 5 of 8</p>
+<h2>Why the Studio exists</h2>
+<p>We created the Studio because finishing is where most launches are won or lost. Structured working sessions, expert eyes on your actual assets, and a fixed build rhythm carry a plan from understood to launched.</p>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">Move from learning to launching - join the Studio</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="6" data-section-key="big_bold_who" class="alt">
+<p class="entry-tag">Optional extra - step 6 of 8</p>
+<h2>Built for members ready to implement now</h2>
+<p>The Studio fits members who have a launch date in mind, who want their real pages and emails reviewed as they build them, and who work best with scheduled accountability. Members still exploring can join a later cohort rhythm instead.</p>
+<ul>
+<li>You have a launch you intend to ship this season</li>
+<li>You want expert review of your real assets as you build</li>
+<li>You finish more with scheduled, accountable working time</li>
+</ul>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">If you are building now, join the Studio</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="7" data-section-key="big_bold_what" class="">
+<p class="entry-tag">Optional extra - step 7 of 8</p>
+<h2>Exactly what the Studio adds</h2>
+<p>The Studio adds a series of guided implementation sessions, individual review of the assets you build in those sessions, and a structured build plan for your launch. It is a working programme, separate from the content archive, and it does not repeat the training you already own.</p>
+<ul>
+<li>Guided live implementation working sessions</li>
+<li>Individual expert review of assets you build</li>
+<li>A structured week-by-week launch build plan</li>
+<li>Material limitation: sessions run on the published Studio schedule</li>
+</ul>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">Join the Studio and build it live</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<section data-section-number="8" data-section-key="seven_reasons" class="alt">
+<p class="entry-tag">Optional extra - step 8 of 8</p>
+<h2>7 Reasons To Commit To Your Fully-Built Future</h2>
+<p>Seven reasons guided implementation changes what you ship.</p>
+<ol class="reasons">
+<li>Finished beats understood: guided sessions convert the method you learned into pages, emails and assets that actually exist.</li>
+<li>Expert review catches expensive mistakes early, while a headline, form or checkout step is still cheap to fix.</li>
+<li>Scheduled working time defends your launch from the daily demands that quietly push implementation aside.</li>
+<li>Building alongside other committed members keeps energy high on the days when working alone would stall.</li>
+<li>A week-by-week build plan removes guesswork: you always know the next asset to finish and why it comes next.</li>
+<li>You leave each session with completed work, not homework, so progress is visible and measurable every week.</li>
+<li>Your launch date becomes realistic: a reviewed, structured build is how a plan turns into a launch that ships.</li>
+</ol>
+<div class="cta-block"><button class="cta" data-action-ref="extra-offer-binding:TEST-ONLY-U2" data-native-action-status="interface_conformant_pending_s06" disabled aria-disabled="true">Commit to your Fully-Built Future - join the Studio</button><p class="disclosure">USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.</p></div>
+</section>
+<footer>
+<a class="decline" href="#route-TEST-THANK_YOU" data-decline-route="TEST-THANK_YOU" data-charges="false">No thanks - continue without this extra</a>
+<p class="disclosure">Choosing no thanks never charges you. Your original purchase stays complete either way.</p>
+</footer>
+</main>
+</body>
+</html>
