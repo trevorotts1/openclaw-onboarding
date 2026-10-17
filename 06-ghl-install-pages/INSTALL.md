@@ -165,13 +165,13 @@ The agent must verify ALL of these are in place before proceeding:
 
 The OpenClaw Chrome extension is the PRIMARY engine (operator decision, 2026-10-13): the OpenClaw browser's extension driver on the operator's paired, already signed-in Chrome, driven via `openclaw browser`. agent-browser (Vercel Labs, Skill 03) is the FALLBACK lane; **Skill 03 (Wave 1) must be complete BEFORE Skill 06 starts** — 06 is not parallel-safe with 03.
 
-**1. Install / verify the OpenClaw Chrome extension (PRIMARY).** Install the OpenClaw extension from the Chrome Web Store into the Chrome profile OpenClaw is paired with, then run the standing version preflight. It compares the installed version against the newest the box can prove (the operator pin, else the extension source bundled with the local OpenClaw install) and STOPs with the update path when the extension is missing or behind:
+**1. Install / verify the OpenClaw Chrome extension (PRIMARY).** Install the OpenClaw extension from the Chrome Web Store into the Chrome profile OpenClaw is paired with, then run the standing version preflight. It compares the installed version against the newest the box can prove (the operator pin, else the extension source bundled with the local OpenClaw install) and reports the extension lane's (Lane 1) verdict, with the update path named, when the extension is missing or behind:
 
 ```bash
 bash scripts/check-openclaw-extension-version.sh
 ```
 
-Expected: `OK: OpenClaw Chrome extension vX.Y.Z is installed and current`. Any STOP output means no install run starts until the extension is installed or updated and the check passes.
+Expected: `OK: OpenClaw Chrome extension vX.Y.Z is installed and current (expected vA.B.C)`. A `LANE 1 UNAVAILABLE` result disables the extension lane only: record the reason, continue to the capability probe (item 3), and let it select the best verified lane; install or update the extension when convenient to restore Lane 1. An install run fails to start only when the probe verifies zero lanes (item 3, fail closed).
 
 **2. Install / verify the agent-browser CLI (FALLBACK lane).** Follow the 03-agent-browser skill, then verify the CLI resolves and matches the repo pin:
 
@@ -259,6 +259,7 @@ with sync_playwright() as p:
 Configuration notes:
 - Always use launch_persistent_context (not regular launch). This saves login session so re-authentication is not required on every run.
 - The user_data_dir ("./ghl_session") is where the browser saves cookies and session data. This folder persists between runs.
+- VPS/container: the `~/.openclaw/playwright-data/ghl-install-pages` path above is the Mac form (on a Mac the durable root IS `~/.openclaw`). On a VPS the persistent-context dir MUST sit under the durable root (`tools/browser_manager.py` `durable_root()`): `/data/.openclaw/playwright-data/ghl-install-pages` on a /data-backed box. Never point it at a container-layer path: a recreate wipes it and the saved login with it (see the provisioning contract in `ENV-MATRIX.md`).
 - headless MUST stay True (D6 HEADLESS-ONLY). A visible window is forbidden, dev OR client. Authentication on this lane is still the Step 6 auth ladder (token-only primary, gated Tier-2, fail-loud Tier-3) — the fallback lane changes the driver, never the auth doctrine.
 - On the fallback lane only, an existing persistent session at `~/.openclaw/playwright-data/ghl-install-pages` may carry logged-in state while a token is unavailable — note it in MEMORY.md. Tier-1 token seeding remains the only unattended auth path.
 - Below 1280px width: GHL's left sidebar collapses into a hamburger menu, breaking automation.
@@ -327,7 +328,7 @@ If the user does not specify which one, default to Funnels.
 > Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
 > the policy gates allow; Tier-3 fail-loud — never a silent UI login.
 
-**Tier-1 — TOKEN-ONLY (default, unattended).** The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) and NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form.
+**Tier-1 — TOKEN-ONLY (default, unattended).** The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) and NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form. Resolution is the shared resolver (`tools/ghl_secret_resolver.py`): `seed-ghl-auth.py --check` performs the FULL resolution (the `GHL_REFRESH_TOKEN_FILE` indirection, then the env alias chain GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / CAF_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN, then the canonical store), so a token that lives only in the store or only behind a `*_FILE` variable is found, not false-failed; the grep below is only a spot check of the canonical name in the canonical file.
 
 **ALWAYS check for an existing token before prompting the user. Presence-only checks — NEVER print the token value:**
 

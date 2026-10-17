@@ -1381,13 +1381,25 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str) -> d
 # gates are deliberately strict (never-fabricate): the author is BOUND to the
 # intake founder name (it cannot default to the brand or blank), keywords must be
 # a researched, non-placeholder set, the canonical must be the intended live/
-# preview domain (never a Firebase storage URL), and title/description honour the
-# search-engine display-truncation limits. Pure: no network — the live ogImage
-# 200 re-verify is the §3 asset-cdn stage's job; callers pass its result in.
+# preview domain (never a Firebase storage URL), and the title honours the
+# search-engine display-truncation limit while the description honours the
+# stricter 155-char save-time cap (see SEO_DESCRIPTION_SAVE_MAX below). Pure:
+# no network; the live ogImage 200 re-verify is the §3 asset-cdn stage's job;
+# callers pass its result in.
 
 SEO_TITLE_MAX = 60          # search-engine title truncation threshold
-SEO_DESCRIPTION_MAX = 160   # search-engine meta-description truncation threshold
-SEO_LANGUAGE_DEFAULT = "en"  # set explicitly — never inherit the GHL default
+# S06-06 Q1 disposition: TWO description numbers with TWO different jobs.
+# SEO_DESCRIPTION_MAX (160) is the search-engine DISPLAY-truncation threshold
+# only: beyond it, search results may cut the description off. It never
+# authorizes a longer description. The operative SAVE-TIME cap is
+# SEO_DESCRIPTION_SAVE_MAX (155): GHL's own in-app validator rejects a
+# description over 155 chars (validator string "Description is under 155
+# characters", the same gate ghl_builder.SEO_DESC_MAX enforces; 156-160 char
+# descriptions passed the old 160 cap but failed GHL's validator). Every
+# build/validation path enforces 155; the 156-160 band is refused here too.
+SEO_DESCRIPTION_MAX = 160   # DISPLAY-truncation threshold ONLY (never a save cap)
+SEO_DESCRIPTION_SAVE_MAX = 155  # operative save-time cap (GHL validator)
+SEO_LANGUAGE_DEFAULT = "en"  # set explicitly; never inherit the GHL default
 SEO_MIN_KEYWORDS = 3        # researched-keywords gate: >= N distinct, non-placeholder
 
 # Tokens a *researched* keyword/tag set must never contain — these betray an
@@ -1494,7 +1506,9 @@ def build_seo_meta(
     malformed:
 
       * ``title``    — required, ``<= SEO_TITLE_MAX`` (60) chars.
-      * ``description`` — required, ``<= SEO_DESCRIPTION_MAX`` (160) chars.
+      * ``description`` - required, ``<= SEO_DESCRIPTION_SAVE_MAX`` (155) chars
+        (the GHL save-time validator cap; 160 is only the search-engine
+        display-truncation threshold and never authorizes a longer value).
       * ``keywords`` — researched set: non-empty, ``>= SEO_MIN_KEYWORDS`` distinct,
         no placeholder tokens (``_assert_researched_keywords``).
       * ``author``   — BOUND to ``founder_name`` (never free-typed, never the brand
@@ -1525,10 +1539,11 @@ def build_seo_meta(
             f"seoMeta.title is {len(title)} chars; must be <= {SEO_TITLE_MAX} "
             "(search engines truncate beyond this)"
         )
-    if len(description) > SEO_DESCRIPTION_MAX:
+    if len(description) > SEO_DESCRIPTION_SAVE_MAX:
         raise ValueError(
             f"seoMeta.description is {len(description)} chars; must be <= "
-            f"{SEO_DESCRIPTION_MAX} (search engines truncate beyond this)"
+            f"{SEO_DESCRIPTION_SAVE_MAX} (the GHL save-time validator cap; "
+            "search engines may also truncate display beyond 160)"
         )
 
     kw = _seo_clean_list(keywords, "keywords")
@@ -1692,8 +1707,9 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
     step["expect"]["seo_author_is_founder"] = bool(founder_name)
     step["expect"]["verify_seo"] = (
         "re-read GET /funnels/page/<id>; fetch its pageDataDownloadUrl; confirm "
-        "pageData.seoMeta is present + populated (title<=60, description<=160, "
-        ">=3 researched keywords, author==founder, https canonical, language='en')"
+        "pageData.seoMeta is present + populated (title<=60, description<=155 "
+        "(save cap), >=3 researched keywords, author==founder, https canonical, "
+        "language='en')"
     )
     return step
 
@@ -2342,6 +2358,7 @@ __all__ = [
     "edit_element_customcode",
     "SEO_TITLE_MAX",
     "SEO_DESCRIPTION_MAX",
+    "SEO_DESCRIPTION_SAVE_MAX",
     "SEO_LANGUAGE_DEFAULT",
     "SEO_MIN_KEYWORDS",
     "build_seo_meta",

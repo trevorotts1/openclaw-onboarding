@@ -45,7 +45,24 @@ CLI
     python3 ghl_vps_mount_proof.py classify <path>
     python3 ghl_vps_mount_proof.py pre <path> --run-id <id> [--evidence-root <dir>] [--box-label <name>]
     python3 ghl_vps_mount_proof.py post <path> --run-id <id> [--evidence-root <dir>] [--box-label <name>]
+    python3 ghl_vps_mount_proof.py pre-pathset --path KEY=PATH [--path KEY=PATH ...] --run-id <id> [--evidence-root <dir>] [--box-label <name>]
+    python3 ghl_vps_mount_proof.py post-pathset --path KEY=PATH [--path KEY=PATH ...] --run-id <id> [--evidence-root <dir>] [--box-label <name>]
     python3 ghl_vps_mount_proof.py --selftest
+
+PATH SET (S06-05)
+-----------------
+The single-path proof above covers the one path B-U15 named
+(``~/.agent-browser``). A container recreate threatens FIVE Skill-6
+persistence paths at once, so S06-05 adds a PATH-SET proof alongside it:
+``pre-pathset`` / ``post-pathset`` run the same marker round trip over
+every path in the set and write ONE receipt per box
+(``routing/vps-mount-pathset-receipt.json``) with a separate
+survived/classification row per path. The single-path receipt
+(``routing/vps-mount-receipt.json``), its schema, and its CLI behaviour
+are UNCHANGED (back-compat). Per-path honesty matches the single-path
+rule: a path with no post-phase is PRE-ONLY, never a PASS. The live
+recreate between the two phases stays operator-gated, exactly like the
+single-path live leg.
 """
 from __future__ import annotations
 
@@ -295,6 +312,168 @@ def read_receipt(evidence_root: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
+# S06-05 — the full persistence PATH SET in one receipt per box
+# ---------------------------------------------------------------------------
+# The five paths a container recreate must not silently lose (ENV-MATRIX.md
+# provisioning contract): the agent-browser state dir, the run-evidence base,
+# the run-state root, the Playwright persistent-context data dir, and the
+# secrets dir. Keys are stable receipt vocabulary — the provisioning
+# verifier (tools/ghl_vps_provision_check.py) consumes the same keys.
+PATHSET_KEYS = (
+    "agent_browser_state",
+    "evidence_base",
+    "run_state_root",
+    "playwright_data_dir",
+    "secrets_dir",
+)
+
+PATHSET_RECEIPT_FILENAME = "vps-mount-pathset-receipt.json"
+
+
+def default_pathset(
+    *,
+    durable_root: str = "",
+    home: str = "",
+    evidence_base: str = "",
+    secrets_dir: str = "",
+) -> dict:
+    """The canonical per-box persistence path set (key -> path).
+
+    Pure: no filesystem access, no environment detection of its own — the
+    caller resolves ``durable_root`` via the ONE sanctioned primitive
+    (``browser_manager.durable_root()``, ENV-MATRIX adaptation contract
+    item 1) and the evidence base via ``cc_board.resolve_evidence_base()``,
+    then passes them in. An entry whose root could not be resolved is the
+    empty string; the receipt records it as skipped, never guesses a path.
+    """
+    home = home or os.path.expanduser("~")
+    return {
+        "agent_browser_state": os.path.join(home, ".agent-browser"),
+        "evidence_base": evidence_base or "",
+        "run_state_root": (
+            os.path.join(durable_root, "skill6-runs") if durable_root else ""
+        ),
+        "playwright_data_dir": (
+            os.path.join(durable_root, "playwright-data", "ghl-install-pages")
+            if durable_root else ""
+        ),
+        "secrets_dir": secrets_dir or os.path.join(home, ".openclaw", "secrets"),
+    }
+
+
+def pathset_pre(
+    paths: dict,
+    run_id: str,
+    *,
+    mounts_reader: Optional[Callable[[], List[MountEntry]]] = None,
+    platform: Optional[str] = None,
+) -> dict:
+    """PRE-phase for the whole set: plant the run-id marker in every
+    resolvable path. Returns {key: marker} for the paths actually marked."""
+    out = {}
+    for key, p in paths.items():
+        if not p:
+            continue
+        out[key] = write_marker(
+            p, run_id, mounts_reader=mounts_reader, platform=platform
+        )
+    return out
+
+
+def pathset_post(paths: dict, run_id: str) -> dict:
+    """POST-phase for the whole set: verify each path's marker. Returns
+    {key: verify_marker(...) result} for every resolvable path."""
+    out = {}
+    for key, p in paths.items():
+        if not p:
+            continue
+        out[key] = verify_marker(p, run_id)
+    return out
+
+
+def build_pathset_receipt(
+    paths: dict,
+    pre: Optional[dict],
+    post: Optional[dict],
+    *,
+    run_id: str,
+    box_label: Optional[str] = None,
+) -> dict:
+    """Assemble the one-receipt-per-box path-set artifact. ``post=None``
+    marks EVERY path PRE-ONLY (``survived_recreate=None``) — the set is
+    never upgraded to a PASS by classification alone, per path, exactly
+    like the single-path receipt. An unresolvable path (empty string) is
+    recorded as skipped with ``survived_recreate=None``."""
+    rows = {}
+    for key, p in paths.items():
+        if not p:
+            rows[key] = {
+                "path": p,
+                "classify": None,
+                "mount_type": None,
+                "is_persistent_by_classification": None,
+                "pre": None,
+                "post": None,
+                "survived_recreate": None,
+                "live_leg_status": (
+                    "SKIPPED — no path resolved for this entry on this box"
+                ),
+            }
+            continue
+        pre_entry = (pre or {}).get(key)
+        classify = (pre_entry or {}).get("classify_at_write") or {}
+        if post is None:
+            survived = None
+            live = (
+                "PRE-ONLY — live `docker compose up -d --force-recreate` "
+                "round trip owed (operator VPS)"
+            )
+            post_entry = None
+        else:
+            post_entry = post.get(key) or {}
+            survived = bool(post_entry.get("present")) and bool(
+                post_entry.get("run_id_matches")
+            )
+            live = "complete"
+        rows[key] = {
+            "path": p,
+            "classify": classify or None,
+            "mount_type": classify.get("mount_type"),
+            "is_persistent_by_classification": classify.get("is_persistent"),
+            "pre": pre_entry,
+            "post": post_entry,
+            "survived_recreate": survived,
+            "live_leg_status": live,
+        }
+    return {
+        "schema": "skill6-vps-mount-pathset/1",
+        "box_label": box_label,
+        "run_id": run_id,
+        "paths": rows,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "vps_mount_proof_version": VPS_MOUNT_PROOF_VERSION,
+    }
+
+
+def pathset_receipt_path(evidence_root: str) -> str:
+    return os.path.join(evidence_root, "routing", PATHSET_RECEIPT_FILENAME)
+
+
+def write_pathset_receipt(evidence_root: str, receipt: dict) -> str:
+    path = pathset_receipt_path(evidence_root)
+    _atomic_write_json(path, receipt)
+    return path
+
+
+def read_pathset_receipt(evidence_root: str) -> Optional[dict]:
+    path = pathset_receipt_path(evidence_root)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+# ---------------------------------------------------------------------------
 # Self-test — no network, no Docker, no live browser (tmp dirs only)
 # ---------------------------------------------------------------------------
 def _selftest() -> int:
@@ -398,6 +577,56 @@ def _selftest() -> int:
         if read_receipt(empty_root) is not None:
             errors.append("read_receipt on an empty root should return None")
 
+        # 14. S06-05 pathset: pre-only receipt is PRE-ONLY per path, never a
+        #     PASS, and an unresolvable ("") entry is SKIPPED, not guessed.
+        ps = {
+            "agent_browser_state": os.path.join(tmp, "ps-ab"),
+            "evidence_base": os.path.join(tmp, "ps-ev"),
+            "run_state_root": "",
+            "playwright_data_dir": os.path.join(tmp, "ps-pw"),
+            "secrets_dir": os.path.join(tmp, "ps-sec"),
+        }
+        ps_pre = pathset_pre(ps, "run-ps-1", platform="darwin")
+        ps_receipt = build_pathset_receipt(ps, ps_pre, None, run_id="run-ps-1")
+        for key, row in ps_receipt["paths"].items():
+            if row["survived_recreate"] is not None:
+                errors.append(f"pathset pre-only row {key} must have survived=None: {row}")
+        if "PRE-ONLY" not in ps_receipt["paths"]["agent_browser_state"]["live_leg_status"]:
+            errors.append("pathset pre-only row must be labelled PRE-ONLY")
+        if "SKIPPED" not in ps_receipt["paths"]["run_state_root"]["live_leg_status"]:
+            errors.append("unresolvable pathset entry must be SKIPPED, never guessed")
+
+        # 15. Pathset full round trip: every marked path survives.
+        ps_post = pathset_post(ps, "run-ps-1")
+        ps_full = build_pathset_receipt(ps, ps_pre, ps_post, run_id="run-ps-1")
+        for key in ("agent_browser_state", "evidence_base", "playwright_data_dir", "secrets_dir"):
+            if ps_full["paths"][key]["survived_recreate"] is not True:
+                errors.append(f"pathset round-trip row {key} should survive=True: {ps_full['paths'][key]}")
+
+        # 16. Pathset with ONE wiped path: that path alone reports survived=False.
+        import shutil
+        shutil.rmtree(ps["evidence_base"])
+        os.makedirs(ps["evidence_base"])  # recreated EMPTY — the wipe signature
+        ps_post2 = pathset_post(ps, "run-ps-1")
+        ps_wiped = build_pathset_receipt(ps, ps_pre, ps_post2, run_id="run-ps-1")
+        if ps_wiped["paths"]["evidence_base"]["survived_recreate"] is not False:
+            errors.append("wiped pathset entry must report survived=False")
+        if ps_wiped["paths"]["agent_browser_state"]["survived_recreate"] is not True:
+            errors.append("unwiped pathset entry must still report survived=True")
+
+        # 17. Pathset receipt write/read round trip under its OWN filename —
+        #     the single-path receipt path must stay untouched by it.
+        ps_out = write_pathset_receipt(evidence_root, ps_full)
+        if os.path.basename(ps_out) != PATHSET_RECEIPT_FILENAME:
+            errors.append(f"pathset receipt filename wrong: {ps_out}")
+        if ps_out == out_path:
+            errors.append("pathset receipt must not overwrite the single-path receipt")
+        ps_loaded = read_pathset_receipt(evidence_root)
+        if not ps_loaded or ps_loaded.get("run_id") != "run-ps-1":
+            errors.append(f"pathset receipt round-trip broken: {ps_loaded}")
+        if read_pathset_receipt(empty_root) is not None:
+            errors.append("read_pathset_receipt on an empty root should return None")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -426,6 +655,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         sp.add_argument("--run-id", required=True)
         sp.add_argument("--evidence-root", default=None,
                          help="If given, write/update routing/vps-mount-receipt.json under this root.")
+        sp.add_argument("--box-label", default=None)
+
+    for verb in ("pre-pathset", "post-pathset"):
+        sp = sub.add_parser(verb, help=f"{verb.upper()}-phase marker proof over the S06-05 persistence PATH SET.")
+        sp.add_argument("--path", action="append", default=[], metavar="KEY=PATH",
+                        help=f"One path-set entry; repeat per key. Keys: {', '.join(PATHSET_KEYS)}.")
+        sp.add_argument("--run-id", required=True)
+        sp.add_argument("--evidence-root", default=None,
+                        help="If given, write routing/vps-mount-pathset-receipt.json under this root.")
         sp.add_argument("--box-label", default=None)
 
     p.add_argument("--selftest", action="store_true", help="Run the no-network self-test and exit.")
@@ -461,6 +699,43 @@ def main(argv: Optional[List[str]] = None) -> int:
             out = write_receipt(args.evidence_root, receipt)
             print(f"[ghl_vps_mount_proof] POST receipt written: {out}", file=sys.stderr)
         return 0 if (result["present"] and result["run_id_matches"]) else 1
+
+    if args.cmd in ("pre-pathset", "post-pathset"):
+        paths: dict = {}
+        for item in args.path:
+            if "=" not in item:
+                p.error(f"--path must be KEY=PATH, got {item!r}")
+            key, value = item.split("=", 1)
+            if key not in PATHSET_KEYS:
+                p.error(f"unknown path-set key {key!r} (keys: {', '.join(PATHSET_KEYS)})")
+            paths[key] = value
+        if not paths:
+            p.error("at least one --path KEY=PATH is required")
+        if args.cmd == "pre-pathset":
+            pre = pathset_pre(paths, args.run_id)
+            print(json.dumps(pre, indent=2))
+            if args.evidence_root:
+                receipt = build_pathset_receipt(
+                    paths, pre, None, run_id=args.run_id, box_label=args.box_label)
+                out = write_pathset_receipt(args.evidence_root, receipt)
+                print(f"[ghl_vps_mount_proof] PRE pathset receipt written: {out}", file=sys.stderr)
+            return 0
+        # post-pathset: re-derive each path's pre-phase from its on-disk
+        # marker (same cross-process pattern as the single-path `post`).
+        post = pathset_post(paths, args.run_id)
+        pre_map = {}
+        for key, res in post.items():
+            pre_map[key] = (res.get("marker") or {}) if res.get("present") else {
+                "run_id": args.run_id, "classify_at_write": {}}
+        print(json.dumps(post, indent=2))
+        if args.evidence_root:
+            receipt = build_pathset_receipt(
+                paths, pre_map, post, run_id=args.run_id, box_label=args.box_label)
+            out = write_pathset_receipt(args.evidence_root, receipt)
+            print(f"[ghl_vps_mount_proof] POST pathset receipt written: {out}", file=sys.stderr)
+        return 0 if all(
+            r.get("present") and r.get("run_id_matches") for r in post.values()
+        ) else 1
 
     p.print_help()
     return 0

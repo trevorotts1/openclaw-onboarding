@@ -363,3 +363,31 @@ def test_rule8_receipt_freshness_holds_in_waiting():
     proc = _pytest("tests/test_browser_manager_capability_wire.py",
                    "-k", "holds_in_waiting")
     assert proc.returncode == 0, proc.stdout + proc.stderr
+# ══════════════════════════════════════════════════════════════════════════════
+# Rule 2 addendum (S06-03) — the docs carry NO global extension stop
+# ══════════════════════════════════════════════════════════════════════════════
+
+_BUILDER_MD = os.path.join(_SKILL_DIR, "ghl-browser-builder-full.md")
+
+
+def test_rule2_docs_carry_no_global_extension_stop():
+    """S06-03: the extension preflight verdict gates Lane 1 only, in every
+    doc that states it - the pre-S06-03 global-stop wording must not
+    silently regress into SKILL.md, INSTALL.md, or the builder guide."""
+    skill = _read(_SKILL_MD)
+    start = skill.index("> **ENGINE")
+    block = skill[start:skill.index("\n\n", start)]
+    assert "STOPs the run" not in block, (
+        "SKILL.md ENGINE block regained a global extension stop (S06-03)")
+    assert "zero lanes" in block, (
+        "SKILL.md ENGINE block lost the zero-lanes fail-closed rule (S06-03)")
+    install = _read(_INSTALL_MD)
+    assert "Any STOP output means no install run starts" not in install, (
+        "INSTALL.md regained the global extension stop (S06-03)")
+    assert "LANE 1 UNAVAILABLE" in install, (
+        "INSTALL.md lost the lane-scoped LANE 1 UNAVAILABLE wording (S06-03)")
+    builder = _read(_BUILDER_MD)
+    bstart = builder.index("- **Version-gated")
+    bullet = builder[bstart:builder.index("\n- **", bstart)]
+    assert "STOPs the run with" not in bullet, (
+        "builder section 1.1 regained a global extension stop (S06-03)")

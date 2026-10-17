@@ -73,6 +73,7 @@ if _TOOLS_DIR not in sys.path:
 
 import browser_manager  # noqa: E402  (browser_session — the singleton gateway)
 import ghl_builder  # noqa: E402  (render_check, verify_url, browser_cmd, may_publish)
+import ghl_evidence  # noqa: E402  (S06-08 tenant contract + evidence scrubber)
 
 
 # ── SINGLETON BROWSER GATEWAY for the live verification loop (T2-01) ──────────
@@ -622,12 +623,89 @@ def _published_csp_errors(page: dict, render_one: Callable) -> list:
     return out
 
 
+def _observed_location_for(res: dict | None) -> str | None:
+    """The location a read-back actually observed, or None.
+
+    Order: an explicit location field on the render/fetch result
+    (``observed_location_id``, then ``location_id``), then the rendered DOM
+    (inline ``dom``/``dom_content``, else the captured ``dom_path`` file),
+    where a single distinct location id in the media-CDN / app-URL shapes
+    is the observation. Ambiguous or absent = None = unobserved (never a
+    guess; the record then states tenant_binding "unbound" explicitly).
+    """
+    if not isinstance(res, dict):
+        return None
+    for key in ("observed_location_id", "location_id"):
+        value = res.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for key in ("dom", "dom_content"):
+        value = res.get(key)
+        if isinstance(value, str) and value:
+            found = ghl_evidence.extract_observed_location_id(value)
+            if found:
+                return found
+    dom_path = res.get("dom_path")
+    if isinstance(dom_path, str) and dom_path and os.path.isfile(dom_path):
+        try:
+            with open(dom_path, encoding="utf-8", errors="replace") as fh:
+                return ghl_evidence.extract_observed_location_id(fh.read())
+        except OSError:
+            return None
+    return None
+
+
+def _finalize_record(
+    rec: dict,
+    res: dict | None,
+    *,
+    expected_location_id: str | None,
+    run_id: str,
+    scrubber: "ghl_evidence.EvidenceScrubber | None",
+) -> dict:
+    """Stamp the S06-08 tenant contract fields on a raw verify record.
+
+    A tenant mismatch appends a ``tenant_mismatch:`` render error and
+    forces PASS False: a wrong-location read-back FAILS, with no override
+    (the same discipline as every other render error). The record's
+    free-text fields (``render_errors``, ``error``) pass through the
+    evidence scrubber and the redaction count is recorded on the record
+    (prep step 5: every redaction counted, the count recorded).
+    """
+    observed = _observed_location_for(res)
+    rec.update(
+        ghl_evidence.tenant_fields(expected_location_id, observed, run_id=run_id)
+    )
+    if rec["tenant_binding"] == ghl_evidence.BINDING_MISMATCH:
+        rec["render_errors"] = list(rec.get("render_errors") or []) + [
+            "tenant_mismatch: read-back observed location "
+            f"{observed!r} but the run is gated for {expected_location_id!r} "
+            "(wrong-location read-back FAILS; no override)"
+        ]
+        rec["PASS"] = False
+    active = scrubber or ghl_evidence.EvidenceScrubber()
+    redactions = 0
+    if isinstance(rec.get("render_errors"), list):
+        scrubbed, n = active.scrub_obj(rec["render_errors"])
+        rec["render_errors"] = scrubbed
+        redactions += n
+    if isinstance(rec.get("error"), str):
+        scrubbed, n = active.scrub_text(rec["error"])
+        rec["error"] = scrubbed
+        redactions += n
+    rec["redactions"] = redactions
+    return rec
+
+
 def verify_page(
     page: dict,
     *,
     run_dir: str = "",
     fetcher: Callable | None = None,
     live: bool | object = _SENTINEL,
+    expected_location_id: str | None = None,
+    run_id: str = "",
+    scrubber: "ghl_evidence.EvidenceScrubber | None" = None,
 ) -> dict:
     """Run the SINGLE real check for one built page and return its raw record.
 
@@ -659,6 +737,14 @@ def verify_page(
     BACKWARD COMPAT: the record also carries ``http_code`` (alias of ``http``)
     and ``marker_in_preview`` (alias of ``marker_in_rendered_dom``) so existing
     callers and tests that reference those field names continue to work.
+
+    S06-08 TENANT BINDING: the record is stamped with the read-back contract
+    fields (``expected_location_id`` / ``observed_location_id`` /
+    ``tenant_binding``, see tools/ghl_evidence.py). A read-back that
+    observes a DIFFERENT location than ``expected_location_id`` appends a
+    ``tenant_mismatch:`` render error and is forced PASS False. When no
+    expected location is supplied the record states
+    ``tenant_binding: "unbound"`` explicitly, never a silent omission.
     """
     # Resolve the `live` sentinel: if the caller did not set `live` explicitly,
     # infer it from whether a `fetcher` was provided.  A fetcher implies mock mode
@@ -682,7 +768,7 @@ def verify_page(
     _run_dir = run_dir or "/tmp/ghl-verify-no-rundir"
 
     if not preview_url or not marker:
-        return {
+        return _finalize_record({
             "step": step,
             "page_id": page.get("page_id"),
             "preview_url": preview_url,
@@ -699,7 +785,8 @@ def verify_page(
             "dom_bytes": 0, "visible_text_len": 0,
             "error": "missing preview_url or marker — cannot verify live (FAIL)",
             **({"trust": "MOCK"} if not live else {}),
-        }
+        }, None, expected_location_id=expected_location_id, run_id=run_id,
+            scrubber=scrubber)
 
     if not live:
         # MOCK path — fetcher is a test stub.
@@ -741,7 +828,7 @@ def verify_page(
         mird = bool(res.get("marker_in_rendered_dom") or res.get("marker_found"))
         forced_fail = bool(render_errors) or http != 200
         pass_val = bool(res.get("ok")) and not forced_fail
-        return {
+        return _finalize_record({
             "step": step,
             "page_id": page.get("page_id"),
             "preview_url": preview_url,
@@ -762,7 +849,8 @@ def verify_page(
             "dom_bytes": res.get("dom_bytes", 0),
             "visible_text_len": res.get("visible_text_len", 0),
             "trust": "MOCK",
-        }
+        }, res, expected_location_id=expected_location_id, run_id=run_id,
+            scrubber=scrubber)
 
     # LIVE path — the ONLY accepted pass criterion.
     # T2-01: hold ONE managed browser session across every browser-driven step
@@ -861,7 +949,9 @@ def verify_page(
         rec["error"] = res["error"]
     if _html_repair_receipt:
         rec["repair_model_receipt"] = _html_repair_receipt
-    return rec
+    return _finalize_record(
+        rec, res, expected_location_id=expected_location_id, run_id=run_id,
+        scrubber=scrubber)
 
 
 # ── The reduction (summary is a PURE function of the raw array) ───────────────
@@ -891,6 +981,24 @@ def derive_summary(
     passed = sum(1 for r in raw if r.get("PASS") is True)
     failed = total - passed
     overall = total > 0 and failed == 0
+    # S06-08 tenant reduction: the summary's tenant state is a pure reduction
+    # of the raw records' contract fields. Legacy records without them reduce
+    # to "unbound" (Q2: flagged by the reduction, never silently bound). A
+    # single distinct expected location across the raw log is the summary's
+    # expected location; mixed expectations reduce to None plus "mismatch"
+    # via any disagreeing record's own binding.
+    _expected_ids = {
+        r.get("expected_location_id") for r in raw if r.get("expected_location_id")
+    }
+    _expected = next(iter(_expected_ids)) if len(_expected_ids) == 1 else None
+    _bindings = [ghl_evidence.effective_binding(r) for r in raw]
+    if any(b == ghl_evidence.BINDING_MISMATCH for b in _bindings):
+        _tenant_binding = ghl_evidence.BINDING_MISMATCH
+    elif raw and all(b == ghl_evidence.BINDING_BOUND for b in _bindings):
+        _tenant_binding = ghl_evidence.BINDING_BOUND
+    else:
+        _tenant_binding = ghl_evidence.BINDING_UNBOUND
+    _redactions = sum(int(r.get("redactions") or 0) for r in raw)
     # NOTE: we do NOT force overall_pass=False in MOCK mode here.  The counts
     # are always an honest reduction of the raw array.  The trust='MOCK' stamp
     # is how ghl_gate refuses mock verdicts — it checks trust, not overall_pass.
@@ -909,6 +1017,9 @@ def derive_summary(
         "passed": passed,
         "failed": failed,
         "overall_pass": overall,
+        "expected_location_id": _expected,
+        "tenant_binding": _tenant_binding,
+        "redactions": _redactions,
         "pages": [
             {
                 "step": r.get("step"),
@@ -918,6 +1029,9 @@ def derive_summary(
                 "marker_in_rendered_dom": bool(r.get("marker_in_rendered_dom")),
                 "marker_in_preview": bool(r.get("marker_in_rendered_dom")),
                 "render_errors": list(r.get("render_errors") or []),
+                "expected_location_id": r.get("expected_location_id"),
+                "observed_location_id": r.get("observed_location_id"),
+                "tenant_binding": ghl_evidence.effective_binding(r),
             }
             for r in raw
         ],
@@ -961,6 +1075,13 @@ def assert_consistent(
       6. RENDERED-<img> MIRROR (FIX-XC-03c): any raw record with a non-empty
          ``missing_images`` (a manifest cdn_url absent from the rendered DOM) MUST
          have ``PASS=False`` — a page whose images did not render cannot pass.
+      7. TENANT MIRROR (S06-08): fires ONLY when the summary declares an
+         ``expected_location_id`` (legacy summaries without one are untouched,
+         per Q2 grandfathering). A raw record stamped for a DIFFERENT expected
+         location is cross-tenant evidence in this run's log; a PASS record
+         that is not tenant-"bound" contradicts the gated tenant's pass; a
+         summary claiming tenant_binding "bound" while any raw record is not
+         bound is more optimistic than its evidence. All raise.
     """
     raw_total = len(raw)
     raw_passed = sum(1 for r in raw if r.get("PASS") is True)
@@ -1037,6 +1158,36 @@ def assert_consistent(
                 "(the un-fakeable rendered-<img> gate)."
             )
 
+    # Invariant 7 (S06-08 tenant mirror): see the docstring. Fires only for
+    # summaries that declare an expected location.
+    _expected = summary.get("expected_location_id")
+    if _expected:
+        for idx, r in enumerate(raw):
+            r_expected = r.get("expected_location_id")
+            if r_expected and r_expected != _expected:
+                raise VerifyContradiction(
+                    f"CROSS-TENANT RAW ROW at index {idx} (step={r.get('step')!r}): "
+                    f"record expected_location_id={r_expected!r} disagrees with "
+                    f"the summary's {_expected!r}. One run's evidence cannot "
+                    "mix tenants."
+                )
+            r_binding = ghl_evidence.effective_binding(r)
+            if r.get("PASS") and r_binding != ghl_evidence.BINDING_BOUND:
+                raise VerifyContradiction(
+                    f"TENANT-UNBOUND PASS at index {idx} (step={r.get('step')!r}): "
+                    f"PASS=True with tenant_binding={r_binding!r} in a run gated "
+                    f"for {_expected!r}. A pass observed on the wrong tenant "
+                    "(or on no observed tenant) is a contradiction, never a pass."
+                )
+        if summary.get("tenant_binding") == ghl_evidence.BINDING_BOUND:
+            for idx, r in enumerate(raw):
+                if ghl_evidence.effective_binding(r) != ghl_evidence.BINDING_BOUND:
+                    raise VerifyContradiction(
+                        "summary claims tenant_binding='bound' but raw row "
+                        f"{idx} (step={r.get('step')!r}) is not bound: more "
+                        "optimistic than the raw evidence."
+                    )
+
     # Invariant 5: artifact hash binding.
     if render_manifest:
         for step_name, entry in render_manifest.items():
@@ -1077,6 +1228,8 @@ def verify_all(
     brand: str = "",
     fetcher: Callable | None = None,
     extra: dict | None = None,
+    expected_location_id: str | None = None,
+    secret_values: Any = None,
 ) -> dict:
     """THE canonical verify step. One pass, one source of truth, both files.
 
@@ -1104,6 +1257,11 @@ def verify_all(
     In MOCK mode (``live=False``), every raw record and the summary carry
     ``trust:'MOCK'`` and ``overall_pass`` is forced False.  A MOCK-DO-NOT-SHIP
     sentinel is written.  ``ghl_gate.require_pass`` will refuse a mock verdict.
+
+    S06-08: ``expected_location_id`` binds the pass to the run's gated tenant
+    (records stamped per tools/ghl_evidence.py; a wrong-location read-back
+    fails its page, no override) and ``secret_values`` seeds the evidence
+    scrubber with the run's resolved secret values (held in memory only).
 
     Returns ``{raw, summary, raw_path, summary_path, render_manifest_path,
     run_nonce, trust}``.  Raises ``VerifyContradiction`` or
@@ -1148,8 +1306,13 @@ def verify_all(
             )
 
     trust = "LIVE" if live else "MOCK"
-    os.makedirs(os.path.join(run_dir, "logs"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "scorecard"), exist_ok=True)
+    # S06-08 step 5: ONE evidence scrubber for the whole pass. secret_values
+    # are the run's resolved secret values, held in memory only (never
+    # persisted as a pattern list, see tools/ghl_evidence.py).
+    scrubber = ghl_evidence.EvidenceScrubber(secret_values)
+    # Q4 interim default: evidence dirs are created 0700, files written 0600.
+    ghl_evidence.ensure_private_dir(os.path.join(run_dir, "logs"))
+    ghl_evidence.ensure_private_dir(os.path.join(run_dir, "scorecard"))
 
     # ── ONE PASS: verify every page ───────────────────────────────────────────
     # T2-01: in LIVE mode hold ONE managed browser session for the WHOLE loop.
@@ -1163,20 +1326,50 @@ def verify_all(
     if live:
         with _live_browser_session("verify"):
             raw = [
-                verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+                verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live,
+                            expected_location_id=expected_location_id,
+                            run_id=run_id, scrubber=scrubber)
                 for p in pages
             ]
     else:
         raw = [
-            verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+            verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live,
+                        expected_location_id=expected_location_id,
+                        run_id=run_id, scrubber=scrubber)
             for p in pages
         ]
 
+    # S06-08 step 5: scrub the TEXT artifacts (DOM / console captures) in
+    # place BEFORE the raw log is written, so the record, the render
+    # manifest, and the disk all describe the same scrubbed bytes. PNG
+    # captures are binary and are NOT text-scrubbed (capture-time
+    # suppression territory, Q3). Record hashes / byte counts are refreshed
+    # from disk so a record never claims pre-scrub bytes.
+    for r in raw:
+        _extra_redactions = 0
+        for _path_key, _sha_key, _bytes_key in (
+            ("dom_path", "dom_sha256", "dom_bytes"),
+            ("console_path", "console_sha256", None),
+        ):
+            _artifact = r.get(_path_key)
+            if _artifact and os.path.isfile(_artifact):
+                _extra_redactions += ghl_evidence.scrub_file_text(
+                    _artifact, scrubber)
+                r[_sha_key] = _sha256_file(_artifact) or r.get(_sha_key, "")
+                if _bytes_key:
+                    r[_bytes_key] = os.path.getsize(_artifact)
+        if _extra_redactions:
+            r["redactions"] = int(r.get("redactions") or 0) + _extra_redactions
+
     raw_path = os.path.join(run_dir, RAW_REL)
 
-    # Write the RAW source of truth FIRST.
-    with open(raw_path, "w", encoding="utf-8") as f:
-        json.dump(raw, f, indent=2)
+    # Write the RAW source of truth FIRST. S06-08 step 8 (R1 honesty): this
+    # write, like the summary, manifest, and mock-sentinel writes below,
+    # is a PLAIN IN-PLACE write, not an atomic rename; S06-08 adds only the
+    # explicit 0600 mode (Q4). A torn file here is failed evidence, never a
+    # pass: the guard below re-reads it from disk and an unparseable raw log
+    # fails the run.
+    ghl_evidence.write_json_private(raw_path, raw)
 
     # Compute raw_sha256 (hash of the just-written raw log).
     with open(raw_path, "rb") as f:
@@ -1194,9 +1387,8 @@ def verify_all(
         raw_on_disk = json.load(f)
     assert_consistent(summary, raw_on_disk)
 
-    # Write the summary AFTER the guard passes.
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
+    # Write the summary AFTER the guard passes (plain in-place write, 0600).
+    ghl_evidence.write_json_private(summary_path, summary)
 
     # ── RENDER MANIFEST (artifact hash binding) ───────────────────────────────
     render_manifest: dict[str, dict] = {}
@@ -1219,8 +1411,8 @@ def verify_all(
             render_manifest[s_name] = entry
 
     render_manifest_path = os.path.join(run_dir, RENDER_MANIFEST_REL)
-    with open(render_manifest_path, "w", encoding="utf-8") as f:
-        json.dump(render_manifest, f, indent=2)
+    # Plain in-place write, 0600 (see the raw-log write note above).
+    ghl_evidence.write_json_private(render_manifest_path, render_manifest)
 
     # Re-run the consistency guard including artifact hash binding.
     assert_consistent(summary, raw_on_disk, render_manifest=render_manifest)
@@ -1228,14 +1420,15 @@ def verify_all(
     # ── MOCK SENTINEL ──────────────────────────────────────────────────────────
     sentinel_path = os.path.join(run_dir, MOCK_SENTINEL_REL)
     if not live:
-        with open(sentinel_path, "w", encoding="utf-8") as f:
-            f.write(
-                "MOCK-DO-NOT-SHIP\n"
-                "This evidence tree was produced with live=False (mock verifier).\n"
-                "A mock verdict CANNOT be accepted as a shippable build pass.\n"
-                f"run_nonce: {run_nonce}\n"
-                f"written_at: {_ts()}\n"
-            )
+        # Plain in-place write, 0600 (the fourth of the four verify writes).
+        ghl_evidence.write_text_private(
+            sentinel_path,
+            "MOCK-DO-NOT-SHIP\n"
+            "This evidence tree was produced with live=False (mock verifier).\n"
+            "A mock verdict CANNOT be accepted as a shippable build pass.\n"
+            f"run_nonce: {run_nonce}\n"
+            f"written_at: {_ts()}\n",
+        )
     else:
         # Remove any stale mock sentinel from a prior mock run in this directory.
         if os.path.isfile(sentinel_path):
