@@ -84,6 +84,7 @@ _ANSWERS = {
     "want_sales_checkout": "yes",
     "want_vsl_page": "no",
     "want_email_sequences": "no",
+    "want_motion_graphics": "no",
 }
 
 _ENGINE_STUB = '''#!/usr/bin/env python3
