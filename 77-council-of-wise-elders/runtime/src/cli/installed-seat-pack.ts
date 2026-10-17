@@ -107,9 +107,9 @@ function checkedFile(
 
 /** Do not inject private-scope commentary into shared advisor prompts. */
 function sharedOnlyBriefing(text: string): string {
-  return text.split(/\\n\\n+/)
+  return text.split(/\n\n+/)
     .filter((paragraph) => !/user_private|private_scope|private-scope/i.test(paragraph))
-    .join('\\n\\n');
+    .join('\n\n');
 }
 
 function sharedEvidenceLines(sources: JsonObject): string[] {
