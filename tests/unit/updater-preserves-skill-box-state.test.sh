@@ -100,7 +100,7 @@ LIB="$WORK/lib.sh"
   awk '/^    # Remove old version if exists\./{on=1} on{print} on && /echo "    Updated: \$SKILL_NAME"/{exit}' "$TARGET"
   echo '}'
 } > "$LIB"
-grep -q 'cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"' "$LIB" \
+grep -q 'cp -R "${SKILL_DIR%/}" "$SKILLS_DIR/"' "$LIB" \
   || { echo "FATAL: install-loop anchors drifted; nothing extracted from $TARGET"; exit 2; }
 bash -n "$LIB" || { echo "FATAL: extracted block does not parse"; exit 2; }
 # main's EXIT trap, verbatim (the only `trap ... EXIT` in main).
