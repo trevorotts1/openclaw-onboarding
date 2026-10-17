@@ -1,29 +1,39 @@
 #!/usr/bin/env bash
-# openclaw_browser_adapter.sh — Lane 1 adapter: maps Skill 06 builder calls onto
-# the OpenClaw browser CLI (`openclaw browser …`, extension driver). Plan ref
-# P1-12 / 9.7-6 / Appendix A.
+# openclaw_browser_adapter.sh: the OpenClaw managed-browser adapter. It maps
+# Skill 06 builder calls onto the OpenClaw browser CLI (`openclaw browser`,
+# extension driver). Plan ref P1-12 / 9.7-6 / Appendix A.
 #
-# LANE POLICY (load-bearing — read before wiring): this adapter serves
-# Lane 1, the PRIMARY lane since the operator decision of 2026-10-13 (the
-# OpenClaw Chrome extension is Skill 6's default engine). The capability
-# probe (tools/capability_probe.py) is the sole decider: this adapter runs
-# only when the probe has selected the `openclaw_managed_browser` lane, and
-# even then it REFUSES (exit 75) unless
-# `lanes.openclaw_managed_browser.cliWorks` is `true` in the capability JSON
-# and the extension is installed and current. agent-browser via
-# browser_manager.sh (pin 0.27.0) is the FALLBACK lane; do not remove that
-# pin, it carries every host the extension lane cannot.
+# LANE POLICY (load-bearing, read before wiring): this adapter serves the
+# `openclaw_managed_browser` mechanism, the PRIMARY browser mechanism since
+# the operator decision of 2026-10-13 (the OpenClaw Chrome extension is
+# Skill 6's default engine). The capability probe
+# (tools/capability_probe.py) is the sole decider: this adapter runs only
+# when the probe has selected the `openclaw_managed_browser` lane. The
+# gates THIS adapter enforces are exactly two: Gate 1, the `openclaw` CLI
+# must be present on PATH (refusal exit 64, checked first); Gate 2, the
+# capability gate, which reads ONLY
+# `lanes.openclaw_managed_browser.cliWorks` from the capability JSON and
+# refuses (exit 75) unless it is `true`. The extension installed-and-
+# current condition is NOT re-checked here: the probe's lane eligibility
+# already requires the extension installed and current, plus the plugin
+# enabled and the CLI working, before it selects this lane. An earlier
+# wording of this header claimed the adapter itself refused on the
+# extension condition; that overstated Gate 2 and is cured here (S06-09
+# step 3, D2). agent-browser via browser_manager.sh (pin 0.27.0) is the
+# FALLBACK mechanism; do not remove that pin, it carries every host the
+# extension lane cannot.
 #
 # WHY AN ADAPTER: Skill 6's builder speaks a small verb vocabulary (status /
 # start / open / snapshot / click / type / frame-snapshot / stop). This file is
 # the ONE place those verbs are translated to `openclaw browser` subcommands,
-# so a Lane-2 client never hand-rolls CLI plumbing and the mapping is testable
-# offline. Snapshot defaults per plan P1-12: ALWAYS `--interactive`
-# (snapshotDefaults), the `--efficient` preset ON by default
-# (snapshotDefaults.mode: efficient — matches capability JSON
-# optimizations.snapshotMode = "efficient"), and `--frame SELECTOR` is passed
-# through VERBATIM whenever given (frame-scoped snapshots are the whole point
-# of Lane 2 on iframe-heavy GHL builder pages — Appendix A / 9.6 lane table).
+# so a managed-browser client never hand-rolls CLI plumbing and the mapping
+# is testable offline. Snapshot defaults per plan P1-12: ALWAYS
+# `--interactive` (snapshotDefaults), the `--efficient` preset ON by
+# default (snapshotDefaults.mode: efficient, matching the capability JSON
+# optimizations.snapshotMode = "efficient"), and `--frame SELECTOR` is
+# passed through VERBATIM whenever given (frame-scoped snapshots are the
+# whole point of the managed-browser mechanism on iframe-heavy GHL builder
+# pages, Appendix A / 9.6).
 #
 # SAFETY: headless-safe and browser-safe. This adapter NEVER launches a
 # browser in --selftest: every selftest invocation runs either against a

@@ -100,9 +100,13 @@ template-first matcher above:
 - `NO_ENGINE_MATCH` → fall through to `funnel_matcher.py` (the 38 templates) + the generic build. Never
   blocks a build.
 
-Registered engine: **`signature-funnel`** (Skill 49 — the Trevor Otts 12-section Hero + 3/5/7 funnel;
-entry `49-signature-funnel/signature-funnel-entry.sh`). A second entry (Skill 56 Sales-Page-Assets) is
-added by appending one object to `engines[]` — no selector code change. CLI:
+Registered engines: **`signature-funnel`** (Skill 49, the Trevor Otts 12-section Hero + 3/5/7
+funnel; entry `49-signature-funnel/signature-funnel-entry.sh`), **`sales-page-assets`** (Skill 56,
+the direct-response Sales-Page / VSL family; entry `56-sales-page-assets/sales-page-assets-entry.sh`),
+and **`cinematic-web-funnel-engine`** (Skill 62, cinematic web funnels; entry
+`62-cinematic-web-funnel-engine/cinematic-web-funnel-entry.sh`; readiness `skeleton`,
+certify_capable false, so STEP-0 refuses a production route into it without `--force-skeleton`).
+A further entry is added by appending one object to `engines[]`, no selector code change. CLI:
 `python3 tools/funnel_engine_selector.py --match "<request>"` / `--list` / `--self-test`. See
 `funnel-engines/README.md`.
 
