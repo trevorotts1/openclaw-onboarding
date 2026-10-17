@@ -1,0 +1,27 @@
+{
+  "accessibility": "Semantic figure/blockquote/figcaption for testimonials; absent state renders an empty section that CSS hides (display:none).",
+  "dependencies": [
+    {
+      "component": "shared-styles",
+      "file": "design.css",
+      "sha256": "68f6084ba8e86cb32622bbf799b49b16a518c4c348481dcbe2f992200cda2cce"
+    }
+  ],
+  "doc": "16_SHARED_COMPONENTS_BRAND_AND_QC.md + 18_END_TO_END_ACCEPTANCE_MATRIX.md",
+  "doc_sections": [
+    "16:1",
+    "16:8",
+    "18:6"
+  ],
+  "events": [],
+  "files": {
+    "README.md": "b7f601cad220c2f03e089f885ee30427382105bfe53c390b65c0e4bc7043b7aa",
+    "test_trust_block.py": "abb1de3bb343c3713e1770ee90703cdca48dd4f452bcdb8cf139d22088030e87",
+    "trust_block.py": "b3f5fe70d1087de6ddaf4494f2e52a65454b673acd081a2904ad44047471ccb5"
+  },
+  "inputs": "proof {testimonials[{quote, attribution, source_ref}], credentials[{label, detail?, source_ref}], counts[{value, label, source_ref}]} or None.",
+  "name": "trust-proof-block",
+  "outputs": "{html, state: present|absent, rendered counts, excluded_unsubstantiated}. Absent state renders an empty shell with no testimonial markup; items without source_ref are excluded and tallied.",
+  "owner": "S71",
+  "version": "1.0.0"
+}

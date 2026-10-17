@@ -1,0 +1,10 @@
+{
+  "stage": "publish-verify",
+  "status": "pass",
+  "author_agent": "fixture-builder",
+  "author_session": "fixture-session-author",
+  "started_at": "2026-10-16T09:25:00+00:00",
+  "finished_at": "2026-10-16T09:35:00+00:00",
+  "artifacts": [],
+  "public_url": "http://127.0.0.1:33943/"
+}

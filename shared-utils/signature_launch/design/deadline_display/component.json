@@ -1,0 +1,26 @@
+{
+  "accessibility": "Semantic <time datetime> element with a human-readable rendering in the launch timezone; label and status are plain text.",
+  "dependencies": [
+    {
+      "component": "shared-styles",
+      "file": "design.css",
+      "sha256": "68f6084ba8e86cb32622bbf799b49b16a518c4c348481dcbe2f992200cda2cce"
+    }
+  ],
+  "doc": "16_SHARED_COMPONENTS_BRAND_AND_QC.md",
+  "doc_sections": [
+    "16:1",
+    "16:8"
+  ],
+  "events": [],
+  "files": {
+    "README.md": "57f3af11e0501d1740354658594e1cd04a1f169c770a2d980ceb0938434b2c3d",
+    "deadline_display.py": "dc584b5473fce7e441daa237dcc5f548b7e255b5137b50dfd4e1e6d43fe765ce",
+    "test_deadline_display.py": "37b955f6f25ffc52b8af33c9bb0ca5de8220689e7c1be22f7b793d49a73f860d"
+  },
+  "inputs": "deadline {deadline_at ISO-8601 with offset | None, timezone IANA name, label, expired_text?} + injected timezone-aware now. A naive deadline_at, a naive now, or an unknown timezone name raises ValueError (an unknown timezone is named in the message).",
+  "name": "deadline-display",
+  "outputs": "{html, state: absent|active|expired, deadline_at, timezone}. Absent renders no date or scarcity text; expired never extends or resets the deadline.",
+  "owner": "S71",
+  "version": "1.0.0"
+}
