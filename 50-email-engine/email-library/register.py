@@ -6,14 +6,15 @@
 # "register --check" leg, mirroring Skill 23's register-library-additions.py).
 #
 # Fail-closed, stdlib-only. Proves:
-#   * catalog-index.json is a list of 36 entries with the expected type census
-#     (13 framework / 4 buyer-type / 4 objective / 12 persona-style / 3 sequence);
+#   * catalog-index.json is a list of 37 entries with the expected type census
+#     (13 framework / 4 buyer-type / 4 objective / 12 persona-style / 4 sequence);
 #   * EVERY entry has its paired on-disk <group>/<id>.json + <id>.md;
 #   * every <id>.json carries a non-empty tags[] and a rules{} block with a kind;
-#   * catalog-built-index.json is in sync (entryCount == 36, all ids present);
+#   * catalog-built-index.json is in sync (entryCount == 37, all ids present);
 #   * the set FULLY COVERS the prover's maps — every one of prove-email.py's 13
-#     canonical FRAMEWORKS and 12 PERSONA_STYLES ids, and all three sequence types
-#     (landing_page_10 / high_ticket_12 / buyer_type_12), is represented.
+#     canonical FRAMEWORKS and 12 PERSONA_STYLES ids, and all four sequence types
+#     (landing_page_10 / high_ticket_12 / buyer_type_12 /
+#     signature_launch_landing_10), is represented.
 #
 # USAGE:  python3 register.py --check     (exit 0 = all good; nonzero = fail)
 # =============================================================================
@@ -33,8 +34,9 @@ GROUP = {"framework": "frameworks", "buyer-type": "buyer-types",
          "objective": "objectives", "persona-style": "persona-styles",
          "sequence": "sequences"}
 EXPECTED_CENSUS = {"framework": 13, "buyer-type": 4, "objective": 4,
-                   "persona-style": 12, "sequence": 3}
-EXPECTED_SEQ_TYPES = {"landing_page_10", "high_ticket_12", "buyer_type_12"}
+                   "persona-style": 12, "sequence": 4}
+EXPECTED_SEQ_TYPES = {"landing_page_10", "high_ticket_12", "buyer_type_12",
+                      "signature_launch_landing_10"}
 
 
 def _load_prover():
@@ -127,8 +129,8 @@ def main(argv=None):
     fails = check()
     if not fails:
         print("== email-library register --check: PASS ==")
-        print("   36 entries, all paired (json+md), built index in sync, prover maps fully covered "
-              "(13 frameworks / 12 personas / 3 sequence types).")
+        print("   37 entries, all paired (json+md), built index in sync, prover maps fully covered "
+              "(13 frameworks / 12 personas / 4 sequence types).")
         return 0
     print("== email-library register --check: FAIL — %d issue(s) ==" % len(fails))
     for f in fails:
