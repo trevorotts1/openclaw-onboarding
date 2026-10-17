@@ -1,0 +1,68 @@
+{
+  "abstention_rule": "Below its required minimum on both anchors, this seat abstains on source-grounded claims about the absent works. Its authored content is limited to (a) concepts traced to the supplementary Atlas of the Heart derivative notes, each labeled paraphrase evidence of unverified quality, and (b) decision rules and procedures explicitly labeled BlackCEO adaptations.",
+  "claimed_titles": [
+    "Dare to Lead",
+    "Documented BRAVING material",
+    "Atlas of the Heart"
+  ],
+  "covered": {
+    "application_cases": 0,
+    "concepts": 0
+  },
+  "covered_note": "The covered counts measure the required-foundation gate exactly as the CWE-012 validator computes it: traceable concepts and application cases tied to required works whose records are primary_substantive. Both required anchors for this seat are absent, so the honest covered count is zero. Supplementary material is reported separately below and is never folded into these counts.",
+  "gaps": [
+    "Dare to Lead absent from the authorized source export (supply gap).",
+    "Documented BRAVING material absent as a standalone record (supply gap).",
+    "No page locators exist in any present material for this seat; section locators into the derivative notes only.",
+    "Provenance of the underlying Atlas of the Heart copy behind the derivative notes is unverified.",
+    "Export note summaries are truncated at 400 characters, so two BRAVING elements beyond the five recorded in the notes could not be confirmed from the available material and are not asserted in this pack."
+  ],
+  "pack_owner_unit": "CWE-019",
+  "qualification": "bibliographic_only",
+  "required_minimum": "For each book anchor: at least three independently traceable concepts plus one application case, each linked to a verified source record. Seats grounded in interviews or documented teaching meet the equivalent bar per anchor named in sources.json.",
+  "seat_id": "brene-brown",
+  "status": "authored_pack_foundation_bibliographic_only",
+  "supplementary_material": {
+    "anchor_role": "supplementary",
+    "application_case_candidates_in_export": 1,
+    "application_cases_carried_into_pack": 0,
+    "concepts_carried_as_paraphrase_evidence": 20,
+    "note": "The export carries derivative Skill 22 notes (analysis notes, extraction notes, persona blueprint) about the book, not the book text. Note summaries in the export are truncated at 400 characters. All 190 quotation candidates are excluded from this pack: per CWE-012, real-tree candidates were rejected QUOTE_TEXT_NOT_IN_SOURCE and candidates are never upgraded to verified quotes.",
+    "page_locators": 0,
+    "quality": "unverified",
+    "quote_candidates_carried_into_pack": 0,
+    "quote_candidates_in_export": 190,
+    "quotes_verified": 0,
+    "rights_status": "reference_only",
+    "section_locators": 10,
+    "source_record": "src-brene-brown-atlas-of-the-heart",
+    "status": "present_as_derivative_notes",
+    "title": "Atlas of the Heart"
+  },
+  "works": [
+    {
+      "anchor_role": "anchor",
+      "application_cases": 0,
+      "gap": "No Skill 22 persona package exists for this work in the authorized export (CWE-011). Supply gap, bypass lane. No content, quotation, or locator is claimed.",
+      "gate_met": false,
+      "kind": "book",
+      "status": "absent",
+      "title": "Dare to Lead",
+      "traceable_concepts": 0,
+      "work_class": "bibliographic_only",
+      "work_key": "dare-to-lead"
+    },
+    {
+      "anchor_role": "anchor",
+      "application_cases": 0,
+      "gap": "Absent as a standalone record in the authorized export (CWE-011). Supply gap, bypass lane. A summary of BRAVING elements appears inside the supplementary Atlas of the Heart derivative notes (items 8 and 17) and is carried in this pack as supplementary paraphrase evidence only; it does not satisfy this anchor. Research seed A09 (directive Section 39.5, the BRAVING Inventory page at brenebrown.com) is recorded in sources.json as a seed only and was not ingested by this unit.",
+      "gate_met": false,
+      "kind": "documented_material",
+      "status": "absent",
+      "title": "Documented BRAVING material",
+      "traceable_concepts": 0,
+      "work_class": "bibliographic_only",
+      "work_key": "braving"
+    }
+  ]
+}

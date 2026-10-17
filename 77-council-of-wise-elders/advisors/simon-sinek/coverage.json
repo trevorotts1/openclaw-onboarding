@@ -1,0 +1,69 @@
+{
+  "seat_id": "simon-sinek",
+  "pack_owner_unit": "CWE-013",
+  "status": "authored",
+  "qualification": "bibliographic_only",
+  "qualification_basis": "CWE-012 validator vocabulary governs this file. Both source records are quality unverified and rights reference_only, the export's own labels, so the Section 8.2 substantive gate counts zero traceable concepts and zero application cases for this seat today, however much located concept material the pack carries. The bridge's label for the same material, substantive_candidate_provenance_unverified, agrees it is not substantive; it is recorded here only to keep the two vocabularies traceable to each other.",
+  "claimed_titles": [
+    "Start with Why",
+    "Find Your Why"
+  ],
+  "required_minimum": "For each book anchor: at least three independently traceable concepts plus one application case, each linked to a verified source record. Seats grounded in interviews or documented teaching meet the equivalent bar per anchor named in sources.json.",
+  "covered": {
+    "concepts": 0,
+    "application_cases": 0
+  },
+  "covered_explanation": "covered counts only what the substantive gate counts: concepts and cases carried on provenance-verified primary_substantive records. That count is honestly zero today. The located concept material the pack does carry is accounted separately below so nothing is hidden and nothing is inflated.",
+  "evidence_in_pack": {
+    "concept_units": 36,
+    "start_with_why_concept_units": 18,
+    "find_your_why_concept_units": 18,
+    "application_case_units": 0,
+    "quotation_units": 0,
+    "note": "Concept units are paraphrase-marked, each with a single exact locator (page for Start with Why, section for Find Your Why), the source record's content hash as source_version, and an authored paraphrase. They are traceable in form; they do not count toward the substantive gate until a record's provenance is verified."
+  },
+  "export_package_accounting": {
+    "evidence_units_total": 373,
+    "concept_units_total": 40,
+    "quote_candidates_total": 333,
+    "quote_candidates_verified_against_retained_text": 0,
+    "start_with_why_page_locators": 192,
+    "find_your_why_section_locators": 20,
+    "application_case_candidate_headings": 2,
+    "note": "Counts from the CWE-011 export package for this seat. The two application-case candidate headings are heading-level mentions inside the derivative notes, not located case evidence; the export contains no application_case evidence units, so this pack claims none."
+  },
+  "gate": {
+    "work": "Start with Why",
+    "min_traceable_concepts": 3,
+    "min_application_cases": 1,
+    "gate_met": false,
+    "reason": "The required work is present as a full source record with 18 located concept units, but the record's quality is unverified because the lawful-access provenance of the underlying Skill 22 copy is unverified. Under the validator's rules the gate counts concepts only on primary_substantive records. The pack therefore reports the foundation as bibliographic_only and claims nothing more."
+  },
+  "works": [
+    {
+      "title": "Start with Why",
+      "role": "required anchor",
+      "record_status": "present, full Section 8.3 record",
+      "validator_class": "bibliographic_only",
+      "bridge_label": "substantive_candidate_provenance_unverified",
+      "concept_units_in_pack": 18,
+      "page_locators_in_export": 192
+    },
+    {
+      "title": "Find Your Why",
+      "role": "supplementary",
+      "record_status": "present, full Section 8.3 record",
+      "validator_class": "not a required foundation; material carried as supplementary",
+      "bridge_label": "partial_notes_without_page_locators",
+      "concept_units_in_pack": 18,
+      "section_locators_in_export": 20
+    }
+  ],
+  "gaps": [
+    "No quotation is verified against retained source text anywhere in this seat's material: 333 candidates, 0 verified. The pack contains zero quotations and presents none.",
+    "The export contains no application_case evidence units, so the pack carries no source application case; application lives in the frameworks and evaluation cases, which are pack-authored analysis, not source evidence.",
+    "Lawful-access provenance of the underlying Skill 22 copies is unverified for both works; both records stay quality unverified and rights reference_only until provenance-verified material exists.",
+    "Concept units c001 (author background framing) and c011 (quote candidate lists) from each work's export set were deliberately not carried as pack evidence; see sources.json notes."
+  ],
+  "note": "Honest state: an authored, fully located concept pack on an unprovenanced foundation. It is fit to argue purpose fit at concept level with its qualification attached, and it must never be described, in any pack file, UI copy, or report, as substantive or source-grounded coverage."
+}

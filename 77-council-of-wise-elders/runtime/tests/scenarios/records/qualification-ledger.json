@@ -1,0 +1,574 @@
+{
+  "schema": "wise-elders.qualification-ledger/v1",
+  "unit": "CWE-042",
+  "directive_section": "32.5",
+  "mode": "full",
+  "evaluation_allowance": {
+    "live_runs_authorized": false,
+    "runtime_verified": false,
+    "note": "No funded live evaluation exists for Skill 77 at this build stage. Every planned run is retained below as NOT_RUN with its reason; nothing is omitted and nothing is upgraded."
+  },
+  "council_runs": [
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q01",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q01",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q01",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q02",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q02",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q02",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q03",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q03",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q03",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q04",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q04",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q04",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q05",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q05",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q05",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q06",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q06",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q06",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q07",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q07",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q07",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q08",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q08",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q08",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q09",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q09",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q09",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q10",
+      "repetition": 1,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q10",
+      "repetition": 2,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    },
+    {
+      "run_kind": "council_full_mode",
+      "case_id": "Q10",
+      "repetition": 3,
+      "status": "not_run",
+      "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+      "hard_failures": []
+    }
+  ],
+  "baseline": {
+    "description": "One well-prompted non-council advisor on the same route, source/case evidence, resource envelope, cases, and repetitions (Section 32.5).",
+    "status": "not_run",
+    "overall_mean": null,
+    "hard_failures": [],
+    "runs": [
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q01",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q01",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q01",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q02",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q02",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q02",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q03",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q03",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q03",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q04",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q04",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q04",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q05",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q05",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q05",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q06",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q06",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q06",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q07",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q07",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q07",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q08",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q08",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q08",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q09",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q09",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q09",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q10",
+        "repetition": 1,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q10",
+        "repetition": 2,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      },
+      {
+        "run_kind": "baseline_single_advisor",
+        "case_id": "Q10",
+        "repetition": 3,
+        "status": "not_run",
+        "not_run_reason": "No live evaluation allowance exists in this build and no generated council runs exist to grade. Section 32.5: an unfunded test stays NOT_RUN, not PASS. Fixture transports were not used to simulate grades: scripted output would measure the script author, not the council.",
+        "hard_failures": []
+      }
+    ]
+  },
+  "differentiation": {
+    "status": "not_run",
+    "not_run_reason": "The blind test needs generated seat cards for Q01-Q05 (45 cards) plus blinded reviewers. No generated cards exist. The strip procedure and the 80 percent overall / 60 percent per-seat thresholds are implemented and unit-tested in rubric.ts and rubric.test.ts; the graded execution stays NOT_RUN.",
+    "planned_cards": 45,
+    "thresholds": {
+      "overall_percent_min": 80,
+      "per_seat_percent_min": 60
+    }
+  },
+  "other_modes": {
+    "quick": {
+      "status": "not_run",
+      "note": "Modes qualify separately; no runs of any mode exist."
+    },
+    "selected": {
+      "status": "not_run",
+      "note": "Modes qualify separately; no runs of any mode exist."
+    },
+    "consult": {
+      "status": "not_run",
+      "note": "Modes qualify separately; no runs of any mode exist."
+    }
+  },
+  "mechanical_decision": {
+    "qualified": false,
+    "graded_runs": 0,
+    "planned_runs": 30,
+    "summary": "evaluateQualification over this ledger returns qualified false with 30 run_not_graded reasons and baseline_not_run (asserted in pack-evals.test.ts). No route may be labeled quality-qualified on this record (T036)."
+  },
+  "deterministic_executions": [
+    {
+      "id": "det-aliche-arithmetic",
+      "kind": "pack_case_arithmetic_and_gate",
+      "evidence": "runtime/tests/scenarios/pack-evals.test.ts: Aliche pack cases test",
+      "proves": "The Aliche pack cases are internally executable: the figures and hard-gate classifications stated in each case reproduce exactly from the committed case inputs under the pack framework affordability procedure."
+    },
+    {
+      "id": "det-golden-fixture",
+      "kind": "scoring_service_cross_check",
+      "evidence": "runtime/tests/scenarios/pack-evals.test.ts: Q08 golden fixture test",
+      "proves": "Section 32.2 arithmetic (132/22, 168/22, 145/22; abstention variant 150 over 19, coverage 19/22) and the WAIT outcome reproduce through the CWE-026 analyzeDecision service."
+    },
+    {
+      "id": "det-quote-boundaries",
+      "kind": "quotation_validator_against_real_and_fixture_corpora",
+      "evidence": "runtime/tests/scenarios/pack-evals.test.ts: Q10 tests",
+      "proves": "All nine committed pack corpora contain zero quotation units and reject probe tuples fail-closed; wrong-speaker, locator, rights, revocation, other-seat, and generated-rounds attributions behave per Section 8.4 on the CWE-012 fixture corpora, with a verified positive control."
+    },
+    {
+      "id": "det-jakes-card-structure",
+      "kind": "card_source_use",
+      "evidence": "runtime/tests/scenarios/pack-evals.test.ts: Q07 card structure test",
+      "proves": "One seat, three lenses, one vote holds structurally: three-lens one-vote cards pass; vote inflation, foreign lenses, and unknown lenses are diagnosed."
+    },
+    {
+      "id": "det-injection-screen",
+      "kind": "pack_validator_negative",
+      "evidence": "runtime/tests/scenarios/pack-evals.test.ts: Q10 injection test",
+      "proves": "Instruction text embedded in pack evidence is a validation error (SOURCE_INJECTION_CONTENT)."
+    },
+    {
+      "id": "det-audit-determinism",
+      "kind": "validator_regression",
+      "evidence": "runtime/tests/scenarios/pack-evals.test.ts: audit determinism test",
+      "proves": "Audit hashes are a deterministic function of pack content, validator version, and the host-supplied audited_at input."
+    },
+    {
+      "id": "det-rubric-mechanics",
+      "kind": "qualification_calculator",
+      "evidence": "runtime/tests/scenarios/rubric.test.ts",
+      "proves": "Weights sum to one; thresholds, hard-failure override, baseline comparison, per-mode separation, and differentiation thresholds behave mechanically on hand-computed synthetic grade sets."
+    }
+  ]
+}

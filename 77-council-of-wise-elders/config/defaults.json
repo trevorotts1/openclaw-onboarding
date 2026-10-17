@@ -1,0 +1,60 @@
+{
+  "authority_mode": {
+    "allowed_values": [
+      "managed",
+      "standalone"
+    ],
+    "default": null,
+    "rule": "Chosen and persisted at installation or session creation, outside the skill folder. Never silently switched during a network failure."
+  },
+  "budgets": {
+    "max_provider_requests_per_session": 50,
+    "planned_full_council_requests": {
+      "brief_preparation": 1,
+      "planned_total": 33,
+      "quotation_validation": 1,
+      "ratification": 1,
+      "round_1_openings": 9,
+      "round_1_synthesis": 1,
+      "round_2_challenge": 9,
+      "round_2_synthesis": 1,
+      "round_3_response": 9,
+      "verdict_composition": 1
+    },
+    "repair_reconciliation_allowance": 9,
+    "rule": "Worst-case total can never exceed 50. A retry counts against the session ceiling. When a request's completion is uncertain it is recorded as unknown and never replayed to make a display green.",
+    "transport_retry_allowance": 8
+  },
+  "diagnostic_error_states": [
+    "FEATURE_NOT_READY",
+    "CONTEXT_TOO_SMALL",
+    "RUN_AUTHORIZATION_REQUIRED"
+  ],
+  "diagnostics": {
+    "capture_default": "off",
+    "capture_default_window_minutes": 60,
+    "capture_max_mib_per_operation": 5,
+    "capture_max_mib_per_session": 25,
+    "capture_max_window_minutes": 240,
+    "capture_ttl_hours": 24,
+    "capture_ttl_max_hours": 72
+  },
+  "model_routing": {
+    "fallback_policy": "none",
+    "selection_rule": "The client explicitly selects the model, or their configured default applies. Recommendations are guidance only and are never a hidden prescription."
+  },
+  "notes": "Nonsecret reference defaults shipped with the skill. The runtime reads effective configuration from the authoritative store for the installation's chosen mode; nothing in this folder is mutable runtime state.",
+  "operation_lease": {
+    "heartbeat_seconds": 15,
+    "ttl_seconds": 60
+  },
+  "provider_request": {
+    "deadline_seconds": 600
+  },
+  "run_authorization": {
+    "grant_validity_minutes": 1440,
+    "preview_validity_minutes": 15
+  },
+  "schema_version": "1.0.0",
+  "skill": "council-of-wise-elders"
+}

@@ -1,0 +1,352 @@
+{
+  "seat_id": "tiffany-aliche",
+  "pack_owner_unit": "CWE-016",
+  "status": "authored_from_cwe011_export",
+  "provenance": {
+    "origin": "CWE-011 export package for seat tiffany-aliche (Skill 22 export bridge), accepted by CWE-012",
+    "package_content_sha256": "c62f2564fbabb22e36536432d2f0b9d7c248377b11f21e4046bce76ed72b7fef",
+    "export_files_sha256": {
+      "sources.json": "8eaacc2d1948a125ed497337e8003b57d653cd2e838df0a9c8f374a0f3e75587",
+      "evidence-units.json": "e18e17f9cfb28e174893827dc98039de59369bc7402f3a7d1c518c757dad98ce",
+      "coverage.json": "6790b711c68f32b3a79e939794ad557ed0ba999ce355391f5e201213e470bd78"
+    },
+    "provenance_state_as_exported": "blueprint_only_no_extraction_layer",
+    "content_hash_basis_as_exported": "sha256 of the Skill 22 derivative artifact persona-blueprint.md; originals are never hashed into or copied into the export package",
+    "rights_note_as_exported": "Skill 22 derivative set; lawful-access provenance of the underlying copy is unverified. Present material is in use as build source per the build source order; distribution scope is a separate ruling.",
+    "record_status_as_exported": "verified_source_material_present_provenance_unverified",
+    "coverage_label_as_exported": "partial_blueprint_only",
+    "locator_basis": "blueprint section headings only; the blueprint has no extraction layer and no page locators exist",
+    "quote_candidates_as_exported": 0,
+    "verified_quotations": 0,
+    "retrieved_at_basis": "The export package carried retrieved_at as null; the CWE-012 integration substituted the export time. This pack records the CWE-011 export timestamp as retrieved_at for the same reason."
+  },
+  "records": [
+    {
+      "source_id": "src-tiffany-aliche-get-good-with-money",
+      "work_id": "work-get-good-with-money",
+      "work_title": "Get Good with Money",
+      "credited_authors": [
+        "Tiffany Aliche"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14T13:41:08.578Z",
+      "canonical_url": "https://www.tiffanyaliche.com/get-good-with-money",
+      "private_asset_id": null,
+      "content_sha256": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "Section 1 - Identity & Voice"
+        },
+        {
+          "kind": "section",
+          "value": "Section 2 - Core Philosophy"
+        },
+        {
+          "kind": "section",
+          "value": "Section 3 - Signature Framework: The 10 Steps of Financial Wholeness"
+        },
+        {
+          "kind": "section",
+          "value": "Section 4 - Key Principles (5-7 Principles)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 5 - Coaching Mode: When to Invoke"
+        },
+        {
+          "kind": "section",
+          "value": "Section 6 - Coaching Mode: How to Respond"
+        },
+        {
+          "kind": "section",
+          "value": "Section 7 - Task Mode: When to Invoke"
+        },
+        {
+          "kind": "section",
+          "value": "Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 9 - Department Routing"
+        },
+        {
+          "kind": "section",
+          "value": "Section 10 - Trigger Phrases & Keywords"
+        },
+        {
+          "kind": "section",
+          "value": "Section 11 - Sample Responses (3 Examples)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 12 - Boundaries & Limitations"
+        },
+        {
+          "kind": "section",
+          "value": "Section 13 - Integration with Other Personas"
+        },
+        {
+          "kind": "section",
+          "value": "Section 14 - Quick Reference Card"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c001",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 1 - Identity & Voice"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Blueprint identity section: presents Tiffany Aliche as a financial educator known as The Budgetnista, a former preschool teacher, and the founder of the Live Richer movement.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c002",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 2 - Core Philosophy"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Core philosophy section: five foundational beliefs drive the teaching; the first belief named in the retained summary is that financial wholeness is the only true safety.",
+          "claim_ids": [
+            "rule-available-cash-only",
+            "fw-financial-wholeness"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c003",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 3 - Signature Framework: The 10 Steps of Financial Wholeness"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Signature framework section: a numbered, step-by-step methodology, the 10 Steps of Financial Wholeness, intended to move a person from no systems in place to every pillar functioning.",
+          "claim_ids": [
+            "fw-financial-wholeness",
+            "rule-smaller-test"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c004",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 4 - Key Principles (5-7 Principles)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Key principles section: the budget is presented as a plan that directs money toward what matters, a permission structure rather than deprivation.",
+          "claim_ids": [
+            "rule-budget-is-the-plan"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c005",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 5 - Coaching Mode: When to Invoke"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching mode triggers: the coaching voice activates when a person is struggling with the emotional and behavioral side of money, for example fear of looking at a bank account.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c006",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 6 - Coaching Mode: How to Respond"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching response method: the response begins with assessment questions that diagnose the person's relationship with money before any advice is given.",
+          "claim_ids": [
+            "rule-minimal-figures-no-manufacture"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c007",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 7 - Task Mode: When to Invoke"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Task mode triggers: task mode activates for concrete financial planning, execution, or oversight requests, such as creating a budget, and each request is governed by stated requirements.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c008",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Task execution standard: before executing a governed task, the agent must confirm access to or completion of the stated pre-task requirements.",
+          "claim_ids": [
+            "rule-minimal-figures-no-manufacture",
+            "fw-affordability-assessment"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c009",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 9 - Department Routing"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Department routing section: routed use cases include building financial stability on variable income.",
+          "claim_ids": [
+            "rule-cash-is-not-revenue"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c010",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 10 - Trigger Phrases & Keywords"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Trigger phrases section: lists the phrases and situations that route a person to coaching, including fear about debt and avoidance of statements.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c011",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 11 - Sample Responses (3 Examples)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Sample responses section: three worked examples, including a coaching scenario for a person overwhelmed by debt and shame, and a task scenario in which an agent creates a debt payoff plan.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c012",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 12 - Boundaries & Limitations"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Boundaries section: sets limits on the persona, including handing off when a situation involves clinical financial trauma or a mental-health crisis beyond money coaching.",
+          "claim_ids": [
+            "rule-scope-boundaries"
+          ],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c013",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 13 - Integration with Other Personas"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Integration section: describes when a client needs support beyond this persona, such as deep habit-formation help, and how the personas hand off to each other.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        },
+        {
+          "evidence_id": "ev-tiffany-aliche-get-good-with-money-c014",
+          "source_id": "src-tiffany-aliche-get-good-with-money",
+          "source_version": "4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+          "locator": {
+            "kind": "section",
+            "value": "Section 14 - Quick Reference Card"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Quick reference section: summarizes the persona as a supportive financial coach and governance aid that turns financial anxiety into an automated, shame-free system.",
+          "claim_ids": [],
+          "seat_id": "tiffany-aliche"
+        }
+      ]
+    },
+    {
+      "title": "Documented financial-wholeness teaching",
+      "basis": "documented teaching material",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "note": "No Skill 22 persona package exists for this work (supply gap recorded by the CWE-011 export). It is named as part of this seat's initial foundation in the build directive's seed registry. No content has been ingested, and no quotation, locator, or concept is claimed from it."
+    }
+  ]
+}

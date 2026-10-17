@@ -1,0 +1,91 @@
+{
+  "bin": {
+    "blackceo-council": "dist/blackceo-council.mjs"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "description": "Council of Wise Elders portable core (CWE-004 foundation): canonical contracts, injected host ports, standalone local host, deliberation engine, and the blackceo-council CLI dispatcher. Proposed internal package identity per directive Section 6.2; not published to npm. Live transports (CWE-009, CWE-010), the run-authorization service (CWE-049), durable worker scheduling (CWE-027), and the full repository layer (CWE-006) are downstream units that compose through these ports.",
+  "devDependencies": {
+    "@types/node": "20.19.42",
+    "esbuild": "0.28.2",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./contracts": {
+      "import": "./dist/contracts/index.js",
+      "types": "./dist/contracts/index.d.ts"
+    },
+    "./authorization": {
+      "import": "./dist/authorization/index.js",
+      "types": "./dist/authorization/index.d.ts"
+    },
+    "./budgets": {
+      "import": "./dist/budgets/index.js",
+      "types": "./dist/budgets/index.d.ts"
+    },
+    "./persistence": {
+      "import": "./dist/persistence/index.js",
+      "types": "./dist/persistence/index.d.ts"
+    },
+    "./context": {
+      "import": "./dist/context/index.js",
+      "types": "./dist/context/index.d.ts"
+    },
+    "./intake": {
+      "import": "./dist/intake/index.js",
+      "types": "./dist/intake/index.d.ts"
+    },
+    "./scoring": {
+      "import": "./dist/scoring/index.js",
+      "types": "./dist/scoring/index.d.ts"
+    },
+    "./protocol": {
+      "import": "./dist/protocol/index.js",
+      "types": "./dist/protocol/index.d.ts"
+    },
+    "./sources": {
+      "import": "./dist/sources/index.js",
+      "types": "./dist/sources/index.d.ts"
+    },
+    "./reports": {
+      "import": "./dist/reports/index.js",
+      "types": "./dist/reports/index.d.ts"
+    },
+    "./cli/authorization": {
+      "import": "./dist/cli/authorization.js",
+      "types": "./dist/cli/authorization.d.ts"
+    },
+    "./cli/report-export": {
+      "import": "./dist/cli/report-export.js",
+      "types": "./dist/cli/report-export.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "name": "@blackceo/wise-elders-core",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run bundle",
+    "bundle": "esbuild src/cli/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/blackceo-council.mjs && node scripts/copy-runtime-assets.mjs",
+    "council:build": "npm run build",
+    "test": "node --import tsx --test tests/*.test.ts tests/scenarios/*.test.ts",
+    "test:contracts": "node --import tsx --test src/contracts/contracts.test.ts",
+    "test:council:unit": "npm test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "version": "0.1.0"
+}

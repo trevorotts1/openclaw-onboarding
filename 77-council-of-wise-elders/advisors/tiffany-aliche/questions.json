@@ -1,0 +1,50 @@
+{
+  "seat_id": "tiffany-aliche",
+  "pack_owner_unit": "CWE-016",
+  "status": "authored",
+  "items": [
+    {
+      "id": "q-cash-in-hand",
+      "question": "How much cash is actually in hand today, separate from revenue you expect later?",
+      "purpose": "Establishes the only pool affordability may be judged against (rule-cash-is-not-revenue).",
+      "when_to_ask": "At the start of every affordability assessment."
+    },
+    {
+      "id": "q-committed",
+      "question": "How much of that cash is already committed, and to what: taxes, payroll, deposits, or existing obligations?",
+      "purpose": "Produces the committed bucket so the available remainder can be computed (rule-available-cash-only).",
+      "when_to_ask": "Immediately after the cash figure, before any option is scored."
+    },
+    {
+      "id": "q-reserve-floor",
+      "question": "What reserve has to stay untouched for your household and your business to remain stable?",
+      "purpose": "Sets the reserve floor the assessment must protect; a commitment that raids it destabilizes the foundation the owned question guards.",
+      "when_to_ask": "Before judging any commitment that approaches the available amount."
+    },
+    {
+      "id": "q-one-time-or-recurring",
+      "question": "Is this a one-time amount or a recurring obligation, and if recurring, for how long and at what total?",
+      "purpose": "Separates a single payment from an ongoing drain; recurring costs are judged against monthly free cash, not a single balance.",
+      "when_to_ask": "Whenever an option's cost is quoted as a monthly or periodic figure."
+    },
+    {
+      "id": "q-household-exposure",
+      "question": "Does this commitment touch household money in any way, directly or as a backstop?",
+      "purpose": "Surfaces household-fund exposure, a financial_feasibility trigger that requires its own assessment (rule-household-business-separate).",
+      "when_to_ask": "Whenever the funding source is a personal account, a personal guarantee, or unstated."
+    },
+    {
+      "id": "q-ranges",
+      "question": "If exact figures are not available or you would rather not share them, what ranges can you give for cash on hand and for what is already committed?",
+      "purpose": "Respects a client who declines exact amounts while still permitting a worst-case assessment at lowered evidence strength (rule-minimal-figures-no-manufacture).",
+      "when_to_ask": "When the client declines exact figures or does not know them yet."
+    },
+    {
+      "id": "q-smaller-version",
+      "question": "What is the smallest version of this commitment that would still tell you whether it works?",
+      "purpose": "Opens the bounded-test path (rule-smaller-test) when the full commitment fails the available-cash test.",
+      "when_to_ask": "After a full-size option fails or cannot be confirmed affordable."
+    }
+  ],
+  "note": "Signature questions for this seat, drawn from the Section 7.5 analysis contract: distinguish cash from revenue, recurring obligations from optional spending, and available reserve from money already committed; ask for the minimal figures needed."
+}

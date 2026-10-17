@@ -1,0 +1,638 @@
+{
+ "action_binding": {
+  "binding_kind": "native_one_click_guarded",
+  "forbidden": [
+   "custom fetch endpoints (e.g. custom-fetch:...)",
+   "raw http/https charge URLs",
+   "any self-declared charge endpoint invented inside the copy document"
+  ],
+  "required_ref_pattern": "^native-one-click:[A-Za-z0-9][A-Za-z0-9._-]*$",
+  "rule": "Every CTA accept action must be the instance's single guarded NATIVE product-bound one-click action (spec 10 section 6). The copy document's own accept_action_ref AND its in-document action_binding block are claims, never proof (re-review defect R2-01): a validator PASS for the binding check requires the expectation to come from OUTSIDE the copy document - the validator's --expected-action-ref argument, or a separate binding manifest passed via --binding-manifest whose entries are keyed by page_id/offer_id/copy_id and carry their own source (the instance request id / S49 route-graph reference). With neither external source, the binding status is UNVERIFIED: the validator fails closed (U80-CTA-BINDING-UNVERIFIED) unless the explicitly local --allow-unverified-binding mode is used, which prints the limitation and may never be cited as production binding evidence. The request schema (S80-02) requires the request-side action_binding block (defect R2-07) so the expectation chain cannot be silently absent upstream; the manifest must agree with it. Manifest provenance (closing re-review defect R3-01): a manifest entry's source_ref must itself pass the structured-external-reference standard of validator_patterns.evidence_ref_structure (prefixed record ref - now including request:/graph: for manifest citations of the S49 request / route graph - an http(s) URL, or a separator-structured record id, with the assertion denylist applied); a manifest whose matching entry carries prose self-assertion as its source ('my own say-so, not a manifest') is rejected (U80-CTA-BINDING). Structure is enforced; a forger can still mint structured strings, so the truth anchor for binding remains the S49 graph / S80-06 read-back, not this layer.",
+  "external_expectation_sources": [
+   "--expected-action-ref (sourced by the caller from the instance request/manifest)",
+   "--binding-manifest <file> (produced outside the copy document; entries keyed by page_id/offer_id/copy_id, each carrying expected_action_ref + its own source_ref)"
+  ],
+  "unverified_status": "binding_verification=unverified is reported in validator output whenever no external expectation was supplied; in default (production) mode it is a violation, in --allow-unverified-binding local mode it is a printed limitation only."
+ },
+ "cta_rule": {
+  "applies_to_sections": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8
+  ],
+  "cta_binding": "Every CTA in one instance invokes the SAME guarded native product-bound one-click action (cta_action_ref). A CTA is never a generic Continue that conceals an immediate charge; adjacent disclosure is required by the request schema (S80-02).",
+  "cta_in_every_section": true,
+  "override_note": "The main-page rules that omit a CTA in certain sections (Skill 49 main profile: Who has NO CTA; Benefits 1-2 have NO CTA button) do NOT apply to this derived upsell profile. The owner explicitly requires a CTA in every upsell section."
+ },
+ "derivation": {
+  "base_format": "Owner 12-section Hero landing page format (Skill 49 main-section source)",
+  "excluded_original_section_names": [
+   "The Big Bold Benefit 1",
+   "The Big Bold Benefit 2",
+   "The Big Bold Benefit 3",
+   "The Big How To"
+  ],
+  "excluded_original_sections": [
+   8,
+   9,
+   10,
+   11
+  ],
+  "replaced_original_section": {
+   "inspiring_phrase_rule": "Fill the blank with an inspiring phrase in harmony with the intent of the source landing page; the phrase is an approved copy field, recorded per instance as inspiring_phrase.",
+   "new_name_pattern": "7 Reasons To Commit To Your {inspiring_phrase} Future",
+   "new_number": 8,
+   "original_name": "Message from the Founder / The Big Bold Heartfelt Message",
+   "original_number": 12,
+   "owner_sample_heading_normalisation": "The owner's printed sample (doc 20) heads this section 'The 7 Reasons to Commit to Your 7-Figure Future' with a leading 'The'; the profile heading pattern follows the owner's instruction text ('7 Reasons To Commit To Your ____ Future', no leading article). Verbatim sample imports are normalised by dropping the leading 'The'. Recorded here (independent review observation O-1) so the normalisation is never silent and a verbatim import is never rejected without explanation."
+  },
+  "retained_original_sections": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "section_numbering": "Derived numbering 1-8 only. Original numbering 9-12 must never appear in an upsell instance.",
+  "total_sections": 8
+ },
+ "instances": {
+  "upsell_1": {
+   "eligibility": "Verified original (main) purchase succeeded.",
+   "instance": "upsell_1",
+   "offer_slot": "upsell_1",
+   "page_role": "upsell_1",
+   "visible_separately_in_progress_and_acceptance": true
+  },
+  "upsell_2": {
+   "canonical_page": "ONE canonical U2 page ID and product mapping, shared by both entry paths.",
+   "distinctness": "U2 must explain a genuinely different incremental outcome from U1; U1 copy with its name replaced is a validation failure.",
+   "eligibility": "Verified original purchase PLUS verified accepted upsell_1 OR verified accepted downsell_1 purchase. A bump alone never qualifies. A client-side parameter such as acceptedU1=true is never proof.",
+   "entry_contexts": [
+    "from_upsell_1",
+    "from_downsell_1"
+   ],
+   "instance": "upsell_2",
+   "offer_slot": "upsell_2",
+   "page_role": "upsell_2",
+   "visible_separately_in_progress_and_acceptance": true
+  }
+ },
+ "offer_clarity_rule": {
+  "enforced_as": "The incremental offer name must appear in section 1 (heading or body).",
+  "offer_clear_from_the_start": true,
+  "original_purchase_acknowledgement": "Copy may acknowledge the base purchase only after its actual verified status is known. Never imply the original product is unusable without the upgrade unless that is a truthful, clearly disclosed prerequisite already part of the original offer."
+ },
+ "profile_id": "signature-upsell-eight-section",
+ "profile_version": "1.4.0",
+ "reason_concept_groups": {
+  "groups": {
+   "availability_access": [
+    "availab",
+    "access",
+    "replay",
+    "rewatch",
+    "revisit",
+    "archive",
+    "recording",
+    "remain",
+    "stays",
+    "whenever",
+    "anytime",
+    "permanent",
+    "entry",
+    "expir",
+    "waits"
+   ],
+   "bonus_depth": [
+    "bonus",
+    "deepen",
+    "advanced applications"
+   ],
+   "catch_up_continuity": [
+    "catch up",
+    "lost week",
+    "gaps",
+    "busy week",
+    "consistency",
+    "motivation",
+    "on track"
+   ],
+   "commitment_identity": [
+    "commit",
+    "deserve",
+    "dreamed",
+    "investment in yourself"
+   ],
+   "expert_review": [
+    "review",
+    "reviewed",
+    "expert",
+    "feedback",
+    "mistakes"
+   ],
+   "finished_output": [
+    "finished",
+    "completed work",
+    "ship",
+    "launch date",
+    "realistic"
+   ],
+   "investment_value": [
+    "investment",
+    "roi",
+    "worth",
+    "paying you back"
+   ],
+   "organisation_retrieval": [
+    "organised",
+    "organized",
+    "scattered",
+    "search",
+    "single place"
+   ],
+   "schedule_structure": [
+    "scheduled",
+    "week-by-week",
+    "plan removes",
+    "calendar",
+    "rhythm"
+   ],
+   "speed_progress": [
+    "faster",
+    "speed",
+    "pace",
+    "progress",
+    "momentum",
+    "accelerat",
+    "quickly",
+    "rapid",
+    "advancing",
+    "forward",
+    "improvement",
+    "improves"
+   ],
+   "support_community": [
+    "support",
+    "community",
+    "team",
+    "alone",
+    "guidance"
+   ],
+   "workbooks_practice": [
+    "workbook",
+    "exercise",
+    "worksheets"
+   ]
+  },
+  "note": "Concept-signature distinctness (repair of review defect D-04). Each section-8 reason is mapped to the concept groups whose stems it contains. Lexical metrics alone cannot separate paraphrases of one proposition from genuinely distinct reasons (measured: the reviewer's paraphrase set scores LOWER on containment than the owner's own sample), so distinctness ALSO fails when one concept pair co-occurs in >= 5 of 7 reasons or >= 5 reasons share one identical concept signature: the reasons have collapsed to a single repeated idea, however they are worded."
+ },
+ "scarcity_and_proof_rule": {
+  "evidence_requirement": "Any scarcity/urgency claim in copy must be backed by an entry in the copy document's verified_scarcity_evidence array (fact + source_ref). No evidence entry, no scarcity claim.",
+  "forbidden": [
+   "invented countdown or timer",
+   "invented disappearing discount",
+   "invented stock/places-remaining counts",
+   "fabricated testimonials, reviews, ratings or customer counts",
+   "fabricated loss claims in Pain sections"
+  ],
+  "governing_constraint": "Urgency and scarcity may be used ONLY from verified availability/deadline facts or genuine relevance (spec 10 section 4; doc 18 section 6).",
+  "owner_instruction": "Use scarcity and fear of missing out to create urgency.",
+  "proof_evidence_requirement": "A testimonial or proof construction is lawful ONLY with an entry in the copy document's verified_proof_evidence array (fact + source_ref) naming the real, supplied proof record. Missing proof stays missing: with no such entry, any testimonial construction - denylist marker, attributed quote, first-person result claim or collective report - is a violation.",
+  "evidence_structure_requirement": "Evidence entries must carry a STRUCTURED external source_ref (see validator_patterns.evidence_ref_structure): a bare self-assertion inside the same document is not evidence and is itself a violation (U80-EVIDENCE-REF). Residual limit, stated plainly: this layer can require the structure of an external reference deterministically; it cannot prove the referenced record exists or is truthful. That truth is proven at S80-06 / S44 read-back."
+ },
+ "schema_version": "1.0",
+ "sections": [
+  {
+   "cta_required": true,
+   "derived_from_original_section": 1,
+   "job": "Name the incremental offer and its additional outcome immediately; offer clear from the start.",
+   "key": "big_bold_claim",
+   "number": 1,
+   "private_label": "The Big Bold Claim"
+  },
+  {
+   "cta_required": true,
+   "derived_from_original_section": 2,
+   "distinct_from": [
+    "big_bold_pain_2",
+    "big_bold_pain_3"
+   ],
+   "job": "Address a specific remaining challenge the upsell solves.",
+   "key": "big_bold_pain_1",
+   "number": 2,
+   "private_label": "The Big Bold Pain 1"
+  },
+  {
+   "cta_required": true,
+   "derived_from_original_section": 3,
+   "distinct_from": [
+    "big_bold_pain_1",
+    "big_bold_pain_3"
+   ],
+   "job": "Address a different relevant remaining challenge.",
+   "key": "big_bold_pain_2",
+   "number": 3,
+   "private_label": "The Big Bold Pain 2"
+  },
+  {
+   "cta_required": true,
+   "derived_from_original_section": 4,
+   "distinct_from": [
+    "big_bold_pain_1",
+    "big_bold_pain_2"
+   ],
+   "job": "Address a third distinct challenge; no fabricated loss claim.",
+   "key": "big_bold_pain_3",
+   "number": 4,
+   "private_label": "The Big Bold Pain 3"
+  },
+  {
+   "cta_required": true,
+   "derived_from_original_section": 5,
+   "job": "Explain why this additional offer exists and why it matters now.",
+   "key": "big_bold_why",
+   "number": 5,
+   "private_label": "The Big Bold Why"
+  },
+  {
+   "cta_note": "CTA IS required here in the upsell profile, unlike the main-page Who section.",
+   "cta_required": true,
+   "derived_from_original_section": 6,
+   "job": "Identify who benefits from the upgrade, without shaming those who decline.",
+   "key": "big_bold_who",
+   "number": 6,
+   "private_label": "The Big Bold Who"
+  },
+  {
+   "cta_required": true,
+   "derived_from_original_section": 7,
+   "job": "Exact incremental inclusions and material limitations. Never promise as newly unlocked a benefit already included in the original purchase.",
+   "key": "big_bold_what",
+   "number": 7,
+   "private_label": "The Big Bold What"
+  },
+  {
+   "cta_required": true,
+   "derived_from_original_section": 12,
+   "heading_pattern": "^7 Reasons To Commit To Your .+ Future$",
+   "job": "Seven substantive, distinct reasons to commit to the inspiring future named in the heading.",
+   "key": "seven_reasons",
+   "number": 8,
+   "private_label": "7 Reasons To Commit To Your {inspiring_phrase} Future",
+   "reasons_must_be_distinct": true,
+   "reasons_required": 7,
+   "renumbered_from": 12
+  }
+ ],
+ "skill": 80,
+ "skill_name": "80-signature-upsell",
+ "source": {
+  "acceptance": "packet/18_END_TO_END_ACCEPTANCE_MATRIX.md sections 2, 3 (A10, A12) and 6",
+  "owner_corpus": "packet/20_OWNER_SOURCE_MATERIAL.md, Phase 3 (UPSELL PAGE Instructions) + Sample Upsell Page",
+  "owner_corpus_original_sha256": "4beebb19ef63df89ba5c9022cb0f3b609260874b2098309e08541ca482b3d1c4",
+  "shared_contracts": "packet/02_SHARED_CONTRACTS_AND_ARCHITECTURE.md sections 1, 3 and 4",
+  "spec": "packet/10_SKILL_80_UPSELL_1_AND_2_SPEC.md sections 2 and 4"
+ },
+ "test_only": false,
+ "unresolved_conflicts": [
+  {
+   "description": "Owner corpus directs ultra-compelling scarcity/FOMO throughout; spec 10 section 4 and doc 18 section 6 prohibit invented scarcity. Resolution recorded in this profile: scarcity language is permitted only with verified evidence entries. No invented countdown, discount, stock count or deadline is ever generated.",
+   "id": "S80-CONFLICT-01",
+   "status": "resolved_by_governing_constraint"
+  },
+  {
+   "description": "Skill 49 main-page bands (char/word limits per section) are NOT imported into this profile: spec 10 section 4 forbids blindly importing Standard/Long-Form limits that conflict with the derived upsell profile. This profile therefore sets NO char/word bands; substantive checks (reason length/distinctness, pain distinctness) are structural floors, not imported bands.",
+   "id": "S80-CONFLICT-02",
+   "status": "recorded_no_band_import"
+  }
+ ],
+ "validator_denylists": {
+  "invented_scarcity_markers": [
+   "only a few left",
+   "spots left",
+   "places left",
+   "seats left",
+   "hurry, only",
+   "countdown",
+   "timer is ticking",
+   "offer expires in",
+   "price goes up at midnight",
+   "gone for good",
+   "never be offered again",
+   "limited spots",
+   "selling out fast",
+   "while supplies last"
+  ],
+  "invented_testimonial_markers": [
+   "testimonial",
+   "what our customers say",
+   "our customers say",
+   "5-star review",
+   "five-star review",
+   "rated 4.",
+   "rated 5",
+   "customers love",
+   "success story of",
+   "meet sarah",
+   "as featured in"
+  ],
+  "private_framework_labels": [
+   "The Big Bold",
+   "Big Bold Claim",
+   "Big Bold Pain",
+   "Big Bold Why",
+   "Big Bold Who",
+   "Big Bold What",
+   "Section 1:",
+   "Section 2:",
+   "Section 3:",
+   "Section 4:",
+   "Section 5:",
+   "Section 6:",
+   "Section 7:",
+   "Section 8:",
+   "framework label",
+   "P.A.S.T.O.R",
+   "copy profile",
+   "private authoring"
+  ],
+  "reintroduced_original_section_markers": [
+   "Big Bold Benefit",
+   "The Big How",
+   "How To Get Started",
+   "Message from the Founder",
+   "Heartfelt Message",
+   "seven_reasons_placeholder"
+  ],
+  "scarcity_note": "Scarcity markers AND scarcity-claim pattern families (profile validator_patterns) are violations UNLESS the copy document carries a non-empty verified_scarcity_evidence array whose entries name the fact and its source_ref. Testimonial markers and testimonial-claim patterns are violations UNLESS the copy document carries a non-empty verified_proof_evidence array naming the supplied proof record; missing proof stays missing."
+ },
+ "validator_patterns": {
+  "attribution_verbs_regex": "\\b(says|said|writes|wrote|reports|reported|tells us|told us)\\b",
+  "note": "Pattern families widen the finite denylists (repair of review defects D-01, D-02, D-05). They raise detection coverage; they cannot prove the ABSENCE of invented scarcity or proof, so a validator PASS never substitutes for the independent substantive review (rubric R4/R10). R2 pass (re-review 2026-10-15): binding expectation is external-only, evidence refs must be structured external references, unbound purchase-path paraphrases and collective-result / scarcity morphology variants are folded into the families; concept-rotation emptiness (R2-05) remains a declared residual limit. R3 pass (closing re-review 2026-10-15): manifest entry source_refs are held to the same structured standard (R3-01); the decline exemption can no longer shield a directive-family hit (R3-02); QR-code / settle-up / payment-screen / email-link buy paths and the pause-enrolments scarcity variant are folded in (R3-03/R3-05). R4 pass (closing R3 re-review 2026-10-15): subject-first inversions of the scarcity folds are covered (R4-01: 'Admissions halt on Sunday', 'Enrolment pauses after this weekend', plus closes/fills/price sibling inversions), and the decline exemption no longer shields an imperative direction spoken through the descriptive family (R4-02: 'go to the payment page' after decline wording is a direction, never a mention). R4-03 (press/grab/freeze paraphrase edges) and R4-04 (attributed-quote window/verb-list boundary) are NOT pattern-chased in this pass: they are the standing paraphrase/proof classes, rubric-carried (R4/R10), and remain declared residuals (see BUILD-NOTES Appendix D). A named-individual transformation story in plain prose ('Meet Jordan, who went from two clients to twenty...', R3-05) remains a DECLARED RESIDUAL: it is not pattern-chased, because distinguishing a fabricated story from a lawful supplied one is substantive-review work (rubric R4/R10) gated on verified_proof_evidence judgment, not surface form.",
+  "quote_span_regex": "['\"\\u201c]([^'\"\\u201d]{10,160})['\"\\u201d]",
+  "scarcity_claim_patterns": [
+   {
+    "family": "time_bound",
+    "id": "time_bound_only_today",
+    "regex": "\\bonly (today|tonight)\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "deadline_weekday",
+    "regex": "\\b(ends?|closes?|expir\\w+|deadline)\\b[^.!?]{0,50}\\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|midnight|tonight|tomorrow)\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "session_ends",
+    "regex": "\\bsession ends\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "disappears_the_moment",
+    "regex": "\\b(disappears?|vanish\\w*) the moment\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "during_this_visit",
+    "regex": "\\bduring this visit\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "last_chance",
+    "regex": "\\blast chance\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "running_out",
+    "regex": "\\b(time is running out|running out of time)\\b"
+   },
+   {
+    "family": "availability",
+    "id": "available_only",
+    "regex": "\\bavailable only\\b"
+   },
+   {
+    "family": "availability",
+    "id": "only_on_this_page",
+    "regex": "\\bonly on this page\\b"
+   },
+   {
+    "family": "availability",
+    "id": "once_you_leave",
+    "regex": "\\bonce you leave\\b"
+   },
+   {
+    "family": "availability",
+    "id": "door_closes",
+    "regex": "\\bdoors? closes?\\b",
+    "note": "Verb-form morphology widened (re-review R2-03): covers 'door closes' and 'Doors close'."
+   },
+   {
+    "family": "availability",
+    "id": "limited_availability",
+    "regex": "\\blimited availability\\b"
+   },
+   {
+    "family": "exclusivity",
+    "id": "one_time_opportunity",
+    "regex": "\\bone-time opportunity\\b"
+   },
+   {
+    "family": "exclusivity",
+    "id": "not_anywhere_else",
+    "regex": "\\bnot available anywhere else\\b"
+   },
+   {
+    "family": "exclusivity",
+    "id": "never_offered_again",
+    "regex": "\\bnever (be )?offered again\\b"
+   },
+   {
+    "family": "time_bound",
+    "id": "enrolment_shuts_or_closes",
+    "regex": "\\benrol\\w*\\s+(shuts|closes|ends)\\b",
+    "note": "R2-03: 'enrolment shuts soon' class; deadline-weekday forms are also caught by deadline_weekday."
+   },
+   {
+    "family": "availability",
+    "id": "round_or_cohort_fills",
+    "regex": "\\b(round|cohort|class|group)\\s+(fills|is full|fills up)\\b",
+    "note": "R2-03: capacity-fill scarcity claims require verified evidence like any other scarcity claim."
+   },
+   {
+    "family": "availability",
+    "id": "price_rises_when_full",
+    "regex": "\\bprice\\s+(rises|goes up|increases)\\b",
+    "note": "R2-03: a rising-price claim is a scarcity/urgency claim and requires verified evidence."
+   },
+   {
+    "family": "time_bound",
+    "id": "will_not_be_waiting",
+    "regex": "\\bwill not be waiting\\b",
+    "note": "R2-03: disappearance framing ('will not be waiting when you come back')."
+   },
+   {
+    "family": "availability",
+    "id": "pause_or_halt_enrolments",
+    "regex": "\\b(?:(pause|pauses|pausing|paused|halt|halts|halting|suspend|suspends|suspending)\\s+(new\\s+)?(enrol\\w*|admissions?|sign[- ]?ups?|registrations?)|(enrol\\w*|admissions?|sign[- ]?ups?|registrations?)\\s+(pause|pauses|pausing|paused|halt|halts|halting|suspend|suspends|suspending|is paused|are paused|is suspended|are suspended|is halted|are halted))\\b",
+    "note": "R3-05: 'We pause new enrolments after this weekend' - a pause/halt on enrolment is a scarcity claim (implied deadline + reopening uncertainty) and requires verified evidence like any other. R4-01 (closing R3 re-review): the alternation also covers SUBJECT-FIRST word order ('Admissions halt on Sunday', 'Enrolment pauses after this weekend', 'admissions are paused'), the trivial inversion of the folded sentence that escaped the verb-first-only form. 'intake' is deliberately NOT a subject noun here: intake is the governed name of this build's own intake process (S49 intake), so its pauses are process statements, not copy scarcity."
+   },
+   {
+    "family": "availability",
+    "id": "enrolment_closes_subject_first",
+    "regex": "\\b(enrol\\w*|admissions?|sign[- ]?ups?|registrations?)\\s+(closes?|shuts|ends|is closing|are closing|is ending|are ending)\\b",
+    "note": "R4-01 sibling inversion: enrolment_shuts_or_closes is verb-first ('enrolment shuts soon'); this is its subject-first mirror ('Admissions close on Friday', 'sign-ups end tonight'). deadline_weekday already catches weekday forms; this covers the rest."
+   },
+   {
+    "family": "availability",
+    "id": "capacity_fills_subject_first",
+    "regex": "\\b(places|spots|seats)\\s+(are\\s+)?(filling|filled|gone|running out)\\b",
+    "note": "R4-01 sibling inversion: round_or_cohort_fills covers '(round|cohort) fills'; the places/spots/seats subject-first forms ('Places are filling fast', 'spots are running out') are the same capacity scarcity claim. Substantivised forms ('places left') remain denylist markers."
+   },
+   {
+    "family": "availability",
+    "id": "price_rises_subject_first",
+    "regex": "\\b(the\\s+)?(price|cost|fee|tuition)\\s+(rises|goes up|increases|will rise|will increase|is rising|is going up)\\b",
+    "note": "R4-01 sibling inversion: price_rises_when_full is already subject-anchored for the bare subject; this extends it to articled and progressive forms ('The price is going up', 'the fee will rise')."
+   }
+  ],
+  "testimonial_claim_patterns": [
+   {
+    "family": "endorsement",
+    "id": "first_person_result",
+    "regex": "\\bi (doubled|tripled|quadrupled|increased|grew|earned|made|saved|lost) (my|our|\\d)"
+   },
+   {
+    "family": "endorsement",
+    "id": "my_results_claim",
+    "regex": "\\bmy (output|revenue|sales|income|profit|results|business) (doubled|tripled|grew|increased|jumped|skyrocketed)\\b"
+   },
+   {
+    "family": "endorsement",
+    "id": "collective_report",
+    "regex": "\\b(others|members|customers|clients|students|participants) (report|reports|say|says|tell us|told us|are reporting)\\b"
+   },
+   {
+    "family": "endorsement",
+    "id": "people_are_saying",
+    "regex": "\\bpeople are saying\\b"
+   },
+   {
+    "family": "endorsement",
+    "id": "collective_result_claim",
+    "regex": "\\b(people|everyone|every single one|all of them|members|learners|participants|students|clients|customers|the last cohort|the previous cohort|last cohort)\\b[^.!?]{0,90}\\b(doubled|tripled|quadrupled|increased|grew|earned|saved|skyrocketed|transformed|multiplied)\\b",
+    "note": "R2-04: collective fabricated-result claims phrased outside the report-verb families (e.g. 'People in the last cohort doubled their output...')."
+   }
+  ],
+  "unbound_cta_patterns": [
+   {
+    "id": "click_to_buy",
+    "regex": "\\bclick\\b[^.!?]{0,80}\\b(buy|purchase|checkout|check out|order|link|button)\\b"
+   },
+   {
+    "id": "tap_to_buy",
+    "regex": "\\btap\\b[^.!?]{0,80}\\b(buy|purchase|checkout|link|button)\\b"
+   },
+   {
+    "id": "buy_instantly_now_here",
+    "regex": "\\b(buy|purchase) (instantly|now|here)\\b"
+   },
+   {
+    "id": "order_now",
+    "regex": "\\border now\\b"
+   },
+   {
+    "id": "express_checkout",
+    "regex": "\\b(express|separate) checkout\\b"
+   },
+   {
+    "id": "checkout_link_button_page",
+    "regex": "\\bcheck ?out (link|button|page)\\b"
+   },
+   {
+    "id": "complete_your_purchase",
+    "regex": "\\bcomplete your purchase\\b",
+    "note": "R2-02: an instruction to complete a purchase anywhere but the mapped CTA is an unbound buy path, whatever verbs surround it."
+   },
+   {
+    "id": "payment_page_purchase_direction",
+    "regex": "\\b(visit|head|go|navigate|proceed|click through)\\b[^.!?]{0,60}\\b(payment page|checkout page|order page|separate page)\\b",
+    "note": "R2-02: directing the reader off this page to a payment/checkout page is an alternate buy path beside the mapped native action."
+   },
+   {
+    "id": "claim_yours_off_page",
+    "regex": "\\b(claim|get) yours\\b[^.!?]{0,60}\\b(payment page|checkout|separate page|another page|link in)\\b",
+    "note": "R2-02: 'claim yours' coupled to an off-page destination."
+   },
+   {
+    "id": "head_to_checkout_direction",
+    "regex": "\\b(head|go|proceed|continue|click through)\\s+to\\s+(the\\s+)?checkout\\b",
+    "note": "R2-02: 'head to checkout to get yours' class - directing the reader to a checkout step outside the mapped CTA."
+   },
+   {
+    "id": "qr_code_buy_path",
+    "regex": "\\bscan\\b[^.!?]{0,80}\\b(qr code|pay|payment|checkout|buy|purchase)\\b",
+    "note": "R3-03: 'Scan the QR code ... to pay for the upgrade' - a scannable off-CTA payment path is an unbound buy path like any other."
+   },
+   {
+    "id": "settle_up_buy_path",
+    "regex": "\\bsettle up\\b[^.!?]{0,80}\\b(payment|checkout|pay|activate|upgrade)\\b",
+    "note": "R3-03: 'Settle up on the payment screen to activate the upgrade' - settle-up phrasing directing payment/activation outside the mapped CTA."
+   },
+   {
+    "id": "payment_screen_path",
+    "regex": "(?:\\b(visit|head|go|navigate|proceed)\\b[^.!?]{0,60}\\b(payment|checkout|order) screen\\b|\\b(payment|checkout|order) screen\\b[^.!?]{0,60}\\b(pay|activate|complete|buy|purchase|settle|finish)\\b)",
+    "note": "R3-03: the R2-02 direction families named only the payment/checkout/order PAGE; the same directions to a payment SCREEN are the same alternate buy path."
+   },
+   {
+    "id": "email_link_buy_path",
+    "regex": "\\blink in (your|the)\\b[^.!?]{0,40}\\be-?mail\\b[^.!?]{0,60}\\b(pay|buy|purchase|complete|activate)\\b",
+    "note": "R3-03: 'Use the link in your confirmation email to pay for the upgrade' - an off-page email-link purchase path beside the mapped CTA."
+   }
+  ],
+  "decline_continuation_allowlist": {
+   "note": "Decline/continuation copy is modelled explicitly (R2-02, repaired R3-02, tightened R4-02): a body-text segment qualifies for the decline exemption ONLY when (a) it matches the decline segment_regex, (b) it contains no purchase verb, (c) every unbound_cta_pattern it trips belongs to descriptive_direction_pattern_ids - the descriptive payment-page DIRECTION family, whose hit can be a mere mention ('the payment page is only for buyers who want the extra') - AND (d) it contains NO imperative direction (imperative_direction_regex): go to / head to / visit / navigate to / proceed to (also bare 'go', 'proceed', 'continue' or 'follow' immediately before) a payment/checkout/order page, screen or step. The R2-02 rule exempted any decline segment without a listed purchase verb, but that verb list was narrower than the unbound families it exempted from: 'tap the enrolment link on the next screen to activate the upgrade instantly' carries no listed verb yet is a genuine purchase directive (tap_to_buy family), so decline wording prefixed onto a buy path smuggled it past the scan (closing re-review defect R3-02). R3-02 narrowed the exemption to descriptive-family hits only, but the family regex cannot tell a descriptive mention from a true imperative spoken through the same family ('No thanks is an option; go to the payment page' - closing R3 re-review defect R4-02), so condition (d) closes that edge: the exemption covers descriptive mentions, never directions. 'Go back' is not an imperative direction (it is followed by no destination noun) and the legitimate decline control ('To go back without the upgrade, choose no thanks; the payment page is only for buyers who want the extra') stays exempt. A decline segment tripping ANY directive family, carrying a purchase verb, or speaking an imperative direction is therefore NOT exempt; the decline path routes through the declared decline action in the route contract, not through a purchase.",
+   "segment_regex": "\\b(no thanks|no, thanks|continue without|skip (this|the) (offer|upgrade|step|page)|decline( the)?( offer| upgrade)?|keep (only )?my (current|original|existing)|not for me|i'?ll pass)\\b",
+   "purchase_verb_regex": "\\b(buy|purchase|checkout|check out|order|pay|claim yours|get yours|complete your purchase)\\b",
+   "imperative_direction_regex": "\\b(go to|head to|visit|navigate to|proceed to|continue to|click through to|go|proceed|continue|follow)\\s+(the\\s+|your\\s+)?(payment|checkout|check out|order)\\s+(page|screen|step|form)\\b|\\b(go to|head to|go|proceed|continue)\\s+(the\\s+)?checkout\\b",
+   "descriptive_direction_pattern_ids": [
+    "payment_page_purchase_direction"
+   ]
+  },
+  "evidence_ref_structure": {
+   "applies_to": [
+    "copy verified_scarcity_evidence entries",
+    "copy verified_proof_evidence entries",
+    "binding manifest entry source_ref (validator, same standard, repair R3-01)",
+    "request eligibility evidence_ref / provider_event_ref, factual_scarcity_evidence[].source_ref and payment_capability.evidence_ref (schema pattern, same form; the last two added by repair R3-04; the schema pattern keeps the R2-06 prefix set, the request:/graph: prefixes below are validator-side for manifest citations)"
+   ],
+   "source_ref_pattern": "^(?:(?:ledger|provider-event|s44|native|catalog|request|graph):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+   "assertion_denylist": [
+    "says so",
+    "say-so",
+    "trust me",
+    "believe me",
+    "just trust",
+    "my own say-so",
+    "own say-so",
+    "this document",
+    "because i said",
+    "author says so",
+    "self-asserted",
+    "no external source",
+    "not a manifest",
+    "my own word"
+   ],
+   "rule": "An evidence entry counts ONLY when its source_ref is a structured external reference (a prefixed record ref such as ledger:/provider-event:/s44:/native:/catalog:, an http(s) URL, or a separator-structured record id) AND neither the fact nor the source_ref is a bare self-assertion from the assertion denylist. A content-free assertion ('because the copy author says so', source_ref 'this document') is a violation (U80-EVIDENCE-REF) and does NOT clear scarcity or testimonial codes (re-review R2-06). The same structure + denylist standard applies to binding-manifest entry source_refs (repair R3-01), where the request:/graph: prefixes are also admitted so a manifest can cite the S49 instance request / route graph it was produced from.",
+   "residual_limit": "Deterministic checks can require the STRUCTURE of an external reference; they cannot prove the referenced record exists or says what the entry claims. Truth of the referenced record is proven at S80-06 native-binding / S44 event read-back, not at this layer."
+  }
+ }
+}

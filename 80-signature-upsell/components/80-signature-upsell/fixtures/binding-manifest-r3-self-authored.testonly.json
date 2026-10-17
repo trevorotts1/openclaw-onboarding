@@ -1,0 +1,17 @@
+{
+ "schema_version": "1.0",
+ "test_only": true,
+ "source": "TEST ONLY adversarial fixture (defect R3-01): a binding manifest authored by the copy author for fixtures/copy-r2-self-authored-binding.json, expecting exactly that copy's invented ref, with a prose self-assertion as its source_ref. Escaped validation (exit 0, verified_external) at closing re-review time.",
+ "bindings": [
+  {
+   "copy_id": "TEST-ONLY-upsell1-public",
+   "expected_action_ref": "native-one-click:INVENTED-BY-COPY-AUTHOR",
+   "source_ref": "my own say-so, not a manifest"
+  }
+ ],
+ "regression_fixture": {
+  "defect": "R3-01",
+  "source": "Closing re-review S80 R2 repairs (work/review-S80-R2-rereview.md), re-reviewer adversarial construction FA-1 in /tmp/s80r2close/; escaped validation (exit 0, binding_verification=verified_external) at re-review time",
+  "test_only": true
+ }
+}

@@ -24,6 +24,24 @@ Contract (references/native-order-summary-integration.md):
 - Per-line payment truth: a line's own payment_status (fixture
   extension; "status" accepted as its alias) wins over the event-level
   payment_status.
+- Refunds: a refund_observed event does not redeliver its lines, it
+  UPDATES them. Folded in stream order over the purchase line it
+  names (same native order): when every immutable line field the
+  packet schema asserts (offer_id, slot, currency, amount_minor,
+  entitlement_ids) matches the purchased line exactly and the status
+  moves along the refund path (succeeded -> refunded /
+  partially_refunded, partially_refunded -> refunded /
+  partially_refunded), the snapshot line takes the refund's status
+  and the refund event becomes that line's provenance — the current-
+  state shape the resolver's fixtures and repair D-04 already use. A
+  refund naming a line this order has not yet purchased in the
+  stream, a refund whose line disagrees with the purchase on any
+  immutable field, or a refund over a line that was never paid fails
+  closed: a refund never invents or rewrites a purchase. The packet
+  event shape carries no refunded-amount field, so a partial refund
+  is a status fold only; the line keeps its full purchase amount,
+  and the resolver already excludes partially refunded money from
+  the paid total.
 - Provenance: each snapshot line carries its own event_id — the line's
   extension value when present, else the deterministic
   "<event_id>::<native_line_ref>" of its source event — and the
@@ -86,6 +104,27 @@ DEFAULT_BILLING = {
     "recurring_interval": None,
     "schedule": [],
     "terms_source": None,
+}
+
+# The immutable identity of a purchased line: the fields the packet
+# purchase-event schema asserts for every line. A refund_observed
+# event must restate them exactly to fold over the purchase; display
+# name and billing terms are adapter-resolved presentation, not
+# event-asserted identity, so the fold preserves the purchase's.
+REFUND_IDENTITY_KEYS = (
+    "offer_id", "slot", "currency", "amount_minor", "entitlement_ids",
+)
+
+# Lawful refund folds: (current line status, refund-reported status).
+# A refund can only take money back from a line that captured it
+# (succeeded) or extend an existing partial refund; a fully refunded
+# line has nothing left to refund, and an unpaid line was never
+# charged, so both fail closed rather than folding.
+REFUND_TRANSITIONS = {
+    ("succeeded", "refunded"),
+    ("succeeded", "partially_refunded"),
+    ("partially_refunded", "refunded"),
+    ("partially_refunded", "partially_refunded"),
 }
 
 
@@ -206,6 +245,80 @@ def _transform_line(event, line, offer_catalog):
     }
 
 
+def _fold_refund_update(existing, refund_line, refund_event):
+    """Fold one refund_observed line over the purchase line it refunds.
+
+    Returns the updated line: the purchase line with its payment
+    status moved to the refund-reported status and its provenance
+    moved to the refund event (the line's current state was set by
+    the refund). Raises AdapterError when the refund does not name
+    exactly this purchase or the status move is not a lawful refund.
+    """
+    ref = refund_line["native_line_ref"]
+    for key in REFUND_IDENTITY_KEYS:
+        if existing[key] != refund_line[key]:
+            raise AdapterError(
+                f"refund_mismatch: refund_observed event "
+                f"{refund_event['event_id']!r} line {ref!r} disagrees "
+                f"with the purchased line on {key} "
+                f"({refund_line[key]!r} != {existing[key]!r}); refusing "
+                "to guess purchase truth"
+            )
+    target = refund_line["payment_status"]
+    current = existing["payment_status"]
+    if (current, target) not in REFUND_TRANSITIONS:
+        raise AdapterError(
+            f"refund_not_applicable: refund_observed event "
+            f"{refund_event['event_id']!r} reports status {target!r} "
+            f"for native line {ref!r}, whose purchased status is "
+            f"{current!r}; a refund can only fold over a paid or "
+            "partially refunded purchase line"
+        )
+    folded = copy.deepcopy(existing)
+    folded["payment_status"] = target
+    folded["event_id"] = refund_line["event_id"]
+    return folded
+
+
+def _merge_order_lines(order_events, offer_catalog):
+    """Transform one order's events into its deduplicated snapshot lines.
+
+    Lines arrive in stream order. Non-refund lines accumulate and the
+    resolver's own deduplicate_line_items keeps its exact semantics
+    for them (identical redelivery collapses, conflicting redelivery
+    raises). A refund_observed event instead folds over the line it
+    refunds, replacing that line in place; a refund naming a line not
+    yet purchased in this order's stream fails closed.
+    """
+    lines = []
+    index = {}  # native_line_ref -> position in lines
+    for event in order_events:
+        for raw_line in event["line_items"]:
+            line = _transform_line(event, raw_line, offer_catalog)
+            ref = line["native_line_ref"]
+            if event["event_type"] == "refund_observed":
+                if ref not in index:
+                    raise AdapterError(
+                        f"refund_unknown_line: refund_observed event "
+                        f"{event['event_id']!r} names native line "
+                        f"{ref!r} of order "
+                        f"{event['native_order_ref']!r}, but no "
+                        "purchase line with that ref precedes it in "
+                        "the stream; refusing to invent a purchase "
+                        "to refund"
+                    )
+                lines[index[ref]] = _fold_refund_update(
+                    lines[index[ref]], line, event)
+                continue
+            if ref not in index:
+                index[ref] = len(lines)
+            lines.append(line)
+    try:
+        return deduplicate_line_items(lines)
+    except ResolverError as exc:
+        raise AdapterError(str(exc)) from exc
+
+
 def build_snapshots(events, journey_ids=None, offer_catalog=None,
                     revision=1, require_live_evidence=False):
     """Build one verified snapshot per native order from an event stream.
@@ -265,14 +378,7 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
 
     snapshots = {}
     for order_ref, order_events in by_order.items():
-        lines = []
-        for event in order_events:
-            for line in event["line_items"]:
-                lines.append(_transform_line(event, line, offer_catalog))
-        try:
-            lines = deduplicate_line_items(lines)
-        except ResolverError as exc:
-            raise AdapterError(str(exc)) from exc
+        lines = _merge_order_lines(order_events, offer_catalog)
 
         revisions = {event["revision"] for event in order_events
                      if event.get("revision") is not None}

@@ -98,6 +98,8 @@ This file is your fallback identity. It governs only when no persona is assigned
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
+| **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" | `~/.openclaw/skills/79-signature-order-form/` | `universal-sops/funnel-craft/` |
+| **80** signature-upsell | "build my upsell pages" · "add an upsell to my launch" · "build the upsell flow for my launch" | `~/.openclaw/skills/80-signature-upsell/` | `universal-sops/funnel-craft/` |
 | **82** signature-thank-you | "build a thank you page" · "order confirmation page" · "page customers see after buying" | `~/.openclaw/skills/82-signature-thank-you/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 

@@ -1,0 +1,61 @@
+{
+  "pages": [
+    {
+      "page_id": "TEST-UPSELL_1",
+      "instance": "upsell_1",
+      "entry_context": null,
+      "directory": "upsell1",
+      "bundle_file": "adapters/fixtures/expected-bundle-upsell1.testonly.json",
+      "copy_file": "80-signature-upsell/fixtures/copy-upsell1-public.valid.json",
+      "action_ref": "extra-offer-binding:TEST-ONLY-U1",
+      "states": [
+        "default",
+        "processing",
+        "payment-failed",
+        "payment-pending",
+        "authentication-required",
+        "expired-context",
+        "one-click-unavailable",
+        "suppressed"
+      ]
+    },
+    {
+      "page_id": "TEST-UPSELL_2",
+      "instance": "upsell_2",
+      "entry_context": "from_upsell_1",
+      "directory": "upsell2-from-upsell-1",
+      "bundle_file": "adapters/fixtures/expected-bundle-upsell2-from-upsell1.testonly.json",
+      "copy_file": "80-signature-upsell/fixtures/copy-upsell2-public.valid.json",
+      "action_ref": "extra-offer-binding:TEST-ONLY-U2",
+      "states": [
+        "default",
+        "processing",
+        "payment-failed",
+        "payment-pending",
+        "authentication-required",
+        "expired-context",
+        "one-click-unavailable",
+        "suppressed"
+      ]
+    },
+    {
+      "page_id": "TEST-UPSELL_2",
+      "instance": "upsell_2",
+      "entry_context": "from_downsell_1",
+      "directory": "upsell2-from-downsell-1",
+      "bundle_file": "adapters/fixtures/expected-bundle-upsell2-from-downsell1.testonly.json",
+      "copy_file": "80-signature-upsell/fixtures/copy-upsell2-public.valid.json",
+      "action_ref": "extra-offer-binding:TEST-ONLY-U2",
+      "states": [
+        "default",
+        "processing",
+        "payment-failed",
+        "payment-pending",
+        "authentication-required",
+        "expired-context",
+        "one-click-unavailable",
+        "suppressed"
+      ]
+    }
+  ]
+}

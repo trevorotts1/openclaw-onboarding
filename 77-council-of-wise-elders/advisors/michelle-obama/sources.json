@@ -1,0 +1,743 @@
+{
+  "seat_id": "michelle-obama",
+  "pack_owner_unit": "CWE-018",
+  "status": "built",
+  "basis": "CWE-011 Skill 22 export package for seat michelle-obama (format wise-elders.skill22-export/v1, package content_sha256 0587bf980da28d5b5ea546e1c57b26cf0f10c9ac1a31369bb98984afa35f1a57). Records mirror the export source records field for field under the Section 8.3 contract. Two documented resolutions: retrieved_at carries the export timestamp, the moment this material entered the build; the canonical_url for The Light We Carry, null in the export, carries the directive Section 39.5 seed registry A08 official books page.",
+  "speaker_note": "Every quote candidate in the export carries original_speaker Michelle Obama by credited-author default only, and every one has verification_status candidate. No quote candidate is embedded as evidence in this pack, and no text in this pack is a verified quotation.",
+  "records": [
+    {
+      "source_id": "src-michelle-obama-becoming",
+      "work_id": "work-becoming",
+      "work_title": "Becoming",
+      "credited_authors": [
+        "Michelle Obama"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14T13:41:09.344Z",
+      "canonical_url": "https://www.becomingmichelleobama.com/",
+      "private_asset_id": null,
+      "content_sha256": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: Author Background and Authority"
+        },
+        {
+          "kind": "section",
+          "value": "item 2: The Central Problem"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: The Root Cause of Human Struggle"
+        },
+        {
+          "kind": "section",
+          "value": "item 4: The Complete Methodology - Every Step"
+        },
+        {
+          "kind": "section",
+          "value": "item 5: Non-Negotiable Principles"
+        },
+        {
+          "kind": "section",
+          "value": "item 6: The Transformation Arc"
+        },
+        {
+          "kind": "section",
+          "value": "item 7: Coaching Questions"
+        },
+        {
+          "kind": "section",
+          "value": "item 8: Tools, Exercises, and Practices"
+        },
+        {
+          "kind": "section",
+          "value": "item 9: Objection Handling and Resistance"
+        },
+        {
+          "kind": "section",
+          "value": "item 10: Author Voice and Language"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c001",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 1: Author Background and Authority"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Michelle LaVaughn Robinson Obama is the daughter of Fraser Robinson III and Marian Robinson, raised in a working-class family on the South Side of Chicago in a small apartment above her great-aunt Robbie Shields.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c002",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: The Central Problem"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The book addresses the struggle of navigating life's transitions while maintaining authenticity and purpose. The central problem is the tension between external expectations (societal, political, familial) and internal growth, the challenge of \"becoming\" when the world wants to define you as already complete.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c003",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: The Root Cause of Human Struggle"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The root cause is the belief in a fixed identity, the notion that one can \"become something and that's the end,\" coupled with the internalization of external judgments that limit self-perception.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c004",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 4: The Complete Methodology - Every Step"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "While \"Becoming\" is a memoir, the methodology for personal growth and professional execution can be extracted as follows: The Personal Evolution Framework: 1.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c005",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 5: Non-Negotiable Principles"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Truth-Telling: \"I tried to communicate the one message... that I knew invisibility... I came from a history of invisibility.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c006",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 6: The Transformation Arc"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Before the Methodology: The \"box-checker\", meticulous, perfectionist, anxious, controlling every detail. She describes herself as having \"lived like a half-closeted CEO, quietly but unswervingly focused on achievement, bent on checking every box.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c007",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 7: Coaching Questions"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- \"What kind of person do I want to be? How do I want to contribute to the world?\" (From her 1991 journal) - \"Am I good enough?",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c008",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 8: Tools, Exercises, and Practices"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Journal Practice: Kept a \"clothbound black book with purple flowers on the cover\" starting in 1991. Used to \"sort through my jumbled feelings\" and answer: \"What kind of person do I want to be?",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c009",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 9: Objection Handling and Resistance"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "To the \"Angry Black Woman\" Stereotype: \"I wanted to ask my detractors which part of that phrase matters to them the most, is it 'angry' or 'black' or 'woman'?",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c010",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 10: Author Voice and Language"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Signature Phrases: - \"Becoming\" (as continuous verb) - \"The box-checker\" vs. \"the swerve\" - \"The gaze\" (referring to public scrutiny) - \"The bubble\" (referring to White House isolation) - \"When they go low, we go high\" - \"Am I good enough?",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c012",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 12: The Repeatable Execution System"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "For High-Stakes Public Leadership: 1. Deep Research Phase: \"I was realizing that the next phase of my journey would not simply unfold on its own...",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c013",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 13: The Quality Bar"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Excellent execution, according to this methodology, produces: - Measurable Community Impact: Not just \"awareness\" but concrete results, \"45 million kids eating healthier breakfasts and lunches,\" \"1.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c014",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 14: Non-Negotiable Execution Rules"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Never Skip Preparation: \"I could see how the opposition had managed to dice up these images and feed me to the public as some sort of pissed-off harpy\", she learned to prepare for optics as well as content.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c015",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 15: Failure Patterns"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Box-Checker Trap: \"I lived like a half-closeted CEO... bent on checking every box.\" This leads to emptiness and burnout.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c016",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 16: Decision Logic"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Family vs. Politics Fork: \"Family comes first\", demonstrated by staying in Hawaii with sick Malia rather than voting on the crime bill.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c017",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 17: Self-Review Protocol"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Video Review: Watching footage of herself with David Axelrod to analyze \"body language, specifically my facial expressions\" and realizing \"it was too serious, too severe.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c018",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 18: Definition of Done"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Work is complete when: - Institutional Memory Exists: \"We'd managed two terms in office without a major scandal\" and created briefing books for successors.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c019",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 19: The Amateur-to-Expert Gap"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1. Preparation Depth: Amateurs wing it; experts rehearse \"again and again\" and have their schedulers drive routes in advance to time transit to the minute.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-becoming-c020",
+          "source_id": "src-michelle-obama-becoming",
+          "source_version": "e264bffae8e88954fb6adc830caa8526a72a910e6b18570684d5a758d6d2a3dc",
+          "locator": {
+            "kind": "section",
+            "value": "item 20: Professional Application"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "This methodology applies most directly to: Public Service and Political Leadership: Especially for those who are \"firsts\" (first woman, first minority) in their roles who must navigate \"the gaze\" while maintaining effectiveness.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        }
+      ]
+    },
+    {
+      "source_id": "src-michelle-obama-the-light-we-carry",
+      "work_id": "work-the-light-we-carry",
+      "work_title": "The Light We Carry",
+      "credited_authors": [
+        "Michelle Obama"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14T13:41:09.344Z",
+      "canonical_url": "https://michelleobamabooks.com/thelightwecarry/",
+      "private_asset_id": null,
+      "content_sha256": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: Author Background and Authority"
+        },
+        {
+          "kind": "section",
+          "value": "item 2: The Central Problem"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: The Root Cause of Human Struggle"
+        },
+        {
+          "kind": "section",
+          "value": "item 4: The Complete Methodology - Every Step"
+        },
+        {
+          "kind": "section",
+          "value": "item 5: Non-Negotiable Principles"
+        },
+        {
+          "kind": "section",
+          "value": "item 6: The Transformation Arc"
+        },
+        {
+          "kind": "section",
+          "value": "item 7: Coaching Questions"
+        },
+        {
+          "kind": "section",
+          "value": "item 8: Tools, Exercises, and Practices"
+        },
+        {
+          "kind": "section",
+          "value": "item 9: Objection Handling and Resistance"
+        },
+        {
+          "kind": "section",
+          "value": "item 10: Author Voice and Language"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c001",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 1: Author Background and Authority"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Michelle Obama served as First Lady of the United States from 2009 to 2017. She is a graduate of Princeton University and Harvard Law School, and began her career as an attorney at the Chicago law firm Sidley & Austin.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c002",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: The Central Problem"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The book addresses the problem of navigating uncertainty, flux, and fear while maintaining one's integrity and light. Specifically, she wrote this for people experiencing periods of major transition or \"deep flux\", whether marked by graduation, divorce, career change, medical diagnosis, or global crises like the pandemic.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c003",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: The Root Cause of Human Struggle"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The root cause is not the external obstacles themselves, but the internalization of fear and the narratives of \"not-mattering\" that become attached to our differentness.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c004",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 4: The Complete Methodology - Every Step"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The methodology is presented as a personal toolbox rather than a rigid formula, organized into ten interconnected practices: Step 1: The Power of Small.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c005",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 5: Non-Negotiable Principles"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- \"When they go low, we go high.\" This is described as a boundary and a test, not just a feeling but a daily practice. - \"Operating with integrity matters.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c006",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 6: The Transformation Arc"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Before: The person is \"wobbly and unsettled,\" paralyzed by \"not-enoughness,\" carrying the label \"I stand out and I don't matter,\" operating with a \"fearful mind\" that rehearses catastrophe, wearing armor that is either too heavy (alienating self) or insufficient (leaving them exposed), feeling isolated, and reacting impulsively to provocation.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c007",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 7: Coaching Questions"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- \"Am I good enough?\" (The bedrock question that plagues even the accomplished) - \"Am I afraid because I'm in actual danger, or is it simply because I'm staring newness in the face?",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c008",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 8: Tools, Exercises, and Practices"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Knitting (The Power of Small): Cast on the first stitch, follow the chart, stitch by stitch until you bind off. \"Both of these actions...",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c009",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 9: Objection Handling and Resistance"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Objection: \"There's no formula for dealing with these things.\" Response: She agrees completely. \"There is no formula. There's no wizard behind the curtain.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c010",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 10: Author Voice and Language"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Voice Characteristics: Warm, maternal, anecdotal, reflective, empathetic but firm. She speaks as a \"survivor's remove\" but with intimate vulnerability.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c012",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 12: The Repeatable Execution System"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "If this methodology were applied to professional work, the practitioner would follow this sequence: Phase 1: Preparation and Assessment 1.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c013",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 13: The Quality Bar"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Excellent execution according to this methodology means: - Preparedness as Armor: Being so thoroughly rehearsed and prepared that you can function despite malfunctioning equipment (speaking for 16 minutes with a broken teleprompter) or unstable conditions.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c014",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 14: Non-Negotiable Execution Rules"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Never let your fearful mind drive: While you can't evict it, you must not let it seize the steering wheel and initiate the plummet.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c015",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 15: Failure Patterns"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Paralysis by \"Not-Enoughness\": Being so overwhelmed by the size of problems that you stall out before starting; believing \"nothing seemed fixable or capable of being finished.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c016",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 16: Decision Logic"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "When facing fear: Ask \"Am I afraid because I'm in actual danger, or is it simply because I'm staring newness in the face?",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c017",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 17: Self-Review Protocol"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The skilled practitioner evaluates their work by: - Checking Internal Red Flags: Monitoring for snapping at loved ones, excessive worry about uncontrollables, or fear revving up.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c018",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 18: Definition of Done"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Work is complete when: - You have maintained integrity throughout the process (\"Operating with integrity matters\"). - You have \"bound off\", completed the finite, manageable task with clear bookends (cast on/bind off).",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c019",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 19: The Amateur-to-Expert Gap"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1. Preparation vs. Improvisation: Amateurs wing it or let fear stop them; experts do \"fire drills\", exhaustive preparation that allows them to function despite equipment failure or chaos (Denver speech example).",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        },
+        {
+          "evidence_id": "ev-michelle-obama-the-light-we-carry-c020",
+          "source_id": "src-michelle-obama-the-light-we-carry",
+          "source_version": "63e3cb8ee3ca81b99359e297876c52139d3eaa82f547fbfc598cf198459467b0",
+          "locator": {
+            "kind": "section",
+            "value": "item 20: Professional Application"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "This methodology applies most directly to: - Executive Leadership and Public Service: Particularly for \"firsts\" or \"onlies\" in institutions (First Lady, minority executives, Supreme Court justices) who must navigate traditional expectations while representing change.",
+          "claim_ids": [],
+          "seat_id": "michelle-obama"
+        }
+      ]
+    }
+  ]
+}

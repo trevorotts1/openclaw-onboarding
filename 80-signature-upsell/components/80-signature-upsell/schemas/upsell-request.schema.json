@@ -1,0 +1,790 @@
+{
+ "$id": "80-signature-upsell/schemas/upsell-request.schema.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "additionalProperties": false,
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "instance": {
+      "const": "upsell_2"
+     }
+    },
+    "required": [
+     "instance"
+    ]
+   },
+   "then": {
+    "properties": {
+     "eligibility": {
+      "properties": {
+       "qualifying_purchase": {
+        "properties": {
+         "evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+          "not": {
+           "anyOf": [
+            {
+             "pattern": "acceptedU1\\s*=\\s*true"
+            },
+            {
+             "pattern": "client-side"
+            },
+            {
+             "pattern": "client_side"
+            }
+           ]
+          }
+         },
+         "slot": {
+          "enum": [
+           "upsell_1",
+           "downsell_1"
+          ]
+         },
+         "status": {
+          "const": "verified_succeeded"
+         },
+         "verification_source": {
+          "enum": [
+           "native_purchase_ledger",
+           "provider_event_readback",
+           "s44_event_adapter"
+          ]
+         }
+        },
+        "required": [
+         "slot",
+         "status",
+         "verification_source",
+         "evidence_ref"
+        ],
+        "type": "object"
+       }
+      }
+     },
+     "entry_context": {
+      "enum": [
+       "from_upsell_1",
+       "from_downsell_1"
+      ]
+     }
+    },
+    "required": [
+     "entry_context"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "instance": {
+      "const": "upsell_1"
+     }
+    },
+    "required": [
+     "instance"
+    ]
+   },
+   "then": {
+    "properties": {
+     "entry_context": {
+      "type": "null"
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "entry_context": {
+      "const": "from_upsell_1"
+     },
+     "instance": {
+      "const": "upsell_2"
+     }
+    },
+    "required": [
+     "instance",
+     "entry_context"
+    ]
+   },
+   "then": {
+    "properties": {
+     "eligibility": {
+      "properties": {
+       "qualifying_purchase": {
+        "properties": {
+         "slot": {
+          "const": "upsell_1"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "entry_context": {
+      "const": "from_downsell_1"
+     },
+     "instance": {
+      "const": "upsell_2"
+     }
+    },
+    "required": [
+     "instance",
+     "entry_context"
+    ]
+   },
+   "then": {
+    "properties": {
+     "eligibility": {
+      "properties": {
+       "qualifying_purchase": {
+        "properties": {
+         "slot": {
+          "const": "downsell_1"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "disclosure": {
+      "properties": {
+       "billing_type": {
+        "enum": [
+         "recurring",
+         "installment",
+         "trial"
+        ]
+       }
+      },
+      "required": [
+       "billing_type"
+      ]
+     }
+    },
+    "required": [
+     "disclosure"
+    ]
+   },
+   "then": {
+    "properties": {
+     "disclosure": {
+      "properties": {
+       "recurring_terms": {
+        "type": "object"
+       }
+      },
+      "required": [
+       "recurring_terms"
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "description": "Skill 80 instance request. Extends the reference page-request.schema.json (all of its identity/approval/brand/route fields are required here unchanged) and aligns its offer/price fields with offer.schema.json and route rules with route-graph.schema.json. Adds the upsell eligibility, U2 entry-context, disclosure and payment-capability contracts from spec 10 sections 3, 5 and 6. TEST ONLY examples live in fixtures/.",
+ "properties": {
+  "action_binding": {
+   "additionalProperties": false,
+   "description": "REQUIRED (repair R2-07): the instance's guarded native one-click action reference, provisioned/verified through Skill 6 (S80-06). The copy validator's external expectation (--expected-action-ref or a --binding-manifest) is sourced from this declaration; a copy document's own accept_action_ref alone is never proof of binding (repairs D-03 / R2-01). This block being required means the expectation chain cannot be silently absent at the schema layer.",
+   "properties": {
+    "binding_kind": {
+     "const": "native_one_click_guarded"
+    },
+    "expected_action_ref": {
+     "pattern": "^native-one-click:[A-Za-z0-9][A-Za-z0-9._-]*$",
+     "type": "string"
+    },
+    "source_ref": {
+     "minLength": 1,
+     "type": "string"
+    }
+   },
+   "required": [
+    "expected_action_ref",
+    "binding_kind",
+    "source_ref"
+   ],
+   "type": "object"
+  },
+  "allowed_write_target": {
+   "enum": [
+    "local_only",
+    "approved_test_location",
+    "approved_live_publication"
+   ]
+  },
+  "approval_hash": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "approval_ref": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "assigned_skill": {
+   "const": 80
+  },
+  "brand_hash": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "brand_ref": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "copy_profile": {
+   "const": "signature-upsell-eight-section"
+  },
+  "disclosure": {
+   "additionalProperties": false,
+   "description": "Adjacent-to-CTA commercial disclosure. amount_minor is a required integer: unknown price is a blocked request, never silently zero (doc 02 section 2). NOTE (review observation ADV-S4): the schema does not cross-check amount_minor against an approved price - no approved price field exists in the request. Amount correctness is bound by approval_ref/approval_hash at intake and by the S80-06 native price read-back before any paid action; it is not proven at this L0 layer.",
+   "properties": {
+    "adjacent_to_cta": {
+     "const": true
+    },
+    "amount_minor": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "billing_type": {
+     "enum": [
+      "one_time",
+      "recurring",
+      "installment",
+      "trial"
+     ]
+    },
+    "currency": {
+     "pattern": "^[A-Z]{3}$",
+     "type": "string"
+    },
+    "disclosure_text": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "native_price_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "recurring_terms": {
+     "description": "Required non-null when billing_type is recurring, installment or trial; null only for a pure one_time charge.",
+     "properties": {
+      "cycles": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "interval": {
+       "enum": [
+        "day",
+        "week",
+        "month",
+        "year"
+       ]
+      },
+      "interval_count": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "trial_amount_minor": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "trial_period": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "interval",
+      "interval_count"
+     ],
+     "type": [
+      "object",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "amount_minor",
+    "currency",
+    "billing_type",
+    "recurring_terms",
+    "disclosure_text",
+    "adjacent_to_cta",
+    "native_price_id"
+   ],
+   "type": "object"
+  },
+  "eligibility": {
+   "additionalProperties": false,
+   "description": "Verified-purchase eligibility. A client-side parameter such as acceptedU1=true is NOT proof and is rejected as a verification source; a bump alone never qualifies for U2.",
+   "properties": {
+    "already_owned_action": {
+     "enum": [
+      "suppress_offer",
+      "route_to_final_thank_you"
+     ]
+    },
+    "already_owned_instance": {
+     "type": "boolean"
+    },
+    "bump_only_qualifies": {
+     "const": false
+    },
+    "client_side_claims_accepted_as_proof": {
+     "const": false
+    },
+    "original_purchase": {
+     "additionalProperties": false,
+     "properties": {
+      "evidence_ref": {
+       "type": "string",
+       "minLength": 1,
+       "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+       "not": {
+        "anyOf": [
+         {
+          "pattern": "acceptedU1\\s*=\\s*true"
+         },
+         {
+          "pattern": "client-side"
+         },
+         {
+          "pattern": "client_side"
+         }
+        ]
+       },
+       "description": "Structured external reference to the verification record (repair R2-06): a prefixed record ref (ledger:/provider-event:/s44:/native:/catalog:), an http(s) URL, or a separator-structured record id. A bare assertion ('verified', 'trust me') is not a reference and fails the pattern; client-side claim text remains forbidden by the not guard. The pattern proves STRUCTURE only - the truth of the referenced record is proven at S80-06 / S44 read-back."
+      },
+      "provider_event_ref": {
+       "description": "Provider event reference, nullable. When a string it carries the SAME discipline as evidence_ref (repairs R2-06): structured external form, and the client-claim not guard - previously this field was unguarded, so 'acceptedU1=true' validated here.",
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "type": "string",
+         "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+         "not": {
+          "anyOf": [
+           {
+            "pattern": "acceptedU1\\s*=\\s*true"
+           },
+           {
+            "pattern": "client-side"
+           },
+           {
+            "pattern": "client_side"
+           }
+          ]
+         }
+        }
+       ]
+      },
+      "status": {
+       "const": "verified_succeeded"
+      },
+      "verification_source": {
+       "enum": [
+        "native_purchase_ledger",
+        "provider_event_readback",
+        "s44_event_adapter"
+       ]
+      }
+     },
+     "required": [
+      "status",
+      "verification_source",
+      "evidence_ref"
+     ],
+     "type": "object"
+    },
+    "qualifying_purchase": {
+     "description": "U2 only: the verified U1 or D1 purchase. Carries the SAME verification discipline as original_purchase (repair D-06): verification_source is required and restricted to adapter/native evidence, and evidence_ref must not be a client-side claim - an asserted status plus 'acceptedU1=true' text is not purchase proof (spec 10 section 3).",
+     "properties": {
+      "evidence_ref": {
+       "type": "string",
+       "minLength": 1,
+       "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+       "not": {
+        "anyOf": [
+         {
+          "pattern": "acceptedU1\\s*=\\s*true"
+         },
+         {
+          "pattern": "client-side"
+         },
+         {
+          "pattern": "client_side"
+         }
+        ]
+       },
+       "description": "Structured external reference to the verification record (repair R2-06): a prefixed record ref (ledger:/provider-event:/s44:/native:/catalog:), an http(s) URL, or a separator-structured record id. A bare assertion ('verified', 'trust me') is not a reference and fails the pattern; client-side claim text remains forbidden by the not guard. The pattern proves STRUCTURE only - the truth of the referenced record is proven at S80-06 / S44 read-back."
+      },
+      "provider_event_ref": {
+       "description": "Provider event reference, nullable. When a string it carries the SAME discipline as evidence_ref (repairs R2-06): structured external form, and the client-claim not guard - previously this field was unguarded, so 'acceptedU1=true' validated here.",
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "type": "string",
+         "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+         "not": {
+          "anyOf": [
+           {
+            "pattern": "acceptedU1\\s*=\\s*true"
+           },
+           {
+            "pattern": "client-side"
+           },
+           {
+            "pattern": "client_side"
+           }
+          ]
+         }
+        }
+       ]
+      },
+      "slot": {
+       "enum": [
+        "upsell_1",
+        "downsell_1"
+       ]
+      },
+      "status": {
+       "const": "verified_succeeded"
+      },
+      "verification_source": {
+       "enum": [
+        "native_purchase_ledger",
+        "provider_event_readback",
+        "s44_event_adapter"
+       ]
+      }
+     },
+     "required": [
+      "slot",
+      "status",
+      "verification_source",
+      "evidence_ref"
+     ],
+     "type": [
+      "object",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "original_purchase",
+    "qualifying_purchase",
+    "bump_only_qualifies",
+    "client_side_claims_accepted_as_proof"
+   ],
+   "type": "object"
+  },
+  "entry_context": {
+   "description": "U2 entry path from verified journey state; null for U1. The SAME canonical U2 page/product serves both paths (spec 10 section 5).",
+   "enum": [
+    "from_upsell_1",
+    "from_downsell_1",
+    null
+   ],
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "factual_scarcity_evidence": {
+   "items": {
+    "additionalProperties": false,
+    "properties": {
+     "fact": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$",
+      "description": "Structured external reference to the record backing the scarcity fact (repair R3-04): the same pattern the purchase evidence_ref fields carry (R2-06). Previously minLength-only free text, so a bare self-assertion ('trust me', 'verified') validated in the request's own scarcity-evidence field while the validator rejected the same assertion in copy with U80-EVIDENCE-REF. The pattern proves STRUCTURE only; the truth of the referenced record is S80-06 / S44 read-back."
+     }
+    },
+    "required": [
+     "fact",
+     "source_ref"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "input_hash": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "instance": {
+   "enum": [
+    "upsell_1",
+    "upsell_2"
+   ]
+  },
+  "launch_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "location_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "offer": {
+   "additionalProperties": false,
+   "description": "Incremental offer for THIS instance, aligned with offer.schema.json. U1 and D1 are mutually exclusive; U2 complements either (doc 02 section 3).",
+   "properties": {
+    "deliverables": {
+     "items": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "minItems": 1,
+     "type": "array"
+    },
+    "display_name": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "entitlement_ids": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "exclusions": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "native_product_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "offer_id": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "slot": {
+     "enum": [
+      "upsell_1",
+      "upsell_2"
+     ]
+    }
+   },
+   "required": [
+    "offer_id",
+    "slot",
+    "display_name",
+    "deliverables",
+    "exclusions",
+    "entitlement_ids",
+    "native_product_id"
+   ],
+   "type": "object"
+  },
+  "offer_refs": {
+   "items": {
+    "minLength": 1,
+    "type": "string"
+   },
+   "minItems": 1,
+   "type": "array"
+  },
+  "page_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "page_role": {
+   "enum": [
+    "upsell_1",
+    "upsell_2"
+   ]
+  },
+  "payment_capability": {
+   "additionalProperties": false,
+   "description": "One-click capability evidence comes from Skill 6 native binding (S80-06); until verified, the paid action follows the declared fallback only.",
+   "properties": {
+    "evidence_ref": {
+     "description": "One-click capability evidence reference (S80-06 / Skill 6 native binding). Nullable while the capability is unverified; when a string it must be a structured external reference (repair R3-04) - the same pattern as the purchase evidence fields (R2-06). Previously unpatterned free text, so a bare assertion validated here.",
+     "anyOf": [
+      {
+       "type": "null"
+      },
+      {
+       "type": "string",
+       "pattern": "^(?:(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*|https?://\\S+|[A-Za-z0-9]+(?:[/_#-][A-Za-z0-9]+)+)$"
+      }
+     ]
+    },
+    "fallback_when_one_click_unavailable": {
+     "enum": [
+      "approved_normal_checkout_with_explicit_disclosure",
+      "block_paid_action_safe_continuation"
+     ]
+    },
+    "one_click_native_action_verified": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "one_click_native_action_verified",
+    "evidence_ref",
+    "fallback_when_one_click_unavailable"
+   ],
+   "type": "object"
+  },
+  "request_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "revision": {
+   "minimum": 1,
+   "type": "integer"
+  },
+  "route_graph_hash": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "route_graph_ref": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "routes": {
+   "additionalProperties": false,
+   "description": "This skill consumes coordinator (S49) routes and validates its own edges (doc 02 section 4). A pending or failed payment never traverses an acceptance or decline edge.",
+   "properties": {
+    "on_explicit_decline": {
+     "additionalProperties": false,
+     "properties": {
+      "target_page_id": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "target_role": {
+       "enum": [
+        "downsell_1",
+        "thank_you"
+       ]
+      }
+     },
+     "required": [
+      "target_role",
+      "target_page_id"
+     ],
+     "type": "object"
+    },
+    "on_payment_pending_or_failed": {
+     "const": "remain_on_page_recoverable"
+    },
+    "on_payment_succeeded": {
+     "additionalProperties": false,
+     "properties": {
+      "target_page_id": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "target_role": {
+       "enum": [
+        "upsell_2",
+        "thank_you"
+       ]
+      }
+     },
+     "required": [
+      "target_role",
+      "target_page_id"
+     ],
+     "type": "object"
+    }
+   },
+   "required": [
+    "on_payment_succeeded",
+    "on_explicit_decline",
+    "on_payment_pending_or_failed"
+   ],
+   "type": "object"
+  },
+  "schema_version": {
+   "const": "1.0"
+  },
+  "source_landing_copy_ref": {
+   "description": "Reference to the source landing copy this upsell derives from (spec 10 section 3).",
+   "minLength": 1,
+   "type": "string"
+  },
+  "tenant_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "test_only": {
+   "type": "boolean"
+  }
+ },
+ "required": [
+  "schema_version",
+  "tenant_id",
+  "location_id",
+  "launch_id",
+  "revision",
+  "request_id",
+  "page_id",
+  "page_role",
+  "assigned_skill",
+  "approval_ref",
+  "approval_hash",
+  "input_hash",
+  "brand_ref",
+  "brand_hash",
+  "route_graph_ref",
+  "route_graph_hash",
+  "offer_refs",
+  "copy_profile",
+  "allowed_write_target",
+  "test_only",
+  "instance",
+  "source_landing_copy_ref",
+  "offer",
+  "disclosure",
+  "eligibility",
+  "entry_context",
+  "routes",
+  "payment_capability",
+  "factual_scarcity_evidence",
+  "action_binding"
+ ],
+ "title": "Skill 80 upsell instance request (extends reference page-request)",
+ "type": "object"
+}

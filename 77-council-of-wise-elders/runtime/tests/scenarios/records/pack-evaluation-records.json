@@ -1,0 +1,592 @@
+{
+  "schema": "wise-elders.pack-evaluation-records/v1",
+  "unit": "CWE-042",
+  "note": "Per-pack, per-case evaluation records. Content review verdicts: every pack is content-verified at bibliographic_only against its recorded export basis; no seat, quote, or qualification is upgraded by this review. Case verdicts distinguish deterministically executed checks from defined cases that did not run, with the reason recorded for each.",
+  "packs": [
+    {
+      "seat_id": "simon-sinek",
+      "pack_unit": "CWE-013",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 2,
+      "evidence_units": 36,
+      "cases": [
+        {
+          "case_id": "sinek-e1-profitable-but-misaligned",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e2-aligned-but-unaffordable",
+          "case_type": "strong_fit, missing_evidence",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e3-product-description-as-why",
+          "case_type": "strong_fit, apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e4-unknown-mission",
+          "case_type": "missing_evidence",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e5-tactical-decision-weak-fit",
+          "case_type": "weak_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e6-agreement-needing-testing",
+          "case_type": "apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e7-overreach-impersonation-and-quotes",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "sinek-e8-manipulation-dependent-growth",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        }
+      ]
+    },
+    {
+      "seat_id": "td-jakes",
+      "pack_unit": "CWE-014",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 1,
+      "evidence_units": 18,
+      "cases": [
+        {
+          "case_id": "EV-01",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-02",
+          "case_type": "weak_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-03",
+          "case_type": "missing_evidence",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-04",
+          "case_type": "apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-05",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-06",
+          "case_type": "directive_scenario",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-07",
+          "case_type": "directive_scenario",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-08",
+          "case_type": "directive_scenario",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-09",
+          "case_type": "directive_scenario",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "EV-10",
+          "case_type": "directive_scenario",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        }
+      ]
+    },
+    {
+      "seat_id": "oprah-winfrey",
+      "pack_unit": "CWE-015",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 0,
+      "evidence_units": 0,
+      "cases": [
+        {
+          "case_id": "oprah-eval-guest-attribution",
+          "case_type": "overreach or safety boundary: mistaken attribution to an interview host",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-private-story-exclusion",
+          "case_type": "overreach or safety boundary: sensitive client story excluded from business task cards",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-good-intention-harmful-execution",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-attention-seeking-launch",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-low-visibility-meaningful-work",
+          "case_type": "apparent agreement needing testing: the seat's first instinct agrees and must be challenged",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-missing-evidence",
+          "case_type": "missing evidence: the seat must abstain or condition on named missing facts",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-therapy-overreach",
+          "case_type": "overreach or safety boundary: the request asks the seat to speak beyond its sources",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-weak-fit-routine-vendor-choice",
+          "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        }
+      ]
+    },
+    {
+      "seat_id": "tiffany-aliche",
+      "pack_unit": "CWE-016",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 1,
+      "evidence_units": 14,
+      "cases": [
+        {
+          "case_id": "eval-high-revenue-low-cash",
+          "case_type": "strong_fit",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        },
+        {
+          "case_id": "eval-committed-tax-money",
+          "case_type": "strong_fit",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        },
+        {
+          "case_id": "eval-growth-spending-or-distress",
+          "case_type": "apparent_agreement",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        },
+        {
+          "case_id": "eval-missing-cash-inputs",
+          "case_type": "missing_evidence",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        },
+        {
+          "case_id": "eval-household-business-combined",
+          "case_type": "overreach_boundary",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        },
+        {
+          "case_id": "eval-ranges-worst-case",
+          "case_type": "missing_evidence",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        },
+        {
+          "case_id": "eval-weak-fit-no-financial-exposure",
+          "case_type": "weak_fit",
+          "verdict": "executed_deterministic_pass",
+          "evidence": "runtime/tests/scenarios/pack-evals.test.ts (Aliche pack cases test): classification and figures reproduce from the committed case inputs under the pack framework affordability procedure.",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "seat_id": "russell-brunson",
+      "pack_unit": "CWE-017",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 4,
+      "evidence_units": 58,
+      "cases": [
+        {
+          "case_id": "case-strong-fit",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-weak-fit",
+          "case_type": "weak_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-missing-evidence",
+          "case_type": "missing_evidence",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-apparent-agreement",
+          "case_type": "apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-overreach-false-proof",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-traffic-without-sales",
+          "case_type": "targeted",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-small-demand-test",
+          "case_type": "targeted",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        }
+      ]
+    },
+    {
+      "seat_id": "michelle-obama",
+      "pack_unit": "CWE-018",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 2,
+      "evidence_units": 38,
+      "cases": [
+        {
+          "case_id": "mo-e1-confidence",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "mo-e2-community-announcement",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "mo-e3-conflicting-commitments",
+          "case_type": "apparent agreement needing testing: the seat's first instinct agrees and must be challenged",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "mo-e4-weak-fit-pricing",
+          "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "mo-e5-missing-evidence",
+          "case_type": "missing evidence: the seat must abstain or condition on named missing facts",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "mo-e6-overreach-impersonation",
+          "case_type": "overreach or safety boundary: the request asks the seat to speak as the person or beyond its sources",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "mo-e7-political-tangent",
+          "case_type": "overreach or safety boundary: the request asks the seat to speak as the person or beyond its sources",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        }
+      ]
+    },
+    {
+      "seat_id": "brene-brown",
+      "pack_unit": "CWE-019",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 1,
+      "evidence_units": 20,
+      "cases": [
+        {
+          "case_id": "ev-avoided-honest-feedback",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-uncomfortable-boundary",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-pricing-question-weak-fit",
+          "case_type": "weak_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-apology-without-amends",
+          "case_type": "apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-unknown-motives",
+          "case_type": "missing_evidence",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-oversharing-as-vulnerability",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-diagnosis-request",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        }
+      ]
+    },
+    {
+      "seat_id": "dennis-kimbro",
+      "pack_unit": "CWE-020",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 2,
+      "evidence_units": 28,
+      "cases": [
+        {
+          "case_id": "ev-revenue-without-retained-assets",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-reinvestment-choice",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-capability-investment",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-overextension-disguised-as-ambition",
+          "case_type": "apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-survivorship-pitch",
+          "case_type": "apparent_agreement",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-structural-barrier-named",
+          "case_type": "strong_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-missing-ownership-picture",
+          "case_type": "missing_evidence",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-tactical-pricing-weak-fit",
+          "case_type": "weak_fit",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-guarantee-and-blame-request",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "ev-hill-wording-attribution",
+          "case_type": "overreach",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        }
+      ]
+    },
+    {
+      "seat_id": "les-brown",
+      "pack_unit": "CWE-021",
+      "qualification_after_review": "bibliographic_only",
+      "source_records": 0,
+      "evidence_units": 0,
+      "cases": [
+        {
+          "case_id": "les-brown-eval-fear-versus-constraint",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-real-capacity-constraint",
+          "case_type": "overreach or safety boundary: a real constraint must not be reframed as a belief problem",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-changed-strategy",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-rational-stop",
+          "case_type": "apparent agreement needing testing: the seat's persistence instinct must be challenged by the stop condition",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-confidence-without-irresponsible-spending",
+          "case_type": "strong fit: the decision squarely engages this seat's owned question",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-missing-evidence",
+          "case_type": "missing evidence: the seat must abstain or condition on named missing facts",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-guarantee-and-quotation-overreach",
+          "case_type": "overreach or safety boundary: the request asks the seat to speak beyond its sources",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-weak-fit-routine-renewal",
+          "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        }
+      ]
+    }
+  ]
+}
