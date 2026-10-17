@@ -5,7 +5,7 @@
 // lines), writes the generated manifest.json, and generates the
 // distributable council-of-wise-elders.skill archive.
 //
-// The manifest excludes itself and any .skill archive. The archive is
+// The manifest excludes itself, any .skill archive, and generated runtime/dist and runtime/node_modules trees. The archive is
 // a deterministic zip (entries sorted, fixed 1980-01-01 timestamps)
 // holding the tree under the council-of-wise-elders/ root directory,
 // as the directive's package layout requires.
@@ -72,16 +72,23 @@ function fail(message) {
   process.exit(1);
 }
 
-function walk(dir, out = []) {
+function isGeneratedRuntimePath(rel) {
+  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
+    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/");
+}
+
+function walk(dir, out = [], base = dir) {
   for (const name of readdirSync(dir).sort()) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
+    const rel = relative(base, p).split("\\").join("/");
+    if (isGeneratedRuntimePath(rel)) continue;
+    if (statSync(p).isDirectory()) walk(p, out, base);
     else out.push(p);
   }
   return out;
 }
 
-const HASH_METHOD = "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.";
+const HASH_METHOD = "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded.";
 const ARCHIVE_BLOCK = {
   file: ARCHIVE_FILE,
   status: "generated",
@@ -309,7 +316,8 @@ try {
     recursive: true,
     filter: (src) => {
       const rel = relative(root, src).split("\\").join("/");
-      return rel !== "manifest.json" && !rel.endsWith(".skill") && rel !== ARCHIVE_TMP;
+      return rel !== "manifest.json" && !rel.endsWith(".skill")
+        && rel !== ARCHIVE_TMP && !isGeneratedRuntimePath(rel);
     },
   });
 
