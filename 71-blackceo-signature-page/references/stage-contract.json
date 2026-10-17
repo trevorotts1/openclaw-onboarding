@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Skill 71 mandatory stage contract. scripts/stage_gate.py is the only enforcer: no stage starts until check exits 0, no stage closes until close exits 0. Stage IDs are canonical; a run order or prompt cannot remove or rename them.",
+  "description": "Skill 71 mandatory stage contract. scripts/stage_gate.py is the only enforcer: no stage starts until check exits 0, no stage closes until close exits 0. Stage IDs are canonical; a run order or prompt cannot remove or rename them. Mockup architecture (Update Plan Item 5, Decision 2 option (i)): visual-mockup is an internal layout-proof stage and is never the client-facing mockup; final-mockups is the single client-judged mockup stage, opening only after the image generation chain (image-inventory-prompts, image-generation-qc, image-map-upload) has closed.",
   "stage_order": [
     "intake",
     "copy",
@@ -31,6 +31,16 @@
         "gate:must_supply --brand {brand}",
         "gate:intake_engine"
       ],
+      "handoff": {
+        "intake_field": "funnel_handoff",
+        "behavior": "form_pop",
+        "step_order": [
+          "signature_page",
+          "product_selection_page",
+          "order_form_page"
+        ],
+        "note": "The signature page's funnel handoff (update plan Item 32): intake records the Convert and Flow form's identity (name and object id), the pop behavior, and the step order (signature page, then product selection page, then order form page). A run with no form identity records the handoff as an explicit missing input with its reason, never a silent placeholder. Written by scripts/write_intake.py (--handoff-form-name/--handoff-form-id, or --handoff-missing-reason); the built page is checked against the record by scripts/validate_handoff.py at the responsive-html stage, and the funnel-completion receipt proves the pop live at ghl-install-test."
+      },
       "review_required": false,
       "min_scores": null,
       "reads": [
@@ -61,8 +71,10 @@
       ],
       "validators": [
         "python3 scripts/validate_copy_structure.py {run_dir} --spec references/copy-specs/{copy_version}-v6.json",
-        "python3 scripts/validate_public_copy.py {run_dir}/copy/public-copy.md"
+        "python3 scripts/validate_public_copy.py {run_dir}/copy/public-copy.md",
+        "gate:copy_handoff --manifest {run_dir}/copy/copy-manifest.json --public-copy {run_dir}/copy/public-copy.md --manuscript {run_dir}/copy/internal-manuscript.md"
       ],
+      "note": "Button handoff (update plan Item 8): the renderer-facing source for button labels and destinations is copy/public-copy.md, where each button is a Markdown link carrying the exact label and the destination; the full [CTA BUTTON: ...] / [CTA MICROCOPY: ...] marker forms live only in copy/internal-manuscript.md. gate:copy_handoff refuses to close this stage while any declared CTA fails to resolve a label and a destination from the public file. Contract: references/artifact-contracts.md, 'Copy manifest and the button handoff'.",
       "review_required": true,
       "min_scores": {
         "each": 8
@@ -115,22 +127,33 @@
         "gate:brand_fonts --font-map {run_dir}/font-action-plan/font-map.json --brand {brand}"
       ],
       "review_required": false,
+      "note": "review_required is false because no approval is recorded at this stage. Derived-font approval is recorded exactly once, at the visual bible review (visual-mockup stage), in the bible's fonts_source/font_rationale/font_reviewer, by that stage's independent bible reviewer (update plan Item 7; pinned in references/artifact-contracts.md, 'Derived-font approval: the pinned rule'). The font map's font_reviewer names that designated reviewer as a forward reference only; gate:brand_fonts checks the documentation fields, never an approval.",
       "min_scores": null,
       "reads": [
         "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
         "references/BlackCEO-Page-Brand-Law.md",
+        "references/artifact-contracts.md",
         "assets/brand/blackceo-brand.json"
       ],
       "may_be_not_authorized": false
     },
     "desktop-wireframe": {
+      "purpose": "Annotated wireframe spec image set for the desktop page (Update Plan Item 11): a designed build spec in the client's brand colors, rendered as images, never an HTML render. One section slice per section, each printed with the section's number and name, its type specs, its image slots labeled with aspect ratio and art direction, the run's real copy, CTA chips with microcopy specs, and behavior notes, under a header strip stating page width and content width; delivered as the section slices, one stitched full-page PNG, and one combined PDF.",
       "depends_on": [
         "font-action-plan"
       ],
       "requires_artifacts": [],
       "artifacts": [
         {
-          "glob": "desktop-wireframe/part-*.png",
+          "glob": "desktop-wireframe/section-*.png",
+          "min_count": 1
+        },
+        {
+          "glob": "desktop-wireframe/wireframe-full.png",
+          "min_count": 1
+        },
+        {
+          "glob": "desktop-wireframe/wireframe.pdf",
           "min_count": 1
         },
         {
@@ -153,18 +176,29 @@
         "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
         "references/BlackCEO-Page-Brand-Law.md",
         "font-action-plan/font-map.json",
-        "assets/page-references/README.md (the layout reference index: the run's layout references are recorded there per Item 13)"
+        "assets/page-references/README.md (the layout reference index: how each reference resolves, original file or registered house default, is recorded there per Item 13 as amended by Item 17)",
+        "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)"
       ],
       "may_be_not_authorized": false
     },
     "mobile-tablet": {
+      "purpose": "Annotated wireframe spec image set for the mobile page, plus the tablet rules (Update Plan Item 11): a designed build spec in the client's brand colors, rendered as images, never an HTML render, at the 390px phone width, each section slice printed with the section's number and name, its type specs, its image slots labeled with aspect ratio and art direction, the run's real copy, CTA chips with microcopy specs, and behavior notes (mobile-specific direction is printed as a behavior note on the section it governs), under a header strip stating page width and content width; delivered as the section slices, one stitched full-page PNG, and one combined PDF.",
       "depends_on": [
         "desktop-wireframe"
       ],
       "requires_artifacts": [],
       "artifacts": [
         {
-          "glob": "mobile-tablet/part-*.png",
+          "glob": "mobile-tablet/section-*.png",
+          "min_count": 1
+        },
+        {
+          "glob": "mobile-tablet/wireframe-full.png",
+          "min_count": 1
+        },
+        {
+          "glob": "mobile-tablet/wireframe.pdf",
           "min_count": 1
         },
         {
@@ -187,11 +221,14 @@
         "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
         "references/BlackCEO-Page-Brand-Law.md",
         "font-action-plan/font-map.json",
-        "assets/page-references/README.md (the layout reference index: the run's layout references are recorded there per Item 13)"
+        "assets/page-references/README.md (the layout reference index: how each reference resolves, original file or registered house default, is recorded there per Item 13 as amended by Item 17)",
+        "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)"
       ],
       "may_be_not_authorized": false
     },
     "visual-mockup": {
+      "purpose": "Internal layout proof and page visual bible. This stage applies the visual system to the passed wireframes and produces page-visual-bible.json (the style input the prompt stage requires) plus a layout proof render whose image slots are solid blocks by design. The layout proof is an internal production artifact: it is never presented to the client as the mockup and is never the client-judged mockup. The single client-judged mockup is final-mockups, after image generation.",
       "depends_on": [
         "mobile-tablet"
       ],
@@ -234,7 +271,7 @@
         "assets/brand/signature-grade-block.txt",
         "desktop-wireframe/",
         "mobile-tablet/",
-        "the layout references recorded in assets/page-references/README.md (Item 13)"
+        "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)"
       ],
       "may_be_not_authorized": false
     },
@@ -342,6 +379,7 @@
       "may_be_not_authorized": false
     },
     "final-mockups": {
+      "purpose": "The mockup: the single client-judged mockup stage (Update Plan Items 5 and 15): the mockup carries real photography in every slot, and the stage cannot close with a placeholder slot. It opens only after the image generation chain has closed (depends_on image-map-upload) and finalizes the layout proof per section with real photography composited into every slot. Supplied assets are placed as files and never generated; the supplied-asset record is the placement proof. Every image slot must trace, through the stage's section generation record (final-mockups/generation-record.json), to a generated image file or to a placed supplied asset under Item 3's supplied-asset record; any slot tracing to neither fails the close by name (trait M1), enforced by scripts/validate_mockup_slots.py. Mockup traits bind at this stage only; the visual-mockup layout proof's solid-block slots are by design and are never scored here. At close the stage also produces the hybrid board (Update Plan Item 12): one sheet carrying the mockup-fidelity desktop panel, the section guide column, and the mockup-fidelity mobile panel, composed deterministically from the approved artifacts. The board is the artifact the stage's approval is recorded against.",
       "depends_on": [
         "visual-mockup",
         "image-map-upload"
@@ -359,16 +397,30 @@
         {
           "glob": "final-mockups/mobile/part-*.png",
           "min_count": 1
+        },
+        {
+          "glob": "final-mockups/hybrid-board.png",
+          "min_count": 1
+        },
+        {
+          "glob": "final-mockups/hybrid-board.json",
+          "min_count": 1
+        },
+        {
+          "glob": "final-mockups/generation-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
-        "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
+        "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
+        "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups"
       ],
       "review_required": true,
       "review_covers": [
         "final-mockups/desktop/part-*.png",
         "final-mockups/mobile/part-*.png",
-        "final-mockups/mockup.html"
+        "final-mockups/mockup.html",
+        "final-mockups/hybrid-board.png"
       ],
       "min_scores": {
         "each": 8
@@ -376,12 +428,18 @@
       "reads": [
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
-        "visual-mockup/mockup.html",
-        "image-map-upload/image-map.json"
+        "visual-mockup/mockup.html (the internal layout proof this stage finalizes with the real assets)",
+        "image-map-upload/image-map.json",
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "desktop-wireframe/section-plan.json (the section guide's section order; the guide's thumbnails are the desktop wireframe slices)",
+        "font-action-plan/font-map.json (the typography spec record the section guide's specs are drawn from)",
+        "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)"
       ],
-      "may_be_not_authorized": false
+      "may_be_not_authorized": false,
+      "approval_artifact": "final-mockups/hybrid-board.png"
     },
     "responsive-html": {
+      "purpose": "Build the live page to match the approved final mockup, which is the design source of truth for this stage (Update Plan Item 16; Trevor's standing rule of 2026-10-11: the image is the design source of truth, the HTML is built to match it). Close requires the parity evidence: the side-by-side parity sheets at 1440 and 390 (mockup render against built page render, scripts/compare_sheet.py) and the structural drift table in responsive-html/compare/compare-report.json with drift status 'pass' (section count, section order, per-section image-placement class, heading-to-body size ratios within tolerance). Named drift failures block close; scripts/stage_gate.py enforces the evidence at close (check_parity_evidence).",
       "depends_on": [
         "final-mockups"
       ],
@@ -396,12 +454,21 @@
           "min_count": 1
         },
         {
-          "glob": "responsive-html/compare/*.png",
+          "glob": "responsive-html/compare/compare-1440-*.png",
+          "min_count": 1
+        },
+        {
+          "glob": "responsive-html/compare/compare-390-*.png",
+          "min_count": 1
+        },
+        {
+          "glob": "responsive-html/compare/compare-report.json",
           "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/responsive-html/index.html --brand {brand} --mode page --run-dir {run_dir}",
+        "python3 scripts/validate_handoff.py {run_dir}",
         "python3 scripts/compare_sheet.py {run_dir}"
       ],
       "review_required": true,
@@ -415,6 +482,8 @@
         "final-mockups/mockup.html",
         "image-map-upload/image-map.json",
         "copy/public-copy.md",
+        "copy/copy-manifest.json (the CTA entries and their handoff types; the primary CTA)",
+        "intake.json (funnel_handoff: the named form the primary CTA pops, or the recorded missing input)",
         "font-action-plan/font-map.json",
         "references/html-qc-rubric.md"
       ],

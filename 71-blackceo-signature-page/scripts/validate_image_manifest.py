@@ -22,11 +22,23 @@ Extended per BLACKCEO-SKILL-71-ENFORCEMENT-FIX-ORDER.md C5:
       declare qc_status "passed". Entries still planned (no asset yet) are
       not blocked by this rule. The production gate (stage_gate.py) runs this
       validator, so a non-zero exit blocks the stage.
+  Delivered filename mapping (Update Plan Item 26, proposal P6, ruled
+  2026-10-15)
+      One convention: the manifest and inventory carry the three-digit
+      internal ID (IMG-001); the delivered file is the two-digit
+      Image-NN.png derived from that ID (IMG-001 -> Image-01.png,
+      IMG-012 -> Image-12.png, IMG-123 -> Image-123.png). An entry's
+      filename must be exactly that delivered name for its own ID, and
+      the trailing number of its prompt_file / asset_file / asset_path
+      (when the file is named in the IMG-<n> / Image-<n> form) must be
+      the same number, so every delivered file maps to exactly one
+      internal ID and one receipt without a reader guessing the form.
 
 Exit codes: 0 pass, 1 fail (each reason on its own line), 2 unreadable input.
 """
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -57,6 +69,88 @@ def identifier(value):
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value
     return None
+
+
+_IMG_ID_RE = re.compile(r"^IMG-(\d+)$", re.IGNORECASE)
+_NAMED_FILE_RE = re.compile(r"^(?:IMG|Image)-(\d+)$", re.IGNORECASE)
+
+
+def internal_number(item_id):
+    """The numeric part of a three-digit internal ID (IMG-001 -> 1).
+
+    Accepts the IMG-<digits> string form or a bare integer ID; anything
+    else has no internal number and returns None.
+    """
+    if isinstance(item_id, bool):
+        return None
+    if isinstance(item_id, int):
+        return item_id
+    if isinstance(item_id, str):
+        m = _IMG_ID_RE.match(item_id.strip())
+        if m:
+            return int(m.group(1))
+        if item_id.strip().isdigit():
+            return int(item_id.strip())
+    return None
+
+
+def delivered_filename(item_id):
+    """The canonical delivered filename for an internal ID (Item 26).
+
+    Two-digit Image-NN.png: the number is zero-padded to two digits and
+    grows naturally past 99 (IMG-001 -> Image-01.png, IMG-012 ->
+    Image-12.png, IMG-123 -> Image-123.png). This is the save-naming
+    derivation the generation route (references/kie-generation-route.md)
+    and the SOP delivery text both state. Returns None when the ID has
+    no internal number.
+    """
+    n = internal_number(item_id)
+    if n is None:
+        return None
+    return f"Image-{n:02d}.png"
+
+
+def _named_file_number(value):
+    """Trailing number of an IMG-<n> / Image-<n> file name, else None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    m = _NAMED_FILE_RE.match(Path(value.strip()).stem)
+    return int(m.group(1)) if m else None
+
+
+def filename_mapping_errors(prefix, item, item_id):
+    """Item 26 mapping check for one manifest entry.
+
+    The entry's delivered filename must be exactly the canonical
+    two-digit name for its three-digit internal ID, and any of its
+    files named in the IMG-<n> / Image-<n> form must carry the same
+    number, so the delivered file, the manifest entry, and its receipt
+    map to exactly one internal ID.
+    """
+    errors = []
+    n = internal_number(item_id)
+    if n is None:
+        return errors
+    filename = item.get("filename")
+    if isinstance(filename, str) and filename.strip():
+        expected = delivered_filename(item_id)
+        actual = Path(filename.strip()).name
+        if actual != expected:
+            errors.append(
+                f"{prefix}.filename {actual!r} does not map to internal id "
+                f"{item_id!r}: delivered files use the two-digit "
+                f"Image-NN.png form, expected {expected!r} (Item 26)."
+            )
+    for key in ("prompt_file", "asset_file", "asset_path"):
+        value = item.get(key)
+        other = _named_file_number(value)
+        if other is not None and other != n:
+            errors.append(
+                f"{prefix}.{key} {value!r} carries number {other} but the "
+                f"entry's internal id is {item_id!r} (number {n}); a "
+                f"delivered file maps to exactly one internal id (Item 26)."
+            )
+    return errors
 
 
 def inventory_generation_count(data):
@@ -210,6 +304,7 @@ def validate(data, base_dir=None, check_files=False, inventory_data=None, measur
         if entry is None:
             continue
         prefix, item, item_id, _ = entry
+        errors.extend(filename_mapping_errors(prefix, item, item_id))
         master_id = identifier(item.get("master_id"))
         if master_id is None:
             continue

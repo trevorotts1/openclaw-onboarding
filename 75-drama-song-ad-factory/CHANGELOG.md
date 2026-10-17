@@ -4,6 +4,63 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.64 - 2026-10-17 - hook placement without section headers, pace direction guard, duration record
+
+A real 48 s run judged 34 paid takes: 0 accepted. Three causes were measurement
+and request plumbing; the missing audible gear change (pace_change FAIL on all
+34) is the provider's audio and is not changed here. No gate, threshold or
+refusal was weakened.
+
+- `hook_placement.check_returned` returned FAIL "UNMEASURED: section headers"
+  for every take whose words came from local transcription, which hears words
+  and never editorial labels. With no headers it now finds each sheet hook
+  block as its exact approved words on the measured word times, counts it only
+  when the singing detector measured it sung, and applies the same build-up and
+  story-beat floors and the extra-hook check. Untrusted timing, no measured
+  segments, hook words shared with another section, or fewer sung hooks than the
+  sheet carries stay UNMEASURED (blocking). No header is invented. On the same
+  real take read both ways the first hook time agrees (22.589 s).
+- The header branch could PASS with no first hook (headers present, none a
+  hook): the time floors only ran when a hook header existed. That is now a FAIL.
+- `song_dispatch.validate_request` now refuses a final `input.style` missing
+  either pace direction when the pace order is known (argument or the request's
+  `_pace_plan`); `song_choices.build_requests` passes it. `run_takes` checked
+  only `plan["pace_change"]`, so a plan carrying the order as `_pace_plan` (the
+  key the judge also reads) sent a style with neither direction; it now checks
+  the same order the judge reads.
+- `run_takes` records `duration` {requested_s, delivered_target_s, mode} and
+  writes `DURATION_HEADROOM_REQUESTED` to stderr when the request asks for the
+  15 percent headroom: nothing trims the raw take before the length gate, which
+  refuses audio over the delivered seconds.
+
+New check: `scripts/core/sung_hook/test_three_walls.py` (fixtures from the real
+run, brand token replaced).
+
+## v2.9.63 - 2026-10-17 - song generation, word-timing provenance and timing-word shape repairs
+
+Four repairs on the song-choices and word-timing path. No quality-control gate,
+threshold or refusal was weakened.
+
+- `song_choices._real_generate` passed `generation=True` to `kie_dispatch.dispatch`,
+  which accepts no such argument. The call raised `TypeError` before the dispatcher
+  ran, so no real generation could happen. The stale argument is removed.
+- `_real_generate` now keeps the provider's generation `task_id` on every take it
+  returns, so `lyric_timing` no longer raises `SUNO_TRACK_MISSING` for those takes.
+  The per-track Suno `audio_id` is not surfaced by the dispatcher envelope, so it
+  stays absent. It is never filled with the task id, and a dispatcher-made `sync-`
+  id is never recorded.
+- `lyric_timing.fetch_suno_timestamped_lyrics` and `provide_word_timings` now pass the
+  run's recorded choice-card receipt (argument first, else `track["card_receipt"]`)
+  into the dispatch request, as `picture_gate.make_regenerate` already does. The
+  card gate in `kie_dispatch` is unchanged: with no valid receipt it still refuses
+  `CARD_UNANSWERED`. Nothing is invented.
+- `sung_hook.measure`, `hook_placement.returned_sections` and `song_contract`
+  (`_sung_hits`, `check_returned_song`) now read aligned words in both shapes:
+  canonical `{word,start,end}` from `normalize_aligned_words` and raw Suno
+  `{word,startS,endS}`, following `timing_guard`. Before, canonical words raised
+  `KeyError('startS')` and `judge_take` reported a `judge_exception` FAIL.
+  New check: `scripts/core/sung_hook/test_timing_word_shapes.py`.
+
 ## v2.9.62 - 2026-10-16 - BATCH-DSF-12: signature launch wave, skill-72 motion v2, skill-78 product selection, miniapp deletion
 
 Batch `BATCH-DSF-12` — four members merged together into ONE batch branch off

@@ -54,9 +54,12 @@ Calibration Redesign (Rulings 1 and 2, 2026-10-14):
   then derives from its governing class.
 - Option B (Ruling 3): the calibrator also proposes, per family, a
   protected-region saturation ceiling from the FULL anchors (95th
-  percentile x 1.05). The screen ships that metric WARN-only until
-  Trevor approves a ceiling; the Item 12 judgment gate remains the
-  enforcement of record for selective saturation.
+  percentile x 1.05). A ceiling has been approved and written
+  (0.3660, Decision 14 write-in), and the metric remains WARN-only
+  under the owner's Resolution A ruling (S71-OPTION-B, 2026-10-16):
+  an image measuring over the written ceiling warns and never fails
+  on this metric; the Item 12 judgment gate remains the enforcement
+  of record for selective saturation.
 
 ## Manifest format: gold-set.json
 
