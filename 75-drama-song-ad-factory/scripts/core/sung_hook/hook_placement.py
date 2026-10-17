@@ -284,7 +284,7 @@ def returned_sections(aligned_words):
     section headers inline (a header can be split across two words)."""
     text, starts = "", []
     for w in aligned_words or []:
-        starts.append((len(text), w.get("startS")))
+        starts.append((len(text), w.get("start", w.get("startS"))))
         text += str(w.get("word", ""))
     out = []
     for m in _HEADER_RE.finditer(text):
