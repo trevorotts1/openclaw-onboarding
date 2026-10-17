@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH",
+  "revision": 1,
+  "approval_ref": "TEST-ONLY-plan-approval",
+  "approval_hash": "TEST-ONLY-APPROVAL-HASH",
+  "input_hash": "TEST-ONLY-INPUT-HASH",
+  "brand_ref": "TEST-ONLY-BRAND",
+  "brand_hash": "TEST-ONLY-BRAND-HASH",
+  "route_graph_ref": "reference/route-graph-example.json",
+  "route_graph_hash": "43017b1e5678d2904f1eccdd4d21f07093d51faaefa0922e0d76564e06cf2638",
+  "offer_refs": [
+    "TEST-ONLY-OFFER"
+  ],
+  "copy_profile": "signature-upsell-eight-section",
+  "assigned_skill": 80,
+  "allowed_write_target": "local_only",
+  "test_only": true,
+  "source_landing_copy_ref": "TEST-ONLY-landing-copy-ref",
+  "factual_scarcity_evidence": [],
+  "payment_capability": {
+    "one_click_native_action_verified": false,
+    "evidence_ref": null,
+    "fallback_when_one_click_unavailable": "block_paid_action_safe_continuation"
+  },
+  "request_id": "TEST-REQ-U2",
+  "page_id": "TEST-UPSELL_2",
+  "page_role": "upsell_2",
+  "instance": "upsell_2",
+  "entry_context": "from_downsell_1",
+  "offer": {
+    "offer_id": "TEST-ONLY-U2",
+    "slot": "upsell_2",
+    "display_name": "TEST ONLY Implementation Studio",
+    "deliverables": [
+      "TEST ONLY guided implementation sessions",
+      "TEST ONLY individual asset review",
+      "TEST ONLY build plan"
+    ],
+    "exclusions": [
+      "Done-for-you implementation is not included"
+    ],
+    "entitlement_ids": [
+      "TEST-ONLY-studio"
+    ],
+    "native_product_id": null
+  },
+  "disclosure": {
+    "amount_minor": 4700,
+    "currency": "USD",
+    "billing_type": "recurring",
+    "recurring_terms": {
+      "interval": "month",
+      "interval_count": 1,
+      "cycles": 3,
+      "trial_amount_minor": null,
+      "trial_period": null
+    },
+    "disclosure_text": "TEST ONLY: $47.00 today, then $47.00 per month for 2 further months (3 payments total), charged to your original payment method when you accept.",
+    "adjacent_to_cta": true,
+    "native_price_id": null
+  },
+  "eligibility": {
+    "original_purchase": {
+      "status": "verified_succeeded",
+      "verification_source": "s44_event_adapter",
+      "evidence_ref": "TEST-ONLY-ledger-entry",
+      "provider_event_ref": "TEST-ONLY-event"
+    },
+    "qualifying_purchase": {
+      "slot": "downsell_1",
+      "status": "verified_succeeded",
+      "evidence_ref": "acceptedU1=true (client-side URL parameter only)"
+    },
+    "bump_only_qualifies": false,
+    "client_side_claims_accepted_as_proof": false,
+    "already_owned_instance": false,
+    "already_owned_action": "route_to_final_thank_you"
+  },
+  "routes": {
+    "on_payment_succeeded": {
+      "target_role": "thank_you",
+      "target_page_id": "TEST-THANK_YOU"
+    },
+    "on_explicit_decline": {
+      "target_role": "thank_you",
+      "target_page_id": "TEST-THANK_YOU"
+    },
+    "on_payment_pending_or_failed": "remain_on_page_recoverable"
+  },
+  "action_binding": {
+    "expected_action_ref": "native-one-click:TEST-ONLY-U2",
+    "binding_kind": "native_one_click_guarded",
+    "source_ref": "fixtures/copy-upsell2-public.valid.json#action_binding"
+  }
+}
