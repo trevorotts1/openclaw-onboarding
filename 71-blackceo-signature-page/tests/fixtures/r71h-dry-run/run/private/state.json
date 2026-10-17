@@ -1,0 +1,71 @@
+{
+  "stages": {
+    "ghl-install-test": {
+      "status": "closed",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-16T13:51:35+00:00",
+      "artifact_counts": {
+        "ghl-install-test/install-steps.md": 1,
+        "ghl-install-test/funnel-completion.json": 1,
+        "ghl-install-test/evidence/desktop.png": 1,
+        "ghl-install-test/evidence/mobile.png": 1,
+        "ghl-install-test/browser-hygiene.json": 1
+      },
+      "artifact_hashes": {
+        "ghl-install-test/install-steps.md": "a2826575f7ad20553beb9bdea8f24cb65f4181aa81ea0d929039bbb0d8c15e6c",
+        "ghl-install-test/funnel-completion.json": "ffa124cb37a79d5f0f82f7b48403134aa25f30be3fcda3b39a1ca829ec6c2920",
+        "ghl-install-test/evidence/desktop.png": "6c2de1e84261b78f5960d4b6e9edc9fbdaaaa63b43fd315d3a4ed1de6edc5c90",
+        "ghl-install-test/evidence/mobile.png": "6c2de1e84261b78f5960d4b6e9edc9fbdaaaa63b43fd315d3a4ed1de6edc5c90",
+        "ghl-install-test/browser-hygiene.json": "f9161cbab0c520d49ce73f93ec997c285ad11859c87298d936c43aeaae846b1c"
+      },
+      "review_hashes": {},
+      "receipt": {
+        "author_agent": "fixture-builder",
+        "reviewer_agent": null,
+        "author_session": "fixture-session-author",
+        "started_at": "2026-10-16T09:00:00+00:00",
+        "finished_at": "2026-10-16T09:20:00+00:00",
+        "cost": null,
+        "scores_summary": null,
+        "review_files": []
+      },
+      "handoff_sha256": "5ea1502da48cf5c46317c865cfa06ef4f772cede6bba2026852a28809afb2325"
+    },
+    "publish-verify": {
+      "status": "closed",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-16T13:51:39+00:00",
+      "artifact_counts": {
+        "publish-verify/receipts/*": 1,
+        "publish-verify/fetch-record.json": 1,
+        "publish-verify/browser-hygiene.json": 1
+      },
+      "artifact_hashes": {
+        "publish-verify/receipts/loopback-publication.json": "481108f2f37818066515e68713787db87b4b981ed51c1745d124b091f304e53e",
+        "publish-verify/fetch-record.json": "b13a2a309526b33160e384c107303ffb5e76ba3fae1f50b38ffd6dd25c202a2a",
+        "publish-verify/browser-hygiene.json": "6322d1689138901ad433c7f59b6de7115e114ffd343e47e63ebebf74fadca985"
+      },
+      "review_hashes": {},
+      "receipt": {
+        "author_agent": "fixture-builder",
+        "reviewer_agent": null,
+        "author_session": "fixture-session-author",
+        "started_at": "2026-10-16T09:25:00+00:00",
+        "finished_at": "2026-10-16T09:35:00+00:00",
+        "cost": null,
+        "scores_summary": null,
+        "review_files": []
+      }
+    }
+  },
+  "receipts": {
+    "ghl-install-test": "private/receipts/ghl-install-test.json",
+    "publish-verify": "private/receipts/publish-verify.json"
+  },
+  "run_id": "16f4c780-b7fc-4977-a50a-988c5ab51aed",
+  "page_name": "R71H joint dry-run fixture (fictional)",
+  "brand_id": "fixture-brand",
+  "client": "FIXTURE",
+  "host_shape": "fleet-hostinger",
+  "items": {}
+}

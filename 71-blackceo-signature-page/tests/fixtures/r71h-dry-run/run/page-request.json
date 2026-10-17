@@ -1,0 +1,33 @@
+{
+  "launch_id": "FIXTURE-LNCH-001",
+  "plan_approval_ref": "fixture-plan-approval-001",
+  "automation": {
+    "folder": "FIXTURE / R71H Dry-Run",
+    "workflows": [
+      {
+        "form_id": "FORM-1",
+        "slug": "fixture-optin-followup",
+        "expected_steps": 4,
+        "allow_multiple": false,
+        "mechanism": {
+          "type": "contact_tag",
+          "tag": "fixture-optin-signed-up"
+        }
+      },
+      {
+        "form_id": "FORM-2",
+        "slug": "fixture-order-confirmation",
+        "expected_steps": 3,
+        "allow_multiple": true,
+        "mechanism": {
+          "type": "native",
+          "build_method": "tier4-browser-backstop"
+        }
+      },
+      {
+        "form_id": "FORM-3",
+        "no_workflow_reason": "fixture launch plan: the booking form's reminders are owned by the calendar workflow outside this fixture; recorded as an exception so the dry-run exercises the exception path"
+      }
+    ]
+  }
+}

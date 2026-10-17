@@ -1,0 +1,21 @@
+{
+  "accessibility": "Emits no markup. Missing brand values produce no CSS variable, so components inherit page styling instead of an invented brand value.",
+  "dependencies": [],
+  "doc": "16_SHARED_COMPONENTS_BRAND_AND_QC.md",
+  "doc_sections": [
+    "1",
+    "2"
+  ],
+  "events": [],
+  "files": {
+    "README.md": "d8c29556d26fceba07b39a1fb764b5c2e5b1095849d7917a086e6c2c3c13733a",
+    "test_tokens.py": "757619be8a03e4053c897e13ee62e207ad9f2bd2dff88c83cf875cd84c9a056d",
+    "tokens.py": "33e0f77a6525121b2fffba0666d9ab1397575070a95ca0e0459449fe4b92c356",
+    "tokens.schema.json": "4660d4d9f3536f6a7c818d6a54e9a19d0e4812b3cc13c2eb021d4ec2cf0c194f"
+  },
+  "inputs": "Parsed client brand record (Skill 71 brand file form, brand.schema.json) as a dict.",
+  "name": "design-tokens",
+  "outputs": "Token resolution document (tokens.schema.json) + CSS :root block of --sl-* variables via tokens_to_css().",
+  "owner": "S71",
+  "version": "1.0.0"
+}

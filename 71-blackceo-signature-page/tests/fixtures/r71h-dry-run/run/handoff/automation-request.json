@@ -1,0 +1,74 @@
+{
+  "request_id": "gxo_9327e9ecc215",
+  "request_version": 1,
+  "location_id": "fixture-location-001",
+  "launch_id": "FIXTURE-LNCH-001",
+  "requesting_room": "S71",
+  "deploy_mode": "draft-only",
+  "approval": {
+    "ref": "fixture-plan-approval-001",
+    "plan_hash": "49e5ca744043d45f0d7824802885747da5b8afc2d129e9ea88c46574bacea6f3"
+  },
+  "handoff_sha256": "5ea1502da48cf5c46317c865cfa06ef4f772cede6bba2026852a28809afb2325",
+  "plan": {
+    "folder": "FIXTURE / R71H Dry-Run",
+    "fixture-optin-followup": {
+      "form_id": "FORM-1",
+      "origin": {
+        "type": "form_submitted",
+        "form_id": "FORM-1"
+      },
+      "mechanism": {
+        "type": "contact_tag",
+        "tag": "fixture-optin-signed-up"
+      },
+      "expected_steps": 4,
+      "allow_multiple": false
+    },
+    "fixture-order-confirmation": {
+      "form_id": "FORM-2",
+      "origin": {
+        "type": "form_submitted",
+        "form_id": "FORM-2"
+      },
+      "mechanism": {
+        "type": "native",
+        "build_method": "tier4-browser-backstop"
+      },
+      "expected_steps": 3,
+      "allow_multiple": true
+    }
+  },
+  "workflows": [
+    {
+      "slug": "fixture-optin-followup",
+      "expected_steps": 4,
+      "allow_multiple": false,
+      "origin": {
+        "type": "form_submitted",
+        "form_id": "FORM-1"
+      },
+      "mechanism": {
+        "type": "contact_tag",
+        "tag": "fixture-optin-signed-up"
+      }
+    },
+    {
+      "slug": "fixture-order-confirmation",
+      "expected_steps": 3,
+      "allow_multiple": true,
+      "origin": {
+        "type": "form_submitted",
+        "form_id": "FORM-2"
+      },
+      "mechanism": {
+        "type": "native",
+        "build_method": "tier4-browser-backstop"
+      }
+    },
+    {
+      "form_id": "FORM-3",
+      "no_workflow_reason": "fixture launch plan: the booking form's reminders are owned by the calendar workflow outside this fixture; recorded as an exception so the dry-run exercises the exception path"
+    }
+  ]
+}

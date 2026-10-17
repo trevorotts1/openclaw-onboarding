@@ -116,6 +116,55 @@ Layout waivers (Items 13/14): `layout_waivers` records each waiver the intake wr
 (`gate`: `brand-fonts` or `layout-references`, plus its `reason`). The gate's layout gate consumes the matching
 recorded waiver only; an absence with no recorded waiver fails the gate.
 
+### Launch-context import and the `signature_launch_landing` profile (S71-02)
+
+`write_intake.py --launch-context <page-request.json>` imports the approved Signature Launch context for the
+run and activates the `signature_launch_landing` profile. The page-request is validated against the frozen 1.0
+schema vendored at `references/page-request.schema.json` (byte-identical to S49's candidate PR #2137 at commit
+a2bd2c5a; SHA-256 af0bb5738421f99dc9c6a7ba5a8618c2f6991fad061c7fc826b29caf229d847c). Optional companions are
+validated the same way: `--launch-record <launch.json>` (`references/launch.schema.json`, SHA-256
+b8e93f92b5d863fa31966b056e8905a1ace14808073892725dd4b3a5b04865a3) and `--route-graph <file>`
+(`references/route-graph.schema.json`, SHA-256 be055305fd96787b89a52cada50362e4eaa580dadbe7db8d1f5dd47b9ad99d27).
+Validation is performed by `scripts/launch_context.py`, which interprets the vendored schema documents so the
+checks cannot drift from the frozen contracts. Any violation refuses the import with the violation named and
+writes nothing: a schema violation, a page role other than `landing`, an `assigned_skill` other than 71, a
+launch record whose identity, brand, or route fields disagree with the request, a launch record not in status
+`approved` or `building`, a route graph whose SHA-256 differs from the request's `route_graph_hash` (stale
+routing), or a brand file whose hash differs from the approved `brand_hash`.
+
+Field mapping into `intake.json`: the request's `copy_profile` fills `copy_version` when it names `standard`
+or `long-form` (a conflicting `--copy-version` flag is refused); the launch record's `image_provider` fills
+`image_engine` (`kie` or `agnes`; `other_explicit` is refused, because this skill's intake cannot record it);
+the request's `test_only` sets `test_run`. The intake then carries `launch_profile: "signature_launch_landing"`
+and a `launch` block with the mapped context: launch ID and revision, tenant and location, request ID and
+`input_hash`, page ID and role, `approval_ref`, brand ref/hash with the hash-check outcome, route graph
+ref/hash and whether the graph was placed, offer refs, copy profile, allowed write target, journey mode and
+image provider when the launch record was supplied, and the approved next role derived from the route graph
+(the landing node's `interest_submitted` edge; `free_entry` only for a `free_entry` journey ending at the
+terminal `thank_you` node, the same rule the S71-05 handoff applies).
+
+Artifacts the import places in the run: `page-request.json` at the run root (verbatim; the S71-05 handoff
+reads it there), `launch.json` at the run root when the record was supplied (the handoff reads `journey_mode`
+there), the route graph at the request's `route_graph_ref` when supplied, `launch/popup-config.json` (the
+branded interest popup's config in the S71-07 component's shape: component `interest-popup` 1.0.0, the fixed
+field set `first_name`, `last_name`, `email`, `phone` with its native field map, and the consent statements),
+and `launch/design-tokens.css` when the shared tokens component is present in the tree (the component's
+`tokens_to_css()` output for the run's brand; absent values are recorded as missing, never substituted).
+Consent statements arrive only through `--consent-statements` (a JSON list of `{id, text, required}` objects
+in the component's config shape) and are carried verbatim; the import never invents statement text, and when
+none are supplied the config records `consent_source: null` with an empty list. No frozen 1.0 schema carries
+consent statements today: the launch schema has no communication/consent group, so this input is the carrier
+until a schema revision adds one.
+
+Profile effects while the profile is active: `stage_gate.py` engages the no-offer-pricing gate (S71-03) for
+the copy stage's `validate_public_copy.py` run by appending `--no-offer-pricing`; if the validator on disk
+does not support the flag, the copy stage fails closed naming the missing gate rather than validating without
+it. Produced pages include `shared-utils/signature_launch/design/design.css` (SHA-256
+68f6084ba8e86cb32622bbf799b49b16a518c4c348481dcbe2f992200cda2cce per the S71-07 component record) and the
+run's tokens CSS; both are recorded in the intake `launch.design_assets` block. REPORT.md names the active
+profile and its launch. The profile's routing inputs are the placed `page-request.json`, `launch.json`, and
+route graph; routing decisions themselves belong to the S71-05 handoff at report time.
+
 ## Stage receipts and Review Receipt v2
 
 A stage receipt `private/receipts/<stage>.json` carries `status`,
@@ -233,21 +282,32 @@ journey record), verified by `scripts/validate_funnel_completion.py` against
 `references/funnel-completion-checklist.md`. When the sub-stage does not apply, the receipt file records
 `status: "not_applicable"` with a reason citing the intake. The hand-off `handoff/automation-handoff.json`
 (Item 31, IDs only) is recorded at this stage's close; its SHA-256 is stored in state and publish-verify
-verifies the file is unchanged.
+verifies the file is unchanged. The hand-off is produced at close by `scripts/automation_handoff.py`
+(the R71H emitter, `references/automation-handoff.md` section "The producer"), which also writes
+`handoff/emission-record.json` (the hand-off's hash, its origin, and the envelope state) and, when the
+run carries the launch wiring inputs, the dispatch envelope `handoff/automation-request.json`.
 
 The `publish-verify` receipt carries `public_url`; its validator fetches the URL and writes
 `publish-verify/fetch-record.json` (`url`, `final_url`, `status`, `bytes`, `fetched_at`, `checks`,
 `build_marker`, `verdict`: `pass`, `fail`, or `blocked`). A blocked verdict means the network could not be
 reached: the stage stays open and the receipt records status `blocked`. Owner waivers for the publish rules
 (Item 6) are recorded in the receipt's `publish_waivers` (`rule`, `reason`, `approved_by: "owner"`) and print
-in REPORT.md.
+in REPORT.md. The publish close also verifies the automation hand-off against the hash locked in state at
+`ghl-install-test` close: a changed file refuses naming both hashes, a missing file refuses by name, and on
+a GHL run a missing locked hash refuses by name (there is nothing to verify the carried file against).
 
 The `automation-wiring` receipt (Item 31) carries `workflows` (each with `workflow_id`, `name`, `trigger`,
 `build_method`, Skill 44 `qc` evidence, and a `readback`), `form_exceptions` (forms with a
 `no_workflow_reason`), `conversational` (per derived trigger: `trigger`, `source_id`, `workflow_id`, and the
 Skill 38 `playbook`), `conversational_overrides` (owner-approved exceptions), `conversational_not_present`
 (trigger classes with no instance in this funnel), and `ghl_pack_version`. The full contract is
-`references/automation-handoff.md`.
+`references/automation-handoff.md`. The receipt is filed by `scripts/automation_handoff.py` from the
+recorded dispatch outcome (the R71H seam's receipt filing, packet section 4): it also carries the dispatch
+binding (`request_id`, `request_version`, `handoff_sha256`, `outcome`), each workflow's `mechanism`
+alongside its `trigger`, and the QC evidence's WF item count (`qc.wf_items`, verbatim). A refused dispatch
+files the same receipt with status `blocked` and the verbatim reason in `dispatch_refusal`; the stage stays
+open and the refusal prints in REPORT.md. A failed dispatch files status `fail` with its reason in
+`dispatch_failure`.
 
 A completed run ships `deliverables/` under the fixed manifest in `references/deliverables-manifest.md`
 (Item 34), verified by `scripts/check_deliverables.py`: `manifest.json` indexes every file in the folder

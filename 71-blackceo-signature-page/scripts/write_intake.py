@@ -33,12 +33,30 @@ the record and never printed). Refusals are written, at intake:
 
 Credential presence defaults to the process environment; the --*-present /
 --*-absent flags override it (for provisioning records written before the
-secrets.env exists)."""
+secrets.env exists).
+
+Launch-context import (S71-02, profile signature_launch_landing):
+--launch-context <page-request.json> imports the approved Signature
+Launch context for the run. The page-request (and, when supplied, the
+launch record, the route graph, and the popup consent statements) are
+validated against the frozen 1.0 schemas vendored in references/ by
+scripts/launch_context.py; on any violation the import is refused with
+the violation named and nothing is written. On success the context's
+fields are mapped into intake.json (launch_profile plus the launch
+block), the validated documents are placed in the run where the S71-05
+handoff reads them, and the interest popup config is emitted at
+launch/popup-config.json. Without --launch-context this writer's
+behavior is unchanged."""
 import argparse
 import json
 import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import launch_context
+
+SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 ENGINES = ("kie", "agnes")
 
@@ -81,6 +99,25 @@ def main(argv=None):
                    help="record a waiver for the layout gate's reference-existence "
                         "check (requires --layout-references-waiver-reason)")
     p.add_argument("--layout-references-waiver-reason", default=None)
+    # Launch-context import (S71-02).
+    p.add_argument("--launch-context", type=Path, default=None,
+                   help="Signature Launch page-request 1.0 document; validates "
+                        "it against the frozen schemas in references/ and "
+                        "imports the approved launch context, activating the "
+                        "signature_launch_landing profile")
+    p.add_argument("--launch-record", type=Path, default=None,
+                   help="the launch record (launch.json 1.0) the request "
+                        "belongs to; requires --launch-context")
+    p.add_argument("--route-graph", type=Path, default=None,
+                   help="the approved route graph (route-graph 1.0); its "
+                        "SHA-256 must equal the request's route_graph_hash; "
+                        "requires --launch-context")
+    p.add_argument("--consent-statements", type=Path, default=None,
+                   help="the approved popup consent statements as a JSON "
+                        "list of {id, text, required} objects (the interest "
+                        "popup component's config shape), carried verbatim "
+                        "into launch/popup-config.json; requires "
+                        "--launch-context")
     # Item 31 delivery fields (Amendment 4).
     p.add_argument("--publish-target", choices=["ghl", "vercel-embed", "vercel"])
     p.add_argument("--automation-scope", choices=["none", "workflows"], default="none")
@@ -97,6 +134,36 @@ def main(argv=None):
     if a.image_cap < 0 or not a.run_dir.is_dir():
         print("FAIL: run_dir must exist and image_cap must be >= 0")
         return 2
+
+    # Launch-context import (S71-02): validate everything in memory before
+    # anything is written; a refusal here leaves the run untouched.
+    launch_prepared = None
+    if a.launch_context is None:
+        for flag, value in (("--launch-record", a.launch_record),
+                            ("--route-graph", a.route_graph),
+                            ("--consent-statements", a.consent_statements)):
+            if value is not None:
+                print(f"REFUSED: {flag} is a launch-context import input and "
+                      f"requires --launch-context (the page-request it "
+                      f"belongs to).")
+                return 2
+    else:
+        try:
+            launch_prepared = launch_context.prepare_import(
+                SKILL_ROOT, a.run_dir, a.launch_context,
+                launch_path=a.launch_record, graph_path=a.route_graph,
+                consent_path=a.consent_statements, brand_file=a.brand_file)
+        except launch_context.LaunchContextError as exc:
+            print(f"REFUSED: launch context import: {exc}")
+            return 2
+        mapped_copy = launch_prepared[0].get("copy_version")
+        if (a.copy_version is not None and mapped_copy is not None
+                and a.copy_version != mapped_copy):
+            print(f"REFUSED: --copy-version \"{a.copy_version}\" conflicts "
+                  f"with the launch context's approved copy_profile "
+                  f"\"{mapped_copy}\"; the approved launch context governs, "
+                  f"so drop the conflicting flag.")
+            return 2
 
     intake = {"page_version": a.page_version, "brand_owner": a.brand_owner, "brand_file": a.brand_file,
               "creative_direction": a.creative_direction, "image_cap": a.image_cap,
@@ -160,8 +227,17 @@ def main(argv=None):
         intake["credentials"] = credentials
         intake.update(extra)
 
+    if launch_prepared is not None:
+        updates, _prepared_artifacts = launch_prepared
+        intake.update(updates)
+
     (a.run_dir / "intake.json").write_text(json.dumps(intake, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {a.run_dir / 'intake.json'} (image_engine={a.image_engine})")
+    print(f"wrote {a.run_dir / 'intake.json'} (image_engine={intake['image_engine']})")
+    if launch_prepared is not None:
+        _updates, artifacts = launch_prepared
+        launch_context.write_artifacts(a.run_dir, artifacts)
+        print(f"launch profile {launch_context.PROFILE_NAME} imported: "
+              f"{', '.join(sorted(artifacts))} written under {a.run_dir}")
     return 0
 
 

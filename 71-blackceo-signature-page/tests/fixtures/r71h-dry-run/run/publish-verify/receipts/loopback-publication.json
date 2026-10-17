@@ -1,0 +1,6 @@
+{
+  "fixture": true,
+  "served_by": "tests/fixtures/r71h-dry-run/build_fixture.py",
+  "public_url": "http://127.0.0.1:33943/",
+  "note": "the fixture page (fixture-page.html in this run) was served on loopback only for the publish-verify close; the URL is not live and resolves nowhere after the build"
+}

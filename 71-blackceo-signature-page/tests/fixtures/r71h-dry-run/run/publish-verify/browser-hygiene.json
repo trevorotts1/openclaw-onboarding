@@ -1,0 +1,20 @@
+{
+  "stage": "publish-verify",
+  "sessions_opened": 1,
+  "sessions_closed": 1,
+  "orphans_found": 0,
+  "orphans_reaped": 0,
+  "unaccounted": 0,
+  "headed_launches": 0,
+  "owner_override_headed": null,
+  "sessions": [
+    {
+      "name": "fixture-publish-session",
+      "engine": "agent-browser",
+      "binding": "session",
+      "unit": "session",
+      "closed_by": "normal"
+    }
+  ],
+  "updated_at": "2026-10-16T13:51:38+00:00"
+}
