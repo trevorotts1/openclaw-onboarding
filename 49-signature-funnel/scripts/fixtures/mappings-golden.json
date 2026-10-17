@@ -1,0 +1,33 @@
+{
+  "label": "Fixture mappings in the S79 delivered row format, keyed to the Skill 78 golden-three-option catalog; native IDs are that catalog's own TEST ids.",
+  "launch_id": "TEST-LAUNCH-S78-GOLDEN",
+  "mappings": [
+    {
+      "offer_id": "MAIN-ESS",
+      "slot": "main",
+      "native_product_id": "TEST-PROD-ESS",
+      "native_price_id": "TEST-PRICE-ESS",
+      "amount_minor": 9700,
+      "currency": "USD",
+      "test_only": true
+    },
+    {
+      "offer_id": "MAIN-PRO",
+      "slot": "main",
+      "native_product_id": "TEST-PROD-PRO",
+      "native_price_id": "TEST-PRICE-PRO",
+      "amount_minor": 19700,
+      "currency": "USD",
+      "test_only": true
+    },
+    {
+      "offer_id": "MAIN-ELITE",
+      "slot": "main",
+      "native_product_id": "TEST-PROD-ELITE",
+      "native_price_id": "TEST-PRICE-ELITE",
+      "amount_minor": 49700,
+      "currency": "USD",
+      "test_only": true
+    }
+  ]
+}
