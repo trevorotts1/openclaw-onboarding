@@ -22,6 +22,21 @@ under the skill dir by default). Every probe step is NON-FATAL: a failure sets t
 field to false/"unknown" and appends to `warnings`. Secrets are booleans ONLY —
 no secret VALUE is ever emitted, and env is the only source consulted.
 
+ENVIRONMENT CAPABILITIES (Signature Launch spec 05 section 3, S06-02): the
+report ALSO carries a top-level `environmentCapabilities` record (runtime/
+harness identity, OS + architecture, container status, cgroup resource
+limits, persistent storage root, client/location as references + booleans
+only, per-lane browser availability + version, a REAL Playwright launch +
+screenshot proof, OpenClaw extension currency/attach/health with honest
+"unknown" states, approved auth methods, declared public/internal API
+operations, and a per-section evidence timestamp). When the probe writes
+its normal output file, the same record is also written standalone as
+environment-capabilities.json next to it. All legacy top-level keys and
+lane-selection semantics are unchanged; the legacy lane `extension.current`
+keeps its historical boolean behavior (presence counts as current when the
+expected version is unknown) — the new record is where unknown currentness
+is surfaced as the string "unknown" instead of a silent pass.
+
 Lane selection (plan 2.2 + 9.6 REVISED table, engine order revised 2026-10-13):
   1  openclaw_managed_browser — the OpenClaw browser lane (Chrome extension seat
                               first): ONLY if OpenClaw >= 2026.8.1 AND browser plugin
@@ -104,6 +119,26 @@ TO_VERSION_S = 10
 TO_PLUGINS_S = 10
 TO_AGENT_BROWSER_S = 10
 TO_PY_S = 15
+TO_TABS_S = 10
+# The Playwright launch+screenshot proof gets a longer bound: a cold
+# headless Chromium start is slower than a version print, still bounded.
+TO_PW_PROOF_S = 45
+
+# Environment-capabilities knobs (S06-02). Storage root override + client
+# identity references: VALUES are never emitted, only the env var NAME that
+# supplied a value (a reference) and presence booleans.
+STORAGE_ROOT_ENV = "GHL_SKILL6_STORAGE_ROOT"
+CLIENT_IDENTITY_ALIASES = (
+    "GHL_SKILL6_CLIENT_SLUG",
+    "OPENCLAW_CLIENT_SLUG",
+    "CLIENT_SLUG",
+    "OPENCLAW_CLIENT_ID",
+)
+
+# Marker meaning "no usable limit could be determined" in the
+# environment-capabilities record. Absent cgroup data is stated honestly
+# with this string, never as a fabricated number.
+UNBOUNDED_OR_UNKNOWN = "unbounded-or-unknown"
 
 _SEMVER_RE = re.compile(r"(\d{1,4})\.(\d{1,3})\.(\d{1,3})")
 _PLUGIN_RE = re.compile(r"^([A-Za-z0-9@/._-]+)\s+.*?(enabled|disabled)\b", re.IGNORECASE)
@@ -442,6 +477,504 @@ def _probe_cua(runner: Callable[..., Any], env: Dict[str, str],
     }
 
 
+# ── environment capabilities (spec 05 section 3, S06-02) ─────────────────────
+# Everything in this section is NON-FATAL and disk/process-local: a failure
+# records "unknown" (or the UNBOUNDED_OR_UNKNOWN marker), never a guess.
+# Secrets appear as booleans and env-var reference NAMES only.
+
+def _utc_now_iso() -> str:
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _read_text_file(path: str) -> Optional[str]:
+    try:
+        with open(path, "r") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def _detect_harness(env: Dict[str, str]) -> Dict[str, Any]:
+    """Runtime/harness identity from process/env markers only.
+
+    Known markers win in a fixed order; anything else is stated as
+    "unknown" — the harness is never guessed from the working directory
+    or the model name."""
+    checks = (
+        ("claude-code", ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+                         "CLAUDE_CODE_SSE_PORT")),
+        ("codex", ("CODEX_SANDBOX", "CODEX_HOME", "CODEX_CLI")),
+        ("openclaw", ("OPENCLAW_HOME", "OPENCLAW_GATEWAY_PORT",
+                      "OPENCLAW_SESSION")),
+        ("cursor", ("CURSOR_AGENT", "CURSOR_TRACE_ID")),
+        ("9router-claude-nine", ("NINEROUTER_HOME", "CLAUDE_NINE_HOME")),
+    )
+    for name, markers in checks:
+        for marker in markers:
+            if env.get(marker):
+                version = "unknown"
+                for vkey in (f"{name.upper().replace('-', '_')}_VERSION",
+                             "HARNESS_VERSION"):
+                    if env.get(vkey):
+                        version = str(env[vkey])
+                        break
+                return {"name": name, "version": version,
+                        "evidence": f"env:{marker}"}
+    if env.get("container"):
+        return {"name": "unknown", "version": "unknown",
+                "evidence": "container-env-only"}
+    return {"name": "unknown", "version": "unknown", "evidence": "none"}
+
+
+def _cgroup_paths(sys_root: Optional[str]) -> Dict[str, str]:
+    """Absolute probe paths, optionally re-rooted under sys_root (tests)."""
+    root = sys_root or ""
+    return {
+        "dockerenv": os.path.join(root, ".dockerenv"),
+        "proc_cgroup": os.path.join(root, "proc", "1", "cgroup"),
+        "cgroup_dir": os.path.join(root, "sys", "fs", "cgroup"),
+    }
+
+
+def _detect_container(env: Dict[str, str],
+                      sys_root: Optional[str] = None) -> Dict[str, Any]:
+    """Container status from real markers: /.dockerenv, the init process's
+    cgroup lines, and the container= env marker runtimes inject."""
+    paths = _cgroup_paths(sys_root)
+    markers: List[str] = []
+    if os.path.exists(paths["dockerenv"]):
+        markers.append("/.dockerenv present")
+    proc_cgroup = _read_text_file(paths["proc_cgroup"]) or ""
+    for token in ("docker", "kubepods", "containerd", "libpod", "podman"):
+        if token in proc_cgroup:
+            markers.append(f"proc-1-cgroup:{token}")
+            break
+    if env.get("container"):
+        markers.append("env:container")
+    cg_version = "unknown"
+    if os.path.exists(os.path.join(paths["cgroup_dir"], "cgroup.controllers")):
+        cg_version = "v2"
+    elif os.path.isdir(os.path.join(paths["cgroup_dir"], "memory")):
+        cg_version = "v1"
+        if os.path.exists(os.path.join(paths["cgroup_dir"],
+                                       "cgroup.controllers")):
+            cg_version = "mixed"
+    return {
+        "inContainer": bool(markers),
+        "markers": markers,
+        "cgroupVersion": cg_version,
+    }
+
+
+def _parse_cgroup_limits(sys_root: Optional[str] = None) -> Dict[str, Any]:
+    """Real cgroup CPU/memory limits (spec 05 section 3: on Docker, inspect
+    the real files). v2 files win when present; v1 named hierarchies are the
+    fallback. Absent or 'no limit' values read UNBOUNDED_OR_UNKNOWN."""
+    paths = _cgroup_paths(sys_root)
+    base = paths["cgroup_dir"]
+    result: Dict[str, Any] = {
+        "memoryLimitBytes": UNBOUNDED_OR_UNKNOWN,
+        "cpuLimitCores": UNBOUNDED_OR_UNKNOWN,
+        "source": "none",
+    }
+    # ── cgroup v2 (unified hierarchy) ──
+    mem_max = _read_text_file(os.path.join(base, "memory.max"))
+    cpu_max = _read_text_file(os.path.join(base, "cpu.max"))
+    if mem_max is not None or cpu_max is not None:
+        result["source"] = "cgroup-v2"
+        if mem_max is not None:
+            mem_max = mem_max.strip()
+            if mem_max != "max":
+                try:
+                    result["memoryLimitBytes"] = int(mem_max)
+                except ValueError:
+                    pass
+        if cpu_max is not None:
+            parts = cpu_max.split()
+            if len(parts) == 2 and parts[0] != "max":
+                try:
+                    quota, period = int(parts[0]), int(parts[1])
+                    if quota > 0 and period > 0:
+                        result["cpuLimitCores"] = quota / period
+                except ValueError:
+                    pass
+        return result
+    # ── cgroup v1 (named hierarchies) ──
+    mem_v1 = _read_text_file(os.path.join(base, "memory",
+                                          "memory.limit_in_bytes"))
+    quota_v1 = _read_text_file(os.path.join(base, "cpu",
+                                            "cpu.cfs_quota_us"))
+    period_v1 = _read_text_file(os.path.join(base, "cpu",
+                                             "cpu.cfs_period_us"))
+    if mem_v1 is not None or quota_v1 is not None:
+        result["source"] = "cgroup-v1"
+        if mem_v1 is not None:
+            try:
+                limit = int(mem_v1.strip())
+                # The kernel reports "no limit" as a value near LONG_MAX
+                # (page-aligned); anything >= 2**60 is that sentinel.
+                if 0 < limit < 2 ** 60:
+                    result["memoryLimitBytes"] = limit
+            except ValueError:
+                pass
+        if quota_v1 is not None and period_v1 is not None:
+            try:
+                quota, period = int(quota_v1.strip()), int(period_v1.strip())
+                if quota > 0 and period > 0:
+                    result["cpuLimitCores"] = quota / period
+            except ValueError:
+                pass
+    return result
+
+
+def _storage_root(env: Dict[str, str]) -> Dict[str, Any]:
+    """The persistent storage root actually in use, in resolution order:
+    explicit env override, the fleet durable root (/data/.openclaw), the
+    operator's OpenClaw home, else this skill's working/ evidence dir."""
+    override = env.get(STORAGE_ROOT_ENV)
+    if override:
+        root, source = override, f"env:{STORAGE_ROOT_ENV}"
+    else:
+        home = env.get("HOME") or os.path.expanduser("~")
+        oc_home = env.get("OPENCLAW_HOME") or os.path.join(home, ".openclaw")
+        if os.path.isdir("/data/.openclaw"):
+            root, source = "/data/.openclaw", "durable-root"
+        elif os.path.isdir(oc_home):
+            root, source = oc_home, "openclaw-home"
+        else:
+            skill_dir = os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__)))
+            root = os.path.join(skill_dir, "working")
+            source = "skill-working-dir"
+    try:
+        writable = os.path.isdir(root) and os.access(root, os.W_OK)
+    except Exception:
+        writable = False
+    return {"persistentRoot": root, "source": source, "writable": bool(writable)}
+
+
+def _first_env_reference(env: Dict[str, str], aliases: tuple) -> Optional[str]:
+    """Name of the first env var in `aliases` holding a value (reference
+    only — the value itself is never returned or emitted)."""
+    for name in aliases:
+        val = env.get(name)
+        if val is not None and val.strip() != "":
+            return name
+    return None
+
+
+# The Playwright proof child: launches an isolated headless Chromium page,
+# screenshots to a temp path OUTSIDE the skill dir, prints one JSON verdict
+# line, and removes its temp artifacts. Exit code is always 0; the verdict
+# line is the evidence. It deliberately imports via playwright.sync_api so
+# the probe's own "import playwright" package check stays the only command
+# carrying that exact string.
+_PW_PROOF_SCRIPT = r"""
+import json, os, tempfile
+def _verdict(launched, shot, err):
+    print(json.dumps({"launched": launched, "screenshotTaken": shot,
+                      "errorClass": err}))
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    _verdict(False, False, "playwright-missing")
+    raise SystemExit(0)
+_tmp = tempfile.mkdtemp(prefix="skill6-pw-proof-")
+_shot = os.path.join(_tmp, "proof.png")
+try:
+    with sync_playwright() as _p:
+        _b = _p.chromium.launch(headless=True)
+        _pg = _b.new_page()
+        _pg.set_content("<title>skill6-proof</title><h1>ok</h1>")
+        _pg.screenshot(path=_shot)
+        _b.close()
+    _ok = os.path.isfile(_shot) and os.path.getsize(_shot) > 0
+    _verdict(True, bool(_ok), None if _ok else "screenshot-failed")
+except Exception as _e:
+    _msg = str(_e)
+    if "Executable doesn't exist" in _msg or "has not been installed" in _msg:
+        _verdict(False, False, "browser-binary-missing")
+    else:
+        _verdict(False, False, "launch-failed")
+finally:
+    try:
+        if os.path.exists(_shot):
+            os.remove(_shot)
+        os.rmdir(_tmp)
+    except Exception:
+        pass
+"""
+
+
+def _default_playwright_launcher(runner: Callable[..., Any],
+                                 package_available: bool) -> Dict[str, Any]:
+    """Run the REAL launch proof through the injectable runner and parse
+    the child's JSON verdict. A transport-level failure (no verdict line)
+    is classified from the package probe, never upgraded to a pass."""
+    proof: Dict[str, Any] = {"attempted": True, "launched": False,
+                             "screenshotTaken": False, "errorClass": None}
+    cp = _run(runner, [sys.executable or "python3", "-c", _PW_PROOF_SCRIPT],
+              TO_PW_PROOF_S)
+    verdict = None
+    for line in (_out(cp) or "").splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                verdict = json.loads(line)
+            except Exception:
+                verdict = None
+    if verdict is not None:
+        proof["launched"] = bool(verdict.get("launched"))
+        proof["screenshotTaken"] = bool(verdict.get("screenshotTaken"))
+        proof["errorClass"] = verdict.get("errorClass")
+    else:
+        proof["errorClass"] = ("playwright-missing" if not package_available
+                               else "launch-failed")
+    return proof
+
+
+def _extension_expected_source(env: Dict[str, str]) -> str:
+    """Where the expected extension version came from (mirrors
+    _probe_openclaw_extension's resolution order, for the record)."""
+    if env.get(EXTENSION_EXPECTED_ENV):
+        return f"env:{EXTENSION_EXPECTED_ENV}"
+    home = env.get("HOME") or os.path.expanduser("~")
+    oc_home = env.get("OPENCLAW_HOME") or os.path.join(home, ".openclaw")
+    manifest = os.path.join(oc_home, "browser", "chrome-extension",
+                            "manifest.json")
+    if _read_text_file(manifest) is not None:
+        return "bundled-manifest:~/.openclaw/browser/chrome-extension/manifest.json"
+    return "unknown"
+
+
+# Declared API operations (spec 05 sections 3-4): what the skill's adapters
+# implement, labeled DECLARED — a capability report is not a live call, and
+# nothing here claims a live proof that did not happen in this run.
+#
+# S06-07 reconciliation (NQ1/NQ5): the two public funnel READ operations
+# below (funnels.list, funnels.page.list) are implemented by
+# tools/ghl_funnels_read.py behind ghl_inventory's seams. When this
+# declaration was first written, no adapter existed for them, so the
+# blanket "adapters implement" framing was ahead of the code for those two
+# entries; it is accurate now, and they remain declared-not-live-proven
+# (no approved test location exists for these reads; LIVE_PROOF_PENDING).
+# Authority split, stated once here: this record is the DECLARED capability
+# snapshot; the code is authoritative for what is implemented; each unit's
+# evidence is authoritative for live proof. The internal entries below stay
+# labeled internal: a different surface from the public reads (different
+# origin, auth model, and version).
+_DECLARED_API_OPERATIONS: Dict[str, Any] = {
+    "verification": "declared-not-live-proven",
+    "public": [
+        {"operation": "funnels.list", "method": "GET",
+         "path": "/funnels/funnel/list", "kind": "read"},
+        {"operation": "funnels.page.list", "method": "GET",
+         "path": "/funnels/page", "kind": "read"},
+        {"operation": "products.crud", "method": "CRUD",
+         "path": "/products", "kind": "write"},
+        {"operation": "custom-values.crud", "method": "CRUD",
+         "path": "/locations/{locationId}/customValues", "kind": "write"},
+        {"operation": "tags.create", "method": "POST",
+         "path": "/locations/{locationId}/tags", "kind": "write"},
+        {"operation": "funnel-redirects.crud", "method": "CRUD",
+         "path": "/funnels/lookup/redirect", "kind": "write"},
+        {"operation": "media.upload", "method": "POST",
+         "path": "/medias/upload-file", "kind": "write"},
+    ],
+    "internal": [
+        {"operation": "spa.funnels.page.list", "method": "GET",
+         "path": "/funnels/page/list", "kind": "read",
+         "note": "internal SPA family; version/capture-gated, not an "
+                 "official stable API"},
+        {"operation": "spa.pages.autosave", "method": "POST",
+         "path": "builder autosave (captured contract)", "kind": "write",
+         "note": "internal SPA family; version/capture-gated, not an "
+                 "official stable API"},
+        {"operation": "spa.workflows.triggers", "method": "GET/POST",
+         "path": "workflow trigger read/rewire (captured contract)",
+         "kind": "write",
+         "note": "internal SPA family; version/capture-gated, not an "
+                 "official stable API"},
+    ],
+}
+
+
+def _build_environment_capabilities(
+        runner: Callable[..., Any], env: Dict[str, str],
+        stamp: Callable[[], str],
+        oc: Dict[str, Any], lanes: Dict[str, Any], secrets: Dict[str, bool],
+        pw_package_available: bool,
+        pw_launcher: Optional[Callable[[], Dict[str, Any]]] = None,
+        sys_root: Optional[str] = None) -> Dict[str, Any]:
+    """Assemble the spec 05 section 3 environment-capabilities record from
+    the sections the probe already measured, plus the new environment
+    probes. Every section carries its own evidence timestamp."""
+    harness = _detect_harness(env)
+    runtime = {
+        "name": harness["name"],
+        "version": harness["version"],
+        "evidence": harness["evidence"],
+        "python": _platform.python_version(),
+        "evidenceAt": stamp(),
+    }
+    os_section = {
+        "system": _platform.system(),
+        "release": _platform.release(),
+        "architecture": _platform.machine() or "unknown",
+        "platform": _platform_name(),
+        "evidenceAt": stamp(),
+    }
+    container_probe = _detect_container(env, sys_root)
+    container = {
+        "inContainer": container_probe["inContainer"],
+        "markers": container_probe["markers"],
+        "cgroupVersion": container_probe["cgroupVersion"],
+        "evidenceAt": stamp(),
+    }
+    limits = _parse_cgroup_limits(sys_root)
+    resource_limits = {
+        "memoryLimitBytes": limits["memoryLimitBytes"],
+        "cpuLimitCores": limits["cpuLimitCores"],
+        "cpuCount": os.cpu_count(),
+        "source": limits["source"],
+        "evidenceAt": stamp(),
+    }
+    storage_probe = _storage_root(env)
+    storage = {
+        "persistentRoot": storage_probe["persistentRoot"],
+        "source": storage_probe["source"],
+        "writable": storage_probe["writable"],
+        "evidenceAt": stamp(),
+    }
+    client_ref = _first_env_reference(env, CLIENT_IDENTITY_ALIASES)
+    client = {
+        "identityPresent": client_ref is not None,
+        "identityReference": client_ref,
+        "evidenceAt": stamp(),
+    }
+    location_ref = _first_env_reference(env, LOCATION_ID_ALIASES)
+    location = {
+        "present": bool(secrets.get("locationId")),
+        "reference": location_ref,
+        # A disk/env probe cannot verify a location against the account;
+        # stated honestly instead of inheriting the presence boolean.
+        "verified": "unknown",
+        "evidenceAt": stamp(),
+    }
+    ab = lanes["agent_browser"]
+    managed = lanes["openclaw_managed_browser"]
+    pw_lane = lanes["playwright_direct"]
+    chrome_version = "unknown"
+    for binary in ("google-chrome", "chromium", "chromium-browser"):
+        vcp = _run(runner, [binary, "--version"], TO_VERSION_S)
+        vtext = _out(vcp).strip()
+        if vtext:
+            chrome_version = _semver_str(vtext.splitlines()[0])
+            break
+    pw_version = "unknown"
+    if pw_package_available:
+        vcp = _run(runner, [sys.executable or "python3", "-c",
+                            "import importlib.metadata as _m; "
+                            "print(_m.version('playwright'))"], TO_PY_S)
+        vtext = _out(vcp).strip()
+        if vtext:
+            pw_version = vtext.splitlines()[0].strip()
+    browsers = {
+        "agentBrowser": {"available": bool(ab["available"]),
+                         "version": ab.get("version") or "unknown"},
+        "openclawManagedBrowser": {
+            "pluginEnabled": bool(managed["pluginEnabled"]),
+            "cliWorks": bool(managed["cliWorks"]),
+            "profile": managed.get("profile") or "unknown"},
+        "chrome": {
+            "userDataFound": bool(_chrome_user_data_roots(env)
+                                  and any(os.path.isdir(r) for r in
+                                          _chrome_user_data_roots(env))),
+            "version": chrome_version},
+        "playwright": {
+            "packageAvailable": bool(pw_lane["available"]),
+            "packageVersion": pw_version,
+            "browsersInstalled": bool(pw_lane["browsersInstalled"])},
+        "evidenceAt": stamp(),
+    }
+    if pw_launcher is not None:
+        proof = dict(pw_launcher())
+        proof.setdefault("attempted", True)
+    else:
+        proof = _default_playwright_launcher(runner, pw_package_available)
+    playwright_proof = {
+        "attempted": bool(proof.get("attempted")),
+        "launched": bool(proof.get("launched")),
+        "screenshotTaken": bool(proof.get("screenshotTaken")),
+        "errorClass": proof.get("errorClass"),
+        "evidenceAt": stamp(),
+    }
+    ext = managed.get("extension") or {}
+    if not ext.get("installed"):
+        ext_current: Any = False
+    elif ext.get("expectedVersion") is None:
+        # Per spec 05 section 3: unknown expected version means unknown
+        # currentness. The legacy lane field keeps its boolean behavior;
+        # this record is where the unknown is surfaced.
+        ext_current = "unknown"
+    else:
+        ext_current = bool(ext.get("current"))
+    attached = "unknown"
+    connection_health = "unknown"
+    if oc.get("cliPresent"):
+        tcp = _run(runner, ["openclaw", "browser", "tabs"], TO_TABS_S)
+        if tcp is not None and tcp.returncode == 0:
+            attached = "attached"
+            connection_health = "healthy"
+        elif managed.get("cliWorks"):
+            connection_health = "degraded"
+    extension = {
+        "installed": bool(ext.get("installed")),
+        "installedVersion": ext.get("version"),
+        "expectedVersion": ext.get("expectedVersion"),
+        "expectedSource": _extension_expected_source(env),
+        "current": ext_current,
+        "attached": attached,
+        "connectionHealth": connection_health,
+        "evidenceAt": stamp(),
+    }
+    skill_tools = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+    auth_methods = {
+        "firebaseRefreshToken": {"approved": True,
+                                 "present": bool(
+                                     secrets.get("firebaseRefreshToken"))},
+        "locationPit": {"approved": True,
+                        "present": bool(secrets.get("locationPit"))},
+        "locationId": {"approved": True,
+                       "present": bool(secrets.get("locationId"))},
+        "gatedEmail2faBootstrap": {
+            "approved": True,
+            "modulePresent": os.path.isfile(
+                os.path.join(skill_tools, "ghl_auth.py"))},
+        "evidenceAt": stamp(),
+    }
+    api_operations = dict(_DECLARED_API_OPERATIONS)
+    api_operations["evidenceAt"] = stamp()
+    return {
+        "schema": "skill6-environment-capabilities/1",
+        "generatedAt": stamp(),
+        "runtime": runtime,
+        "os": os_section,
+        "container": container,
+        "resourceLimits": resource_limits,
+        "storage": storage,
+        "client": client,
+        "location": location,
+        "browsers": browsers,
+        "playwrightProof": playwright_proof,
+        "extension": extension,
+        "authMethods": auth_methods,
+        "apiOperations": api_operations,
+    }
+
+
 # ── lane selection (plan 2.2 + 9.6 REVISED) ───────────────────────────────────
 
 def _oc_lane_eligible(oc: Dict[str, Any]) -> bool:
@@ -472,20 +1005,34 @@ def _select_lane(lanes: Dict[str, Any], env: Dict[str, str]) -> Optional[str]:
 def run_probe(runner: Callable[..., Any] = subprocess.run,
               env: Optional[Dict[str, str]] = None,
               now: Optional[str] = None,
-              paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+              paths: Optional[Dict[str, str]] = None,
+              pw_launcher: Optional[Callable[[], Dict[str, Any]]] = None,
+              sys_root: Optional[str] = None) -> Dict[str, Any]:
     """Run the full capability probe. All deps injectable for tests.
 
     runner: subprocess.run-compatible callable (cmd, capture_output, text, timeout).
     env:    environment mapping (default os.environ). Booleans only in output.
     now:    ISO-8601 probedAt override (default UTC now).
     paths:  optional {"appDirs": ...} override for mac app checks.
+    pw_launcher: optional () -> proof-dict override for the Playwright
+            launch proof (tests); default runs the real isolated launch.
+    sys_root: optional filesystem root prefix for the container/cgroup
+            probes (tests); default reads the real /, /.dockerenv,
+            /proc/1/cgroup and /sys/fs/cgroup.
     """
     if env is None:
         env = dict(os.environ)
+    explicit_now = now is not None
     if now is None:
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
+
+    def _stamp() -> str:
+        # Per-section evidence timestamps (spec 05 section 3): a fresh UTC
+        # stamp per section in a live run; the caller's fixed `now` when
+        # one was injected (tests stay deterministic).
+        return now if explicit_now else _utc_now_iso()
     warnings: List[str] = []
 
     if paths and paths.get("appDirs"):
@@ -579,6 +1126,11 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
     if selected is None:
         blockers.append("no-browser-lane")
 
+    environment_capabilities = _build_environment_capabilities(
+        runner, env, _stamp, oc, lanes, secrets,
+        pw_package_available=pw["available"],
+        pw_launcher=pw_launcher, sys_root=sys_root)
+
     return {
         "probedAt": now,
         "platform": _platform_name(),  # mac | linux | win per plan Part 2.1
@@ -591,6 +1143,7 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
         "iframeDrag": iframe_drag,
         "blockers": blockers,
         "warnings": warnings,
+        "environmentCapabilities": environment_capabilities,
     }
 
 
@@ -628,6 +1181,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f.write(text + "\n")
         except Exception as e:  # non-fatal: stdout already has the JSON
             print(f"warning: could not write {out_path}: {e}", file=sys.stderr)
+        # Spec 05 section 3: the environment-capabilities record also
+        # stands alone as environment-capabilities.json next to the
+        # capability output.
+        envcaps_path = os.path.join(os.path.dirname(os.path.abspath(out_path)),
+                                    "environment-capabilities.json")
+        try:
+            with open(envcaps_path, "w") as f:
+                f.write(json.dumps(result["environmentCapabilities"],
+                                   indent=2) + "\n")
+        except Exception as e:  # non-fatal, same policy as the main output
+            print(f"warning: could not write {envcaps_path}: {e}",
+                  file=sys.stderr)
     return 0
 
 
@@ -648,6 +1213,30 @@ def _selftest() -> int:
         errors.append(f"empty box should select no lane, got {res['selectedLane']}")
     if "no-browser-lane" not in res["blockers"]:
         errors.append("empty box missing no-browser-lane blocker")
+
+    # 1b. environment-capabilities record rides along (spec 05 section 3):
+    #     shape present, Playwright proof attempted and honestly failed on
+    #     an empty box, extension currentness False when not installed.
+    envcaps = res.get("environmentCapabilities") or {}
+    for section in ("runtime", "os", "container", "resourceLimits",
+                    "storage", "client", "location", "browsers",
+                    "playwrightProof", "extension", "authMethods",
+                    "apiOperations"):
+        if section not in envcaps:
+            errors.append(f"environmentCapabilities missing section {section}")
+        elif section != "apiOperations" and "evidenceAt" not in envcaps[section]:
+            errors.append(f"environmentCapabilities.{section} missing evidenceAt")
+    proof = envcaps.get("playwrightProof") or {}
+    if proof.get("attempted") is not True or proof.get("launched") is not False:
+        errors.append(f"empty-box playwright proof wrong: {proof}")
+    _ext = envcaps.get("extension") or {}
+    if _ext.get("current") not in (True, False, "unknown"):
+        errors.append(f"extension currentness not an honest state: {_ext}")
+    if not _ext.get("installed") and _ext.get("current") is not False:
+        # The extension probe reads the real disk even with fake runners,
+        # so an installed extension here is the host's own — but a NOT
+        # installed extension must never read as current.
+        errors.append("extension absent yet currentness is not False")
 
     # 2. agent-browser only -> lane 1
     def r_ab(cmd, **kw):

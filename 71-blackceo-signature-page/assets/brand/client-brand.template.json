@@ -19,6 +19,19 @@
   "default_creative_direction": "SECRET_SAUCE_ONLY",
   "grade": {"block_file": "assets/brand/signature-grade-block.txt",
             "min_mean_saturation": null, "min_luma_std": null},
+  "layout_thresholds": {
+    "note": "Item 15 layout metric defaults, read by scripts/validate_page.py; declare mandated editorial structures in card_grid_allowlist so the repeated-card-grid metric passes them by declaration: each entry is a sibling group's parent selector, its structure signature, or the pair joined by a space. Worked examples: \"section.persona-rows\", \"div(p,h3,p)\", \"section.letter-body div(p)\".",
+    "signature_monotony_max_share": 0.60,
+    "image_ratio_same_class_tolerance": 0.05,
+    "image_ratio_min_images": 3,
+    "centering_max_share": 0.70,
+    "card_grid_min_repetitions": 3,
+    "card_grid_size_tolerance": 0.02,
+    "empty_width_min_span": 0.60,
+    "cta_size_tolerance_px": 2,
+    "single_cta_design": false,
+    "card_grid_allowlist": []
+  },
   "page_design_rules": [
     "CLIENT_MUST_SUPPLY",
     "CLIENT_MUST_SUPPLY",

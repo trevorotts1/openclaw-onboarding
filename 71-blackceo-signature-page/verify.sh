@@ -73,6 +73,7 @@ for f in \
   assets/brand/blackceo-brand.json assets/brand/brand.schema.json \
   assets/brand/client-brand.template.json assets/brand/signature-grade-block.txt \
   assets/page-references/README.md \
+  assets/visual-standards/README.md assets/visual-standards/ANALYSIS.md assets/visual-standards/manifest.json \
   references/BlackCEO-Page-Brand-Law.md references/stage-contract.json \
   references/swarm-plan.md references/html-qc-rubric.md references/private-label-list.txt \
   references/external-authorities.json \

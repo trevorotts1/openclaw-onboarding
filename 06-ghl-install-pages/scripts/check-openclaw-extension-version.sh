@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # check-openclaw-extension-version.sh — Skill 06 standing preflight:
-# the OpenClaw Chrome extension must be installed AND current before any
-# install run, because the extension is Skill 6's PRIMARY browser engine
-# (operator decision, 2026-10-13).
+# reports the OpenClaw extension lane's (Lane 1) verdict. The extension is
+# Skill 6's PRIMARY browser engine (operator decision, 2026-10-13), but
+# the verdict gates Lane 1 ONLY: a missing or stale extension disables
+# Lane 1 and the run proceeds on the next lane the capability probe
+# verifies; a run stops only when zero lanes verify (fail closed).
 #
 # What "current" means here, in resolution order:
 #   1. $SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION, when the operator pins it.
@@ -19,25 +21,61 @@
 # (os.pathsep-separated) overrides the scan roots — same knobs the capability
 # probe uses, so the two never disagree.
 #
-# Exit codes: 0 = installed and current; 2 = missing or behind (STOP);
-# 1 = the check itself could not run (no python3).
+# Exit codes (human mode): 0 = installed and current (or installed with
+# currency unknown, with a warning); 2 = missing or behind (Lane 1
+# unavailable); 1 = the check itself could not run.
+# Exit codes (--json mode): 0 = a verdict was computed (current, behind,
+# missing, and unknown-currency are all verdicts); 2 = the check itself
+# could not run. The check cannot run when: python3 is absent; the
+# embedded probe fails or its output cannot be parsed; or no enumerated
+# Chrome profile root exists on disk AND no expected-version source
+# exists (no operator pin and no readable bundled manifest). A profile
+# root that does not exist is otherwise NOT an error: it contributes no
+# installed version, and "not installed" is a computable verdict.
 #
-# Usage: bash scripts/check-openclaw-extension-version.sh
+# Usage: bash scripts/check-openclaw-extension-version.sh [--json]
+#   --json prints exactly one JSON object and nothing else on stdout:
+#   {installed, version, expectedVersion, expectedSource, current, lane,
+#    laneAvailable}. current is true, false, or "unknown";
+#    expectedSource is "operator-pin", "bundled-manifest", or "unknown";
+#    lane is always "openclaw-extension"; laneAvailable = installed AND
+#    current != false (mirrors the capability probe, which accepts
+#    presence with a warning when currency is unknown).
 
 set -u
 
 EXTENSION_ID="kcdjddhmeafeomebliikmbpblkmkfoig"
 STORE_URL="https://chromewebstore.google.com/detail/openclaw/${EXTENSION_ID}"
 
+MODE="human"
+if [ $# -gt 0 ]; then
+  if [ "$1" = "--json" ]; then
+    MODE="json"
+  else
+    echo "Usage: bash scripts/check-openclaw-extension-version.sh [--json]" >&2
+    exit 1
+  fi
+fi
+
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 not found; cannot run the OpenClaw extension preflight." >&2
+  if [ "$MODE" = "json" ]; then
+    exit 2
+  fi
   exit 1
 fi
 
-RESULT="$(python3 - << 'PYEOF'
-import glob, json, os, platform
+if [ "$MODE" = "json" ]; then
+  EXT_JSON=1
+else
+  EXT_JSON=0
+fi
+
+RESULT="$(SKILL6_EXT_JSON="$EXT_JSON" python3 - << 'PYEOF'
+import glob, json, os, platform, sys
 
 EXT_ID = "kcdjddhmeafeomebliikmbpblkmkfoig"
+JSON_MODE = os.environ.get("SKILL6_EXT_JSON") == "1"
 
 def semver(v):
     parts = []
@@ -95,36 +133,102 @@ def version_in(user_data):
             best, best_key = ver, semver(ver)
     return best
 
+def cannot_run(reason):
+    sys.stderr.write("cannot run: %s\n" % reason)
+    sys.exit(3)
+
 env = dict(os.environ)
+all_roots = roots(env)
+roots_exist = 0
+for r in all_roots:
+    if os.path.isdir(r):
+        roots_exist += 1
+
 installed = None
-for root in roots(env):
+for root in all_roots:
     ver = version_in(root)
     if ver and (installed is None or semver(ver) > semver(installed)):
         installed = ver
 
 expected = env.get("SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION") or None
-if not expected:
+if expected:
+    expected_source = "operator-pin"
+else:
+    expected_source = "unknown"
     home = env.get("HOME") or os.path.expanduser("~")
     oc_home = env.get("OPENCLAW_HOME") or os.path.join(home, ".openclaw")
     try:
         with open(os.path.join(oc_home, "browser", "chrome-extension",
                                "manifest.json")) as f:
             expected = str(json.load(f).get("version") or "") or None
+        if expected:
+            expected_source = "bundled-manifest"
     except Exception:
         expected = None
 
-print("INSTALLED=%s" % (installed or "none"))
-print("EXPECTED=%s" % (expected or "unknown"))
+if roots_exist == 0 and expected is None:
+    cannot_run("no Chrome profile root exists on disk and no "
+               "expected-version source exists")
+
+if JSON_MODE:
+    if installed is None:
+        current = False
+    elif expected is None:
+        current = "unknown"
+    else:
+        current = semver(installed) >= semver(expected)
+    print(json.dumps({
+        "installed": installed is not None,
+        "version": installed,
+        "expectedVersion": expected,
+        "expectedSource": expected_source,
+        "current": current,
+        "lane": "openclaw-extension",
+        "laneAvailable": installed is not None and current is not False,
+    }))
+else:
+    print("INSTALLED=%s" % (installed or "none"))
+    print("EXPECTED=%s" % (expected or "unknown"))
+    print("EXPECTED_SOURCE=%s" % expected_source)
+    print("ROOTS_EXIST=%d" % roots_exist)
 PYEOF
 )"
+PROBE_RC=$?
+
+if [ "$MODE" = "json" ]; then
+  if [ "$PROBE_RC" -ne 0 ]; then
+    echo "ERROR: the OpenClaw extension preflight could not run on this box (the embedded probe failed). No Lane 1 verdict was computed; this is not a Lane 1 failure." >&2
+    exit 2
+  fi
+  case "$RESULT" in
+    "{"*)
+      printf '%s\n' "$RESULT"
+      exit 0
+      ;;
+    *)
+      echo "ERROR: the OpenClaw extension preflight could not run on this box (the embedded probe output could not be parsed). No Lane 1 verdict was computed; this is not a Lane 1 failure." >&2
+      exit 2
+      ;;
+  esac
+fi
+
+if [ "$PROBE_RC" -ne 0 ]; then
+  echo "ERROR: the OpenClaw extension preflight could not run on this box (the embedded probe failed). No Lane 1 verdict was computed; this is not a Lane 1 failure." >&2
+  exit 1
+fi
 
 INSTALLED="$(printf '%s\n' "$RESULT" | sed -n 's/^INSTALLED=//p')"
 EXPECTED="$(printf '%s\n' "$RESULT" | sed -n 's/^EXPECTED=//p')"
 
-if [ "$INSTALLED" = "none" ] || [ -z "$INSTALLED" ]; then
-  echo "STOP: the OpenClaw Chrome extension is NOT installed in any Chrome profile on this box."
-  echo "Skill 6's PRIMARY browser engine is that extension, so no install run can start."
-  echo "Fix: install it from the Chrome Web Store into the Chrome profile OpenClaw is paired with:"
+if [ -z "$INSTALLED" ] || [ -z "$EXPECTED" ]; then
+  echo "ERROR: the OpenClaw extension preflight could not run on this box (the embedded probe output could not be parsed). No Lane 1 verdict was computed; this is not a Lane 1 failure." >&2
+  exit 1
+fi
+
+if [ "$INSTALLED" = "none" ]; then
+  echo "LANE 1 UNAVAILABLE: the OpenClaw Chrome extension is NOT installed in any Chrome profile on this box."
+  echo "Only the extension lane (Lane 1) is disabled. Skill 6 continues on the next lane the capability probe verifies; the run stops only if no lane verifies."
+  echo "Fix (restores Lane 1): install it from the Chrome Web Store into the Chrome profile OpenClaw is paired with:"
   echo "  $STORE_URL"
   echo "Then re-run this check: bash scripts/check-openclaw-extension-version.sh"
   exit 2
@@ -155,9 +259,9 @@ if [ "$CURRENT" = "1" ]; then
   exit 0
 fi
 
-echo "STOP: the OpenClaw Chrome extension is behind: installed v$INSTALLED, current is v$EXPECTED."
-echo "Skill 6's PRIMARY browser engine must be current before an install run."
-echo "Fix: let Chrome update it (chrome://extensions, or remove and reinstall from the Web Store):"
+echo "LANE 1 UNAVAILABLE: the OpenClaw Chrome extension is behind: installed v$INSTALLED, current is v$EXPECTED."
+echo "Only the extension lane (Lane 1) is disabled. Skill 6 continues on the next lane the capability probe verifies; the run stops only if no lane verifies."
+echo "Fix (restores Lane 1): let Chrome update it (chrome://extensions, or remove and reinstall from the Web Store):"
 echo "  $STORE_URL"
 echo "Then re-run this check: bash scripts/check-openclaw-extension-version.sh"
 exit 2

@@ -5,7 +5,7 @@
   "title": "Page build request",
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "const": "1.1"
     },
     "tenant_id": {
       "type": "string",
@@ -79,6 +79,11 @@
     "copy_profile": {
       "type": "string",
       "minLength": 1
+    },
+    "prompt_policy_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "v1.1 (Q12 prompt-policy reconciliation, S49): OPTIONAL name of the governing prompt policy, minted by the common registry only. Stamped by dispatch_launch.build_requests from the launch record's prompt_policy_id (top level beside brand_ref/brand_hash, plan-approved content bound by the plan document hash) when the record names one; when the record names none, dispatch emits 1.0 requests and the key is absent entirely, never null. Consumers must tolerate absence."
     },
     "allowed_write_target": {
       "enum": [

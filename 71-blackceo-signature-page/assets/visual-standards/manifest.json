@@ -1,0 +1,371 @@
+{
+ "schema": "skill71-visual-standards/v1",
+ "item": "Skill 71 Update Plan Item 14",
+ "standard_for": [
+  "wireframe",
+  "mockup",
+  "hybrid-board"
+ ],
+ "source": "Trevor Otts' supplied example folders (Google Drive folder 1xzD60xunVH-eFOZkk4Ev28ZFziRZBxQ0, downloaded 2026-10-15 to ~/workspace/wireframe-mockup-standards/); bundled byte-exact, never re-rendered, resized, or regenerated.",
+ "analysis": "ANALYSIS.md (bundled copy of the 2026-10-15 wireframe/mockup standards analysis)",
+ "logical_artifacts": {
+  "wireframes": 5,
+  "mockups_including_hybrid_board": 5,
+  "note": "Five logical wireframes and five logical mockups per ANALYSIS.md; slices and part files are the same artifacts cut for review, so the file count exceeds the artifact count."
+ },
+ "file_count": 44,
+ "files": [
+  {
+   "file": "wireframes/chatgpt-wireframe-1.png",
+   "kind": "wireframe-full-page",
+   "bytes": 1793734,
+   "sha256": "9af8dc4f391638bd2b8e6d55465057570fb880b5a4e3efff79131e97f5eb6649",
+   "width_px": 724,
+   "height_px": 2172
+  },
+  {
+   "file": "wireframes/chatgpt-wireframe-2.png",
+   "kind": "wireframe-full-page",
+   "bytes": 1377371,
+   "sha256": "977fdd7b1b82c346065f2fa315fe568bf95a295515c4d99ab2e439d05d6dd1c4",
+   "width_px": 724,
+   "height_px": 2172
+  },
+  {
+   "file": "wireframes/chatgpt-wireframe-3.png",
+   "kind": "wireframe-full-page",
+   "bytes": 1774101,
+   "sha256": "a0c5c77df95f9e74299e2065f9353199a9f98ae2e828ed01f89313741e6893d1",
+   "width_px": 724,
+   "height_px": 2172
+  },
+  {
+   "file": "wireframes/chatgpt-wireframe-4.png",
+   "kind": "wireframe-full-page",
+   "bytes": 1869247,
+   "sha256": "85e445c93acd5ebf0d07c3246231880ee879f07383ef3ba08c3cfa52e4297e33",
+   "width_px": 724,
+   "height_px": 2172
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe-slice1.png",
+   "kind": "wireframe-slice",
+   "bytes": 411556,
+   "sha256": "47f0bf1c8c041ec882caffdb585d78f84e8be7456dd15aa9c9981e45da212d50",
+   "width_px": 1440,
+   "height_px": 2789
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe-slice2.png",
+   "kind": "wireframe-slice",
+   "bytes": 438224,
+   "sha256": "c62aa62b344237902b99c9742161526f2eb05ebe2a2d4aeba5dba9dae0cadaf2",
+   "width_px": 1440,
+   "height_px": 2789
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe-slice3.png",
+   "kind": "wireframe-slice",
+   "bytes": 426084,
+   "sha256": "8fa8c689a488d8e1c4cb30a023a0e896af70f759ec6fe9c7be28118abf2a97f1",
+   "width_px": 1440,
+   "height_px": 2790
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe-slice4.png",
+   "kind": "wireframe-slice",
+   "bytes": 339500,
+   "sha256": "c654d43b1db28967c95585b455c718615a9014b296f6147783184e37edbbb1fd",
+   "width_px": 1440,
+   "height_px": 2789
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe-slice5.png",
+   "kind": "wireframe-slice",
+   "bytes": 476617,
+   "sha256": "858c4949f23d372fbe5a866dd5c9cd75593fbdeeb6d5fc574d42e8ab8de2d689",
+   "width_px": 1440,
+   "height_px": 2789
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe-slice6.png",
+   "kind": "wireframe-slice",
+   "bytes": 326234,
+   "sha256": "544da78563d1329352b7c715a28d390751566ba82a387ae0b2e641bf5ff4ca7b",
+   "width_px": 1440,
+   "height_px": 2790
+  },
+  {
+   "file": "wireframes/set-for-life-desktop-wireframe.png",
+   "kind": "wireframe-full-page",
+   "bytes": 2110007,
+   "sha256": "89053173165d0efc45d134a136fb95212258990bc815fc272d91786bd44552d9",
+   "width_px": 1440,
+   "height_px": 16736
+  },
+  {
+   "file": "wireframes/sfl-wireframe-part1.png",
+   "kind": "wireframe-slice",
+   "bytes": 475887,
+   "sha256": "e777efa7b88a2cec4f4c7ec6b4a548d4b64e9a3dd03e0bb67081627d99265b31",
+   "width_px": 1440,
+   "height_px": 3347
+  },
+  {
+   "file": "wireframes/sfl-wireframe-part2.png",
+   "kind": "wireframe-slice",
+   "bytes": 528443,
+   "sha256": "857a8e9e45d04058e89d5c707ab16ce54174910488245d9735b37918c3bf2aa2",
+   "width_px": 1440,
+   "height_px": 3347
+  },
+  {
+   "file": "wireframes/sfl-wireframe-part3.png",
+   "kind": "wireframe-slice",
+   "bytes": 477683,
+   "sha256": "cc42c6d8c24e6dbf423cc4927d5bce83e73e5d2abea872483045bfdc192f38bc",
+   "width_px": 1440,
+   "height_px": 3347
+  },
+  {
+   "file": "wireframes/sfl-wireframe-part4.png",
+   "kind": "wireframe-slice",
+   "bytes": 513321,
+   "sha256": "83e4742b685c2c9e8d810510ce93baa8e014e2f3bf23c445690739c36cffe615",
+   "width_px": 1440,
+   "height_px": 3347
+  },
+  {
+   "file": "wireframes/sfl-wireframe-part5.png",
+   "kind": "wireframe-slice",
+   "bytes": 422478,
+   "sha256": "be90dd54f7ba12338dd86e7e2437abfc7974dedc4dbd593699910799e7168502",
+   "width_px": 1440,
+   "height_px": 3348
+  },
+  {
+   "file": "mockups/chatgpt-mockup-2.png",
+   "kind": "mockup-full-page",
+   "bytes": 2189576,
+   "sha256": "9bec56505c232c0e44c697450a18e1cd0b46a974f344e7333e5c260d9aa44da2",
+   "width_px": 724,
+   "height_px": 2172
+  },
+  {
+   "file": "mockups/chatgpt-mockup-4.png",
+   "kind": "mockup-full-page",
+   "bytes": 2243067,
+   "sha256": "3fae3fb2ac4c978f1b5772faaf9f5a39bb7e1e5a93ed22b6448384b6f33803d5",
+   "width_px": 724,
+   "height_px": 2172
+  },
+  {
+   "file": "mockups/hybrid-mockup-wireframe-mashup.png",
+   "kind": "hybrid-board",
+   "bytes": 2402555,
+   "sha256": "37378f321c79f709ca00b748c9450a737350938dfd0a3ab10e96ce3e913daca3",
+   "width_px": 1536,
+   "height_px": 1024
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup-slice1.png",
+   "kind": "mockup-slice",
+   "bytes": 985536,
+   "sha256": "d78ab8dd492acdf6f5ddba6d0fa4bb7f7ad962cd7ad65631e56e9efcf74db38d",
+   "width_px": 1440,
+   "height_px": 2787
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup-slice2.png",
+   "kind": "mockup-slice",
+   "bytes": 737926,
+   "sha256": "a1cb05b2befc355d599a0ba2072e6359c91f032a1eddb6df0d678eafbe9aa699",
+   "width_px": 1440,
+   "height_px": 2787
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup-slice3.png",
+   "kind": "mockup-slice",
+   "bytes": 592148,
+   "sha256": "ed99b15f444447f6c8585e16e8b51de2b8d07df8b4b5225543ac8bd60e1b2a75",
+   "width_px": 1440,
+   "height_px": 2787
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup-slice4.png",
+   "kind": "mockup-slice",
+   "bytes": 470748,
+   "sha256": "358d6493a312815e3fa6859f27caf2725761f16bf5b430018c015f9dc792f8f8",
+   "width_px": 1440,
+   "height_px": 2787
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup-slice5.png",
+   "kind": "mockup-slice",
+   "bytes": 671718,
+   "sha256": "70d7ab687c616063e3cb5d95b8c10247ee3fb88051b84144deac0791f0b0d2be",
+   "width_px": 1440,
+   "height_px": 2787
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup-slice6.png",
+   "kind": "mockup-slice",
+   "bytes": 328850,
+   "sha256": "47718518392b04d457928485231a389ef1efd26c55bdb2fbc05ab38ec4250c84",
+   "width_px": 1440,
+   "height_px": 2788
+  },
+  {
+   "file": "mockups/set-for-life-desktop-mockup.png",
+   "kind": "mockup-full-page",
+   "bytes": 3696112,
+   "sha256": "af639085ec400d4b27a57f4455e79718a6ac103a00aae908318248fc14ef8a3a",
+   "width_px": 1440,
+   "height_px": 16723
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice1.png",
+   "kind": "mockup-slice",
+   "bytes": 782512,
+   "sha256": "e86d6d3adc2a24f176f90292d53029dc32644f5a39de12579df77d68b4cd508b",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice10.png",
+   "kind": "mockup-slice",
+   "bytes": 189797,
+   "sha256": "a18bdd90063d27cecc11b5bd63c38eba544b4124afaf5029e4898e5b9c832b72",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice11.png",
+   "kind": "mockup-slice",
+   "bytes": 206988,
+   "sha256": "8a9ee0a2c161b83b786aec4f42d7db5eee88608658d78bfddc34bba6a7403c0a",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice12.png",
+   "kind": "mockup-slice",
+   "bytes": 518245,
+   "sha256": "3c4f2013f54d4154ab98a58f41782935f973e4f70b60a8e89b94e1f0d94a628a",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice13.png",
+   "kind": "mockup-slice",
+   "bytes": 388498,
+   "sha256": "bcac5eb6dcd9aedb7a5c94440a8a3bae3fe4658670ee66cb2b93c705bc8b1a0a",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice14.png",
+   "kind": "mockup-slice",
+   "bytes": 481674,
+   "sha256": "d792fcf5329d0eacab99e8775d2ae68cd4f639c2ab6c7a6b42010904a817421b",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice15.png",
+   "kind": "mockup-slice",
+   "bytes": 328643,
+   "sha256": "afa307ed9671f302e80a02022dc99a246457e048129877a2059cbadcf1f97e93",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice16.png",
+   "kind": "mockup-slice",
+   "bytes": 231438,
+   "sha256": "954629098127ff6c315a80c464ff5a9fedc59dc893a604ca313d760246c3db54",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice17.png",
+   "kind": "mockup-slice",
+   "bytes": 301341,
+   "sha256": "d25f526fe935b04911cbc4a136f4f93b136033b117a57161acaaf4cbb09a2cd0",
+   "width_px": 780,
+   "height_px": 2877
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice2.png",
+   "kind": "mockup-slice",
+   "bytes": 559621,
+   "sha256": "a969b06f32158e00b42e9aaac3edc47ccc4752316e8184bccca74630052f80ff",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice3.png",
+   "kind": "mockup-slice",
+   "bytes": 350407,
+   "sha256": "65a8f04522b2c13582ab7f43d0fa917d2866b1b846db60c9910d0ca02b83295b",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice4.png",
+   "kind": "mockup-slice",
+   "bytes": 574973,
+   "sha256": "487f9d92e9665045f56a2ddd0d1d62921724b3bfd4b3cd68d62ca146204d2c50",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice5.png",
+   "kind": "mockup-slice",
+   "bytes": 489497,
+   "sha256": "fe0b38c5590f006cc1f343580e78624283c7e0f196685c4197a86d35135ee50e",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice6.png",
+   "kind": "mockup-slice",
+   "bytes": 383020,
+   "sha256": "4cdc81e9b3b3d4c7aa2db52fcd99aa7de0eebfdb0c29d7bf07f50a76e20e2c44",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice7.png",
+   "kind": "mockup-slice",
+   "bytes": 386301,
+   "sha256": "99f6b4140c9fd3658d3279df4d52779e6ceb83a2a444c9fbbe2ad1bbced9c206",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice8.png",
+   "kind": "mockup-slice",
+   "bytes": 430931,
+   "sha256": "b435e96b6987c841b425a5ab2f25bac88cdd04e9a0a87dba4a40ff0090e567fb",
+   "width_px": 780,
+   "height_px": 2876
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup-slice9.png",
+   "kind": "mockup-slice",
+   "bytes": 277238,
+   "sha256": "67dd2bb1078c8404d69cb7320641daa5928694db721741b4873b575afad6d432",
+   "width_px": 780,
+   "height_px": 2877
+  },
+  {
+   "file": "mockups/set-for-life-mobile-mockup.png",
+   "kind": "mockup-full-page",
+   "bytes": 6647564,
+   "sha256": "6171fb029436f5c70d1ac81fbd5cd00d3fea897e9a55464ee3cfd3d7b6a7ef77",
+   "width_px": 780,
+   "height_px": 48894
+  }
+ ]
+}

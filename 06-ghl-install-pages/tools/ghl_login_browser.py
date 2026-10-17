@@ -210,3 +210,37 @@ class LoginBrowser:
 
     def select_location(self, location_id: str) -> bool:
         return bool(self.engine.select_location(location_id))
+
+    # ── S06-08 trace suppression (Q5 proof artifact) ────────────────────────
+    def artifact_suppression_record(self) -> dict:
+        """This driver's trace-suppression record for run evidence.
+
+        The login step is the suppression precedent (capture_artifacts
+        defaults False; __post_init__ disables engine artifacts): the
+        EVIDENCE of that posture is this record, in the shared contract
+        shape validated by tools/ghl_evidence.py's
+        ``validate_trace_suppression`` (step / capture_artifacts /
+        artifacts_suppressed). The shape is constructed literally here:
+        this guarded module stays dependency-free by the same isolation
+        discipline ghl_run_state documents for its D6 prefix string."""
+        return {
+            "step": "login",
+            "capture_artifacts": bool(self.capture_artifacts),
+            "artifacts_suppressed": not self.capture_artifacts,
+        }
+
+
+def artifact_suppression_record(driver: Optional[LoginBrowser] = None) -> dict:
+    """The login step's trace-suppression record (S06-08, Q5).
+
+    With a driver, the record reflects ITS posture; without one, it states
+    the module default (capture_artifacts=False -> suppressed). A run's
+    evidence carries this record next to the payment step's (owned by the
+    S06-06/S79 surfaces) in the read-back index's trace_suppression set."""
+    if driver is not None:
+        return driver.artifact_suppression_record()
+    return {
+        "step": "login",
+        "capture_artifacts": False,
+        "artifacts_suppressed": True,
+    }

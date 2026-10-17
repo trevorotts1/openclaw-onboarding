@@ -3910,7 +3910,25 @@ def _verify_motion_phase(run_dir: Path) -> Tuple[bool, List[str]]:
                         f"component")
     if reasons:
         return False, reasons
-    return True, []
+    # B14 Section 5.4 tail (Item 34 R4): the PASS carries the one-line
+    # motion summary as a NOTE, the same shape _verify_upsell_vsl_build
+    # uses for its defer/waived PASS, so the run record states the
+    # motion outcome without anyone opening motion.json. The line is
+    # derived from the landed record by presentation_job.motion (the
+    # seam's single definition site); a summary that cannot be derived
+    # never fails an otherwise proven audit.
+    try:
+        from presentation_job import motion as _pm
+        _arc_tags = {}
+        try:
+            if _bd is not None:
+                _arc_tags = _bd._load_slide_arc_tags(run_dir)
+        except Exception:  # noqa: BLE001
+            _arc_tags = {}
+        return True, [f"NOTE: P8.15-MOTION "
+                      f"{_pm.motion_summary_line(record, _arc_tags)}"]
+    except Exception:  # noqa: BLE001
+        return True, []
 
 
 

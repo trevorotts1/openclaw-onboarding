@@ -7,7 +7,7 @@
 #   Every page produced by Skill 06 must have a companion
 #   routing/method-decision-<page>.json (or method-decision.json for a
 #   single-page build) that records which build method was chosen and WHY.
-#   Two valid methods exist:
+#   Three valid methods exist:
 #
 #     "direct"  — native GoHighLevel page: HTML fragment inside a Custom Code
 #                 element; saved via ghl_rest_canvas / ghl_builder. Used when
@@ -19,16 +19,32 @@
 #                 styling conflicts with the required markup. Requires the Vercel
 #                 deployment to be public (no Vercel deployment protection / SSO)
 #                 and to carry permissive frame-ancestors headers.
+#     "widget"  — the page's form/calendar blocks route to GoHighLevel's own
+#                 native widget embeds (ghl_method.classify_page detects the
+#                 blocks; faking a form/calendar as static HTML is forbidden).
+#                 A widget record must carry the "widgets" list from the
+#                 classifier's own output shape: every entry with a kind of
+#                 "form" or "booking" and a non-empty block_key naming the
+#                 page_spec block the widget replaces.
+#
+#   The S06-02 unified per-run record also lives in routing/ under the name
+#   method-decision.json and IS recognized by this guard: a file whose
+#   "schema" is "skill6-method-decision/1" is validated as the unified record
+#   (a top-level "operations" list must be present), not as a per-page record.
 #
 #   A build is BLOCKED (non-zero exit) when ANY of:
 #     (1) A built-page descriptor exists in the run dir but its companion
 #         routing/method-decision-<page>.json file is absent.
 #     (2) The method-decision file exists but its "method" field is empty or
-#         not one of the recognized methods ("direct" or "vercel").
+#         not one of the recognized methods ("direct", "vercel" or "widget").
 #     (3) The method-decision file exists but its "reason" field is absent,
 #         empty, or shorter than the minimum meaningful length (20 chars).
 #     (4) Any method-decision file carries "method": "vercel" but lacks a
 #         non-empty "vercel_url" field (the embed target must be declared).
+#     (4b) Any method-decision file carries "method": "widget" but lacks a
+#         non-empty "widgets" list, or any widget entry lacks a kind of
+#         "form"/"booking" or a non-empty block_key (the native widget
+#         blocks the decision routes must be named).
 #     (5) Any page produced by a live run has NO routing/ directory at all.
 #         (A missing routing/ during CI dry-runs is a WARN, not a hard FAIL,
 #         so hermetic CI stays green while the live path is still being wired.)
@@ -81,7 +97,7 @@ TOOLS_DIR="$SKILL_DIR/tools"
 GATES_JSON="$TOOLS_DIR/gates.json"
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-VALID_METHODS=("direct" "vercel")
+VALID_METHODS=("direct" "vercel" "widget")
 MIN_REASON_LEN=20
 REQUIRED_GATE_ID="method_decision_per_page"
 
@@ -389,10 +405,20 @@ method = d.get("method", "")
 reason = d.get("reason", "")
 page   = d.get("page", "")
 
+# S06-02 unified per-run record: routing/method-decision.json carries the
+# aggregator schema, not a per-page method. Validate its own shape and stop.
+if d.get("schema") == "skill6-method-decision/1":
+    ops = d.get("operations")
+    if not isinstance(ops, list):
+        print("ISSUES:unified method-decision record (schema skill6-method-decision/1) lacks a top-level 'operations' list")
+    else:
+        print(f"OK:method=unified-record|operations={len(ops)}")
+    sys.exit(0)
+
 if not method:
     issues.append("method field is absent or empty")
-elif method not in ("direct", "vercel"):
-    issues.append(f"method '{method}' is not a recognized method (must be 'direct' or 'vercel')")
+elif method not in ("direct", "vercel", "widget"):
+    issues.append(f"method '{method}' is not a recognized method (must be 'direct', 'vercel' or 'widget')")
 
 if not reason:
     issues.append("reason field is absent or empty")
@@ -406,6 +432,20 @@ if method == "vercel":
     vercel_url = d.get("vercel_url", "")
     if not vercel_url:
         issues.append("method is 'vercel' but vercel_url is absent or empty — declare the embed target")
+
+if method == "widget":
+    widgets = d.get("widgets")
+    if not isinstance(widgets, list) or not widgets:
+        issues.append("method is 'widget' but the 'widgets' list is absent or empty: name the native widget block(s) this decision routes")
+    else:
+        for i, w in enumerate(widgets):
+            if not isinstance(w, dict):
+                issues.append(f"widgets[{i}] is not an object")
+                continue
+            if w.get("kind") not in ("form", "booking"):
+                issues.append(f"widgets[{i}].kind is not a native widget kind ('form' or 'booking')")
+            if not str(w.get("block_key") or "").strip():
+                issues.append(f"widgets[{i}] lacks a non-empty block_key naming the page_spec block the widget replaces")
 
 if issues:
     print("ISSUES:" + "|".join(issues))
@@ -448,9 +488,14 @@ else
   echo "  Every built page MUST have routing/method-decision-<page>.json with:"
   echo "    method:  'direct'  (GoHighLevel native Custom Code element)"
   echo "             or 'vercel' (Vercel-hosted embed via <iframe>)"
+  echo "             or 'widget' (native GoHighLevel widget embed for the"
+  echo "             page's form/calendar blocks)"
   echo "    reason:  a real justification (>=$MIN_REASON_LEN chars) explaining"
   echo "             WHY this method was chosen for this specific page."
   echo "    vercel_url: (required when method='vercel') the public embed URL."
+  echo "    widgets: (required when method='widget') the classifier's widget"
+  echo "             list: every entry with kind 'form' or 'booking' and a"
+  echo "             non-empty block_key."
   echo ""
   echo "  A build CANNOT be marked done without passing this guard."
   exit 1

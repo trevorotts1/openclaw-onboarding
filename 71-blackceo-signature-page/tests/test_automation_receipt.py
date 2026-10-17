@@ -205,6 +205,15 @@ class ReceiptFilingTest(unittest.TestCase):
         run = make_run(self.td)
         proc = self.gate("init", run)
         self.assertEqual(proc.returncode, 0, proc.stdout)
+        # Act 6 / Item 16 parity evidence: the composed gate refuses a
+        # responsive-html close without the parity sheets and a passing
+        # drift report, so the fixture seeds them before that close.
+        write(run / "responsive-html" / "compare" / "compare-1440-fixture.png",
+              PNG_BYTES)
+        write(run / "responsive-html" / "compare" / "compare-390-fixture.png",
+              PNG_BYTES)
+        write_json(run / "responsive-html" / "compare" / "compare-report.json",
+                   {"drift": {"status": "pass"}})
         for stage in ("intake", "font-action-plan", "visual-mockup",
                       "responsive-html"):
             put_receipt(run, stage)

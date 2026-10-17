@@ -34,24 +34,43 @@ EXPIRED_MESSAGE = (
 
 
 class SessionStore:
+    """In-memory reference store. Record and draft access routes through
+    the four small storage hooks below (_put_record, _get_record,
+    _put_draft, _get_draft) so a durable backend can replace ONLY the
+    storage layer while inheriting the resume/confirm semantics above
+    verbatim. See selection_session_store.DurableSessionStore."""
+
     def __init__(self, ttl_seconds: int = DEFAULT_TTL_SECONDS):
         self.ttl = ttl_seconds
         self._records: Dict[str, Dict[str, Any]] = {}
         self._drafts: Dict[str, str] = {}
 
+    # Storage hooks (in-memory implementation).
+    def _put_record(self, ref: str, rec: Dict[str, Any]) -> None:
+        self._records[ref] = rec
+
+    def _get_record(self, ref: str) -> Optional[Dict[str, Any]]:
+        return self._records.get(ref)
+
+    def _put_draft(self, ref: str, draft_ref: str) -> None:
+        self._drafts[ref] = draft_ref
+
+    def _get_draft(self, ref: str) -> Optional[str]:
+        return self._drafts.get(ref)
+
     def create(self, selection: Mapping[str, Any], *, now: int) -> str:
         ref = "sel_" + secrets.token_urlsafe(24)
-        self._records[ref] = {
+        self._put_record(ref, {
             "selection": dict(selection),
             "tenant_id": selection["tenant_id"],
             "launch_id": selection["launch_id"],
             "created_at": now,
             "expires_at": now + self.ttl,
-        }
+        })
         return ref
 
     def _lookup(self, ref: str, *, tenant_id: str, launch_id: str, now: int) -> Optional[Dict[str, Any]]:
-        rec = self._records.get(ref)
+        rec = self._get_record(ref)
         if rec is None:
             return None
         if rec["tenant_id"] != tenant_id or rec["launch_id"] != launch_id:
@@ -119,11 +138,12 @@ class SessionStore:
                     "current_offer": current,
                 }
             return {"state": "expired", "message": EXPIRED_MESSAGE}
-        if ref in self._drafts:
-            return {"state": "confirmed", "draft_ref": self._drafts[ref], "duplicate": True}
+        existing = self._get_draft(ref)
+        if existing is not None:
+            return {"state": "confirmed", "draft_ref": existing, "duplicate": True}
         digest = hashlib.sha256(
             json.dumps(rec["selection"], sort_keys=True).encode()
         ).hexdigest()[:24]
         draft_ref = f"draft_{digest}"
-        self._drafts[ref] = draft_ref
+        self._put_draft(ref, draft_ref)
         return {"state": "confirmed", "draft_ref": draft_ref, "duplicate": False}

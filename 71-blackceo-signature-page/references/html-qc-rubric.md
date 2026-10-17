@@ -36,6 +36,13 @@ agent invented.
    The per-section drift table is in `responsive-html/compare/
    compare-report.json`. Gross structural drift can no longer be scored an
    8 by anyone; the reviewer's score sits on top of that floor.
+   **Required close evidence (Update Plan Item 16):** the approved final
+   mockup is the design source of truth for this stage; the reviewer scores
+   fidelity against the mockup, never against the page's own internal
+   consistency. The stage cannot close unless the parity sheets at 1440
+   and 390 and the drift table are on record in `responsive-html/compare/`
+   and the drift table's status is `pass`; `scripts/stage_gate.py`
+   refuses the close otherwise (check_parity_evidence).
 5. **Image crops and sizes match slots** — each image renders at ≥ 90% of its
    slot width from `image-map-upload/image-map.json` (`desktop_slot_px`), with
    the intended crop, no stretching, no distortion, no shrunken image floating
