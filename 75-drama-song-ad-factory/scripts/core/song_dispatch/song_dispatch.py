@@ -555,7 +555,8 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
                              envelope=take.get("pace_envelope"),
                              hop_s=take.get("pace_hop_s"),
                              bpm_before=take.get("bpm_before"),
-                             bpm_after=take.get("bpm_after"))
+                             bpm_after=take.get("bpm_after"),
+                             located_at_s=take.get("pace_located_at_s"))
     if pg.get("applicable") is False:
         put("pace_change", "UNMEASURED", _pace_turns_required_detail())
     else:
