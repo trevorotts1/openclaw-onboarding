@@ -1,0 +1,47 @@
+name: Council WER-013 source qualification
+
+on:
+  pull_request:
+    paths:
+      - "77-council-of-wise-elders/runtime/src/sources/**"
+      - "77-council-of-wise-elders/runtime/scripts/audit-advisor-sources.ts"
+      - "77-council-of-wise-elders/runtime/tests/wer013-primary-coverage.test.ts"
+      - "77-council-of-wise-elders/advisors/**"
+      - ".github/workflows/council-wer013-source-qualification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-integrity:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: 77-council-of-wise-elders/runtime/package-lock.json
+      - name: Install locked build and audit requirements
+        working-directory: 77-council-of-wise-elders/runtime
+        run: npm ci --no-audit --no-fund
+      - name: Check source coverage classifier and fail-closed cases
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          npm run build
+          node --import tsx --test tests/wer013-primary-coverage.test.ts
+      - name: Print current nine-seat source gap without faking release acceptance
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          node --import tsx scripts/audit-advisor-sources.ts
+          node --import tsx scripts/audit-advisor-sources.ts --json > "${{ runner.temp }}/council-source-qualification.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: council-wer013-source-gap-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/council-source-qualification.json
+          retention-days: 14
