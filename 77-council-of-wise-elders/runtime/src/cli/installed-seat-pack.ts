@@ -9,7 +9,7 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { SEAT_IDS, type SeatId } from '../contracts/index.js';
 import { validateAdvisorPack } from '../sources/packs.js';
 import { CouncilError } from './errors.js';
