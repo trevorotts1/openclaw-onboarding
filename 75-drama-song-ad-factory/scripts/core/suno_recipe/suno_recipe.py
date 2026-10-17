@@ -82,16 +82,34 @@ OPENING_VOCALISE_MAX_S = 3.0
 _VOCALISE_LONG_RE = re.compile(
     r"\b(?:long|held|hold|sustain\w*|prolong\w*|extended?|drag\w*)\b", re.I)
 _VOCALISE_SECONDS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", re.I)
-#: WW-07: the approved lowest-point direction (half-time, thin drums) and the
-#: return, written from the approved pace plan into the FINAL provider style.
-PACE_DROP_CLAUSE = "at the lowest point the groove drops to half-time with thin, sparse drums"
-PACE_RETURN_CLAUSE = "then it turns and rises back to the full groove"
+#: WW-07: the approved lowest-point direction and the return, written from the
+#: approved pace plan into the FINAL provider style.
+#: G11 (2026-10-17, measured -- do not re-litigate): the drop is an ABSENCE,
+#: not a thinner texture. Every stem ever measured kept its drums and RAISED
+#: its energy under the old "half-time with thin, sparse drums" wording: 36
+#: historical stems plus the 12 of the a2 round, whose onsets were flat or
+#: RISING with the energy (1.760 -> 1.760/s at +3.48 dB, 1.886 -> 1.886/s at
+#: +7.91 dB, 2.263 -> 2.766/s at +2.63 dB, 1.760 -> 2.891/s at +2.29 dB) while
+#: the pace_change gate demands a 3 dB drop and a 30% onset REDUCTION. Naming
+#: what is REMOVED, and for how long, is a different instruction from naming a
+#: thinner sound: the return names its intensity for the same reason.
+#: The clause stays short -- the serialized style runs against the 1000-char
+#: SUNO_STYLE_FIELD_MAX, and an over-cap append REFUSES, never truncates.
+PACE_DROP_CLAUSE = "at the lowest point the drums and bass cut out entirely for four seconds"
+PACE_RETURN_CLAUSE = "then the drums slam back in at double intensity"
 #: W1-method-song-U2 (METHOD-INTEGRATION F5, conflicts C3/C4): a METHOD run
 #: replaces both generic clauses with the method's own two seams, written only
 #: when ``pace_plan["method"]`` is true. C3: the drop is AT THE ERM, not "at the
 #: lowest point". C4 + Trevor 2026-10-13 (decision #5): the Hero Shift is any
 #: clear change of pace in the direction this story calls for -- faster, slower,
 #: heavier, bigger, dramatic -- never only a return to the opening groove.
+#: G11 deliberately leaves BOTH method clauses untouched. No method stem has
+#: ever been measured (the 48 measured stems are all non-method), so there is
+#: no evidence the method lane fails the way the generic one did; and a fixed
+#: "double intensity" would contradict C4 / Trevor #5, which rules the Hero
+#: Shift direction-agnostic. Strengthen either here only with a measured
+#: method failure in hand -- and keep the ERM Drop's "the first sung line
+#: enters exactly as" anchor, which test_method_pace asserts.
 METHOD_ERM_DROP_CLAUSE = ("the first sung line enters exactly as the groove drops "
                           "to a heavier, sparser half-time feel")
 METHOD_HERO_SHIFT_CLAUSE = ("when help arrives the music changes pace again, clearly and "
@@ -307,14 +325,15 @@ def method_pace_clauses(pace_plan):
             o.get("return") or hero)
 
 def pace_clause(pace_plan):
-    """WW-07: the approved lowest-point direction (half-time, thin drums) and the
-    return, written from the approved pace plan into the FINAL provider style.
-    No pace plan = no clause (never invented, never a provider tempo field).
+    """WW-07: the approved lowest-point direction (drums and bass cut out,
+    then slam back in) and the return, written from the approved pace plan into
+    the FINAL provider style. No pace plan = no clause (never invented, never a
+    provider tempo field).
 
     W1-method-song-U2: a method order (``pace_plan["method"]`` true) writes the
     method's OWN two seams instead -- the ERM Drop and the Hero Shift -- and
-    nothing about the generic "lowest point" / "rise back to the groove" wording
-    reaches a method run. Every other request is byte-identical to today."""
+    nothing about the generic "lowest point" wording reaches a method run.
+    Every other request is byte-identical to today."""
     if not pace_plan:
         return ""
     if pace_plan.get("method"):
