@@ -1,8 +1,8 @@
 # Direct-to-Agent Update Message Template
-# Version 3.1 | 2026-10-17 (v27.1.29)
+# Version 3.1 | 2026-10-17
+# Repo version at last roll: **v27.1.29** (kept in sync with `version` at repo root)
 #
 # Copy-paste this to any client's agent on Telegram via Skill 15 (BlackCEO Management).
-# Kept in sync with `version` at repo root.
 #
 # WHY THIS IS ONE DETERMINISTIC SCRIPT, NOT A PLAYBOOK (coverage-audit Bug G,
 # 2026-07-30): the old body told the receiving agent to fetch the repo and
@@ -19,25 +19,24 @@
 
 ---
 
-There is an update available for your OpenClaw / BlackCEO system. The target version is **v27.1.29**.
+There is an update available for your OpenClaw / BlackCEO system. The operator supplies the target OpenClaw version `<V>` and the roll id `<ROLL_ID>`.
 
 This release pairs with Command Center v7.6.112. Presentations pipeline hardening, interview reliability (ILJ), provider-routing and Rescue Rangers hardening have landed, with native Linux and Docker topologies supported on Hostinger and Contabo.
 
-Run exactly this command, with the target version and roll id the operator gave you. Do not read a playbook, do not improvise, do not run any other updater:
+Run exactly this two-line form, substituting the operator's `<V>` and `<ROLL_ID>`. Do not read a playbook, do not improvise, do not run any other updater:
 
 ```
-nohup scripts/self-update.sh --version "v27.1.29" --roll-id "<ROLL_ID>" \
-  > "$HOME/.openclaw/self-update/<ROLL_ID>.log" 2>&1 &
-echo $!
+curl -fsSL <SELF_UPDATE_URL> -o /tmp/openclaw-self-update-<ROLL_ID>.sh
+bash /tmp/openclaw-self-update-<ROLL_ID>.sh --roll-id <ROLL_ID> --openclaw-target <V> [--ninerouter-target <V>]
 ```
 
-If your topology uses the container path, apply the same arguments to the script inside the container's mounted repo instead; do not substitute a different updater.
+Run the second command detached (for example `nohup … &`) so it survives your session. On a Mac the operator also passes `--ninerouter-target <V>`; on Linux/Docker it is omitted. If your topology uses the container path, apply the same arguments to the script inside the container instead; do not substitute a different updater.
 
 When it finishes, report back in this exact order — these are proof of completion, not a summary:
 
 1. **The script's EXIT CODE first.** Quote the numeric exit code by itself. A version stamp or a healthy-looking log tail is not a substitute.
-2. The status-file path and its last line: `~/.openclaw/self-update/<ROLL_ID>.status`.
-3. The last 20 lines of the log at `~/.openclaw/self-update/<ROLL_ID>.log`.
+2. `<root>/self-update/<ROLL_ID>.status` — the status-file path and its last line.
+3. The last 20 lines of `<root>/self-update/<ROLL_ID>.log`.
 4. The resulting OpenClaw version, read from `~/.openclaw/skills/.onboarding-version` (on a VPS/Contabo box: `/data/.openclaw/skills/.onboarding-version`).
 
 Rules:
