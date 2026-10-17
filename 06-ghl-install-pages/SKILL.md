@@ -811,6 +811,13 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > one), `run_id`, and `tenant_binding`: "bound" only when expected and
 > observed are both present and equal; a record that cannot bind states
 > `tenant_binding: "unbound"` explicitly, never a silent omission.
+> Deviation S06-08-DEV-01 (coordinator-accepted, room evidence): the Q1
+> disposition assigned the inventory export and the run-state document to
+> the read-back index below; as shipped they satisfy the contract HERE,
+> natively, carrying the full field set on the document itself, and are
+> NOT index members. The index's designated members are the file-shaped
+> artifacts named in the next sentence. The shipped assignment is the
+> contract.
 > File-shaped artifacts (render manifest + DOM/PNG/console captures, the
 > ID-handoff record, provisioning / path-set receipts) are bound through
 > the per-run read-back index (`skill6-readback-index/1`,

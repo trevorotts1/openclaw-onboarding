@@ -456,6 +456,47 @@ class TestReadBackIndex:
                 artifacts=[{"path": str(tmp_path / "ghost.json"),
                             "kind": "verify_raw"}])
 
+    def test_index_member_redactions_survive_round_trip(self, tmp_path):
+        # S06-08 D3 cure: a redactions count supplied on the artifact dict
+        # is recorded on the member entry (at base it was silently dropped)
+        # and survives build + write + verify. A supplied 0 is a real count
+        # and is recorded as 0, not treated as absent.
+        member = tmp_path / "artifact.json"
+        member.write_text(json.dumps({"x": 1}))
+        member2 = tmp_path / "artifact2.json"
+        member2.write_text(json.dumps({"y": 2}))
+        index = ev.build_readback_index(
+            str(tmp_path), run_id="r",
+            artifacts=[
+                {"path": str(member), "kind": "verify_raw", "redactions": 3},
+                {"path": str(member2), "kind": "receipt", "redactions": 0},
+            ])
+        by_kind = {e["kind"]: e for e in index["artifacts"]}
+        assert by_kind["verify_raw"]["redactions"] == 3
+        assert by_kind["receipt"]["redactions"] == 0
+        path = ev.write_readback_index(str(tmp_path), index)
+        loaded = json.loads(open(path).read())
+        loaded_by_kind = {e["kind"]: e for e in loaded["artifacts"]}
+        assert loaded_by_kind["verify_raw"]["redactions"] == 3
+        assert loaded_by_kind["receipt"]["redactions"] == 0
+        assert ev.verify_readback_index(loaded)["ok"] is True
+
+    def test_index_member_without_redactions_omits_the_field(self, tmp_path):
+        # S06-08 D3 convention, pinned: when the caller supplies no count,
+        # the entry carries no "redactions" key at all (the module's
+        # existing convention for optional entry data, as with
+        # observed_location_id), and the member shape is otherwise exactly
+        # the pre-cure shape.
+        member = tmp_path / "artifact.json"
+        member.write_text(json.dumps({"x": 1}))
+        index = ev.build_readback_index(
+            str(tmp_path), run_id="r",
+            artifacts=[{"path": str(member), "kind": "verify_raw"}])
+        (entry,) = index["artifacts"]
+        assert "redactions" not in entry
+        assert set(entry) == {"path", "kind", "sha256", "bytes"}
+        assert ev.verify_readback_index(index)["ok"] is True
+
 
 # ---------------------------------------------------------------------------
 # Q6: media evidence claim is caller-asserted, never "verified" by assertion

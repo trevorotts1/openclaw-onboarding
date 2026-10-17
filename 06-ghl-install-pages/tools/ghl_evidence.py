@@ -38,7 +38,21 @@ INDEX in this module (schema skill6-readback-index/1, precedent shape:
 tools/ghl_id_handoff.py's skill6-id-handoff/1): one index per run at the
 run's evidence root, stamping run id, expected location id, and each member
 artifact's path + sha256. The ID-handoff record is a MEMBER of the index
-set, not a competing index.
+set, not a competing index. The artifacts named in this paragraph are the
+index's DESIGNATED members; the inventory export and the run-state document
+are not among them (they satisfy the contract in Form 1, per the deviation
+note below).
+
+DEVIATION S06-08-DEV-01 (coordinator-accepted, recorded in the room
+evidence): the Q1 disposition's item 2 assigned the inventory export and
+the run-state document to Form 2 above. As shipped, both satisfy the
+contract in Form 1 instead: each is a single JSON document carrying the
+full contract field set natively (inventory export:
+``observed_location_id``, ``tenant_binding``, ``tenant_mismatch_rows``;
+run-state document: ``expected_location_id``, ``trace_suppression``,
+``redactions``), and neither is a designated member of the read-back
+index. The shipped assignment is the contract; the disposition's letter
+is superseded on this one point by the deviation record.
 
 Q2 grandfathering: the fields are additive-optional everywhere. A legacy
 record WITHOUT them is treated as tenant-unbound and flagged as such by the
@@ -544,7 +558,13 @@ def build_readback_index(
     another run's files is visible in the recorded paths).
 
     Each artifact entry: {"path": <path, stored as given>, "kind": <label>,
-    optionally "observed_location_id": <id a read obtained from it>}.
+    optionally "observed_location_id": <id a read obtained from it>,
+    optionally "redactions": <count of secret redactions applied to the
+    artifact before it was written>}. A supplied "redactions" count is
+    recorded verbatim on the entry (int-coerced, 0 included); when none is
+    supplied the entry omits the field, the same convention as
+    "observed_location_id" (S06-08 D3 cure: a supplied count is contract
+    data and is never silently dropped).
     Entries are stamped here with sha256 + byte size read from disk; an
     artifact that cannot be read raises EvidenceContradiction (an index
     over missing evidence is a fabrication channel, never written)."""
@@ -563,6 +583,9 @@ def build_readback_index(
             "sha256": digest,
             "bytes": os.path.getsize(path),
         }
+        supplied_redactions = artifact.get("redactions")
+        if supplied_redactions is not None:
+            entry["redactions"] = int(supplied_redactions)
         observed = artifact.get("observed_location_id")
         if observed:
             entry["observed_location_id"] = observed

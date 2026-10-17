@@ -355,14 +355,21 @@ def assert_consistent(summary: dict, evidence_root: str) -> None:
             f"{truth['total']} under {evidence_root!r}"
         )
 
-    # S06-08 tenant guard. Three refusals, all contradiction-class:
+    # S06-08 tenant guard. Four refusals, all contradiction-class:
     #  (a) the summary declares an expected location and a receipt on disk is
     #      stamped for a DIFFERENT tenant: a cross-tenant page receipt or a
     #      cross-tenant result receipt is a contradiction, never a pass;
     #  (b) the receipts on disk span multiple tenants and the summary does
     #      not declare the mixed-tenant reduction;
     #  (c) the summary carries a tenant section that OMITS a mismatched
-    #      receipt present on disk (over-claiming binding quality).
+    #      receipt present on disk (over-claiming binding quality);
+    #  (d) invariant-7 mirror (S06-08 cure): the summary declares an
+    #      expected location and a VERIFIED created/reused receipt stamped
+    #      for that same expected location is not tenant-bound (its
+    #      read-back obtained no observation, or a different one): a
+    #      verified success in a declared-expected run must be bound, the
+    #      same trigger as ghl_verify's invariant 7. Receipts carrying no
+    #      expected stamp (pure legacy) are skipped, exactly as in (a).
     # Legacy summaries (no tenant fields) over legacy receipts (no stamps)
     # trigger none of these: Q2 grandfathering.
     disk_tenant = truth.get("tenant") or {}
@@ -400,6 +407,37 @@ def assert_consistent(summary: dict, evidence_root: str) -> None:
             raise ReceiptContradiction(
                 f"summary tenant section omits tenant-mismatched receipt(s) "
                 f"{sorted(omitted)} present on disk under {evidence_root!r}"
+            )
+    # (d) invariant-7 mirror. The declared set comes from the summary's own
+    # declaration surfaces: its top-level expected_location_id and/or its
+    # tenant section's expected_location_ids. Only receipts stamped for one
+    # of those declared locations are judged; unstamped legacy receipts are
+    # skipped (Q2 grandfathering), and a summary declaring nothing is
+    # judged on nothing.
+    declared_ids = set()
+    if declared_expected:
+        declared_ids.add(declared_expected)
+    declared_ids.update(summary_tenant.get("expected_location_ids") or [])
+    if declared_ids:
+        verified_tags = _as_set(truth["verified"])
+        not_bound = set()
+        for r in list_receipts(evidence_root):
+            tag = f"{r.get('object_type')}:{r.get('slug')}"
+            if tag not in verified_tags:
+                continue
+            stamped_expected = r.get("expected_location_id")
+            if not stamped_expected or stamped_expected not in declared_ids:
+                continue
+            if ghl_evidence.effective_binding(r) != ghl_evidence.BINDING_BOUND:
+                not_bound.add(tag)
+        if not_bound:
+            raise ReceiptContradiction(
+                f"summary declares expected location(s) "
+                f"{sorted(declared_ids)} but verified receipt(s) "
+                f"{sorted(not_bound)} under {evidence_root!r} are not "
+                f"tenant-bound to a declared location (invariant-7 mirror: "
+                f"a verified success in a declared-expected run must carry "
+                f"tenant_binding 'bound')"
             )
 
 
