@@ -168,16 +168,16 @@ verified components are kept in their exact sibling layout under
 
 ## How to run
 
-Validator (from `components/80-signature-upsell/`):
+Validator (run from the skill root):
 
 ```bash
-python3 -m unittest discover -s tests
-python3 scripts/validate_upsell_copy.py --self-test
-python3 scripts/validate_upsell_copy.py fixtures/copy-upsell1-public.valid.json \
-    --binding-manifest fixtures/binding-manifest.testonly.json
-python3 scripts/validate_upsell_copy.py fixtures/copy-upsell2-public.valid.json \
-    --compare fixtures/copy-upsell1-public.valid.json \
-    --binding-manifest fixtures/binding-manifest.testonly.json
+python3 -m unittest discover -s components/80-signature-upsell/tests
+python3 components/80-signature-upsell/scripts/validate_upsell_copy.py --self-test
+python3 components/80-signature-upsell/scripts/validate_upsell_copy.py components/80-signature-upsell/fixtures/copy-upsell1-public.valid.json \
+    --binding-manifest components/80-signature-upsell/fixtures/binding-manifest.testonly.json
+python3 components/80-signature-upsell/scripts/validate_upsell_copy.py components/80-signature-upsell/fixtures/copy-upsell2-public.valid.json \
+    --compare components/80-signature-upsell/fixtures/copy-upsell1-public.valid.json \
+    --binding-manifest components/80-signature-upsell/fixtures/binding-manifest.testonly.json
 ```
 
 A binding PASS requires the expectation to come from **outside** the copy
@@ -185,27 +185,31 @@ A binding PASS requires the expectation to come from **outside** the copy
 own invented action ref. `--allow-unverified-binding` is a labeled local
 fixture mode only and never reports a binding as verified.
 
-Adapters (from `components/adapters/`):
+Adapters (run from the skill root):
 
 ```bash
-python3 -m unittest discover -s tests
-python3 produce.py --instance upsell_1 \
+python3 components/adapters/produce.py --instance upsell_1 \
     --request <request.json> --copy <copy.json> --journey <journey.json> \
     --out <bundle.json>
 ```
 
-Binding core (from `components/binding/`; resolves the adapters as a
+The adapters test suite runs staged by `verify.py` (below): its routing
+differential cross-check resolves the Signature Launch packet by path, and
+in a standalone checkout `verify.py` reports that one cross-check NOT RUN —
+never silently passed — while every other suite runs.
+
+Binding core (run from the skill root; resolves the adapters as a
 sibling directory):
 
 ```bash
-python3 -m unittest test_binding   # 50 L1 tests vs the TEST-ONLY fixture driver
+python3 -m unittest discover -s components/binding   # 50 L1 tests vs the TEST-ONLY fixture driver
 ```
 
-Pages (from `components/pages/`):
+Pages (run from the skill root):
 
 ```bash
-python3 render_pages.py   # regenerates the HTML deterministically
-python3 check_pages.py    # L2 assertions over 3 instances x 8 states
+python3 components/pages/render_pages.py   # regenerates the HTML deterministically
+python3 components/pages/check_pages.py    # L2 assertions over 3 instances x 8 states
 ```
 
 Whole package:

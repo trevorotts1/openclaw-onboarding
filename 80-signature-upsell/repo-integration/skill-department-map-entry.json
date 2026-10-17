@@ -1,0 +1,43 @@
+{
+ "skill": "80",
+ "slug": "signature-upsell",
+ "name": "signature-upsell",
+ "client_facing": true,
+ "description": "Builds both Signature upsell page instances of a Signature Launch: Upsell 1 (offered after a verified original purchase) and Upsell 2 (one canonical page, offered after a verified accepted Upsell 1 or Downsell 1 purchase). Uses the derived eight-section copy profile with a CTA in every section, exact amount and terms disclosure beside the guarded native one-click action, and deterministic copy validation. Eligibility is proven purchase only: a bump alone never qualifies and a client-side claim is never purchase proof.",
+ "departments": [
+  "web-development",
+  "marketing",
+  "funnels"
+ ],
+ "roles": [
+  {
+   "dept": "web-development",
+   "primary": true,
+   "slug": "funnel-builder-specialist"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "ghl-funnel-build-specialist"
+  },
+  {
+   "dept": "marketing",
+   "primary": false,
+   "slug": "conversion-copywriter"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "funnel-qa-conversion-verification-specialist"
+  }
+ ],
+ "intent_triggers": [
+  "build my upsell pages",
+  "add an upsell to my launch",
+  "build the upsell flow for my launch",
+  "upsell page after checkout"
+ ],
+ "execution_sops": [
+  "funnel-craft"
+ ]
+}
