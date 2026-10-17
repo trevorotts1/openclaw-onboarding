@@ -87,9 +87,6 @@ CLUSTER_MANIFEST = (
 # deliberately serial at an explicit 1).
 EXPECTED_WIDTHS = {
     "P4-COPY": 5,
-    "P-U-DESIGN-SALES": 3,
-    "P-U-DESIGN-CHECKOUT": 3,
-    "P-U-DESIGN-VSL": 3,
     "P4-PROMPT": 12,
     "P-PROMPT-QC": 12,
     "P-STYLE-SPEC": 3,
