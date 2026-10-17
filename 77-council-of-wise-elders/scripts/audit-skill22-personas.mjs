@@ -87,7 +87,9 @@ export function validateRoster(repoRoot) {
   }
   const rosterSection = skillText.split("## The nine seats")[1]?.split("\n## ")[0] ?? "";
   const idsFromSkill = [...rosterSection.matchAll(/^\|\s*([a-z0-9-]+)\s*\|/gm)]
-    .map((m) => m[1]).filter((id) => id !== "Seat ID");
+    .map((m) => m[1])
+    // Markdown's |---|---| separator is not a seat ID.
+    .filter((id) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id));
   if (JSON.stringify(idsFromSkill) !== JSON.stringify(EXPECTED_SEAT_IDS)) {
     throw new Error("Council SKILL.md roster is inconsistent with the user's nine approved advisors");
   }
