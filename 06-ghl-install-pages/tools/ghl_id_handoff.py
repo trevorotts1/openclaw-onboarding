@@ -72,6 +72,8 @@ _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
+import ghl_evidence  # noqa: E402  (S06-08: Q4 file modes for evidence writes)
+
 SCHEMA_ID = "skill6-id-handoff/1"
 HANDOFF_FILENAME = "id-handoff.json"
 
@@ -337,22 +339,37 @@ def load_handoff(run_dir: str) -> Optional[dict]:
     return record
 
 
-def write_handoff(run_dir: str, handoff: dict) -> str:
+def write_handoff(run_dir: str, handoff: dict, *, secret_values=None) -> str:
     """Persist the handoff record (write-then-rename, the ``ghl_receipts``
-    discipline, so a killed process never leaves a half-written record)."""
+    discipline, so a killed process never leaves a half-written record).
+
+    S06-08: the record passes through the evidence scrubber before write
+    (entry names/notes are caller-shaped text; resolved secret values may
+    be supplied by the caller and are held in memory only), the redaction
+    count is recorded as ``redactions`` when nonzero, and the write is
+    mode-explicit per the Q4 interim default: the routing dir is created
+    0700 and the record lands 0600 (mode set on the temp file before the
+    rename). The record's own schema fields are unchanged; under the Q1
+    contract this record is a MEMBER of the run's read-back index
+    (tools/ghl_evidence.py), not a competing index."""
     record = dict(handoff)
     record["schema"] = SCHEMA_ID
     record["generatedAt"] = _now()
     if not record.get("runId"):
         record["runId"] = os.path.basename(
             os.path.normpath(str(run_dir))) or "run"
+    record, redactions = ghl_evidence.EvidenceScrubber(
+        secret_values).scrub_obj(record)
+    if redactions:
+        record["redactions"] = int(record.get("redactions") or 0) + redactions
     path = handoff_path(run_dir)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    ghl_evidence.ensure_private_dir(os.path.dirname(path))
     tmp_path = f"{path}.tmp-{os.getpid()}"
     with open(tmp_path, "w", encoding="utf-8") as fh:
         json.dump(record, fh, indent=2, sort_keys=True)
         fh.write("\n")
         fh.flush()
+        os.chmod(tmp_path, ghl_evidence.FILE_MODE)
         os.fsync(fh.fileno())
     os.replace(tmp_path, path)
     return path

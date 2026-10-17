@@ -102,6 +102,7 @@ if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
 import cc_board  # noqa: E402 -- reuse resolve_evidence_base / list_evidence_runs
+import ghl_evidence  # noqa: E402 -- S06-08 tenant contract + evidence scrubber
 import ghl_method  # noqa: E402 -- reuse resolve_install_target / InstallTargetError
 
 INVENTORY_VERSION = "v1.0.0"
@@ -173,12 +174,18 @@ def _slugify(name: str) -> str:
 
 def _atomic_write_json(path: str, payload: Any) -> str:
     """write-then-rename — a reader can never observe a half-written file
-    (same discipline as ghl_receipts.write_receipt)."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    (same discipline as ghl_receipts.write_receipt).
+
+    S06-08: mode-explicit per the Q4 interim default: parent dirs are
+    created 0700 and the file lands 0600 (mode set on the temp file before
+    the rename), for every payload this helper writes (inventory exports,
+    the card ledger, delete exports, delete receipts)."""
+    ghl_evidence.ensure_private_dir(os.path.dirname(path))
     tmp = f"{path}.tmp-{os.getpid()}"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, sort_keys=True)
         fh.flush()
+        os.chmod(tmp, ghl_evidence.FILE_MODE)
         os.fsync(fh.fileno())
     os.replace(tmp, path)
     return path
@@ -225,6 +232,16 @@ class InventoryReport:
     generated_at: str
     pages: List[PageRecord] = field(default_factory=list)
     inventory_version: str = INVENTORY_VERSION
+    # S06-08 tenant derivation (prep gap 11, additive): ``location_id`` above
+    # remains the location the enumeration was ASKED for. These fields record
+    # what the listers' rows actually showed: the single distinct location id
+    # carried by the rows (None when rows carry none, the canvas listers'
+    # truth today), the derived binding, and how many rows were EXCLUDED
+    # because they named a different tenant (never fabricated into this
+    # location's inventory).
+    observed_location_id: Optional[str] = None
+    tenant_binding: str = "unbound"
+    tenant_mismatch_rows: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -248,6 +265,9 @@ class InventoryReport:
             generated_at=data.get("generated_at", ""),
             pages=pages,
             inventory_version=data.get("inventory_version", INVENTORY_VERSION),
+            observed_location_id=data.get("observed_location_id"),
+            tenant_binding=data.get("tenant_binding", "unbound"),
+            tenant_mismatch_rows=int(data.get("tenant_mismatch_rows") or 0),
         )
 
 
@@ -273,10 +293,22 @@ def enumerate_zhc_inventory(
     Never raises on a single bad record: a funnel/page dict missing its id
     is skipped (not fabricated), so one malformed record can never abort the
     whole enumeration.
+
+    S06-08 TENANT DERIVATION (gap 11): rows may carry their own location id
+    (the public listers' rows carry the documented ``locationId`` field).
+    A row naming a DIFFERENT location than the one asked for is EXCLUDED
+    and counted in ``tenant_mismatch_rows``: another tenant's page is
+    never fabricated into this location's inventory. When rows carry the
+    asked-for id, the report binds (``tenant_binding == "bound"``); when no
+    row carries any location id, the report is honestly ``"unbound"``:
+    enumerate records the asked-for id and, for such listers, verifies
+    nothing about lister tenant.
     """
     pattern = zhc_prefix_re or ZHC_PREFIX_RE
     ts = (now or _now)()
     pages: List[PageRecord] = []
+    observed_ids: set = set()
+    mismatch_rows = 0
 
     for f in funnel_lister(location_id) or []:
         if not isinstance(f, dict):
@@ -285,6 +317,12 @@ def enumerate_zhc_inventory(
         fid = str(f.get("id") or f.get("funnel_id") or "")
         if not fid or not _is_zhc(fname, pattern):
             continue
+        f_loc = str(f.get("locationId") or f.get("location_id") or "")
+        if f_loc and f_loc != location_id:
+            mismatch_rows += 1
+            continue
+        if f_loc:
+            observed_ids.add(f_loc)
         for p in page_lister(fid, location_id) or []:
             if not isinstance(p, dict):
                 continue
@@ -292,6 +330,12 @@ def enumerate_zhc_inventory(
             pname = str(p.get("name") or "")
             if not pid:
                 continue
+            p_loc = str(p.get("locationId") or p.get("location_id") or "")
+            if p_loc and p_loc != location_id:
+                mismatch_rows += 1
+                continue
+            if p_loc:
+                observed_ids.add(p_loc)
             status = str(p.get("status") or STATUS_DRAFT).strip().lower()
             if status not in VALID_STATUSES:
                 status = STATUS_PUBLISHED if p.get("published") else STATUS_DRAFT
@@ -307,15 +351,36 @@ def enumerate_zhc_inventory(
                 page_name=pname,
             ))
 
-    return InventoryReport(location_id=location_id, generated_at=ts, pages=pages)
+    observed = next(iter(observed_ids)) if len(observed_ids) == 1 else None
+    if mismatch_rows:
+        binding = ghl_evidence.BINDING_MISMATCH
+    else:
+        binding = ghl_evidence.tenant_binding(location_id, observed)
+    return InventoryReport(
+        location_id=location_id, generated_at=ts, pages=pages,
+        observed_location_id=observed, tenant_binding=binding,
+        tenant_mismatch_rows=mismatch_rows,
+    )
 
 
-def write_inventory(evidence_base: str, report: InventoryReport) -> str:
-    """Write `<evidence_base>/page-lifecycle/inventory-<location>.json`."""
+def write_inventory(evidence_base: str, report: InventoryReport, *,
+                    secret_values: Any = None) -> str:
+    """Write `<evidence_base>/page-lifecycle/inventory-<location>.json`.
+
+    S06-08: the export is a no-secret sink: the report dict passes through
+    the evidence scrubber before write (generic shapes plus the run's
+    resolved secret values when the caller supplies them), and the
+    redaction count is recorded as ``redactions`` in the written file (a
+    write-level stamp, not a report field, so InventoryReport.from_dict
+    is unaffected)."""
     path = os.path.join(
         evidence_base, _LIFECYCLE_SUBDIR, f"inventory-{report.location_id}.json"
     )
-    return _atomic_write_json(path, report.to_dict())
+    payload, redactions = ghl_evidence.EvidenceScrubber(
+        secret_values).scrub_obj(report.to_dict())
+    if redactions:
+        payload["redactions"] = redactions
+    return _atomic_write_json(path, payload)
 
 
 def load_inventory(path: str) -> Optional[InventoryReport]:
@@ -559,6 +624,7 @@ def execute_approved_deletes(
     prober: Callable[[str], bool],
     evidence_base: str,
     now: Optional[Callable[[], str]] = None,
+    secret_values: Any = None,
 ) -> ExecuteReport:
     """FAIL-CLOSED delete execution — the ONLY function in this module that
     may ever call `deleter`. Guarantees:
@@ -613,6 +679,14 @@ def execute_approved_deletes(
                 entry["status"] = "skipped-not-present"
             else:
                 export = exporter(obj_id)
+                # S06-08: the restorable export is a no-secret sink: the
+                # exporter's payload is caller-shaped page data, scrubbed
+                # before write, the count recorded on the receipt entry.
+                export, export_redactions = ghl_evidence.EvidenceScrubber(
+                    secret_values).scrub_obj(export)
+                if export_redactions:
+                    entry["redactions"] = (
+                        int(entry.get("redactions") or 0) + export_redactions)
                 export_path = os.path.join(
                     evidence_base, _LIFECYCLE_SUBDIR, "exports", f"{obj_id}-{ts}.json"
                 )
@@ -631,7 +705,15 @@ def execute_approved_deletes(
         receipt_path = os.path.join(
             evidence_base, _LIFECYCLE_SUBDIR, "receipts", f"{obj_id}-{ts}.json"
         )
-        _atomic_write_json(receipt_path, entry)
+        # S06-08: the delete receipt is a no-secret sink too (its error field
+        # is free-form exception text), scrubbed copy on disk; the in-memory
+        # entry keeps the caller's exact values.
+        receipt_entry, receipt_redactions = ghl_evidence.EvidenceScrubber(
+            secret_values).scrub_obj(entry)
+        if receipt_redactions:
+            receipt_entry["redactions"] = (
+                int(receipt_entry.get("redactions") or 0) + receipt_redactions)
+        _atomic_write_json(receipt_path, receipt_entry)
         entry["receipt_path"] = receipt_path
         results.append(entry)
 

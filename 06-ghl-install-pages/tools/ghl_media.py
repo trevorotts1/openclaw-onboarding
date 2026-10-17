@@ -89,6 +89,12 @@ from typing import Any, Callable
 
 import ghl_secret_resolver as _resolver  # the ONE shared secret resolver (S06-04)
 
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 evidence contract: Q4 file modes)
+
 
 def _load_kie_prompt_enforcer():
     """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
@@ -1179,6 +1185,20 @@ def build_image_manifest(records: list[dict], out_path: str | None = None) -> li
     violating either is rejected LOUD — the manifest can only ever describe real,
     publicly-resolving images.
 
+    S06-08 EVIDENCE STATUS (Q6 disposition, prep gap 7): the 200 above is a
+    CALLER-ASSERTED status. This function validates the SHAPE of the claim
+    only: nothing here fetches the URL, hashes the bytes, or measures the
+    image, so every entry is stamped ``evidence_status: "caller_asserted"``
+    wherever the manifest is consumed as evidence. A caller-supplied
+    ``evidence_status`` of ``"cdn_verified"`` is REFUSED: no code path in
+    this build performs the fetch, so the claim is unearnable here. The
+    named landing task that earns it: a ``verify_cdn_url()`` here
+    (injectable-opener fetch + sha256 + PNG dimension parse) flipping the
+    stamp only on a real fetch. The independent read-back that exists TODAY
+    is the rendered-<img> gate in ghl_verify (it checks the URL in the
+    rendered DOM, not this manifest's status claim). The written manifest
+    file is mode 0600 (Q4).
+
     Returns the validated list (and writes it to ``out_path`` when given).
     """
     if not isinstance(records, list) or not records:
@@ -1189,6 +1209,14 @@ def build_image_manifest(records: list[dict], out_path: str | None = None) -> li
             raise ValueError(f"records[{i}] must be a dict")
         rid = str(rec.get("id", "")).strip()
         _require(rid, f"records[{i}].id")
+        claimed_status = rec.get("evidence_status")
+        if claimed_status is not None and claimed_status != "caller_asserted":
+            raise ValueError(
+                f"records[{i}] ({rid}): evidence_status {claimed_status!r} is "
+                "refused: no code path in this build fetches/verifies the "
+                "CDN object, so a manifest entry can only ever be stamped "
+                "'caller_asserted' (S06-08 Q6)"
+            )
         cdn_url = str(rec.get("cdn_url", "")).strip()
         if not cdn_url.lower().startswith("https://"):
             raise ValueError(
@@ -1208,15 +1236,14 @@ def build_image_manifest(records: list[dict], out_path: str | None = None) -> li
             "cdn_url": cdn_url,
             "cdn_http_status": 200,
             "used_on_page_id": rec.get("used_on_page_id", ""),
+            "evidence_status": "caller_asserted",
         }
         if "file_id" in rec:
             entry["file_id"] = rec["file_id"]
         out.append(entry)
 
     if out_path:
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(out, f, indent=2)
+        ghl_evidence.write_json_private(out_path, out)
     return out
 
 

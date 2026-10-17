@@ -58,6 +58,12 @@ import time
 import urllib.error
 import urllib.request
 
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 evidence scrubber + Q4 file modes)
+
 # Page/funnel/website build states (furthest-reached, in order). The REST
 # autosave flow maps onto these verbatim: page-saved = autosave 201 verified;
 # previewed = verify_url pass; published only on may_publish().
@@ -360,18 +366,25 @@ def _legacy_ledger_path(run_id: str, funnel: str, step: str) -> str:
     return os.path.join(_LEGACY_LEDGER_BASE, _ledger_relpath(run_id, funnel, step))
 
 
-def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | None = None) -> str:
+def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | None = None, *, secret_values=None) -> str:
     """Record a page's furthest-reached state. Idempotent: only advances; never
     rewinds a page that already reached a later state (unless state==FAILED).
 
     ``FAILED`` and ``WORKFLOW_LEDGER_STATE`` ('wf-rewired') are accepted but are
     NOT part of the ordered page lifecycle — they are never ordered against the
     LEDGER_STATES sequence (a workflow rewire is a parallel fact about a
-    workflow step, not a page-build stage)."""
+    workflow step, not a page-build stage).
+
+    S06-08: the ledger record is a no-secret sink: ``extra`` is a free-form
+    caller dict, so the merged record passes through the evidence scrubber
+    before write and the redaction count is recorded as ``redactions`` when
+    nonzero. The write stays a PLAIN in-place write (its historical class)
+    and gains the explicit 0600 mode (Q4); the ledger dirs are created 0700.
+    """
     if state not in LEDGER_STATES and state not in ("FAILED", WORKFLOW_LEDGER_STATE):
         raise ValueError(f"unknown ledger state: {state}")
     path = _ledger_path(run_id, funnel, step)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    ghl_evidence.ensure_private_dir(os.path.dirname(path))
     prev = {}
     # Repair-in-place merge base (S06-05): if this page's record exists only
     # at the pre-move /tmp location, merge from THERE — otherwise the
@@ -393,8 +406,10 @@ def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | 
            "updated_at": int(time.time()), **(extra or {})}
     if prev:
         rec = {**prev, **rec}
-    with open(path, "w") as f:
-        json.dump(rec, f, indent=2)
+    rec, redactions = ghl_evidence.EvidenceScrubber(secret_values).scrub_obj(rec)
+    if redactions:
+        rec["redactions"] = int(rec.get("redactions") or 0) + redactions
+    ghl_evidence.write_json_private(path, rec)
     return path
 
 
@@ -1544,7 +1559,9 @@ def render_check(
     import subprocess
 
     render_dir = os.path.join(run_dir, "render")
-    os.makedirs(render_dir, exist_ok=True)
+    # Q4 interim default (S06-08): the render dir is created 0700; the
+    # DOM/PNG/console artifacts below are set 0600 as they land.
+    ghl_evidence.ensure_private_dir(render_dir)
 
     dom_path = os.path.join(render_dir, f"{step}.dom.html")
     png_path = os.path.join(render_dir, f"{step}.png")
@@ -1616,6 +1633,7 @@ def render_check(
         elif html_result.stdout:
             with open(dom_path, "w", encoding="utf-8") as f:
                 f.write(html_result.stdout)
+            ghl_evidence.set_private_file(dom_path)
 
         # Screenshot (saves to agent-browser tmp dir; path printed on stdout).
         shot_result = subprocess.run(
@@ -1636,6 +1654,7 @@ def render_check(
                 if os.path.isfile(tmp_png):
                     import shutil
                     shutil.copy2(tmp_png, png_path)
+                    ghl_evidence.set_private_file(png_path)
 
         # Capture console/pageerror. `console` in 0.27.0 outputs plain text.
         console_result = subprocess.run(
@@ -1654,6 +1673,7 @@ def render_check(
         # Write console log.
         with open(console_path, "w", encoding="utf-8") as f:
             json.dump(console_entries, f, indent=2)
+        ghl_evidence.set_private_file(console_path)
 
         # Extract pageerror / console.error entries (P0-1d). agent-browser's
         # `console` emits PLAIN TEXT (kind is usually empty), so structured
@@ -2260,6 +2280,16 @@ def _emit_builder_run_report(rc: int) -> None:
     # root is the ephemeral /tmp fallback so nobody mistakes it for
     # durable run state.
     _ledger_dir = os.path.join(ledger_root(), run_id) if run_id else ""
+    if _ledger_dir:
+        # S06-08 (NQ3): the label is now ALWAYS present, not only in the
+        # ephemeral case. This row names the run's LEDGER dir; on its own the
+        # bare row name invited reading the ledger root as the run EVIDENCE
+        # root, which it is not: the evidence root is the per-run directory
+        # the object builders write receipts / verify / render artifacts
+        # into. The contract (tools/ghl_evidence.py) names the two roots as
+        # distinct things; this label keeps the report honest about which
+        # one it is printing.
+        _ledger_dir += " [ledger root: per-page build ledger, not the run evidence root]"
     if _ledger_dir and ledger_root_is_ephemeral():
         _ledger_dir += " [EPHEMERAL ledger root: /tmp is wiped on recreate/reboot — not durable run state]"
     status = (ghl_run_state.STATUS_OK if rc == 0 else ghl_run_state.STATUS_FAILED)

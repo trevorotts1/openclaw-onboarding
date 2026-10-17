@@ -802,6 +802,51 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > (S06-05; see the provisioning contract in `ENV-MATRIX.md` and
 > `ghl_builder.ledger_root()` / `ghl_run_state.default_state_root()`).
 >
+> **Tenant-safe read-back + no-secret evidence (S06-08, doc 18 section 7).**
+> ONE read-back contract lives in `tools/ghl_evidence.py` and binds every
+> run's evidence to the tenant it was gated for. Record families (verify
+> summary + raw verify records, F6 receipts, ladder receipts, the run-state
+> document, inventory exports) carry it natively and additively:
+> `expected_location_id`, `observed_location_id` (where a read can obtain
+> one), `run_id`, and `tenant_binding`: "bound" only when expected and
+> observed are both present and equal; a record that cannot bind states
+> `tenant_binding: "unbound"` explicitly, never a silent omission.
+> File-shaped artifacts (render manifest + DOM/PNG/console captures, the
+> ID-handoff record, provisioning / path-set receipts) are bound through
+> the per-run read-back index (`skill6-readback-index/1`,
+> `<run>/readback-index.json`: run id, expected location, each artifact's
+> path + sha256, verified by re-hash). Observed != expected is a
+> CONTRADICTION (VerifyContradiction / ReceiptContradiction class), never
+> a pass. Fields are additive-optional: a legacy record without them is
+> tenant-unbound and flagged as such, never silently bound; old evidence
+> roots stay readable; nothing already written is re-stamped. Order plans
+> are INPUTS, not evidence: never stamped, swept, or cited as proof.
+> Credential presence is stated as "resolvable via the canonical
+> resolver" (`tools/ghl_secret_resolver.py`); capability-probe output is
+> env-presence only (see the probe paragraph under Adaptive browser
+> lanes) and is never cited as evidence of resolvability.
+>
+> **No secret lands in evidence.** Every text sink (verify records,
+> DOM/console captures, receipt + ladder free-form fields, run-state
+> argv/carry, inventory exports, ledger extras) passes through the
+> evidence scrubber before write: generic secret SHAPES plus the run's
+> resolved secret VALUES, the values held in memory only and never
+> persisted as a pattern list; every redaction is counted and the count
+> recorded on the record. Where masking cannot be done honestly (binary
+> captures on the login and payment steps), artifacts are SUPPRESSED at
+> capture time and the suppression is recorded (the
+> `ghl_login_browser.py` precedent; rule + record shape in
+> `tools/ghl_evidence.py`). Evidence roots are mode 0700 on creation and
+> evidence files mode 0600, set explicitly by the writer (Q4 interim
+> default): `ghl_evidence.audit_evidence_permissions()` REPORTS a loose
+> root, never silently accepts it. The four `verify_all` writes (raw log,
+> summary, render manifest, mock sentinel) are PLAIN IN-PLACE writes, not
+> atomic renames: a partial or unparseable evidence file is FAILED
+> evidence, never a pass. Media manifest entries are stamped
+> `evidence_status: "caller_asserted"`: no build code fetches or verifies
+> the CDN object, and a caller-supplied "cdn_verified" claim is refused;
+> the rendered-<img> gate in `ghl_verify` is the independent read-back.
+>
 > **Page inventory + staged lifecycle — nothing auto-deletes client content
 > (U31/B-U17).** `tools/ghl_inventory.py` closes the VERIFIED absence noted
 > in B.11 claim #19 (no GHL-side page inventory/lifecycle/retention existed

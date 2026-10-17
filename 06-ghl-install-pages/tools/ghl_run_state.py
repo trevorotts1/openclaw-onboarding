@@ -62,6 +62,12 @@ import sys
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 evidence scrubber + Q4 file modes)
+
 RUN_STATE_VERSION = 1
 
 # Terminal statuses a run can end in (the RUN REPORT's `status` row).
@@ -215,12 +221,19 @@ class RunState:
         argv: Optional[List[str]] = None,
         specs: Optional[List[PhaseSpec]] = None,
         doc: Optional[dict] = None,
+        secret_values: Optional[Iterable[str]] = None,
+        trace_suppression: Optional[List[dict]] = None,
+        expected_location_id: str = "",
     ) -> None:
         self.run_id = run_id
         self.builder = builder
         self.state_root = state_root or default_state_root()
         self.specs: List[PhaseSpec] = list(specs or [])
         self._spec_by_name = {p.name: p for p in self.specs}
+        # S06-08: the evidence scrubber applied on every save(). Resolved
+        # secret values are held in memory only (never persisted); with no
+        # values supplied it still applies the generic secret shapes.
+        self._evidence_scrubber = ghl_evidence.EvidenceScrubber(secret_values)
         # Phases this PROCESS executed (vs. inherited from an earlier attempt).
         # The RUN REPORT's `phases_skipped` row is the difference between the two,
         # and it can only be told from process-local memory — the on-disk ledger
@@ -244,6 +257,15 @@ class RunState:
                 "phases": {},
                 "carry": {},          # cross-phase values a resume must restore (survey_id…)
             }
+            # S06-08 (additive, new runs only): the run's trace-suppression
+            # record set (Q5) and gated tenant, when the caller supplies
+            # them. The suppression set is validated at stamp time: an
+            # unsuppressed login/payment claim is refused here, not later.
+            if trace_suppression is not None:
+                ghl_evidence.validate_trace_suppression(trace_suppression)
+                self.doc["trace_suppression"] = list(trace_suppression)
+            if expected_location_id:
+                self.doc["expected_location_id"] = expected_location_id
         # Keep the declared order authoritative for THIS process even when the
         # stored doc came from an older attempt with a different phase list.
         if self.specs:
@@ -265,13 +287,26 @@ class RunState:
 
     def save(self) -> str:
         """Atomic commit: temp → fsync → rename. A kill mid-save can never leave a
-        torn state file, which is the whole premise of trusting it on resume."""
+        torn state file, which is the whole premise of trusting it on resume.
+
+        S06-08: the state doc is a no-secret sink (prep gap 9: argv/carry
+        were persisted unscrubbed). The whole doc passes through the
+        evidence scrubber on EVERY save; the scrub is idempotent, so a
+        resume re-save counts only NEW redactions, and the cumulative count
+        is recorded as ``doc["redactions"]``. Modes are explicit per the Q4
+        interim default: the state root is created 0700 and the state file
+        is 0600 (mode set on the temp file before the rename)."""
         self.doc["updated_at"] = _ts()
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        scrubbed, n = self._evidence_scrubber.scrub_obj(self.doc)
+        self.doc = scrubbed
+        if n:
+            self.doc["redactions"] = int(self.doc.get("redactions") or 0) + n
+        ghl_evidence.ensure_private_dir(os.path.dirname(self.path))
         tmp = f"{self.path}.tmp-{os.getpid()}"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(self.doc, fh, indent=2, default=str)
             fh.flush()
+            os.chmod(tmp, ghl_evidence.FILE_MODE)
             os.fsync(fh.fileno())
         os.replace(tmp, self.path)
         return self.path
@@ -287,11 +322,16 @@ class RunState:
         state_root: str = "",
         evidence_root: str = "",
         argv: Optional[List[str]] = None,
+        secret_values: Optional[Iterable[str]] = None,
+        trace_suppression: Optional[List[dict]] = None,
+        expected_location_id: str = "",
     ) -> "RunState":
         st = cls(
             run_id or new_run_id(builder), builder,
             state_root=state_root, evidence_root=evidence_root,
-            argv=argv, specs=specs,
+            argv=argv, specs=specs, secret_values=secret_values,
+            trace_suppression=trace_suppression,
+            expected_location_id=expected_location_id,
         )
         st.save()
         return st
@@ -654,12 +694,34 @@ def format_run_report(
         nxt = state.first_incomplete_mutating_phase()
         if nxt:
             rows.append(("next_phase", nxt))
+        # S06-08 rows (present only when the run state carries the data, so
+        # the standard shape is unchanged for runs that do not): the Q5
+        # trace-suppression flags, the run's tenant binding, and the count
+        # of evidence redactions the state file itself carries.
+        _suppression = state.doc.get("trace_suppression")
+        if _suppression:
+            _steps = ", ".join(
+                f"{r.get('step')}:"
+                f"{'suppressed' if r.get('artifacts_suppressed') else 'NOT-suppressed'}"
+                for r in _suppression if isinstance(r, dict)
+            )
+            if _steps:
+                rows.append(("trace_suppression", _steps))
+        if state.doc.get("expected_location_id"):
+            rows.append(
+                ("tenant_binding", ghl_evidence.effective_binding(state.doc)))
+        if int(state.doc.get("redactions") or 0):
+            rows.append(("redactions", str(state.doc["redactions"])))
 
     for k, v in (extra_rows or {}).items():
+        # S06-08: report values are evidence too: scrub before printing.
+        if isinstance(v, str):
+            v = ghl_evidence.scrub_text(v)[0]
         rows.append((k, v))
 
     if error:
-        rows.append(("error", str(error)[:200]))
+        # Scrub BEFORE truncating, so a truncated secret cannot leak a prefix.
+        rows.append(("error", ghl_evidence.scrub_text(str(error))[0][:200]))
 
     cmd = resume_cmd
     if cmd is None:

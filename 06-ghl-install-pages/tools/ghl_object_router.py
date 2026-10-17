@@ -599,6 +599,10 @@ class RunResult:
     status: Optional[int] = None
     error_kind: Optional[str] = None
     detail: str = ""
+    # S06-08 (additive): the location the runner's own read observed, when it
+    # knows it, one of the router's observed-location sources for tenant
+    # binding (see execute_write).
+    location_id: Optional[str] = None
 
 
 def _as_run_result(x: Any) -> RunResult:
@@ -611,8 +615,12 @@ def _as_run_result(x: Any) -> RunResult:
             status=x.get("status"),
             error_kind=x.get("error_kind"),
             detail=x.get("detail", ""),
+            location_id=x.get("location_id") or x.get("observed_location_id"),
         )
     return RunResult(ok=bool(x))
+
+
+_OBS_UNSET = object()  # _finish sentinel: "derive the observed location"
 
 
 def execute_write(
@@ -627,32 +635,63 @@ def execute_write(
     rate_cooldown: Optional[Callable[[RailStep], None]] = None,
     logger: Optional[Callable[[str], None]] = None,
     max_backoff: int = 3,
+    expected_location_id: Optional[str] = None,
+    observed_location_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    secret_values: Any = None,
 ) -> dict:
     """Drive one idempotent, read-back-verified, receipted GHL write per §3.
 
     Returns a result dict: ``{ok, action, rail, tier, receipt, receipt_path,
     disclosures, board_note?, error?}``. NEVER raises for an expected GHL failure
     — it returns an honest FAIL with the receipt trail (card → blocked upstream).
+
+    S06-08 TENANT BINDING: ``expected_location_id`` is the run's GATED tenant
+    context (established by the caller, e.g. ghl_builder.subaccount_matches'
+    MatchGuard target). The observed location comes from, in order: the
+    explicit ``observed_location_id``, the verifier's read-back dict
+    (``location_id`` / ``observed_location_id``), the idempotency probe's
+    dict, or the runner result's ``location_id``. Every receipt is stamped
+    with the contract fields; when expected and observed are both known and
+    DIFFER, the write is receipted as FAILED with a tenant-mismatch error:
+    a cross-tenant read-back is a contradiction, never a create.
     """
     obj = route(object_type)
     log = logger or (lambda m: None)
     disclosures: List[str] = []
     rail_runners = rail_runners or {}
 
+    def _observed(verify: Any = None, probe: Any = None,
+                  result: Any = None) -> Optional[str]:
+        if observed_location_id:
+            return observed_location_id
+        for source in (verify, probe):
+            if isinstance(source, dict):
+                value = source.get("observed_location_id") or source.get("location_id")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        value = getattr(result, "location_id", None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
     def _finish(action: str, rail: Optional[RailStep], response_id, verify,
-                error=None, board_note=None) -> dict:
+                error=None, board_note=None, observed=_OBS_UNSET) -> dict:
+        obs = _observed(verify) if observed is _OBS_UNSET else observed
         receipt = make_receipt(
             object_type, slug, action, rail=rail, response_id=response_id,
             request_shape=request_shape, verify=verify, disclosures=disclosures,
-            error=error,
+            error=error, expected_location_id=expected_location_id,
+            observed_location_id=obs, run_id=run_id,
         )
-        rp = write_receipt(evidence_root, receipt)
+        rp = write_receipt(evidence_root, receipt, secret_values=secret_values)
         return {
             "ok": action in ("created", "reused"),
             "action": action, "rail": rail.rail if rail else None,
             "tier": rail.tier if rail else None,
             "disclosures": disclosures, "receipt": receipt, "receipt_path": rp,
             "board_note": board_note, "error": error,
+            "tenant_binding": receipt.get("tenant_binding"),
         }
 
     # 1. Idempotency probe (GET/search-first) — reuse an existing object.
@@ -669,7 +708,21 @@ def execute_write(
             log(d)
             rid = existing.get("id") if isinstance(existing, dict) else None
             verify = existing.get("verify") if isinstance(existing, dict) else None
-            return _finish("reused", step, rid, verify or {"probe": "existing"})
+            obs = _observed(verify, existing)
+            if (expected_location_id and obs
+                    and obs != expected_location_id):
+                last_error = (
+                    f"tenant mismatch on reuse probe: existing object observed "
+                    f"in location {obs!r} but the run is gated for "
+                    f"{expected_location_id!r}: cross-tenant reuse refused"
+                )
+                log(last_error)
+                return _finish("failed", step, rid, verify or {"probe": "existing"},
+                               error=last_error,
+                               board_note=BOARD_NOTE[Action.STOP_REPORT],
+                               observed=obs)
+            return _finish("reused", step, rid, verify or {"probe": "existing"},
+                           observed=obs)
 
     # 2. Ordered rails — attempt each with its failure policy.
     last_error = "no rail runner provided"
@@ -704,7 +757,26 @@ def execute_write(
                         return _finish("failed", step, res.response_id, verify,
                                        error=last_error,
                                        board_note=BOARD_NOTE[Action.STOP_REPORT])
-                return _finish("created", step, res.response_id, verify)
+                # S06-08 tenant gate: a read-back that observed a DIFFERENT
+                # location than the gated tenant turns the create into a
+                # failed, tenant-mismatch receipt (mirrors the failed-verify
+                # path above), never a created receipt for the wrong tenant.
+                obs = _observed(verify, result=res)
+                if (expected_location_id and obs
+                        and obs != expected_location_id):
+                    last_error = (
+                        f"tenant mismatch on {step.rail}: read-back observed "
+                        f"location {obs!r} but the run is gated for "
+                        f"{expected_location_id!r}: cross-tenant read-back "
+                        "is a contradiction, never a create"
+                    )
+                    log(last_error)
+                    return _finish("failed", step, res.response_id, verify,
+                                   error=last_error,
+                                   board_note=BOARD_NOTE[Action.STOP_REPORT],
+                                   observed=obs)
+                return _finish("created", step, res.response_id, verify,
+                               observed=obs)
 
             # Failure → classify → policy.
             action = classify_failure(res.error_kind, res.status)
