@@ -1,0 +1,43 @@
+{
+ "active_before_refund": [
+  "ent-bump",
+  "ent-extra",
+  "ent-main"
+ ],
+ "version_before_refund": "ev1:e89acbc8f9bf257668fcc7144d6891676af3e6809aef326948dbf48b10d81c09",
+ "ingest_refund": "accepted",
+ "process_refund": {
+  "result": "refund_applied",
+  "actions_created": 0
+ },
+ "ingest_refund_redelivery": "duplicate",
+ "active_after_refund": [
+  "ent-bump",
+  "ent-main"
+ ],
+ "map_after_refund": {
+  "tenant_id": "bceo-client-sandbox",
+  "launch_id": "signature-launch-l4",
+  "contact_ref": "QzIXSs3mnrIuR4agE6R2",
+  "entitlement_version": "ev1:0dc979c3eae0e95d46daf2b25220b65bc642b428a0ecf8806097cc9a7966d59a",
+  "entitlements": {
+   "ent-bump": {
+    "state": "granted",
+    "delivery_url": null,
+    "next_action": "access"
+   },
+   "ent-extra": {
+    "state": "revoked",
+    "delivery_url": null,
+    "next_action": "manage_purchase"
+   },
+   "ent-main": {
+    "state": "granted",
+    "delivery_url": null,
+    "next_action": "access"
+   }
+  }
+ },
+ "version_after_refund": "ev1:0dc979c3eae0e95d46daf2b25220b65bc642b428a0ecf8806097cc9a7966d59a",
+ "version_changed": true
+}

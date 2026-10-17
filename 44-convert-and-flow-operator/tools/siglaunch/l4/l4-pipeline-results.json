@@ -1,0 +1,66 @@
+{
+ "confirmation_messages_native": [
+  {
+   "id": "EHe6iQGiMuVCgBDJYIM4",
+   "date": "2026-10-16T14:35:18.970Z",
+   "status": "failed"
+  },
+  {
+   "id": "wMjb8Fl3sTiYZERYQRXf",
+   "date": "2026-10-16T14:35:16.294Z",
+   "status": "failed"
+  }
+ ],
+ "check3_run1": "DUPLICATED_BY_OPERATOR_RECOVERY: 1 claim, 2 native sends",
+ "send_action_state_before": "claimed",
+ "send_marked": "done_with_native_evidence",
+ "send_second_path": "already_claimed_no_second_send",
+ "active_at_resume2": [
+  "ent-bump",
+  "ent-main"
+ ],
+ "ingest_B": "accepted",
+ "process_B": {
+  "result": "no_grant:unknown",
+  "actions_created": 0
+ },
+ "active_after_B": [
+  "ent-bump",
+  "ent-main"
+ ],
+ "ingest_C": "accepted",
+ "process_C": {
+  "result": "processed",
+  "actions_created": 3
+ },
+ "fulfill_C": "done",
+ "active_after_C": [
+  "ent-bump",
+  "ent-extra",
+  "ent-main"
+ ],
+ "map_after_C": {
+  "tenant_id": "bceo-client-sandbox",
+  "launch_id": "signature-launch-l4",
+  "contact_ref": "QzIXSs3mnrIuR4agE6R2",
+  "entitlement_version": "ev1:e89acbc8f9bf257668fcc7144d6891676af3e6809aef326948dbf48b10d81c09",
+  "entitlements": {
+   "ent-bump": {
+    "state": "granted",
+    "delivery_url": null,
+    "next_action": "access"
+   },
+   "ent-extra": {
+    "state": "granted",
+    "delivery_url": null,
+    "next_action": "access"
+   },
+   "ent-main": {
+    "state": "granted",
+    "delivery_url": null,
+    "next_action": "access"
+   }
+  }
+ },
+ "entitlement_version_after_C": "ev1:e89acbc8f9bf257668fcc7144d6891676af3e6809aef326948dbf48b10d81c09"
+}
