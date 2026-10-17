@@ -879,7 +879,7 @@ def phase_worker_env_var(phase_id: str) -> str:
     P4-PROMPT pool path and nothing at all on the manifest fan-out path. A raw
     f-string `PRESENTATION_PHASE_WORKERS_{phase_id}` is NOT settable from a
     shell for any real phase id -- every fan-out phase in the shipped manifest
-    has a hyphen in it ("P-PROMPT-QC", "P-U-DESIGN-SALES") and one has a dot
+    has a hyphen in it ("P-PROMPT-QC", "P-U-SALES-COPY") and one has a dot
     ("P8.3-INFOGRAPHIC"), and `PRESENTATION_PHASE_WORKERS_P-PROMPT-QC=8` is not
     a valid assignment in sh/bash/zsh. Every non-alphanumeric run collapses to
     a single underscore so the override an operator can actually type is the

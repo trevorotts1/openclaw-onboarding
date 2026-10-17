@@ -788,59 +788,6 @@
       ]
     },
     {
-      "id": "P-U-DESIGN-SALES",
-      "order": 4.2,
-      "name": "Upsell Sales Page Design (each design prompt inside the KIE rule 12 length band, 95 to 100 percent of the model max)",
-      "owning_role": "slide-image-creator",
-      "fanout": {
-        "by": "slide",
-        "desired_count": 3,
-        "batch_width": 3
-      },
-      "produces_artifact": [
-        "prompts/sales.design.txt"
-      ],
-      "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "working/upsell/copy/sales.fragment.md"
-      ],
-      "workers": 3
-    },
-    {
-      "id": "P-U-DESIGN-RENDER-SALES",
-      "order": 4.21,
-      "name": "Upsell Sales Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) — FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
-      "owning_role": "slide-image-creator",
-      "produces_artifact": "design/sales-design.png",
-      "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_infographic.py --run-dir {run_dir} --spec design --page sales"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "prompts/sales.design.txt"
-      ]
-    },
-    {
       "id": "P1Q-COPY-QC",
       "order": 4.2,
       "name": "Copy QC (Phase 1Q) — sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
@@ -895,59 +842,6 @@
       ]
     },
     {
-      "id": "P-U-DESIGN-CHECKOUT",
-      "order": 4.3,
-      "name": "Upsell Checkout Page Design (includes order/payment form design)",
-      "owning_role": "slide-image-creator",
-      "fanout": {
-        "by": "slide",
-        "desired_count": 3,
-        "batch_width": 3
-      },
-      "produces_artifact": [
-        "prompts/checkout.design.txt"
-      ],
-      "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "working/upsell/copy/checkout.fragment.md"
-      ],
-      "workers": 3
-    },
-    {
-      "id": "P-U-DESIGN-RENDER-CHECKOUT",
-      "order": 4.31,
-      "name": "Upsell Checkout Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) — FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
-      "owning_role": "slide-image-creator",
-      "produces_artifact": "design/checkout-design.png",
-      "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_infographic.py --run-dir {run_dir} --spec design --page checkout"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "prompts/checkout.design.txt"
-      ]
-    },
-    {
       "id": "P-U-BRIEF-SALES",
       "order": 4.32,
       "name": "Upsell Sales + Checkout Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
@@ -972,64 +866,7 @@
       "consumes": [
         "working/copy/intake.json",
         "working/upsell/copy/sales.fragment.md",
-        "working/upsell/copy/checkout.fragment.md",
-        "prompts/sales.design.txt",
-        "prompts/checkout.design.txt",
-        "design/sales-design.png",
-        "design/checkout-design.png"
-      ]
-    },
-    {
-      "id": "P-U-DESIGN-VSL",
-      "order": 4.4,
-      "name": "Upsell VSL Page Design (includes email/phone gate form design)",
-      "owning_role": "slide-image-creator",
-      "fanout": {
-        "by": "slide",
-        "desired_count": 3,
-        "batch_width": 3
-      },
-      "produces_artifact": [
-        "prompts/vsl.design.txt"
-      ],
-      "defers_unless": "intake.want_vsl_page == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "working/upsell/copy/vsl.fragment.md"
-      ],
-      "workers": 3
-    },
-    {
-      "id": "P-U-DESIGN-RENDER-VSL",
-      "order": 4.41,
-      "name": "Upsell VSL Page Design Render (canonical Kie path, 16:9 2560x1440, 102,400-byte PNG floor) — FIX 28: the PNG producer; the agent phase above authors the prompt, this script phase renders it",
-      "owning_role": "slide-image-creator",
-      "produces_artifact": "design/vsl-design.png",
-      "defers_unless": "intake.want_vsl_page == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_infographic.py --run-dir {run_dir} --spec design --page vsl"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "prompts/vsl.design.txt"
+        "working/upsell/copy/checkout.fragment.md"
       ]
     },
     {
@@ -1054,9 +891,7 @@
       "consumes": [
         "working/copy/intake.json",
         "working/upsell/copy/vsl.fragment.md",
-        "working/upsell/vsl-research.md",
-        "prompts/vsl.design.txt",
-        "design/vsl-design.png"
+        "working/upsell/vsl-research.md"
       ]
     },
     {
@@ -1374,75 +1209,6 @@
         "renders/slide-*.png"
       ],
       "workers": 12
-    },
-    {
-      "id": "P-U-HTML-SALES",
-      "order": 5.2,
-      "name": "Upsell Sales Page HTML (mirrors design; GHL code-block ready)",
-      "owning_role": "pptx-assembly-specialist",
-      "produces_artifact": "pages/sales.fragment.html",
-      "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "design/sales-design.png",
-        "working/upsell/copy/sales.fragment.md"
-      ]
-    },
-    {
-      "id": "P-U-HTML-CHECKOUT",
-      "order": 5.3,
-      "name": "Upsell Checkout Page HTML (mirrors design; SKILL44_WIDGET form embed)",
-      "owning_role": "pptx-assembly-specialist",
-      "produces_artifact": "pages/checkout.fragment.html",
-      "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "design/checkout-design.png",
-        "working/upsell/copy/checkout.fragment.md"
-      ]
-    },
-    {
-      "id": "P-U-HTML-VSL",
-      "order": 5.4,
-      "name": "Upsell VSL Page HTML (mirrors design; gate overlay with Skill-44 form embed)",
-      "owning_role": "pptx-assembly-specialist",
-      "produces_artifact": "pages/vsl.fragment.html",
-      "defers_unless": "intake.want_vsl_page == \"yes\"",
-      "gate_codes": [],
-      "preflight": null,
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      },
-      "executor": {
-        "kind": "agent"
-      },
-      "verifier": "phase_verifiers.verify",
-      "heartbeat_minutes": 20,
-      "consumes": [
-        "design/vsl-design.png",
-        "working/upsell/copy/vsl.fragment.md"
-      ]
     },
     {
       "id": "P-U-FORM-GATE",
@@ -1987,7 +1753,6 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/sales.fragment.md",
-        "design/sales-design.png",
         "working/sales-checkout/html/sales.html"
       ]
     },
@@ -2016,8 +1781,7 @@
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
       "consumes": [
-        "working/upsell/copy/checkout.fragment.md",
-        "design/checkout-design.png"
+        "working/upsell/copy/checkout.fragment.md"
       ]
     },
     {

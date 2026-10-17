@@ -274,71 +274,68 @@ def test_preflight_refuses_script_executor_fanout(tmp_path, monkeypatch):
     reason = D._preflight_fanout_contract(
         "P9-SPEECH", fanout.FanoutSpec(by="slide"), rd)
     assert reason and "executor is a script" in reason
-
-
 # ---------------------------------------------------------------------------
-# P-U-DESIGN-SALES (by=slide, text units): ordered text join.
+# P4-COPY (by=section, text units): ordered unit join, and below it the
+# PD-TEST-119 / 120 / 121 repair-receipt bank tests.
 #
-# PD-TEST-098 UPDATED THIS FIXTURE -- deliberately, and here is why. It used to
-# read "every unit contributes exactly its own slide's page-design prompt", and
-# its stub matched `SLIDE (\d+) OF (\d+)` and returned a 25-char
-# "DESIGN PROMPT for slide N". That is the DEFECT, encoded as a test: the
-# consumer (`build_infographic.resolve_design_prompt`) reads
-# `prompts/<page>.design.txt` VERBATIM as ONE prompt for ONE 16:9 image and
-# gates it at 9,000-18,000 chars, so three complete per-slide prompts
-# concatenated is not a valid single prompt -- on the live run it made a
-# 58,484-char file against an 18,000 ceiling and parked three render phases.
-# The units now author PARTS of the one prompt, each inside its share of the
-# shared band. The test's REAL intent (units join in declared order) is
-# unchanged and still asserted, and the assertion is now stronger: the joined
-# artifact must land inside the band the consumer enforces.
+# VEHICLE CHANGE (Path A retirement, owner ruling 2026-10-15): this section
+# originally ran on P-U-DESIGN-SALES, the slide-scoped text fan-out whose
+# units authored parts of one page-design prompt. That phase retired with
+# the Path A fragment chains, and its design-only machinery (the shared
+# prompt-band contract, the per-share unit validator) retired with it. The
+# guarantees pinned here belong to the GENERIC fan-out runner
+# (_dispatch_phase_fanout_units): units join in declared order, banked
+# units are reused on an input hash, an actionable repair receipt voids
+# the bank exactly once, and the sufficiency gate counts WANTED units,
+# not enumerated ones. They are now pinned on P4-COPY, the flagship
+# generic-path phase, using this file's own section fixture shape (the
+# p4_env pattern above): three sections, twenty slides, `SLIDE <n>`
+# Markdown blocks reduced by the ordered exactly-once Markdown reducer.
+# The design-band assertion that used to ride the join test (the joined
+# prompt inside prompt_gate's rule 12 band) is NOT carried over: that
+# band's consumer was the retired design render gate.
 # ---------------------------------------------------------------------------
 
-def test_design_text_units_join_in_order(tmp_path, monkeypatch):
-    rd = tmp_path / "drun"
-    (rd / "working" / "copy").mkdir(parents=True)
-    (rd / "working" / "upsell" / "copy").mkdir(parents=True)
-    (rd / "working" / "work-orders").mkdir(parents=True)
-    (rd / "working" / "copy" / "slides.json").write_text(
-        json.dumps({"slides": [{"ordinal": n} for n in range(1, 4)]}))
-    (rd / "working" / "upsell" / "copy" / "sales.fragment.md").write_text("FRAGMENT")
-    (rd / ".test-context").write_text("test")
-    dept = _dept(tmp_path, "designer-x")
-
-    calls = []
+def _copy_env2(tmp_path, monkeypatch, *, verify_ok):
+    rd = _p4_run(tmp_path)
+    dept = _dept(tmp_path, "slide-copywriter")
+    calls: list = []
 
     def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
-        m = re.search(r"PART (\d+) OF (\d+)", user_prompt)
-        assert m, "a design unit must be told which PART of the one prompt it authors"
-        n = int(m.group(1))
         calls.append(user_prompt)
-        # A part inside its own share of the shared band (PD-TEST-098).
-        floor_share, _ceil = D.design_unit_char_budget(int(m.group(2)))
-        part = f"PART for slide {n}. " + ("specific art direction. " *
-                                          (((floor_share + _ceil) // 2) // 24))
-        return part, {"request_id": "r"}, {"provider": "s", "model": "m"}
+        for name, lo, hi in SECTIONS:
+            if repr(name) in user_prompt and "AUTHORS EXACTLY ONE SECTION" in user_prompt:
+                return (_section_body(name, lo, hi), {"request_id": "req-stub"},
+                        {"provider": "stub", "model": "stub-1"})
+        raise AssertionError("unit prompt lost its one-scope instruction")
 
     monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
-    monkeypatch.setattr(D, "_verify", lambda pid, rdir: (True, []))
-    order = {"owning_role": "designer-x",
-             "produces_artifact": "prompts/sales.design.txt"}
-    spec = fanout.parse_fanout_field({"by": "slide", "max_units": 3})
-    target = rd / "prompts" / "sales.design.txt"
-    res = D._dispatch_phase_fanout_units(
-        rd, order, dept_root=dept, phase_obj=FakePhase("P-U-DESIGN-SALES", "designer-x"),
-        worker_id="t", spec=spec, patterns=["prompts/sales.design.txt"],
-        target=target, prior_reasons=[])
+    monkeypatch.setattr(D, "_verify", lambda pid, rdir: (verify_ok, [] if verify_ok else ["AF-P13"]))
+    return {"rd": rd, "dept": dept, "calls": calls,
+            "order": {"owning_role": "slide-copywriter",
+                      "produces_artifact": "working/copy/slides_copy.md"},
+            "spec": fanout.parse_fanout_field({"by": "section", "max_units": 5}),
+            "phase": FakePhase("P4-COPY", "slide-copywriter"),
+            "target": rd / "working" / "copy" / "slides_copy.md"}
+
+
+def _run119(env):
+    """Dispatch the P4-COPY fanout with this env's stubs (the same call shape
+    the PD-TEST-119 work used, defined here so this suite is self-contained)."""
+    return D._dispatch_phase_fanout_units(
+        env["rd"], env["order"], dept_root=env["dept"], phase_obj=env["phase"],
+        worker_id="t", spec=env["spec"], patterns=["working/copy/slides_copy.md"],
+        target=env["target"], prior_reasons=[])
+
+
+def test_copy_section_units_join_in_order(tmp_path, monkeypatch):
+    env = _copy_env2(tmp_path, monkeypatch, verify_ok=True)
+    res = _run119(env)
     assert res.status == "ok", res.reasons
-    body = target.read_text()
-    # the original intent: the parts join in declared order
-    assert body.index("slide 1") < body.index("slide 2") < body.index("slide 3")
-    # PD-TEST-098: and the joined artifact is ONE prompt inside the band the
-    # consumer enforces -- the property whose absence parked three phases.
-    assert 3 == len(calls)
-    import prompt_gate as _pg
-    assert not _pg.length_problems(body.strip()), (
-        f"joined design prompt is {len(body.strip())} chars, outside the rule 12 band: "
-        f"{_pg.length_problems(body.strip())}")
+    assert len(env["calls"]) == 3, "exactly one paid call per section unit"
+    merged = env["target"].read_text()
+    # the original intent: the units join in declared order, exactly once
+    assert _ordinals(merged) == list(range(1, N_SLIDES + 1))
 
 # ---------------------------------------------------------------------------
 # PD-TEST-119 / 120 / 121 -- AN ACTIONABLE REPAIR RECEIPT VOIDS THE BANK.
@@ -350,56 +347,10 @@ def test_design_text_units_join_in_order(tmp_path, monkeypatch):
 # fanout now refuses to reuse banked units while a receipt is actionable -- and
 # the reservations that pay for the re-author consume that same receipt.
 # ---------------------------------------------------------------------------
-def _design_run_for_receipt(tmp_path):
-    rd = tmp_path / "d121"
-    (rd / "working" / "copy").mkdir(parents=True)
-    (rd / "working" / "upsell" / "copy").mkdir(parents=True)
-    (rd / "working" / "work-orders").mkdir(parents=True)
-    (rd / "working" / "copy" / "slides.json").write_text(
-        json.dumps({"slides": [{"ordinal": n} for n in range(1, 4)]}))
-    (rd / "working" / "upsell" / "copy" / "sales.fragment.md").write_text("FRAGMENT")
-    (rd / ".test-context").write_text("test")
-    return rd
-
-
-def _design_env2(tmp_path, monkeypatch, *, verify_ok):
-    rd = _design_run_for_receipt(tmp_path)
-    dept = _dept(tmp_path, "designer-x")
-    calls: list = []
-
-    def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
-        m = re.search(r"PART (\d+) OF (\d+)", user_prompt)
-        assert m, "a design unit must be told which PART it authors"
-        n = int(m.group(1))
-        calls.append(user_prompt)
-        floor_share, _ceil = D.design_unit_char_budget(int(m.group(2)))
-        return (f"PART for slide {n}. "
-                + ("specific art direction. " * (((floor_share + _ceil) // 2) // 24)),
-                {"request_id": "r"}, {"provider": "s", "model": "m"})
-
-    monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
-    monkeypatch.setattr(D, "_verify", lambda pid, rdir: (verify_ok, [] if verify_ok else ["AF-P13"]))
-    return {"rd": rd, "dept": dept, "calls": calls,
-            "order": {"owning_role": "designer-x",
-                      "produces_artifact": "prompts/sales.design.txt"},
-            "spec": fanout.parse_fanout_field({"by": "slide", "max_units": 3}),
-            "phase": FakePhase("P-U-DESIGN-SALES", "designer-x"),
-            "target": rd / "prompts" / "sales.design.txt"}
-
-
-def _run119(env):
-    """Dispatch the design fanout with this env's stubs (the same call shape the
-    PD-TEST-119 work used, defined here so this suite is self-contained)."""
-    return D._dispatch_phase_fanout_units(
-        env["rd"], env["order"], dept_root=env["dept"], phase_obj=env["phase"],
-        worker_id="t", spec=env["spec"], patterns=["prompts/sales.design.txt"],
-        target=env["target"], prior_reasons=[])
-
-
 def _seed_ledger(rd, generation=0, paid=3):
     """A durable ledger, the precondition `authorize_paid_retry_reset` enforces."""
-    D._write_ledger(rd, "P-U-DESIGN-SALES", {
-        "phase_id": "P-U-DESIGN-SALES", "status": "exhausted",
+    D._write_ledger(rd, "P4-COPY", {
+        "phase_id": "P4-COPY", "status": "exhausted",
         "paid_attempts": paid, "generation": generation,
         "blocked": True, "approved_input_revision": "initial"})
 
@@ -407,14 +358,14 @@ def _seed_ledger(rd, generation=0, paid=3):
 def test_actionable_receipt_forces_a_re_author(tmp_path, monkeypatch):
     """THE ACCEPTANCE TARGET. Banked units are reused on an input hash alone, so
     without this the phase rebuilds the identical rejected artifact forever."""
-    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    env = _copy_env2(tmp_path, monkeypatch, verify_ok=True)
     _run119(env)
     assert len(env["calls"]) == 3, "first pass authors"
     _run119(env)
     assert len(env["calls"]) == 3, "a banked unit set is reused (no re-bill)"
 
     _seed_ledger(env["rd"], generation=0)
-    receipt = D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=3)
+    receipt = D.authorize_paid_retry_reset(env["rd"], "P4-COPY", allowance=3)
     assert receipt["prior_generation"] == 0
 
     _run119(env)
@@ -426,10 +377,10 @@ def test_actionable_receipt_forces_a_re_author(tmp_path, monkeypatch):
 def test_consuming_the_receipt_restores_normal_banking(tmp_path, monkeypatch):
     """BOUND: the receipt is single-use by generation. Once spent, the bank is
     reusable again, so a phase whose verifier can never pass cannot loop."""
-    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    env = _copy_env2(tmp_path, monkeypatch, verify_ok=True)
     _run119(env)
     _seed_ledger(env["rd"], generation=0)
-    D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=3)
+    D.authorize_paid_retry_reset(env["rd"], "P4-COPY", allowance=3)
     _run119(env)
     assert len(env["calls"]) == 6, "the receipt voided the bank once"
 
@@ -443,10 +394,10 @@ def test_consuming_the_receipt_restores_normal_banking(tmp_path, monkeypatch):
     # flagged). Assert the BOUND on the property that actually decides it instead:
     # advance the generation exactly as consumption does, and require the bank to
     # be honoured again.
-    led = D._read_ledger(env["rd"], "P-U-DESIGN-SALES")
+    led = D._read_ledger(env["rd"], "P4-COPY")
     led = dict(led)
     led["generation"] = int(led.get("generation") or 0) + 1
-    D._write_ledger(env["rd"], "P-U-DESIGN-SALES", led)
+    D._write_ledger(env["rd"], "P4-COPY", led)
     _run119(env)
     assert len(env["calls"]) == 6, (
         "once the ledger generation has advanced past the receipt's "
@@ -457,7 +408,7 @@ def test_consuming_the_receipt_restores_normal_banking(tmp_path, monkeypatch):
 def test_no_receipt_leaves_the_bank_untouched(tmp_path, monkeypatch):
     """REGRESSION GUARD for PRES-014: with no receipt on disk nothing about the
     reuse decision changes."""
-    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    env = _copy_env2(tmp_path, monkeypatch, verify_ok=True)
     _run119(env)
     assert len(env["calls"]) == 3
     _run119(env)
@@ -473,18 +424,18 @@ def test_void_is_refused_when_the_receipt_cannot_pay_for_every_unit(tmp_path, mo
     from `ok` to `failed` -- the "parked AND unbuildable" mode. The bank must be
     left intact instead."""
     from presentation_job import unit_store
-    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    env = _copy_env2(tmp_path, monkeypatch, verify_ok=True)
     _run119(env)
     assert len(env["calls"]) == 3, "first pass authors"
-    before = unit_store.load_state(env["rd"], "P-U-DESIGN-SALES")
+    before = unit_store.load_state(env["rd"], "P4-COPY")
 
     _seed_ledger(env["rd"], generation=0)
-    D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=1)
+    D.authorize_paid_retry_reset(env["rd"], "P4-COPY", allowance=1)
     _run119(env)
     assert len(env["calls"]) == 3, (
         "a receipt that cannot pay for every unit it would invalidate must NOT "
         "void the bank -- the units are reused instead")
-    after = unit_store.load_state(env["rd"], "P-U-DESIGN-SALES")
+    after = unit_store.load_state(env["rd"], "P4-COPY")
     # `ok` -> `banked` is the NORMAL admission transition for a reused unit and is
     # expected here; what the defect produced was `ok` -> `failed`, which loses the
     # bank outright. Assert the hazard, not the transition.
@@ -494,70 +445,81 @@ def test_void_is_refused_when_the_receipt_cannot_pay_for_every_unit(tmp_path, mo
     assert len(after) == len(before), (
         f"unit records must not be dropped: before={len(before)} after={len(after)}")
     side = (env["rd"] / "working" / "work-orders"
-            / "P-U-DESIGN-SALES.dispatcher-log.jsonl").read_text()
+            / "P4-COPY.dispatcher-log.jsonl").read_text()
     assert "bank_void_refused_insufficient_allowance" in side, (
         "the refusal must be recorded, not silent")
 
 def test_sufficiency_gate_counts_WANTED_units_not_ENUMERATED_ones(tmp_path, monkeypatch):
     """REGRESSION for the bug that made the void inert on the live run.
 
-    A `by: slide` fan-out ENUMERATES one unit per slide but only WANTS
-    `desired_count` of them. The design phases enumerate 8 and want 3, so a gate
-    comparing the receipt's allowance against the ENUMERATED count saw `3 < 8`,
-    refused with `bank_void_refused_insufficient_allowance`, and left the bank
-    intact -- on exactly the three phases the void was written for. Everything
-    looked correct: the receipt was actionable and the code path ran."""
+    A fan-out ENUMERATES every unit its source declares but only WANTS
+    `desired_count` of them. The design phases this test originally ran on
+    enumerated 8 slides and wanted 3, so a gate comparing the receipt's
+    allowance against the ENUMERATED count saw `3 < 8`, refused with
+    `bank_void_refused_insufficient_allowance`, and left the bank intact --
+    on exactly the phases the void was written for. Everything looked
+    correct: the receipt was actionable and the code path ran. The same
+    shape is reproduced here with sections: eight enumerated, three wanted."""
     from presentation_job import unit_store
     rd = tmp_path / "d8"
     (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "research").mkdir(parents=True)
     (rd / "working" / "work-orders").mkdir(parents=True)
-    # EIGHT slides, but the fan-out wants only THREE.
+    # EIGHT sections of one slide each, but the fan-out wants only THREE.
+    sections8 = tuple((f"S{i}", i, i) for i in range(1, 9))
+    slots = [{"ordinal": n, "arc": name} for name, lo, hi in sections8
+             for n in range(lo, hi + 1)]
+    (rd / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({"slots": slots}))
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps({"client": "t"}))
+    (rd / "working" / "copy" / "priority_shift_spec.json").write_text(json.dumps({"p": 1}))
+    (rd / "working" / "copy" / "sp_intake.json").write_text(json.dumps({"s": 1}))
+    (rd / "working" / "research" / "research_map.json").write_text(json.dumps({"m": 1}))
     (rd / "working" / "copy" / "slides.json").write_text(
         json.dumps({"slides": [{"ordinal": n} for n in range(1, 9)]}))
-    (rd / "working" / "copy" / "arc_allocation.json").write_text(
-        json.dumps({"slots": [{"ordinal": n} for n in range(1, 9)]}))
-    (rd / "working" / "copy" / "intake.json").write_text(json.dumps({"client": "t"}))
-    dept = _dept(tmp_path, "designer-x")
+    dept = _dept(tmp_path, "slide-copywriter")
     calls: list = []
 
     def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
         calls.append(user_prompt)
-        return ("part text " * 400, {"request_id": "r"}, {"provider": "s", "model": "m"})
+        for name, lo, hi in sections8:
+            if repr(name) in user_prompt and "AUTHORS EXACTLY ONE SECTION" in user_prompt:
+                return (_section_body(name, lo, hi), {"request_id": "req-stub"},
+                        {"provider": "stub", "model": "stub-1"})
+        raise AssertionError("unit prompt lost its one-scope instruction")
 
     monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
     monkeypatch.setattr(D, "_verify", lambda pid, rdir: (True, []))
-    order = {"owning_role": "designer-x",
-             "produces_artifact": "prompts/sales.design.txt"}
-    spec = fanout.parse_fanout_field({"by": "slide", "max_units": 3})
-    phase = FakePhase("P-U-DESIGN-SALES", "designer-x")
-    target = rd / "prompts" / "sales.design.txt"
+    order = {"owning_role": "slide-copywriter",
+             "produces_artifact": "working/copy/slides_copy.md"}
+    spec = fanout.parse_fanout_field({"by": "section", "max_units": 3})
+    phase = FakePhase("P4-COPY", "slide-copywriter")
+    target = rd / "working" / "copy" / "slides_copy.md"
 
     def run():
         return D._dispatch_phase_fanout_units(
             rd, order, dept_root=dept, phase_obj=phase, worker_id="t", spec=spec,
-            patterns=["prompts/sales.design.txt"], target=target, prior_reasons=[])
+            patterns=["working/copy/slides_copy.md"], target=target, prior_reasons=[])
 
     run()
     wanted = len(unit_store.apply_desired_count(
-        fanout.enumerate_fanout_items(rd, spec, phase_id="P-U-DESIGN-SALES",
-                                      produces_artifact=["prompts/sales.design.txt"]),
+        fanout.enumerate_fanout_items(rd, spec, phase_id="P4-COPY",
+                                      produces_artifact=["working/copy/slides_copy.md"]),
         getattr(spec, "desired_count", None)))
     assert wanted == 3, f"fixture must want 3 of the 8 enumerated units, got {wanted}"
     after_first = len(calls)
     assert after_first == 3, f"only the WANTED units author: {after_first}"
 
-    D._write_ledger(rd, "P-U-DESIGN-SALES", {
-        "phase_id": "P-U-DESIGN-SALES", "status": "exhausted", "paid_attempts": 3,
+    D._write_ledger(rd, "P4-COPY", {
+        "phase_id": "P4-COPY", "status": "exhausted", "paid_attempts": 3,
         "generation": 0, "blocked": True, "approved_input_revision": "initial"})
-    D.authorize_paid_retry_reset(rd, "P-U-DESIGN-SALES", allowance=3)
+    D.authorize_paid_retry_reset(rd, "P4-COPY", allowance=3)
 
     run()
     assert len(calls) == 6, (
         "allowance 3 IS sufficient for 3 wanted units: the gate must count the "
         "WANTED units, not the 8 enumerated ones, or the void is inert")
     side = (rd / "working" / "work-orders"
-            / "P-U-DESIGN-SALES.dispatcher-log.jsonl").read_text()
+            / "P4-COPY.dispatcher-log.jsonl").read_text()
     assert "bank_voided_by_receipt" in side, "the void must have fired"
     assert "insufficient_allowance" not in side, (
         "the gate refused a sufficient receipt")
-

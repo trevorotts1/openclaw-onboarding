@@ -5591,10 +5591,10 @@
       "path": "templates/role-library/presentations/director-of-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:6b70f29aabcfd26c421c08ebbdf83b39df4dbc1783e92253d4815a4feee44066",
-      "render_sha": "sha256:9f8fd258194a525088be6aeae99ebc15b49d46cfb7610bf89ededf2e45776903",
-      "content_version": "1.0.40",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:d08d2a9a4ac575ef8b172db01b41373069a1efd70ef380e43c36df2f4aecf683",
+      "render_sha": "sha256:7fd7d11b03ba7907ede87303f4ea40ec2d4df299ec4efacf4a3ca55cafcfb157",
+      "content_version": "1.0.41",
+      "content_hashed_at": "2026-10-17T04:37:56.434730+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations",
@@ -5703,10 +5703,10 @@
       "path": "templates/role-library/presentations/pptx-assembly-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:aea02559d7e68dd85f4b44cd4b6210ccf09d5b383cc183fd5a41f8180918d427",
-      "render_sha": "sha256:aea02559d7e68dd85f4b44cd4b6210ccf09d5b383cc183fd5a41f8180918d427",
-      "content_version": "1.0.23",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:7fb02648e7d7d25a94275489b4c4e4c53eb415a53cd1fd70fe39caf702e032e4",
+      "render_sha": "sha256:7fb02648e7d7d25a94275489b4c4e4c53eb415a53cd1fd70fe39caf702e032e4",
+      "content_version": "1.0.24",
+      "content_hashed_at": "2026-10-17T04:37:56.434730+00:00"
     },
     {
       "slug": "presenter-coach",
@@ -5799,10 +5799,10 @@
       "path": "templates/role-library/presentations/slide-image-creator.md",
       "capability_class": "GENERATION",
       "vision_flag": false,
-      "content_sha": "sha256:89a5ca6b3103a7ec7448aa392902e04f0103df171e5b6bf22223a44a3150d915",
-      "render_sha": "sha256:89a5ca6b3103a7ec7448aa392902e04f0103df171e5b6bf22223a44a3150d915",
-      "content_version": "1.0.36",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:816d23ba2f6feb9bc460e74a1fe48a6ae1a3404d0b0eb5c1db0a6e9ebde23a5e",
+      "render_sha": "sha256:816d23ba2f6feb9bc460e74a1fe48a6ae1a3404d0b0eb5c1db0a6e9ebde23a5e",
+      "content_version": "1.0.37",
+      "content_hashed_at": "2026-10-17T04:37:56.434730+00:00"
     },
     {
       "slug": "slide-submitter",
@@ -7607,10 +7607,10 @@
       "path": "templates/role-library/presentations/qc-specialist-prompt-presentations.md",
       "capability_class": "JUDGMENT",
       "vision_flag": false,
-      "content_sha": "sha256:dd703b3724cfdbb1f6b8f4c64474ee2c8df723950036eacdf89da372b663aee1",
-      "render_sha": "sha256:764c10519f14022ec68c4c45220ede08eac9d8689a10d74c88e7e9e9184d3c3d",
-      "content_version": "1.0.19",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:1a048bcff13a2e009048abb9f67e5eb12da3cc789290945d707e6f95a63ea6cc",
+      "render_sha": "sha256:6f53c09436cf216bc8426c8e4273d0f17e5040f12b6327d474185ae42ee5afc3",
+      "content_version": "1.0.20",
+      "content_hashed_at": "2026-10-17T04:37:56.434730+00:00"
     },
     {
       "slug": "qc-specialist-image-presentations",
@@ -10546,9 +10546,9 @@
       "slug": "pptx-assembly-specialist-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/pptx-assembly-specialist-sops.md",
-      "content_sha": "sha256:90338eb4e45f370d416ebef6aa7891e57df306118d18756483dfae4c40e59975",
-      "content_version": "1.0.11",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:dc2d06beb29610a68b63bf1eb900e5ee376c1542d99d1c81ee3850fa39a02844",
+      "content_version": "1.0.12",
+      "content_hashed_at": "2026-10-17T04:37:56.434730+00:00"
     },
     {
       "slug": "presenter-coach-sops",
