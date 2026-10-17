@@ -1,0 +1,251 @@
+{
+  "result": {
+    "schema_version": "1.0",
+    "tenant_id": "TEST-TENANT",
+    "location_id": "TEST-LOCATION",
+    "launch_id": "TEST-LAUNCH",
+    "revision": 1,
+    "request_id": "TEST-REQ-U2-VIA-U1",
+    "input_hash": "TEST-ONLY-INPUT-HASH",
+    "page_id": "TEST-UPSELL_2",
+    "status": "authored",
+    "artifacts": [
+      {
+        "path": "80-signature-upsell/fixtures/copy-upsell2-public.valid.json",
+        "sha256": "56735f9a571af1226443777cc22464e5aa77a24e7cd2db47df02490f43734530"
+      }
+    ],
+    "author_session": "S80-adapters-builder (S80-04/S80-05/S80-07 build session)",
+    "reviewer_session": null,
+    "independent_review": false,
+    "proof_class": "L1",
+    "blockers": [
+      "S80-06 extra-offer binding is integrated at interface-conformance level only (S79 draft interface, fixture level): the native action ID is null pending S06 confirmation (open questions S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local only, NOT installed or live proof."
+    ],
+    "native_bindings_ref": null,
+    "test_only": true,
+    "instance": "upsell_2",
+    "source_hash": "56735f9a571af1226443777cc22464e5aa77a24e7cd2db47df02490f43734530",
+    "approved_offer_mapping": {
+      "offer_id": "TEST-ONLY-U2",
+      "slot": "upsell_2",
+      "native_product_id": null,
+      "native_price_id": null,
+      "amount_minor": 4700,
+      "currency": "USD",
+      "billing_type": "recurring"
+    },
+    "native_action": {
+      "action_id": null,
+      "settings_ref": null,
+      "binding_screenshot_ref": null,
+      "verified_by": "s80_06_binding"
+    },
+    "cta_map": [
+      {
+        "section_number": 1,
+        "cta_text": "Yes, reserve my Studio working sessions",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 2,
+        "cta_text": "Get guided build time - join the Studio",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 3,
+        "cta_text": "Have every piece reviewed - join the Studio",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 4,
+        "cta_text": "Put build sessions on the calendar - join the Studio",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 5,
+        "cta_text": "Move from learning to launching - join the Studio",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 6,
+        "cta_text": "If you are building now, join the Studio",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 7,
+        "cta_text": "Join the Studio and build it live",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      },
+      {
+        "section_number": 8,
+        "cta_text": "Commit to your Fully-Built Future - join the Studio",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U2"
+      }
+    ],
+    "disclosure_audit": {
+      "amount_matches_native": null,
+      "currency_present": true,
+      "recurring_terms_disclosed": true,
+      "adjacent_to_cta": true,
+      "verdict": "pending_native_binding",
+      "notes": [
+        "Local disclosure rendered from integer amount_minor, currency and billing terms: USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.",
+        "Amount-versus-native match completes only after the native read-back that follows S06's installed binding confirmation (S80-06 binding is interface-conformant only until then)."
+      ]
+    },
+    "eligibility_check": {
+      "original_purchase_verified": true,
+      "qualifying_purchase_slot": "upsell_1",
+      "entry_context": "from_upsell_1",
+      "verdict": "eligible"
+    },
+    "copy_validation": {
+      "validator": "scripts/validate_upsell_copy.py",
+      "profile_id": "signature-upsell-eight-section",
+      "exit_code": 0,
+      "verdict": "pass",
+      "copy_sha256": "56735f9a571af1226443777cc22464e5aa77a24e7cd2db47df02490f43734530"
+    },
+    "hashes": {
+      "copy_sha256": "56735f9a571af1226443777cc22464e5aa77a24e7cd2db47df02490f43734530",
+      "ui_sha256": null,
+      "asset_sha256": []
+    },
+    "test_outcomes": [
+      {
+        "test_id": "S80-05-adapter-upsell2-fixtures",
+        "level": "L1",
+        "outcome": "pass",
+        "evidence_ref": "tests/test_adapters_upsell2.py"
+      },
+      {
+        "test_id": "A12-U2-both-entry-paths-local",
+        "level": "L1",
+        "outcome": "pass",
+        "evidence_ref": "tests/test_adapters_upsell2.py"
+      },
+      {
+        "test_id": "A12-U2-both-entry-paths-native",
+        "level": "L4",
+        "outcome": "not_run",
+        "evidence_ref": null
+      },
+      {
+        "test_id": "S80-09-installed-purchase-tests",
+        "level": "L4",
+        "outcome": "not_run",
+        "evidence_ref": null
+      }
+    ]
+  },
+  "page_plan": {
+    "test_only": true,
+    "instance": "upsell_2",
+    "page_id": "TEST-UPSELL_2",
+    "action_binding": {
+      "kind": "extra_offer_binding",
+      "status": "interface_conformant_pending_s06",
+      "action_ref": "extra-offer-binding:TEST-ONLY-U2",
+      "native_action_ref": "native-one-click:TEST-ONLY-U2",
+      "action_id": null,
+      "guard": "single_flight_payment_attempt_guard",
+      "purchase_trigger": "cta_click",
+      "triggers_that_never_purchase": [
+        "page_load",
+        "scroll",
+        "timer_expiry",
+        "close_icon_click"
+      ],
+      "all_ctas_bind_this_action": true
+    },
+    "disclosure": {
+      "adjacent_to_cta": true,
+      "text": "USD 47.00 today, then USD 47.00 per month for 2 further payments (3 payments total), charged to your original payment method when you accept.",
+      "amount_minor": 4700,
+      "currency": "USD",
+      "billing_type": "recurring",
+      "recurring_terms": {
+        "interval": "month",
+        "interval_count": 1,
+        "cycles": 3,
+        "trial_amount_minor": null,
+        "trial_period": null
+      }
+    },
+    "states": {
+      "processing": {
+        "on_cta_click": "show_processing_and_disable_repeat_triggering",
+        "repeat_click_while_pending": "ignored_by_single_flight_guard"
+      },
+      "decline": {
+        "visible": true,
+        "charges": false,
+        "target_role": "thank_you",
+        "target_page_id": "TEST-THANK_YOU"
+      },
+      "payment_pending_or_failed": {
+        "behaviour": "remain_on_page_recoverable",
+        "is_acceptance": false,
+        "is_decline": false,
+        "grants_entitlement": false,
+        "continue_without_extra": "deliberate action recorded separately as an explicit decline (doc 02 section 4)"
+      },
+      "requires_customer_action": {
+        "behaviour": "remain_on_page_recoverable",
+        "is_acceptance": false,
+        "is_decline": false
+      },
+      "expired_or_lost_payment_context": {
+        "behaviour": "block_paid_action_safe_continuation",
+        "fabricate_payment_token": false
+      },
+      "one_click_unavailable": {
+        "fallback": "block_paid_action_safe_continuation",
+        "one_click_native_action_verified": false
+      },
+      "already_owned_or_incompatible": {
+        "behaviour": "suppress_or_safe_final_thank_you",
+        "duplicate_charge": false
+      }
+    },
+    "success_route": {
+      "target_role": "thank_you",
+      "target_page_id": "TEST-THANK_YOU",
+      "requires": "verified_payment_from_trusted_adapter"
+    },
+    "disposition": {
+      "action": "present_offer",
+      "reason": "eligible",
+      "charge_action_emitted": true
+    },
+    "acknowledgement_blocks": [
+      {
+        "condition": "verified_original_purchase",
+        "text": "Your original purchase is confirmed. This page offers one further optional extra; everything you already bought stays yours either way."
+      },
+      {
+        "condition": "from_upsell_1",
+        "text": "Your first upgrade is confirmed (TEST ONLY Deep Work Library). The Implementation Studio builds on it with guided implementation - a different step from the content upgrade you just added."
+      }
+    ]
+  },
+  "native_binding": {
+    "kind": "extra_offer_binding",
+    "interface_ref": "S79 extra_offer_interface.md DRAFT (fixture level)",
+    "binding_status": "interface_conformant_pending_s06",
+    "native_action_id": null,
+    "capability_evidence_ref": "native:TEST-CAPABILITY-EVIDENCE",
+    "open_questions": [
+      "S06-Q1",
+      "S06-Q2",
+      "S06-Q3",
+      "S06-Q4",
+      "S06-Q5",
+      "S06-Q6",
+      "S44-Q7",
+      "S44-Q8",
+      "S49-Q9"
+    ]
+  }
+}

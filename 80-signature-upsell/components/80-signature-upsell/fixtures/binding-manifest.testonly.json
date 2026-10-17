@@ -1,0 +1,28 @@
+{
+ "schema_version": "1.0",
+ "test_only": true,
+ "source": "TEST ONLY binding manifest stand-in for the S49 route graph / instance request set. In production this manifest is produced outside the copy document (S49 graph + S80-02 requests); the copy author never authors it. Entry source_refs are structured request:/graph: references (repair R3-01): the validator holds a manifest entry's source_ref to the same structured-external-reference standard as evidence refs and rejects prose self-assertion.",
+ "bindings": [
+  {
+   "page_id": "TEST-UPSELL_1",
+   "offer_id": "TEST-ONLY-U1",
+   "copy_id": "TEST-ONLY-upsell1-public",
+   "expected_action_ref": "native-one-click:TEST-ONLY-U1",
+   "source_ref": "request:TEST-REQ-U1/action_binding"
+  },
+  {
+   "page_id": "TEST-UPSELL_2",
+   "offer_id": "TEST-ONLY-U2",
+   "copy_id": "TEST-ONLY-upsell2-public",
+   "expected_action_ref": "native-one-click:TEST-ONLY-U2",
+   "source_ref": "request:TEST-REQ-U2/action_binding"
+  },
+  {
+   "page_id": "TEST-UPSELL_1-SAMPLE",
+   "offer_id": "TEST-ONLY-SAMPLE-U1",
+   "copy_id": "TEST-ONLY-owner-sample-upsell1",
+   "expected_action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1",
+   "source_ref": "graph:TEST-ROUTE-GRAPH/sample-upsell-1"
+  }
+ ]
+}

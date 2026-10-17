@@ -1,0 +1,235 @@
+{
+  "result": {
+    "schema_version": "1.0",
+    "tenant_id": "TEST-TENANT",
+    "location_id": "TEST-LOCATION",
+    "launch_id": "TEST-LAUNCH",
+    "revision": 1,
+    "request_id": "TEST-REQ-U1",
+    "input_hash": "TEST-ONLY-INPUT-HASH",
+    "page_id": "TEST-UPSELL_1",
+    "status": "authored",
+    "artifacts": [
+      {
+        "path": "80-signature-upsell/fixtures/copy-upsell1-public.valid.json",
+        "sha256": "ad2eaff4f90d1e7c201aed9c713e46de3cf7d213257717eb504db421c74cab13"
+      }
+    ],
+    "author_session": "S80-adapters-builder (S80-04/S80-05/S80-07 build session)",
+    "reviewer_session": null,
+    "independent_review": false,
+    "proof_class": "L1",
+    "blockers": [
+      "S80-06 extra-offer binding is integrated at interface-conformance level only (S79 draft interface, fixture level): the native action ID is null pending S06 confirmation (open questions S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local only, NOT installed or live proof."
+    ],
+    "native_bindings_ref": null,
+    "test_only": true,
+    "instance": "upsell_1",
+    "source_hash": "ad2eaff4f90d1e7c201aed9c713e46de3cf7d213257717eb504db421c74cab13",
+    "approved_offer_mapping": {
+      "offer_id": "TEST-ONLY-U1",
+      "slot": "upsell_1",
+      "native_product_id": null,
+      "native_price_id": null,
+      "amount_minor": 6700,
+      "currency": "USD",
+      "billing_type": "one_time"
+    },
+    "native_action": {
+      "action_id": null,
+      "settings_ref": null,
+      "binding_screenshot_ref": null,
+      "verified_by": "s80_06_binding"
+    },
+    "cta_map": [
+      {
+        "section_number": 1,
+        "cta_text": "Yes, add the Deep Work Library to my order",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 2,
+        "cta_text": "Keep every lesson within reach - add the Library",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 3,
+        "cta_text": "Get the structured workbooks - add the Library",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 4,
+        "cta_text": "Protect your momentum - add the Library",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 5,
+        "cta_text": "Make the programme a permanent reference - add the Library",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 6,
+        "cta_text": "If that sounds like you, add the Library",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 7,
+        "cta_text": "Add the Library and get the full archive",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      },
+      {
+        "section_number": 8,
+        "cta_text": "Commit to your Focused Future - add the Library",
+        "action_ref": "extra-offer-binding:TEST-ONLY-U1"
+      }
+    ],
+    "disclosure_audit": {
+      "amount_matches_native": null,
+      "currency_present": true,
+      "recurring_terms_disclosed": null,
+      "adjacent_to_cta": true,
+      "verdict": "pending_native_binding",
+      "notes": [
+        "Local disclosure rendered from integer amount_minor, currency and billing terms: One-time charge of USD 67.00, charged to your original payment method when you accept. No further charges for this offer.",
+        "Amount-versus-native match completes only after the native read-back that follows S06's installed binding confirmation (S80-06 binding is interface-conformant only until then)."
+      ]
+    },
+    "eligibility_check": {
+      "original_purchase_verified": true,
+      "qualifying_purchase_slot": null,
+      "entry_context": null,
+      "verdict": "eligible"
+    },
+    "copy_validation": {
+      "validator": "scripts/validate_upsell_copy.py",
+      "profile_id": "signature-upsell-eight-section",
+      "exit_code": 0,
+      "verdict": "pass",
+      "copy_sha256": "ad2eaff4f90d1e7c201aed9c713e46de3cf7d213257717eb504db421c74cab13"
+    },
+    "hashes": {
+      "copy_sha256": "ad2eaff4f90d1e7c201aed9c713e46de3cf7d213257717eb504db421c74cab13",
+      "ui_sha256": null,
+      "asset_sha256": []
+    },
+    "test_outcomes": [
+      {
+        "test_id": "S80-04-adapter-upsell1-fixtures",
+        "level": "L1",
+        "outcome": "pass",
+        "evidence_ref": "tests/test_adapters_upsell1.py"
+      },
+      {
+        "test_id": "A10-route-native",
+        "level": "L3",
+        "outcome": "not_run",
+        "evidence_ref": null
+      },
+      {
+        "test_id": "S80-09-installed-purchase-tests",
+        "level": "L4",
+        "outcome": "not_run",
+        "evidence_ref": null
+      }
+    ]
+  },
+  "page_plan": {
+    "test_only": true,
+    "instance": "upsell_1",
+    "page_id": "TEST-UPSELL_1",
+    "action_binding": {
+      "kind": "extra_offer_binding",
+      "status": "interface_conformant_pending_s06",
+      "action_ref": "extra-offer-binding:TEST-ONLY-U1",
+      "native_action_ref": "native-one-click:TEST-ONLY-U1",
+      "action_id": null,
+      "guard": "single_flight_payment_attempt_guard",
+      "purchase_trigger": "cta_click",
+      "triggers_that_never_purchase": [
+        "page_load",
+        "scroll",
+        "timer_expiry",
+        "close_icon_click"
+      ],
+      "all_ctas_bind_this_action": true
+    },
+    "disclosure": {
+      "adjacent_to_cta": true,
+      "text": "One-time charge of USD 67.00, charged to your original payment method when you accept. No further charges for this offer.",
+      "amount_minor": 6700,
+      "currency": "USD",
+      "billing_type": "one_time",
+      "recurring_terms": null
+    },
+    "states": {
+      "processing": {
+        "on_cta_click": "show_processing_and_disable_repeat_triggering",
+        "repeat_click_while_pending": "ignored_by_single_flight_guard"
+      },
+      "decline": {
+        "visible": true,
+        "charges": false,
+        "target_role": "downsell_1",
+        "target_page_id": "TEST-DOWNSELL_1"
+      },
+      "payment_pending_or_failed": {
+        "behaviour": "remain_on_page_recoverable",
+        "is_acceptance": false,
+        "is_decline": false,
+        "grants_entitlement": false,
+        "continue_without_extra": "deliberate action recorded separately as an explicit decline (doc 02 section 4)"
+      },
+      "requires_customer_action": {
+        "behaviour": "remain_on_page_recoverable",
+        "is_acceptance": false,
+        "is_decline": false
+      },
+      "expired_or_lost_payment_context": {
+        "behaviour": "block_paid_action_safe_continuation",
+        "fabricate_payment_token": false
+      },
+      "one_click_unavailable": {
+        "fallback": "block_paid_action_safe_continuation",
+        "one_click_native_action_verified": false
+      },
+      "already_owned_or_incompatible": {
+        "behaviour": "suppress_or_safe_final_thank_you",
+        "duplicate_charge": false
+      }
+    },
+    "success_route": {
+      "target_role": "upsell_2",
+      "target_page_id": "TEST-UPSELL_2",
+      "requires": "verified_payment_from_trusted_adapter"
+    },
+    "disposition": {
+      "action": "present_offer",
+      "reason": "eligible",
+      "charge_action_emitted": true
+    },
+    "acknowledgement_blocks": [
+      {
+        "condition": "verified_original_purchase",
+        "text": "Your original purchase is confirmed (TEST ONLY Core Programme). It is complete on its own; this page offers an optional extra that adds to it."
+      }
+    ]
+  },
+  "native_binding": {
+    "kind": "extra_offer_binding",
+    "interface_ref": "S79 extra_offer_interface.md DRAFT (fixture level)",
+    "binding_status": "interface_conformant_pending_s06",
+    "native_action_id": null,
+    "capability_evidence_ref": "native:TEST-CAPABILITY-EVIDENCE",
+    "open_questions": [
+      "S06-Q1",
+      "S06-Q2",
+      "S06-Q3",
+      "S06-Q4",
+      "S06-Q5",
+      "S06-Q6",
+      "S44-Q7",
+      "S44-Q8",
+      "S49-Q9"
+    ]
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0",
+  "test_only": true,
+  "copy_id": "TEST-ONLY-upsell2-public",
+  "instance": "upsell_2",
+  "visibility": "public",
+  "source_note": "TEST ONLY fixture. Invented test offer for validator proof only; never a client offer or price. Deliberately a different incremental outcome from the U1 fixture: guided implementation, not content access.",
+  "offer_name": "TEST ONLY Implementation Studio",
+  "inspiring_phrase": "Fully-Built",
+  "accept_action_ref": "native-one-click:TEST-ONLY-U2",
+  "verified_scarcity_evidence": [],
+  "sections": [
+    {
+      "number": 1,
+      "key": "big_bold_claim",
+      "heading": "Finish the build with the TEST ONLY Implementation Studio",
+      "body": "Your upgrade is confirmed. The TEST ONLY Implementation Studio adds guided working sessions where you build your launch assets live, with an expert reviewing each piece before you leave the room.",
+      "cta": {
+        "text": "Yes, reserve my Studio working sessions",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 2,
+      "key": "big_bold_pain_1",
+      "heading": "Knowing the steps is not the same as finishing them",
+      "body": "Many members understand exactly what to build and still stall at the blank page, because turning a method into finished pages, emails and assets is a different job from learning it.",
+      "cta": {
+        "text": "Get guided build time - join the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 3,
+      "key": "big_bold_pain_2",
+      "heading": "Small mistakes compound when nobody reviews the work",
+      "body": "A unclear headline, a miswired form or a broken checkout step can sit unnoticed for weeks when you build alone, quietly costing the launch you worked to prepare.",
+      "cta": {
+        "text": "Have every piece reviewed - join the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 4,
+      "key": "big_bold_pain_3",
+      "heading": "Accountability disappears when the calendar is empty",
+      "body": "Without scheduled working sessions, implementation slips behind client work and daily demands, and the plan that felt clear in training slowly turns into a folder of intentions.",
+      "cta": {
+        "text": "Put build sessions on the calendar - join the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 5,
+      "key": "big_bold_why",
+      "heading": "Why the Studio exists",
+      "body": "We created the Studio because finishing is where most launches are won or lost. Structured working sessions, expert eyes on your actual assets, and a fixed build rhythm carry a plan from understood to launched.",
+      "cta": {
+        "text": "Move from learning to launching - join the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      }
+    },
+    {
+      "number": 6,
+      "key": "big_bold_who",
+      "heading": "Built for members ready to implement now",
+      "body": "The Studio fits members who have a launch date in mind, who want their real pages and emails reviewed as they build them, and who work best with scheduled accountability. Members still exploring can join a later cohort rhythm instead.",
+      "cta": {
+        "text": "If you are building now, join the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      },
+      "bullets": [
+        "You have a launch you intend to ship this season",
+        "You want expert review of your real assets as you build",
+        "You finish more with scheduled, accountable working time"
+      ]
+    },
+    {
+      "number": 7,
+      "key": "big_bold_what",
+      "heading": "Exactly what the Studio adds",
+      "body": "The Studio adds a series of guided implementation sessions, individual review of the assets you build in those sessions, and a structured build plan for your launch. It is a working programme, separate from the content archive, and it does not repeat the training you already own.",
+      "cta": {
+        "text": "Join the Studio and build it live",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      },
+      "bullets": [
+        "Guided live implementation working sessions",
+        "Individual expert review of assets you build",
+        "A structured week-by-week launch build plan",
+        "Material limitation: sessions run on the published Studio schedule"
+      ]
+    },
+    {
+      "number": 8,
+      "key": "seven_reasons",
+      "heading": "7 Reasons To Commit To Your Fully-Built Future",
+      "body": "Seven reasons guided implementation changes what you ship.",
+      "cta": {
+        "text": "Commit to your Fully-Built Future - join the Studio",
+        "action_ref": "native-one-click:TEST-ONLY-U2"
+      },
+      "reasons": [
+        "Finished beats understood: guided sessions convert the method you learned into pages, emails and assets that actually exist.",
+        "Expert review catches expensive mistakes early, while a headline, form or checkout step is still cheap to fix.",
+        "Scheduled working time defends your launch from the daily demands that quietly push implementation aside.",
+        "Building alongside other committed members keeps energy high on the days when working alone would stall.",
+        "A week-by-week build plan removes guesswork: you always know the next asset to finish and why it comes next.",
+        "You leave each session with completed work, not homework, so progress is visible and measurable every week.",
+        "Your launch date becomes realistic: a reviewed, structured build is how a plan turns into a launch that ships."
+      ]
+    }
+  ],
+  "action_binding": {
+    "expected_action_ref": "native-one-click:TEST-ONLY-U2",
+    "binding_kind": "native_one_click_guarded",
+    "source_ref": "fixtures/request-upsell2.testonly.json#action_binding"
+  }
+}
