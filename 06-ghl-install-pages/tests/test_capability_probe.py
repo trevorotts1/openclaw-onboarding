@@ -49,6 +49,12 @@ EXT_ENV = {
     "SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION": "2.3.0",
 }
 
+# Same fixture shape with the extension at v1.0.0 (S06-03 T-A3): proves
+# the INSTALLED version gates the lane, not only the operator pin.
+FIXTURE_CHROME_OLD_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures",
+    "fake-chrome-old")
+
 
 # ── fake runner plumbing ──────────────────────────────────────────────────────
 
@@ -115,6 +121,29 @@ def runner_oc2_managed():
             ),
             "--browser-profile": _CP(returncode=0, stdout="profile openclaw ready\n"),
             "import playwright": _CP(returncode=0, stdout=""),
+        }
+    )
+
+
+def runner_oc2_plus_agent_browser():
+    """OpenClaw 2.x managed stack AND agent-browser 0.27.0 both present.
+
+    S06-03 T-A1: the OpenClaw rules are inserted BEFORE the agent-browser
+    rules - _fake_runner matches substrings in dict insertion order, and
+    the bare "--version" rule is a substring of "openclaw --version", so
+    agent-browser first would shadow the OpenClaw version probe.
+    """
+    return _fake_runner(
+        **{
+            "openclaw --version": _CP(returncode=0, stdout="OpenClaw 2026.9.2 (3928bad)\n"),
+            "openclaw plugins list": _CP(
+                returncode=0,
+                stdout="@openclaw/browser-plugin 2.0.1 enabled\ncua-computer 0.21.0 enabled\n",
+            ),
+            "--browser-profile": _CP(returncode=0, stdout="profile openclaw ready\n"),
+            "import playwright": _CP(returncode=0, stdout=""),
+            "command -v": _CP(returncode=0, stdout="/usr/local/bin/agent-browser\n"),
+            "--version": _CP(returncode=0, stdout="agent-browser 0.27.0\n"),
         }
     )
 
@@ -189,6 +218,62 @@ def test_oc_extension_behind_blocks_primary_lane():
     assert res["selectedLane"] == "playwright_direct"
     assert "openclaw_managed_browser" not in res["fallbackChain"]
     assert any("behind" in w for w in res["warnings"])
+
+
+def test_oc_extension_behind_falls_back_to_agent_browser():
+    """S06-03 T-A1 (spec 05 section 9): an old/behind extension with a
+    healthy agent-browser lane routes successfully - Lane 1 is rejected
+    with the reason recorded, the run proceeds on the fallback lane."""
+    env = dict(EXT_ENV)
+    env["SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION"] = "9.9.9"
+    res = cp.run_probe(runner=runner_oc2_plus_agent_browser(), env=env,
+                       now=NOW)
+    lane = res["lanes"]["openclaw_managed_browser"]
+    assert lane["extension"]["installed"] is True
+    assert lane["extension"]["current"] is False
+    assert res["selectedLane"] == "agent_browser"
+    assert "openclaw_managed_browser" not in res["fallbackChain"]
+    assert any("behind" in w for w in res["warnings"])
+
+
+def test_oc_extension_behind_warning_names_preflight_script():
+    """S06-03 T-A2: SKILL.md's Adaptive-lanes text claims the probe warns
+    "naming the preflight script" when the extension is behind; pin the
+    claim so a probe-text change cannot silently break the doctrine."""
+    env = dict(EXT_ENV)
+    env["SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION"] = "9.9.9"
+    res = cp.run_probe(runner=runner_oc2_managed(), env=env, now=NOW)
+    assert any("check-openclaw-extension-version" in w
+               for w in res["warnings"])
+
+
+def test_oc_extension_old_fixture_version_gates_lane(tmp_path):
+    """S06-03 T-A3: the INSTALLED version gates the lane, not only the
+    operator pin - fixture extension at v1.0.0 against expected 2.3.0.
+
+    HOME / OPENCLAW_HOME are pinned to empty tmp dirs: the probe ADDS its
+    default roots (real HOME Chrome profile, real OpenClaw-managed
+    user-data dirs) to the override roots, so on a box whose real Chrome
+    carries the extension the real install would win the max-version scan
+    and this fixture would never be what is measured. The prep's T-B
+    hermetic rule (real box state must never leak in) applied to T-A3.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    oc_home = tmp_path / "openclaw"
+    oc_home.mkdir()
+    env = {
+        "GHL_SKILL6_CHROME_PROFILE_ROOTS": FIXTURE_CHROME_OLD_ROOT,
+        "SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION": "2.3.0",
+        "HOME": str(home),
+        "OPENCLAW_HOME": str(oc_home),
+    }
+    res = cp.run_probe(runner=runner_oc2_managed(), env=env, now=NOW)
+    lane = res["lanes"]["openclaw_managed_browser"]
+    assert lane["extension"]["installed"] is True
+    assert lane["extension"]["version"] == "1.0.0"
+    assert lane["extension"]["current"] is False
+    assert res["selectedLane"] == "playwright_direct"
 
 
 def test_oc_pre_2x_managed_lane_not_eligible():
@@ -316,6 +401,9 @@ def test_no_secret_values_in_output_json():
 EXPECTED_TOP_KEYS = {
     "probedAt", "platform", "openclaw", "lanes", "secrets", "selectedLane",
     "fallbackChain", "optimizations", "iframeDrag", "blockers", "warnings",
+    # S06-02 (spec 05 section 3): the environment-capabilities record is an
+    # additive top-level key; every plan 2.1 key above is unchanged.
+    "environmentCapabilities",
 }
 
 

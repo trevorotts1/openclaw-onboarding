@@ -57,6 +57,8 @@ MODULES = [
     "test_item20_21_governing_docs.py",
     "test_wave6_items22_24_28.py",
     "test_sync_allowlist.py",
+    # Signature Launch S71 A23: per-provider image-generation-qc gate.
+    "test_provider_gate_a23.py",
 ]
 
 def main():

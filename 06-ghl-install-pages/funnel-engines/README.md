@@ -37,6 +37,8 @@ in front of it and only fires for a **specialist IP funnel** whose engine has re
 | id | Skill | Owns | Entry (canonical fail-closed shell) |
 |---|---|---|---|
 | `signature-funnel` | 49-signature-funnel | Trevor Otts 12-section Hero + 3/5/7 funnel | `49-signature-funnel/signature-funnel-entry.sh` |
+| `sales-page-assets` | 56-sales-page-assets | Direct-Response asset stack: 8-section main sales page, 9-section upsell, downsell recovery page, high-ticket long-form page, order-bump copy | `56-sales-page-assets/sales-page-assets-entry.sh` |
+| `cinematic-web-funnel-engine` | 62-cinematic-web-funnel-engine | Scroll-controlled cinematic scene sequences assembled into a website (readiness: skeleton, certify_capable false; the selector STEP-0 refuses a production route into it without --force-skeleton) | `62-cinematic-web-funnel-engine/cinematic-web-funnel-entry.sh` |
 
 ## How to register a SECOND entry (no selector code change)
 
@@ -63,16 +65,17 @@ Append ONE object to `registry.json` → `engines[]`:
 `funnel_engine_selector.py` discovers the new entry automatically (it iterates `engines[]`); no
 Python change is required. Higher `priority` and a verbatim `names` hit win ties.
 
-### Forward-ref: Skill 56 (Sales-Page-Assets) is the planned second entry
+### Registration history (kept current with the registry by the consistency test)
 
-Skill **56** (direct-response Sales-Page / VSL family — a design-response sibling of Skill 49) will
-register the second entry here. When Skill 56 lands it MUST:
-
-1. append its `engines[]` object (id e.g. `sales-page`) with its own canonical entry shell;
-2. keep `delivery_rail: 06-ghl-install-pages` (Skill 6 remains the ONE GHL delivery rail);
-3. pin the reciprocal deliverable-**labeling grammar** shared with Skill 49 —
-   `<client>__<funnel>__<stage>__<type>__vNN` (see `49-signature-funnel/MASTERDOC.md` §8 and
-   `SKILL.md`). This is the 49↔56 reciprocal labeling pin.
+Skill **56** (direct-response Sales-Page / VSL family, a Direct-Response sibling of Skill 49) IS
+registered as the second entry (id `sales-page-assets`), and Skill **62** is registered as the
+third (id `cinematic-web-funnel-engine`, readiness `skeleton`, certify_capable false). Both keep
+`delivery_rail: 06-ghl-install-pages` (Skill 6 remains the ONE GHL delivery rail). The reciprocal
+deliverable-**labeling grammar** shared by Skills 49 and 56 stands as the labeling pin:
+`<client>__<funnel>__<stage>__<type>__vNN` (see `49-signature-funnel/MASTERDOC.md` §8 and
+`SKILL.md`); Skill 56 owns that grammar. A future entry registers the same way, by appending
+ONE object to `engines[]`, and the table above is extended in the same change:
+`tests/test_s06_09_parity.py` fails while the table and the registry disagree.
 
 ## CLI
 

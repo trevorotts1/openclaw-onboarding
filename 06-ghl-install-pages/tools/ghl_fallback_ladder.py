@@ -68,6 +68,8 @@ if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 from cc_board import _CC_BLOCK_REASONS as TAXONOMY_TAGS  # noqa: E402
 
+import ghl_evidence  # noqa: E402  (S06-08 tenant contract + evidence scrubber)
+
 # ── constants ───────────────────────────────────────────────────────────────
 FLAG_ENV = "GHL_FALLBACK_LADDER"
 TRANSPORTS: Tuple[str, ...] = ("browser", "api", "mcp")
@@ -252,6 +254,10 @@ class LadderResult:
     ladder_active: bool = False
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     decided_at: str = field(default_factory=_now)
+    # S06-08 tenant contract (additive): the location the run was gated for,
+    # and the location a rung's read-back observed, when either is known.
+    expected_location_id: Optional[str] = None
+    observed_location_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -264,20 +270,28 @@ class LadderResult:
             "ladder_active": self.ladder_active,
             "run_id": self.run_id,
             "decided_at": self.decided_at,
+            **ghl_evidence.tenant_fields(
+                self.expected_location_id, self.observed_location_id),
         }
 
 
-def write_ladder_receipt(result: LadderResult, receipt_path: str) -> None:
+def write_ladder_receipt(result: LadderResult, receipt_path: str, *,
+                         secret_values: Any = None) -> None:
     """Persist ``result`` as a JSON receipt. Called on BOTH outcomes — a
     successful rung and an all-rungs-fail PARKED close — so success is always
     explicitly recorded (never silent) and failure is always fail-closed
-    (never a silent no-op)."""
-    d = os.path.dirname(receipt_path)
-    if d:
-        os.makedirs(d, exist_ok=True)
-    with open(receipt_path, "w", encoding="utf-8") as fh:
-        json.dump(result.to_dict(), fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    (never a silent no-op).
+
+    S06-08: this is a no-secret sink: rung ``detail`` strings are free-form
+    caller text, so the record passes through the evidence scrubber before
+    write and the redaction count is stamped as ``redactions``. The write
+    stays a PLAIN in-place write (its historical class, named honestly per
+    prep R1) and gains the explicit 0600 mode (Q4)."""
+    payload, redactions = ghl_evidence.EvidenceScrubber(
+        secret_values).scrub_obj(result.to_dict())
+    payload["redactions"] = int(payload.get("redactions") or 0) + redactions
+    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    ghl_evidence.write_text_private(receipt_path, text)
 
 
 # ── the ladder runner ──────────────────────────────────────────────────────
@@ -289,6 +303,9 @@ def run_ladder(
     path: Optional[str] = None,
     env: Optional[Mapping[str, str]] = None,
     receipt_path: Optional[str] = None,
+    expected_location_id: Optional[str] = None,
+    observed_location_id: Optional[str] = None,
+    secret_values: Any = None,
 ) -> LadderResult:
     """Walk ``surface``'s declared transport order, calling ``rungs[transport]()``
     for each, stopping at the first success.
@@ -336,6 +353,10 @@ def run_ladder(
         if outcome.get("ok"):
             attempts.append(RungAttempt(transport, True, None, str(outcome.get("detail", ""))))
             succeeded_rung = transport
+            # S06-08: a rung outcome may report the location its read-back
+            # observed; the successful rung's observation is the ladder's.
+            if observed_location_id is None and outcome.get("location_id"):
+                observed_location_id = str(outcome["location_id"])
             break
 
         code = outcome.get("code")
@@ -356,10 +377,12 @@ def run_ladder(
         succeeded_rung=succeeded_rung,
         decision="SUCCESS" if ok else "PARKED",
         ladder_active=active,
+        expected_location_id=expected_location_id,
+        observed_location_id=observed_location_id,
     )
 
     if receipt_path:
-        write_ladder_receipt(result, receipt_path)
+        write_ladder_receipt(result, receipt_path, secret_values=secret_values)
 
     return result
 
