@@ -6,8 +6,8 @@
  * Assembles the real local host for the portable core: SQLite store in
  * the per-user data directory (never inside the skill tree), in-process
  * budget ledger and lease provider, a transport registry, an evidence
- * provider that serves the frozen brief manifest and reports "no pack
- * installed" honestly, a secrets probe that never accepts or returns
+ * provider that serves the frozen brief manifest and resolves the
+ * installed advisor assets by manifest hashes, a secrets probe that never accepts or returns
  * values, and the run authorization provider composed from CWE-049's
  * standalone service (withRunAuthorization over
  * createStandaloneRunAuthorization): grants approved through the
@@ -70,6 +70,7 @@ import { InProcessBudgetLedger } from './budget.js';
 import { SubprocessHostCallTransport } from './host-call-transport.js';
 import { InProcessLeaseProvider } from './leases.js';
 import { LocalSqliteStore } from './local-store.js';
+import { loadInstalledSeatPack } from './installed-seat-pack.js';
 import { resolveDataDir } from './paths.js';
 import {
   discoverConfiguredRoutes,
@@ -294,12 +295,13 @@ export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
       const session = await store.getSession(sessionId);
       return session?.brief.evidence_manifest ?? [];
     },
-    async loadSeatPack(_seatId: SeatId) {
-      // Seat packs are installed content (CWE-011 onward). Until a pack
-      // resolver is composed, the honest answer is "no pack installed";
-      // the engine then grounds prompts in the seat's frozen relevance
-      // weight and Section 7 owned question only.
-      return null;
+    async loadSeatPack(seatId: SeatId) {
+      // CLI and installed launchers provide skillRoot, binding every real
+      // paid request to the shipped, manifest-verified advisor assets.
+      // Lightweight hosts with no installed skill root (test injections)
+      // continue to expose absence rather than invent a pack.
+      if (!options.skillRoot) return null;
+      return loadInstalledSeatPack(options.skillRoot, seatId);
     },
   };
   const host: CouncilHost = {
