@@ -41,10 +41,36 @@ from render_thank_you import (  # noqa: E402
     render_thank_you,
 )
 
-REF = Path(os.environ.get(
-    "S82_PACKET_REFERENCE",
-    str(SKILL_DIR.parents[3] / "packet" / "reference"),
-))
+def _packet_reference_dir():
+    """Locate ``packet/reference`` independent of the checkout depth.
+
+    CR-INT-S82-001: the fixed-depth ``SKILL_DIR.parents[3]`` walk this
+    replaces resolved the packet only at the authored layout's depth
+    and errored at import everywhere else. Resolution order: the
+    ``S82_PACKET_REFERENCE`` env override, then a tolerant ancestor
+    walk from the skill directory up to the first ancestor carrying
+    ``packet/reference`` (the tolerant-walk shape INTEGRATION
+    suggested in CR-INT-S82-001, mirroring S78's CR-INT-S78-001 fix).
+    The suite asserts identically in every layout whose tree carries
+    the packet at any ancestor depth.
+    """
+    override = os.environ.get("S82_PACKET_REFERENCE")
+    if override:
+        return Path(override)
+    for ancestor in SKILL_DIR.parents:
+        candidate = ancestor / "packet" / "reference"
+        if (candidate / "launch-example.json").is_file() and \
+                (candidate / "acceptance-cases.json").is_file():
+            return candidate
+    raise ImportError(
+        "S82 tests: packet/reference (launch-example.json + "
+        "acceptance-cases.json) not found in any ancestor of "
+        f"{SKILL_DIR}; set S82_PACKET_REFERENCE to the packet "
+        "reference directory"
+    )
+
+
+REF = _packet_reference_dir()
 LAUNCH = json.loads((REF / "launch-example.json").read_text())
 OFFERS = {o["offer_id"]: o for o in LAUNCH["offers"]}
 IDENTITY = {
