@@ -5,7 +5,7 @@
 // profile labels, JSON validity, manifest agreement, and the rule
 // that no council state lives inside the skill folder.
 // Usage: node doctor.mjs [--root <skill-folder>]
-// Exit 0 when every check passes, 1 otherwise. No network, no writes.
+// Exit 0 when every check passes, 1 otherwise. No network, no writes.\n// Generated runtime/dist and runtime/node_modules are not part of source integrity.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -44,10 +44,17 @@ const pass = (m) => console.log(`PASS ${m}`);
 const fail = (m) => { failures += 1; console.log(`FAIL ${m}`); };
 const info = (m) => console.log(`INFO ${m}`);
 
-function walk(dir, out = []) {
+function isGeneratedRuntimePath(rel) {
+  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
+    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/");
+}
+
+function walk(dir, out = [], base = dir) {
   for (const name of readdirSync(dir).sort()) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
+    const rel = relative(base, p).split("\\").join("/");
+    if (isGeneratedRuntimePath(rel)) continue;
+    if (statSync(p).isDirectory()) walk(p, out, base);
     else out.push(p);
   }
   return out;
