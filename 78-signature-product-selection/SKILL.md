@@ -54,8 +54,13 @@ and a page result in the shared doc 02 contract shapes.
   `components/selection-ui/selection.css`.
 - `scripts/emit_binding_plan.py` - the explicit per-price-choice binding plan
   consumed by S79 and S06.
-- `scripts/emit_page_result.py` - page result emitter conforming to
-  schema/selection-result.schema.json (doc 02 section 6), honest L1 proof.
+- `scripts/emit_page_result.py` - page result emitter (Path A follow-on
+  after PR #2158): writes the bare packet page-result 1.0 document
+  (schema/page-result.schema.json, doc 02 section 6) to the `--output`
+  file path, echoing `page_id` and `input_hash` from the request and
+  carrying no `outcome` field. The plan outcome remains in Skill 78's
+  own selection-result profile (schema/selection-result.schema.json,
+  via `emit_selection_result()`). Honest L1 proof.
 - `scripts/selection_core.py` - the shared normalization/validation core the
   wrappers call. No wrapper duplicates its logic.
 

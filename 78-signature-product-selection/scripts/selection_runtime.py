@@ -119,10 +119,14 @@ class Runtime:
                     route=request.get("route", "per_offer_targets"),
                 )
             elif action == "page_result":
+                page_request = request.get("page_request") or request.get("request")
                 result = emit_page_result(
                     _need(request, "plan"),
                     author_session=_need(request, "author_session"),
-                    request_id=_need(request, "request_id"),
+                    request_id=request.get("request_id") or (page_request.get("request_id") if isinstance(page_request, dict) else None) or _need(request, "request_id"),
+                    page_id=request.get("page_id"),
+                    input_hash=request.get("input_hash"),
+                    request=page_request if isinstance(page_request, dict) else None,
                     test_only=bool(request.get("test_only", False)),
                 )
             elif action == "session_create":
@@ -165,6 +169,20 @@ def self_test():
     rt = Runtime()
     out = rt.handle({"action": "plan", "launch": SELF_TEST_LAUNCH})
     assert out["ok"] and out["result"]["outcome"] == "plan", out
+    pr = rt.handle({
+        "action": "page_result", "plan": out["result"], "author_session": "self-test",
+        "request_id": "self-test-request", "page_id": "SELF-TEST-SELECTION-PAGE",
+        "input_hash": "c" * 64, "test_only": True,
+    })
+    assert pr["ok"], pr
+    assert pr["result"]["page_id"] == "SELF-TEST-SELECTION-PAGE"
+    assert pr["result"]["input_hash"] == "c" * 64
+    assert "outcome" not in pr["result"]
+    no_echo = rt.handle({
+        "action": "page_result", "plan": out["result"], "author_session": "self-test",
+        "request_id": "self-test-request",
+    })
+    assert not no_echo["ok"], no_echo
     sel = rt.handle({
         "action": "select", "launch": SELF_TEST_LAUNCH, "offer_id": "MAIN-B",
         "price_choice_id": "MAIN-B-USD", "selected_at": "2026-10-15T20:00:00Z",
