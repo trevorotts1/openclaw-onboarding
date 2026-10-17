@@ -76,8 +76,10 @@ palette, font, logo, or photo.
 **Font carve-out:** missing brand fonts are the one exception. `font_policy` in the brand
 file sets `when_brand_fonts_missing: "derive-document"`: if the brand fonts are still
 `TREVOR_MUST_SUPPLY` / `CLIENT_MUST_SUPPLY`, the agent derives the best display/body/accent
-faces for the job, documents the rationale in the visual bible (`fonts_source: "derived"`,
-`font_rationale`, `font_reviewer`), and the reviewer approves — fonts are never blocked.
+faces for the job, documents the derivation in the font map (`fonts_source: "derived"`,
+`font_rationale`, `font_reviewer` naming the designated reviewer, the visual-mockup
+stage's independent bible reviewer, as a forward reference only), and the approval is
+recorded exactly once, in the visual bible at its review — fonts are never blocked.
 Every other `MUST_SUPPLY` / `CLIENT_MUST_SUPPLY` value (palette, logo, masthead files,
 founder photos) still blocks intake until the owner supplies it. Derived fonts remain bound
 by `banned_fonts`: a derived face may never be a banned font.
@@ -87,9 +89,7 @@ by `banned_fonts`: a derived face may never be a banned font.
 The canonical grade block lives at `assets/brand/signature-grade-block.txt` (extracted
 byte-for-byte from
 `~/clawd/projects/Signature-Landing-Page-ARCHIVED/IMPROVED-FRAMEWORK-v2.md`, section 2.4).
-In `SECRET_SAUCE_ONLY`, every image prompt embeds it verbatim. Until the grade thresholds
-(`grade.min_mean_saturation`, `grade.min_luma_std`) are calibrated by Trevor-approved
-images, they stay `null` and grade checks run as uncalibrated WARN.
+In `SECRET_SAUCE_ONLY`, every image prompt embeds it verbatim. Until the grade thresholds (grade.min_mean_saturation, grade.min_luma_std) are calibrated by Trevor-approved images, they stay null and grade checks run as uncalibrated WARN in test runs and during production work. A production close of the image stage is refused while either threshold is null (Item 6): uncalibrated WARN is a working state, never a production verdict. Calibration is Item 8 and waits on the owner's gold images.
 
 **Ruling 6 conformance (owner ruling, 2026-10-14):** the block's saturation prose was
 conformed to selective saturation, the doctrine of the Secret Super Sauce in Image Guide

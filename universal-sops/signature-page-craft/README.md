@@ -1,10 +1,15 @@
 # Signature-Page-Craft SOP Cluster (`universal-sops/signature-page-craft/`)
 
 The SHARED, cross-department procedure for how any department discovers and drives the **BlackCEO
-Signature Page engine (Skill 71)** end to end: intake -> Standard/Long-Form copy -> font/action plan ->
-desktop wireframe -> mobile/tablet -> visual mockup -> image inventory/prompts -> image generation/QC ->
-image map/upload -> final mockups -> responsive HTML -> target install/test -> publish/verify when
-authorized.
+Signature Page engine (Skill 71)** end to end, through the contract's 14 stages in order:
+intake -> copy -> font-action-plan -> desktop-wireframe -> mobile-tablet -> visual-mockup ->
+image-inventory-prompts -> image-generation-qc -> image-map-upload -> final-mockups ->
+responsive-html -> ghl-install-test -> publish-verify -> automation-wiring (conditional:
+it runs only when the intake records a GHL publish target with automation scope "workflows";
+otherwise the gate records it not_applicable).
+
+Stage-list rule: any stage list this README restates is regenerated from
+`71-blackceo-signature-page/references/stage-contract.json`, never written by hand.
 
 This cluster is the `universal-sops` face of the capability. It does NOT re-implement the skill. The
 authoritative machine spine lives in the skill:
@@ -15,8 +20,9 @@ authoritative machine spine lives in the skill:
 - `71-blackceo-signature-page/references/qc-contract.md` -- page-stage >=8/10 no-auto-fail; prompt/image >=8.5 average, >=8 each, zero auto-fails where required; failed-only repair.
 - `71-blackceo-signature-page/references/BlackCEO-Signature-Landing-Page-Standard-v6.md` OR `...-Long-Form-v6.md` -- the selected writing guide (never both silently merged).
 - `71-blackceo-signature-page/references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md` -- image planning, Secret Super Sauce, representation, prompt construction, visual QC.
-- `71-blackceo-signature-page/references/artifact-contracts.md` -- the private/public output tree + workflow-state/image-map/review-PDF JSON contracts.
-- `71-blackceo-signature-page/scripts/validate_state.py`, `validate_public_copy.py`, `validate_prompt.py`, `validate_image_manifest.py`, `combine_review_pdf.py`, `validate_review_pdf.py` -- the deterministic model-free validators.
+- `71-blackceo-signature-page/references/artifact-contracts.md` -- the private/public output tree + run-state/image-map/review-PDF JSON contracts.
+- `71-blackceo-signature-page/scripts/stage_gate.py` -- the stage gate over the run's `private/state.json`; `71-blackceo-signature-page/scripts/swarm_runner.py` -- the orchestrator for item-level fan-out.
+- `71-blackceo-signature-page/scripts/validate_public_copy.py`, `validate_prompt.py`, `validate_image_manifest.py`, `combine_review_pdf.py`, `validate_review_pdf.py` -- the deterministic model-free validators the gate and reviewers run per stage. (`scripts/validate_state.py` is legacy: it validates the retired workflow-state format and is kept for old runs only.)
 
 Read only what the current stage needs. Do not load all three style libraries at once. Load only the
 selected family/style when needed.
@@ -46,12 +52,17 @@ truth for a 20,000+ line reference set.
 
 ## The ONE way in
 
-Skill 71 ships no entry shell, no run-dir orchestrator, and no gate-code family. The deterministic
-rail for a page build is the skill's own model-free validators, run per stage as the workflow-state
-dictates:
+The rail for a page build is the skill's own gate (scripts/stage_gate.py over the run's private/state.json) with scripts/swarm_runner.py as the orchestrator for item-level fan-out. scripts/validate_state.py is legacy: it validates the retired workflow-state format and is kept for old runs only.
 
 ```
-python3 71-blackceo-signature-page/scripts/validate_state.py <workflow-state.json>
+python3 71-blackceo-signature-page/scripts/stage_gate.py check <run_dir> <stage>
+python3 71-blackceo-signature-page/scripts/stage_gate.py close <run_dir> <stage>
+```
+
+A stage opens only through the gate's `check` and ends only when the gate's `close` exits 0. The
+deterministic model-free validators run per stage under the gate:
+
+```
 python3 71-blackceo-signature-page/scripts/validate_public_copy.py <public-copy.md>
 python3 71-blackceo-signature-page/scripts/validate_prompt.py <prompt.md>
 python3 71-blackceo-signature-page/scripts/validate_image_manifest.py <image-map.json>
@@ -112,7 +123,7 @@ credential storage.
 
 ```text
 project/
-  private/   workflow-state.json, internal-copy.md, copy-manifest.json, page-visual-bible.md, image-map.json, qc/
+  private/   state.json, internal-copy.md, copy-manifest.json, page-visual-bible.md, image-map.json, qc/
   public/    public-copy.md, html/
   wireframes/desktop/, wireframes/mobile/
   mockups/desktop/, mockups/mobile/
@@ -120,7 +131,7 @@ project/
   review/    desktop-wireframes.pdf, mobile-wireframes.pdf, desktop-mockups.pdf, mobile-mockups.pdf
 ```
 
-Four JSON contracts govern handoff: the workflow-state JSON (exact ordered stage names, attempts 0-3),
+Four JSON contracts govern handoff: the run-state JSON (`private/state.json`; exact ordered stage names, attempts 0-3),
 the image-map JSON (one entry per intended generated master asset; crops point to a `master_id`), the
 copy manifest, and the review-PDF manifest (the manifest is the authority for page order -- never
 lexicographic filename sorting; `combine_review_pdf.py` writes the PDF plus a SHA-256 receipt).
