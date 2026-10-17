@@ -20,13 +20,35 @@ ready_for_activation additionally requires independent review on every
 role. The checkpoint is evidence for the watchdog's progress sample; it
 never declares a merge or an activation by itself.
 
+Prompt items (PP-T3, Q11): a producing page may also emit provider-neutral
+asset receipts (doc 02 section 10; schema prompt-asset-receipt 1.0), one
+per prompt-produced asset. collect() accepts them via asset_receipts and
+closes a prompt item only when the receipt echoes its page request's
+identity (tenant, launch, revision, page), its prompt_hash agrees with
+the prompt artifact recorded in the page's page-result, its provider
+identifiers are honest (a KIE task ID recorded only where KIE issued
+one; an absent identifier recorded as absent, never fabricated), and its
+budget_decision CITES the one governing prompt policy as
+{decision, prompt_policy_id, registry_entry_hash}. Since the Q1 ruling
+(2026-10-17) that citation names the ONE governing policy (the KIE
+rule-12 band); this module performs NO policy selection, NO policy
+evaluation, and invokes NO prompt validator (S49's Q6 position is
+unchanged). Decision values are registry verdict strings only: layer-
+local exit codes, numeric or exit-code-shaped, are refused by name, as
+is a citation missing either its policy id or its entry hash. When a
+registry artifact is supplied, the cited entry is resolved in it and
+the cited hash is verified (SHA-256 over canonical JSON, the entry_hash
+field itself excluded).
+
 Deterministic, stdlib only. Exit 0 ok, 2 violation, 3 usage.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -84,6 +106,186 @@ def validate_result(res: Any, request: Optional[Dict[str, Any]]) -> List[str]:
     return fails
 
 
+# --- PP-T3 (Q11) prompt-item asset receipts -------------------------------
+# A prompt item closes only through an asset receipt satisfying S49's
+# filed Q11 acceptance rules (prompt-policy answers, section 1) and the
+# registry citation rule: every budget decision cites the policy_id AND
+# the entry_hash; a decision missing either is not acceptable here.
+
+_RECEIPT_FIELDS = ("schema_version", "tenant_id", "launch_id", "revision",
+                   "page_id", "requested_provider", "requested_model",
+                   "actual_provider", "actual_model", "mode",
+                   "request_metadata", "provider_receipt_ids", "result_hash",
+                   "result_dimensions", "budget_decision", "output_path",
+                   "prompt_artifact_path", "prompt_hash",
+                   "independent_visual_qc")
+_BUDGET_DECISION_FIELDS = ("decision", "prompt_policy_id",
+                           "registry_entry_hash")
+_HEX64 = re.compile(r"^[a-f0-9]{64}$")
+_EXIT_CODE_SHAPE = re.compile(r"^-?\d+$")
+
+
+def compute_entry_hash(entry: Dict[str, Any]) -> str:
+    """Q13 entry hash: SHA-256 of the entry serialized as canonical JSON
+    (keys sorted, comma and colon separators, UTF-8), with the entry_hash
+    field itself excluded. Every other field, including provenance, is
+    inside the hash."""
+    body = {k: v for k, v in entry.items() if k != "entry_hash"}
+    blob = json.dumps(body, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def find_registry_entry(registry: Optional[Dict[str, Any]],
+                        policy_id: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(registry, dict):
+        return None
+    for entry in registry.get("entries", []):
+        if isinstance(entry, dict) and entry.get("policy_id") == policy_id:
+            return entry
+    return None
+
+
+def validate_budget_decision(bd: Any,
+                             registry: Optional[Dict[str, Any]] = None
+                             ) -> List[str]:
+    """A budget decision is a CITATION of the one governing policy, never
+    a selection and never an evaluation: it names the governing
+    prompt_policy_id and cites that registry entry's hash. Decision
+    values are registry verdict strings only; layer-local exit codes
+    (numeric values, or strings shaped like exit codes) are refused by
+    name, as is a citation missing either of its halves. When a registry
+    artifact is supplied, the entry is resolved in it and the cited hash
+    and verdict are verified against it."""
+    if bd is None:
+        return ["budget_decision is absent: a prompt item cannot close "
+                "without a budget_decision naming prompt_policy_id and "
+                "registry_entry_hash"]
+    if not isinstance(bd, dict):
+        return ["budget_decision is not an object"]
+    fails: List[str] = []
+    for f in bd:
+        if f not in _BUDGET_DECISION_FIELDS:
+            fails.append(f"budget_decision carries unknown field {f!r}")
+    if "decision" not in bd:
+        fails.append("budget_decision missing decision")
+    else:
+        decision = bd["decision"]
+        if not isinstance(decision, str):
+            fails.append(f"budget_decision decision {decision!r} is not a "
+                         "registry verdict string: layer-local exit codes "
+                         "are refused as decision values")
+        elif not decision.strip():
+            fails.append("budget_decision decision is blank: no verdict "
+                         "is cited")
+        elif _EXIT_CODE_SHAPE.match(decision.strip()):
+            fails.append(f"budget_decision decision {decision!r} is an "
+                         "exit-code-shaped value: layer-local exit codes "
+                         "are refused as decision values")
+    if "prompt_policy_id" not in bd:
+        fails.append("budget_decision missing prompt_policy_id: a "
+                     "citation must name the governing policy")
+    elif not isinstance(bd["prompt_policy_id"], str) or \
+            not bd["prompt_policy_id"].strip():
+        fails.append("budget_decision prompt_policy_id is not a "
+                     "non-empty string")
+    if "registry_entry_hash" not in bd:
+        fails.append("budget_decision missing registry_entry_hash: a "
+                     "citation must cite the registry entry hash "
+                     "alongside the policy id")
+    elif not isinstance(bd["registry_entry_hash"], str) or \
+            not _HEX64.match(bd["registry_entry_hash"]):
+        fails.append("budget_decision registry_entry_hash is not a "
+                     "64-character lowercase hex SHA-256")
+    if fails:
+        return fails
+    if registry is not None:
+        policy_id = bd["prompt_policy_id"]
+        entry = find_registry_entry(registry, policy_id)
+        if entry is None:
+            fails.append(f"budget_decision names prompt_policy_id "
+                         f"{policy_id!r}, which no entry in the supplied "
+                         "registry carries")
+            return fails
+        if entry.get("entry_status") != "active":
+            fails.append(f"budget_decision cites registry entry "
+                         f"{policy_id!r} whose entry_status is "
+                         f"{entry.get('entry_status')!r}: only active "
+                         "entries may be resolved by a new run")
+        if entry.get("entry_hash") != compute_entry_hash(entry):
+            fails.append(f"registry entry {policy_id!r} fails its own "
+                         "entry_hash check against the supplied registry")
+        if bd["registry_entry_hash"] != entry.get("entry_hash"):
+            fails.append(f"budget_decision registry_entry_hash does not "
+                         f"match the hash of registry entry {policy_id!r}")
+        values = (entry.get("budget_decision") or {}).get("decision_values")
+        if isinstance(values, list) and bd["decision"] not in values:
+            fails.append(f"budget_decision decision {bd['decision']!r} is "
+                         f"not one of registry entry {policy_id!r}'s "
+                         "decision_values (unknown verdict string)")
+    return fails
+
+
+def validate_asset_receipt(receipt: Any, request: Optional[Dict[str, Any]],
+                           result: Optional[Dict[str, Any]],
+                           registry: Optional[Dict[str, Any]] = None
+                           ) -> List[str]:
+    """Q11 acceptance rules for one prompt item's asset receipt (doc 02
+    section 10 fields): identity echo against its page request, prompt
+    hash agreement with the prompt artifact named in the page-result,
+    provider identifier honesty, and a budget_decision that cites the
+    governing policy (see validate_budget_decision)."""
+    fails: List[str] = []
+    if not isinstance(receipt, dict):
+        return ["asset receipt is not an object"]
+    for f in _RECEIPT_FIELDS:
+        if f not in receipt:
+            fails.append(f"asset receipt missing field {f!r}")
+    if fails:
+        return fails
+    if receipt["schema_version"] != "1.0":
+        fails.append("asset receipt schema_version is not 1.0")
+    if request is not None:
+        for f in ("tenant_id", "launch_id", "revision", "page_id"):
+            if f in request and receipt[f] != request[f]:
+                fails.append(f"asset receipt does not echo its request "
+                             f"on {f}: {receipt[f]!r} != {request[f]!r}")
+    # Provider identifier honesty (doc 02 section 10; the A23 rule): a
+    # KIE task ID is recorded only where KIE actually issued one; an
+    # absent identifier is recorded as absent (null), never fabricated.
+    ids = receipt["provider_receipt_ids"]
+    if not isinstance(ids, dict):
+        fails.append("provider_receipt_ids is not an object")
+    else:
+        task_id = ids.get("kie_task_id")
+        if task_id is not None:
+            if not isinstance(task_id, str) or not task_id.strip():
+                fails.append("provider_receipt_ids kie_task_id is claimed "
+                             "but is not a non-empty string")
+            elif "kie" not in str(receipt["actual_provider"]).lower():
+                fails.append(f"provider_receipt_ids claims a KIE task ID "
+                             f"but actual_provider is "
+                             f"{receipt['actual_provider']!r}: a task ID "
+                             "recorded where the provider issued none is "
+                             "fabricated")
+    # Prompt hash agreement: the receipt's prompt_hash must equal the
+    # sha256 of the prompt artifact it names in the page-result.
+    if result is not None:
+        artifacts = {a.get("path"): a.get("sha256")
+                     for a in result.get("artifacts", [])
+                     if isinstance(a, dict)}
+        named = receipt["prompt_artifact_path"]
+        if named not in artifacts:
+            fails.append(f"prompt artifact {named!r} is not among the "
+                         "page-result's artifacts")
+        elif artifacts[named] != receipt["prompt_hash"]:
+            fails.append("prompt_hash does not agree with the prompt "
+                         f"artifact {named!r} in the page-result")
+    fails.extend(validate_budget_decision(receipt["budget_decision"],
+                                           registry))
+    return fails
+
+
 def _manifest_requests(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Echo anchors carried by the dispatch manifest itself (request_id,
     input_hash, page_id per request, plus the manifest's launch/revision).
@@ -99,11 +301,20 @@ def _manifest_requests(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
-            requests: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+            requests: Optional[Dict[str, Dict[str, Any]]] = None,
+            asset_receipts: Optional[List[Dict[str, Any]]] = None,
+            registry: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """manifest: the dispatch manifest. results: page-result dicts.
     requests: optional request_id -> request map for FULL echo validation
     (adds tenant/location/test_only); when omitted, echo validation still
-    runs against the manifest's own request anchors."""
+    runs against the manifest's own request anchors.
+    asset_receipts: optional PP-T3 prompt-item asset receipts; when
+    supplied, each is validated under the Q11 acceptance rules against
+    its page's counted result and the checkpoint gains a prompt_items
+    block listing the closed items. When omitted, the checkpoint is
+    exactly the shipped page-result aggregation, unchanged.
+    registry: optional prompt-policy registry document; when supplied,
+    budget-decision citations are verified against it."""
     expected = {r["page_role"]: r for r in manifest["requests"]}
     by_role: Dict[str, Dict[str, Any]] = {}
     problems: List[str] = []
@@ -126,6 +337,34 @@ def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
             problems.extend(f"{role}: {f}" for f in fails)
             continue
         by_role[role] = res
+    prompt_block = None
+    if asset_receipts is not None:
+        closed: List[Dict[str, Any]] = []
+        anchors = requests or _manifest_requests(manifest)
+        for receipt in asset_receipts:
+            page_id = receipt.get("page_id") \
+                if isinstance(receipt, dict) else None
+            role = next((ro for ro, r in by_role.items()
+                         if r["page_id"] == page_id), None)
+            if role is None:
+                problems.append(f"prompt item for page {page_id!r}: no "
+                                "counted page-result carries that page, "
+                                "so the item cannot close")
+                continue
+            result = by_role[role]
+            req = anchors.get(result["request_id"])
+            fails = validate_asset_receipt(receipt, req, result, registry)
+            if fails:
+                problems.extend(f"prompt item {role}: {f}" for f in fails)
+                continue
+            bd = receipt["budget_decision"]
+            closed.append({"page_id": page_id, "page_role": role,
+                           "decision": bd["decision"],
+                           "prompt_policy_id": bd["prompt_policy_id"],
+                           "registry_entry_hash":
+                               bd["registry_entry_hash"]})
+        prompt_block = {"closed": sorted(closed,
+                                         key=lambda c: c["page_id"])}
     missing = [ro for ro in expected if ro not in by_role]
     blocked = [ro for ro, r in by_role.items() if r["status"] == "blocked"]
     present = [by_role[ro] for ro in expected if ro in by_role]
@@ -167,6 +406,8 @@ def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
         "missing_roles": sorted(missing),
         "blocked_roles": sorted(blocked),
         "problems": problems,
+        **({"prompt_items": prompt_block} if prompt_block is not None
+           else {}),
         "per_role": {ro: {"status": by_role[ro]["status"],
                           "proof_class": by_role[ro]["proof_class"],
                           "independent_review": by_role[ro]["independent_review"],
@@ -260,6 +501,13 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--manifest", help="dispatch-manifest.json")
     ap.add_argument("--results-dir", help="directory of result-*.json files")
     ap.add_argument("--requests-dir", help="directory of request-*.json files")
+    ap.add_argument("--asset-receipts-dir",
+                    help="directory of asset-receipt-*.json files (PP-T3 "
+                         "prompt items); without it, behavior is exactly "
+                         "the shipped page-result aggregation")
+    ap.add_argument("--registry",
+                    help="prompt-policy registry JSON; when supplied, "
+                         "budget-decision citations are verified against it")
     ap.add_argument("--out", help="write the checkpoint JSON here")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
@@ -278,7 +526,13 @@ def main(argv: List[str]) -> int:
             for p in sorted(Path(args.requests_dir).glob("request-*.json")):
                 r = _load(str(p))
                 requests[r["request_id"]] = r
-        cp = collect(manifest, results, requests)
+        asset_receipts = None
+        if args.asset_receipts_dir:
+            asset_receipts = [_load(str(p)) for p in
+                              sorted(Path(args.asset_receipts_dir)
+                                     .glob("asset-receipt-*.json"))]
+        registry = _load(args.registry) if args.registry else None
+        cp = collect(manifest, results, requests, asset_receipts, registry)
     except (OSError, ValueError, KeyError) as exc:
         print(f"FAIL: {exc}")
         return EXIT_VIOLATION
