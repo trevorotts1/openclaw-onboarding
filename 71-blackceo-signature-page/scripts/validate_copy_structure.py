@@ -30,6 +30,12 @@ What this script does NOT do: judge quality. Emotional-quality criteria and
 the either/or rules live in the spec as kind "qualitative"/"conditional";
 where a mechanical prefilter exists it emits FLAG lines for the reviewer,
 never failures. Public-copy leakage stays with validate_public_copy.py.
+
+The copy manifest's CTA entries are checked for their handoff types
+(update plan Item 32): every entry the manifest carries under "ctas" must
+carry a handoff_type of form_pop, in_page_anchor, or external_link;
+exactly one entry may be marked primary, and the primary's type must be
+form_pop, the pop of the form intake names.
 """
 import argparse
 import json
@@ -40,6 +46,11 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 # Counting core (the guides' declared convention; fixture-verified)
 # --------------------------------------------------------------------------
+
+# Update plan Item 32: the handoff types a copy-manifest CTA entry may
+# carry (form_pop: the button pops the Convert and Flow form intake names;
+# in_page_anchor; external_link).
+HANDOFF_TYPES = ("form_pop", "in_page_anchor", "external_link")
 
 CTA_RE = re.compile(r"\[CTA (BUTTON|MICROCOPY):\s*(.*?)\]", re.S)
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
@@ -497,6 +508,48 @@ def validate(units, section_order, structure_notes, spec, manifest=None,
                         f"{' / '.join(repr(p) for p in prefixes)}; flagged "
                         f"for rule '{flag_id}' (a natural equivalent is the "
                         f"reviewer's call): \"{first.text[:80]}\"")
+
+    # --- copy manifest CTA handoff types (update plan Item 32) -----------
+    # Button behavior is specified where button copy is specified: when
+    # the manifest carries CTA entries, each one must carry its handoff
+    # type; exactly one entry may be primary, and the primary's type is
+    # the form pop against the form intake names.
+    if isinstance(manifest, dict) and "ctas" in manifest:
+        ctas = manifest.get("ctas")
+        if not isinstance(ctas, list):
+            rep.fails.append(
+                "CTA handoff: copy manifest 'ctas' must be a list of CTA "
+                "entries, one per CTA in the copy")
+        else:
+            primaries = []
+            for i, entry in enumerate(ctas):
+                if not isinstance(entry, dict):
+                    rep.fails.append(
+                        f"CTA handoff: copy manifest CTA entry {i + 1} is "
+                        f"not an object; each entry carries its label and "
+                        f"its handoff_type")
+                    continue
+                label = entry.get("label") or entry.get("section") \
+                    or f"entry {i + 1}"
+                ht = entry.get("handoff_type")
+                if ht not in HANDOFF_TYPES:
+                    rep.fails.append(
+                        f"CTA handoff: copy manifest CTA entry {label!r} "
+                        f"carries handoff_type {ht!r}; every CTA entry "
+                        f"carries its handoff type (form_pop, in_page_anchor, "
+                        f"or external_link)")
+                if entry.get("primary") is True:
+                    primaries.append((label, ht))
+            if len(primaries) > 1:
+                rep.fails.append(
+                    f"CTA handoff: copy manifest marks {len(primaries)} "
+                    f"primary CTAs; the page has exactly one primary CTA")
+            elif primaries and primaries[0][1] != "form_pop":
+                rep.fails.append(
+                    f"CTA handoff: the primary CTA {primaries[0][0]!r} "
+                    f"carries handoff_type {primaries[0][1]!r}; the primary "
+                    f"CTA's handoff is the form pop (form_pop) against the "
+                    f"form intake names")
 
     invite = rules.get("invite_names_offer")
     if invite and manifest and manifest.get("offer_name"):

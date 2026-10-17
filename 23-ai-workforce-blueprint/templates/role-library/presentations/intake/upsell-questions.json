@@ -1,13 +1,15 @@
 {
  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
  "section": "deck-intake-upsell",
- "version": "1.0.0",
- "description": "The Presentation Upsell intake questions -- Q1 sales page + checkout page, Q2 VSL (video sales letter) page, Q3 Skill 50 email sequences (an election-gated delivery option: draft-only, human approval before anything deploys), plus the conditional declined-reason follow-ups. Loaded by deck-intake-driver.py in signature mode and appended to the standard deck-intake question bank. These questions mirror the want_teleprompter / teleprompter_declined_reason waiver pattern EXACTLY: required, block_gate, conditional_on for the declined-reason follow-ups, storeOn under pre_presentation_capture.*, flowing into working/copy/intake.json at --complete. The SAME definitions live in deck-intake-questions.json (orders 7.6, 7.61, 7.7, 7.71, 7.9, 7.91); this file is the standalone upsell-questions.json the design's §10.3 specifies for signature-mode loading.",
+ "version": "1.1.0",
+ "description": "The Presentation Upsell intake questions -- Q1 sales page + checkout page, Q2 VSL (video sales letter) page, Q3 Skill 50 email sequences (an election-gated delivery option: draft-only, human approval before anything deploys), Q4 motion graphics (the Item 34 election: opt-in, default no; elected pieces are embedded in the deck file with the designed slide as their still; playback inside PowerPoint is UNVERIFIED and never promised), plus the conditional declined-reason follow-ups. Loaded by deck-intake-driver.py in signature mode and appended to the standard deck-intake question bank. These questions mirror the want_teleprompter / teleprompter_declined_reason waiver pattern EXACTLY: required, block_gate, conditional_on for the declined-reason follow-ups, storeOn under pre_presentation_capture.*, flowing into working/copy/intake.json at --complete. The SAME definitions live in deck-intake-questions.json (orders 7.6, 7.61, 7.7, 7.71, 7.8, 7.81, 7.9, 7.91); this file is the standalone upsell-questions.json the design's §10.3 specifies for signature-mode loading.",
  "storeTarget": {
   "WANT_SALES_CHECKOUT": "pre_presentation_capture.WANT_SALES_CHECKOUT",
   "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
   "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
   "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+  "WANT_MOTION_GRAPHICS": "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+  "MOTION_GRAPHICS_DECLINED_REASON": "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
   "WANT_EMAIL_SEQUENCES": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
   "EMAIL_SEQUENCES_DECLINED_REASON": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON"
  },
@@ -87,6 +89,43 @@
    "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
   },
   {
+   "id": "want_motion_graphics",
+   "section": "deck-intake-upsell",
+   "order": 7.8,
+   "prompt": "Would you like motion graphics in this deck: short video pieces embedded in the deck file for up to two slides? (yes / no) A 'yes' elects the motion option: each piece is produced for a slide chosen for motion and embedded in the deck file itself, with the designed slide as that piece's still image. The webinar video uses the same pieces.",
+   "help": "Default NO -- motion graphics are an opt-in election, asked on every run, and only an explicit 'yes' elects them. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the motion branch entirely: the deck is built still-only. What a 'yes' promises is that the pieces are embedded in the deck file with the designed slide as their still; playback inside Microsoft PowerPoint is UNVERIFIED and is never promised.",
+   "kind": "text",
+   "allowed_values": [
+    "yes",
+    "no"
+   ],
+   "value_labels": {
+    "yes": "Yes, add motion graphics to the deck",
+    "no": "No thank you"
+   },
+   "default": "no",
+   "storeOn": "WANT_MOTION_GRAPHICS",
+   "required": true,
+   "block_gate": true,
+   "resolverHint": "Default 'no'. Only an explicit 'yes' elects motion; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' carries the election into the run: slides declare media.kind 'motion' with slot A or B (at most two pieces per deck), Skill 72 (V2 powerpoint_graphic) produces each package into working/motion/slide-NN/, assembly embeds the authenticated pieces, and P8.15-MOTION audits the record. Never promise the client the pieces play inside PowerPoint: playback there is UNVERIFIED; what is promised is that the pieces are embedded in the deck file with the designed slide as their still."
+  },
+  {
+   "id": "motion_graphics_declined_reason",
+   "section": "deck-intake-upsell",
+   "order": 7.81,
+   "prompt": "Understood -- no motion graphics. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
+   "help": "Asked ONLY when want_motion_graphics is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+   "kind": "text",
+   "storeOn": "MOTION_GRAPHICS_DECLINED_REASON",
+   "required": true,
+   "block_gate": true,
+   "conditional_on": {
+    "id": "want_motion_graphics",
+    "equals": "no"
+   },
+   "resolverHint": "Auto-skipped whenever want_motion_graphics is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+  },
+  {
    "id": "want_email_sequences",
    "section": "deck-intake-upsell",
    "order": 7.9,
@@ -133,6 +172,10 @@
   "vsl_page": {
    "toggle": "want_vsl_page",
    "reason": "vsl_page_declined_reason"
+  },
+  "motion_graphics": {
+   "toggle": "want_motion_graphics",
+   "reason": "motion_graphics_declined_reason"
   },
   "email_sequences": {
    "toggle": "want_email_sequences",

@@ -24,13 +24,11 @@ Browser hygiene: N sessions opened, N closed, N orphans reaped.
 
 ## Which stages are browser-using
 
-The contract marks a stage with `"uses_browser": true` (the hygiene
-patch adds it to `ghl-install-test` and `publish-verify`, with
-`<stage>/browser-hygiene.json` as a required artifact of each).
-`automation-wiring` is browser-using when the Tier 4 backstop runs:
-when that stage's contract entry lands (S5's stage 14), it gains the
-same flag and artifact glob; the gate code is flag-driven and needs no
-change. Independently of the flag, any stage the registry holds
+The contract marks a stage with `"uses_browser": true`: the flag is
+on `ghl-install-test`, `publish-verify`, and `automation-wiring`
+(stage 14), with `<stage>/browser-hygiene.json` as a required
+artifact of each. `automation-wiring`'s browser use is the Tier 4
+backstop case; the gate code is flag-driven and needs no change. Independently of the flag, any stage the registry holds
 sessions for is accountable: the gate treats registry presence as
 browser use, which is the publish-verify conditional case (a browser
 produced its evidence) expressed without a second flag value.

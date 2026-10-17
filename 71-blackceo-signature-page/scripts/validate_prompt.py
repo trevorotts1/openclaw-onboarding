@@ -1,27 +1,48 @@
 #!/usr/bin/env python3
 """Validate BlackCEO production prompts (Skill 71, Item 10 as rebuilt by
-FIX-PLAN Amendment 6, Parts B and C).
+FIX-PLAN Amendment 6, Parts B and C; length doctrine superseded by owner
+Decision 1, 2026-10-15).
 
-WHAT GOVERNS NOW (Amendment 6):
+WHAT GOVERNS NOW:
 
-- Element completeness governs acceptance (Part C-rule 1): the guide's
-  ten element jobs are present and fully expressed. A missing element is
-  an automatic failure. Length is recorded as TELEMETRY ONLY (character
-  count under the guide's counting convention: NFC-normalized, trimmed,
-  Unicode code points; percent of model maximum where a cap is known,
-  null where the limit is UNKNOWN; the prompt's SHA-256). Length is
-  never a pass/fail target in either direction.
-- The model maximum is a hard ceiling ONLY where a VERIFIED cap exists,
-  under Skill 66's cap-status semantics (references/prompt-budget-policy.json),
-  which govern inside Skill 71 and SUPERSEDE the shared enforcer's blind
-  band (Part C-rule 2). OWNER_CONFIRMED and NOT_PUBLISHED caps warn on
-  overflow, never hard-fail. Token-limited models are checked in tokens,
-  never converted to a fake character cap; this validator has no
-  tokenizer, so it records character telemetry and does not judge token
-  counts. There is NO percentage floor (Part C-rule 3): a complete
-  prompt under 2,000 characters is flagged as a TRIPWIRE for manual
-  element re-inspection by the reviewer, recorded, never auto-failed.
-- Padding detection is a hard fail at close (Part C-rule 4): repeated
+- Element completeness governs acceptance: the guide's ten element jobs
+  are present and fully expressed. A missing element is an automatic
+  failure. (Counting convention, per the guide: NFC-normalized, trimmed,
+  Unicode code points; the prompt's SHA-256 is recorded in telemetry.)
+- Length is governed by the KIE rule 12 band, adopted as this skill's
+  native authoring target by owner Decision 1 (2026-10-15): author each
+  prompt to 95 to 100 percent of the model's live prompt field maximum,
+  never below the 80 percent floor, by genuine specification only.
+  This validator renders the band verdict per prompt at the prompt
+  stage; the numbers come from band_numbers(), which calls the shared
+  enforcer's budget() (shared-utils/kie_prompt_enforcer.py) so this
+  skill and the transport can never drift apart. Below the floor FAILS
+  (budget exit 3, naming the exact characters to ADD and the count to
+  the 95 percent target); above the maximum FAILS (budget exit 4,
+  naming the exact characters to CUT); floor-to-target passes with a
+  below-target warning; in band passes. Characters, percent of the
+  maximum, and the full budget block land in the prompt's telemetry,
+  and the prompt stage gate records the budget block on the item close
+  entry. The policy layer (references/prompt-budget-policy.json)
+  records each model's maximum; cap_status survives there as
+  provenance only and no longer carries overflow semantics. Verbatim
+  fields (text a model speaks or sings exactly) are exempt from the
+  floor; this validator only ever receives the descriptive field.
+- The requested aspect ratio is confirmed at validate time against
+  the model's aspect-ratio enum in Skill 74's registry snapshot
+  (74-kie-live-adapter/references/kie-model-registry.json) and the
+  answer is recorded in telemetry (ratio_confirmation): confirmed;
+  not_in_enum (fails at validate time by name); unverified (enum
+  unreadable; recorded, never reported as confirmed); not_recorded.
+- Where NO maximum is recorded for a model, no band verdict is
+  rendered (budget status UNKNOWN, percent_of_max null) and the
+  retained 2,000-character TRIPWIRE is the operative short-prompt
+  flag: a complete prompt under it is flagged for manual element
+  re-inspection by the reviewer, recorded, never auto-failed.
+  Token-limited models are checked in tokens, never converted to a
+  fake character cap; this validator has no tokenizer, so it records
+  character telemetry and renders no character verdict for them.
+- Padding detection is a hard fail at close (Part C-rule 4, retained): repeated
   n-gram blocks beyond what the verbatim blocks and locks explain,
   boilerplate not traceable to the Page Visual Bible, the selected
   style's extraction file, or the image's inventory entry, and element
@@ -49,13 +70,16 @@ WHAT GOVERNS NOW (Amendment 6):
   section 11): specific "Do not..." statements covering at least six of
   the repository's eight classes, not by one fixed string.
 
-RETIRED HERE (withdrawn designs, do not reintroduce): KIE prompt rule
-12's 95-to-100 percent band and 80 percent floor as enforced by the
-shared enforcer's blind check (the enforcer remains importable for
-telemetry cross-checks but renders no verdict in this script); the
-verbatim style_block paste check; the composition-phrase quota; the
-index-heading contamination screen; the single fixed negative-block
-string as the coverage test.
+RETIRED HERE (withdrawn designs, do not reintroduce): Amendment 6
+Part C's length position (element completeness alone governs length;
+length as telemetry only; a hard ceiling only where a VERIFIED cap
+exists; cap-status overflow semantics with warn-only overflow for
+NOT_PUBLISHED and OWNER_CONFIRMED caps) — withdrawn by owner
+Decision 1 (2026-10-15), which adopted the rule 12 band as the
+native authoring target and supersedes Part C wherever the two
+conflict; the verbatim style_block paste check; the
+composition-phrase quota; the index-heading contamination screen;
+the single fixed negative-block string as the coverage test.
 
 CLI (contract shape kept: the stage contract calls
 `validate_prompt.py {file} {sauce}`):
@@ -83,9 +107,10 @@ from pathlib import Path
 def _load_kie_prompt_enforcer():
     """Best-effort import of shared-utils/kie_prompt_enforcer.py.
 
-    Retained for telemetry cross-checks only (Part C: its blind band
-    renders NO verdict inside Skill 71). Absence is not an error: the
-    validator's own policy layer carries cap status.
+    Since owner Decision 1 (2026-10-15) the enforcer DOES render the
+    length verdict inside Skill 71: band_numbers() calls its budget()
+    for the band math. Absence is not an error: band_numbers() then
+    falls back to identical arithmetic.
     """
     try:
         envd = os.environ.get("OPENCLAW_SKILLS_DIR")
@@ -267,6 +292,117 @@ def cap_for_model(model, policy):
                                    "unit": "chars"})
 
 
+# ------------------------------------------------------- rule 12 band
+
+FLOOR_PCT, TARGET_PCT = 80, 95  # KIE rule 12, adopted by Decision 1
+
+
+def band_numbers(max_chars):
+    """The rule 12 band for a recorded maximum:
+    {"max", "floor", "target_min", "target_max"}.
+
+    Calls the shared enforcer's budget() so this skill and the
+    transport compute one set of numbers from one implementation.
+    The fallback repeats the enforcer's integer math exactly (ceiling
+    of 80 and 95 percent) for the case where the enforcer cannot be
+    imported; it is character-identical arithmetic, not a second
+    implementation that can drift.
+    """
+    m = int(max_chars)
+    if KPE is not None:
+        try:
+            return KPE.budget(m)
+        except Exception:
+            pass
+    return {"max": m, "floor": -(-m * FLOOR_PCT // 100),
+            "target_min": -(-m * TARGET_PCT // 100), "target_max": m}
+
+
+def _registry_path():
+    """Skill 74's model registry snapshot (kie-model-registry.json)."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    roots = list(Path(__file__).resolve().parents)
+    if envd:
+        roots.append(Path(envd))
+    roots += [Path.home() / ".openclaw" / "skills",
+              Path("/data/.openclaw/skills")]
+    for root in roots:
+        candidate = root / "74-kie-live-adapter" / "references" \
+            / "kie-model-registry.json"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def model_ratio_enum(model):
+    """The model's aspect-ratio enum from the Skill 74 registry
+    snapshot. Returns (enum, source) or (None, None) when the enum
+    cannot be read (snapshot missing/unreadable, model absent, or no
+    enum recorded): the caller records that as unverified, never as
+    confirmed."""
+    path = _registry_path()
+    if path is None:
+        return None, None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, None
+    for entry in doc.get("models") or []:
+        if isinstance(entry, dict) and entry.get("id") == model:
+            enum = ((entry.get("input_fields") or {})
+                    .get("aspect_ratio") or {}).get("enum")
+            if isinstance(enum, list) and enum:
+                return [str(x) for x in enum], str(path)
+            return None, None
+    return None, None
+
+
+def requested_ratio_of(entry):
+    """The requested aspect ratio recorded on an inventory entry
+    (requested_ratio, then aspect_ratio, then ratio), or None."""
+    if not isinstance(entry, dict):
+        return None
+    for key in ("requested_ratio", "aspect_ratio", "ratio"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def ratio_confirmation(model, entry, errors, notes):
+    """Confirm the entry's requested ratio against the model's enum
+    (Item 4 part 3): the 21:9 class of question is settled at
+    validate time, not discovered at generation. The record lands in
+    telemetry["ratio_confirmation"] in one of four states."""
+    requested = requested_ratio_of(entry)
+    if requested is None:
+        return {"status": "not_recorded", "requested_ratio": None,
+                "model": model}
+    enum, source = model_ratio_enum(model)
+    if enum is None:
+        notes.append(
+            f"Ratio confirmation unverified: the aspect-ratio enum for "
+            f"{model} could not be read from the Skill 74 registry "
+            f"snapshot; requested ratio {requested!r} is recorded, not "
+            "confirmed.")
+        return {"status": "unverified", "requested_ratio": requested,
+                "model": model}
+    if requested in enum:
+        notes.append(
+            f"Ratio confirmed: requested ratio {requested} is in the "
+            f"aspect-ratio enum for {model} (Skill 74 registry "
+            "snapshot).")
+        return {"status": "confirmed", "requested_ratio": requested,
+                "model": model, "enum_source": source}
+    errors.append(
+        f"Requested ratio {requested!r} is not in the aspect-ratio "
+        f"enum for {model} ({', '.join(enum)}); author the prompt to "
+        "a supported ratio or correct the inventory entry (Item 4 "
+        "part 3).")
+    return {"status": "not_in_enum", "requested_ratio": requested,
+            "model": model, "enum_source": source}
+
+
 def load_json_file(path, label, errors):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -430,6 +566,69 @@ def load_inventory_entries(path):
         if isinstance(item, dict) and item.get("id") is not None:
             out[normalize_image_id(item["id"])] = item
     return out
+
+
+def is_supplied_entry(entry):
+    """A run-context inventory entry is a supplied asset when its source
+    begins with "supplied" (e.g. "supplied-logo", "supplied-founder-photo"):
+    the asset already exists and no generation is performed for it
+    (Item 3 supplied-asset path)."""
+    if not isinstance(entry, dict):
+        return False
+    source = entry.get("source")
+    return isinstance(source, str) and source.strip().lower().startswith("supplied")
+
+
+def inventory_entry_ratio(entry):
+    """The aspect ratio recorded on an inventory entry, under any of the
+    keys the run records use, or None."""
+    if not isinstance(entry, dict):
+        return None
+    for key in ("requested_ratio", "aspect_ratio", "ratio"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def validate_supplied_record(text, entry, image_id):
+    """Validate a stage file as a supplied-asset record (Item 3): the
+    record must name the image id, carry the asset sha256 recorded on
+    the inventory entry, carry the inventory aspect ratio, declare
+    itself supplied, and carry an explicit no-generation declaration.
+    Every missing or mismatched field fails by name. Returns errors."""
+    errors = []
+    who = image_id or "this image"
+    upper = text.upper()
+    if image_id is None or normalize_image_id(image_id) not in upper:
+        errors.append(f"supplied-asset record does not name its image id "
+                      f"({who}); a supplied-asset record must name the image "
+                      "it stands in for")
+    sha = entry.get("sha256")
+    if not isinstance(sha, str) or not sha.strip():
+        errors.append(f"inventory entry for {who} records no sha256 for "
+                      "the supplied asset; a supplied-asset record cannot "
+                      "be verified without the inventory sha256")
+    elif sha.strip().lower() not in text.lower():
+        errors.append(f"supplied-asset record for {who} does not carry "
+                      f"the asset sha256 recorded on the inventory entry "
+                      f"({sha.strip()})")
+    ratio = inventory_entry_ratio(entry)
+    if ratio is None:
+        errors.append(f"inventory entry for {who} records no aspect "
+                      "ratio; a supplied-asset record must carry the "
+                      "inventory aspect ratio")
+    elif ratio not in text:
+        errors.append(f"supplied-asset record for {who} does not carry "
+                      f"the inventory aspect ratio ({ratio})")
+    if not re.search(r"\bsupplied\b", text, re.IGNORECASE):
+        errors.append(f"supplied-asset record for {who} does not declare "
+                      "itself supplied")
+    if not re.search(r"no generation|not generated|never generated",
+                     text, re.IGNORECASE):
+        errors.append(f"supplied-asset record for {who} carries no "
+                      "explicit no-generation declaration")
+    return errors
 
 
 def selection_record_for(selection_doc, image_id):
@@ -1037,7 +1236,7 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
     policy = policy or load_policy()
     sections = split_elements(stripped)
 
-    # --- telemetry + budget (Part C-rules 1-3)
+    # --- telemetry + budget (Decision 1: the rule 12 band governs length)
     cap = cap_for_model(model, policy)
     percent = None
     if cap.get("unit") == "chars" and cap.get("max_chars"):
@@ -1051,48 +1250,67 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
         "model_max_chars": cap.get("max_chars"),
         "percent_of_max": percent,
     }
-    # --- enforcer cross-check (rule 12 registry: record-only telemetry;
-    # the shared enforcer renders NO verdict inside Skill 71, Part C)
-    if KPE is None:
-        telemetry["enforcer_crosscheck"] = {"status": "unavailable",
-                                            "chars": None, "max": None}
-    else:
-        try:
-            crosscheck = KPE.check(model, stripped)
-            telemetry["enforcer_crosscheck"] = {
-                "status": crosscheck.get("status"),
-                "chars": crosscheck.get("chars"),
-                "max": crosscheck.get("max"),
-            }
-        except Exception:
-            telemetry["enforcer_crosscheck"] = {"status": "error",
-                                                "chars": None, "max": None}
+    budget = {"status": "UNKNOWN", "budget_exit": 0, "max": None,
+              "floor": None, "target_min": None, "target_max": None,
+              "add_chars": 0, "add_to_target_chars": 0, "cut_chars": 0,
+              "cap_status": cap.get("cap_status", "UNKNOWN")}
     if cap.get("unit") == "tokens":
         notes.append("Token-limited model: the ceiling is denominated in tokens and is "
                      "not converted to a character cap; character telemetry is recorded "
-                     "and no token verdict is rendered by this validator (Part C-rule 2).")
+                     "and no character band verdict is rendered by this validator.")
     elif cap.get("max_chars"):
-        if chars > cap["max_chars"]:
-            if cap.get("cap_status") == "VERIFIED":
-                errors.append(f"Prompt length {chars} exceeds the VERIFIED model cap of "
-                                f"{cap['max_chars']} characters for {model}; a verified "
-                                "cap fails closed (Part C-rule 2).")
-            else:
-                warnings.append(f"Prompt length {chars} exceeds the {cap['max_chars']} "
-                                f"character cap recorded for {model} (cap status "
-                                f"{cap.get('cap_status')}); overflow warns only under "
-                                "cap-status semantics (Part C-rule 2).")
+        band = band_numbers(cap["max_chars"])
+        budget.update(band)
+        pct = 100.0 * chars / band["max"]
+        if chars > band["max"]:
+            budget["status"] = "ABOVE_MAX"
+            budget["budget_exit"] = 4
+            budget["cut_chars"] = chars - band["max"]
+            errors.append(
+                f"prompt is {chars} chars; max is {band['max']}; CUT exactly "
+                f"{budget['cut_chars']} chars (cap status "
+                f"{cap.get('cap_status', 'UNKNOWN')}; budget exit 4).")
+        elif chars < band["floor"]:
+            budget["status"] = "BELOW_FLOOR"
+            budget["budget_exit"] = 3
+            budget["add_chars"] = band["floor"] - chars
+            budget["add_to_target_chars"] = band["target_min"] - chars
+            errors.append(
+                f"prompt is {chars} chars ({pct:.1f}% of max {band['max']}); floor is "
+                f"{band['floor']}: ADD at least {budget['add_chars']} chars "
+                f"({budget['add_to_target_chars']} to reach the 95 percent target of "
+                f"{band['target_min']}) of genuine specification (budget exit 3).")
+        elif chars < band["target_min"]:
+            budget["status"] = "BELOW_TARGET"
+            budget["add_to_target_chars"] = band["target_min"] - chars
+            warnings.append(
+                f"prompt is {chars} chars ({pct:.1f}% of max {band['max']}); in the "
+                f"band but below the 95 percent target of {band['target_min']}: ADD "
+                f"{budget['add_to_target_chars']} chars of genuine specification to "
+                "reach the target (budget exit 0).")
+        else:
+            budget["status"] = "OK"
+            notes.append(f"prompt is {chars} chars ({pct:.1f}% of max {band['max']}); "
+                         "in band, budget exit 0.")
     else:
-        notes.append("Model cap UNKNOWN: percent_of_max is null and no ceiling is "
-                     "enforced (Part C-rule 1; limit UNKNOWN is a pass-with-warning "
-                     "world).")
+        notes.append("Model cap UNKNOWN: percent_of_max is null and no band verdict is "
+                     "rendered; the tripwire below is the operative short-prompt flag "
+                     "for this model.")
+    telemetry["budget"] = budget
+
+    # --- ratio confirmation (Item 4 part 3)
+    ratio_entry = ctx.get("inventory_entry") if isinstance(ctx, dict) else None
+    telemetry["ratio_confirmation"] = ratio_confirmation(model, ratio_entry,
+                                                         errors, notes)
+
     tripwire = policy.get("tripwire_chars", 2000)
     if chars < tripwire:
         warnings.append(f"TRIPWIRE: complete prompt is {chars} characters, under the "
                         f"{tripwire}-character smell-test tripwire; the reviewer must "
                         "manually re-inspect every element for completeness and record "
                         "that re-inspection in the review file. This is NOT an "
-                        "automatic failure (Part C-rule 3).")
+                        "automatic failure (the tripwire is retained for models with "
+                        "no recorded maximum; Decision 1).")
 
     # --- placeholders (unchanged legacy screen)
     for pattern in PLACEHOLDER_PATTERNS:
@@ -1201,6 +1419,14 @@ def discover_context(prompt_file, args):
     errors = []
     record = None
     extraction_entry = None
+    # The inventory entry is loaded before selection governance: a
+    # supplied entry (source begins with "supplied") is exempt from
+    # style-selection governance and takes the supplied-asset record
+    # path in main() instead of the prompt pipeline (Item 3).
+    entry = None
+    if inventory_path is not None and image_id is not None:
+        entry = load_inventory_entries(inventory_path).get(normalize_image_id(image_id))
+    supplied = is_supplied_entry(entry)
     if selection_path is not None:
         doc = load_json_file(selection_path, "selection record", errors)
         if doc is not None:
@@ -1213,28 +1439,25 @@ def discover_context(prompt_file, args):
                                   "selection governs this prompt.")
             else:
                 record = selection_record_for(doc, image_id)
-            if record is None and image_id is not None and not errors:
+            if record is None and image_id is not None and not errors and not supplied:
                 errors.append(f"The selection record at {selection_path} carries no "
                               f"selection governing {image_id}; every image must be "
                               "governed by a selection record before its prompt is "
                               "authored (Part B1).")
-            if record is not None and not errors:
+            if record is not None and not errors and not supplied:
                 _doc, extraction_entry = load_extraction(record, errors,
                                                          image_id or "this image")
-    elif args.require_selection:
+    elif args.require_selection and not supplied:
         errors.append("No selection record found for this prompt (looked for "
                       "image-inventory-prompts/style-selection.json in the run layout); "
                       "a run with no selection record cannot close "
                       "image-inventory-prompts (Part B1).")
 
-    entry = None
-    if inventory_path is not None and image_id is not None:
-        entry = load_inventory_entries(inventory_path).get(normalize_image_id(image_id))
-
     if record is None and entry is None and bible_path is None and not errors:
         return None, []
     ctx = {"record": record, "extraction_entry": extraction_entry,
            "inventory_entry": entry, "image_id": image_id,
+           "supplied_entry": entry if supplied else None,
            "bible_path": bible_path, "traits_dir": args.traits_dir,
            "sauce_only": args.sauce_only}
     return ctx, errors
@@ -1242,18 +1465,20 @@ def discover_context(prompt_file, args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Validate a production prompt: element completeness (Amendment 6 "
-                    "Part C), style fidelity against the selection record and trait "
-                    "extraction (Part B), padding, placeholders, verbatim blocks.")
+        description="Validate a production prompt: element completeness, the rule 12 "
+                    "prompt budget band (Decision 1), style fidelity against the "
+                    "selection record and trait extraction (Part B), padding, "
+                    "placeholders, verbatim blocks.")
     parser.add_argument("prompt_file", type=Path)
     parser.add_argument("--model", default=IMAGE_MODEL_DEFAULT,
-                        help="KIE image model id (telemetry + cap policy; default %(default)s).")
+                        help="KIE image model id (band policy + ratio enum; "
+                             "default %(default)s).")
     parser.add_argument("--runtime-max", type=int, default=None,
-                        help="DEPRECATED and ignored: length verdicts follow Part C "
-                             "(cap-status semantics), not a runtime max.")
+                        help="DEPRECATED and ignored: length verdicts follow the "
+                             "rule 12 band (Decision 1), not a runtime max.")
     parser.add_argument("--strict-runtime", action="store_true",
-                        help="Treat warnings (including tripwire and cap-overflow "
-                             "warnings) as failures.")
+                        help="Treat warnings (including tripwire and below-target "
+                             "band warnings) as failures.")
     parser.add_argument("--sauce-only", action="store_true",
                         help="SECRET_SAUCE_ONLY page: the Signature Grade Block must "
                              "START Element F verbatim.")
@@ -1284,6 +1509,30 @@ def main():
 
     policy = load_policy(args.policy)
     ctx, ctx_errors = discover_context(args.prompt_file, args)
+    if ctx is not None and ctx.get("supplied_entry") is not None:
+        # Item 3 supplied-asset path: the inventory entry for this file's
+        # image records a source beginning with "supplied", so the stage
+        # file is validated as a supplied-asset record and stops here;
+        # no prompt validation is performed on it.
+        entry = ctx["supplied_entry"]
+        image_id = ctx.get("image_id")
+        errors = ctx_errors + validate_supplied_record(text, entry, image_id)
+        source = entry.get("source")
+        if args.json:
+            print(json.dumps({"supplied_asset": True, "image_id": image_id,
+                              "source": source, "characters": len(text),
+                              "words": len(text.split()), "errors": errors,
+                              "warnings": [], "notes": []}, indent=2))
+        elif errors:
+            print(f"FAIL: {image_id} supplied-asset record (source: {source}) "
+                  "does not validate.")
+            for item in errors:
+                print(f"ERROR: {item}")
+        else:
+            print(f"PASS: {image_id} is a supplied asset (source: {source}); "
+                  "validated as a supplied-asset record; no prompt "
+                  "validation performed.")
+        return 1 if errors else 0
     result = inspect(text, args.model, sauce_only=args.sauce_only, ctx=ctx,
                      policy=policy)
     result["errors"] = ctx_errors + result["errors"]

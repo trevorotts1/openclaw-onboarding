@@ -23,6 +23,6 @@ Operate the owning skill before authoring by hand. Skill 71 delegates image exec
 
 ## Normal production flow
 
-`intake -> copy -> font/action plan -> desktop wireframe -> mobile/tablet -> visual mockup -> image inventory/prompts -> image generation/QC -> image map/upload -> final mockups -> responsive HTML -> install/test -> publish/verify when authorized`
+`intake -> copy -> font/action plan -> desktop wireframe -> mobile/tablet -> visual mockup -> image inventory/prompts -> image generation/QC -> image map/upload -> final mockups -> responsive HTML -> install/test -> publish/verify when authorized -> wire the follow-up automations when the intake's automation scope includes them (conditional automation-wiring stage)`
 
 The bundled Production/QC SOP is authoritative for detail, stage gates, repair rules, public/private separation, and delivery.

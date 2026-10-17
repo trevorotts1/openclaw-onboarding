@@ -3910,7 +3910,25 @@ def _verify_motion_phase(run_dir: Path) -> Tuple[bool, List[str]]:
                         f"component")
     if reasons:
         return False, reasons
-    return True, []
+    # B14 Section 5.4 tail (Item 34 R4): the PASS carries the one-line
+    # motion summary as a NOTE, the same shape _verify_upsell_vsl_build
+    # uses for its defer/waived PASS, so the run record states the
+    # motion outcome without anyone opening motion.json. The line is
+    # derived from the landed record by presentation_job.motion (the
+    # seam's single definition site); a summary that cannot be derived
+    # never fails an otherwise proven audit.
+    try:
+        from presentation_job import motion as _pm
+        _arc_tags = {}
+        try:
+            if _bd is not None:
+                _arc_tags = _bd._load_slide_arc_tags(run_dir)
+        except Exception:  # noqa: BLE001
+            _arc_tags = {}
+        return True, [f"NOTE: P8.15-MOTION "
+                      f"{_pm.motion_summary_line(record, _arc_tags)}"]
+    except Exception:  # noqa: BLE001
+        return True, []
 
 
 
@@ -4218,8 +4236,7 @@ def _pu_phase_shape(phase_id: str) -> str:
     Every phase gets a SPECIFIC verifier; the generic any-path check is gone.
     Shapes: json (parseable JSON object), receipt (the unified
     build_receipt/ghl_build_receipt family), ghl_receipt (GHL receipts with the
-    full schema_version/scope/revision/hash contract), html (real assembled
-    page markers), png (decoded image), text (non-empty content), collection
+    full schema_version/scope/revision/hash contract), text (non-empty content), collection
     (non-empty upsell collateral dir), qc (scorecard with per-criterion rows
     and independent-reviewer provenance), form (Skill-44 gate form/workflow
     plan objects)."""
@@ -4231,10 +4248,6 @@ def _pu_phase_shape(phase_id: str) -> str:
         return "upsell_qc"
     if phase_id == "P-U-COLLATERAL":
         return "collection"
-    if phase_id.endswith("P-U-HTML-SALES") or phase_id.endswith("P-U-HTML-CHECKOUT") or phase_id.endswith("P-U-HTML-VSL"):
-        return "html"
-    if phase_id.endswith("P-U-DESIGN-RENDER-SALES") or phase_id.endswith("P-U-DESIGN-RENDER-CHECKOUT") or phase_id.endswith("P-U-DESIGN-RENDER-VSL"):
-        return "png"
     return "text_or_json"
 
 
@@ -4430,51 +4443,6 @@ def _pu_ghl_readback_reasons(run_dir: Path, receipt: dict) -> List[str]:
     return reasons
 
 
-def _pu_check_html(run_dir: Path, rel: str) -> List[str]:
-    """A declared HTML artifact must be a real assembled page: non-trivial
-    content, an <h1>/<body> skeleton, and NOT a bare placeholder."""
-    p = artifact_path(run_dir, rel)
-    if p is None:
-        return [f"{rel}: file not found -- phase artifact missing"]
-    if p.stat().st_size == 0:
-        return [f"{rel}: file is zero bytes"]
-    try:
-        text = p.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        return [f"{rel}: unreadable ({exc!r})"]
-    if len(text.strip()) < 200:
-        return [f"{rel}: only {len(text.strip())} chars -- too small to be a real "
-                "assembled page"]
-    low = text.lower()
-    if "<body" not in low:
-        return [f"{rel}: has no <body> element -- not a real assembled page"]
-    if "lorem ipsum" in low or "placeholder" in low.replace("placeholder=", "") and "<h1" not in low:
-        return [f"{rel}: reads as a placeholder/wireframe page, not assembled content"]
-    return []
-
-
-def _pu_check_png(run_dir: Path, rel: str) -> List[str]:
-    """A declared PNG artifact must decode: real PNG magic + plausible header
-    dimensions (the stdlib struct read; no third-party dependency)."""
-    p = artifact_path(run_dir, rel)
-    if p is None:
-        return [f"{rel}: file not found -- phase artifact missing"]
-    data = p.read_bytes()
-    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
-        return [f"{rel}: not a PNG (bad magic) -- a renamed/decoy file is not this "
-                "phase's artifact"]
-    # IHDR: width/height at fixed offsets; a 0x0 image is not a real render.
-    try:
-        import struct
-        w, h = struct.unpack(">II", data[16:24])
-        if w == 0 or h == 0:
-            return [f"{rel}: PNG decodes to {w}x{h} -- a zero-dimension image is not "
-                    "a real rendered design"]
-    except Exception as exc:  # noqa: BLE001
-        return [f"{rel}: PNG header unreadable ({exc!r})"]
-    return []
-
-
 def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
     """A declared text/markdown artifact must carry real content (>= 40 chars
     of non-whitespace) -- one junk line is not a fragment."""
@@ -4490,106 +4458,6 @@ def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
     if len(text.strip()) < 40:
         return [f"{rel}: only {len(text.strip())} chars of content -- too small to "
                 "be a real authored fragment"]
-    return []
-
-
-# The three page-design prompts: `prompts/<page>.design.txt`. Kept as ONE
-# pattern so the verifier arm and the producer's own registry agree.
-_DESIGN_PROMPT_REL_RE = re.compile(r"^prompts/[A-Za-z0-9_-]+\.design\.txt$")
-
-
-def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
-    """PD-TEST-098: a page-design prompt (`prompts/<page>.design.txt`) must sit
-    inside the SHARED prompt band its render phase enforces.
-
-    THE DEFECT THIS CLOSES -- and why the artifacts.py predicate alone was NOT
-    enough. `_pu_check_text` accepted these files on ">= 40 chars" alone, so
-    `phase_verifiers.verify('P-U-DESIGN-SALES', run)` returned `(True, [])` on
-    the live 58,482-char prompt. Two authorities then re-blessed the artifact
-    that `Engine._revalidate_banked` had just announced as invalid:
-
-      1. `Engine._phase_artifact_satisfied` (phases.py:2670) is presence AND
-         this verifier, and `wo_satisfied` (phases.py:2813) uses it to complete
-         a phase WITHOUT dispatching -- so the engine re-attested the phase
-         `done`, rc=0, artifact byte-unchanged;
-      2. the dispatcher's own idempotent pre-check (dispatcher.py:5121-5160)
-         consults the same verifier and returned `skipped_satisfied`;
-      3. and because that re-attestation path is NOT gated on
-         `status == 'done'`, it also covers `running`/`pending` phases -- the
-         DEADLOCK-1 window, where `_revalidate_banked` never runs at all.
-
-    Net effect before this check: 0 model calls, artifact unchanged, render
-    phases refused exactly as before. This verifier IS the seam all three
-    consult, so the band belongs here (and the `artifacts.validate_artifact`
-    arm stays as the banked re-validation half).
-
-    The band is READ FROM `prompt_gate` -- the same shared source the render
-    gate and the producer use, never a second copy. Length is measured on the
-    stripped text, exactly as `build_infographic.resolve_design_prompt` and
-    `prompt_gate.prompt_problems` measure it."""
-    p = artifact_path(run_dir, rel)
-    if p is None:
-        return [f"{rel}: file not found -- phase artifact missing"]
-    try:
-        text = p.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        return [f"{rel}: unreadable ({exc!r})"]
-    length = len(text.strip())
-    if length < 40:
-        return [f"{rel}: only {length} chars of content -- too small to "
-                "be a real authored fragment"]
-    try:
-        import prompt_gate as _pg
-    except Exception as exc:  # noqa: BLE001
-        # FAIL CLOSED, deliberately: this gate decides whether a phase may be
-        # marked DONE without re-authoring, so an unverifiable band must not
-        # silently re-bless the artifact. (The artifacts.py arm degrades the
-        # other way on purpose -- it must not turn every banked design prompt
-        # into a permanent re-author loop -- and DISCLOSES that in its verdict.)
-        return [f"{rel}: PD-TEST-098 band check UNAVAILABLE -- prompt_gate "
-                f"could not be imported ({type(exc).__name__}: {exc}); refusing "
-                "to attest an unverifiable design prompt"]
-    # PD-TEST-113 -- THE WHOLE GATE, NOT JUST ITS LENGTH CLAUSE.
-    #
-    # This verifier used to enforce exactly two rules of the shared gate:
-    # AF-P1 (floor) and AF-P2 (ceiling). `prompt_gate.prompt_problems` applies
-    # more than that, and the CONSUMER
-    # (`build_infographic.resolve_design_prompt`) calls the WHOLE gate. So a
-    # design prompt could clear this verifier, be attested `done` by the
-    # engine, and then be refused by its own render phase on a rule this seam
-    # never checked -- and `prior_reasons` could never carry that requirement
-    # back to the producer, because the producer is only ever told the reasons
-    # THIS function emits. The re-author loop was therefore structurally
-    # incapable of converging on the unstated rules.
-    #
-    # Measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
-    # all three design prompts PASSED this verifier at 13,513 / 14,612 /
-    # 12,296 chars, and P-U-DESIGN-RENDER-SALES / -VSL then refused them with
-    # `AF-R3: forbidden hardcoded demographic default 'default demographic'`
-    # and `AF-P13: negative block does not name defect class(es): placeholder/
-    # bracket tokens, anatomical artifacts` -- one full paid re-author plus a
-    # quarantined render phase per undiscovered rule, discovered one gate code
-    # at a time.
-    #
-    # THE FIX: delegate to the ONE shared authority rather than restate a
-    # subset of it. `prompt_problems` is the same accumulating, non-raising
-    # function the render path and build_deck's provers call, so this phase now
-    # fails on exactly the rules its consumer enforces -- no more, no fewer,
-    # and no second copy of any rule to drift. Verified against the live run:
-    # `prompt_problems` on the three banked artifacts returns byte-identical
-    # findings to the render refusals above (2 / 0 / 1 problems), including
-    # AF-R3 and both AF-P13 class lists.
-    #
-    # `copy_val` stays None deliberately -- AF-P-VERBATIM needs a slide's exact
-    # copy, which is a property of the CONSUMING slide, not of this aggregate
-    # page prompt; the render path applies it per slide with the copy in hand.
-    # The floor/ceiling constants this function already imported remain the
-    # single source for the length rule, now applied by `prompt_problems`
-    # itself.
-    # D1 (independent review of PR #1148): the CONSUMER feeds the STRIPPED text (`build_infographic.resolve_design_prompt` does `stripped = text.strip()` then `prompt_gate.prompt_problems(stripped)`). `prompt_gate`'s structural check matches the literal `'Do not '` INCLUDING its trailing space, so a file whose only such literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED by the consumer. Passing `text` here reproduced that divergence one layer up; pass exactly what the consumer passes.
-    problems = _pg.prompt_problems(text.strip())
-    if problems:
-        return [f"{rel}: {problem}" for problem in problems]
     return []
 
 
@@ -4774,20 +4642,10 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_receipt_identity(run_dir, p, scope_key="ghl_receipt"))
             elif shape == "form_gate":
                 reasons.extend(_pu_check_form_gate(run_dir, rel))
-            elif shape == "html":
-                reasons.extend(_pu_check_html(run_dir, rel))
-            elif shape == "png":
-                reasons.extend(_pu_check_png(run_dir, rel))
             elif shape == "upsell_qc":
                 reasons.extend(_pu_check_qc_scorecard(run_dir, rel))
             elif shape == "collection":
                 reasons.extend(_pu_check_collection(run_dir, rel))
-            elif _DESIGN_PROMPT_REL_RE.match(rel):
-                # PD-TEST-098: the page-design prompt carries the SHARED prompt
-                # band, not just ">= 40 chars". This is the seam the engine's
-                # wo_satisfied re-attestation AND the dispatcher's
-                # already_satisfied pre-check both consult.
-                reasons.extend(_pu_check_design_prompt(run_dir, rel))
             elif rel.endswith(".json") or rel in _PU_JSON_ARTIFACTS:
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:
@@ -4804,24 +4662,6 @@ for _pid, _arts in (
     ("P-U-CHECKOUT-COPY",  ["copy/checkout.fragment.md"]),
     ("P-U-VSL-RESEARCH",   ["vsl-research.md"]),
     ("P-U-VSL-COPY",       ["copy/vsl.fragment.md"]),
-    # DEFECT-4 (manifest v67): the agent phase authors the PROMPT ONLY. It used
-    # to list design/<page>-design.png here as well, which is the RENDER phase's
-    # artifact -- the same-artifact multi-producer shape that let one phase's
-    # output satisfy another's presence check (P-SP-P3-HYGIENE, v24.2.0). The
-    # manifest's produces_artifact now matches this list exactly.
-    ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt"]),
-    ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt"]),
-    ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt"]),
-    # FIX 28 render phases: the agent phase above now authors the prompt only;
-    # the script executor P-U-DESIGN-RENDER-* produces design/<page>-design.png
-    # through build_infographic.py --spec design (no hand step). Each render
-    # phase verifies its own PNG so the registry covers every manifest phase id.
-    ("P-U-DESIGN-RENDER-SALES",   ["design/sales-design.png"]),
-    ("P-U-DESIGN-RENDER-CHECKOUT",["design/checkout-design.png"]),
-    ("P-U-DESIGN-RENDER-VSL",     ["design/vsl-design.png"]),
-    ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
-    ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
-    ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),
     # PRES-011: P-U-FORM-GATE / P-U-GHL-SALES / P-U-GHL-VSL are NOT in this
     # generic presence table anymore. Their receipts prove REMOTE installs
     # (adapter IDs + readback + ops-ledger provenance via

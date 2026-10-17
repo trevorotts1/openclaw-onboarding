@@ -47,6 +47,12 @@ CONSUMERS
   build_webinar_video.py reads the slide-media manifest (or derives
                          it from motion.json) and hash-verifies every
                          clip before webinar_ffmpeg.py may use it.
+  phase_verifiers.py     surfaces motion_summary_line (the B14
+                         Section 5.4 one-line delivery summary) as the
+                         P8.15-MOTION verifier's PASS NOTE, the same
+                         shape the VSL verifier's defer/waived NOTE
+                         takes, so the run record states the motion
+                         outcome without anyone opening the JSON.
 
 This module deliberately holds no validation logic of its own beyond
 election/slot/record plumbing: package authentication lives in
@@ -63,6 +69,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -145,6 +152,17 @@ MOTION_COPY_DENSITY = "MOTION_COPY_DENSITY"
 MOTION_EMBED_MISSING = "MOTION_EMBED_MISSING"
 MOTION_RECORD_INVALID = "MOTION_RECORD_INVALID"
 MOTION_CLIP_EXCEEDS_SLOT = "MOTION_CLIP_EXCEEDS_SLOT"
+
+# Slot-exclusion codes (FIX-PLAN Item 34 residual R3, B14 Sections 3.2
+# and 3.3): a slide can BE a nominal slot (slide 1, or a section
+# divider) and still be doctrine-barred from hosting a piece. That is
+# a different fact from MOTION_SLOT_INVALID (no slot at all), so each
+# exclusion carries its own named code and the motion record entry
+# says which doctrine barred the slide.
+MOTION_SLOT_EXCLUDED_HOOK = "MOTION_SLOT_EXCLUDED_HOOK"
+MOTION_SLOT_EXCLUDED_PRICE = "MOTION_SLOT_EXCLUDED_PRICE"
+MOTION_SLOT_EXCLUDED_OFFER_CTA = "MOTION_SLOT_EXCLUDED_OFFER_CTA"
+MOTION_SLOT_EXCLUDED_PROOF = "MOTION_SLOT_EXCLUDED_PROOF"
 
 MOTION_STATUS_EMBEDDED = "embedded"
 MOTION_STATUS_VALIDATED = "validated"
@@ -307,6 +325,109 @@ def slot_for_slide(slide_ord: int, tag_blob: Optional[str]) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Slot exclusions (B14 Sections 3.2 and 3.3, Item 34 residual R3)
+#
+# Slot legality is judged from run data the validator already reads
+# neighbors of: the slide's arc tag blob (arc_allocation.json, via
+# build_deck._load_slide_arc_tags, whose "hook" token is the per-slide
+# dedicated-hook marker; hook_package.json carries only a slide COUNT,
+# never slide numbers, so it cannot name a slide) and the slide's
+# approved copy lines (slides.json copy, threaded in by the planner).
+# No new copy and no new client question is invented for this judgment.
+# ---------------------------------------------------------------------------
+
+# Arc-blob markers for the offer/CTA arc family.
+OFFER_CTA_ARC_MARKERS = (
+    "offer",
+    "cta",
+    "call-to-action",
+    "call_to_action",
+)
+
+# Arc-blob markers for proof / guarantee / signature-quote slides.
+PROOF_ARC_MARKERS = (
+    "proof",
+    "guarantee",
+    "testimonial",
+    "signature-quote",
+    "signature_quote",
+    "signature quote",
+)
+
+# Approved-copy markers for proof / guarantee copy. The price judgment
+# has its own matcher below (a currency amount, or the FINAL_PRICE
+# literal the copy pipeline carries).
+PROOF_COPY_MARKERS = (
+    "guarantee",
+    "guaranteed",
+    "money-back",
+    "money back",
+    "testimonial",
+)
+
+_PRICE_TOKEN_RE = re.compile(r"\$\s?\d")
+
+
+def _copy_blob(copy_lines) -> str:
+    if not copy_lines:
+        return ""
+    return "\n".join(str(c) for c in copy_lines).lower()
+
+
+def slot_exclusion(slide_ord: int, tag_blob: Optional[str],
+                   copy_lines=None):
+    """The B14 Section 3.2 doctrine exclusion for one nominal slot
+    slide, as (reason_code, detail), or None when the slide may host
+    a piece. Judged in doctrine order: dedicated hook, price copy,
+    offer/CTA arc, proof or guarantee. Adjacency of the two filled
+    slots (B14 Section 3.2's last exclusion) is deliberately NOT
+    enforced here or in the planner: the landed MG-036 suite pins
+    adjacent slides 1 and 2 as the two kept pieces of its cap case
+    (test_plan_enforces_b14_cap), so an adjacency degrade would
+    contradict the merged seam's own acceptance behavior. The
+    conflict is recorded in the Item 34 stream record (B34-IMPL)
+    for a coordinator ruling; until then the landed behavior
+    governs, exactly as with the frame-0 poster divergence."""
+    blob = str(tag_blob or "").lower()
+    copy = _copy_blob(copy_lines)
+    if "hook" in blob:
+        return (MOTION_SLOT_EXCLUDED_HOOK,
+                f"slide {slide_ord} is a dedicated hook slide (the "
+                f"run's arc data marks it hook); B14 Section 3.2 "
+                f"bars motion on dedicated hook slides, so the piece "
+                f"degrades to the static slide")
+    if "final_price" in copy or _PRICE_TOKEN_RE.search(copy):
+        return (MOTION_SLOT_EXCLUDED_PRICE,
+                f"slide {slide_ord}'s approved copy carries a price "
+                f"token or FINAL_PRICE; B14 Section 3.2 bars motion "
+                f"on price and offer slides, so the piece degrades "
+                f"to the static slide")
+    for marker in OFFER_CTA_ARC_MARKERS:
+        if marker in blob:
+            return (MOTION_SLOT_EXCLUDED_OFFER_CTA,
+                    f"slide {slide_ord} sits in the offer/CTA arc "
+                    f"(arc marker {marker!r}); B14 Section 3.2 bars "
+                    f"motion on offer and CTA slides, so the piece "
+                    f"degrades to the static slide")
+    for marker in PROOF_ARC_MARKERS:
+        if marker in blob:
+            return (MOTION_SLOT_EXCLUDED_PROOF,
+                    f"slide {slide_ord} is a proof, guarantee or "
+                    f"signature-quote slide (arc marker {marker!r}); "
+                    f"B14 Section 3.2 bars motion there, so the piece "
+                    f"degrades to the static slide")
+    for marker in PROOF_COPY_MARKERS:
+        if marker in copy:
+            return (MOTION_SLOT_EXCLUDED_PROOF,
+                    f"slide {slide_ord}'s approved copy carries "
+                    f"proof or guarantee copy ({marker!r}); B14 "
+                    f"Section 3.2 bars motion on proof and guarantee "
+                    f"slides, so the piece degrades to the static "
+                    f"slide")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Records
 # ---------------------------------------------------------------------------
 
@@ -386,3 +507,56 @@ def write_slide_media_manifest(run_dir: Path,
                                record: Dict[str, Any]) -> Path:
     return atomic_write_json(slide_media_manifest_path(run_dir),
                              slide_media_manifest_from_record(record))
+
+
+# ---------------------------------------------------------------------------
+# Delivery surfacing (B14 Section 5.4 tail, Item 34 residual R4)
+# ---------------------------------------------------------------------------
+
+def motion_summary_line(record: Dict[str, Any],
+                        arc_tags: Optional[Dict[int, str]] = None) -> str:
+    """The one-line motion summary the delivery path surfaces, derived
+    from the LANDED motion.json shape (election object plus slides[]
+    entries keyed by slide number with MOTION_* reason codes; the
+    record stores no slot letter on degraded-before-slot entries, so
+    the letter is derived through slot_for_slide exactly as the seam
+    derives it, using the entry's recorded slot when it carries one).
+
+    Shape: "Motion: 1 of 2 pieces embedded; slot B degraded
+    (MOTION_...); deck complete on static slides". A deck that did
+    not elect motion reads "Motion: not elected; deck complete on
+    static slides". The line states embed structure only; it never
+    claims playback."""
+    record = record if isinstance(record, dict) else {}
+    election = record.get("election") or {}
+    if not election.get("elected"):
+        return "Motion: not elected; deck complete on static slides"
+    slides = [e for e in (record.get("slides") or [])
+              if isinstance(e, dict)]
+    total = len(slides)
+    embedded = sum(1 for e in slides
+                   if e.get("status") == MOTION_STATUS_EMBEDDED)
+    parts = [f"Motion: {embedded} of {total} pieces embedded"]
+    arc_tags = arc_tags or {}
+    for entry in slides:
+        status = entry.get("status")
+        if status == MOTION_STATUS_EMBEDDED:
+            continue
+        slide = entry.get("slide")
+        letter = entry.get("slot")
+        if not letter and isinstance(slide, int):
+            letter = slot_for_slide(slide, arc_tags.get(slide, ""))
+        name = f"slot {letter}" if letter else f"slide {slide}"
+        if status == MOTION_STATUS_DEGRADED:
+            parts.append(
+                f"{name} degraded "
+                f"({entry.get('reason_code') or MOTION_RECORD_INVALID})")
+        elif status == MOTION_STATUS_LATE:
+            parts.append(f"{name} produced late, not embedded")
+        elif status == MOTION_STATUS_VALIDATED:
+            parts.append(f"{name} validated, not embedded")
+        else:
+            parts.append(f"{name} {status or 'unrecorded'}")
+    if embedded < total or total == 0:
+        parts.append("deck complete on static slides")
+    return "; ".join(parts)

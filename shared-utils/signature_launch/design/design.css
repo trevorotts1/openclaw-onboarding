@@ -1,0 +1,217 @@
+/*
+ * Signature Launch shared component styles (owner: S71, doc 16).
+ *
+ * Every class is namespaced `sl-` and every brand value comes from the
+ * --sl-* custom properties emitted by tokens.tokens_to_css() from the
+ * client's brand file (doc 16 section 6: namespaced component classes
+ * and token variables prevent collisions inside the page builder).
+ * This file contains NO brand colors, NO font names and NO broad
+ * resets: where a token variable is unset (missing brand data), the
+ * components inherit the page's own styling instead of inventing one.
+ * Native form internals inside a cross-origin embed are styled in
+ * their own builder, never from here (doc 16 section 6).
+ *
+ * Two variables are FUNCTIONAL, not brand values, and carry universal
+ * defaults as documented fallbacks: --sl-color-error (error text) and
+ * --sl-color-scrim (the popup overlay dim). A page may override either
+ * in its own :root block; the defaults are the conventional values
+ * already used by these components, not client brand data.
+ */
+
+/* ---------- Branded interest popup (doc 16 section 1, doc 07 section 4) */
+
+.sl-popup-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sl-space-md, 1rem);
+  background: var(--sl-color-scrim, rgba(0, 0, 0, 0.55));
+  z-index: 1000;
+}
+
+.sl-popup-overlay[hidden] {
+  display: none;
+}
+
+.sl-popup {
+  position: relative;
+  width: 100%;
+  max-width: 30rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--sl-space-lg, 1.5rem);
+  border-radius: var(--sl-radius-lg, 16px);
+  background: var(--sl-color-ground-light, #ffffff);
+  color: inherit;
+  font-family: var(--sl-font-body, inherit);
+}
+
+.sl-popup h2 {
+  font-family: var(--sl-font-display, inherit);
+  margin: 0 var(--sl-space-xl, 2.5rem) var(--sl-space-sm, 0.5rem) 0;
+}
+
+.sl-popup-close {
+  position: absolute;
+  top: var(--sl-space-sm, 0.5rem);
+  right: var(--sl-space-sm, 0.5rem);
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  border: 0;
+  background: transparent;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+
+.sl-popup-form .sl-field {
+  margin-bottom: var(--sl-space-md, 1rem);
+}
+
+.sl-popup-form label {
+  display: block;
+  margin-bottom: var(--sl-space-xs, 0.25rem);
+  font-weight: 600;
+}
+
+.sl-popup-form input[type="text"],
+.sl-popup-form input[type="email"],
+.sl-popup-form input[type="tel"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sl-space-sm, 0.5rem);
+  border: 1px solid currentColor;
+  border-radius: var(--sl-radius-sm, 4px);
+  font: inherit;
+}
+
+.sl-popup-form .sl-consent {
+  margin-bottom: var(--sl-space-sm, 0.5rem);
+}
+
+.sl-popup-form .sl-consent label {
+  display: flex;
+  gap: var(--sl-space-sm, 0.5rem);
+  align-items: flex-start;
+  font-weight: 400;
+}
+
+.sl-popup-submit {
+  width: 100%;
+  padding: var(--sl-space-sm, 0.5rem) var(--sl-space-md, 1rem);
+  border: 0;
+  border-radius: var(--sl-radius-md, 8px);
+  background: var(--sl-color-accent, inherit);
+  color: var(--sl-color-logo-white, inherit);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sl-popup-error {
+  color: var(--sl-color-error, #b00020);
+  font-weight: 600;
+}
+
+/* Visible focus for every interactive element in the popup (doc 16
+   section 5 names the focus state). The ring follows the brand accent
+   token; where no accent is resolved it uses the element's own color. */
+.sl-popup-close:focus,
+.sl-popup-form input:focus,
+.sl-popup-submit:focus {
+  outline: 2px solid var(--sl-color-accent, currentColor);
+  outline-offset: 2px;
+}
+
+.sl-popup-close:focus-visible,
+.sl-popup-form input:focus-visible,
+.sl-popup-submit:focus-visible {
+  outline: 2px solid var(--sl-color-accent, currentColor);
+  outline-offset: 2px;
+}
+
+.sl-popup-submit[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.sl-popup-pending,
+.sl-popup-verified {
+  font-weight: 600;
+}
+
+/* ---------- Trust/proof block (doc 16 sections 1, 8) */
+
+.sl-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-lg, 1.5rem);
+  align-items: flex-start;
+}
+
+.sl-trust[data-state="absent"] {
+  display: none;
+}
+
+.sl-trust-testimonial {
+  margin: 0;
+  max-width: 34rem;
+}
+
+.sl-trust-testimonial blockquote {
+  margin: 0 0 var(--sl-space-sm, 0.5rem) 0;
+  font-family: var(--sl-font-accent, inherit);
+  font-size: 1.125rem;
+}
+
+.sl-trust-count {
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-trust-count-value {
+  font-family: var(--sl-font-display, inherit);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--sl-color-accent, inherit);
+}
+
+.sl-trust-credential {
+  font-weight: 600;
+}
+
+.sl-trust-credential-detail {
+  font-weight: 400;
+}
+
+/* ---------- Deadline display (doc 16 sections 1, 8) */
+
+.sl-deadline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-sm, 0.5rem);
+  align-items: baseline;
+  font-family: var(--sl-font-body, inherit);
+}
+
+.sl-deadline[data-state="absent"] {
+  display: none;
+}
+
+.sl-deadline-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sl-deadline-remaining {
+  font-weight: 600;
+  color: var(--sl-color-accent, inherit);
+}
+
+.sl-deadline[data-state="expired"] .sl-deadline-status {
+  font-weight: 600;
+}

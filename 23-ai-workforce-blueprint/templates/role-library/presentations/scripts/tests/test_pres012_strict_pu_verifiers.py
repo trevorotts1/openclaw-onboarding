@@ -15,7 +15,7 @@ THE CONTRACT under test (TODO.md PRES-012 steps 1-5):
      identity, revision/input hashes; GHL receipts additionally need a real
      location_id, remote ids, real preview URLs, and (when the LOCATION PIT
      resolves) a read-only list-back;
-  4. image/HTML/text substance (decode, dimensions, assembled markers);
+  4. text/JSON substance (real content, parseable objects, never stubs);
   5. a sibling's presence never satisfies another declared output, and an
      already-written artifact never substitutes for a fresh full contract.
 
@@ -258,40 +258,6 @@ class TestEveryDeclaredOutputRequired:
         assert ok is True, r
         ok, r = pv.verify("P-U-VSL-RESEARCH", rd)
         assert ok is True, r
-
-    def test_html_phase_rejects_prose_and_accepts_real_page(self, tmp_path):
-        rd = _intake(tmp_path / "run", {"WANT_SALES_CHECKOUT": "yes"})
-        (rd / "pages").mkdir()
-        (rd / "pages" / "sales.fragment.html").write_text("I did it")
-        ok, reasons = pv.verify("P-U-HTML-SALES", rd)
-        assert ok is False
-        assert any("not a real assembled page" in r or "too small" in r for r in reasons)
-        real = ("<!doctype html><html><head><title>Sales</title></head>"
-                "<body><h1>Acme Widget Mastery</h1>" + "<p>real assembled content</p>" * 10
-                + "</body></html>")
-        (rd / "pages" / "sales.fragment.html").write_text(real)
-        ok, reasons = pv.verify("P-U-HTML-SALES", rd)
-        assert ok is True, reasons
-
-    def test_design_render_rejects_non_png_and_zero_dimension(self, tmp_path):
-        rd = _intake(tmp_path / "run", {"WANT_SALES_CHECKOUT": "yes"})
-        (rd / "design").mkdir()
-        (rd / "design" / "sales-design.png").write_bytes(b"not a png at all")
-        ok, reasons = pv.verify("P-U-DESIGN-RENDER-SALES", rd)
-        assert ok is False
-        assert any("not a PNG" in r for r in reasons)
-        # zero-dimension header
-        zero = (b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
-                + struct.pack(">II", 0, 0) + b"\x08\x06\x00\x00\x00"
-                + b"\x00\x00\x00\x00" + b"\x00\x00\x00\x00" + b"IEND")
-        (rd / "design" / "sales-design.png").write_bytes(zero)
-        ok, reasons = pv.verify("P-U-DESIGN-RENDER-SALES", rd)
-        assert ok is False
-        assert any("zero-dimension" in r for r in reasons)
-        # real PNG passes
-        (rd / "design" / "sales-design.png").write_bytes(_TINY_PNG)
-        ok, reasons = pv.verify("P-U-DESIGN-RENDER-SALES", rd)
-        assert ok is True, reasons
 
     def test_qc_scorecard_requires_criteria_and_independence(self, tmp_path):
         rd = _intake(tmp_path / "run", {"WANT_SALES_CHECKOUT": "yes"})

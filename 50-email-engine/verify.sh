@@ -9,6 +9,9 @@
 #   1. prove-email.py --self-test          (built-in VALID + VIOLATION fixtures)
 #   1b. test_department_routing.py         (AST static: board card routes to the REAL
 #                                           primary department "marketing", never "email")
+#   1c. launch intake adapter              (S50-04: launch_intake_adapter.py --self-test
+#                                           + test_launch_intake_adapter.py — the
+#                                           shared-launch intake path and its refusals)
 #   2. email_matcher_cli.py --selftest     (route corpus examples to their entry)
 #   3. emit_build_plan.py --selftest       (DRAFT-ONLY build-plan emitter)
 #   4. email-library/register.py --check   (paired files + built index + coverage)
@@ -68,6 +71,8 @@ run "prove-email.py --self-test"        "$PY" "$TOOLS/prove-email.py" --self-tes
 run "run_email_engine.py --self-test"   "$PY" "$SKILL_DIR/run_email_engine.py" --self-test
 run "test_department_routing.py"        "$PY" "$SKILL_DIR/test_department_routing.py"
 run "test_intake_contract_authority.py" "$PY" "$SKILL_DIR/test_intake_contract_authority.py"
+run "launch_intake_adapter.py --self-test" "$PY" "$TOOLS/launch_intake_adapter.py" --self-test
+run "test_launch_intake_adapter.py"     "$PY" "$SKILL_DIR/test_launch_intake_adapter.py"
 run "email_matcher_cli.py --selftest"   "$PY" "$TOOLS/email_matcher_cli.py" --selftest
 run "emit_build_plan.py --selftest"     "$PY" "$TOOLS/emit_build_plan.py" --selftest
 run "email-library/register.py --check" "$PY" "$LIB/register.py" --check

@@ -58,11 +58,15 @@ def test_brief_phases_registered_with_recorded_shape():
     sales = _phase(m, "P-U-BRIEF-SALES")
     vsl = _phase(m, "P-U-BRIEF-VSL")
     # Placement: each emit phase sits immediately after its branch's
-    # design-render phase (B30 record section 2d item 5).
+    # design-render phase (B30 record section 2d item 5). Conformed for
+    # the Path A retirement (owner ruling 2026-10-15): the design-render
+    # anchors are retired phases, so the same placement is asserted
+    # against the surviving anchors: both emit phases sit in the upsell
+    # seam after copy QC, sales before VSL, and the VSL emit still sits
+    # before PF-DESIGN exactly as registered.
     order = {p["id"]: p["order"] for p in m["phases"]}
-    assert order["P-U-DESIGN-RENDER-CHECKOUT"] < sales["order"] \
-        < order["P-U-DESIGN-VSL"]
-    assert order["P-U-DESIGN-RENDER-VSL"] < vsl["order"] < order["PF-DESIGN"]
+    assert order["P1Q-COPY-QC"] < sales["order"] < order["P-U-BRIEF-VSL"]
+    assert order["P-U-BRIEF-SALES"] < vsl["order"] < order["PF-DESIGN"]
     assert sales["defers_unless"] == 'intake.want_sales_checkout == "yes"'
     assert vsl["defers_unless"] == 'intake.want_vsl_page == "yes"'
     assert sales["executor"] == {

@@ -77,6 +77,10 @@ AF_TYPE_MISMATCH = "AF-EMAIL-TYPE-MISMATCH"
 AF_INTAKE_SPLIT = "AF-EMAIL-INTAKE-SPLIT"
 AF_BRIEF_INCOMPLETE = "AF-EMAIL-BRIEF-INCOMPLETE"
 AF_OVERRIDE_UNLOGGED = "AF-EMAIL-OVERRIDE-UNLOGGED"
+AF_CTA_PLACEMENT = "AF-EMAIL-CTA-PLACEMENT"
+AF_SLOT_TRACE = "AF-EMAIL-SLOT-TRACE"
+AF_LABEL_LEAK = "AF-EMAIL-LABEL-LEAK"
+AF_LAUNCH_PROVENANCE = "AF-EMAIL-LAUNCH-PROVENANCE"
 
 # ---- SACRED constants (preserved VERBATIM from the corpus) ------------------
 FRAMEWORKS = (
@@ -116,8 +120,97 @@ LANDING_MAP = {
     4: "features-to-benefit", 5: "six-ws", 6: "before-after-bridge",
     7: "three-b-plan", 8: "million-dollar-sales", 9: "aida", 10: "pas",
 }
-SEQ_LENGTHS = {"landing_page_10": 10, "high_ticket_12": 12, "buyer_type_12": 12}
-PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 2}
+SEQ_LENGTHS = {"landing_page_10": 10, "high_ticket_12": 12, "buyer_type_12": 12,
+               "signature_launch_landing_10": 10}
+PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 2,
+                    "signature_launch_landing_10": 2}
+# The named Signature Launch profile (Signature Launch build, spec 13). It rides
+# the SAME ten-email LANDING_MAP, but its two-preview rule is a property of the
+# PROFILE, encoded here and in the profile's locked brief — the ordinary
+# Convert&Flow one-preview default (buyer_type_12) can never reach it, and a
+# per-email or locked-brief preview-count override can never lower it (see
+# evaluate_email). Other profiles are untouched.
+SIGNATURE_LAUNCH_TYPE = "signature_launch_landing_10"
+# Canonical ordered part labels for the profile's eight mapped frameworks
+# (grounded in each framework's email-library record). On the Signature Launch
+# profile, sections[] are REQUIRED and must follow this order, so framework
+# structure (the E8 twelve beats, the AIDA and PAS arcs, the 6 W's) is provable
+# on every run instead of only when an author volunteers sections. Labels are
+# matched against the section's leading label (text before a colon, or the
+# whole section string), case-insensitively, as an ordered subsequence.
+PROFILE_PART_ORDER = {
+    "pastor-solutions": ["problem", "amplify", "story", "transformation", "offer", "response"],
+    "features-to-benefit": ["feature", "benefit", "deeper benefit"],
+    "six-ws": ["why", "what", "who", "when", "where", "how"],
+    "before-after-bridge": ["before", "after", "bridge"],
+    "three-b-plan": ["brevity", "blunt", "basic"],
+    "million-dollar-sales": ["attention", "intention", "disqualifier", "credibility",
+                             "context", "cta", "benefits", "testimonial", "cta",
+                             "intention", "cta", "humorous"],
+    "aida": ["attention", "interest", "desire", "action"],
+    "pas": ["problem", "agitate", "solution"],
+}
+# The profile's measurable PASTOR CTA placement rule (beginning / middle / end):
+# the first CTA starts within the first half of the body words and the last CTA
+# starts inside the final quarter.
+CTA_FIRST_MAX_FRACTION = 0.50
+CTA_LAST_MIN_FRACTION = 0.75
+# The label split (spec 13 section 3): the private client-review document labels
+# each email with its framework and labels the body "Email Body:"; the recipient
+# payload carries NONE of that. Review direction: each profile email declares
+# review_label naming its framework (one of these tokens must appear in it).
+# Payload direction: no recipient-visible field may contain production labeling.
+REVIEW_LABEL_TOKENS = {
+    "pastor-solutions": ("pastor",),
+    "features-to-benefit": ("features-to-benefit", "features to benefit"),
+    "six-ws": ("six-ws", "six ws", "6 w"),
+    "before-after-bridge": ("before-after-bridge", "before after bridge"),
+    "three-b-plan": ("three-b", "3-b", "3 b plan"),
+    "million-dollar-sales": ("million dollar",),
+    "aida": ("aida",),
+    "pas": ("pas",),
+}
+LABEL_LEAK_PATTERNS = (
+    ("'Email Body:' label", re.compile(r"email\s+body\s*:", re.I)),
+    ("'Framework:' label", re.compile(r"framework\s*:", re.I)),
+    ("subject/preview line label", re.compile(r"(subject\s+line|preview\s+(text|line))\s*[ab]?\s*:", re.I)),
+    ("framework id", re.compile(r"\b(pastor-solutions|features-to-benefit|six-ws|before-after-bridge|three-b-plan|million-dollar-sales)\b", re.I)),
+    ("slot instruction", re.compile(r"\bslot\s+\d+\b|\bpain\s+point\s+#?\d+\s+from\b", re.I)),
+)
+
+
+def _section_label(text):
+    t = (text or "").strip().lower()
+    head = t.split(":", 1)[0] if ":" in t[:48] else t
+    return head.strip()
+
+
+def _sections_follow_order(sections, canonical):
+    """True when the canonical part labels appear in `sections` in order
+    (an ordered subsequence over the sections' leading labels)."""
+    p = 0
+    for s in sections:
+        if p >= len(canonical):
+            break
+        if canonical[p] in _section_label(s):
+            p += 1
+    return p >= len(canonical)
+
+
+def _cta_word_fraction(body, cta):
+    """Fraction of body words before the first occurrence of the CTA text
+    (case-insensitive), or None when the CTA text is absent from the body."""
+    text = (body or "").lower()
+    needle = (cta or "").strip().lower()
+    if not needle:
+        return None
+    pos = text.find(needle)
+    if pos < 0:
+        return None
+    total = len(text.split())
+    if total == 0:
+        return None
+    return len(text[:pos].split()) / total
 
 # ---- required brief fields — DERIVED FROM THE INTAKE CONTRACT (T2-38) --------
 # intake/email-intake-questions.json:6 describes itself as "the authoritative spec
@@ -330,6 +423,8 @@ def _sequence_type(obj):
     sid = (obj.get("sequence_id") or obj.get("sequence_position") or "").lower()
     if "high-ticket" in sid or "high_ticket" in sid:
         return "high_ticket_12"
+    if "signature-launch" in sid or "signature_launch" in sid:
+        return SIGNATURE_LAUNCH_TYPE
     if "landing" in sid:
         return "landing_page_10"
     if "buyer" in sid or "convert-and-flow" in sid or "convert_and_flow" in sid:
@@ -435,6 +530,37 @@ def evaluate_email(email, ctx):
             if have != want:
                 fails.append((AF_FRAMEWORK_INCOMPLETE,
                               "%s: %s declares %d sections, needs exactly %d" % (tag, framework, have, want)))
+        # Signature Launch profile: sections[] are REQUIRED and ORDERED, so the
+        # framework's structure is provable on every profile run (the generic
+        # engine still treats sections as opt-in for every other profile).
+        if seq_type == SIGNATURE_LAUNCH_TYPE and framework in PROFILE_PART_ORDER:
+            canonical = PROFILE_PART_ORDER[framework]
+            secs = ([s for s in sections if _nonempty_str(s)]
+                    if isinstance(sections, list) else [])
+            if not secs:
+                fails.append((AF_FRAMEWORK_INCOMPLETE,
+                              "%s: profile %s requires structured sections[] for %s "
+                              "(canonical order: %s)"
+                              % (tag, SIGNATURE_LAUNCH_TYPE, framework, " -> ".join(canonical))))
+            elif framework == "features-to-benefit":
+                feats = [s for s in secs if _section_label(s).startswith("feature")]
+                if len(feats) > 3:
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: features-to-benefit carries %d features, maximum 3"
+                                  % (tag, len(feats))))
+                if not _sections_follow_order(secs, canonical):
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: features-to-benefit sections do not complete the "
+                                  "feature -> benefit -> deeper benefit chain in order" % tag))
+            else:
+                if framework not in FRAMEWORK_PARTS and len(secs) != len(canonical):
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: %s declares %d sections, needs exactly %d on this profile"
+                                  % (tag, framework, len(secs), len(canonical))))
+                if not _sections_follow_order(secs, canonical):
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: %s sections are out of canonical order (expected %s)"
+                                  % (tag, framework, " -> ".join(canonical))))
 
     # --- objective validity (AF-EMAIL-OBJECTIVE-INVALID) ---
     if objective not in OBJECTIVES:
@@ -469,7 +595,20 @@ def evaluate_email(email, ctx):
         subjects = subjects if isinstance(subjects, list) else []
 
     # --- preview count (AF-EMAIL-PREVIEW-COUNT) ---
-    want_prev = prev_override if isinstance(prev_override, int) else _expected_previews(seq_type, mode)
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        # The Signature Launch profile fixes exactly 2 preview lines. The count
+        # is a profile property, NOT a client-exact override surface: even a
+        # LOCKED-brief-logged expected_preview_count cannot lower it (spec 13
+        # section 1/3; doc 19 conflict register — the profile carries two, other
+        # profiles keep their own defaults).
+        if isinstance(prev_override, int) and prev_override != 2:
+            fails.append((AF_PREVIEW_COUNT,
+                          "%s: profile %s fixes exactly 2 preview lines; a preview-count "
+                          "override (%r) is not permitted on this profile"
+                          % (tag, SIGNATURE_LAUNCH_TYPE, prev_override)))
+        want_prev = 2
+    else:
+        want_prev = prev_override if isinstance(prev_override, int) else _expected_previews(seq_type, mode)
     if not (isinstance(previews, list) and len(previews) == want_prev and all(_nonempty_str(p) for p in previews)):
         fails.append((AF_PREVIEW_COUNT,
                       "%s: needs exactly %d non-empty preview line(s) for this sequence" % (tag, want_prev)))
@@ -527,6 +666,43 @@ def evaluate_email(email, ctx):
         fails.append((AF_FIRSTNAME,
                       "%s: {{contact.first_name}} not placed in a subject%s"
                       % (tag, " (first 40 chars)" if mode != "high_ticket" else "")))
+
+    # Signature Launch profile: a subject or preview that uses the first-name
+    # merge field must declare the approved empty-first-name fallback, so an
+    # empty name renders clean copy instead of broken punctuation.
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        uses_merge = any("{{contact.first_name}}" in (s or "")
+                         for s in list(subjects or []) + list(previews or []))
+        if uses_merge and not _nonempty_str(email.get("merge_fallback")):
+            fails.append((AF_FIRSTNAME,
+                          "%s: profile %s requires a non-empty merge_fallback when a subject "
+                          "or preview uses {{contact.first_name}}" % (tag, SIGNATURE_LAUNCH_TYPE)))
+
+    # Signature Launch profile: the label split, both directions
+    # (AF-EMAIL-LABEL-LEAK). Review direction — the authored record must carry
+    # the framework label the private review document renders from. Payload
+    # direction — no recipient-visible field may carry production labeling.
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        tokens = REVIEW_LABEL_TOKENS.get(framework, ())
+        # Normalize punctuation away so the owner's own stylized label
+        # ("P.A.S.T.O.R. V1 (Solutions)") matches its framework token.
+        label = re.sub(r"[^a-z0-9]+", "", (email.get("review_label") or "").lower())
+        if tokens and not any(re.sub(r"[^a-z0-9]+", "", t) in label for t in tokens):
+            fails.append((AF_LABEL_LEAK,
+                          "%s: profile %s requires a review_label naming the framework %r "
+                          "for the private review document (got %r)"
+                          % (tag, SIGNATURE_LAUNCH_TYPE, framework, email.get("review_label"))))
+        payload_fields = (list(subjects or []) + list(previews or [])
+                          + [body or ""] + list(email.get("ctas") or []))
+        for field in payload_fields:
+            if not isinstance(field, str):
+                continue
+            for why, pat in LABEL_LEAK_PATTERNS:
+                if pat.search(field):
+                    fails.append((AF_LABEL_LEAK,
+                                  "%s: recipient payload contains production labeling (%s) — "
+                                  "labels belong to the private review document only" % (tag, why)))
+                    break
 
     # --- formatting (AF-EMAIL-FORMAT) ---
     if _count_emojis(body) > 4:
@@ -593,7 +769,7 @@ def evaluate_sequence(ledger, brief=None):
                "founder_name": founder, "require_disruptive": require_disruptive,
                "cta_min": 1, "locked_overrides": locked}
         # framework map + CTA floor per map
-        if seq_type == "landing_page_10":
+        if seq_type in ("landing_page_10", SIGNATURE_LAUNCH_TYPE):
             want_fw = LANDING_MAP.get(slot)
             if want_fw and isinstance(e, dict) and e.get("framework") != want_fw:
                 fails.append((AF_SEQUENCE_MAP,
@@ -614,6 +790,76 @@ def evaluate_sequence(ledger, brief=None):
                               % (slot, e.get("buyer_type"), want_bt)))
         fails.extend(evaluate_email(e, ctx))
 
+    # Signature Launch profile: slot-level enforcement that needs the whole
+    # sequence in view — PASTOR CTA placement and landing-source traceability.
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        by_slot = {}
+        for i, e in enumerate(emails, 1):
+            if isinstance(e, dict):
+                by_slot[e.get("e_slot", i)] = e
+        # CTA placement (AF-EMAIL-CTA-PLACEMENT): PASTOR slots 1-3, first CTA
+        # within the first half of the body words, last CTA inside the final
+        # quarter, every declared CTA present in the body text.
+        for slot in (1, 2, 3):
+            e = by_slot.get(slot)
+            if not e:
+                continue
+            ctas = [c for c in (e.get("ctas") or []) if _nonempty_str(c)]
+            body = e.get("body") or ""
+            fracs = [_cta_word_fraction(body, c) for c in ctas]
+            if ctas and any(f is None for f in fracs):
+                fails.append((AF_CTA_PLACEMENT,
+                              "E%d: a declared CTA does not appear in the body text "
+                              "(placement cannot be proven)" % slot))
+            elif fracs:
+                if fracs[0] > CTA_FIRST_MAX_FRACTION:
+                    fails.append((AF_CTA_PLACEMENT,
+                                  "E%d: first CTA starts at %.0f%% of the body words; the "
+                                  "profile requires it within the first half (beginning)"
+                                  % (slot, fracs[0] * 100)))
+                if fracs[-1] < CTA_LAST_MIN_FRACTION:
+                    fails.append((AF_CTA_PLACEMENT,
+                                  "E%d: last CTA starts at %.0f%% of the body words; the "
+                                  "profile requires it inside the final quarter (end)"
+                                  % (slot, fracs[-1] * 100)))
+        # Slot traceability (AF-EMAIL-SLOT-TRACE): each PASTOR slot owns a
+        # DIFFERENT landing Section 6 pain point; slot 4 traces to landing
+        # sections 8/9/10; slot 5's When is brief-supplied or absent.
+        pain_refs = {}
+        for slot in (1, 2, 3):
+            e = by_slot.get(slot)
+            if not e:
+                continue
+            ref = e.get("pain_ref")
+            if not _nonempty_str(ref):
+                fails.append((AF_SLOT_TRACE,
+                              "E%d: no pain_ref — the slot's landing Section 6 pain point "
+                              "is not traceable" % slot))
+            elif ref in pain_refs:
+                fails.append((AF_SLOT_TRACE,
+                              "E%d: pain_ref %r duplicates E%d — each PASTOR email must own "
+                              "a DIFFERENT Section 6 pain point" % (slot, ref, pain_refs[ref])))
+            else:
+                pain_refs[ref] = slot
+        e4 = by_slot.get(4)
+        if e4 is not None:
+            srcs = {str(s) for s in (e4.get("source_sections") or [])}
+            if not {"8", "9", "10"}.issubset(srcs):
+                fails.append((AF_SLOT_TRACE,
+                              "E4: source_sections %s do not cover landing sections 8, 9 and 10"
+                              % (sorted(srcs) or "[]")))
+        e5 = by_slot.get(5)
+        if e5 is not None:
+            prov = e5.get("when_provenance")
+            if prov not in ("brief", "none"):
+                fails.append((AF_SLOT_TRACE,
+                              "E5: when_provenance must be 'brief' or 'none' (got %r) — the "
+                              "6 W's When is stated only when the brief supplies it" % (prov,)))
+            elif e5.get("deadline") and prov != "brief":
+                fails.append((AF_SLOT_TRACE,
+                              "E5: a deadline is declared but when_provenance is %r — an "
+                              "invented When is forbidden" % (prov,)))
+
     # process integrity — a signed certificate is required before deploy
     if ledger.get("deploy_requested") is True:
         cert = ledger.get("process_certificate")
@@ -626,6 +872,118 @@ def evaluate_sequence(ledger, brief=None):
 
 
 # ---- intake / brief evaluation ----------------------------------------------
+# ---- Signature Launch intake path (S50-04) -----------------------------------
+# A brief with intake_mode "signature_launch" was produced by
+# tools/launch_intake_adapter.py from the approved S49 launch intake (contract:
+# intake/launch-intake-contract.json). It carries a launch_provenance block
+# instead of the legacy one-block attestation. The constants below mirror the
+# contract's vocabulary; the adapter is the producing authority and this prover
+# is the consuming gate.
+LAUNCH_INTAKE_MODE = "signature_launch"
+LAUNCH_FIELD_STATES = ("provided", "verified_existing", "recommended_unapproved",
+                       "approved_recommendation", "unknown", "not_applicable")
+LAUNCH_REQUIRED_FIELDS = ("sequence_position", "objective", "buyer_type", "offer",
+                          "founder_name", "brand_voice", "why_section_5",
+                          "pains_section_6", "sections_8_9_10", "round_timing",
+                          "testimonial_evidence")
+LAUNCH_VERIFICATION_CLASSES = ("authenticated_platform_record",
+                               "recorded_consent_not_cryptographically_sealed")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _launch_prov_errors(rec, answers):
+    """Verify a launch brief's launch_provenance block for presence, shape, and
+    internal consistency (AF-EMAIL-LAUNCH-PROVENANCE). This checks the brief's
+    INTERNAL binding: the approval record it carries must be of the plan-build
+    type, with a scope covering the build, not revoked, and bound by its
+    subject hash to the plan hash the brief carries; and every consumed field
+    must carry a provenance entry in a consumable state with a source
+    reference. Recomputing the plan hash from the launch record itself happens
+    at import time in the adapter; a brief that reaches this prover has
+    already crossed that gate."""
+    errs = []
+    if _sequence_type({"sequence_position": answers.get("sequence_position")}) \
+            != SIGNATURE_LAUNCH_TYPE:
+        errs.append("intake_mode %r is only valid for profile %s "
+                    "(sequence_position is %r)"
+                    % (LAUNCH_INTAKE_MODE, SIGNATURE_LAUNCH_TYPE,
+                       answers.get("sequence_position")))
+    prov = rec.get("launch_provenance")
+    if not isinstance(prov, dict):
+        return errs + ["intake_mode %r brief carries no launch_provenance "
+                       "object" % LAUNCH_INTAKE_MODE]
+    if _sequence_type({"sequence_position": prov.get("profile")}) \
+            != SIGNATURE_LAUNCH_TYPE:
+        errs.append("launch_provenance.profile is %r, expected the %s "
+                    "profile" % (prov.get("profile"), SIGNATURE_LAUNCH_TYPE))
+    if not _nonempty_str(prov.get("launch_id")):
+        errs.append("launch_provenance.launch_id is missing/empty")
+    plan_hash = prov.get("plan_hash")
+    if not (isinstance(plan_hash, str) and _HEX64_RE.match(plan_hash)):
+        errs.append("launch_provenance.plan_hash is not a sha256 hex digest")
+    offer = prov.get("offer")
+    if not isinstance(offer, dict) or not _nonempty_str(offer.get("display_name")):
+        errs.append("launch_provenance.offer carries no display_name")
+    elif offer.get("display_name") != answers.get("offer"):
+        errs.append("launch_provenance.offer.display_name %r does not match "
+                    "the brief offer answer %r"
+                    % (offer.get("display_name"), answers.get("offer")))
+    approval = prov.get("approval")
+    if not isinstance(approval, dict):
+        errs.append("launch_provenance carries no approval record")
+    else:
+        if approval.get("subject_type") != "launch_plan_build":
+            errs.append("approval subject_type is %r, expected "
+                        "'launch_plan_build'" % approval.get("subject_type"))
+        if approval.get("subject_hash") != plan_hash:
+            errs.append("approval subject_hash does not equal "
+                        "launch_provenance.plan_hash (the approval is not "
+                        "bound to this plan)")
+        scope = approval.get("scope")
+        if not (isinstance(scope, list) and "launch_plan_build" in scope):
+            errs.append("approval scope %r does not contain "
+                        "'launch_plan_build'" % (scope,))
+        if approval.get("revoked") is not False:
+            errs.append("approval is revoked (or its revocation state is "
+                        "not recorded as false)")
+        if not _nonempty_str(approval.get("approval_id")):
+            errs.append("approval record carries no approval_id")
+        if not _nonempty_str(approval.get("owner_identity_ref")):
+            errs.append("approval record names no owner identity")
+        if not _nonempty_str(approval.get("source_message_ref")):
+            errs.append("approval record carries no source message "
+                        "reference (the client's own response)")
+        if approval.get("verification_class") not in LAUNCH_VERIFICATION_CLASSES:
+            errs.append("approval verification_class %r is not recognized"
+                        % (approval.get("verification_class"),))
+    fields = prov.get("fields")
+    if not isinstance(fields, dict):
+        errs.append("launch_provenance carries no per-field provenance "
+                    "(fields)")
+    else:
+        for name in LAUNCH_REQUIRED_FIELDS:
+            entry = fields.get(name)
+            if not isinstance(entry, dict):
+                errs.append("field %r carries no provenance entry" % name)
+                continue
+            state = entry.get("state")
+            if state not in LAUNCH_FIELD_STATES:
+                errs.append("field %r provenance state %r is not a "
+                            "recognized field state" % (name, state))
+            elif state in ("unknown", "recommended_unapproved"):
+                errs.append("field %r provenance state is %r: an "
+                            "unconsumed fact cannot lock a brief"
+                            % (name, state))
+            elif state == "not_applicable" and name != "testimonial_evidence":
+                errs.append("field %r is not_applicable: only "
+                            "testimonial_evidence may be not_applicable"
+                            % name)
+            if not _nonempty_str(entry.get("source_ref")):
+                errs.append("field %r provenance carries no source_ref"
+                            % name)
+    return errs
+
+
 def _ledger_oneblock(ledger):
     """INDEPENDENT one-block verification (FIX-S36-47). Derives the one-block
     property from an EXPORTED conversation ledger — the actual transcript, not a
@@ -655,12 +1013,26 @@ def evaluate_intake(rec):
         if st not in SEQ_LENGTHS and st != "single":
             fails.append((AF_TYPE_MISMATCH, "sequence_position %r resolves to unknown type" % seq_pos))
 
+    # Signature Launch path (S50-04; intake/launch-intake-contract.json): a
+    # brief with intake_mode "signature_launch" came through the approved S49
+    # launch intake, NOT the legacy one-block questionnaire, so it carries NO
+    # one-block attestation (asked_all_at_once would be a fabricated flag on
+    # this path). Its launch_provenance block is verified instead, and the
+    # one-block checks below are skipped for it. Legacy briefs are untouched.
+    launch_mode = rec.get("intake_mode") == LAUNCH_INTAKE_MODE
+    if launch_mode:
+        _ans = rec.get("answers") if isinstance(rec.get("answers"), dict) else {}
+        for _lmsg in _launch_prov_errors(rec, _ans):
+            fails.append((AF_LAUNCH_PROVENANCE, _lmsg))
+
     # one-block delivery (FIX-S36-47) — when an INDEPENDENT conversation-ledger
     # export is supplied it is AUTHORITATIVE (derived from the transcript, not a
     # self-attested boolean); the self-attested flags are only a fallback and are
     # explicitly labeled attestation-based when no ledger is present.
     ledger = rec.get("conversation_ledger")
-    if isinstance(ledger, list) and ledger:
+    if launch_mode:
+        pass  # launch path: provenance verified above; no one-block checks
+    elif isinstance(ledger, list) and ledger:
         fails.extend(_ledger_oneblock(ledger))
     else:
         if rec.get("asked_all_at_once") is not True:
@@ -888,6 +1260,64 @@ def _landing_ledger():
     }
 
 
+_SIGNATURE_SECTIONS = {
+    "pastor-solutions": ["Problem", "Amplify", "Story", "Transformation", "Offer", "Response"],
+    "features-to-benefit": ["Feature 1", "Benefit 1", "Deeper Benefit 1",
+                            "Feature 2", "Benefit 2", "Deeper Benefit 2",
+                            "Feature 3", "Benefit 3", "Deeper Benefit 3"],
+    "six-ws": ["Why", "What", "Who", "When", "Where", "How"],
+    "before-after-bridge": ["Before", "After", "Bridge"],
+    "three-b-plan": ["Brevity", "Blunt", "Basic"],
+    "million-dollar-sales": ["Attention Grabber", "Intention Call-Out", "Disqualifier",
+                             "Credibility", "Context", "CTA 1", "Benefits", "Testimonial",
+                             "CTA 2", "Final Intention Call-Out", "Final CTA", "Humorous P.S."],
+    "aida": ["Attention", "Interest", "Desire", "Action"],
+    "pas": ["Problem", "Agitate", "Solution"],
+}
+_FILLER = ("steady progress comes from small promises kept daily and measured "
+           "honestly over time with patience and care for the people involved")
+
+
+def _placed_body(ctas, founder, late=False):
+    """A 150-300 word body with the CTAs embedded in the text. Default layout
+    puts CTA1 in the first third, CTA2 mid-body, CTA3 in the final quarter
+    (the profile's placement rule); late=True bunches all three at the end."""
+    w = _FILLER.split()
+    if late:
+        parts = [" ".join((w * 8)[:150]), ctas[0], ctas[1], ctas[2], founder]
+        return "\n\n".join(parts)
+    parts = [" ".join((w * 3)[:45]), ctas[0], " ".join((w * 4)[:55]), ctas[1],
+             " ".join((w * 3)[:45]), ctas[2], " ".join(w[:10]), founder]
+    return "\n\n".join(parts)
+
+
+def _signature_ledger():
+    led = _landing_ledger()
+    led["sequence_type"] = SIGNATURE_LAUNCH_TYPE
+    led["sequence_id"] = "sequence-signature-launch-landing-10"
+    led["profile"] = SIGNATURE_LAUNCH_TYPE
+    pastor_ctas = ["See how it works", "Read the full story", "Claim your spot"]
+    review_labels = {"pastor-solutions": "P.A.S.T.O.R. V1 (Solutions)",
+                     "features-to-benefit": "Features-to-Benefit",
+                     "six-ws": "The 6 W's", "before-after-bridge": "Before-After-Bridge",
+                     "three-b-plan": "The 3-B Plan", "million-dollar-sales": "Million Dollar Sales",
+                     "aida": "AIDA", "pas": "PAS"}
+    for e in led["emails"]:
+        slot = e.get("e_slot")
+        e["sections"] = list(_SIGNATURE_SECTIONS[e["framework"]])
+        e["merge_fallback"] = "friend"
+        e["review_label"] = review_labels[e["framework"]]
+        if slot in (1, 2, 3):
+            e["ctas"] = list(pastor_ctas)
+            e["body"] = _placed_body(pastor_ctas, FOUNDER)
+            e["pain_ref"] = "landing.section6.pain.%d" % slot
+        if slot == 4:
+            e["source_sections"] = [8, 9, 10]
+        if slot == 5:
+            e["when_provenance"] = "none"
+    return led
+
+
 def _buyer12_ledger():
     emails = []
     for slot in range(1, 13):
@@ -931,6 +1361,67 @@ def _valid_intake():
     }
 
 
+def _valid_launch_brief():
+    """A launch brief as tools/launch_intake_adapter.py emits it: intake_mode
+    signature_launch, a complete launch_provenance block whose approval subject
+    hash equals its plan hash, and NO one-block attestation flags (they would
+    be fabricated statements on this path)."""
+
+    def _f(state):
+        return {"state": state, "source_kind": "owner",
+                "source_ref": "fixture provenance", "question_id": None,
+                "artifact": "fixture", "artifact_hash": "0" * 64}
+
+    plan_hash = "0123456789abcdef" * 4
+    return {
+        "kind": "brief", "skill": "email-engine",
+        "intake_mode": "signature_launch",
+        "launch_provenance": {
+            "profile": SIGNATURE_LAUNCH_TYPE,
+            "launch_id": "launch-fixture",
+            "launch_revision": 1,
+            "plan_hash": plan_hash,
+            "offer": {"offer_id": "offer-main",
+                      "display_name": "The Momentum Method",
+                      "source_kind": "owner", "source_ref": "fixture"},
+            "approval": {
+                "approval_id": "approval-fixture",
+                "subject_type": "launch_plan_build",
+                "subject_hash": plan_hash,
+                "owner_identity_ref": "client:fixture",
+                "source_message_ref": "msg-fixture",
+                "recorded_at": "2026-10-15T14:30:00+00:00",
+                "scope": ["launch_plan_build"], "revoked": False,
+                "verification_class":
+                    "recorded_consent_not_cryptographically_sealed",
+            },
+            "fields": {
+                "sequence_position": _f("verified_existing"),
+                "objective": _f("verified_existing"),
+                "buyer_type": _f("verified_existing"),
+                "offer": _f("provided"),
+                "founder_name": _f("provided"),
+                "brand_voice": _f("provided"),
+                "why_section_5": _f("provided"),
+                "pains_section_6": _f("provided"),
+                "sections_8_9_10": _f("provided"),
+                "round_timing": _f("provided"),
+                "testimonial_evidence": _f("not_applicable"),
+            },
+        },
+        "answers": {
+            "objective": "promotional", "buyer_type": "all",
+            "offer": "The Momentum Method",
+            "brand_voice": "Warm, direct, builder to builder.",
+            "sequence_position": "signature-launch-landing-10",
+            "founder_name": "Jordan Marsh",
+            "high_ticket": "no",
+            "offer_token_ledger": ["The Momentum Method"],
+            "client_overrode_word_band": False,
+        },
+    }
+
+
 def self_test():
     ok = True
 
@@ -956,9 +1447,11 @@ def self_test():
     print("== self-test: VALID fixtures (must PASS / exit 0) ==")
     check_pass("single-email", _valid_email())
     check_pass("landing-page-10", _landing_ledger())
+    check_pass("signature-launch-10", _signature_ledger())
     check_pass("buyer-type-12", _buyer12_ledger())
     check_pass("high-ticket-12", _ht12_ledger())
     check_pass("intake-brief", _valid_intake())
+    check_pass("launch-intake-brief", _valid_launch_brief())
 
     print("== self-test: VIOLATION fixtures (must FAIL / exit nonzero) ==")
 
@@ -1037,6 +1530,53 @@ def self_test():
     lg = _landing_ledger(); lg["emails"][3]["framework"] = "pas"  # slot4 should be features-to-benefit
     check_fail("landing-map", lg, AF_SEQUENCE_MAP)
 
+    # Signature Launch profile: the two-preview rule belongs to the PROFILE.
+    sg = _signature_ledger(); sg["emails"][0]["previews"] = ["only one preview line"]
+    check_fail("signature-preview-one", sg, AF_PREVIEW_COUNT)
+
+    sg = _signature_ledger(); sg["emails"][4]["framework"] = "pas"  # slot5 must be six-ws
+    check_fail("signature-map", sg, AF_SEQUENCE_MAP)
+
+    sg = _signature_ledger(); sg["emails"][1]["ctas"] = ["only one CTA"]  # PASTOR floor is 3
+    check_fail("signature-pastor-cta", sg, AF_CTA_COUNT)
+
+    # S50-05: profile sections are required and ordered; CTA placement and
+    # slot traceability are enforced (profile-scoped; legacy types unaffected).
+    sg = _signature_ledger(); sg["emails"][8].pop("sections", None)  # E9 AIDA, no sections
+    check_fail("signature-no-sections", sg, AF_FRAMEWORK_INCOMPLETE)
+
+    sg = _signature_ledger(); sg["emails"][8]["sections"] = ["Action", "Desire", "Interest", "Attention"]
+    check_fail("signature-section-order", sg, AF_FRAMEWORK_INCOMPLETE)
+
+    sg = _signature_ledger(); sg["emails"][7]["sections"] = sg["emails"][7]["sections"][:11]  # E8 drops a beat
+    check_fail("signature-md-sales-beats", sg, AF_FRAMEWORK_INCOMPLETE)
+
+    sg = _signature_ledger()
+    sg["emails"][0]["body"] = _placed_body(sg["emails"][0]["ctas"], FOUNDER, late=True)
+    check_fail("signature-cta-placement", sg, AF_CTA_PLACEMENT)
+
+    sg = _signature_ledger(); sg["emails"][1]["pain_ref"] = sg["emails"][0]["pain_ref"]
+    check_fail("signature-pain-dup", sg, AF_SLOT_TRACE)
+
+    sg = _signature_ledger(); sg["emails"][3]["source_sections"] = [8, 9]
+    check_fail("signature-e4-trace", sg, AF_SLOT_TRACE)
+
+    sg = _signature_ledger(); sg["emails"][4]["deadline"] = "Thursday"
+    check_fail("signature-when-invented", sg, AF_SLOT_TRACE)
+
+    sg = _signature_ledger(); sg["emails"][0].pop("merge_fallback", None)
+    check_fail("signature-no-fallback", sg, AF_FIRSTNAME)
+
+    # S50-06: the label split, both directions.
+    sg = _signature_ledger(); sg["emails"][0]["body"] = "Email Body:\n\n" + sg["emails"][0]["body"]
+    check_fail("signature-label-leak", sg, AF_LABEL_LEAK)
+
+    sg = _signature_ledger(); sg["emails"][8]["subjects"] = ["Framework: AIDA in four moves for {{contact.first_name}} today", sg["emails"][8]["subjects"][1]]
+    check_fail("signature-label-subject", sg, AF_LABEL_LEAK)
+
+    sg = _signature_ledger(); sg["emails"][2].pop("review_label", None)
+    check_fail("signature-review-label", sg, AF_LABEL_LEAK)
+
     hg = _ht12_ledger(); hg["emails"][0].pop("disruptive_elements", None)
     check_fail("disruptive-missing", hg, AF_DISRUPTIVE)
 
@@ -1067,6 +1607,31 @@ def self_test():
     it = _valid_intake(); it["skill"] = "deck-engine"
     check_fail("type-mismatch", it, AF_TYPE_MISMATCH)
 
+    # S50-04 — the launch intake path: provenance replaces the one-block
+    # attestation. The valid launch brief above carries no asked_all_at_once
+    # and passes; each provenance defect below trips AF-EMAIL-LAUNCH-PROVENANCE.
+    lb = _valid_launch_brief(); del lb["launch_provenance"]
+    check_fail("launch-no-provenance", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["approval"]["subject_hash"] = "f" * 64
+    check_fail("launch-hash-mismatch", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief(); lb["launch_provenance"]["approval"]["revoked"] = True
+    check_fail("launch-revoked", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["approval"]["scope"] = ["paid_asset_budget"]
+    check_fail("launch-scope-narrowed", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["fields"]["pains_section_6"]["state"] = "unknown"
+    check_fail("launch-field-unknown", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["fields"]["founder_name"]["state"] = "not_applicable"
+    check_fail("launch-field-na", lb, AF_LAUNCH_PROVENANCE)
+
     # FIX-XC-12a — an override present on the email but NOT logged in the LOCKED
     # brief is REFUSED (AF-EMAIL-OVERRIDE-UNLOGGED) and the SACRED band re-applies.
     e = _valid_email(); e["body"] = _make_body(400); e["word_band_override"] = [350, 450]
@@ -1092,6 +1657,17 @@ def self_test():
     wrong_brief = {"locked_overrides": {"word_band_override": [10, 20]}}
     check_brief("override-mismatch", e_ok, wrong_brief, expect_pass=False,
                 expect_code=AF_OVERRIDE_UNLOGGED)
+
+    # Signature Launch profile: even a LOCKED-brief-logged preview override
+    # cannot lower the profile's fixed two previews (the two-preview rule is
+    # the profile's, not an override surface). The C&F one-preview default
+    # arriving through the override channel is refused on this profile.
+    sg = _signature_ledger()
+    sg["emails"][0]["previews"] = ["only one preview line"]
+    sg["emails"][0]["expected_preview_count"] = 1
+    sig_brief = {"locked_overrides": {"expected_preview_count": 1}}
+    check_brief("signature-override", sg, sig_brief, expect_pass=False,
+                expect_code=AF_PREVIEW_COUNT)
 
     # FIX-S36-47 — an INDEPENDENT conversation-ledger export is authoritative.
     it = _valid_intake()

@@ -84,7 +84,7 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-STYLE-PICK": 45,
     # Presentation Upsell (P-U-*) budgets — DESIGN-OPUS.md §10.1. These optional
     # phases are defers_unless-gated on the intake answers; deck-only runs never
-    # reach them. DESIGN-* 60, HTML-* 30, GHL-* 60, FORM-* 30, VSL-RESEARCH 15,
+    # reach them. GHL-* 60, FORM-* 30, VSL-RESEARCH 15,
     # COLLATERAL 20, QC 30, copy phases 20 (the DEFAULT_PHASE_BUDGET_MINUTES floor;
     # listed explicitly because test_budget_covers_all_canonical_phases requires
     # every canonical manifest id to have a PHASE_BUDGET_MINUTES entry).
@@ -98,22 +98,11 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-U-SALES-COPY": 20,
     "P-U-CHECKOUT-COPY": 20,
     "P-U-VSL-COPY": 20,
-    "P-U-DESIGN-SALES": 60,
-    "P-U-DESIGN-CHECKOUT": 60,
-    "P-U-DESIGN-VSL": 60,
-    # FIX-28: RENDER phases are mechanical Kie image renders (poll + download + ledger);
-    # budget 30 matches P8.3-INFOGRAPHIC (same Kie render class), not DESIGN 60.
-    "P-U-DESIGN-RENDER-SALES": 30,
-    "P-U-DESIGN-RENDER-CHECKOUT": 30,
-    "P-U-DESIGN-RENDER-VSL": 30,
     # Item 20 page-brief seam (B30 registration): the brief emit is a mechanical
     # gather + validate + write over artifacts the run already holds; budget 20
     # matches the copy phases' emit class (the DEFAULT floor).
     "P-U-BRIEF-SALES": 20,
     "P-U-BRIEF-VSL": 20,
-    "P-U-HTML-SALES": 30,
-    "P-U-HTML-CHECKOUT": 30,
-    "P-U-HTML-VSL": 30,
     "P-U-GHL-SALES": 60,
     "P-U-GHL-VSL": 60,
     "P-U-FORM-GATE": 30,
@@ -1042,7 +1031,14 @@ MIN_MANIFEST_VERSION = 75  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_versio
 # (MIN_MANIFEST_PHASES = 40 shadowed by = 26 below it), so the floor matched
 # neither the merged phase-count reality nor itself. One floor, matching
 # len(manifest.phases), in one place; _assert_manifest_current reads it.
-MIN_MANIFEST_PHASES = 59
+# 59 -> 56: the Path A fragment chains retire under Trevor's RETIRE ruling
+# of 2026-10-15 (the nine
+# P-U-DESIGN-* / P-U-DESIGN-RENDER-* / P-U-HTML-* phases produced artifacts no
+# live path consumes). The canonical manifest ships 56 phases (65 at the
+# rebase base, including the two Item 20 BRIEF phases and Skill 72's
+# P8.15-MOTION, minus the nine retired), so the floor follows it in the
+# same commit, per the FIX 83 doctrine above.
+MIN_MANIFEST_PHASES = 56
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""

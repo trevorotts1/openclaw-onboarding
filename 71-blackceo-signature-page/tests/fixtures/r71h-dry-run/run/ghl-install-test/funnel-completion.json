@@ -1,0 +1,121 @@
+{
+  "status": "complete",
+  "funnel": {
+    "funnel_id": "F-100",
+    "name": "Fixture Funnel",
+    "created": false,
+    "existence_check": true,
+    "rail": "browser"
+  },
+  "steps": [
+    {
+      "order": 1,
+      "step_id": "S-1",
+      "name": "Opt-in",
+      "type": "optin",
+      "binding": {
+        "kind": "ghl_page",
+        "page_id": "P-200"
+      },
+      "rail": "browser"
+    },
+    {
+      "order": 2,
+      "step_id": "S-2",
+      "name": "Order",
+      "type": "order",
+      "binding": {
+        "kind": "external_embed",
+        "embed_url": "https://pages.example.com/order",
+        "repo": "op/pages",
+        "deployment_id": "dpl_1"
+      },
+      "rail": "browser"
+    },
+    {
+      "order": 3,
+      "step_id": "S-3",
+      "name": "Book",
+      "type": "booking",
+      "binding": {
+        "kind": "ghl_page",
+        "page_id": "P-201"
+      },
+      "rail": "browser"
+    }
+  ],
+  "forms": [
+    {
+      "form_id": "FORM-1",
+      "name": "Opt-in form",
+      "attached_to_step": "Opt-in",
+      "optin_fields": [
+        "name",
+        "email",
+        "phone"
+      ],
+      "created": true,
+      "existence_check": true,
+      "rail": "browser"
+    },
+    {
+      "form_id": "FORM-2",
+      "name": "Order form",
+      "attached_to_step": "Order",
+      "created": true,
+      "existence_check": true,
+      "rail": "browser"
+    },
+    {
+      "form_id": "FORM-3",
+      "name": "Booking form",
+      "attached_to_step": "Book",
+      "created": false,
+      "existence_check": true,
+      "rail": "browser"
+    }
+  ],
+  "popups": [
+    {
+      "name": "Exit-intent popup",
+      "step": "Opt-in",
+      "trigger_element": "exit-intent",
+      "created": false,
+      "existence_check": true,
+      "rail": "browser"
+    }
+  ],
+  "click_actions": [
+    {
+      "element": "hero-cta",
+      "step": "Opt-in",
+      "verified_by_clickthrough": true,
+      "rail": "browser"
+    }
+  ],
+  "order_forms": [
+    {
+      "step": "Order",
+      "order_form_id": "OF-1",
+      "product_ids": [
+        "PR-1"
+      ],
+      "bound": true,
+      "rail": "browser"
+    }
+  ],
+  "products": [
+    {
+      "product_id": "PR-1",
+      "name": "Fixture Product",
+      "price": 497,
+      "currency": "USD",
+      "created": false,
+      "existence_check": true,
+      "rail": "api"
+    }
+  ],
+  "payment": {
+    "provider_present": true
+  }
+}

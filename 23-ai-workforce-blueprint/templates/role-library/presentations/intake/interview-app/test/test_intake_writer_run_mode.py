@@ -90,6 +90,7 @@ BASE_ANSWERS = {
     "want_sales_checkout": "yes",
     "want_vsl_page": "no",
     "want_email_sequences": "no",
+    "want_motion_graphics": "no",
     "client_notes": "",
 }
 
@@ -123,7 +124,8 @@ def _submit(run_mode=None, *, frontend_shaped=False):
                       {"PRESENTATION_TYPE": "from_scratch",
                        "WANT_SALES_CHECKOUT": answers["want_sales_checkout"],
                        "WANT_VSL_PAGE": answers["want_vsl_page"],
-                       "WANT_EMAIL_SEQUENCES": answers["want_email_sequences"]}, **pre),
+                       "WANT_EMAIL_SEQUENCES": answers["want_email_sequences"],
+                       "WANT_MOTION_GRAPHICS": answers["want_motion_graphics"]}, **pre),
                   "deck_brief": {"OFFER_NAME": answers["offer_name"],
                                  "NAMED_METHODOLOGY": answers["named_methodology"],
                                  "TRANSFORMATION_PROMISE": answers["transformation_promise"],

@@ -49,7 +49,7 @@ WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
 GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop",
-                 "gate:grade_calibrated", "gate:image_grade_full_set"}
+                 "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
 
 
 def fail_exit(lines):
@@ -392,12 +392,20 @@ def run_validators(run_dir, stage, receipt):
             continue
         if isinstance(resolved, tuple) and resolved[0] == "__per_file__":
             _, cmd_tpl, files = resolved
+            cmd_tpl, profile_line = apply_launch_profile(cmd_tpl, run_dir)
+            if profile_line:
+                failures.append(profile_line)
+                continue
             for fpath in files:
                 cmd = cmd_tpl.replace("{file}", fpath)
                 line = run_one_validator(cmd, run_dir)
                 if line:
                     failures.append(line)
         else:
+            resolved, profile_line = apply_launch_profile(resolved, run_dir)
+            if profile_line:
+                failures.append(profile_line)
+                continue
             line = run_one_validator(resolved, run_dir)
             if line:
                 failures.append(line)
@@ -425,6 +433,97 @@ def run_one_validator(cmd, run_dir):
         err = (proc.stderr or "").strip()
         detail = (out or err or "(no output)")[:600]
         return f"validator exit {proc.returncode}: {cmd}\n    {detail}"
+    return None
+
+
+CTA_MARKER_RE = re.compile(r"\[CTA BUTTON:\s*(.*?)\]", re.S)
+MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]*)\)")
+
+
+def _norm_label(text):
+    return " ".join(str(text).replace("**", " ").replace("__", " ").split())
+
+
+def copy_handoff_failure(manifest_path, public_path, manuscript_path):
+    """Update plan Item 8: the copy-to-renderer handoff check.
+
+    The pinned source for button labels and destinations is
+    copy/public-copy.md: each button is a Markdown link carrying the
+    exact label and the destination. The [CTA BUTTON: ...] markers live
+    only in copy/internal-manuscript.md (validate_copy_structure.py's
+    CTA map reads them there; validate_public_copy.py fails any public
+    file carrying the literal marker). Every declared CTA must resolve
+    a label and a destination from the public file. The declared set is
+    the copy manifest's `ctas` inventory when it carries one, else the
+    manuscript's CTA markers with the manifest's `cta_destination`;
+    when both inventories exist they must agree exactly. Prose links
+    (the Section 12 in-letter link) are not CTAs and never counted.
+    Returns a failure line, or None when the handoff is complete.
+    """
+    try:
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        return f"gate:copy_handoff: copy manifest unreadable: {exc}"
+    if not isinstance(manifest, dict):
+        return "gate:copy_handoff: copy manifest is not a JSON object"
+    try:
+        public_text = Path(public_path).read_text(encoding="utf-8")
+    except Exception as exc:
+        return f"gate:copy_handoff: public copy unreadable: {exc}"
+    manuscript_text = ""
+    if manuscript_path:
+        try:
+            manuscript_text = Path(manuscript_path).read_text(encoding="utf-8")
+        except Exception:
+            manuscript_text = ""
+    links = {}
+    for label, dest in MD_LINK_RE.findall(public_text):
+        links.setdefault(_norm_label(label), set()).add(dest.strip())
+    page_destination = str(manifest.get("cta_destination") or "").strip()
+    declared = []
+    raw_ctas = manifest.get("ctas")
+    if isinstance(raw_ctas, list):
+        for entry in raw_ctas:
+            if isinstance(entry, dict) and str(entry.get("label") or "").strip():
+                declared.append({
+                    "label": _norm_label(entry["label"]),
+                    "destination": str(entry.get("destination")
+                                       or page_destination).strip(),
+                })
+    markers = [_norm_label(m) for m in CTA_MARKER_RE.findall(manuscript_text)]
+    marker_set = set(markers)
+    if declared:
+        declared_set = {d["label"] for d in declared}
+        if marker_set and declared_set != marker_set:
+            parts = []
+            if declared_set - marker_set:
+                parts.append("manifest only: " + ", ".join(sorted(declared_set - marker_set)))
+            if marker_set - declared_set:
+                parts.append("manuscript only: " + ", ".join(sorted(marker_set - declared_set)))
+            return ("gate:copy_handoff: the copy manifest's CTA inventory does "
+                    "not match the internal manuscript's CTA markers ("
+                    + "; ".join(parts)
+                    + "); the handoff carries one CTA inventory, recorded in "
+                    "the manifest (update plan Item 8)")
+        ctas = declared
+    else:
+        ctas = [{"label": label, "destination": page_destination}
+                for label in dict.fromkeys(markers)]
+    problems = []
+    for cta in ctas:
+        if not cta["destination"]:
+            problems.append(
+                f"CTA {cta['label']!r} has no destination: the copy manifest "
+                "records no cta_destination and the entry carries none")
+        elif cta["destination"] not in links.get(cta["label"], set()):
+            problems.append(
+                f"CTA {cta['label']!r} does not resolve in copy/public-copy.md: "
+                f"no Markdown link carries that label with destination "
+                f"{cta['destination']!r}")
+    if problems:
+        return ("gate:copy_handoff: " + "; ".join(problems)
+                + "; the pinned source for button labels and destinations is "
+                "the Markdown links in copy/public-copy.md (update plan Item 8)")
     return None
 
 
@@ -564,7 +663,53 @@ def run_builtin(name, args, run_dir):
         banned_used = sorted(f for f in used if f in banned)
         if banned_used:
             return "gate:brand_fonts: banned fonts used: " + ", ".join(banned_used)
+        if derived:
+            # Update plan Item 7: on the derive path the gate checks the
+            # derivation DOCUMENTATION fields in the font map (the same
+            # three field names the visual bible carries), never an
+            # approval: no approval exists at this stage. The approval is
+            # recorded once, at the visual bible review, in the bible's
+            # font_reviewer (enforced by validate_visual_direction.py and
+            # the publish-verify rules below). font_reviewer here names
+            # the designated reviewer (the visual-mockup stage's
+            # independent bible reviewer) as a forward reference only.
+            problems = []
+            if str(fonts.get("fonts_source") or "").strip() != "derived":
+                problems.append('fonts_source is not "derived"')
+            if not str(fonts.get("font_rationale") or "").strip():
+                problems.append("font_rationale is empty")
+            reviewer = str(fonts.get("font_reviewer") or "").strip()
+            if not reviewer or reviewer in MUST_SUPPLY_STRINGS:
+                problems.append("font_reviewer names no designated reviewer")
+            if problems:
+                return ("gate:brand_fonts: derived fonts are not documented "
+                        "in the font map: " + "; ".join(problems)
+                        + "; font_policy derive-document requires the font map "
+                        "to carry fonts_source \"derived\", a written "
+                        "font_rationale, and font_reviewer naming the "
+                        "designated reviewer, so the visual bible can lift "
+                        "them verbatim (update plan Item 7)")
         return None
+    if name == "gate:copy_handoff":
+        # Update plan Item 8: every CTA declared by the copy manifest
+        # (or by the internal manuscript's CTA markers) must resolve a
+        # label and a destination from the pinned source,
+        # copy/public-copy.md's Markdown links. See copy_handoff_failure.
+        manifest = None
+        public = None
+        manuscript = None
+        i = 0
+        while i < len(args):
+            if args[i] == "--manifest" and i + 1 < len(args):
+                manifest = Path(args[i + 1])
+            elif args[i] == "--public-copy" and i + 1 < len(args):
+                public = Path(args[i + 1])
+            elif args[i] == "--manuscript" and i + 1 < len(args):
+                manuscript = Path(args[i + 1])
+            i += 1
+        if manifest is None or public is None:
+            return "gate:copy_handoff: missing --manifest or --public-copy"
+        return copy_handoff_failure(manifest, public, manuscript)
     return f"unknown builtin validator {name}"
 
 
@@ -963,6 +1108,50 @@ def _agnes_selected(run_dir):
     return isinstance(intake, dict) and str(intake.get("image_engine", "")).strip().lower() == "agnes"
 
 
+# ---------------------------------------------------------------------------
+# Launch profile wiring (S71-02): under the signature_launch_landing
+# profile, the copy stage's public-copy validation runs with S71-03's
+# no-offer-pricing gate engaged (packet doc 07 section 3: no offer
+# pricing on a Signature Launch landing page). The gate itself is an
+# opt-in flag on validate_public_copy.py owned by S71-03; the profile is
+# what engages it. Until the gate lands in this tree, a profile run's
+# copy stage fails closed naming the missing gate rather than silently
+# validating without it. Non-profile runs are untouched.
+
+LAUNCH_PROFILE_NAME = "signature_launch_landing"
+NO_OFFER_PRICING_FLAG = "--no-offer-pricing"
+
+
+def launch_profile_active(run_dir):
+    return intake_data(run_dir).get("launch_profile") == LAUNCH_PROFILE_NAME
+
+
+def apply_launch_profile(cmd, run_dir):
+    """Engage the profile's no-offer-pricing gate on a validator command.
+
+    Returns (command, failure_line_or_None): the command with the flag
+    appended when the profile is active and the validator on disk
+    supports it; a named failure when the profile is active but the
+    on-disk validator has no such flag; the command unchanged otherwise.
+    """
+    if "validate_public_copy.py" not in cmd or not launch_profile_active(run_dir):
+        return cmd, None
+    if NO_OFFER_PRICING_FLAG in cmd:
+        return cmd, None
+    script = SKILL_ROOT / "scripts" / "validate_public_copy.py"
+    try:
+        supported = NO_OFFER_PRICING_FLAG in script.read_text(encoding="utf-8")
+    except OSError:
+        supported = False
+    if not supported:
+        return cmd, ("launch profile signature_launch_landing requires the "
+                     "no-offer-pricing gate (S71-03), but "
+                     "scripts/validate_public_copy.py on disk does not "
+                     "support --no-offer-pricing; the copy stage cannot "
+                     "close under the profile without the gate engaged")
+    return cmd + " " + NO_OFFER_PRICING_FLAG, None
+
+
 def _intake_runtime(run_dir):
     try:
         intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
@@ -981,7 +1170,11 @@ LAYOUT_SUBSTITUTIONS_NAME = "substitutions.json"
 
 
 def _layout_substitution_record(skill_root=None):
-    """Parse assets/page-references/substitutions.json (Ruling 5).
+    """Parse assets/page-references/substitutions.json, the standing
+    house-default registry (Ruling 5, 2026-10-14; Item 17, ruled
+    2026-10-15: each complete entry is the APPROVED HOUSE DEFAULT for
+    its named reference, the fallback a run uses when the original
+    file was not supplied).
 
     A substitution counts only when its record is complete: the named
     file, status "substituted", a non-empty ruled_by, ruling_date, and
@@ -1045,6 +1238,33 @@ def _layout_references_waived(run_dir):
             and bool(str(intake.get("layout_references_waiver_reason") or "").strip()))
 
 
+def _is_supplied_entry(entry):
+    """A run inventory entry is a supplied asset when its source begins
+    with "supplied" (e.g. "supplied-logo", "supplied-founder-photo"):
+    the asset already exists and no generation is performed for it
+    (Item 3 supplied-asset path)."""
+    if not isinstance(entry, dict):
+        return False
+    source = entry.get("source")
+    return isinstance(source, str) and source.strip().lower().startswith("supplied")
+
+
+def _supplied_inventory_entries(run_dir):
+    """The run's supplied inventory entries, keyed by inventory id."""
+    inv_path = run_dir / "desktop-wireframe" / "image-inventory.json"
+    out = {}
+    if inv_path.is_file():
+        try:
+            data = json.loads(inv_path.read_text(encoding="utf-8"))
+        except ValueError:
+            return out
+        images = data.get("images", []) if isinstance(data, dict) else []
+        for e in images:
+            if _is_supplied_entry(e) and e.get("id"):
+                out[str(e["id"])] = e
+    return out
+
+
 def style_selection_problems(run_dir):
     """GCR-S2-4 (Item 10, Amendment 6 Part B1): a run with no style
     selection record cannot close image-inventory-prompts. The record
@@ -1091,61 +1311,116 @@ def style_selection_problems(run_dir):
     if problems:
         return problems
     inventory_ids = []
+    supplied_ids = set()
     inv_path = run_dir / "desktop-wireframe" / "image-inventory.json"
     if inv_path.is_file():
         try:
-            inventory_ids = [e.get("id") for e in
-                             json.loads(inv_path.read_text(
-                                 encoding="utf-8")).get("images", [])
-                             if isinstance(e, dict)]
+            entries = [e for e in
+                       json.loads(inv_path.read_text(
+                           encoding="utf-8")).get("images", [])
+                       if isinstance(e, dict)]
+            inventory_ids = [e.get("id") for e in entries]
+            supplied_ids = {str(e["id"]) for e in entries
+                            if _is_supplied_entry(e) and e.get("id")}
         except ValueError:
             inventory_ids = []
+    # Item 3: supplied entries (source begins with "supplied") are
+    # exempt from style-selection governance; no selection record has
+    # to govern them and "all" does not need to reach them.
+    governed_ids = [i for i in inventory_ids if str(i) not in supplied_ids]
     governed = set()
     for rec in data["selections"]:
         applies = rec.get("applies_to")
         if applies == "all":
-            governed.update(inventory_ids)
+            governed.update(governed_ids)
         elif isinstance(applies, list):
             governed.update(applies)
-    for image_id in inventory_ids:
+    for image_id in governed_ids:
         if image_id not in governed:
             problems.append(f"stage {stage}: inventory image {image_id} "
                             "has no governing style selection record")
     return problems
 
 
+def layout_reference_sources(run_dir=None):
+    """Item 17 (ruled 2026-10-15): resolve each named layout reference
+    in order and report the source a run uses for it.
+
+    Resolution order per reference: (1) the supplied or bundled
+    original file in assets/page-references/; (2) the approved house
+    default recorded in the standing registry
+    (assets/page-references/substitutions.json); (3) a recorded owner
+    waiver in the run's intake, kept for true exceptions. Only a
+    reference with none of the three is "unresolved", and only an
+    unresolved reference stops the layout stages, naming it. Returns
+    one dict per named reference, in LAYOUT_REFERENCE_FILES order:
+    {named_file, source, detail}, where source is "original",
+    "house_default", "waiver", or "unresolved".
+    """
+    substitutions, _outstanding = _layout_substitution_record()
+    waived = (_layout_references_waived(run_dir)
+              if run_dir is not None else False)
+    sources = []
+    for name in LAYOUT_REFERENCE_FILES:
+        entry = substitutions.get(name)
+        if (SKILL_ROOT / "assets" / "page-references" / name).is_file():
+            detail = "original file"
+            if entry is not None and any(
+                    str(s.get("file") or "") == name
+                    for s in entry.get("stand_in_files") or []):
+                detail = ("original file (bundled ruled capture, owner "
+                          f"ruling {entry.get('ruling_date')})")
+            sources.append({"named_file": name, "source": "original",
+                            "detail": detail})
+        elif entry is not None:
+            files = ", ".join(str(s.get("file"))
+                              for s in entry.get("stand_in_files") or [])
+            sources.append({"named_file": name, "source": "house_default",
+                            "detail": f"house default: {files} "
+                                      f"(owner ruling "
+                                      f"{entry.get('ruling_date')})"})
+        elif waived:
+            sources.append({"named_file": name, "source": "waiver",
+                            "detail": "waiver: recorded owner waiver "
+                                      "in intake.json"})
+        else:
+            sources.append({"named_file": name, "source": "unresolved",
+                            "detail": "unresolved: no original file, no "
+                                      "registered house default, no "
+                                      "recorded waiver"})
+    return sources
+
+
 def layout_gate_failures(run_dir):
-    """Item 13 / S3 Request 2: the three bundled layout reference files
-    must exist in the installed skill at wireframe and mockup close, or
-    the run's intake must carry the recorded waiver. The files are
-    owner-supplied; no substitute is accepted except one the owner has
-    ruled on, recorded in assets/page-references/substitutions.json
-    (Ruling 5, 2026-10-14: the owner-supplied GoFullPage PDF captures
-    stand in for the two Challenge screenshots; the Elevation
-    Conference JPG has no substitution and stays outstanding, so an
-    unwaivered run still hard-stops on it). The gate reads the
-    substitution record, not the stand-in binaries: the PDFs (108 MB)
+    """Item 13 as amended by Item 17 (ruled 2026-10-15): each of the
+    three layout references must RESOLVE at wireframe and mockup
+    close: the supplied or bundled original file, or the approved
+    house default recorded in the standing registry
+    (assets/page-references/substitutions.json; Ruling 5, 2026-10-14,
+    for the two Challenge screenshots; Decision 4, 2026-10-15, for
+    the Elevation Conference capture), or a recorded owner waiver in
+    intake for a true exception. The stage stops only for a reference
+    with no resolution, and the failure names it. The gate reads the
+    registry, not the stand-in binaries: the Challenge PDFs (108 MB)
     are held in the diagnostic record and bundling them here is a
     separate owner-visible step."""
-    substitutions, _outstanding = _layout_substitution_record()
-    missing = [name for name in LAYOUT_REFERENCE_FILES
-               if not (SKILL_ROOT / "assets" / "page-references" / name).is_file()
-               and name not in substitutions]
-    if not missing:
+    sources = layout_reference_sources(run_dir)
+    unresolved = [s["named_file"] for s in sources
+                  if s["source"] == "unresolved"]
+    if not unresolved:
         return []
-    if _layout_references_waived(run_dir):
-        return []
-    covered = [name for name in LAYOUT_REFERENCE_FILES if name in substitutions]
+    fallback = [f"{s['named_file']} <- {s['detail']}" for s in sources
+                if s["source"] == "house_default"]
     note = ""
-    if covered:
-        note = (f"; {len(covered)} named reference(s) are satisfied by the "
-                "recorded owner substitution in assets/page-references/"
-                "substitutions.json (Ruling 5, 2026-10-14)")
-    return ["missing layout reference file(s) in assets/page-references/: "
-            + ", ".join(missing) + note
-            + "; the references are required reads for this stage (Item 13) "
-              "and no waiver is recorded in intake.json (layout_waivers or "
-              "layout_references_waived with a reason)"]
+    if fallback:
+        note = ("; resolved by approved house default: "
+                + "; ".join(fallback))
+    return ["unresolved layout reference(s) in assets/page-references/: "
+            + ", ".join(unresolved) + note
+            + "; each reference resolves in order (the original file, "
+              "the registered house default in substitutions.json, a "
+              "recorded owner waiver in intake.json) and none applied "
+              "(Item 13 as amended by Item 17)"]
 
 
 def _ratio_problem(who, task):
@@ -1167,6 +1442,40 @@ def _ratio_problem(who, task):
         return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
                 f"expected {N43_SUBSTITUTIONS.get(req, req)}")
     return None
+
+
+def _supplied_transport_problems(run_dir, stage, item_id, artifact_rel, task):
+    """Item 3 supplied-asset transport slice: a supplied item (inventory
+    source begins with "supplied") is satisfied not by a Skill 74 task
+    but by a transport.tasks entry carrying {"supplied_asset": true,
+    "sha256": <sha256 of the filed bytes>}. The recorded sha256 is
+    verified against the actual bytes on disk, and against the sha256
+    recorded on the inventory entry when the entry records one."""
+    who = f"stage {stage} item {item_id} ({artifact_rel})"
+    if not isinstance(task, dict) or task.get("supplied_asset") is not True:
+        return [f"{who}: item is a supplied asset (no generation was "
+                f"performed for it); its transport entry must carry "
+                f"supplied_asset: true and the sha256 of the filed bytes "
+                f"instead of a generation task"]
+    recorded = task.get("sha256")
+    if not isinstance(recorded, str) or not recorded.strip():
+        return [f"{who}: supplied-asset transport entry carries no "
+                f"sha256 of the filed bytes"]
+    if not artifact_rel or not (run_dir / artifact_rel).is_file():
+        return [f"{who}: supplied asset file {artifact_rel} is not on disk"]
+    actual = sha256_file(run_dir / artifact_rel)
+    if recorded.strip().lower() != actual.lower():
+        return [f"{who}: supplied-asset sha256 mismatch: the transport "
+                f"entry records {recorded.strip()} but the filed bytes "
+                f"hash to {actual}"]
+    entry = _supplied_inventory_entries(run_dir).get(str(item_id)) or {}
+    inv_sha = entry.get("sha256")
+    if (isinstance(inv_sha, str) and inv_sha.strip()
+            and inv_sha.strip().lower() != actual.lower()):
+        return [f"{who}: the filed bytes hash to {actual} but the "
+                f"inventory entry records sha256 {inv_sha.strip()} for "
+                f"this supplied asset"]
+    return []
 
 
 def check_transport(run_dir, stage, receipt):
@@ -1210,12 +1519,29 @@ def check_transport(run_dir, stage, receipt):
     got = sorted(str(x.get("file")) for x in tasks if isinstance(x, dict))
     if got != files:
         problems.append(f"stage {stage}: transport.tasks cover {got} but the stage has {files}")
+    # Item 3: files belonging to supplied inventory entries are
+    # verified through the supplied-asset slice, never the task checks.
+    supplied_here = {}
+    for supplied_id in _supplied_inventory_entries(run_dir):
+        # A supplied file that is missing from disk has no on-disk glob
+        # match; fall back to its expected path so its transport entry
+        # still reaches _supplied_transport_problems(), whose
+        # not-on-disk branch names the file (Item 3 review defect D1).
+        rel = (item_artifact_rel(run_dir, stage, supplied_id)
+               or expected_item_artifact_rel(stage, supplied_id))
+        if rel:
+            supplied_here[rel] = supplied_id
     if kie_like:
         problems.extend(_kie74_problems(run_dir, stage, tasks, alias=kie_alias))
     for i, x in enumerate(tasks):
         who = f"stage {stage}: transport.tasks[{i}] ({x.get('file') if isinstance(x, dict) else '?'})"
         if not isinstance(x, dict):
             problems.append(f"{who} is not an object")
+            continue
+        if str(x.get("file")) in supplied_here:
+            problems.extend(_supplied_transport_problems(
+                run_dir, stage, supplied_here[str(x.get("file"))],
+                str(x.get("file")), x))
             continue
         if not kie_like:
             continue
@@ -1251,7 +1577,8 @@ def check_transport(run_dir, stage, receipt):
 # close-item, block-item. The canonical item id space is the inventory id
 # space (IMG-001, ...); an item's artifact and review files are located by
 # numeric suffix, because the stages name their files differently
-# (IMG-001.txt vs Image-001.png, whose review item id is its file stem).
+# (IMG-001.txt vs Image-01.png, whose review item id is its file stem;
+# the generation file carries the two-digit delivered name, Item 26).
 #
 # The weld this cuts: a generation item opens the moment ITS prompt item is
 # closed. Stage-level `check` for image-generation-qc is unchanged and still
@@ -1317,6 +1644,23 @@ def item_artifact_rel(run_dir, stage, item_id):
         if p.is_file() and _item_number(p.stem) == want:
             return str(p.relative_to(run_dir))
     return None
+
+
+def expected_item_artifact_rel(stage, item_id):
+    """The item's expected artifact path (run-relative), derived from the
+    stage's per_file_glob instead of the on-disk glob (the same derivation
+    swarm_runner.expected_item_artifact uses), or None when the pattern
+    or the item number cannot name one. Unlike item_artifact_rel() this
+    names the path even when the file is absent, which is what lets a
+    caller report a missing file by name."""
+    spec = STAGES[stage]
+    pattern = spec.get("per_file_glob")
+    want = _item_number(item_id)
+    if not pattern or want is None or "*" not in Path(pattern).name:
+        return None
+    prefix, _, suffix = Path(pattern).name.partition("*")
+    stem = str(item_id) if str(item_id).startswith(prefix) else f"{prefix}{want:03d}"
+    return str(Path(pattern).parent / f"{stem}{suffix}")
 
 
 def item_review_item_id(run_dir, stage, item_id):
@@ -1621,6 +1965,12 @@ def check_item_transport(run_dir, stage, item_id, receipt):
     if not spec.get("transport_required"):
         return []
     artifact_rel = item_artifact_rel(run_dir, stage, item_id)
+    if artifact_rel is None and str(item_id) in _supplied_inventory_entries(run_dir):
+        # Item 3 review defect D1: a supplied item whose file is missing
+        # from disk has no on-disk glob match, so resolve its expected
+        # path; the supplied slice below then reports the file as not
+        # on disk instead of the slice never being reached.
+        artifact_rel = expected_item_artifact_rel(stage, item_id)
     t = receipt.get("transport")
     if not isinstance(t, dict):
         return [f"stage {stage}: receipt missing transport block "
@@ -1660,6 +2010,12 @@ def check_item_transport(run_dir, stage, item_id, receipt):
                            f"has no entry for {artifact_rel}"]
     x = mine[0]
     who = f"stage {stage} item {item_id} ({artifact_rel})"
+    if str(item_id) in _supplied_inventory_entries(run_dir):
+        # Item 3: a supplied item's slice is satisfied by a
+        # supplied-asset entry verified against the filed bytes,
+        # never by a generation task.
+        return problems + _supplied_transport_problems(
+            run_dir, stage, item_id, artifact_rel, x)
     if kie_alias and x.get("model_source") == "user-pin":
         # Validation-time vocabulary mapping (see check_transport).
         x = {**x, "model_source": "department-pin"}
@@ -1781,6 +2137,30 @@ def cmd_close_item(run_dir, stage, item_id):
     return 0
 
 
+def _prompt_budget_record(prompt_path):
+    """Best-effort Decision 1 budget record for a prompt artifact.
+
+    Runs validate_prompt.inspect() on the file (default model, no run
+    context, matching how the stage contract invokes the validator)
+    and returns {"characters", "percent_of_max", "budget"} for the
+    close entry. Any failure returns None: recording the budget never
+    blocks a close that has already passed its validators.
+    """
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "skill71_validate_prompt", SKILL_ROOT / "scripts" / "validate_prompt.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        result = mod.inspect(Path(prompt_path).read_text(encoding="utf-8"))
+        telemetry = result["telemetry"]
+        return {"characters": telemetry["characters"],
+                "percent_of_max": telemetry["percent_of_max"],
+                "budget": telemetry["budget"]}
+    except Exception:
+        return None
+
+
 def record_item_close(run_dir, stage, item_id, artifact_rel):
     state, _ = load_state(run_dir)
     review_item = item_review_item_id(run_dir, stage, item_id)
@@ -1795,6 +2175,10 @@ def record_item_close(run_dir, stage, item_id, artifact_rel):
     }
     if review_path.exists():
         entry["review_hash"] = sha256_file(review_path)
+    if stage == "image-inventory-prompts":
+        budget_record = _prompt_budget_record(run_dir / artifact_rel)
+        if budget_record is not None:
+            entry["prompt_budget"] = budget_record
     state.setdefault("items", {}).setdefault(stage, {})[item_id] = entry
     save_state(run_dir, state)
     emit_event(run_dir, {"event_type": "item_closed", "stage": stage,
@@ -1825,9 +2209,9 @@ def cmd_block_item(run_dir, stage, item_id, reason):
 # Browser teardown and hygiene gate (fix plan Item 33).
 #
 # A stage whose contract entry carries "uses_browser": true (today
-# ghl-install-test and publish-verify; automation-wiring gains the same
-# flag when its contract entry lands), and any stage the session
-# registry holds sessions for, may not close until the reaper pass has
+# ghl-install-test, publish-verify, and automation-wiring), and any
+# stage the session registry holds sessions for, may not close until
+# the reaper pass has
 # accounted for every browser session the run opened for it. The
 # registry, probe, reaper, and receipt writer live in
 # scripts/browser_sessions.py, loaded by path the way validators resolve
@@ -1851,6 +2235,49 @@ def _browser_sessions_module():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def _page_result_module():
+    path = SKILL_ROOT / "scripts" / "page_result.py"
+    if not path.exists():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "skill71_page_result", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _automation_handoff_module():
+    path = SKILL_ROOT / "scripts" / "automation_handoff.py"
+    if not path.exists():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "skill71_automation_handoff", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def emit_install_handoff(run_dir):
+    """R71H producer side (Item 31, S71-08 P1): at ghl-install-test
+    close, emit handoff/automation-handoff.json from the run's records
+    (funnel-completion form IDs are the sole form source) and hash-lock
+    it, then check_install_handoff verifies what was written. Returns
+    failure lines; an emitter refusal refuses the close."""
+    mod = _automation_handoff_module()
+    if mod is None:
+        if intake_data(run_dir).get("publish_target") == "ghl":
+            return ["stage ghl-install-test: the automation hand-off "
+                    "cannot be produced: scripts/automation_handoff.py "
+                    "is missing from the skill; a GHL install cannot "
+                    "close without its R71H emitter"]
+        return []
+    failures, _record = mod.emit_handoff(
+        run_dir, deploy_mode=mod.ONLY_DEPLOY_MODE, requesting_room="S71")
+    return failures
 
 
 def stage_uses_browser(run_dir, stage):
@@ -2039,6 +2466,59 @@ def check_install_handoff(run_dir):
     return failures
 
 
+def check_parity_evidence(run_dir):
+    """Update Plan Item 16: the approved final mockup is the design source
+    of truth for the responsive-html stage, and the stage closes only on
+    parity evidence against it: the side-by-side parity sheets at 1440
+    and 390 (scripts/compare_sheet.py) and its structural drift table in
+    responsive-html/compare/compare-report.json, whose drift status must
+    be "pass". A missing sheet, a missing report, or a drift status of
+    fail / skipped-no-html / unavailable-playwright blocks the close by
+    name: a page that drifted from its approved mockup, or whose drift
+    was never measured, does not close on internal consistency alone.
+    A stage-close hook (not a contract validator) because the report is
+    a run-level record the validator itself writes."""
+    failures = []
+    compare_dir = run_dir / "responsive-html" / "compare"
+    for width in (1440, 390):
+        if not list(compare_dir.glob(f"compare-{width}-*.png")):
+            failures.append(
+                f"stage responsive-html: parity evidence missing: no "
+                f"side-by-side parity sheet at {width}px "
+                f"(responsive-html/compare/compare-{width}-*.png); the "
+                f"parity sheet at 1440 and 390 is required close evidence "
+                f"against the approved final mockup (Update Plan Item 16)")
+    report_path = compare_dir / "compare-report.json"
+    if not report_path.is_file():
+        failures.append(
+            "stage responsive-html: parity evidence missing: "
+            "responsive-html/compare/compare-report.json (the "
+            "compare_sheet.py structural drift table) is not on record; "
+            "the stage cannot close without the drift table (Update "
+            "Plan Item 16)")
+        return failures
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        failures.append(
+            f"stage responsive-html: compare-report.json unreadable: {exc}")
+        return failures
+    drift = report.get("drift") if isinstance(report, dict) else None
+    status = drift.get("status") if isinstance(drift, dict) else None
+    if status != "pass":
+        failures.append(
+            f"stage responsive-html: structural drift table status is "
+            f"{status!r}, not 'pass'; named drift failures block close "
+            f"(Update Plan Item 16)")
+        if isinstance(drift, dict):
+            for width, block in (drift.get("widths") or {}).items():
+                if isinstance(block, dict):
+                    for line in block.get("failures") or []:
+                        failures.append(
+                            f"stage responsive-html: [{width}px] {line}")
+    return failures
+
+
 def check_publish_rules(run_dir, receipt):
     """Item 6 publish discipline, enforced at a publish-verify PASS close,
     plus Item 31's hand-off carry-forward check."""
@@ -2107,6 +2587,9 @@ def check_publish_rules(run_dir, receipt):
                             f"a waiver prints in REPORT.md.")
     # Item 31: publish-verify carries the automation hand-off forward
     # unchanged; the hash recorded at ghl-install-test close must match.
+    # R71H seam P2 completes the gate: on a GHL run a missing locked
+    # hash refuses by name too (there is nothing to verify the carried
+    # file against), and a mismatch names both hashes.
     state, _ = load_state(run_dir)
     recorded = (state.get("stages", {}).get("ghl-install-test") or {}).get("handoff_sha256")
     if recorded:
@@ -2115,11 +2598,20 @@ def check_publish_rules(run_dir, receipt):
             failures.append("stage publish-verify: handoff/automation-handoff.json is "
                             "missing; publish-verify carries the install hand-off "
                             "forward unchanged (fix plan Item 31)")
-        elif sha256_file(hp) != recorded:
-            failures.append("stage publish-verify: handoff/automation-handoff.json "
-                            "changed after ghl-install-test close (SHA-256 mismatch "
-                            "with the recorded hand-off hash); the hand-off is "
-                            "carried forward unchanged (fix plan Item 31)")
+        else:
+            actual = sha256_file(hp)
+            if actual != recorded:
+                failures.append("stage publish-verify: handoff/automation-handoff.json "
+                                "changed after ghl-install-test close (SHA-256 mismatch: "
+                                f"the hash locked at ghl-install-test close is {recorded}, "
+                                f"the file on disk hashes to {actual}); the hand-off is "
+                                "carried forward unchanged (fix plan Item 31)")
+    elif intake.get("publish_target") == "ghl":
+        failures.append("stage publish-verify: no hand-off hash is locked in state "
+                        "(stages.ghl-install-test.handoff_sha256 is absent); a GHL "
+                        "run's publish close verifies handoff/automation-handoff.json "
+                        "against the hash locked at ghl-install-test close, and there "
+                        "is no locked hash to verify against (fix plan Item 31)")
     return failures
 
 
@@ -2323,6 +2815,11 @@ def cmd_close(run_dir, stage):
     spec, errs = load_contract_stage(stage)
     if errs:
         return fail_exit(errs)
+    # Item 19: a stage that places supplied assets carries any UNDERSIZED
+    # flag in its close evidence. The flag never blocks the close.
+    if stage in SUPPLIED_PLACING_STAGES:
+        for line in supplied_size_flag_lines(run_dir):
+            print(line)
     # Item 31: a conditional stage that does not apply closes as
     # not_applicable, recorded in state (and cited in REPORT.md), never
     # silently skipped and never forced through the receipt machinery.
@@ -2346,6 +2843,18 @@ def cmd_close(run_dir, stage):
     receipt_status_val = receipt.get("status") if receipt else None
     if receipt_status_val == "fail":
         failures.append(f"stage {stage}: receipt status is 'fail'; close refused")
+    # R71H seam P2: a filed dispatch refusal is itself a close verdict
+    # for automation-wiring. The receipt records the receiver's refusal
+    # reason verbatim; the stage stays open and the close names the
+    # refusal, whatever else the close would find.
+    if stage == "automation-wiring" and receipt:
+        refusal = receipt.get("dispatch_refusal")
+        if isinstance(refusal, dict) and str(refusal.get("reason") or "").strip():
+            failures.append(f"stage automation-wiring: the automation dispatch was "
+                            f"refused: {refusal['reason']} (refusal filed in "
+                            f"private/receipts/automation-wiring.json; a refused "
+                            f"dispatch leaves the stage open, R71H seam packet "
+                            f"section 4)")
 
     # Artifacts on disk
     art_problems, counts = artifacts_for(run_dir, stage)
@@ -2383,14 +2892,19 @@ def cmd_close(run_dir, stage):
         failures.extend(check_cost(run_dir, stage, receipt))
         failures.extend(check_transport(run_dir, stage, receipt))
         # S5 delivery rules (Items 6, 31)
-        if stage == "ghl-install-test":
+        if stage == "responsive-html":
+            failures.extend(check_parity_evidence(run_dir))
+        elif stage == "ghl-install-test":
+            failures.extend(emit_install_handoff(run_dir))
             failures.extend(check_install_handoff(run_dir))
         elif stage == "publish-verify":
             failures.extend(check_publish_rules(run_dir, receipt))
         elif stage == "automation-wiring":
             failures.extend(check_automation_wiring(run_dir, receipt))
-        # Item 13 / S3 Request 2: layout reference existence at
-        # wireframe and mockup close (waiver path in layout_gate_failures).
+        # Item 13 / S3 Request 2, as amended by Item 17: layout
+        # reference RESOLUTION at wireframe and mockup close (original
+        # file, registered house default, or recorded waiver; the
+        # failure path is in layout_gate_failures).
         if stage in LAYOUT_GATE_STAGES:
             failures.extend(layout_gate_failures(run_dir))
         # GCR-S2-4 (Item 10, Amendment 6 Part B1): the style selection
@@ -2518,6 +3032,39 @@ def stage_line(run_dir, stage, state):
     return line
 
 
+# Update Plan Item 19: stages that place supplied assets into the page;
+# an UNDERSIZED verdict recorded at intake prints in each one's evidence.
+SUPPLIED_PLACING_STAGES = ("visual-mockup", "image-inventory-prompts",
+                           "image-generation-qc", "image-map-upload",
+                           "final-mockups", "responsive-html")
+
+
+def supplied_size_flag_lines(run_dir):
+    """Item 19: the named UNDERSIZED lines from intake.json's
+    supplied_asset_size_checks records (written by write_intake.py).
+    OK records are on file in the intake record; only the flags print."""
+    lines = []
+    try:
+        data = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+    except Exception:
+        return lines
+    if not isinstance(data, dict):
+        return lines
+    for record in data.get("supplied_asset_size_checks") or []:
+        if not isinstance(record, dict) or record.get("verdict") != "UNDERSIZED":
+            continue
+        asset, slot = record.get("asset_px") or {}, record.get("slot_px") or {}
+        short = record.get("shortfall_px") or {}
+        lines.append(
+            f"SUPPLIED ASSET SIZE {record.get('id')} ({record.get('source')}): "
+            f"asset {asset.get('width')}x{asset.get('height')} px, "
+            f"slot {slot.get('width')}x{slot.get('height')} px: UNDERSIZED "
+            f"(shortfall {short.get('width')}x{short.get('height')} px; flagged "
+            "at intake under Item 19, never substituted, upscaled, or "
+            "regenerated)")
+    return lines
+
+
 def collect_warnings(run_dir, state):
     warns = []
     intake = run_dir / "intake.json"
@@ -2544,18 +3091,32 @@ def collect_warnings(run_dir, state):
             if _idata.get("layout_references_waived") is True:
                 warns.append("layout waiver recorded (layout-references, flat form): "
                              f"{_idata.get('layout_references_waiver_reason')}")
+            # S71-02: an imported launch profile is always visible in the
+            # report, with the launch it binds the run to.
+            _launch = _idata.get("launch")
+            if _idata.get("launch_profile"):
+                _lid = _launch.get("launch_id") if isinstance(_launch, dict) else None
+                _rev = _launch.get("revision") if isinstance(_launch, dict) else None
+                warns.append(f"launch profile active: {_idata['launch_profile']} "
+                             f"(launch {_lid}, revision {_rev}); the run's "
+                             f"launch context is recorded in intake.json")
+    # Items 13/17: REPORT.md prints, per layout reference, the source
+    # this run used (original file, house default by name, or
+    # waiver), so a fallback is visible, never silent, and a
+    # substituted set is never implied to be the original set.
+    for _s in layout_reference_sources(run_dir):
+        warns.append(f"layout reference source ({_s['named_file']}): "
+                     f"{_s['detail']}")
+    # Item 19: an undersized supplied asset is always visible in the
+    # report, named, with both sizes and the shortfall.
+    warns.extend(supplied_size_flag_lines(run_dir))
     # Item 13 (Ruling 5): recorded reference substitutions and any
     # outstanding reference are always visible in the report, so a
     # report never implies the substituted set is the original set.
     _subs, _outst = _layout_substitution_record()
-    for _name in sorted(_subs):
-        _entry = _subs[_name]
-        _files = ", ".join(str(s.get("file")) for s in _entry.get("stand_in_files") or [])
-        warns.append(f"layout reference substitution recorded ({_name}): "
-                     f"stand-in {_files} (owner ruling {_entry.get('ruling_date')})")
     for _name in _outst:
-        warns.append(f"layout reference outstanding ({_name}): no substitution "
-                     "recorded; the original is still required (Item 13)")
+        warns.append(f"layout reference outstanding ({_name}): the "
+                     "registry marks it outstanding (Item 13)")
     # Uncalibrated grade thresholds
     brand = brand_path_for(run_dir)
     try:
@@ -2591,6 +3152,16 @@ def collect_warnings(run_dir, state):
             warns.append(f"conversational coverage owner override: trigger "
                          f"{o.get('trigger')} on {o.get('source_id')}: {o.get('reason')} "
                          f"(approved by {o.get('approved_by')})")
+    # R71H seam P2: a filed dispatch refusal or failure is always
+    # visible in the report with its recorded reason, never silent.
+    _refusal = aw_receipt.get("dispatch_refusal")
+    if isinstance(_refusal, dict) and str(_refusal.get("reason") or "").strip():
+        warns.append(f"automation dispatch refused: {_refusal['reason']} "
+                     f"(automation-wiring stays open)")
+    _dfailure = aw_receipt.get("dispatch_failure")
+    if isinstance(_dfailure, dict) and str(_dfailure.get("reason") or "").strip():
+        warns.append(f"automation dispatch failed: {_dfailure['reason']} "
+                     f"(automation-wiring stays open)")
     return warns
 
 
@@ -2856,6 +3427,24 @@ def cmd_report(run_dir):
                          "review_mode": rm_data["mode"],
                          "report_json_path": str(report_json_path),
                          "report_md_path": str(report_path)})
+    # S71-05 (Signature Launch): a run that carries a page-request.json
+    # (doc 02 section 6) also emits its page-result.json and
+    # page-handoff.json in this same pass. Legacy runs without a
+    # page-request are untouched. A launch run whose result cannot be
+    # built validly fails the report: an invalid handoff must never
+    # ride a passing report.
+    if (run_dir / "page-request.json").exists():
+        pr_mod = _page_result_module()
+        if pr_mod is None:
+            print("FAIL: page-result emission (S71-05): "
+                  "scripts/page_result.py is missing from the skill; "
+                  "a launch run cannot report without it")
+            return 1
+        pr_ok, pr_lines = pr_mod.emit_for_report(run_dir)
+        for line in pr_lines:
+            print(line)
+        if not pr_ok:
+            return 1
     print(f"wrote {report_path}")
     print(f"OVERALL: {overall}")
     return 0 if required_closed else 1
