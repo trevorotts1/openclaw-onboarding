@@ -195,7 +195,7 @@ export function loadInstalledSeatPack(skillRoot: string, seatId: SeatId): Instal
   const sections = [
     `Council advisor: ${string(profile.name) ?? seatId}; seat_id=${seatId}; pack_identity=${version}`,
     'Attribution: AI perspective inspired by published work, not the real individual or an endorsement.',
-    `Source qualification: ${string(profile.qualification) ?? 'unverified'}. Bibliographic/quality-unverified materials do NOT establish verified quotations or full-work coverage.`,
+    `Source qualification (coverage gate): ${string(coverage.qualification) ?? 'unverified'}. Existing Skill 22 derivatives may be preserved and referenced, but bibliographic/quality-unverified materials do NOT establish verified quotations or full-work coverage.`,
     'ADVISOR BRIEFING (installed source):\n' + sharedOnlyBriefing(briefing),
     'COMMUNICATION RULES (installed source):\n' + communication,
     'TRACEABLE, PARAPHRASE-ONLY SOURCE REFERENCES (not certified against original works):\n' + (sharedEvidenceLines(sources).join('\n') || 'No qualified shared-source paraphrase records are available.'),
