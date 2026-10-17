@@ -244,6 +244,29 @@ poster (byte-identical), and the movie plays on top of it.
   `working/checkpoints/slide_media_manifest.json` for the webinar
   build. A record claiming an embed the deck does not carry fails the
   phase.
+- **Production contract (Item 34 R2, adopted at dispatch 2026-10-17).**
+  Production is OUT of pipeline: there is no in-pipeline render phase,
+  no render script, and no second motion ledger. For a deck whose
+  intake election is YES (`want_motion_graphics`, recorded in
+  `working/checkpoints/motion.json`'s election block, which cites
+  this contract), the run's Director of Presentations launches ONE
+  Skill 72 Motion Graphics V2 job per elected slot, in
+  `powerpoint_graphic` mode, once the slide plan and copy lock (the
+  job's inputs are THIS run's brand: the run's STYLE BLOCK, brand
+  palette and logo, plus the slot slide's approved verbatim copy
+  strings from the locked slides.json; no new copy is authored for
+  motion). Skill 72's own pipeline governs the job end to end (job
+  package, its approval policy, a readiness-proven render adapter,
+  the MG-034 QC gate, MG-035 packaging). The finished governed
+  package is staged into the run's `working/motion/slide-NN/`
+  workspace (manifest.json, renders/artifacts.json,
+  delivery/poster.png, and the package/ directory) BEFORE
+  P8-ASSEMBLE runs: assembly authenticates and embeds whatever is
+  staged at that moment, and this role's audit then proves it. A
+  package that lands after assembly is never waited on and never
+  retro-embedded by the run; it is recorded
+  `produced_late_not_embedded` and the deck stands complete on its
+  static slides.
 - **Fallbacks stay separate.** The PDF/export fallback for a motion
   slide is the labeled poster derivative, never the diagnostic deck
   and never an obscured movie. Playback inside Microsoft PowerPoint

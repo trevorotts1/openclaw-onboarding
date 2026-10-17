@@ -88,10 +88,12 @@ class UnknownIntakeDepth(ValueError):
     Economy), which is a different axis and is never accepted here."""
 
 
-# The six upsell fields intake/upsell-questions.json's storeTarget maps
+# The eight upsell fields intake/upsell-questions.json's storeTarget maps
 # under pre_presentation_capture (WANT_SALES_CHECKOUT / its declined-reason
 # waiver, WANT_VSL_PAGE / its declined-reason waiver, WANT_EMAIL_SEQUENCES /
-# its declined-reason waiver -- the Skill 50 email election, Item 33c). Each
+# its declined-reason waiver -- the Skill 50 email election, Item 33c, and
+# WANT_MOTION_GRAPHICS / its declined-reason waiver -- the Item 34 motion
+# graphics election). Each
 # entry is (canonical pre_presentation_capture field name, the question's
 # own `id` in upsell-questions.json -- the ledger entries[] key the real
 # driver writes).
@@ -102,6 +104,8 @@ _UPSELL_FIELDS = (
     ("VSL_PAGE_DECLINED_REASON", "vsl_page_declined_reason"),
     ("WANT_EMAIL_SEQUENCES", "want_email_sequences"),
     ("EMAIL_SEQUENCES_DECLINED_REASON", "email_sequences_declined_reason"),
+    ("WANT_MOTION_GRAPHICS", "want_motion_graphics"),
+    ("MOTION_GRAPHICS_DECLINED_REASON", "motion_graphics_declined_reason"),
     # Core deliverables and destinations share the same sealed capture path.
     # Carry only captured values into the engine's immutable input; no defaults.
     ("DELIVERABLE_SET", "deliverable_set"),

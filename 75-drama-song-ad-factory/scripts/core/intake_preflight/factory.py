@@ -36,6 +36,7 @@ import re
 import shlex
 import sqlite3
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -498,6 +499,200 @@ def _song_choices_next(run_dir, orchestrated=False):
     }
 
 
+# ── Music stage lifecycle: the ONE owner of the music row ───────────────────
+#
+# `next` only reads the store, and nothing ever claimed or completed the music
+# row, so a run that had bought and reconciled every song still read music =
+# NOT_STARTED and continuity-bible was never eligible. `music` is the parent
+# owner of that row (INSTRUCTIONS step 8: claim, work, register, independent
+# QC, guarded transition): start = claim or resume, the two waiting states,
+# and complete = song gate + audio on disk + independent qc_gate PASS, then
+# QC -> COMPLETE. Variant workers own their take folders, never a second claim
+# on music. This command never buys, never regenerates, never invents a pick.
+
+MUSIC = "music"
+_MUSIC_TO = {"wait-provider": "WAITING_PROVIDER", "wait-approval": "WAITING_APPROVAL",
+             "resume": "RUNNING", "park": "PARKED", "reopen": "READY"}
+_MUSIC_ACTIONS = ("start", "complete", "fail") + tuple(_MUSIC_TO)
+_AUDIO_EXT = (".mp3", ".wav", ".flac", ".m4a", ".aac")
+# ponytail: a client's song pick can take a day; same lease the storyboard
+# approval wait uses. Make it a flag when a client needs longer.
+_APPROVAL_LEASE_S = 86400
+
+
+def _mres(outcome, code, detail, row=None):
+    return {"outcome": outcome, "reason_code": code, "detail": detail, "row": row}
+
+
+def _music_audio(run_dir):
+    """Non-empty audio files in $RUN/music (single-song master or picked-song.mp3)."""
+    try:
+        return sorted(p.name for p in (Path(run_dir) / "music").iterdir()
+                      if p.suffix.lower() in _AUDIO_EXT and p.stat().st_size > 0)
+    except OSError:
+        return []
+
+
+def _song_hold(run_dir):
+    """The existing song-pick / acceptance / constituent gate; fail closed."""
+    try:
+        sc = _core_mod("song_choices")
+        return sc.refusal(str(run_dir)) or sc.constituent_hold(str(run_dir))
+    except Exception as exc:  # noqa: BLE001 - a broken gate never opens
+        return {"reason_code": "SONG_GATE_BROKEN", "detail": repr(exc)[:200]}
+
+
+def music_stage(run_dir, owner, action, run_id=None, reason=None,
+                retryable=False, qc=None, lease_s=3600):
+    """One guarded lifecycle step on the music row. Returns _mres(...).
+
+    Idempotent: COMPLETE answers with the existing row; the live owner calling
+    start again heartbeats and resumes (no second claim); another live owner is
+    refused; an expired RUNNING lease is reclaimed by state_store.claim. Every
+    write is a version-predicated state_store call, so TRANSITIONS is the law.
+    qc = {"records": [...], "makers": {...}, "required": [...]} for complete.
+    """
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    import state_store as ss  # noqa: PLC0415
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    if not db.exists():
+        return _mres("error", "state-file-missing", str(db))
+    try:
+        st = ss.Store(db)
+    except ss.StoreError as e:
+        return _mres("error", e.code, str(e))
+    row = None
+    try:
+        rid = run_id
+        if not rid:
+            ids = [r[0] for r in st.con.execute(
+                "SELECT DISTINCT run_id FROM stages WHERE stage=?", (MUSIC,))]
+            if len(ids) != 1:
+                return _mres("error", "music-run-id-ambiguous",
+                             "store holds %d music rows %r; pass --run-id" % (len(ids), ids))
+            rid = ids[0]
+        row = st.get(rid, MUSIC)
+        state = row["state"]
+        live = bool(row["owner"]) and (row["lease_expires"] or 0) > time.time()
+        if state == "COMPLETE" and action in ("start", "complete"):
+            return _mres("ok", "music-complete", "music is already COMPLETE; no new work", row)
+
+        if action == "start":
+            waiting = ("WAITING_PROVIDER", "WAITING_APPROVAL")
+            if state in ("RUNNING", "QC") + waiting and live and row["owner"] == owner:
+                row = st.heartbeat(rid, MUSIC, owner, lease_s=lease_s)
+                return _mres("ok", "music-resumed",
+                             "%s already holds music (%s); lease extended, resume the "
+                             "existing work, never resubmit a ledger-known job" % (owner, state), row)
+            if state in waiting:
+                if live:
+                    return _mres("rejected", "NOT_OWNER", "lease held by %s" % row["owner"], row)
+                return _mres("rejected", "LEASE_EXPIRED_WAITING",
+                             "the %s lease expired: reconcile the spend ledger's acknowledged "
+                             "jobs first, then `music --action resume` under the recovering "
+                             "worker id; never resubmit a paid job to recover" % state, row)
+            if state == "NOT_STARTED":
+                row = st.transition(rid, MUSIC, "READY", owner, expected_version=row["version"])
+            row = st.claim(rid, MUSIC, owner, lease_s=lease_s, expected_version=row["version"])
+            return _mres("ok", "music-claimed", "%s owns music (RUNNING)" % owner, row)
+
+        if action != "complete":
+            to = _MUSIC_TO.get(action) or ("FAILED_RETRYABLE" if retryable else "FAILED_BLOCKED")
+            row = st.transition(rid, MUSIC, to, owner, expected_version=row["version"],
+                                reason=reason)
+            if row["owner"] == owner and to in ("RUNNING", "WAITING_PROVIDER", "WAITING_APPROVAL"):
+                row = st.heartbeat(rid, MUSIC, owner, lease_s=max(
+                    lease_s, _APPROVAL_LEASE_S if to == "WAITING_APPROVAL" else 0))
+            elif to == "RUNNING":       # recovering worker after an expired lease
+                row = st.claim(rid, MUSIC, owner, lease_s=lease_s,
+                               expected_version=row["version"])
+            out = {"PARKED": "parked", "FAILED_BLOCKED": "rejected"}.get(to, "ok")
+            return _mres(out, "music-" + to.lower().replace("_", "-"),
+                         "music %s -> %s" % (state, to), row)
+
+        # complete
+        if row["owner"] != owner or not live:
+            return _mres("rejected", "NOT_OWNER",
+                         "complete needs the live music lease (run `music --action start` "
+                         "first); row owner %r state %s" % (row["owner"], state), row)
+        if state not in ("RUNNING", "WAITING_APPROVAL", "QC"):
+            return _mres("rejected", "ILLEGAL_TRANSITION",
+                         "complete from %s: reconcile and `--action resume` first" % state, row)
+
+        def block(code, why):
+            r = st.transition(rid, MUSIC, "FAILED_BLOCKED", owner,
+                              expected_version=row["version"], reason="%s: %s" % (code, why)[:500])
+            return _mres("rejected", code, why, r)
+
+        hold = _song_hold(run_dir)
+        if hold:
+            code, why = hold["reason_code"], hold.get("detail") or hold.get("next_action", "")
+            if code == "SONG_GATE_BROKEN":
+                return _mres("error", code, why, row)
+            if code != "SONG_PICK_MISSING":
+                return block(code, why)
+            if state == "QC":
+                row = st.transition(rid, MUSIC, "RUNNING", owner, expected_version=row["version"])
+            if row["state"] == "RUNNING":
+                row = st.transition(rid, MUSIC, "WAITING_APPROVAL", owner,
+                                    expected_version=row["version"])
+            row = st.heartbeat(rid, MUSIC, owner, lease_s=max(lease_s, _APPROVAL_LEASE_S))
+            return _mres("waiting", code, why, row)
+        audio = _music_audio(run_dir)
+        if not audio:
+            return block("MUSIC_AUDIO_MISSING",
+                         "no non-empty audio in %s" % (Path(run_dir) / "music"))
+        qc = qc or {}
+        qg = _core_mod("qc_gate")
+        try:
+            res = qg.evaluate(rid, MUSIC, qc.get("records"), qc.get("makers"),
+                              qc.get("required"))
+        except Exception as e:  # noqa: BLE001 - bad QC input: nothing written
+            return _mres("error", getattr(e, "code", "qc-input-invalid"), str(e)[:300], row)
+        if state != "QC":
+            row = st.transition(rid, MUSIC, "QC", owner, expected_version=row["version"])
+        if res["gate"] != "PASS":
+            return block("QC_" + res["gate"], res["reason_code"])
+        row = st.transition(rid, MUSIC, "COMPLETE", owner, expected_version=row["version"],
+                            reason="qc %s; audio %s" % (res["reason_code"], ",".join(audio)))
+        return _mres("ok", "music-complete", "music COMPLETE: %s" % ",".join(audio), row)
+    except ss.StoreError as e:
+        return _mres("rejected", e.code, str(e), row)
+    finally:
+        st.close()
+
+
+def cmd_music(a):
+    run_dir = Path(a.run_dir).expanduser().resolve()
+    qc = None
+    if a.action == "complete":
+        try:
+            qc = {"records": _load(a.records) if a.records else [],
+                  "makers": _load(a.makers) if a.makers else {},
+                  "required": [c.strip() for c in (a.required or "").split(",") if c.strip()]}
+        except (OSError, ValueError) as e:
+            return envelope("music", run_dir.name or "run", "error", "qc-input-unreadable", str(e)[:200])
+    r = music_stage(run_dir, a.owner, a.action, run_id=a.run_id, reason=a.reason,
+                    retryable=a.retryable, qc=qc, lease_s=a.lease_s)
+    return envelope("music", run_dir.name or "run", r["outcome"], r["reason_code"],
+                    r["detail"], data={"stage": MUSIC, "row": r["row"]})
+
+
+def _music_lifecycle():
+    """The commands `next` hands out with the music stage (descriptor only)."""
+    base = ("python3 scripts/core/intake_preflight/factory.py music "
+            "--run-dir \"$RUN\" --owner <worker id> --action ")
+    return {"start": base + "start",
+            "wait_provider": base + "wait-provider",
+            "resume": base + "resume",
+            "complete": base + "complete --records \"$RUN/music/qc-records.json\" "
+                        "--makers \"$RUN/music/makers.json\" --required <required-checks>",
+            "note": "Claim music BEFORE any generation, complete it after the pick and "
+                    "independent QC; continuity-bible is never eligible until then."}
+
+
 # ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
 #
 # Inert until the run carries control/method.json (purpose routing) or the
@@ -842,6 +1037,16 @@ def cmd_next(a):
                             "(sends the shot cards + stills once; reply GO or "
                             "'shot N: change ...' via --reply)." % run_dir,
                             data={"stage": next_stage})
+    if (stages.index(next_stage) > stages.index(MUSIC)
+            and got.get(MUSIC) in ("FAILED_BLOCKED", "PARKED")):
+        # A blocked or parked music row is skipped by the loop above; it must
+        # never read as permission for a later stage (fail closed).
+        return envelope("next", str(sid), "rejected", "MUSIC_NOT_COMPLETE",
+                        "music is %s, so %r never runs: fix the cause, then "
+                        "`factory.py music --action reopen` and `--action start`."
+                        % (got[MUSIC], next_stage),
+                        data={"stage": MUSIC, "blocked_stage": next_stage,
+                              "lifecycle": _music_lifecycle()})
     if stages.index(next_stage) > stages.index("music"):    # SONG APPROVAL gate (fail closed)
         try:
             _c = str(Path(__file__).resolve().parent.parent)
@@ -1011,7 +1216,8 @@ def cmd_next(a):
             lane = lane_size_payload()
             data = {"stage": next_stage, "command": sc["command"],
                     "produces": row.get("produces", ""), "lane_size": lane,
-                    "stages_source": stages_source, "song_choices": sc}
+                    "stages_source": stages_source, "song_choices": sc,
+                    "lifecycle": _music_lifecycle()}
             if method_block is not None:
                 data["method"] = method_block
             if music_request is not None:
@@ -1036,6 +1242,8 @@ def cmd_next(a):
         nxt["platform_fit"] = platform_fit
     if music_request is not None:
         nxt["music_request"] = music_request
+    if next_stage == "music":
+        nxt["lifecycle"] = _music_lifecycle()
     return envelope("next", str(sid), "ok", "next-stage",
                     "Run this command for stage %r; after it passes its QC "
                     "gate, run `next` again." % present_id,
@@ -1111,6 +1319,19 @@ def main(argv=None):
     n.add_argument("--target", default="",
                    help="Client Telegram chat id for the SCRIPT APPROVAL message; "
                         "empty = hand the message back for the chat.")
+    m = sub.add_parser("music", help="Own the music stage row: start (claim/resume), "
+                       "wait-provider, wait-approval, resume, complete (song gate + audio "
+                       "+ independent qc_gate PASS), fail, park, reopen.")
+    m.add_argument("--run-dir", required=True)
+    m.add_argument("--owner", required=True, help="Worker id that holds the music lease.")
+    m.add_argument("--action", required=True, choices=_MUSIC_ACTIONS)
+    m.add_argument("--run-id", default=None, help="Store run id; default: the only one.")
+    m.add_argument("--reason", default=None, help="Required for fail and park.")
+    m.add_argument("--retryable", action="store_true", help="fail -> FAILED_RETRYABLE.")
+    m.add_argument("--lease-s", type=int, default=3600)
+    m.add_argument("--records", default=None, help="complete: qc-schema records JSON.")
+    m.add_argument("--makers", default=None, help="complete: check_id -> maker JSON.")
+    m.add_argument("--required", default=None, help="complete: required checks, comma list.")
     sr = sub.add_parser("script-reply", help="The client's reply to the script message "
                                              "(SCRIPT APPROVAL): approve, or an edit.")
     sr.add_argument("--run-dir", required=True)
@@ -1193,6 +1414,8 @@ def main(argv=None):
         env = cmd_storyboard(a)
     elif a.cmd == "script-reply":
         env = cmd_script_reply(a)
+    elif a.cmd == "music":
+        env = cmd_music(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

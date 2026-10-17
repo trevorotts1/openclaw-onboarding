@@ -58,6 +58,7 @@ def _complete_answers() -> dict:
         "want_sales_checkout": "yes",
         "want_vsl_page": "no",
         "want_email_sequences": "no",
+        "want_motion_graphics": "no",
         "client_notes": "",
     }
 
