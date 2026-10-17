@@ -4,7 +4,7 @@
 // the SKILL.md frontmatter name against the portable skill name, and
 // checks that no state files live inside the folder.
 // Usage: node verify-bundles.mjs [--root <skill-folder>]
-// Exit 0 on agreement, 1 on any drift.
+// Exit 0 on agreement, 1 on any drift.\n// Generated runtime/dist and runtime/node_modules are excluded from source integrity.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -21,10 +21,17 @@ let failures = 0;
 const pass = (m) => console.log(`PASS ${m}`);
 const fail = (m) => { failures += 1; console.log(`FAIL ${m}`); };
 
-function walk(dir, out = []) {
+function isGeneratedRuntimePath(rel) {
+  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
+    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/");
+}
+
+function walk(dir, out = [], base = dir) {
   for (const name of readdirSync(dir).sort()) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
+    const rel = relative(base, p).split("\\").join("/");
+    if (isGeneratedRuntimePath(rel)) continue;
+    if (statSync(p).isDirectory()) walk(p, out, base);
     else out.push(p);
   }
   return out;
