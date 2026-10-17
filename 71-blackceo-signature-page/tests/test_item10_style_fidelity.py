@@ -34,6 +34,16 @@ CINE = json.loads((TRAITS / "cinematic.json").read_text(encoding="utf-8"))
 VA = json.loads((TRAITS / "visual-artists.json").read_text(encoding="utf-8"))
 DENY_PHOTO = json.loads((TRAITS / "denylist-photographers.json").read_text(encoding="utf-8"))
 
+# Prompts a test expects to PASS are grown into the Decision 1 length
+# band by the suite's fitting helper (tests/fit_prompt.py; the standing
+# convention from test_stage_gate.py / test_validate_copy_prompt.py):
+# the composed prompts here are small on purpose, and under the adopted
+# band a raw one fails the floor before the fidelity checks under test
+# can pass. Prompts a test expects to FAIL keep their raw composed
+# form, so the named failure is the one under test.
+sys.path.insert(0, HERE)
+import fit_prompt  # noqa: E402
+
 NEGATIVE_LINES = [
     "Do not produce flat, muted, pastel, desaturated, washed-out, or low-contrast color.",
     "Do not distort hands, eyes, or teeth.",
@@ -176,8 +186,8 @@ class TestStyleFidelity(unittest.TestCase):
         entry = PHOTO["entries"]["VDL-005"]
         sel = selection_for("photographers", "VDL-005", entry["branded_name"],
                             "photographers.json")
-        prompt = compose_prompt("VDL-005 White Field Intensity",
-                                lock_tokens(entry))
+        prompt = fit_prompt.fit_text(compose_prompt(
+            "VDL-005 White Field Intensity", lock_tokens(entry)))
         path = write_run(self.tmp / "run", sel, photo_entry(), prompt,
                          bible={"blend_profile": {"hero_color_chroma": "FULL"}})
         proc = run(PROMPT_SCRIPT, str(path))
@@ -235,7 +245,7 @@ class TestStyleFidelity(unittest.TestCase):
                    "owner_authorized": True})
         path = write_run(self.tmp / "run", sel,
                          {"id": "IMG-001", "text_mode": "none"},
-                         self._cinematic_prompt())
+                         fit_prompt.fit_text(self._cinematic_prompt()))
         proc = run(PROMPT_SCRIPT, str(path))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
@@ -269,7 +279,7 @@ class TestStyleFidelity(unittest.TestCase):
                             "visual-artists.json")
         path = write_run(self.tmp / "run", sel,
                          {"id": "IMG-001", "text_mode": "none"},
-                         self._va_prompt())
+                         fit_prompt.fit_text(self._va_prompt()))
         proc = run(PROMPT_SCRIPT, str(path))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
@@ -314,7 +324,7 @@ class TestStyleFidelity(unittest.TestCase):
                             "photographers.json", declaration_block=block)
         path = write_run(self.tmp / "run", sel,
                          {"id": "IMG-001", "text_mode": "none"},
-                         self._procedural_prompt())
+                         fit_prompt.fit_text(self._procedural_prompt()))
         proc = run(PROMPT_SCRIPT, str(path))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("procedural", proc.stdout.lower())

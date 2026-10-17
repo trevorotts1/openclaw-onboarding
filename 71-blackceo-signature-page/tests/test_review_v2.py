@@ -496,14 +496,19 @@ class PerFileAndCoversTest(unittest.TestCase):
         write(self.run / "final-mockups" / "mockup.html", "<html></html>")
         write(self.run / "final-mockups" / "desktop" / "part-01.png", b"png-d")
         write(self.run / "final-mockups" / "mobile" / "part-01.png", b"png-m")
+        # Item 12: the hybrid board is a closing deliverable of the stage
+        # and is in its review cover as the approval artifact.
+        write(self.run / "final-mockups" / "hybrid-board.png", b"png-b")
+        write(self.run / "final-mockups" / "hybrid-board.json", "{}")
         failures = self.gate.check_review_scores(
             self.run, "final-mockups", self.receipt())
         joined = "\n".join(failures)
-        for item in ("desktop-part-01", "mobile-part-01", "mockup"):
+        for item in ("desktop-part-01", "mobile-part-01", "mockup", "hybrid-board"):
             self.assertIn(item, joined)
         self.assertIn("missing review file", joined)
         for item, rel in (("desktop-part-01", "final-mockups/desktop/part-01.png"),
                           ("mobile-part-01", "final-mockups/mobile/part-01.png"),
+                          ("hybrid-board", "final-mockups/hybrid-board.png"),
                           ("mockup", "final-mockups/mockup.html")):
             self.write_review_file("final-mockups", item, rel,
                                    {"composition_fidelity": 9})
@@ -555,6 +560,13 @@ class PerFileAndCoversTest(unittest.TestCase):
 
 
 class WireframeValidatorTest(unittest.TestCase):
+    # Migrated to the Item 11 spec image set by Update Plan Item 15: the
+    # validator now checks section slices (not the retired part-*.png
+    # exports) plus the Item 15 annotation, slot-label, and brand-color
+    # traits, so the compliant fixture carries real brand-colored slices
+    # and a fully annotated plan. Each test's intent is unchanged.
+    NAVY = (26, 26, 46)  # the skill brand file's palette navy
+
     def setUp(self):
         self.td = Path(tempfile.mkdtemp(prefix="wireframe-"))
         self.run = self.td / "run"
@@ -565,13 +577,28 @@ class WireframeValidatorTest(unittest.TestCase):
         write(self.run / "desktop-wireframe" / "image-inventory.json", json.dumps(
             {"images": [{"id": "IMG-001", "aspect_ratio": "16:9"},
                         {"id": "IMG-002", "aspect_ratio": "4:5"}]}))
-        self.write_png(self.run / "desktop-wireframe" / "part-01.png", 1440)
-        self.write_png(self.run / "desktop-wireframe" / "part-02.png", 1440)
+        self.write_png(self.run / "desktop-wireframe" / "section-01.png", 1440)
+        self.write_png(self.run / "desktop-wireframe" / "section-02.png", 1440)
+        write(self.run / "desktop-wireframe" / "wireframe-full.png", "stub")
+        write(self.run / "desktop-wireframe" / "wireframe.pdf", "stub")
         self.good_plan = [
-            {"section_id": "hero", "copy_block_ids": ["hero-copy"],
-             "image_slot_ids": ["IMG-001"], "reference_traits": []},
-            {"section_id": "offer", "copy_block_ids": ["offer-copy"],
-             "image_slot_ids": ["IMG-002"], "reference_traits": []},
+            {"section_id": "hero", "section_number": 1, "section_name": "Hero",
+             "copy_block_ids": ["hero-copy"],
+             "image_slot_ids": ["IMG-001"], "reference_traits": [],
+             "type_specs": {"h1": "64px", "h2": "32px", "body": "18px",
+                            "cta": "18px"},
+             "behavior_notes": "CTA before portrait on mobile",
+             "header_strip": {"page_width_px": 1440, "content_width_px": 1200},
+             "slot_labels": {"IMG-001": {"aspect_ratio": "16:9",
+                                         "art_direction": "Founder portrait, hero"}}},
+            {"section_id": "offer", "section_number": 2, "section_name": "Offer",
+             "copy_block_ids": ["offer-copy"],
+             "image_slot_ids": ["IMG-002"], "reference_traits": [],
+             "type_specs": {"h1": "48px", "h2": "32px", "body": "18px",
+                            "cta": "18px"},
+             "behavior_notes": "No CTA",
+             "slot_labels": {"IMG-002": {"aspect_ratio": "4:5",
+                                         "art_direction": "Product still life"}}},
         ]
         self.write_plan(self.good_plan)
 
@@ -580,7 +607,7 @@ class WireframeValidatorTest(unittest.TestCase):
 
     def write_png(self, path, width, height=300):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.Image.new("RGB", (width, height), (255, 255, 255)).save(path)
+        self.Image.new("RGB", (width, height), self.NAVY).save(path)
 
     def write_plan(self, plan):
         write(self.run / "desktop-wireframe" / "section-plan.json", json.dumps(plan))
@@ -615,15 +642,16 @@ class WireframeValidatorTest(unittest.TestCase):
         self.assertIn("IMG-999", proc.stdout)
         self.assertIn("IMG-002", proc.stdout)
 
-    def test_numbering_gap_fails(self):
-        (self.run / "desktop-wireframe" / "part-02.png").rename(
-            self.run / "desktop-wireframe" / "part-03.png")
+    def test_missing_slice_fails(self):
+        # Item 15 form of the old numbering-gap test: the spec image set
+        # delivers exactly one section slice per planned section.
+        (self.run / "desktop-wireframe" / "section-02.png").unlink()
         proc = self.validate()
         self.assertEqual(proc.returncode, 1, proc.stdout)
-        self.assertIn("not consecutive", proc.stdout)
+        self.assertIn("one slice per section", proc.stdout)
 
     def test_wrong_width_fails(self):
-        self.write_png(self.run / "desktop-wireframe" / "part-02.png", 800)
+        self.write_png(self.run / "desktop-wireframe" / "section-02.png", 800)
         proc = self.validate()
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn("width 800px, expected 1440px", proc.stdout)
