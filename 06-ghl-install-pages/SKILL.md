@@ -803,28 +803,73 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > `ghl_builder.ledger_root()` / `ghl_run_state.default_state_root()`).
 >
 > **Tenant-safe read-back + no-secret evidence (S06-08, doc 18 section 7).**
-> ONE read-back contract lives in `tools/ghl_evidence.py` and binds every
-> run's evidence to the tenant it was gated for. Record families (verify
-> summary + raw verify records, F6 receipts, ladder receipts, the run-state
-> document, inventory exports) carry it natively and additively:
-> `expected_location_id`, `observed_location_id` (where a read can obtain
-> one), `run_id`, and `tenant_binding`: "bound" only when expected and
-> observed are both present and equal; a record that cannot bind states
-> `tenant_binding: "unbound"` explicitly, never a silent omission.
+> ONE read-back contract lives in `tools/ghl_evidence.py`: it DEFINES how
+> a run's evidence binds to the tenant it was gated for. The contract
+> text never upgrades a stamp into an enforcement: which families
+> enforce the binding in code, which only stamp it, and which only flag
+> it is stated per family below. `tenant_binding` is "bound" only when
+> expected and observed are both present and equal, "mismatch" when
+> both are present and unequal, and "unbound" when either is absent.
+> Field truth per family (native, additive): raw verify records stamp
+> `expected_location_id`, `observed_location_id`, and `tenant_binding`
+> on every record, and the verify summary carries `run_id`, the single
+> distinct `expected_location_id` (or None when the raw log declares
+> none or mixes them), a derived `tenant_binding`, and each page's own
+> observed id in its per-page rows (the summary has no single top-level
+> observed id). F6 receipts and ladder receipts stamp
+> `expected_location_id`, `observed_location_id`, and `tenant_binding`
+> on every record; a receipt's `run_id` appears only when the producing
+> call supplies one, while verify records and ladder receipts always
+> carry their run id. On those families a record that cannot bind
+> states `tenant_binding: "unbound"` explicitly, never a silent
+> omission. The run-state document is narrower: it stores
+> `expected_location_id` ONLY when one is supplied for a new run
+> (absent, not null, otherwise), stores NO `observed_location_id` and
+> NO stored `tenant_binding` ever, and its binding is DERIVED at report
+> time (`ghl_evidence.effective_binding`) rather than stored. Inventory
+> exports carry `observed_location_id` and `tenant_binding`, with the
+> pre-existing `location_id` serving the expected role; an export
+> carries NO `expected_location_id` field and NO contract `run_id`.
 > Deviation S06-08-DEV-01 (coordinator-accepted, room evidence): the Q1
 > disposition assigned the inventory export and the run-state document to
 > the read-back index below; as shipped they satisfy the contract HERE,
-> natively, carrying the full field set on the document itself, and are
-> NOT index members. The index's designated members are the file-shaped
-> artifacts named in the next sentence. The shipped assignment is the
-> contract.
+> natively, with the per-family fields just stated (the run-state
+> document's conditional `expected_location_id` and derived binding;
+> the inventory export's `observed_location_id` and `tenant_binding`
+> under its `location_id`), and are NOT index members. The index's
+> designated members are the file-shaped artifacts named in the next
+> sentence. The shipped assignment is the contract.
 > File-shaped artifacts (render manifest + DOM/PNG/console captures, the
-> ID-handoff record, provisioning / path-set receipts) are bound through
-> the per-run read-back index (`skill6-readback-index/1`,
-> `<run>/readback-index.json`: run id, expected location, each artifact's
-> path + sha256, verified by re-hash). Observed != expected is a
-> CONTRADICTION (VerifyContradiction / ReceiptContradiction class), never
-> a pass. Fields are additive-optional: a legacy record without them is
+> ID-handoff record, provisioning / path-set receipts) are the
+> designated members of the per-run read-back index
+> (`skill6-readback-index/1`, `<run>/readback-index.json`: run id,
+> expected location, each artifact's path + sha256, verified by
+> re-hash). The index is a PROVIDED mechanism in
+> `tools/ghl_evidence.py`: NO production module calls it yet (only its
+> definitions, its self-test, and the tests exercise it), so no
+> production run writes a `readback-index.json` today; the designated
+> members are the artifacts the index is designed to bind when a
+> production caller writes one. Observed != expected is a CONTRADICTION
+> (VerifyContradiction / ReceiptContradiction class), never a pass,
+> ONLY in the verify family (a mismatch forces PASS False, and
+> invariant 7 refuses a PASS record that is not "bound" in a
+> declared-expected run) and at the router's create and reuse success
+> gates (a read-back observing a different location than the gated
+> tenant fails the write; both gates require an actual observation, so
+> a gated run whose read-back obtains NO observation can still succeed
+> stamped "unbound"). The other families do NOT fail on a mismatch:
+> ladder receipts stamp the binding (including "mismatch") with no
+> verdict effect, so a ladder run can close SUCCESS carrying a mismatch
+> stamp; receipts flag and guard a mismatch (`reduce_receipts` groups
+> it in the summary's tenant section, `assert_consistent` refuses a
+> summary that conceals one or leaves a mixed-tenant reduction
+> undeclared, and since the D6 cure it also refuses a declared-expected
+> summary holding a verified receipt that is not "bound"), but
+> `reduce_receipts`' `all_verified` is NOT forced false by a mismatch
+> alone; inventory enumeration excludes rows naming a different tenant,
+> counts them in `tenant_mismatch_rows`, stamps the binding, and
+> returns normally without raising a contradiction. Fields are
+> additive-optional: a legacy record without them is
 > tenant-unbound and flagged as such, never silently bound; old evidence
 > roots stay readable; nothing already written is re-stamped. Order plans
 > are INPUTS, not evidence: never stamped, swept, or cited as proof.
@@ -838,12 +883,23 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > argv/carry, inventory exports, ledger extras) passes through the
 > evidence scrubber before write: generic secret SHAPES plus the run's
 > resolved secret VALUES, the values held in memory only and never
-> persisted as a pattern list; every redaction is counted and the count
-> recorded on the record. Where masking cannot be done honestly (binary
-> captures on the login and payment steps), artifacts are SUPPRESSED at
-> capture time and the suppression is recorded (the
-> `ghl_login_browser.py` precedent; rule + record shape in
-> `tools/ghl_evidence.py`). Evidence roots are mode 0700 on creation and
+> persisted as a pattern list; every redaction is counted, and the
+> count is recorded on the record in the families whose writers always
+> stamp it (raw verify records and the verify summary, F6 receipts,
+> ladder receipts). In several families the count is stored ONLY WHEN
+> NONZERO (inventory exports, the run-state document, the ID-handoff
+> record, builder ledger records), so in those families the absence of
+> a `redactions` key does not by itself distinguish "scrubbed, nothing
+> found" from "not stamped"; read-back index member entries likewise
+> carry a member's `redactions` count only when the caller supplied
+> one. Where masking cannot be done honestly (binary captures on the
+> login and payment steps), artifacts are SUPPRESSED at capture time
+> and the suppression is recorded (the `ghl_login_browser.py`
+> precedent; rule + record shape in `tools/ghl_evidence.py`). For
+> payment steps that sentence states the S06-08 rule and the recorded
+> suppression flag only: proof is fixture-tier, live payment capture
+> behavior is LIVE_PROOF_PENDING, and the payment capture surfaces are
+> owned by S06-06/S79. Evidence roots are mode 0700 on creation and
 > evidence files mode 0600, set explicitly by the writer (Q4 interim
 > default): `ghl_evidence.audit_evidence_permissions()` REPORTS a loose
 > root, never silently accepts it. The four `verify_all` writes (raw log,
