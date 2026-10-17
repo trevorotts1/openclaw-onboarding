@@ -1,0 +1,29 @@
+{
+ "ingest_A2": "accepted",
+ "process_A2": {
+  "result": "processed",
+  "actions_created": 3
+ },
+ "fulfill_A2": "done",
+ "send_claim": "claimed_fresh",
+ "send_key": [
+  "bceo-client-sandbox",
+  "6ad238d157d447970c871671",
+  "*",
+  "send_confirmation",
+  "v1"
+ ],
+ "map_buyer2": {
+  "tenant_id": "bceo-client-sandbox",
+  "launch_id": "signature-launch-l4",
+  "contact_ref": "Hf63k0vcefn3MNmlGYri",
+  "entitlement_version": "ev1:139be695a6624c756dc346dbb18b34ef454a5d208d0ae83746908a177b0e75ed",
+  "entitlements": {
+   "ent-main": {
+    "state": "granted",
+    "delivery_url": null,
+    "next_action": "access"
+   }
+  }
+ }
+}
