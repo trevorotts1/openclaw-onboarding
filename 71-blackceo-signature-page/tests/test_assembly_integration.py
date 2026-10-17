@@ -95,48 +95,91 @@ def events_of(run):
 # ---------------------------------------------------------------- layout gate
 
 def test_layout_gate_failures_and_waivers():
-    missing = [n for n in gate.LAYOUT_REFERENCE_FILES
-               if not (gate.SKILL_ROOT / "assets" / "page-references" / n).is_file()]
-    assert missing, "precondition: the owner-supplied references are absent here"
+    """Item 17 (ruled 2026-10-15): the gate checks RESOLUTION, not
+    file presence. Against a synthetic skill root: a reference with
+    neither its file nor a registered house default fails, naming
+    it; a missing original with a default present passes with the
+    fallback named in the failure output and in the per-reference
+    sources; a recorded waiver excuses an unresolved reference; a
+    waiver without a reason is not a waiver."""
+    real_root = gate.SKILL_ROOT
     with tempfile.TemporaryDirectory() as td:
-        run = Path(td)
-        fixture_intake(run)
-        failures = gate.layout_gate_failures(run)
-        assert failures and "missing layout reference" in failures[0], failures
-        fixture_intake(run, layout_waivers=[{"gate": "layout-references",
-                                             "reason": "owner waived for this run"}])
-        assert gate.layout_gate_failures(run) == []
-        fixture_intake(run, layout_references_waived=True,
-                       layout_references_waiver_reason="owner waived, flat form")
-        assert gate.layout_gate_failures(run) == []
-        fixture_intake(run, layout_waivers=[{"gate": "layout-references",
-                                             "reason": "  "}])
-        assert gate.layout_gate_failures(run), "a waiver without a reason is not a waiver"
+        root = Path(td) / "skill"
+        run = Path(td) / "run"
+        run.mkdir(parents=True)
+        registry = root / "assets" / "page-references" / "substitutions.json"
+        write(registry, json.dumps({"substitutions": [], "outstanding": []}))
+        try:
+            gate.SKILL_ROOT = root
+            fixture_intake(run)
+            failures = gate.layout_gate_failures(run)
+            assert failures and "unresolved layout reference" in failures[0], failures
+            for name in gate.LAYOUT_REFERENCE_FILES:
+                assert name in failures[0], failures
+            fixture_intake(run, layout_waivers=[{"gate": "layout-references",
+                                                 "reason": "owner waived for this run"}])
+            assert gate.layout_gate_failures(run) == []
+            fixture_intake(run, layout_references_waived=True,
+                           layout_references_waiver_reason="owner waived, flat form")
+            assert gate.layout_gate_failures(run) == []
+            fixture_intake(run, layout_waivers=[{"gate": "layout-references",
+                                                 "reason": "  "}])
+            assert gate.layout_gate_failures(run), "a waiver without a reason is not a waiver"
+            # mixed root: one original present, one house default, one neither
+            first, second, third = gate.LAYOUT_REFERENCE_FILES
+            write(root / "assets" / "page-references" / first, "x")
+            entry = {"named_file": second, "status": "substituted",
+                     "stand_in_files": [{"file": "default.pdf"}],
+                     "ruled_by": "Trevor Otts", "ruling_date": "2026-10-15",
+                     "ruling": "stands in"}
+            write(registry, json.dumps({"substitutions": [entry],
+                                        "outstanding": []}))
+            fixture_intake(run)
+            failures = gate.layout_gate_failures(run)
+            assert len(failures) == 1, failures
+            assert third in failures[0], failures
+            assert first not in failures[0], failures
+            assert "house default" in failures[0], failures  # fallback named in output
+            sources = {s["named_file"]: s["source"]
+                       for s in gate.layout_reference_sources(run)}
+            assert sources == {first: "original", second: "house_default",
+                               third: "unresolved"}, sources
+            # deleting the default's registration too fails that reference
+            write(registry, json.dumps({"substitutions": [], "outstanding": []}))
+            failures = gate.layout_gate_failures(run)
+            assert len(failures) == 1 and second in failures[0], failures
+        finally:
+            gate.SKILL_ROOT = real_root
 
 
 def test_layout_gate_substitution_record():
-    """Ruling 5 (2026-10-14): the recorded owner substitution in
-    assets/page-references/substitutions.json satisfies the two
-    Challenge screenshots; the Elevation Conference JPG stays
-    outstanding, so an unwaivered run still fails naming only it,
-    and a defective record fails closed (no substitution at all)."""
+    """Ruling 5 (2026-10-14) as completed by Decision 4 (2026-10-15)
+    under Item 17: the standing registry records an approved house
+    default for all three named references and none is outstanding,
+    so an unwaivered run resolves every reference and passes (the
+    School of AI run's fact pattern: files 2 and 3 substituted, file
+    1 outstanding under the old rule). The per-reference sources and
+    the REPORT.md lines name each fallback; a defective record
+    fails closed (no default at all)."""
     subs, outstanding = gate._layout_substitution_record()
-    assert set(subs) == {
-        "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07.png",
-        "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png"}, subs
-    assert outstanding == ["Sales Page - Elevation Conference - Desktop(1).jpg"], outstanding
+    assert set(subs) == set(gate.LAYOUT_REFERENCE_FILES), subs
+    assert outstanding == [], outstanding
     with tempfile.TemporaryDirectory() as td:
         run = Path(td)
         fixture_intake(run)
-        failures = gate.layout_gate_failures(run)
-        assert len(failures) == 1, failures
-        assert "missing layout reference" in failures[0], failures
-        assert "Elevation Conference" in failures[0], failures
-        assert "screencapture" not in failures[0], failures
-        # a recorded waiver still excuses the outstanding file for the run
-        fixture_intake(run, layout_waivers=[{"gate": "layout-references",
-                                             "reason": "owner waived for this run"}])
         assert gate.layout_gate_failures(run) == []
+        sources = {s["named_file"]: s
+                   for s in gate.layout_reference_sources(run)}
+        elev = sources["Sales Page - Elevation Conference - Desktop(1).jpg"]
+        assert elev["source"] == "original", elev
+        for name in ("screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07.png",
+                     "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png"):
+            assert sources[name]["source"] == "house_default", sources[name]
+            assert "gofullpage-blackceochallenge-reg-va.pdf" in sources[name]["detail"]
+        warns = "\n".join(gate.collect_warnings(run, {"stages": {}}))
+        for name in gate.LAYOUT_REFERENCE_FILES:
+            assert f"layout reference source ({name})" in warns, warns
+        assert "house default: gofullpage-blackceochallenge-reg-va.pdf" in warns, warns
     # fail-closed parsing against synthetic roots
     def record_at(root, payload):
         write(Path(root) / "assets" / "page-references" / "substitutions.json",

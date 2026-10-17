@@ -3,6 +3,18 @@
 """dispatch_launch.py — turn an APPROVED launch plan into specialist page
 requests (spec 06 S49-07; contracts doc 02 §7, schemas page-request 1.0).
 
+Q12 REVISION (schema 1.1, S49): when the launch record names a
+prompt_policy_id (top-level field, plan-approved content bound by the
+plan document hash), build_requests stamps it into every emitted request
+and marks those requests schema_version "1.1" (page-request.v1.1 schema,
+1.0 preserved). When the record names none, the emitted requests are
+byte-identical 1.0 requests. No policy values are minted here: the id is
+copied from the record verbatim, never invented per run, and never
+supplied by a CLI flag, a run-dir config key, or a function parameter
+(copy_profile's parameter path is the anti-pattern: it is not plan-bound).
+validate_request applies the same rule in reverse: a "1.1" request must
+carry the field, and a "1.0" request must not.
+
 FAIL-CLOSED, in this order:
   1. The launch record must validate (validate_launch_plan) and its status
      must be approved/building.
@@ -89,6 +101,17 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
     if allowed_write_target not in WRITE_TARGETS:
         raise DispatchError(f"allowed_write_target {allowed_write_target!r} "
                             "is not a write target")
+    if "prompt_policy_id" in launch:
+        policy_id = launch["prompt_policy_id"]
+        if not isinstance(policy_id, str) or not policy_id.strip():
+            raise DispatchError(
+                "launch record prompt_policy_id, when the key is present, "
+                "must be a non-empty string — null or blank is refused; "
+                "omit the key entirely when no policy governs (absence is "
+                "the only encoding of 'no policy': absent, null, and a "
+                "value are three different plan hashes)")
+    else:
+        policy_id = None
     offer_ids = {}
     for o in launch["offers"]:
         offer_ids.setdefault(o["slot"], []).append(o["offer_id"])
@@ -100,7 +123,7 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
         for slot in ROLE_OFFERS[role]:
             refs.extend(offer_ids.get(slot, []))
         requests.append({
-            "schema_version": "1.0",
+            "schema_version": "1.1" if policy_id else "1.0",
             "tenant_id": launch["tenant_id"],
             "location_id": launch["location_id"],
             "launch_id": launch["launch_id"],
@@ -117,6 +140,7 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
             "route_graph_hash": launch["route_graph_hash"],
             "offer_refs": refs,
             "copy_profile": copy_profile,
+            **({"prompt_policy_id": policy_id} if policy_id else {}),
             "allowed_write_target": allowed_write_target,
             "test_only": bool(launch["test_only"]),
         })
@@ -136,8 +160,17 @@ def validate_request(req: Dict[str, Any]) -> List[str]:
              if f not in req]
     if fails:
         return fails
-    if req["schema_version"] != "1.0":
-        fails.append("request schema_version is not 1.0")
+    if req["schema_version"] not in ("1.0", "1.1"):
+        fails.append("request schema_version is not 1.0 or 1.1")
+    elif req["schema_version"] == "1.1":
+        pid = req.get("prompt_policy_id")
+        if not isinstance(pid, str) or not pid.strip():
+            fails.append("a 1.1 request must carry a non-empty "
+                         "prompt_policy_id (the 1.1 label exists to carry "
+                         "the field)")
+    elif "prompt_policy_id" in req:
+        fails.append("prompt_policy_id requires request schema_version "
+                     "1.1 (the 1.0 schema forbids the field)")
     if req["page_role"] not in ROLE_SKILL:
         fails.append(f"unknown page_role {req['page_role']!r}")
     elif req["assigned_skill"] != ROLE_SKILL[req["page_role"]]:

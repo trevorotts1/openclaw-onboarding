@@ -41,11 +41,11 @@ def authoring_entry(status="ready", with_asset=False, qc_status=None, size=None)
         "references": [],
         "technical_plan": "Wide master",
         "prompt_file": "prompts/IMG-001.md",
-        "filename": "IMG-001.png",
+        "filename": "Image-01.png",
         "status": status,
     }
     if with_asset:
-        entry["asset_file"] = "generated/IMG-001.png"
+        entry["asset_file"] = "generated/Image-01.png"
         if qc_status is not None:
             entry["qc_status"] = qc_status
         if size is not None:
@@ -146,7 +146,7 @@ def test_manifest_measure_mismatch_fails():
         td = Path(td)
         (td / "prompts").mkdir(parents=True)
         (td / "prompts" / "IMG-001.md").write_text("x\n", encoding="utf-8")
-        _png(td / "generated" / "IMG-001.png", 64, 32)
+        _png(td / "generated" / "Image-01.png", 64, 32)
         manifest = td / "image-map.json"
         manifest.write_text(json.dumps({"images": [entry]}), encoding="utf-8")
         proc = run([PY, SCRIPTS / "validate_image_manifest.py", manifest, "--measure"], 1)

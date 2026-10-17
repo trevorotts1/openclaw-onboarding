@@ -247,3 +247,78 @@ def test_cli_summarize_prints_json(capsys):
 
 def test_cli_selftest_exits_zero():
     assert receipts.main(["--selftest"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# S06-08 D6 cure — assert_consistent invariant-7 mirror (receipts family)
+# ---------------------------------------------------------------------------
+def _stamped_verified(tmp, slug, expected=None, observed=None):
+    receipts.write_receipt(tmp, receipts.make_receipt(
+        "page", slug, "created", response_id=f"r-{slug}",
+        verify={"ok": True}, expected_location_id=expected,
+        observed_location_id=observed))
+
+
+def test_d6_declared_expected_refuses_unbound_verified_receipt():
+    """(a) The D6 defect shape: a verified receipt is stamped for the run's
+    expected location but its read-back obtained no observation
+    (tenant_binding "unbound"). reduce counts it verified with
+    all_verified True; a summary declaring that expected location (here via
+    its own tenant section, as reduce produces) must now be refused, the
+    same trigger as ghl_verify's invariant 7. At base this passed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _stamped_verified(tmp, "zhc_no_obs", expected="locA", observed=None)
+        summ = receipts.reduce_receipts(tmp)
+        assert summ["verified"] == ["page:zhc_no_obs"]
+        assert summ["all_verified"] is True
+        assert summ["tenant"]["unbound"] == ["page:zhc_no_obs"]
+        with pytest.raises(receipts.ReceiptContradiction):
+            receipts.assert_consistent(summ, tmp)
+
+
+def test_d6_top_level_declaration_refuses_unbound_verified_receipt():
+    """(a, top-level surface) Same receipt; the summary declares the
+    expected location via its top-level expected_location_id field."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _stamped_verified(tmp, "zhc_no_obs", expected="locA", observed=None)
+        summ = receipts.reduce_receipts(tmp)
+        summ["expected_location_id"] = "locA"
+        with pytest.raises(receipts.ReceiptContradiction):
+            receipts.assert_consistent(summ, tmp)
+
+
+def test_d6_declared_expected_accepts_bound_verified_receipt():
+    """(b) Declared-expected run whose verified receipt IS bound: passes on
+    both declaration surfaces."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _stamped_verified(tmp, "zhc_bound", expected="locA", observed="locA")
+        summ = receipts.reduce_receipts(tmp)
+        assert summ["tenant"]["bound"] == ["page:zhc_bound"]
+        receipts.assert_consistent(summ, tmp)  # must not raise
+        summ["expected_location_id"] = "locA"
+        receipts.assert_consistent(summ, tmp)  # must not raise
+
+
+def test_d6_undeclared_legacy_summary_over_unbound_receipt_passes():
+    """(c) NO declared expected anywhere: a legacy-shaped summary (no tenant
+    section, no expected_location_id) over the same unbound verified
+    receipt passes exactly as at base (Q2 grandfathering unchanged)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _stamped_verified(tmp, "zhc_no_obs", expected="locA", observed=None)
+        legacy = {"created": ["page:zhc_no_obs"], "reused": [],
+                  "verified": ["page:zhc_no_obs"], "total": 1}
+        receipts.assert_consistent(legacy, tmp)  # must not raise
+
+
+def test_d6_mismatch_stamped_verified_receipt_still_refuses():
+    """(d) A mismatch-stamped verified receipt still refuses as at base:
+    stamped expected locB with an observed locA read-back, under a summary
+    declaring locA, is a cross-tenant contradiction (guard (a), unchanged
+    by the cure)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _stamped_verified(tmp, "zhc_cross", expected="locB", observed="locA")
+        summ = receipts.reduce_receipts(tmp)
+        assert summ["tenant"]["mismatch"] == ["page:zhc_cross"]
+        summ["expected_location_id"] = "locA"
+        with pytest.raises(receipts.ReceiptContradiction):
+            receipts.assert_consistent(summ, tmp)

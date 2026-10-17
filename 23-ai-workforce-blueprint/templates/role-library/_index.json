@@ -555,8 +555,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:25c72b965309c66fbb77e650b3bee5915b6d4e2c711f530fe35a52edd8a93318",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:eadc1db6c01f8931db953f10f771bfa40cb87f89bc89ccb27d35d4704b1f61c9",
+      "content_hashed_at": "2026-10-17T11:35:45.682336+00:00"
     },
     "product-production": {
       "count": 4,
@@ -10546,9 +10546,9 @@
       "slug": "pptx-assembly-specialist-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/pptx-assembly-specialist-sops.md",
-      "content_sha": "sha256:dc2d06beb29610a68b63bf1eb900e5ee376c1542d99d1c81ee3850fa39a02844",
-      "content_version": "1.0.12",
-      "content_hashed_at": "2026-10-17T04:37:56.434730+00:00"
+      "content_sha": "sha256:f36e2a58af4db4d7b8ec078440d0916301f25a9838e49f4cc795766d6f0f4146",
+      "content_version": "1.0.13",
+      "content_hashed_at": "2026-10-17T11:35:45.682336+00:00"
     },
     {
       "slug": "presenter-coach-sops",

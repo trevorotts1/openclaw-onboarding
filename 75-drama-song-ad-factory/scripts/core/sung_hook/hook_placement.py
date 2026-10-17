@@ -37,7 +37,14 @@ Hook. The rules here replace that:
      aligned word times: fail if Suno added hook blocks (or any blocks)
      beyond the sheet, moved a hook block earlier in the section order, or
      sang the first hook inside the build-up window, or before the second
-     its ``true_at_beat`` starts.
+     its ``true_at_beat`` starts. Headers present but none a hook: FAIL
+     (UNMEASURED), never a pass with no first hook.
+     NO HEADERS (word timing from local transcription, or Suno sent none):
+     the hook is placed from the approved hook words found on the measured,
+     ordered word times, each occurrence confirmed sung by the detector's
+     measured segments; the same floors and the extra-hook check apply.
+     Untrusted timing, missing hook words or no measured segments block.
+     Headers are never invented at planned times.
 
   hook_plan JSON shape (SKILL.md "Hook placement"):
      {"true_at_beat": "the_turn"}
@@ -55,6 +62,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import math
 import os
 import re
 import sys
@@ -69,7 +77,7 @@ from sung_hook import sung_hook as _SH             # noqa: E402
 import words_fit as _WF                            # noqa: E402
 
 TOOL_NAME = "hook_placement"
-TOOL_VERSION = "1.2.0"
+TOOL_VERSION = "1.3.0"
 SOURCE = "Trevor 2026-10-09: the hook is the payoff, placed after the build-up, at its story beat"
 
 HOOK_HEADS = ("hook", "chorus")
@@ -284,7 +292,7 @@ def returned_sections(aligned_words):
     section headers inline (a header can be split across two words)."""
     text, starts = "", []
     for w in aligned_words or []:
-        starts.append((len(text), w.get("startS")))
+        starts.append((len(text), w.get("start", w.get("startS"))))
         text += str(w.get("word", ""))
     out = []
     for m in _HEADER_RE.finditer(text):
@@ -309,9 +317,121 @@ def _head_kind(tag):
     return kind_of(_parsed(tag))
 
 
-def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None):
+def _floor_reasons(first, style_id, delivered_s, true_at):
+    """The two time floors on the first sung hook: the build-up window and the
+    story beat where the hook's words become true. Shared by both readers."""
+    floor, out = min_first_hook_s(style_id, delivered_s), []
+    if first < floor:
+        out.append("first hook sung at %.1f s, inside the %.1f s build-up window for a %g s ad"
+                   % (first, floor, delivered_s))
+    at = beat_start_s(true_at, delivered_s)
+    if first < at:
+        out.append("first hook sung at %.1f s (beat %r), before %r starts at %.1f s where "
+                   "its words become true" % (first, beat_at(first / delivered_s), true_at, at))
+    return out
+
+
+def _timed_tokens(aligned_words):
+    """[(token, start, end)] from ordered word records, every token of a record
+    kept (Suno packs "Verse 3 " or "talking.\\n\\n" into one record). None when the
+    timing cannot be trusted: a non-numeric, non-finite or reversed time, or
+    starts that run backwards."""
+    out, last = [], None
+    for w in aligned_words or []:
+        if not isinstance(w, dict):
+            return None
+        a, b = _SH._span(w)
+        if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+                   for x in (a, b)) or b < a or (last is not None and a < last):
+            return None
+        last = a
+        text = re.sub(r"\[[^\]]*\]?|^[^\[]*\]", " ", str(w.get("word", "")))
+        out += [(t, float(a), float(b)) for t in _SH._words(text)]
+    return out
+
+
+def _find(seq, key):
+    """Start indexes of every non-overlapping run of ``key`` in ``seq``."""
+    hits, i, n, key = [], 0, len(key), list(key)
+    while n and i + n <= len(seq):
+        if list(seq[i:i + n]) == key:
+            hits.append(i)
+            i += n
+        else:
+            i += 1
+    return hits
+
+
+def _lexical_unmeasured(why, wh):
+    return {"verdict": "FAIL", "reasons": ["UNMEASURED: " + why], "first_hook_s": None,
+            "min_first_hook_s": None, "hook_blocks_sheet": wh, "hook_blocks_returned": None,
+            "basis": "lexical", "source": SOURCE}
+
+
+def _check_lexical(secs, want, aligned_words, segments, style_id, delivered_s, true_at):
+    """Rule 4 with NO section headers in the returned words (local transcription
+    hears words, never editorial labels). Each sheet hook block is found as its
+    exact approved words on the measured word times and counts only when the
+    singing detector measured it sung. Everything incomplete blocks: untrusted
+    timing, no measured segments, ambiguous hook words, or fewer sung hook
+    blocks than the sheet carries (an unread earlier hook cannot be ruled out).
+    No header is ever invented at a planned time."""
+    wh = want.count("hook")
+    keys = sorted({tuple(_SH._words(" ".join(s.get("lines") or [])))
+                   for s, k in zip(secs, want) if k == "hook"} - {()}, key=len, reverse=True)
+    if not keys:
+        return _lexical_unmeasured("section headers (Suno returned none) and the sheet carries "
+                                   "no hook words to place", wh)
+    for s, k in zip(secs, want):
+        own = _SH._words(" ".join(s.get("lines") or []))
+        if k != "hook" and any(_find(own, key) for key in keys):
+            return _lexical_unmeasured("hook words also sit in the sheet's %r section: hook "
+                                       "placement is ambiguous without section headers"
+                                       % s.get("tag"), wh)
+    toks = _timed_tokens(aligned_words)
+    if not toks:
+        return _lexical_unmeasured("section headers (Suno returned none) and the word timing "
+                                   "is missing or untrusted, so the hook cannot be placed", wh)
+    segs = [s for s in segments or [] if isinstance(s, dict)]
+    if not segs or any(s.get("source") != "measured" for s in segs):
+        return _lexical_unmeasured("section headers (Suno returned none) and no detector-"
+                                   "measured segments confirm the hook was sung", wh)
+    seq = [t for t, _, _ in toks]
+    found = set()
+    for key in keys:                                # longest key first: no double count
+        for i in _find(seq, key):
+            if not any(i <= j < i + len(key) or j <= i < j + n for j, n in found):
+                found.add((i, len(key)))
+    sung = []
+    for i, n in sorted(found):
+        a, b = toks[i][1], toks[i + n - 1][2]
+        if any(s.get("delivery") == "sung" and s["start"] <= (a + b) / 2 <= s["end"] for s in segs):
+            sung.append(round(a, 3))
+    if len(sung) > wh:
+        return {"verdict": "FAIL", "first_hook_s": sung[0], "basis": "lexical",
+                "reasons": ["Suno sang %d hook blocks, the sheet has %d (hook words sung at %s)"
+                            % (len(sung), wh, ", ".join("%.1f s" % t for t in sung))]
+                + _floor_reasons(sung[0], style_id, delivered_s, true_at),
+                "min_first_hook_s": min_first_hook_s(style_id, delivered_s),
+                "hook_blocks_sheet": wh, "hook_blocks_returned": len(sung), "source": SOURCE}
+    if len(sung) < wh:
+        r = _lexical_unmeasured("section headers (Suno returned none); the approved hook words "
+                                "were heard sung %d of the sheet's %d times, so an earlier "
+                                "unread hook cannot be ruled out" % (len(sung), wh), wh)
+        r["hook_blocks_returned"] = len(sung)
+        return r
+    reasons = _floor_reasons(sung[0], style_id, delivered_s, true_at)
+    return {"verdict": "FAIL" if reasons else "PASS", "reasons": reasons,
+            "first_hook_s": sung[0], "min_first_hook_s": min_first_hook_s(style_id, delivered_s),
+            "hook_blocks_sheet": wh, "hook_blocks_returned": len(sung), "basis": "lexical",
+            "source": SOURCE}
+
+
+def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None, segments=None):
     """Rule 4 on one take, always on. {"verdict", "reasons", "first_hook_s", ...}.
-    A missing sheet, style_id, length or hook_plan is a FAIL ("UNMEASURED: <field>")."""
+    A missing sheet, style_id, length or hook_plan is a FAIL ("UNMEASURED: <field>").
+    ``segments``: the singing detector's measured segments, needed only when the
+    returned words carry no section headers (the lexical reader)."""
     true_at = hook_plan.get("true_at_beat") if isinstance(hook_plan, dict) else None
     miss = unmeasured(sheet_text=sheet or None, style_id=style_id, length_s=delivered_s,
                       hook_plan=hook_plan) or beat_errors(true_at)
@@ -322,9 +442,7 @@ def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None):
     want = [kind_of(s) for s in secs]
     got_tags = returned_sections(aligned_words)
     if not got_tags:
-        return {"verdict": "FAIL", "reasons": ["UNMEASURED: section headers (Suno returned "
-                                               "none; hook placement cannot be read)"],
-                "first_hook_s": None, "min_first_hook_s": None, "source": SOURCE}
+        return _check_lexical(secs, want, aligned_words, segments, style_id, delivered_s, true_at)
     got = [(_head_kind(t), t, s) for t, s in got_tags
            if t.lower() != "end" and "instrumental" not in t.lower()]
     reasons = []
@@ -341,18 +459,18 @@ def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None):
                        % (g_idx[0] + 1, w_idx[0] + 1))
     first = next((s for k, _, s in got if k == "hook"), None)
     floor = min_first_hook_s(style_id, delivered_s)
-    if first is not None and first < floor:
-        reasons.append("first hook sung at %.1f s, inside the %.1f s build-up window for a %g s ad"
-                       % (first, floor, delivered_s))
     if first is not None:
-        at = beat_start_s(true_at, delivered_s)
-        if first < at:
-            reasons.append("first hook sung at %.1f s (beat %r), before %r starts at %.1f s where "
-                           "its words become true" % (first, beat_at(first / delivered_s),
-                                                      true_at, at))
+        reasons += _floor_reasons(first, style_id, delivered_s, true_at)
+    elif wh:
+        # the sheet carries a hook but no returned header names one: the first
+        # hook time is unread, which never passes the time floors
+        reasons.append("UNMEASURED: no returned section header names a hook (%d headers, the "
+                       "sheet has %d hook blocks); the first hook time cannot be read"
+                       % (len(got), wh))
     return {"verdict": "FAIL" if reasons else "PASS", "reasons": reasons,
             "first_hook_s": first, "min_first_hook_s": floor,
-            "hook_blocks_sheet": wh, "hook_blocks_returned": gh, "source": SOURCE}
+            "hook_blocks_sheet": wh, "hook_blocks_returned": gh, "basis": "headers",
+            "source": SOURCE}
 
 
 def _extra_hooks(secs, got):

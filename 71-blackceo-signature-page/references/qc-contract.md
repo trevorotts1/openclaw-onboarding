@@ -15,7 +15,7 @@ Examples of automatic failure include missing required content, wrong image, lea
 
 ## Prompt and generated-image pass rule
 
-Retain the stricter Graphics threshold:
+This bar is Skill 71's own, vendored here and in the Image Guide's QC section (Update Plan Item 21, Decision 5: the skill carries its own standard and defers to no external repository for this bar). Retain it exactly:
 
 - average at least 8.5;
 - every applicable individual criterion at least 8;
@@ -35,7 +35,11 @@ Style fidelity is enforced against data, not impressions of the library texts. B
 
 Reviewers score the selected style's own gate (see `references/style-traits/README.md`): the Photographers ten-question Style Fidelity Check with the four-of-five locks rule, the Cinematic eight-dimension Fidelity Gate, or the Visual Artists entry's own dimensions at 8 or above with no averaging, plus its originality attestation. The per-artifact arithmetic above (average at least 8.5, every criterion at least 8, zero auto-fails) applies to EACH prompt and EACH image individually; scores are never pooled across artifacts.
 
+**Fidelity-gate governing rule (Update Plan Item 28 / proposal P8):** When a style library supplies its own fidelity apparatus, that apparatus governs the style-level verdict for images under that selection. The guide's fidelity gate governs the page-level verdict (coherence across the page's images) and remains the only gate when no library apparatus applies. The two verdicts are recorded separately in the review; neither silently overrides the other.
+
 ## Residual judgment (Amendment 6, Part B6)
+
+**Status (owner approval, 2026-10-15):** this section is approved governing doctrine, not commentary. Trevor approved the residual-judgment list below as governing text on 2026-10-15 (Skill 71 update plan, Decision 11; proposal P7 from the Item 30 reconciliation drafts; source: Amendment 6, Part B6). Review records cite this section as doctrine.
 
 After the mechanical checks above, the following remain judgment, and no part of this skill may claim mechanical coverage for them:
 
@@ -47,6 +51,60 @@ After the mechanical checks above, the following remain judgment, and no part of
 6. the libraries' own production-ready claims, which rest on per-style QA scores (at least 8.0 of 10 on ten dimensions) that are published NOWHERE, making the claim unfalsifiable from the artifacts.
 
 Mitigations, the strongest available: independent review under Item 2's receipt machinery as the floor for every judgment item; the per-style gate rubrics as the review FORM, so judgment is exercised against the style's own criteria rather than a generic impression; and this list, printed here so the coverage is never mistaken for total.
+
+## Visual standard set traits (Item 14)
+
+The skill's visual standard for wireframes, mockups, and the hybrid
+board is Trevor's own example set, bundled at
+`assets/visual-standards/` (inventory and hashes in its
+`manifest.json`; the classification rule and production analysis in
+its `ANALYSIS.md`). Reviewers score the traits below with that set
+open beside the artifact under review, and the review record cites
+traits by ID and names the standard file compared. Gates check
+traits, not general impressions: any trait that fails is a named
+defect in the review record, and a mockup failing M1 fails review
+outright. Deterministic gate enforcement of these traits (the
+wireframe annotation, slot-label, and brand-color checks, and the
+mockup placeholder-slot gate check) is Item 15 and is not part of
+this section; until it lands, these traits bind through review.
+
+Wireframe traits (a designed, annotated build spec rendered as an
+image, in the client's brand colors):
+
+- W1: every section is numbered and named against the 12-section
+  standard.
+- W2: type specs are printed on the sheet (H1, H2, body, and CTA
+  sizes, desktop and mobile).
+- W3: every image slot is a deliberate placeholder (a
+  black-and-white photographic plate or a crossed box), labeled with
+  its aspect ratio AND its art direction (what the image must show).
+- W4: the sheet is rendered in the client's brand colors.
+- W5: a header strip states the page width and the content width.
+- W6: behavior notes are printed per section (for example "CTA
+  before portrait on mobile", "No CTA", "Typography-only response").
+- W7: CTAs are shown as designed chips carrying the real button text
+  and microcopy specs, and copy is the run's real copy where it
+  exists.
+
+Mockup traits (the same page with nothing left as a placeholder
+except genuinely unknown data such as an event date or start time):
+
+- M1: real photography in every slot; zero placeholder slots.
+- M2: buttons are filled in the brand color.
+- M3: the real logo is placed.
+- M4: the copy is the final copy, not structural placeholder copy.
+- M5: the mockup matches the approved wireframe section for section
+  (same layout, same copy); only the image slots come alive and the
+  buttons fill.
+
+Hybrid board traits (one presentation sheet pairing structure and
+finished look for a single approval pass):
+
+- H1: all three panels are present on one sheet: the
+  mockup-fidelity desktop page, the mockup-fidelity mobile page,
+  and a section guide column.
+- H2: the section guide matches the mockups it sits beside: numbered
+  sections, mini wireframe thumbnails, and typography specs.
 
 ## Failed-only repair loop
 
@@ -112,6 +170,22 @@ present):
 - `section_rhythm_variety` (section rhythm and variety)
 - `image_slot_integrity` (image-slot integrity)
 
+Final-mockups stage (`final-mockups`) only, one review per covered
+part and one for the stage's `mockup.html` (item `mockup`): the
+mockup trait criterion binds only at the single client-judged mockup
+stage (Update Plan Item 5, Decision 2 option (i)). It is never
+scored at `visual-mockup`: that stage's layout proof is an internal
+production artifact whose image slots are solid blocks by design, so
+scoring it against the mockup traits would fail a correctly built
+layout proof.
+
+- `mockup_trait_fidelity` (Item 14: the mockup traits M1 to M5 in
+  "Visual standard set traits" above, scored with the bundled
+  standard set at `assets/visual-standards/` open beside the
+  artifact; any placeholder slot is an M1 failure and an automatic
+  failure of this criterion; where the stage produces the hybrid
+  board, traits H1 and H2 are scored under this criterion as well)
+
 Generated images (`image-generation-qc`), one review per generated file,
 under the per-artifact rule: each file's own criterion mean must reach
 the contract average of 8.5, every criterion must be at or above 8, and
@@ -140,3 +214,9 @@ still provisional:
   the correspondence is structural, not merely thematic; when the
   reference set is waived at intake, score against the brand file's
   layout thresholds and record the waiver in the note)
+- `wireframe_trait_completeness` (Item 14: the wireframe traits W1
+  to W7 in "Visual standard set traits" above, scored trait by trait
+  with the bundled standard set at `assets/visual-standards/` open
+  beside the artifact; the criterion note names each trait's verdict,
+  and a missing annotation (W1, W2, W5, W6) or an unlabeled slot
+  (W3) is a named defect, never a general impression)

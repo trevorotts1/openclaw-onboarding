@@ -42,11 +42,13 @@ contract of record.
   `IMG-001`. Item ids are identical across both itemized stages: generation
   item `IMG-001` is fed by prompt item `IMG-001`.
 - An item's artifact is located by matching the stage's `per_file_glob` and
-  comparing the trailing number: `IMG-001.txt` and `Image-001.png` are both
-  item `IMG-001`.
+  comparing the trailing number: `IMG-001.txt` and `Image-01.png` are both
+  item `IMG-001`. (Since Update Plan Item 26 the generation route saves
+  under the two-digit delivered name `Image-NN.png`; the numeric match
+  is unchanged.)
 - An item's Review Receipt v2 file keeps the gate's existing naming: the
   review item id is the artifact's file stem (`IMG-001` for prompts,
-  `Image-001` for images), at
+  `Image-01` for images), at
   `private/reviews/<stage>/<review-item-id>.review.json`, written by
   `scripts/write_review.py` from the reviewing session. Review files are
   never written by hand.
