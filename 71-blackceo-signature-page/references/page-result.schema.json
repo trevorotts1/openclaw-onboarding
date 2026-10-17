@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Page build result",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "location_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "page_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "authored",
+        "locally_verified",
+        "installed_test_verified",
+        "ready_for_activation",
+        "live_verified",
+        "blocked"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Artifact reference",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ]
+      }
+    },
+    "author_session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_session": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "independent_review": {
+      "type": "boolean"
+    },
+    "proof_class": {
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ]
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "native_bindings_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "test_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "revision",
+    "request_id",
+    "input_hash",
+    "page_id",
+    "status",
+    "artifacts",
+    "author_session",
+    "reviewer_session",
+    "independent_review",
+    "proof_class",
+    "blockers",
+    "native_bindings_ref",
+    "test_only"
+  ]
+}

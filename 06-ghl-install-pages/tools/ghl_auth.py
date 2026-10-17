@@ -22,6 +22,18 @@ THE 3-TIER LADDER
 The Tier-1 token branch is the FIRST branch and textually precedes the
 ghl_auth_fallback import (guard-ghl-auth-fallback.sh invariant 7). The fallback
 import is LAZY (inside the Tier-2 branch) so a valid-token run never touches it.
+
+Refresh-token resolution goes through the ONE shared resolver
+(tools/ghl_secret_resolver.py): the *_FILE indirection
+(GHL_REFRESH_TOKEN_FILE) first, then the env alias chain, then (for the
+process environment only) the canonical stores. See resolve_refresh_token
+for the hermetic rule for explicit env mappings.
+
+TIER-2 ENGINE CONTRACT (S06-04 open question Q2, decided): run() takes the
+Tier-2 engine as caller-injected dependencies (store / probe / driver). The
+production CLI injects none, so when Tier 1 cannot serve, the CLI reports
+Tier 3 (exit 7) naming this contract. Wiring a production engine is a
+separate, separately verified task; the gates do not change.
 """
 
 from __future__ import annotations
@@ -33,6 +45,8 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from typing import Mapping, Optional
+
+import ghl_secret_resolver as _resolver  # the ONE shared secret resolver (S06-04)
 
 # Tier tags (kept here so the orchestrator does not need to import the fallback to
 # name a tier — the fallback re-uses the same string values).
@@ -46,6 +60,10 @@ REFRESH_ENV_VARS = (
     "CAF_FIREBASE_REFRESH_TOKEN",
     "GHL_FIREBASE_REFRESH_TOKEN",
 )
+
+# *_FILE indirection for the refresh token (packet spec 05 section 6 — the
+# packet's example name, implemented in the shared resolver).
+REFRESH_TOKEN_FILE_VAR = "GHL_REFRESH_TOKEN_FILE"
 
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 _SEED_SCRIPT = os.path.join(_TOOLS_DIR, "seed-ghl-auth.py")
@@ -75,15 +93,36 @@ class Counter:
 
 
 def resolve_refresh_token(env: Optional[Mapping[str, str]] = None) -> tuple[str, str]:
-    """Return (token, env_var_name) for the first non-empty refresh-token var, or
-    ("", "") if none. SAME precedence as seed-ghl-auth.py."""
-    src = env if env is not None else os.environ
-    for name in REFRESH_ENV_VARS:
-        val = (src.get(name, "") or "").strip()
-        if val:
-            return val, name
-    return "", ""
+    """Return (token, source_name) for the first usable refresh token, or
+    ("", "") if none. SAME precedence as seed-ghl-auth.py — both delegate
+    to the ONE shared resolver (ghl_secret_resolver.attempt_resolution):
+    (1) the *_FILE indirection GHL_REFRESH_TOKEN_FILE, (2) the env alias
+    chain REFRESH_ENV_VARS, (3) the canonical env stores. Dummy-literal
+    placeholder candidates (is_placeholder_shape) are skipped at every
+    layer (a placeholder is not a usable token).
 
+    Hermetic rule: an explicit env mapping is a COMPLETE environment (the
+    mapping plus the files its *_FILE variables name) — the canonical
+    stores join only for the process environment (env=None), which is the
+    production path (this module's CLI, and the seed script resolving its
+    own process env in full). A set-but-broken *_FILE variable raises
+    ghl_secret_resolver.SecretFileError (precise, value-free); run() and
+    _check() convert it into a Tier-3 report.
+    """
+    res = _resolve_refresh(env)
+    return res.value, res.source
+
+
+def _resolve_refresh(env: Optional[Mapping[str, str]] = None) -> _resolver.Resolution:
+    """The detailed resolution behind resolve_refresh_token — also carries
+    the placeholder sighting so run() / _check() can fail loud with it."""
+    return _resolver.attempt_resolution(
+        env,
+        file_vars=(REFRESH_TOKEN_FILE_VAR,),
+        aliases=REFRESH_ENV_VARS,
+        search_stores=env is None,
+        placeholder_check=_resolver.is_placeholder_shape,
+    )
 
 def tier1_mint_and_seed(
     session: str,
@@ -167,7 +206,24 @@ def run(
     counter = fallback_entry_counter or Counter()
 
     # ── TIER 1 (PRIMARY, FIRST BRANCH) ──────────────────────────────────────────
-    token, _env_name = resolve_refresh_token(env)
+    try:
+        resolution = _resolve_refresh(env)
+    except _resolver.SecretFileError as exc:
+        # A set-but-broken *_FILE indirection is a precise Tier-3 failure:
+        # the error names the variable, the path, and the mode — never a
+        # value. Tier 2 is NOT entered (the fallback was never evaluated).
+        result = AuthResult(
+            TIER3, False, 2, fallback_entries=counter.value,
+            reason=str(exc),
+            client_message=(
+                "The secret file named by the *_FILE variable could not be "
+                "used. Fix its path or permissions (owner-only, mode 0600), "
+                "or unset the variable, then retry."
+            ),
+        )
+        _persist_tier(out, result)
+        return result
+    token = resolution.value
     if token:
         r1 = tier1_mint_and_seed(session, out, env, seed_runner=seed_runner)
         if r1.exit_code == 0:
@@ -188,9 +244,19 @@ def run(
     if driver is None:
         # Production browser engine is wired by the box's stack; absent an engine
         # we cannot drive a login -> Tier 3 (never crash, never silently degrade).
+        _reason7 = (
+            "no browser engine available for Tier-2 login — the Tier-2 "
+            "engine is caller-injected (store/probe/driver into run()); "
+            "the production CLI injects none, so Tier 2 cannot execute here"
+        )
+        if not token and resolution.placeholder_seen:
+            _reason7 += (
+                "; note: refresh-token candidate(s) were PLACEHOLDER-shaped "
+                "and were skipped (a placeholder is not a credential)"
+            )
         result = AuthResult(
             TIER3, False, 7, fallback_entries=counter.value,
-            reason="no browser engine available for Tier-2 login",
+            reason=_reason7,
             client_message=(
                 "Automated login requires a headless browser on this box. Install "
                 "it or provide a fresh refresh token instead."
@@ -216,13 +282,18 @@ def run(
 def _check(session: str, out: str, env: Optional[Mapping[str, str]] = None) -> AuthResult:
     """--check: report the tier that WOULD run without performing any login. Never
     imports the fallback (no login code touched on a check)."""
-    token, env_name = resolve_refresh_token(env)
-    if token:
+    try:
+        resolution = _resolve_refresh(env)
+    except _resolver.SecretFileError as exc:
+        return AuthResult(TIER3, False, 2, fallback_entries=0, reason=str(exc))
+    if resolution.value:
         return AuthResult(TIER1, True, 0, fallback_entries=0,
-                          reason=f"would use Tier 1 (token via {env_name})")
-    return AuthResult(TIER2, False, 0, fallback_entries=0,
-                      reason="no token; would evaluate Tier-2 gates")
-
+                          reason=f"would use Tier 1 (token via {resolution.source})")
+    reason = "no token; would evaluate Tier-2 gates"
+    if resolution.placeholder_seen:
+        reason += (" (note: refresh-token candidate(s) were PLACEHOLDER-shaped "
+                   "and were skipped — a placeholder is not a credential)")
+    return AuthResult(TIER2, False, 0, fallback_entries=0, reason=reason)
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(

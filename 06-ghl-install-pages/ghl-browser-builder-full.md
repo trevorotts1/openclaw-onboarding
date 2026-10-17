@@ -124,12 +124,14 @@ eval-steps INSIDE the seeded agent-browser:
   in. The build never renders a login form; if a GHL Sign-in form appears in
   a shared tab, treat it exactly like a failed seed: STOP per §2 / A1 EDGE
   rules. Never fill it.
-- **Version-gated.** Before any run, `bash
-  scripts/check-openclaw-extension-version.sh` must exit 0 (extension
-  installed + current), and the capability probe re-checks currency before
-  it will select this lane. A missing or stale extension STOPs the run with
-  the update path named; lane changes happen at probe time, never silently
-  mid-run.
+- **Version-gated (this lane only).** Before any run, `bash
+  scripts/check-openclaw-extension-version.sh` reports this lane's verdict
+  (exit 0 = extension installed + current), and the capability probe
+  re-checks currency before it will select this lane. A missing or stale
+  extension disables THIS lane, with the reason and the update path
+  recorded, and the probe moves the run to the next verified lane; the run
+  STOPs only when no lane verifies (fail closed). Lane changes happen at
+  probe time, never silently mid-run.
 - **Operator keeps tab control.** The extension shares eligible tabs (all
   eligible tabs, or only the OpenClaw tab group; per-tab pause/allow is the
   operator's call). A run works in tabs it opens itself and, at teardown,

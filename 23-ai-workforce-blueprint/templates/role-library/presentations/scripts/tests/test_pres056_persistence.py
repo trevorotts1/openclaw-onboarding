@@ -11,7 +11,7 @@ modules, never a grep):
   3. A locked valid plan preference never triggers an extra plan prompt:
      resource_plan resolves from the lock and --complete passes.
   4. Metrics: turn-count + time-to-valid-brief measured against the 23-turn
-     baseline (bank header is the single source: 23 merged turns, 50 rows,
+     baseline (bank header is the single source: 23 merged turns, 52 rows,
      20 required). Valid brief = every required field real /
      approved-derived / explicit pending -- never null, never invented;
      omitted vs declined stays distinct (a declined toggle without a

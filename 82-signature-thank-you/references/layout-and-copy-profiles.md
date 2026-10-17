@@ -9,7 +9,7 @@ never URL claims); output is the accessible summary table and the
 per-entitlement access blocks specified below. Consumers: the final
 thank-you page and approved confirmation states only.
 
-This component has a version (Skill 82 v0.1.0), an input schema
+This component has a version (Skill 82 v0.3.0), an input schema
 (`schemas/order-view.schema.json`), the DOM contract in section 2 of
 this document, accessibility expectations in section 5, and tests
 (`tests/test_render.py`). The layout in this document is the proposed

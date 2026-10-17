@@ -459,7 +459,14 @@ def test_option_b_wash_warns_uncalibrated():
         assert "Item 12 judgment gate" in proc.stdout, proc.stdout
 
 
-def test_option_b_ceiling_enforced_when_approved():
+def test_option_b_ceiling_warns_not_fails_when_approved():
+    """Owner ruling S71-OPTION-B, Resolution A (2026-10-16): with an
+    approved ceiling WRITTEN, an over-ceiling FULL image WARNs and does
+    NOT fail; the brand note's WARN-only status governs and writing the
+    value does not change its enforcement status. (This replaces the
+    pre-ruling pin that asserted a FAIL here.) The fixture carries no
+    inventory or bible, so its posture is UNRECORDED, which resolves
+    to the FULL class the Option B screen governs."""
     with tempfile.TemporaryDirectory() as td:
         washed = Path(td) / "Image-107.png"
         skin_hero(washed, 0.45, seed=82)
@@ -467,11 +474,65 @@ def test_option_b_ceiling_enforced_when_approved():
         skin_hero(selective, 0.15, seed=83)
         b = brand(td, {**FULL, "max_protected_saturation": 0.20})
         proc = run([PY, SCRIPTS / "validate_image_grade.py", washed,
-                    "--brand", b], 1)
+                    "--brand", b], 0)
+        assert "WARN: Option B selectivity" in proc.stdout, proc.stdout
         assert "protected-region mean saturation" in proc.stdout, proc.stdout
         assert "ceiling" in proc.stdout, proc.stdout
-        run([PY, SCRIPTS / "validate_image_grade.py", selective,
-             "--brand", b], 0)
+        assert "never a failure" in proc.stdout, proc.stdout
+        assert "FAIL: Image-107" not in proc.stdout, proc.stdout
+        # Under the ceiling: unchanged, the within-ceiling NOTE prints.
+        proc = run([PY, SCRIPTS / "validate_image_grade.py", selective,
+                    "--brand", b], 0)
+        assert "within the approved ceiling" in proc.stdout, proc.stdout
+
+
+def test_option_b_other_floor_still_fails_with_ceiling():
+    """Resolution A changes only the Option B ceiling path: with the
+    ceiling written and the image over it, a different floor breach
+    (sharpness) still FAILs, and the protected-region overage appears
+    only in the WARN line, never among the fail reasons."""
+    with tempfile.TemporaryDirectory() as td:
+        washed = Path(td) / "Image-110.png"
+        skin_hero(washed, 0.45, seed=85)
+        b = brand(td, {**FULL, "max_protected_saturation": 0.20,
+                       "min_sharpness": 100000})
+        proc = run([PY, SCRIPTS / "validate_image_grade.py", washed,
+                    "--brand", b], 1)
+        assert "WARN: Option B selectivity" in proc.stdout, proc.stdout
+        fail_lines = [l for l in proc.stdout.splitlines()
+                      if l.startswith("FAIL: Image-110")]
+        assert fail_lines, proc.stdout
+        assert "sharpness" in fail_lines[0], proc.stdout
+        assert "protected-region" not in fail_lines[0], proc.stdout
+
+
+def test_option_b_adapt_band_unchanged_with_ceiling():
+    """The ADAPT band mechanism is untouched by Resolution A: with a
+    ceiling written in the family's FULL block, an ADAPT image above
+    its band still FAILs on the band, and one inside its band passes."""
+    with tempfile.TemporaryDirectory() as td:
+        grade = {"min_mean_saturation": None, "min_luma_std": None,
+                 "floors": {"photographic": {
+                     "full": {"min_mean_saturation": 0.5,
+                              "min_colorfulness": 30,
+                              "max_protected_saturation": 0.20},
+                     "adapt": {"min_mean_saturation": 0.15,
+                               "max_mean_saturation": 0.45,
+                               "min_colorfulness": 5,
+                               "max_colorfulness": 90,
+                               "min_luma_std": 5},
+                     "noncolor": {"min_luma_std": 5, "min_sharpness": 10}}}}
+        b = brand(td, grade)
+        bible = adapt_bible(td)
+        above = Path(td) / "Image-111.png"
+        textured(above, 0.6, 0.85, 0.75, seed=86)
+        proc = run([PY, SCRIPTS / "validate_image_grade.py", above,
+                    "--brand", b, "--bible", bible], 1)
+        assert "ADAPT band ceiling" in proc.stdout, proc.stdout
+        inside = Path(td) / "Image-112.png"
+        textured(inside, 0.6, 0.30, 0.65, seed=87)
+        run([PY, SCRIPTS / "validate_image_grade.py", inside,
+             "--brand", b, "--bible", bible], 0)
 
 
 def test_option_b_na_when_mask_empty():
@@ -503,7 +564,9 @@ def main():
         test_validator_adapt_provisional_warns_not_fails,
         test_validator_uncalibrated_family_warns,
         test_option_b_wash_warns_uncalibrated,
-        test_option_b_ceiling_enforced_when_approved,
+        test_option_b_ceiling_warns_not_fails_when_approved,
+        test_option_b_other_floor_still_fails_with_ceiling,
+        test_option_b_adapt_band_unchanged_with_ceiling,
         test_option_b_na_when_mask_empty,
     ]
     failures = 0

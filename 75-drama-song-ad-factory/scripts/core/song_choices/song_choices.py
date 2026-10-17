@@ -236,16 +236,21 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
                                      sheet, vocal_gender, pace_plan,
                                      tail_clause=v["brief"]["arrangement"])
         req = dict(req, input=dict(req["input"], style=style))
-        errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
+        # FU-HOOK-PLACEMENT: the hook plan must ride the request BEFORE the
+        # pre-spend validation so the hook-count gate judges it with the same
+        # plan the judge later sees (validate_request honors _hook_plan). It
+        # never reaches KIE: run_takes moves it into the plan as metadata.
+        if kw.get("hook_plan") is not None:
+            req = dict(req, _hook_plan=kw["hook_plan"])
+        errs = _SD.validate_request(req, style_id, client_text, length_s,   # 1758: delivered_s required
+                                    pace_plan=pace_plan)
         if errs:
             raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))
-        # The judge needs the style and the hook plan (FU-RNBFLOW-SONG song_contract,
-        # FU-HOOK-PLACEMENT hook_placement): ride them on the request; run_takes
-        # moves _hook_plan into the plan, generate_choices turns _style_id into style_id,
-        # and neither reaches KIE.
+        # The judge needs the style (FU-RNBFLOW-SONG song_contract) and the hook
+        # plan (FU-HOOK-PLACEMENT hook_placement): ride them on the request;
+        # run_takes moves _hook_plan into the plan, generate_choices turns
+        # _style_id into style_id, and neither reaches KIE.
         req = dict(req, _style_id=style_id)
-        if kw.get("hook_plan") is not None:
-            req["_hook_plan"] = kw["hook_plan"]
         # D1 / F2: the ordered pace change rides the request like the hook
         # plan; run_takes moves _pace_plan into the plan and it NEVER reaches KIE.
         if pace_plan is not None:
@@ -1031,8 +1036,7 @@ def _real_generate(run_dir, ledger, run_id):
                            run_id=run_id or (os.path.basename(run_dir) or "run"),
                            logical_key="song/%s" % variant["id"],
                            attempt_id="a1", estimated_cost=_SD.GEN_COST_CENTS,
-                           prompt=request.get("input", {}).get("style", "")[:2000],
-                           generation=True)
+                           prompt=request.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
         _write_envelope(run_dir, variant["id"], ev)
         # D2 item 3: the overlap receipt, built from the PROVIDER lifecycle
@@ -1043,10 +1047,18 @@ def _real_generate(run_dir, ledger, run_id):
         if ev.get("accepted_submit_at") and ev.get("terminal_at"):
             receipt_for(run_dir, variant, request, "a1", ev.get("task_id"),
                         ev["accepted_submit_at"], ev["terminal_at"])
+        # Provenance for lyric_timing (reads take["task_id"] / take["audio_id"]).
+        # The envelope carries the generation task id only; the per-track Suno
+        # audio id is not surfaced, so audio_id stays ABSENT -- never filled
+        # with the task id. A dispatcher-synthesized "sync-" id is not a
+        # provider id and is not recorded.
+        task_id = ev.get("task_id")
+        prov = ({"task_id": task_id} if isinstance(task_id, str) and task_id
+                and not task_id.startswith("sync-") else {})
         takes = []
         if isinstance(env, dict) and env.get("outcome") == "ok":
             for p in ev.get("saved_paths", []) or []:
-                takes.append({"audio_path": p})
+                takes.append(dict(prov, audio_path=p))
         return takes
     return generate
 

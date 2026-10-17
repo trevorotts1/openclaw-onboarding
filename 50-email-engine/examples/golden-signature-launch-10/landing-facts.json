@@ -1,0 +1,46 @@
+{
+  "fixture": true,
+  "fictional": true,
+  "note": "FICTIONAL FIXTURE. Jordan Marsh, The Momentum Method, and every story, quote, and result in this set are invented for testing. No real person, offer, or customer is described. Stories in the PASTOR emails are written as clearly hypothetical illustrations ('Picture a builder who...') because this fixture supplies NO testimonial evidence, per spec 13 section 4.",
+  "offer": "The Momentum Method",
+  "founder_name": "Jordan Marsh",
+  "landing": {
+    "section_5_why": "The people who work the hardest should never be the ones rewarded the least. Effort was never the problem; the missing architecture was.",
+    "section_6_who": {
+      "audience": "Founders and builders with a real offer and real effort, whose results do not match the work they put in.",
+      "pains": [
+        {
+          "ref": "landing.section6.pain.1",
+          "pain": "Effort without return: working harder than ever, doing everything right, and still watching results stay flat month after month."
+        },
+        {
+          "ref": "landing.section6.pain.2",
+          "pain": "No system: every week starts from zero, every win is a scramble, and nothing learned ever compounds into predictable results."
+        },
+        {
+          "ref": "landing.section6.pain.3",
+          "pain": "Building alone: no room, no peers, and no one to check your thinking, so isolation quietly convinces you the wall is permanent."
+        }
+      ]
+    },
+    "section_8_what_is_inside": [
+      "The weekly system map: the one thing to work on each week",
+      "Plug-and-play launch templates: skip the blank page",
+      "The results tracker: momentum you can see building"
+    ],
+    "section_9_how_it_works": [
+      "A guided thirty-day path, one step at a time",
+      "Live monthly strategy calls with people ahead of you",
+      "A private builder community for fast answers"
+    ],
+    "section_10_support": [
+      "Your first personalized system map the same day you join",
+      "Direct feedback on your plan inside the calls"
+    ],
+    "round_timing": {
+      "ref": "landing.offer.round_timing",
+      "fact": "The Momentum Method runs in rolling thirty-day rounds. The next round begins on a Monday, and enrollment for that round closes the Thursday before it begins."
+    },
+    "testimonial_evidence": null
+  }
+}

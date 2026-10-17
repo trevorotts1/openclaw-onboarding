@@ -209,6 +209,11 @@
       },
       "type": "array"
     },
+    "entitlement_version": {
+      "description": "S44's order-level entitlement version for the entitlement state shown, carried through by the resolver from the S44 fulfillment-map producer envelope (or the resolver's explicit version input) when S44 supplies one. Optional: absent when no version was supplied, in which case the confirmation dedupe key falls back to the deterministic derived fingerprint. When present it must be a well-formed ev1 value (CR-S82-002 item 5): the 'ev1:' prefix plus the lowercase sha256 hex of S44's canonical book-state string. Any other shape is mismatched or forged and fails validation.",
+      "pattern": "^ev1:[0-9a-f]{64}$",
+      "type": "string"
+    },
     "failed_items": {
       "items": {
         "type": "string"

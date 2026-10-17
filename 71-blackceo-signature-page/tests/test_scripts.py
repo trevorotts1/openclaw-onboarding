@@ -76,6 +76,37 @@ def test_pdf_pipeline():
         run([PY, str(SCRIPTS / "validate_review_pdf.py"), str(manifest_path)], 0)
 
 
+def test_intake_founder_photo_forms():
+    # Update plan Item 10: write_intake refuses a brand founder_photos entry
+    # that is in none of the forms validate_page.founder_allowed_hashes
+    # accepts, at intake, naming the entry and the accepted forms.
+    with tempfile.TemporaryDirectory() as td:
+        run_dir = Path(td) / "run"
+        (run_dir / "private").mkdir(parents=True)
+        brand_path = run_dir / "private" / "brand.json"
+        photo = run_dir / "private" / "founder.jpg"
+        photo.write_bytes(b"fake-jpeg-bytes")
+
+        def intake_with(photos):
+            brand_path.write_text(json.dumps({"founder_photos": photos}), encoding="utf-8")
+            return subprocess.run([
+                PY, str(SCRIPTS / "write_intake.py"), str(run_dir),
+                "--page-version", "standard", "--brand-owner", "Fixture",
+                "--brand-file", "private/brand.json", "--image-cap", "1",
+            ], text=True, capture_output=True)
+
+        bare = "93eecdc2044f27b2c5a2c6836d2e2b020dcd6865cde7c4278a5abd52b27b336a"
+        proc = intake_with(f"/photos/founder.jpg Trevor's supplied founder photo, sha256 {bare}")
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        assert "founder_photos" in proc.stdout and "sha256:" in proc.stdout, proc.stdout
+        proc = intake_with("no-such-photo.jpg")
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        assert intake_with(bare).returncode == 0
+        assert intake_with([f"sha256:{bare}"]).returncode == 0
+        assert intake_with(["founder.jpg"]).returncode == 0
+        assert intake_with("TREVOR_MUST_SUPPLY").returncode == 0
+
+
 def test_installer_dry_run():
     with tempfile.TemporaryDirectory() as td:
         run([
@@ -93,6 +124,7 @@ def main():
         test_image_manifest,
         test_public_copy,
         test_pdf_pipeline,
+        test_intake_founder_photo_forms,
         test_installer_dry_run,
     ]
     for test in tests:

@@ -3558,7 +3558,8 @@ def _decline_present(answers):
     """True when any waiver toggle carries an explicit client "no"."""
     for key in ("want_teleprompter", "want_speech_script", "want_ghl_upload",
                 "want_audio_deliverable", "want_sales_checkout",
-                "want_vsl_page", "want_email_sequences"):
+                "want_vsl_page", "want_email_sequences",
+                "want_motion_graphics"):
         val = answers.get(key)
         if isinstance(val, bool):
             if val is False:
@@ -3587,7 +3588,7 @@ def _refine_condition_met(qdef, answers, selected):
             toggles = ("want_teleprompter", "want_speech_script",
                        "want_ghl_upload", "want_audio_deliverable",
                        "want_sales_checkout", "want_vsl_page",
-                       "want_email_sequences")
+                       "want_email_sequences", "want_motion_graphics")
             if _decline_present(answers):
                 return True
             if all(answers.get(t) is not None for t in toggles):
@@ -3607,7 +3608,7 @@ def _refine_condition_met(qdef, answers, selected):
         toggles = ("want_teleprompter", "want_speech_script",
                    "want_ghl_upload", "want_audio_deliverable",
                    "want_sales_checkout", "want_vsl_page",
-                   "want_email_sequences")
+                   "want_email_sequences", "want_motion_graphics")
         if _decline_present(answers):
             return True
         if all(answers.get(t) is not None for t in toggles):
@@ -3729,7 +3730,7 @@ def _residual_skippable(qdef, answers):
         toggles = ("want_teleprompter", "want_speech_script",
                    "want_ghl_upload", "want_audio_deliverable",
                    "want_sales_checkout", "want_vsl_page",
-                   "want_email_sequences")
+                   "want_email_sequences", "want_motion_graphics")
         if not _decline_present(answers) and all(
                 answers.get(t) is not None for t in toggles):
             return True

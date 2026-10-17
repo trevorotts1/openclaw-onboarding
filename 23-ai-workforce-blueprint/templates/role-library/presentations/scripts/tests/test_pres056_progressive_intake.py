@@ -200,13 +200,15 @@ def test_bank_still_23_turns_50_rows_20_required():
     TURN structure is untouched (Trevor ruling: 23 turns is the ceiling).
     Physical rows are 50 since Item 33c added the want_email_sequences /
     email_sequences_declined_reason alias rows (the FIX 30 alias pattern:
-    physical rows for legacy consumers, no new turn)."""
+    physical rows for legacy consumers, no new turn), and 52 since
+    Item 34 added the want_motion_graphics /
+    motion_graphics_declined_reason alias rows the same way."""
     bank = json.loads(_BANK.read_text(encoding="utf-8"))
     assert bank["session_budget"]["max_turns"] == 23
     merged = [q for q in bank["questions"]
               if q.get("kind") == "merged" and not q.get("alias")]
     assert len(merged) == 23, [q["id"] for q in merged]
-    assert len(bank["questions"]) == 50
+    assert len(bank["questions"]) == 52
     assert sum(1 for q in merged if q.get("required")) == 20
 
 

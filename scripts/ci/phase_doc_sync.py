@@ -42,8 +42,8 @@ WHAT IT OWNS (and nothing else)
 
 CANONICAL ORDER: `sorted(phases, key=lambda p: p["order"])` -- the exact
 expression run_signature_deck.py's declare_plan() sorts on. Python's sort is
-stable, so phases sharing an `order` (P-U-DESIGN-SALES and P1Q-COPY-QC are both
-4.2) keep their manifest file order, matching the runner.
+stable, so phases sharing an `order` keep their manifest file order,
+matching the runner.
 
 USAGE
     python3 scripts/ci/phase_doc_sync.py --check     # CI; exit 1 on drift

@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Validate a Skill 71 per-section production record (Update Plan Item 13).
+
+Usage:
+  python3 scripts/validate_production_record.py <production-record.json>
+
+The production method for wireframe and mockup section images is pinned
+(see references/artifact-contracts.md, "Production method and per-section
+build record", and the SOP wireframe and mockup stages): every section is
+generated per section via the KIE.ai GPT-image route, with the exact model
+resolved from the model registry at build time (Skill 66 resolves it; the
+record carries the resolved id and its source, never a name typed from
+memory), the approved wireframe section as the mockup section's layout
+reference, and the page visual bible as the style input; each section is
+generated at its native aspect; a deterministic stitcher assembles the
+full-page PNG and the PDF combiner the combined PDF; and text-fidelity QC
+reads every section at native resolution BEFORE stitching, so any section
+with a garbled word fails and is regenerated before stitching, never
+accepted into the combined artifact.
+
+This validator is the deterministic floor of that method. Per section it
+checks:
+
+  1. The generation inputs are recorded: the KIE GPT-image route, the
+     build-time-resolved model id and its registry source, the layout
+     reference, and the style input (the visual bible).
+  2. The native-aspect output: the recorded width/height and native_aspect
+     match the slice file's actual pixel dimensions.
+  3. The text-QC leg record exists, states the read happened at native
+     resolution, and its verdict is honest: the garbled-word set is
+     recomputed here from the recorded expected text (the section's real
+     copy) and the recorded read-back text (the words read off the
+     generated section at native resolution). A read-back token that does
+     not appear in the expected text is a garble. Any garble FAILs the
+     section by name, whatever the recorded verdict claims; a recorded
+     garbled-word list that differs from the recomputed set also FAILs.
+
+Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
+"""
+import json
+import re
+import sys
+from pathlib import Path
+
+ROUTE = "kie-gpt-image"
+MODEL_SOURCES = {"latest-family", "explicit-request", "department-pin", "legacy-ratio-route"}
+TOKEN_RE = re.compile(r"[a-z0-9]+(?:['-][a-z0-9]+)*")
+
+
+def tokens(text):
+    return TOKEN_RE.findall(str(text).lower())
+
+
+def garbled_words(expected_text, readback_text):
+    """Read-back tokens that do not appear in the expected text, sorted."""
+    expected = set(tokens(expected_text))
+    return sorted({tok for tok in tokens(readback_text) if tok not in expected})
+
+
+def check_record(data, base_dir=None):
+    """Return a list of named failure strings; empty means the record passes.
+
+    base_dir, when given, is the folder slice paths resolve against; slice
+    existence and pixel dimensions are checked only then.
+    """
+    failures = []
+    if not isinstance(data, dict):
+        return ["production record is not a JSON object"]
+    if data.get("artifact") not in ("wireframe", "mockup"):
+        failures.append("artifact must be 'wireframe' or 'mockup'")
+    sections = data.get("sections")
+    if not isinstance(sections, list) or not sections:
+        failures.append("sections must be a non-empty ordered array")
+        return failures
+    seen = set()
+    for i, section in enumerate(sections, start=1):
+        if not isinstance(section, dict):
+            failures.append(f"sections[{i}] is not an object")
+            continue
+        sid = section.get("section_id")
+        label = sid if isinstance(sid, str) and sid else f"sections[{i}]"
+        if not isinstance(sid, str) or not sid:
+            failures.append(f"sections[{i}]: section_id is required")
+        elif sid in seen:
+            failures.append(f"section {sid}: duplicated section_id")
+        else:
+            seen.add(sid)
+
+        slice_name = section.get("slice")
+        if not isinstance(slice_name, str) or not slice_name:
+            failures.append(f"section {label}: slice file is required")
+            slice_name = None
+        width, height = section.get("width"), section.get("height")
+        dims_ok = isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0
+        if not dims_ok:
+            failures.append(f"section {label}: width and height must be positive integers (the native-aspect output)")
+
+        gen = section.get("generation")
+        if not isinstance(gen, dict):
+            failures.append(f"section {label}: generation inputs record is required")
+            gen = {}
+        if gen.get("route") != ROUTE:
+            failures.append(f"section {label}: generation.route must be '{ROUTE}' (the KIE.ai GPT-image route)")
+        if not isinstance(gen.get("model_id"), str) or not gen.get("model_id"):
+            failures.append(f"section {label}: generation.model_id is required (the model resolved from the registry at build time)")
+        if gen.get("model_source") not in MODEL_SOURCES:
+            failures.append(f"section {label}: generation.model_source must be one of {sorted(MODEL_SOURCES)}")
+        if not isinstance(gen.get("layout_reference"), str) or not gen.get("layout_reference"):
+            failures.append(f"section {label}: generation.layout_reference is required (the approved wireframe section for a mockup section; the section plan for a wireframe section)")
+        if not isinstance(gen.get("style_input"), str) or not gen.get("style_input"):
+            failures.append(f"section {label}: generation.style_input is required (the page visual bible)")
+        if dims_ok and gen.get("native_aspect") != f"{width}x{height}":
+            failures.append(f"section {label}: generation.native_aspect must equal the recorded output size {width}x{height}")
+
+        if base_dir is not None and slice_name:
+            slice_path = Path(base_dir) / slice_name
+            if not slice_path.exists():
+                failures.append(f"section {label}: slice file is not on disk: {slice_name}")
+            elif dims_ok:
+                try:
+                    from PIL import Image
+                    with Image.open(slice_path) as im:
+                        actual = im.size
+                except Exception as exc:
+                    failures.append(f"section {label}: slice is not a readable image: {slice_name} ({exc})")
+                    actual = None
+                if actual is not None and actual != (width, height):
+                    failures.append(
+                        f"section {label}: slice is {actual[0]}x{actual[1]} on disk but the record claims "
+                        f"{width}x{height} (native-aspect output must match the filed bytes)")
+
+        qc = section.get("text_qc")
+        if not isinstance(qc, dict):
+            failures.append(f"section {label}: text_qc record is required (the per-section text-QC leg runs before stitching)")
+            continue
+        if qc.get("checked_at_native_resolution") is not True:
+            failures.append(f"section {label}: text_qc.checked_at_native_resolution must be true (the read happens at native resolution)")
+        expected, readback = qc.get("expected_text"), qc.get("readback_text")
+        if not isinstance(expected, str) or not expected.strip():
+            failures.append(f"section {label}: text_qc.expected_text is required (the section's real copy)")
+        if not isinstance(readback, str) or not readback.strip():
+            failures.append(f"section {label}: text_qc.readback_text is required (the words read off the generated section)")
+        attempts = qc.get("attempts")
+        if not isinstance(attempts, int) or attempts < 1:
+            failures.append(f"section {label}: text_qc.attempts must be an integer >= 1 (a regenerated section records its attempts)")
+        if isinstance(expected, str) and isinstance(readback, str) and expected.strip() and readback.strip():
+            recomputed = garbled_words(expected, readback)
+            recorded = qc.get("garbled_words")
+            if recorded != recomputed:
+                failures.append(
+                    f"section {label}: text_qc.garbled_words {recorded!r} does not match the recomputed "
+                    f"garble set {recomputed!r}")
+            if recomputed:
+                failures.append(
+                    f"section {label}: garbled word(s) in the generated section: {', '.join(recomputed)} "
+                    f"(the section FAILS the text-QC leg and must be regenerated before stitching)")
+            elif qc.get("verdict") != "pass":
+                failures.append(f"section {label}: text_qc.verdict must be 'pass' when no garbled word is present")
+            if recomputed and qc.get("verdict") == "pass":
+                failures.append(f"section {label}: text_qc.verdict claims 'pass' but the section is garbled")
+    return failures
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if len(argv) != 1:
+        print("FAIL: usage: validate_production_record.py <production-record.json>")
+        return 2
+    path = Path(argv[0])
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"FAIL: could not read production record: {exc}")
+        return 2
+    failures = check_record(data, base_dir=path.parent)
+    if failures:
+        print("FAIL")
+        for failure in failures:
+            print(f"- {failure}")
+        return 1
+    count = len(data.get("sections", []))
+    print(f"PASS: production record for {data.get('artifact')} '{data.get('stage')}' "
+          f"carries {count} section(s), each with its generation inputs, native-aspect "
+          f"output, and a passing per-section text-QC record.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

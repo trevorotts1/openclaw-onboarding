@@ -603,6 +603,32 @@ bm_capability_preflight() {
   return 0
 }
 
+# ── S06-05: VPS provisioning preflight (WARN-only, OPT-IN) ──────────────────
+# Runs the provisioning verifier (tools/ghl_vps_provision_check.py) in its
+# advisory mode and forwards its finding lines to stderr. OPT-IN: completely
+# silent unless GHL_VPS_PROVISION_CLIENT names the client/location identity
+# the box serves (an unconfigured box has nothing to verify against, and a
+# preflight that invents findings is worse than none). Advisory ONLY —
+# never fails bm_ensure, exactly like the two preflights above; the gate
+# form is the standalone verifier run by the operator. Defers entirely
+# under BM_DURABLE_ROOT_OVERRIDE (test isolation), mirroring
+# bm_capability_preflight: a harness fake HOME must never gain real
+# provisioning findings or receipts.
+bm_provision_preflight() {
+  [ -n "${GHL_VPS_PROVISION_CLIENT:-}" ] || return 0
+  [ "${BM_DURABLE_ROOT_OVERRIDE+x}" = x ] && return 0
+  local py
+  py="$(command -v python3 || true)"
+  [ -z "$py" ] && return 0   # no python3 on PATH — silent, advisory only
+  local self_dir
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+  [ -f "$self_dir/ghl_vps_provision_check.py" ] || return 0
+  local out
+  out="$("$py" "$self_dir/ghl_vps_provision_check.py" --client "$GHL_VPS_PROVISION_CLIENT" --advisory 2>/dev/null)" || return 0
+  [ -n "$out" ] && echo "$out" >&2
+  return 0
+}
+
 # ── SESSION-EXPIRED (GHL login-bounce) circuit breaker ────────────────────────
 # INCIDENT (2026-07-30, operator box): a live securetoken exchange confirmed
 # the GHL Firebase ID token is a hard ONE-HOUR expiry (`expires_in: 3600`).
@@ -790,6 +816,7 @@ bm_ensure() {
   bm_require_current_guard || return $?   # B1: refuse old-guard / headed launch
   bm_stale_env_preflight                  # B-U15 item 3: advisory, never fails ensure
   bm_capability_preflight                 # P0-6: capability-probe advisory, never fails ensure
+  bm_provision_preflight                  # S06-05: provisioning advisory (opt-in), never fails ensure
   local session
   session="$(bm_session_name)"
   bm_assert_session "$session"

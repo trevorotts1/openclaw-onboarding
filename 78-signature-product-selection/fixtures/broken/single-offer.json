@@ -1,0 +1,48 @@
+{
+  "case": "single-offer",
+  "launch": {
+    "tenant_id": "TEST-TENANT",
+    "location_id": "TEST-LOCATION",
+    "launch_id": "TEST-LAUNCH",
+    "revision": 1,
+    "journey_mode": "single_simple",
+    "offers": [
+      {
+        "offer_id": "MAIN-A",
+        "slot": "main",
+        "display_name": "TEST ONLY A",
+        "deliverables": [
+          "base-a"
+        ],
+        "exclusions": [
+          "No private reviews"
+        ],
+        "entitlement_ids": [
+          "base-a"
+        ],
+        "requires": [],
+        "excludes": [],
+        "native_product_id": "TEST-PROD-A",
+        "prices": [
+          {
+            "price_choice_id": "MAIN-A-USD",
+            "currency": "USD",
+            "amount_minor": 9700,
+            "billing_type": "one_time",
+            "native_price_id": "TEST-PRICE-A",
+            "schedule": [],
+            "terms_source": null,
+            "approval_status": "approved"
+          }
+        ],
+        "source_kind": "test_fixture",
+        "source_ref": "self-test",
+        "test_only": true
+      }
+    ]
+  },
+  "via": "catalog",
+  "expect": {
+    "decline_single_offer": true
+  }
+}

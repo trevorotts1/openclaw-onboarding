@@ -43,6 +43,15 @@ budget cap) and the per-job image cap still apply before the first paid call.
    (or `run --request req.json --save-dir DIR --mode active`, which submits, waits and saves in one call).
 5. Wait and save immediately (rule 8; result links can expire within 24 hours):
    `python3 scripts/kie_live_adapter.py wait --task-id <id>` then `save --task-id <id> --save-dir DIR`.
+   Save naming (Update Plan Item 26, proposal P6, ruled 2026-10-15): the saved
+   file carries the delivered name, the two-digit `Image-NN.png` derived from
+   the item's three-digit internal ID (`IMG-001` saves as `Image-01.png`,
+   `IMG-012` as `Image-12.png`, `IMG-123` as `Image-123.png`; the derivation
+   of record is `delivered_filename` in `scripts/validate_image_manifest.py`).
+   Never save under the internal ID (`IMG-001.png`) or the three-digit form
+   (`Image-001.png`): the saved file, the receipt's `file` below, and the
+   delivered file are one name, and the gate matches that name to the
+   internal ID by its trailing number.
 
 The adapter never retries createTask after a network error, makes one attempt on a 401 or 403 (stop and
 report), and never prints the key (rules 6 and 9). The key is the client's own. Prices are never typed
@@ -64,7 +73,7 @@ block that matches this route. Example (values are placeholders):
   "policy": "66-kie-image",
   "mode": "active",
   "tasks": [
-    {"file": "image-generation-qc/Image-001.png", "task_id": "<KIE task id>",
+    {"file": "image-generation-qc/Image-01.png", "task_id": "<KIE task id>",
      "model_id": "<id returned by Skill 66>", "model_source": "latest-family",
      "requested_ratio": "16:9", "generated_ratio": "16:9",
      "preflight_ok": true, "budget_exit": 0}
@@ -82,6 +91,51 @@ override the substitution.
 Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.json` (a successful active Skill 74 result, recorded with the Skill 49/56 `kie74_receipt.py` pattern or written by the run's own recorder) and be unique across tasks and files. A task whose `model_source` is `explicit-request` or `department-pin` carries `evidence` (the request text or the pin id); without it the N43 substitution cannot be skipped. `evidence` must be at least 12 characters and not a placeholder. The intake stage writes `intake.json` with `scripts/write_intake.py`, whose `--image-engine` is `kie` (default) or `agnes`; the Agnes route is accepted only when `intake.json` has `image_engine: "agnes"`.
 `credits_before` and `credits_after` come from `kie_live_adapter.py credits`, never from an estimate.
 When the client selected Agnes, `skill` and `policy` are both `63-agnes-image` and `cost.provider` is `agnes`.
+
+### Per-provider branch (A23; reconciled matrix Q10)
+
+The transport-block requirement above is the **KIE branch**. It does not
+apply to Agnes, and an Agnes receipt must never be forced into its shape:
+
+- **KIE branch** (`74-kie-live-adapter`, or the claude-nine `kie` alias):
+  every task requires the real KIE `task_id` the KIE API returned, backed
+  by its own `receipts/kie74/<task_id>.json` result file, with
+  `mode: "active"`, preflight, budget, model and N43 ratio evidence as
+  above. A KIE task with no task identifier fails the gate by name.
+- **Agnes branch** (`63-agnes-image`, only when `intake.json` records
+  `image_engine: "agnes"`): Agnes generation is synchronous and the
+  provider issues **no task ID**. The honest per-task shape is
+  `task_id` present with value `null`, or the key omitted entirely —
+  both are honest absence and both are accepted; `request_id` is
+  recorded only when the provider actually returned one; a declared
+  mode (on the transport block or the task) is `"sync"`, never the
+  Skill 74 `"active"` mode; and the task carries no polling artefacts
+  (no poll-loop evidence exists for a synchronous result, and none may
+  be demanded or fabricated). Example (values are placeholders):
+
+  ```json
+  "transport": {
+    "skill": "63-agnes-image",
+    "policy": "63-agnes-image",
+    "mode": "sync",
+    "tasks": [
+      {"file": "image-generation-qc/Image-01.png", "task_id": null,
+       "request_id": "<id returned by Agnes, if any>",
+       "model_id": "agnes-image-2.5-flash", "mode": "sync"}
+    ]
+  },
+  "cost": {"provider": "agnes", "credits_before": 0, "credits_after": 0}
+  ```
+
+  The gate **refuses** an Agnes task that carries any non-null
+  `task_id`, any non-null KIE-named identifier field, a declared mode
+  other than `"sync"`, or any polling artefact. No code path mints,
+  defaults, or back-fills a task ID for Agnes: the absence is the
+  record. This matches Skill 63's `validate_receipt` rules (Agnes
+  receipt `task_id` always explicit null; any non-null task ID or
+  KIE-named field on an Agnes receipt refused; the real task ID
+  required on a KIE receipt). No `receipts/kie74/` file is required —
+  or meaningful — for an Agnes task.
 
 ## 4. Video
 

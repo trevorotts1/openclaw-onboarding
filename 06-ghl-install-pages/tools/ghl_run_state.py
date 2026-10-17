@@ -62,6 +62,12 @@ import sys
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 evidence scrubber + Q4 file modes)
+
 RUN_STATE_VERSION = 1
 
 # Terminal statuses a run can end in (the RUN REPORT's `status` row).
@@ -111,6 +117,32 @@ class RunStateCorrupt(ValueError):
     """The state file exists but is not a readable v1 run-state document."""
 
 
+def _durable_root() -> str:
+    """The sanctioned durable root (ENV-MATRIX adaptation contract item 1:
+    detect ONLY via ``browser_manager.durable_root()`` — never a new
+    hand-rolled /data or ~/.openclaw check).
+
+    Lazy sibling import: this module deliberately stays import-light at load
+    time (the same reason the D6 refusal prefix above is duplicated rather
+    than imported), so the import happens per call, and ANY failure degrades
+    to "" (no durable root resolvable) rather than breaking the state store.
+    """
+    try:
+        import browser_manager
+
+        return browser_manager.durable_root()
+    except Exception:  # noqa: BLE001 - a state store must never die on detection
+        return ""
+
+
+def legacy_state_root() -> str:
+    """The pre-S06-05 default root: ``~/.openclaw/skill6-runs`` regardless of
+    the durable root. Kept ONLY as a load fallback (see ``RunState.load``) so
+    a run started before the durable-root fix stays resumable — SK6002
+    repair-in-place: never a silent move that orphans a resumable run."""
+    return os.path.join(os.path.expanduser("~"), ".openclaw", "skill6-runs")
+
+
 def default_state_root() -> str:
     """Where run state lives. Env-overridable so a box, a test, and a CI job can
     each point at their own store without touching argv.
@@ -118,11 +150,23 @@ def default_state_root() -> str:
     Deliberately NOT under ``evidence_root``: ``--resume <run_id>`` must be able
     to find a run knowing ONLY the run id, and the evidence root is itself one of
     the things the state file restores.
+
+    Resolution order (S06-05):
+      1. ``GHL_RUN_STATE_ROOT`` env (explicit override — always wins).
+      2. ``<durable_root()>/skill6-runs`` — on a VPS that is
+         ``/data/.openclaw/skill6-runs``, which survives a container
+         recreate; on a Mac ``durable_root()`` IS ``~/.openclaw``, so this
+         is the historical path, unchanged.
+      3. The legacy ``~/.openclaw/skill6-runs`` when no durable root
+         resolves (bare checkout / CI with no onboarded root).
     """
     env = os.environ.get("GHL_RUN_STATE_ROOT", "").strip()
     if env:
         return env
-    return os.path.join(os.path.expanduser("~"), ".openclaw", "skill6-runs")
+    durable = _durable_root()
+    if durable:
+        return os.path.join(durable, "skill6-runs")
+    return legacy_state_root()
 
 
 def new_run_id(builder: str = "") -> str:
@@ -177,12 +221,19 @@ class RunState:
         argv: Optional[List[str]] = None,
         specs: Optional[List[PhaseSpec]] = None,
         doc: Optional[dict] = None,
+        secret_values: Optional[Iterable[str]] = None,
+        trace_suppression: Optional[List[dict]] = None,
+        expected_location_id: str = "",
     ) -> None:
         self.run_id = run_id
         self.builder = builder
         self.state_root = state_root or default_state_root()
         self.specs: List[PhaseSpec] = list(specs or [])
         self._spec_by_name = {p.name: p for p in self.specs}
+        # S06-08: the evidence scrubber applied on every save(). Resolved
+        # secret values are held in memory only (never persisted); with no
+        # values supplied it still applies the generic secret shapes.
+        self._evidence_scrubber = ghl_evidence.EvidenceScrubber(secret_values)
         # Phases this PROCESS executed (vs. inherited from an earlier attempt).
         # The RUN REPORT's `phases_skipped` row is the difference between the two,
         # and it can only be told from process-local memory — the on-disk ledger
@@ -206,6 +257,15 @@ class RunState:
                 "phases": {},
                 "carry": {},          # cross-phase values a resume must restore (survey_id…)
             }
+            # S06-08 (additive, new runs only): the run's trace-suppression
+            # record set (Q5) and gated tenant, when the caller supplies
+            # them. The suppression set is validated at stamp time: an
+            # unsuppressed login/payment claim is refused here, not later.
+            if trace_suppression is not None:
+                ghl_evidence.validate_trace_suppression(trace_suppression)
+                self.doc["trace_suppression"] = list(trace_suppression)
+            if expected_location_id:
+                self.doc["expected_location_id"] = expected_location_id
         # Keep the declared order authoritative for THIS process even when the
         # stored doc came from an older attempt with a different phase list.
         if self.specs:
@@ -227,13 +287,26 @@ class RunState:
 
     def save(self) -> str:
         """Atomic commit: temp → fsync → rename. A kill mid-save can never leave a
-        torn state file, which is the whole premise of trusting it on resume."""
+        torn state file, which is the whole premise of trusting it on resume.
+
+        S06-08: the state doc is a no-secret sink (prep gap 9: argv/carry
+        were persisted unscrubbed). The whole doc passes through the
+        evidence scrubber on EVERY save; the scrub is idempotent, so a
+        resume re-save counts only NEW redactions, and the cumulative count
+        is recorded as ``doc["redactions"]``. Modes are explicit per the Q4
+        interim default: the state root is created 0700 and the state file
+        is 0600 (mode set on the temp file before the rename)."""
         self.doc["updated_at"] = _ts()
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        scrubbed, n = self._evidence_scrubber.scrub_obj(self.doc)
+        self.doc = scrubbed
+        if n:
+            self.doc["redactions"] = int(self.doc.get("redactions") or 0) + n
+        ghl_evidence.ensure_private_dir(os.path.dirname(self.path))
         tmp = f"{self.path}.tmp-{os.getpid()}"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(self.doc, fh, indent=2, default=str)
             fh.flush()
+            os.chmod(tmp, ghl_evidence.FILE_MODE)
             os.fsync(fh.fileno())
         os.replace(tmp, self.path)
         return self.path
@@ -249,11 +322,16 @@ class RunState:
         state_root: str = "",
         evidence_root: str = "",
         argv: Optional[List[str]] = None,
+        secret_values: Optional[Iterable[str]] = None,
+        trace_suppression: Optional[List[dict]] = None,
+        expected_location_id: str = "",
     ) -> "RunState":
         st = cls(
             run_id or new_run_id(builder), builder,
             state_root=state_root, evidence_root=evidence_root,
-            argv=argv, specs=specs,
+            argv=argv, specs=specs, secret_values=secret_values,
+            trace_suppression=trace_suppression,
+            expected_location_id=expected_location_id,
         )
         st.save()
         return st
@@ -269,6 +347,20 @@ class RunState:
     ) -> "RunState":
         root = state_root or default_state_root()
         probe = cls(run_id, builder, state_root=root, specs=specs)
+        loaded_from_legacy = False
+        if not os.path.isfile(probe.path):
+            # S06-05 / SK6002 repair-in-place: a run started BEFORE the
+            # durable-root fix wrote its state under the legacy root. Probe
+            # there before declaring the run lost, and — if found — keep
+            # THIS run writing to the legacy root (repair in place, recorded
+            # on the doc below). A silent move would orphan any other reader
+            # of the old path; new runs start at the resolved root above.
+            legacy = legacy_state_root()
+            if os.path.abspath(legacy) != os.path.abspath(root):
+                legacy_probe = cls(run_id, builder, state_root=legacy, specs=specs)
+                if os.path.isfile(legacy_probe.path):
+                    root, probe = legacy, legacy_probe
+                    loaded_from_legacy = True
         if not os.path.isfile(probe.path):
             raise RunStateNotFound(
                 f"no run state for run_id {run_id!r} under {root!r} — "
@@ -290,6 +382,8 @@ class RunState:
                 f"run {run_id!r} belongs to builder {doc['builder']!r}, "
                 f"not {builder!r} — refusing to resume it with the wrong builder"
             )
+        if loaded_from_legacy:
+            st.doc["state_root_legacy_fallback"] = True
         st.doc["attempts"] = int(doc.get("attempts", 1)) + 1
         st.doc["status"] = STATUS_RUNNING
         st.save()
@@ -600,12 +694,34 @@ def format_run_report(
         nxt = state.first_incomplete_mutating_phase()
         if nxt:
             rows.append(("next_phase", nxt))
+        # S06-08 rows (present only when the run state carries the data, so
+        # the standard shape is unchanged for runs that do not): the Q5
+        # trace-suppression flags, the run's tenant binding, and the count
+        # of evidence redactions the state file itself carries.
+        _suppression = state.doc.get("trace_suppression")
+        if _suppression:
+            _steps = ", ".join(
+                f"{r.get('step')}:"
+                f"{'suppressed' if r.get('artifacts_suppressed') else 'NOT-suppressed'}"
+                for r in _suppression if isinstance(r, dict)
+            )
+            if _steps:
+                rows.append(("trace_suppression", _steps))
+        if state.doc.get("expected_location_id"):
+            rows.append(
+                ("tenant_binding", ghl_evidence.effective_binding(state.doc)))
+        if int(state.doc.get("redactions") or 0):
+            rows.append(("redactions", str(state.doc["redactions"])))
 
     for k, v in (extra_rows or {}).items():
+        # S06-08: report values are evidence too: scrub before printing.
+        if isinstance(v, str):
+            v = ghl_evidence.scrub_text(v)[0]
         rows.append((k, v))
 
     if error:
-        rows.append(("error", str(error)[:200]))
+        # Scrub BEFORE truncating, so a truncated secret cannot leak a prefix.
+        rows.append(("error", ghl_evidence.scrub_text(str(error))[0][:200]))
 
     cmd = resume_cmd
     if cmd is None:
@@ -918,9 +1034,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not os.path.isdir(root):
             print(f"(no runs — {root} does not exist)")
             return 0
-        for fn in sorted(os.listdir(root)):
-            if fn.endswith(".json"):
-                print(fn[:-5])
+        names = {fn[:-5] for fn in os.listdir(root) if fn.endswith(".json")}
+        # S06-05: pre-fix runs may still live under the legacy root (the
+        # same repair-in-place fallback RunState.load applies) — list them
+        # too so an operator can find a run id to --resume.
+        legacy = legacy_state_root()
+        if os.path.abspath(legacy) != os.path.abspath(root) and os.path.isdir(legacy):
+            names |= {fn[:-5] for fn in os.listdir(legacy) if fn.endswith(".json")}
+        for name in sorted(names):
+            print(name)
         return 0
     p.print_help()
     return 0

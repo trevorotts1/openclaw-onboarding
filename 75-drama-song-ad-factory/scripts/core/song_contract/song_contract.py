@@ -505,7 +505,8 @@ def _sung_hits(key, seq, words, segs):
     hits = i = 0
     while key and i + len(key) <= len(seq):
         if seq[i:i + len(key)] == list(key):
-            mid = (words[i]["startS"] + words[i + len(key) - 1]["endS"]) / 2.0
+            a, z = words[i], words[i + len(key) - 1]   # canonical start/end or raw startS/endS
+            mid = (a.get("start", a.get("startS")) + z.get("end", z.get("endS"))) / 2.0
             if any(s["delivery"] == "sung" and s["start"] <= mid <= s["end"] for s in segs):
                 hits += 1
             i += len(key)
@@ -558,7 +559,7 @@ def check_returned_song(sheet_text, aligned_words, segments, style_id, delivered
         return {"verdict": "FAIL", "reasons": reasons, "numbers": nums, "style_id": sid}
     sheet = parse_sections(sheet_text)
     blocks, hook_keys = _hook_blocks(sheet)
-    words = [w for w in aligned_words if isinstance(w, dict) and "startS" in w]
+    words = [w for w in aligned_words if isinstance(w, dict) and ("start" in w or "startS" in w)]
     returned = "".join(str(w.get("word", "")) for w in words)
     nums["sheet_hook_blocks"] = len(blocks)
     # Hook BLOCK count and placement on the take: hook_placement.check_returned.

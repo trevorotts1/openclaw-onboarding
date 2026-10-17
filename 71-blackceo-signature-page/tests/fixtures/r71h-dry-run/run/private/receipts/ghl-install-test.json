@@ -1,0 +1,41 @@
+{
+  "stage": "ghl-install-test",
+  "status": "pass",
+  "author_agent": "fixture-builder",
+  "author_session": "fixture-session-author",
+  "started_at": "2026-10-16T09:00:00+00:00",
+  "finished_at": "2026-10-16T09:20:00+00:00",
+  "artifacts": [],
+  "install": {
+    "target": {
+      "kind": "ghl",
+      "funnel_or_site_id": "F-100",
+      "page_id_or_url": "P-200"
+    },
+    "journey_checks": {
+      "cta_clicks": [
+        {
+          "label": "Hero CTA",
+          "destination": "step:Order",
+          "ok": true
+        }
+      ],
+      "form_submit_test": {
+        "performed": true,
+        "ok": true,
+        "test_contact_id": "FIXTURE-CONTACT-1",
+        "submissions_count": 1
+      },
+      "popup_open_close": {
+        "ok": true
+      },
+      "mobile_keyboard_scroll": {
+        "ok": true
+      }
+    },
+    "sales_check": {
+      "mode": "test",
+      "live_charge_made": false
+    }
+  }
+}

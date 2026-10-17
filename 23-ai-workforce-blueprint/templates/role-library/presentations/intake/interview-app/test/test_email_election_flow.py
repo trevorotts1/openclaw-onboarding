@@ -59,6 +59,7 @@ def _complete_answers(**overrides):
         "want_vsl_page": "yes",
         "want_email_sequences": "no",
         "email_sequences_declined_reason": REASON,
+        "want_motion_graphics": "yes",
     }
     answers.update(overrides)
     return answers

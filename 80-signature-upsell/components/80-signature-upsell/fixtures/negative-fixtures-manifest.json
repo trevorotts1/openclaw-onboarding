@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "test_only": true,
+  "fixtures": [
+    {
+      "file": "copy-neg-seven-sections.json",
+      "expected_exit": 2,
+      "expected_code": "U80-SECTION-COUNT",
+      "defect": "only 7 sections"
+    },
+    {
+      "file": "copy-neg-missing-cta-who.json",
+      "expected_exit": 2,
+      "expected_code": "U80-CTA-MISSING",
+      "defect": "section 6 (Who) has no CTA - the main-page no-CTA rule wrongly applied"
+    },
+    {
+      "file": "copy-neg-six-reasons.json",
+      "expected_exit": 2,
+      "expected_code": "U80-REASON-COUNT",
+      "defect": "section 8 has only 6 reasons"
+    },
+    {
+      "file": "copy-neg-duplicate-reason.json",
+      "expected_exit": 2,
+      "expected_code": "U80-REASON-DISTINCT",
+      "defect": "reason 7 duplicates reason 1"
+    },
+    {
+      "file": "copy-neg-bad-reasons-heading.json",
+      "expected_exit": 2,
+      "expected_code": "U80-REASON-HEADING",
+      "defect": "section 8 heading does not match the approved pattern"
+    },
+    {
+      "file": "copy-neg-reintroduced-benefit.json",
+      "expected_exit": 2,
+      "expected_code": "U80-ORIGINAL-SECTIONS-EXCLUDED",
+      "defect": "original section 8 (Benefit) reintroduced as a 9th section"
+    },
+    {
+      "file": "copy-neg-private-label-leak.json",
+      "expected_exit": 2,
+      "expected_code": "U80-PRIVATE-LABEL-LEAK",
+      "defect": "private framework label leaks into public output"
+    },
+    {
+      "file": "copy-neg-invented-scarcity.json",
+      "expected_exit": 2,
+      "expected_code": "U80-INVENTED-SCARCITY",
+      "defect": "countdown and stock scarcity with no verified evidence entry"
+    },
+    {
+      "file": "copy-neg-invented-testimonial.json",
+      "expected_exit": 2,
+      "expected_code": "U80-INVENTED-TESTIMONIAL",
+      "defect": "fabricated testimonial markers; missing proof must stay missing"
+    },
+    {
+      "file": "copy-neg-offer-not-named-early.json",
+      "expected_exit": 2,
+      "expected_code": "U80-OFFER-NAMED-EARLY",
+      "defect": "offer is not named in section 1"
+    },
+    {
+      "file": "copy-neg-u2-renamed-u1.json",
+      "expected_exit": 2,
+      "expected_code": "U80-U2-DISTINCT",
+      "defect": "U2 is merely renamed U1; must be validated with --compare against copy-upsell1-public.valid.json"
+    }
+  ]
+}

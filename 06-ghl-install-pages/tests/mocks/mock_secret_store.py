@@ -71,7 +71,10 @@ class MockSecretStore:
 
     @property
     def location_id(self) -> str:
-        return self.read_secret(_fb.LOCATION_ID_KEY)
+        # Mirror production SecretStore.location_id: the canonical name
+        # first, the legacy alias second. (Before S06-04 this mock read the
+        # legacy key only, which hid the precedence from the tests.)
+        return self._first((_fb.LOCATION_ID_KEY_CANONICAL, _fb.LOCATION_ID_KEY))
 
 
 def fully_provisioned_store(**overrides: str) -> MockSecretStore:
