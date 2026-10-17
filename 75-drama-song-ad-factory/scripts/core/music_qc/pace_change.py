@@ -308,6 +308,47 @@ def locate_gear_change(samples, sr, lo_s, hi_s, win_s=PACE_LOCATE_WIN_S,
     return out
 
 
+def locate_return(samples, sr, lo_s, hi_s, before, win_s=PACE_LOCATE_WIN_S,
+                  step_s=PACE_LOCATE_STEP_S):
+    """The FIRST window after a located drop that is back on the opening
+    baseline, and where it is.
+
+    The return carries the same problem as the drop: a provider puts it where
+    the song wants it, so a window pinned to the ordered return second
+    measures the wrong moment and refuses a take that does come back. The
+    bounds are the SAME approved ones (PACE_RETURN_TOL onset, PACE_RETURN_DB
+    energy against the opening window); only WHERE the window is sampled
+    moves, and the located second is reported."""
+    b = _window(before, "before")
+    if hasattr(samples, "tolist"):
+        samples = samples.tolist()
+    lo = max(0.0, float(lo_s))
+    hi = max(lo, float(hi_s))
+    best = None
+    t = lo
+    while t + step_s <= hi + 1e-9:
+        w = window_stats(samples, sr, t, t + win_s)
+        if w is not None and b["onset_rate"] > 0:
+            onset_gap = abs(w["onset_rate_per_s"] - b["onset_rate"]) / b["onset_rate"]
+            energy_gap = abs(w["rms_dbfs"] - b["rms_dbfs"])
+            ok = (onset_gap <= PACE_RETURN_TOL and energy_gap <= PACE_RETURN_DB)
+            cand = {"at_s": round(t, 3), "after": w,
+                    "onset_gap": round(onset_gap, 4),
+                    "energy_gap_db": round(energy_gap, 3), "ok": ok}
+            if best is None or (cand["ok"], -cand["at_s"]) > (best["ok"], -best["at_s"]):
+                best = cand
+            if ok:
+                best = cand
+                break
+        t += step_s
+    if best is None:
+        return {"found": False, "at_s": None, "after": None,
+                "onset_gap": None, "energy_gap_db": None,
+                "reason": "no measurable window in [%.1f, %.1f) s" % (lo, hi)}
+    best["found"] = best.pop("ok")
+    return best
+
+
 def _window(obj, name):
     if not isinstance(obj, dict):
         raise PaceError("%s window must be a mapping, got %r" % (name, obj))
