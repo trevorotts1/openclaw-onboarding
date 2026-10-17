@@ -156,11 +156,15 @@ never inside the artifact under review) containing:
 
 ## 6. Current status
 
-This protocol and the pre-screen are built (S82-09). A recorded
-verdict under this protocol on the candidate artifact set is the
-final independent-review step for A14's semantic layer; until that
-record exists, the semantic layer is **protocol-ready, verdict
-pending** — see `references/branch-matrix.md` (row P-08). The TEST
+This protocol and the pre-screen are built (S82-09). The recorded
+verdict on the candidate artifact set **exists**: the independent
+semantic review was performed 2026-10-15 under this protocol and
+recorded in `rooms/S82/review-s82-final.md` §6 — overall verdict
+**PASS** on the TEST ONLY rendered fragment (SHA-256 `230ad69b…`,
+6,292 bytes; pre-screen clean; reviewer ≠ author; per-surface
+and per-test results recorded). A14's semantic layer is therefore
+closed at the offline level for the candidate artifact — see
+`references/branch-matrix.md` (row P-08). The TEST
 ONLY fixture render is the offline review subject; each real
 launch's rendered page needs its own recorded verdict before it is
 treated as A14-complete at its level.
