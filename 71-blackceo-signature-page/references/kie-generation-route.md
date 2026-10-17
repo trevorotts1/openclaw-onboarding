@@ -43,6 +43,15 @@ budget cap) and the per-job image cap still apply before the first paid call.
    (or `run --request req.json --save-dir DIR --mode active`, which submits, waits and saves in one call).
 5. Wait and save immediately (rule 8; result links can expire within 24 hours):
    `python3 scripts/kie_live_adapter.py wait --task-id <id>` then `save --task-id <id> --save-dir DIR`.
+   Save naming (Update Plan Item 26, proposal P6, ruled 2026-10-15): the saved
+   file carries the delivered name, the two-digit `Image-NN.png` derived from
+   the item's three-digit internal ID (`IMG-001` saves as `Image-01.png`,
+   `IMG-012` as `Image-12.png`, `IMG-123` as `Image-123.png`; the derivation
+   of record is `delivered_filename` in `scripts/validate_image_manifest.py`).
+   Never save under the internal ID (`IMG-001.png`) or the three-digit form
+   (`Image-001.png`): the saved file, the receipt's `file` below, and the
+   delivered file are one name, and the gate matches that name to the
+   internal ID by its trailing number.
 
 The adapter never retries createTask after a network error, makes one attempt on a 401 or 403 (stop and
 report), and never prints the key (rules 6 and 9). The key is the client's own. Prices are never typed
@@ -64,7 +73,7 @@ block that matches this route. Example (values are placeholders):
   "policy": "66-kie-image",
   "mode": "active",
   "tasks": [
-    {"file": "image-generation-qc/Image-001.png", "task_id": "<KIE task id>",
+    {"file": "image-generation-qc/Image-01.png", "task_id": "<KIE task id>",
      "model_id": "<id returned by Skill 66>", "model_source": "latest-family",
      "requested_ratio": "16:9", "generated_ratio": "16:9",
      "preflight_ok": true, "budget_exit": 0}

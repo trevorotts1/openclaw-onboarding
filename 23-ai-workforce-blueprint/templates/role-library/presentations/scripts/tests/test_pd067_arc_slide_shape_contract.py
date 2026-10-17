@@ -390,16 +390,22 @@ def test_absent_allocation_enumerates_zero_then_resumes_when_it_lands(
     assert (run_dir / SPEC_ARTIFACT).is_file()
 
 
-def test_design_phases_still_enumerate_once_the_arc_exists(tmp_path):
-    """The three design phases fan out by=slide, so each reads the deck's slide
-    list from P3-ARC's artifact. This pins the CODE half of that dependency:
-    given the arc, they enumerate; the manifest DAG edge that would make an
-    ABSENT arc a withheld admission is NOT part of this change (see the PR body
-    -- adding it edits the sha-pinned manifest and would force a gated
-    `--repin` of any in-flight run, which this fix deliberately avoids).
+def test_slide_fanout_phases_still_enumerate_once_the_arc_exists(tmp_path):
+    """The by=slide fanout phases read the deck's slide list from P3-ARC's
+    artifact. This pins the CODE half of that dependency: given the arc, they
+    enumerate; the manifest DAG edge that would make an ABSENT arc a withheld
+    admission is NOT part of this change (see the PR body -- adding it edits
+    the sha-pinned manifest and would force a gated `--repin` of any in-flight
+    run, which this fix deliberately avoids).
 
     The refusal for a genuinely absent input is unchanged and is covered by
     test_absent_allocation_enumerates_zero_then_resumes_when_it_lands above.
+
+    Vehicle note: this test originally ran on the three P-U-DESIGN-* phases.
+    They retired with the Path A fragment chains (owner ruling 2026-10-15),
+    so the same enumeration guarantee is now pinned on the three surviving
+    by=slide fanout phases below; the enumerator behavior under test is
+    phase-agnostic.
     """
     from presentation_job import execution_plan as ep
 
@@ -407,13 +413,13 @@ def test_design_phases_still_enumerate_once_the_arc_exists(tmp_path):
     by_id = {p["id"]: p for p in manifest["phases"]}
     dag = ep.load_phase_dag(CLUSTER_MANIFEST)
 
-    for pid in ("P-U-DESIGN-SALES", "P-U-DESIGN-CHECKOUT", "P-U-DESIGN-VSL"):
+    for pid in ("P-STYLE-SPEC", "P-PROMPT-QC", "P-IMAGE-QC"):
         spec = by_id[pid].get("fanout")
         assert spec and spec.get("by") == "slide", \
             f"{pid} is expected to fan out over the deck's slide list"
 
     run_dir = _seed_run(tmp_path, allocation=_live_allocation(8))
-    for pid in ("P-U-DESIGN-SALES", "P-U-DESIGN-CHECKOUT", "P-U-DESIGN-VSL"):
+    for pid in ("P-STYLE-SPEC", "P-PROMPT-QC", "P-IMAGE-QC"):
         items = fo.enumerate_fanout_items(
             run_dir, fo.parse_fanout_field(by_id[pid].get("fanout")), phase_id=pid,
             produces_artifact=by_id[pid].get("produces_artifact"))

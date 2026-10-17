@@ -12,7 +12,8 @@ Proves (each refused with field, chars, cap, source, status; nothing truncated):
      nothing (the payload is never mutated into a passing one);
   6. the caps come from the 68 catalog (read live), never copied;
   7. the all-clear path still builds (no false refusal);
-  8. song_dispatch accepts the G9 headroom duration and still refuses a patch.
+  8. song_dispatch admits ONLY the delivered duration; the bare G9 headroom is
+     refused unless the owner selected it on the plan, and then it is recorded.
 
 Run: python3 core/music_director/test_prompt_limits_u6.py   (from scripts/core)
 Exit 0 = all pass, 1 = failures.
@@ -167,7 +168,7 @@ def test_clear_path_builds_and_is_measured():
                                          length_s=58, true_at_beat="the_world")))
 
 
-# ---- 4. the 999 dispatch seam: G9 headroom allowed, a patch still refused -
+# ---- 4. the 999 dispatch seam: exact duration, owner override, patch refused
 def test_dispatch_allows_headroom_duration():
     plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN,
                 pace_change=PACE_ORDER)
@@ -196,17 +197,28 @@ def test_dispatch_allows_headroom_duration():
     GOOD["aligned_words"] = [dict(w, startS=3 + i, endS=3.5 + i) for i, w in enumerate(words)]
     hook = " ".join(HOOK)
     script = "One closed door. She Found Power in the Climb. Get the book. Link below."
-    # headroom (plan + >=15%) and the exact planned length are both accepted;
-    # a patch/short duration is still refused before any spend.
-    out = SD.run_takes(req, plan, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {},
-                       lambda t, r: None, script, hook, (15, 20), kie=lambda fn, lbl, generation=False: fn(),
-                       style_id="soul-ballad")
-    check("G9 headroom duration accepted (no whole-track refusal)",
-          out["verdict"] in ("PASS", "FLAG", "FAIL") and out["spent_cents"] == 6, out)
+    # CPR-R2: the request must ask for the DELIVERED seconds exactly. The bare
+    # G9 headroom is no longer silently accepted -- it is admitted only when the
+    # OWNER selected it on the plan, and then it is recorded, not dropped.
+    try:
+        SD.run_takes(req, plan, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {},
+                     lambda t, r: None, script, hook, (15, 20),
+                     kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
+        check("bare headroom duration is refused before any spend", False, "no DispatchError")
+    except SD.DispatchError:
+        check("bare headroom duration is refused before any spend", True)
+    approved = dict(plan, duration_headroom_approved={"owner": "trevor", "reason": "test stub"})
+    out = SD.run_takes(req, approved, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {},
+                       lambda t, r: None, script, hook, (15, 20),
+                       kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
+    check("owner-selected headroom is honored and recorded",
+          out["spent_cents"] == 6 and out["duration"]["mode"] == "headroom_override"
+          and out["duration"]["headroom_approved"] == approved["duration_headroom_approved"], out)
     out2 = SD.run_takes(dict(req, input=dict(req["input"], duration=plan["delivered_s"])), plan, lambda rq: [dict(GOOD), dict(GOOD)],
                         lambda t: {}, lambda t, r: None, script, hook, (15, 20),
                         kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
-    check("exact planned duration still accepted", out2["spent_cents"] == 6, out2)
+    check("exact planned duration still accepted",
+          out2["spent_cents"] == 6 and out2["duration"]["mode"] == "exact", out2)
     try:
         SD.run_takes(dict(req, input=dict(req["input"], duration=30)), plan, lambda rq: [], lambda t: {}, lambda t, r: None,
                      script, hook, (15, 20))

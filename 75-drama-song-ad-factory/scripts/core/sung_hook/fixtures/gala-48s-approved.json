@@ -1,0 +1,16 @@
+{
+ "note": "Real approved 48 s sheet and plan from a 2026-10-17 run; one brand token replaced (examplegala2026). Judging metadata only.",
+ "style_id": "soul-ballad",
+ "length_s": 48,
+ "hook_plan": {
+  "true_at_beat": "pain_deepens"
+ },
+ "pace_plan": {
+  "reason": "verse-2 is the emotional low point (I fear missing this): groove drops to half-time, then turns and rises for the final chorus",
+  "boundary_s": 16.0,
+  "return_boundary_s": 40.0,
+  "drop": "at the lowest point the groove drops to half-time with thin, sparse drums",
+  "return": "then it turns and rises back to the full groove"
+ },
+ "sheet_text": "[Intro (spoken): close dry voice, plain speech, no melody]\nEverybody's talking.\n\n[Vocalise (sung): wordless, brief lead-in, one short note]\nOo-o-o-o-o-oh,\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nI hear the buzz in town\nI see the empty chair and stare\nI need my seat tonight\n\n[Hook 1 (sung): full melody, sustained notes, slow long held notes]\nThe night of legacy and light\nIn emerald and light\n\n[Verse 2 (sung): melodic, rhymed, slow long held notes]\nI press reserve, not too late\nI'm on my way\n\n[Hook 2 (sung): full melody, sustained notes, slow long held notes]\nThe night of legacy and light\nIn emerald and light\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nReserve by October 27. examplegala2026 dot com.\n\n[End]"
+}

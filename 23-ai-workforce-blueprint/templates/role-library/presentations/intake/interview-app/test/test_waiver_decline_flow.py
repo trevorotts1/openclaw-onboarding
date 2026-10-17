@@ -78,6 +78,7 @@ def _hosted_answers(**overrides) -> dict:
         "want_vsl_page": "no",
         "vsl_page_declined_reason": VSL_REASON,
         "want_email_sequences": "no",
+        "want_motion_graphics": "yes",
         "client_notes": "",
     }
     answers.update(overrides)

@@ -412,12 +412,26 @@ def insert_agents_and_tasks(db, info, starter_tasks=True):
 def update_logo_config():
     """Empty logoUrl → useLogoUrl hook falls through to text-SVG fallback
     which renders the company name from the companies row. Drop a per-client
-    PNG at public/logo-<slug>.png and set logoUrl accordingly to override."""
+    PNG at public/logo-<slug>.png and set logoUrl accordingly to override.
+
+    NON-DESTRUCTIVE: an existing non-empty logoUrl is the box's own branding
+    and is preserved; only an absent/empty logoUrl is seeded with the
+    text-SVG fallback."""
     for p in [
         Path("/data/projects/command-center/public/logo-config.json"),
         Path.home() / "projects/command-center/public/logo-config.json",
     ]:
         if p.parent.is_dir():
+            if p.exists():
+                try:
+                    existing = json.load(open(p))
+                except (OSError, ValueError) as e:
+                    print(f"  logo-config unreadable at {p}; left untouched: {e}", file=sys.stderr)
+                    continue
+                logo_url = existing.get("logoUrl") if isinstance(existing, dict) else ""
+                if isinstance(logo_url, str) and logo_url.strip():
+                    print(f"  logo-config: existing logoUrl preserved at {p}")
+                    return
             try:
                 json.dump({"logoUrl": ""}, open(p, "w"), indent=2)
                 print(f"  logo-config: text-SVG fallback set at {p}")

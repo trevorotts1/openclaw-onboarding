@@ -60,12 +60,16 @@ images the screen also measures the protected region: near-neutral
 pixels (HSV saturation <= 0.12) plus the skin-hue band. It reports the
 protected-region mean saturation and the saturated-intrusion share
 (protected-territory skin-band pixels pushed past the protected cap).
-When an approved ceiling exists (grade.max_protected_saturation, or
-the family's FULL max_protected_saturation) the protected mean is
-enforced as a CEILING: a global color wash colonizes neutrals and skin
-and fails it, while selective hyperchroma at any hero intensity passes
-(Sauce sections 2 and 23.2). Until a ceiling is approved the metric is
-WARN-only and names itself uncalibrated Option B. When the protected
+The metric is WARN-only, whether or not an approved ceiling exists
+(grade.max_protected_saturation, or the family's FULL
+max_protected_saturation): over the ceiling the screen prints a WARN
+naming the measurement and the ceiling (a global color wash colonizes
+neutrals and skin; Sauce sections 2 and 23.2), and selective
+hyperchroma at any hero intensity passes; with no ceiling the WARN
+names itself uncalibrated Option B. Writing the ceiling into the brand
+file does not change its enforcement status (owner ruling S71-OPTION-B,
+Resolution A, 2026-10-16: the record's WARN-only status governs; the
+code was conformed to it). When the protected
 mask covers almost none of the working copy the metric reports N/A,
 never a fabricated pass. This pixel proxy does not replace the
 doctrine's enforcement of record: selective saturation is judged at the
@@ -275,7 +279,9 @@ def protected_ceiling(grade, plan, family):
 
     The family's FULL max_protected_saturation wins; the brand-wide
     grade.max_protected_saturation is the fallback. Null/absent means
-    uncalibrated: Option B is WARN-only.
+    uncalibrated. Either way Option B is WARN-only: the ceiling is a
+    screen value the WARN names, never a failure threshold (Ruling 3;
+    owner ruling S71-OPTION-B, Resolution A, 2026-10-16).
     """
     full = plan.get(family, {}).get("full") or {}
     value = _num(full.get("max_protected_saturation"))
@@ -949,13 +955,20 @@ def apply_grade_floors(name, m, family, posture, posture_source,
                   "record for selective saturation (Sauce 2, 23.2).")
             uncal.append("grade.max_protected_saturation")
         elif m["protected_sat"] > ceiling:
-            reasons.append(
-                f"protected-region mean saturation {m['protected_sat']:.4f} "
-                f"exceeds the approved protected-region ceiling "
-                f"{ceiling} (Option B selectivity: a global wash "
-                "colonizes the protected neutrals and skin; Sauce 2, "
-                "23.2; saturated-intrusion share "
-                f"{m['intrusion_share']:.2%})")
+            # WARN only, never a failure, whether or not a ceiling is
+            # written (Ruling 3; owner ruling S71-OPTION-B, Resolution
+            # A, 2026-10-16: writing the ceiling does not change its
+            # enforcement status, and the Item 12 judgment gate remains
+            # the enforcement of record for selective saturation).
+            print(f"WARN: Option B selectivity: {name}: "
+                  f"protected-region mean saturation "
+                  f"{m['protected_sat']:.4f} exceeds the approved "
+                  f"protected-region ceiling {ceiling} (a global wash "
+                  "colonizes the protected neutrals and skin; Sauce 2, "
+                  "23.2; saturated-intrusion share "
+                  f"{m['intrusion_share']:.2%}); WARN only, never a "
+                  "failure. The Item 12 judgment gate remains the "
+                  "enforcement of record for selective saturation.")
         else:
             print(f"NOTE: {name}: protected-region mean saturation "
                   f"{m['protected_sat']:.4f} is within the approved "

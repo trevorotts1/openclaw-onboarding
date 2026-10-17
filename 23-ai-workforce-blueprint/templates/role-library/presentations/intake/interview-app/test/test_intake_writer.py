@@ -59,7 +59,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "cta_action": "book a call", "tone": "Teacher",
                            "final_price": "$1", "speech_speed_preference": "default",
                            "want_sales_checkout": "yes", "want_vsl_page": "no",
-                           "want_email_sequences": "no"}}
+                           "want_email_sequences": "no",
+                           "want_motion_graphics": "no"}}
         intake = iw.assemble_intake(raw, run_id="R2")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R2"
@@ -209,7 +210,8 @@ class TestIntakeWriter(unittest.TestCase):
             "pre_presentation_capture": {"PRESENTATION_TYPE": "signature",
                                          "WANT_SALES_CHECKOUT": "yes",
                                          "WANT_VSL_PAGE": "no",
-                                         "WANT_EMAIL_SEQUENCES": "no"},
+                                         "WANT_EMAIL_SEQUENCES": "no",
+                                         "WANT_MOTION_GRAPHICS": "no"},
         }
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R7"

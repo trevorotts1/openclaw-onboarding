@@ -52,9 +52,6 @@ GOVERNED_BLEND_PHASES = frozenset({
     "P9-SPEECH-WEBINAR-INTRO",
     "P8.2-GUIDE",
     "P8.25-WORKBOOK",
-    "P-U-HTML-SALES",
-    "P-U-HTML-CHECKOUT",
-    "P-U-HTML-VSL",
     "P8.4-FISH-TAG",
     "P-CONVERTER",
 })
@@ -80,7 +77,7 @@ HUMAN_GATE_PHASES = frozenset({
 
 # Execution specialist per pipeline phase (manifest owning_role verbatim).
 # Source: universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json
-# (62 phases). Kept as data so drift is a diff, not a mystery.
+# (53 phases). Kept as data so drift is a diff, not a mystery.
 EXECUTION_SPECIALIST_FOR: Dict[str, str] = {
     "P-CONVERTER": "content-to-presentation-architect",
     "P-0.5-RESEARCH": "deep-research-specialist-presentations",
@@ -98,13 +95,7 @@ EXECUTION_SPECIALIST_FOR: Dict[str, str] = {
     "P4-COPY": "slide-copywriter",
     "P-SP-STRUCTURE": "signature-presentation-architect",
     "P-SP-P3-HYGIENE": "qc-specialist-signature-presentations",
-    "P-U-DESIGN-SALES": "slide-image-creator",
-    "P-U-DESIGN-RENDER-SALES": "slide-image-creator",
     "P1Q-COPY-QC": "qc-specialist-presentations",
-    "P-U-DESIGN-CHECKOUT": "slide-image-creator",
-    "P-U-DESIGN-RENDER-CHECKOUT": "slide-image-creator",
-    "P-U-DESIGN-VSL": "slide-image-creator",
-    "P-U-DESIGN-RENDER-VSL": "slide-image-creator",
     "PF-DESIGN": "typography-architect",
     "P-TYPO-QC": "qc-specialist-typography-presentations",
     "P4-PROMPT": "prompt-author-presentations",
@@ -114,9 +105,6 @@ EXECUTION_SPECIALIST_FOR: Dict[str, str] = {
     "P-STYLE-PICK": "brand-steward",
     "P4-RENDER": "slide-image-creator",
     "P-IMAGE-QC": "qc-specialist-image-presentations",
-    "P-U-HTML-SALES": "pptx-assembly-specialist",
-    "P-U-HTML-CHECKOUT": "pptx-assembly-specialist",
-    "P-U-HTML-VSL": "pptx-assembly-specialist",
     "P-U-FORM-GATE": "media-librarian-ghl-updater",
     "P-U-GHL-SALES": "media-librarian-ghl-updater",
     "P-U-GHL-VSL": "media-librarian-ghl-updater",

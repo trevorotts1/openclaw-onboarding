@@ -33,8 +33,9 @@ PER POSTURE CLASS (the pre-redesign pooled brand-level floor is gone):
   - Option B ceiling proposal (per family, Ruling 3): the protected-
     region saturation ceiling = 95th percentile x 1.05 of the family's
     FULL anchors' protected-region mean saturation. Printed as a
-    proposal only; the metric ships WARN-only until Trevor approves a
-    ceiling and it is written into the brand file.
+    proposal only; the metric is WARN-only, and remains WARN-only after
+    a ceiling is approved and written into the brand file (owner ruling
+    S71-OPTION-B, Resolution A, 2026-10-16).
 
 Percentile method: linear interpolation between closest ranks (the
 numpy 'linear' default), computed here with the standard library only.

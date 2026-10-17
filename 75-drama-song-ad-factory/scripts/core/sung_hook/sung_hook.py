@@ -123,10 +123,18 @@ def check_sheet_count(sheet, hook_lines, length_s, want=None):
     return errs
 
 
+def _span(w):
+    """(start, end) of one aligned word. Canonical {word,start,end}
+    (lyric_timing.normalize_aligned_words) or raw Suno {word,startS,endS}:
+    the same either-shape read timing_guard uses."""
+    return w.get("start", w.get("startS")), w.get("end", w.get("endS"))
+
+
 def measure(hook_text, words, segments, target):
     """Count hook occurrences that were actually sung.
 
-    words: Suno aligned words [{"word","startS","endS"}] (lyric_timing tier 1).
+    words: aligned words, canonical [{"word","start","end"}] (lyric_timing
+    tier 1, normalized) or raw Suno [{"word","startS","endS"}].
     segments: the singing detector's [{"delivery","start","end","source"}].
     Returns the receipt: hook, target, measured, times, verdict, action.
     """
@@ -141,7 +149,7 @@ def measure(hook_text, words, segments, target):
     hits, i = [], 0
     while key and i + len(key) <= len(seq):
         if seq[i:i + len(key)] == key:
-            a, b = words[i]["startS"], words[i + len(key) - 1]["endS"]
+            a, b = _span(words[i])[0], _span(words[i + len(key) - 1])[1]
             mid = (a + b) / 2
             if any(s["delivery"] == "sung" and s["start"] <= mid <= s["end"] for s in segs):
                 hits.append(round(a, 2))
