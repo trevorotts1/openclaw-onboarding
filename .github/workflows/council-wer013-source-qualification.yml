@@ -3,9 +3,9 @@ name: Council WER-013 source qualification
 on:
   pull_request:
     paths:
-      - "77-council-of-wise-elders/runtime/src/sources/**"
+      - "77-council-of-wise-elders/runtime/src/sources/**"\n      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"\n      - "22-book-to-persona-coaching-leadership-system/personas/**"
       - "77-council-of-wise-elders/runtime/scripts/audit-advisor-sources.ts"
-      - "77-council-of-wise-elders/runtime/tests/wer013-primary-coverage.test.ts"
+      - "77-council-of-wise-elders/runtime/tests/wer013-primary-coverage.test.ts"\n      - "77-council-of-wise-elders/runtime/tests/wer013-skill22-preservation.test.ts"\n      - "77-council-of-wise-elders/runtime/scripts/audit-skill22-preservation.ts"
       - "77-council-of-wise-elders/advisors/**"
       - ".github/workflows/council-wer013-source-qualification.yml"
   workflow_dispatch:
@@ -35,6 +35,12 @@ jobs:
         run: |
           npm run build
           node --import tsx --test tests/wer013-primary-coverage.test.ts
+      - name: Verify Skill 22 legacy books and canonical Council roster are preserved
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          node --import tsx --test tests/wer013-skill22-preservation.test.ts
+          node --import tsx scripts/audit-skill22-preservation.ts
+          node --import tsx scripts/audit-skill22-preservation.ts --json > "${{ runner.temp }}/council-skill22-preservation.json"
       - name: Print current nine-seat source gap without faking release acceptance
         working-directory: 77-council-of-wise-elders/runtime
         run: |
@@ -43,5 +49,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: council-wer013-source-gap-node-${{ matrix.node }}
-          path: ${{ runner.temp }}/council-source-qualification.json
+          path: |\n            ${{ runner.temp }}/council-source-qualification.json\n            ${{ runner.temp }}/council-skill22-preservation.json
           retention-days: 14
