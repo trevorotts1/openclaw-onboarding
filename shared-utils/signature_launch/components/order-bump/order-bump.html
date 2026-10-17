@@ -1,0 +1,38 @@
+<!-- S79 order bump component (doc 09 section 6, doc 16 component).
+     Rendered states, one per data-state value; the fixture model in
+     work/order_bump decides which state exists. TEST values only.
+     The checkbox is UNCHECKED in the offered state, always. Checking it
+     only modifies the pending order; the native checkout submission is
+     what processes the purchase. -->
+
+<!-- State: offered_unchecked -->
+<section class="sig-order-bump" data-state="offered_unchecked" aria-labelledby="bump-heading">
+  <h3 id="bump-heading">Add the TEST Workbook</h3>
+  <!-- Optional image slot: filled only when the approved bump offer has image_ref. -->
+  <p class="sig-bump-copy">TEST bump copy from the approved offer record.</p>
+  <label class="sig-bump-toggle">
+    <input type="checkbox" name="order_bump" value="BUMP" aria-describedby="bump-price bump-disclosure">
+    <span>Yes, add this to my order</span>
+  </label>
+  <p class="sig-price-line" id="bump-price"><span>TEST Workbook</span><span>USD 27.00</span></p>
+  <!-- Recurring disclosure slot: rendered only when the bump bills recurring or on a trial. -->
+  <p class="sig-disclosure" id="bump-disclosure"></p>
+</section>
+
+<!-- State: suppressed_included (entitlement already in the chosen package).
+     No checkbox is rendered. -->
+<section class="sig-order-bump" data-state="suppressed_included">
+  <p class="sig-bump-suppressed">Good news: the TEST Workbook is already included in your package, so there is nothing extra to add here.</p>
+</section>
+
+<!-- State: suppressed_previously_purchased (the visitor already owns this
+     entitlement from an earlier purchase; the reason differs from the
+     included case, so the copy differs too). No checkbox is rendered. -->
+<section class="sig-order-bump" data-state="suppressed_previously_purchased">
+  <p class="sig-bump-suppressed">You already own the TEST Workbook from an earlier purchase, so it is not offered again here.</p>
+</section>
+
+<!-- State: disabled_unavailable (mapping expired, tier inapplicable, or out of stock). -->
+<section class="sig-order-bump" data-state="disabled_unavailable">
+  <p class="sig-bump-unavailable">The TEST Workbook add-on is not available with this package right now. Your order is not affected.</p>
+</section>

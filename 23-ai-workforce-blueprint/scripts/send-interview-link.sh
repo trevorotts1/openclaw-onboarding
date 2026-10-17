@@ -128,7 +128,7 @@ Welcome back, $FIRST_NAME — continue your AI Workforce Interview here: $LINK
 You can stop and return later. Any saved answers will resume after sign-in.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+{{INVITATION_RECOVERY}}
 EOF
 elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -138,7 +138,7 @@ Hi $FIRST_NAME — your company's standard foundation is already set up, and you
 Answers are saved as you go. You can stop and return later.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+{{INVITATION_RECOVERY}}
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -148,7 +148,7 @@ Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversati
 Answers are saved as you go. You can stop and return later.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+{{INVITATION_RECOVERY}}
 EOF
 
 fi
@@ -191,7 +191,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED invitation=unproven delivery=not-attempted"
   echo "readiness-only proof: no invitation was minted and no message was sent."
   echo "----- preview only: enrollment is issued at send time -----"
-  sed 's/{{INVITATION_VALIDITY}}/The link'"'"'s validity is stated in the message when the private sign-in link is issued./g' "$TMP_MSG"
+  sed -e 's/{{INVITATION_VALIDITY}}/The link'"'"'s validity is stated in the message when the private sign-in link is issued./g' -e 's/{{INVITATION_RECOVERY}}/Recovery instructions depend on the issued link. Saved answers stay in place./g' "$TMP_MSG"
   echo "-------------------"
   exit 0
 fi

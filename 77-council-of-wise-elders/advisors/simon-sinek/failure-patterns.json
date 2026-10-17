@@ -1,0 +1,87 @@
+{
+  "seat_id": "simon-sinek",
+  "status": "authored",
+  "pack_owner_unit": "CWE-013",
+  "items": [
+    {
+      "pattern_id": "sinek-f1-the-split",
+      "name": "The Split: WHY goes fuzzy as WHAT grows",
+      "kind": "detected_in_client",
+      "description": "Growth shifts attention from the founding purpose to measurable outputs until the organization can report everything it does and nothing it is for. Detected in inconsistent leader answers, all-WHAT metric sets, and skills-only hiring.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c015",
+        "ev-simon-sinek-find-your-why-c006"
+      ]
+    },
+    {
+      "pattern_id": "sinek-f2-outside-in",
+      "name": "Outside-in communication",
+      "kind": "detected_in_client",
+      "description": "Messages and pitches lead with features, specs, and price, the WHATs, because the WHY was never articulated. The offer becomes interchangeable with every competitor saying the same things louder.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c003"
+      ]
+    },
+    {
+      "pattern_id": "sinek-f3-manipulation-dependence",
+      "name": "Manipulation dependence",
+      "kind": "detected_in_client",
+      "description": "Transactions are produced by price cuts, promotions, fear, peer pressure, or novelty. Each campaign must be bigger than the last because nothing was believed, only triggered.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c003",
+        "ev-simon-sinek-start-with-why-c006"
+      ]
+    },
+    {
+      "pattern_id": "sinek-f4-what-masquerading-as-why",
+      "name": "A WHAT wearing a WHY costume",
+      "kind": "detected_in_client",
+      "description": "The stated purpose is a product description, a revenue target, or a market position. Alignment tests built on it pass everything and filter nothing.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c019",
+        "ev-simon-sinek-start-with-why-c002"
+      ]
+    },
+    {
+      "pattern_id": "sinek-f5-aspirational-why",
+      "name": "The aspirational WHY",
+      "kind": "detected_in_client",
+      "description": "A purpose statement describing who the organization wishes it were, written in a workshop, instead of who it is at its natural best, discovered from its own stories. It inspires a poster and guides nothing.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-find-your-why-c005",
+        "ev-simon-sinek-find-your-why-c014"
+      ]
+    },
+    {
+      "pattern_id": "sinek-f6-solo-discovery",
+      "name": "Solo discovery",
+      "kind": "detected_in_client",
+      "description": "A founder tries to find the WHY alone, telling the stories and mining the themes in the same head. The method's own rules say this does not work; the themes that matter are the ones the teller cannot see.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-find-your-why-c015",
+        "ev-simon-sinek-find-your-why-c014"
+      ]
+    },
+    {
+      "pattern_id": "sinek-f7-purpose-imperialism",
+      "name": "Purpose imperialism (seat overreach)",
+      "kind": "seat_must_avoid",
+      "description": "This seat's own failure mode: treating purpose as the dominant criterion for every decision, including tactical, pricing, or survival decisions where purpose is one input among several, or where affordability and legality decide. The seat names its lens and its limits instead.",
+      "source_evidence_ids": []
+    },
+    {
+      "pattern_id": "sinek-f8-invented-mission",
+      "name": "The invented mission (seat overreach)",
+      "kind": "seat_must_avoid",
+      "description": "When the client's purpose is unknown, the seat writes a plausible one and analyzes against it. Unknown purpose must remain unknown in the record; a fabricated WHY corrupts every downstream judgment.",
+      "source_evidence_ids": []
+    },
+    {
+      "pattern_id": "sinek-f9-quotation-theater",
+      "name": "Quotation theater (seat overreach)",
+      "kind": "seat_must_avoid",
+      "description": "Presenting generated lines as the author's words, or leaning on a famous-sounding sentence to win an argument. This pack carries zero verified quotations; the seat argues from located concepts and labels its own sentences as generated analysis.",
+      "source_evidence_ids": []
+    }
+  ]
+}

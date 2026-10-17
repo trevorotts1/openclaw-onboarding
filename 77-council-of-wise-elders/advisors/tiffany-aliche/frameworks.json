@@ -1,0 +1,87 @@
+{
+  "seat_id": "tiffany-aliche",
+  "pack_owner_unit": "CWE-016",
+  "status": "authored",
+  "items": [
+    {
+      "id": "fw-financial-wholeness",
+      "name": "Financial Wholeness (10 Steps of Financial Wholeness)",
+      "attribution_kind": "source_principle",
+      "source_evidence_ids": [
+        "ev-tiffany-aliche-get-good-with-money-c003",
+        "ev-tiffany-aliche-get-good-with-money-c002"
+      ],
+      "summary": "The blueprint's signature framework: a numbered, step-by-step methodology intended to move a person from no financial systems in place to every pillar functioning, on the philosophy that financial wholeness is the only true safety.",
+      "grounding_level": "concept_level_only",
+      "grounding_note": "The pack holds this framework at concept level from the blueprint's section summaries. The individual ten steps are not enumerated in the retained CWE-011 export evidence, so this pack does not recite, number, or invent a step list. Any step list would require provenance-verified source material.",
+      "preconditions": [
+        "The person's current obligations, reserves, and recurring commitments are known or honestly marked unknown.",
+        "Household and business finances are assessed separately unless the client explicitly connects them."
+      ],
+      "how_to_apply": [
+        "Locate the commitment being considered inside the whole financial picture: what it draws from, what it displaces, and what must keep functioning while it runs.",
+        "Test the commitment stage by stage: a smaller, earlier-stage commitment that keeps every pillar functioning is preferred over a larger one that breaks a pillar.",
+        "Name which part of the foundation the commitment stresses, and state the condition that would relieve the stress."
+      ],
+      "limits": [
+        "The framework is personal-finance teaching. Applying it to business commitments is a BlackCEO adaptation and is labeled as such wherever this pack does it.",
+        "It does not produce investment, tax, or legal conclusions.",
+        "At concept-level grounding it guides questions and conditions; it does not certify any specific plan as sound."
+      ],
+      "questions_to_ask": [
+        "What has to keep working, financially, while this commitment runs?",
+        "Which obligation or reserve does this commitment pull from?",
+        "What is the smallest version of this commitment that still tests the idea?"
+      ],
+      "counterexamples": [
+        "A commitment that funds growth by emptying the reserve pillar: revenue may rise while wholeness falls, and this framework scores that as a step backward, not progress.",
+        "Treating a one-time windfall as a functioning pillar: a pillar is a system that keeps working, not a single deposit."
+      ],
+      "evidence_needed": [
+        "Cash actually in hand, separated into available, already committed, and reserve amounts.",
+        "The recurring obligations the commitment must coexist with."
+      ]
+    },
+    {
+      "id": "fw-affordability-assessment",
+      "name": "Affordability Assessment (available, committed, reserve)",
+      "attribution_kind": "blackceo_adaptation",
+      "source_evidence_ids": [
+        "ev-tiffany-aliche-get-good-with-money-c008",
+        "ev-tiffany-aliche-get-good-with-money-c002"
+      ],
+      "adaptation_note": "This assessment procedure is a BlackCEO adaptation built for council scoring. It operationalizes the blueprint's financial-wholeness philosophy and its pre-task confirmation standard for business decisions. It is not a named framework from the author's published work and must never be attributed to her as one.",
+      "summary": "Before any option with financial exposure is scored, split the money into three buckets: cash available, cash already committed, and reserve that must stay untouched. The option is affordable only if its full cost, including recurring obligations it creates, fits inside the available bucket without raiding the other two.",
+      "preconditions": [
+        "The option's cost is stated as an amount or a range, one-time and recurring parts separated.",
+        "The client has provided cash figures or ranges, or has explicitly declined, in which case the assessment abstains."
+      ],
+      "how_to_apply": [
+        "Confirm the preconditions first, the way the blueprint's task standard requires confirming pre-task requirements before executing.",
+        "Compute available cash deterministically: cash in hand minus committed amounts minus the reserve floor. Show the arithmetic; never estimate a missing input.",
+        "Classify per option: the same council decision can pass for a bounded test and fail for a full rollout.",
+        "When a range is all the client will give, run the worst case. If the worst case fails, affordability is unconfirmed, not assumed."
+      ],
+      "limits": [
+        "The assessment judges affordability only. It does not judge whether an affordable option is wise, on-mission, or well-timed; other seats own those questions.",
+        "It cannot run on projected revenue, receivables, or hoped-for sales. Those are not cash in hand."
+      ],
+      "questions_to_ask": [
+        "How much cash is in hand today, and how much of it is already spoken for?",
+        "What reserve has to remain untouched for life and business to stay stable?",
+        "What does this option keep costing after the first payment?"
+      ],
+      "counterexamples": [
+        "High revenue with low cash: a strong sales month does not make an upfront payment affordable when the bank balance is already committed.",
+        "A deposit described as refundable: until it is actually refunded it is committed money, not available money."
+      ],
+      "evidence_needed": [
+        "Current cash balance or an honest range.",
+        "Amounts already committed and what they are committed to.",
+        "The reserve floor the client requires.",
+        "The option's one-time and recurring costs."
+      ]
+    }
+  ],
+  "note": "Two frameworks only. The directive forbids inventing a named framework to meet a quantity target; the second framework is an explicitly labeled BlackCEO adaptation, not an author framework."
+}

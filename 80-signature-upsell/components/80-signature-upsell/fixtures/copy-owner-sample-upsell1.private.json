@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0",
+  "test_only": true,
+  "copy_id": "TEST-ONLY-owner-sample-upsell1",
+  "instance": "upsell_1",
+  "visibility": "private_authoring",
+  "source_note": "TEST ONLY fixture derived verbatim from the owner's Sample Upsell Page in packet/20_OWNER_SOURCE_MATERIAL.md Phase 3 (VIP / CEO Unleashed sample). It is the owner's teaching sample, NOT a client offer, price or live fact. Private authoring visibility: framework labels are lawful here and must never ship in public output. Offer named in section 1 by its sample alias 'Go VIP' (declared in offer_aliases).",
+  "offer_name": "VIP upgrade",
+  "inspiring_phrase": "7-Figure",
+  "accept_action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1",
+  "verified_scarcity_evidence": [],
+  "sections": [
+    {
+      "number": 1,
+      "key": "big_bold_claim",
+      "heading": "The Big Bold Claim",
+      "body": "Unlock 24/7 Access to Your 7-Figure Transformation: Go VIP and Get All 12 Weeks of Video Training, Bonuses, and Workbooks! It's time to commit to your success.",
+      "cta": {
+        "text": "Say YES to Your 7-Figure Future! Upgrade Now",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 2,
+      "key": "big_bold_pain_1",
+      "heading": "The Big Bold Pain 1",
+      "body": "You've felt the frustration of not having the guidance and support you need, when you need it. Without 24/7 access to the training, you're left struggling to implement the strategies on your own.",
+      "cta": {
+        "text": "Never feel lost or alone again. Go VIP today!",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 3,
+      "key": "big_bold_pain_2",
+      "heading": "The Big Bold Pain 2",
+      "body": "Inconsistent access to the training means inconsistent results. You deserve to have the videos, bonuses, and workbooks at your fingertips, so you can make steady progress towards your 7-figure goals.",
+      "cta": {
+        "text": "Get the consistency you crave. Upgrade to VIP now!",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 4,
+      "key": "big_bold_pain_3",
+      "heading": "The Big Bold Pain 3",
+      "body": "Without the VIP resources, you're leaving money on the table. The videos, bonuses, and workbooks are your key to maximizing your results and achieving the highest ROI on your investment.",
+      "cta": {
+        "text": "Stop missing out on your full potential. Go VIP now!",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 5,
+      "key": "big_bold_why",
+      "heading": "The Big Bold Why",
+      "body": "We created the VIP upgrade because we know how transformative it is to have unlimited access to the tools and strategies you need to succeed. We want you to have everything you need to stay committed, motivated, and on track towards your 7-figure future.",
+      "cta": {
+        "text": "We're committed to your success. Are you? Upgrade to VIP now!",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 6,
+      "key": "big_bold_who",
+      "heading": "The Big Bold Who",
+      "body": "The VIP upgrade is perfect for you if you are ready to commit.",
+      "bullets": [
+        "You're ready to fully commit to your 7-figure journey",
+        "You want the convenience and flexibility of 24/7 access",
+        "You know having all the resources at your fingertips will keep you motivated and on track",
+        "You're ready to maximize your results and achieve the highest ROI possible"
+      ],
+      "cta": {
+        "text": "If this is you, it's time to go VIP! Upgrade now.",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 7,
+      "key": "big_bold_what",
+      "heading": "The Big Bold What",
+      "body": "Here's everything you get when you upgrade to VIP. Plus, you'll be fully immersed in the CEO Unleashed experience, with VIP-only perks and surprises along the way!",
+      "bullets": [
+        "24/7 access to all 12 weeks of comprehensive video training",
+        "Downloadable workbooks to guide you through implementing each week's strategies",
+        "Exclusive bonus content to enhance your learning and results",
+        "The convenience of being able to rewatch and review the material anytime",
+        "The confidence of knowing you have everything you need to succeed",
+        "Priority support from our team to keep you motivated and on track"
+      ],
+      "cta": {
+        "text": "Upgrade to VIP now and get EVERYTHING you need for your 7-figure transformation!",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    },
+    {
+      "number": 8,
+      "key": "seven_reasons",
+      "heading": "7 Reasons To Commit To Your 7-Figure Future",
+      "body": "The 7 Reasons to Commit to Your 7-Figure Future",
+      "reasons": [
+        "You deserve to have the life and business you've always dreamed of. The VIP upgrade is your key to making it a reality.",
+        "The faster you implement these proven strategies, the faster you'll see results. 24/7 access to the training means you can move at your own pace and accelerate your progress.",
+        "The workbooks and bonus content are essential for applying what you learn and maximizing your results. Don't miss out on these powerful tools!",
+        "Consistency is critical for success. With the VIP upgrade, you'll never lose momentum or motivation because you'll always have the resources you need to stay on track.",
+        "You'll be supported every step of the way by our team and the VIP community. You don't have to do this alone!",
+        "The VIP upgrade is an investment in yourself and your future. You're worth it, and the ROI will be incredible.",
+        "You've already taken the first step by joining CEO Unleashed. Now it's time to go all in and commit fully to your transformation. The VIP upgrade is your way of saying \"YES!\" to your 7-figure future."
+      ],
+      "cta": {
+        "text": "Your 7-figure future is waiting. Commit now and upgrade to VIP!",
+        "action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1"
+      }
+    }
+  ],
+  "offer_aliases": [
+    "Go VIP"
+  ],
+  "action_binding": {
+    "expected_action_ref": "native-one-click:TEST-ONLY-SAMPLE-U1",
+    "binding_kind": "native_one_click_guarded",
+    "source_ref": "packet/20_OWNER_SOURCE_MATERIAL.md sample upsell page (TEST ONLY stand-in binding)"
+  }
+}

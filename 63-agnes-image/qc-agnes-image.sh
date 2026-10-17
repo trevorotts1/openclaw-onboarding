@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Skill 63 — Agnes Image 2.1 Flash — Install QC
+# Skill 63 — Agnes Image (default model 2.5 Flash) — Install QC
 #
 # Verifies the skill shipped correctly AND that its endpoint reference is
 # internally correct (right model, right endpoint, the response_format gotcha,
@@ -30,7 +30,7 @@ if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || t
 : "${AGNES_AI_API_KEY:=}"
 
 echo ""
-echo "═══ Skill 63 — Agnes Image 2.1 Flash — Install QC ═══"
+echo "═══ Skill 63 — Agnes Image (default model 2.5 Flash) — Install QC ═══"
 echo ""
 
 # ── Structural: required files present ───────────────────────────────────────
@@ -46,7 +46,9 @@ assert "scripts present"             "[ -d \"$SKILL_DIR/scripts\" ]"
 assert "full reference present"      "[ -f \"$REF\" ]"
 
 # ── Content correctness of the endpoint reference (these can FIRE red) ────────
-assert "reference names model agnes-image-2.1-flash" \
+assert "reference names default model agnes-image-2.5-flash" \
+  "grep -qF 'agnes-image-2.5-flash' \"$REF\""
+assert "reference names legacy model agnes-image-2.1-flash" \
   "grep -qF 'agnes-image-2.1-flash' \"$REF\""
 assert "reference names endpoint apihub.agnes-ai.com/v1/images/generations" \
   "grep -qF 'apihub.agnes-ai.com/v1/images/generations' \"$REF\""

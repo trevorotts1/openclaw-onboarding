@@ -1,0 +1,1504 @@
+{
+  "schema_version": "1.0",
+  "test_only": true,
+  "not_live_payment_evidence": true,
+  "case_count": 64,
+  "cases": [
+    {
+      "case_id": "NORMAL-001",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A"
+      ],
+      "expected_total_minor_test_usd": 9700,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-002",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 16400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-003",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 13400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-004",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 12400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-005",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 19100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-006",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 16100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-007",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A"
+      ],
+      "expected_total_minor_test_usd": 9700,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-008",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 16400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-009",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 21100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-010",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 13400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-011",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 18100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-012",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 12400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-013",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 19100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-014",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 23800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-015",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 16100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-016",
+      "test_only": true,
+      "journey_mode": "single_simple",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 20800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-017",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A"
+      ],
+      "expected_total_minor_test_usd": 9700,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-018",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 16400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-019",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 13400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-020",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 12400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-021",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 19100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-022",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 16100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-023",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B"
+      ],
+      "expected_total_minor_test_usd": 19700,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-024",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 26400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-025",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 23400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-026",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 22400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-027",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 29100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-028",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 26100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-029",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C"
+      ],
+      "expected_total_minor_test_usd": 29700,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-030",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 36400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-031",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 33400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-032",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 32400,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-033",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 39100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-034",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": false,
+      "decisions": "u1_no_d1_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 36100,
+      "canonical_u2_page_id": null
+    },
+    {
+      "case_id": "NORMAL-035",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A"
+      ],
+      "expected_total_minor_test_usd": 9700,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-036",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 16400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-037",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 21100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-038",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 13400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-039",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 18100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-040",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 12400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-041",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 19100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-042",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 23800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-043",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 16100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-044",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-A",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-A",
+        "BUMP",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 20800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-045",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B"
+      ],
+      "expected_total_minor_test_usd": 19700,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-046",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 26400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-047",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 31100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-048",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 23400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-049",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 28100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-050",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 22400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-051",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 29100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-052",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 33800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-053",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 26100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-054",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-B",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-B",
+        "BUMP",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 30800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-055",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C"
+      ],
+      "expected_total_minor_test_usd": 29700,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-056",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 36400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-057",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 41100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-058",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 33400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-059",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": false,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 38100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-060",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP"
+      ],
+      "expected_total_minor_test_usd": 32400,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-061",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP",
+        "U1"
+      ],
+      "expected_total_minor_test_usd": 39100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-062",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP",
+        "U1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 43800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-063",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_no",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP",
+        "D1"
+      ],
+      "expected_total_minor_test_usd": 36100,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    },
+    {
+      "case_id": "NORMAL-064",
+      "test_only": true,
+      "journey_mode": "multiple_options",
+      "main_offer": "MAIN-C",
+      "bump_selected": true,
+      "u2_enabled": true,
+      "decisions": "u1_no_d1_yes_u2_yes",
+      "expected_page_roles": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ],
+      "expected_purchased_offers": [
+        "MAIN-C",
+        "BUMP",
+        "D1",
+        "U2"
+      ],
+      "expected_total_minor_test_usd": 40800,
+      "canonical_u2_page_id": "TEST-UPSELL_2"
+    }
+  ]
+}

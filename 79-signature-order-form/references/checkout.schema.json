@@ -1,0 +1,665 @@
+{
+  "$defs": {
+    "bump_config": {
+      "additionalProperties": false,
+      "properties": {
+        "applicable_main_offer_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "benefit_explanation": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "component_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "component_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "default_selected": {
+          "const": false
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "entitlement_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "fulfillment_rule_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "headline": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "incompatible_entitlement_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "native_price_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_product_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offer_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "price": {
+          "$ref": "#/$defs/price_choice"
+        },
+        "price_mapping_expires_at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quantity_policy": {
+          "enum": [
+            "fixed_1",
+            "match_main_quantity"
+          ]
+        },
+        "image_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "included_entitlement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "component_id",
+        "component_version",
+        "enabled",
+        "offer_id",
+        "applicable_main_offer_ids",
+        "entitlement_ids",
+        "headline",
+        "benefit_explanation",
+        "price",
+        "default_selected",
+        "quantity_policy",
+        "fulfillment_rule_ref"
+      ],
+      "type": "object"
+    },
+    "checkout_request": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "checkout_mode": {
+                "const": "combined_single_offer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selection_ref": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "checkout_mode": {
+                "const": "post_selection"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selection_ref": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "selection_revision": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "approved_plan_hash": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "brand_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "brand_revision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "bump": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/bump_config"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkout_mode": {
+          "enum": [
+            "combined_single_offer",
+            "post_selection"
+          ]
+        },
+        "fulfillment_mapping_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "launch_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "launch_plan_approval_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "launch_revision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "location_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "main_entitlement_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "main_offer_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "main_price": {
+          "$ref": "#/$defs/price_choice"
+        },
+        "native_capability_evidence_ref": {
+          "description": "S06 capability evidence for the selected native form, gateway, payment method and billing type (doc 09 section 7 capability matrix).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "previously_purchased_entitlement_ids": {
+          "description": "Distinct from main_entitlement_ids (D4(i)): entitlements bought in earlier orders, used only for bump suppression.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "quantity": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "selection_ref": {
+          "description": "Opaque short-lived selection/session reference (doc 02 section 5). Required in post_selection mode, must be null in combined mode. Never a URL amount, email, or card token.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "successful_payment_next_route": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "tenant_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "terms_ref": {
+          "description": "Approved guarantee/terms block reference (doc 16, S79-owned). Client-provided placeholder text cannot be published as a final policy.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "test_only": {
+          "type": "boolean"
+        },
+        "consent_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failed_pending_requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failed_state_copy_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pending_state_copy_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retry_policy": {
+              "enum": [
+                "reconcile_native_records_first"
+              ]
+            },
+            "requires_customer_action_copy_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "failed_state_copy_ref",
+            "pending_state_copy_ref",
+            "retry_policy"
+          ]
+        }
+      },
+      "required": [
+        "tenant_id",
+        "location_id",
+        "launch_id",
+        "launch_revision",
+        "launch_plan_approval_ref",
+        "approved_plan_hash",
+        "checkout_mode",
+        "main_offer_id",
+        "main_price",
+        "quantity",
+        "selection_ref",
+        "main_entitlement_ids",
+        "previously_purchased_entitlement_ids",
+        "bump",
+        "brand_ref",
+        "brand_revision",
+        "terms_ref",
+        "native_capability_evidence_ref",
+        "successful_payment_next_route",
+        "fulfillment_mapping_ref",
+        "test_only",
+        "consent_ref",
+        "failed_pending_requirements"
+      ],
+      "type": "object"
+    },
+    "checkout_result": {
+      "additionalProperties": false,
+      "properties": {
+        "billing_display_audit_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bump_binding": {
+          "additionalProperties": false,
+          "properties": {
+            "component_id": {
+              "type": "string"
+            },
+            "default_selected": {
+              "const": false
+            },
+            "native_price_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "native_product_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "component_id",
+            "default_selected"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "expected_decline_destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_error_destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_success_destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "known_blockers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "native_form_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_page_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_price_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_product_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "producer_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "request_input_hash": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reviewer_id": {
+          "description": "Must differ from the producer; a result cannot be its own independent review.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "authored",
+            "locally_verified",
+            "installed_test_verified",
+            "ready_for_activation",
+            "live_verified",
+            "blocked"
+          ]
+        },
+        "test_record_refs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "copy_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artifact_hashes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purchase_automation_request_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "request_input_hash",
+        "status",
+        "test_record_refs",
+        "producer_id",
+        "known_blockers"
+      ],
+      "type": "object",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "locally_verified",
+                  "installed_test_verified",
+                  "ready_for_activation",
+                  "live_verified"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reviewer_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "copy_hash": {
+                "type": "string",
+                "minLength": 1
+              },
+              "artifact_hashes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "reviewer_id",
+              "copy_hash",
+              "artifact_hashes"
+            ]
+          }
+        }
+      ]
+    },
+    "price_choice": {
+      "additionalProperties": false,
+      "properties": {
+        "amount_minor": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "approval_status": {
+          "enum": [
+            "approved",
+            "recommended_unapproved",
+            "test_only"
+          ]
+        },
+        "billing_type": {
+          "enum": [
+            "one_time",
+            "recurring",
+            "trial_then_recurring"
+          ]
+        },
+        "currency": {
+          "maxLength": 3,
+          "minLength": 3,
+          "type": "string"
+        },
+        "currency_exponent": {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "native_price_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_product_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "price_choice_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "price_mapping_expires_at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recurring_interval": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trial_period": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schedule": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sequence": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "due": {
+                "type": "string",
+                "minLength": 1
+              },
+              "amount_minor": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "sequence",
+              "due",
+              "amount_minor"
+            ]
+          }
+        },
+        "amount_due_now_minor": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tax_policy_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shipping_policy_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discount_policy_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "price_choice_id",
+        "currency",
+        "currency_exponent",
+        "amount_minor",
+        "billing_type",
+        "native_product_id",
+        "native_price_id",
+        "approval_status"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "s79/checkout.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Internal contract from doc 09 sections 3 and 9 and doc 02 sections 2, 3 and 5. Not a GHL API payload. Native product/price objects and the processor quote are authoritative; amounts here are integer minor units for display-state checks only. No secret values, no card data, ever.",
+  "properties": {
+    "request": {
+      "$ref": "#/$defs/checkout_request"
+    },
+    "result": {
+      "$ref": "#/$defs/checkout_result"
+    },
+    "schema_version": {
+      "const": "0.2-draft"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request"
+  ],
+  "title": "Skill 79 checkout input and result - DRAFT v0.1 (S79-01, fixture level, not installed)",
+  "type": "object"
+}

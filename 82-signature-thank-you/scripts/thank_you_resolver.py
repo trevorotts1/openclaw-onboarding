@@ -30,11 +30,22 @@ Rules enforced here (packet doc 12 sections 2, 3, 5, 6; doc 18 A13/A20):
   under-claim lines the manifest omits, and two distinct lines may not
   share one event_id.
 - Raw payment credential fields anywhere in the input are rejected.
+- S44's order-level entitlement version (the ev1 value of CR-S82-002
+  item 5) is carried through to the view's `entitlement_version` field
+  when S44 supplies one — on the fulfillment-map producer envelope or
+  as the resolver's explicit version input — so the confirmation
+  dedupe key (contract section 3) can be the ev1-based key the S44
+  worker checks. Only a well-formed ev1 value is carried; any other
+  shape fails closed, and a version supplied for a different
+  tenant/launch than the verified snapshot is rejected. With no
+  version supplied the view carries no such field and is identical to
+  the pre-ev1 shape (gap I6).
 
 Stdlib only. Deterministic: no clock, no randomness, no network.
 """
 
 import copy
+import re
 
 SNAPSHOT_SOURCE = "verified_normalized_purchase_snapshot"
 
@@ -55,6 +66,13 @@ ALLOWED_NEXT_ACTIONS = {
 # Payment statuses that mean money was given back. Such an item keeps its
 # historical receipt row but is never "confirmed" (repair D-04).
 REFUNDED_STATUSES = ("refunded", "partially_refunded")
+
+# S44's order-level entitlement version (CR-S82-002 item 5): "ev1:" plus
+# the lowercase sha256 hex of S44's canonical entitlement-book string.
+# The prefix versions the canonicalization algorithm, so this exact
+# shape is the only lawful version value; anything else is mismatched
+# or forged and is never carried into a view.
+ENTITLEMENT_VERSION_PATTERN = re.compile(r"^ev1:[0-9a-f]{64}$")
 
 # Normalized display status per snapshot payment_status.
 DISPLAY_STATUS = {
@@ -191,20 +209,44 @@ def check_event_provenance(snapshot, lines):
 
 
 def resolve_order_view(snapshot, fulfillment_map=None, expected_identity=None,
-                       request_context=None):
+                       request_context=None, entitlement_version=None):
     """Build the order view from a verified purchase snapshot.
 
     snapshot: verified normalized purchase snapshot (see request schema).
     fulfillment_map: S44 entitlement state keyed by entitlement_id,
         {entitlement_id: {"state": "granted|pending|not_granted|revoked",
                           "delivery_url": str|None, "next_action": str|None}}.
+        The S44 producer envelope shape is also accepted:
+        {"tenant_id":..., "launch_id":..., "contact_ref":...,
+         "entitlement_version": "ev1:...", "entitlements": <the map>};
+        the inner entitlements dict is then the map and the envelope's
+        order-level version is the incoming entitlement_version.
     expected_identity: {"tenant_id":..., "location_id":..., "launch_id":...}
         the identity this page instance is authorized to render for.
     request_context: accepted only to prove it is ignored as authority —
         query parameters never change the view; a context that tries to
         claim entitlements is rejected.
+    entitlement_version: S44's order-level ev1 entitlement version for
+        this buyer's entitlement state, when the caller supplies it
+        directly; overrides the producer envelope's value when both are
+        given. Carried through to the view only when well-formed.
     """
     fulfillment_map = fulfillment_map or {}
+
+    # S44 producer envelope (CR-S82-002): the version rides at order
+    # level on the envelope, never inside the bare map. A bare map can
+    # never satisfy this shape — its values are entry objects, so an
+    # "entitlements" entry would be an object (not the inner map dict
+    # paired with a string version) and an "entitlement_version" entry
+    # would be an object, not a string.
+    envelope = None
+    if (isinstance(fulfillment_map, dict)
+            and isinstance(fulfillment_map.get("entitlements"), dict)
+            and isinstance(fulfillment_map.get("entitlement_version"), str)):
+        envelope = fulfillment_map
+        fulfillment_map = envelope["entitlements"]
+        if entitlement_version is None:
+            entitlement_version = envelope["entitlement_version"]
 
     if request_context:
         claims = request_context.get("claimed_entitlement_ids") or []
@@ -246,6 +288,33 @@ def resolve_order_view(snapshot, fulfillment_map=None, expected_identity=None,
                     f"does not match expected {expected!r} "
                     f"({'wrong_tenant' if key == 'tenant_id' else 'wrong_scope'})"
                 )
+
+    # Order-level entitlement version (gap I6): the ev1 value S44
+    # computes over its entitlement book (CR-S82-002 item 5) is the
+    # version component of the joint confirmation dedupe key (contract
+    # section 3). An envelope naming a different tenant/launch than the
+    # verified snapshot belongs to another buyer's state and is
+    # rejected; a version that is not a well-formed ev1 value fails
+    # closed here rather than poisoning the dedupe key — the schema
+    # (order-view.schema.json) enforces the same shape on the view.
+    if envelope is not None:
+        for key in ("tenant_id", "launch_id"):
+            named = envelope.get(key)
+            if named is not None and named != snapshot.get(key):
+                raise ResolverError(
+                    f"identity_mismatch: fulfillment envelope {key}="
+                    f"{named!r} does not match snapshot "
+                    f"{snapshot.get(key)!r} (wrong_scope)"
+                )
+    if entitlement_version is not None:
+        if (not isinstance(entitlement_version, str)
+                or not ENTITLEMENT_VERSION_PATTERN.match(entitlement_version)):
+            raise ResolverError(
+                "invalid_entitlement_version: "
+                f"{entitlement_version!r} is not a well-formed ev1 value "
+                "('ev1:' + 64 lowercase hex); refusing to carry a "
+                "mismatched or forged version into the view"
+            )
 
     lines = deduplicate_line_items(snapshot.get("line_items") or [])
     if not lines:
@@ -407,7 +476,7 @@ def resolve_order_view(snapshot, fulfillment_map=None, expected_identity=None,
         "initiates_new_charge": False,
     })
 
-    return {
+    view = {
         "schema_version": "1.0",
         "tenant_id": snapshot["tenant_id"],
         "location_id": snapshot["location_id"],
@@ -439,3 +508,10 @@ def resolve_order_view(snapshot, fulfillment_map=None, expected_identity=None,
         },
         "test_only": bool(snapshot.get("test_only", False)),
     }
+    if entitlement_version is not None:
+        # Carried through only when S44 supplied a well-formed ev1
+        # value; when none was supplied the field stays absent, the
+        # view is identical to the pre-ev1 shape, and the confirmation
+        # observation derives its fingerprint fallback (gap I6).
+        view["entitlement_version"] = entitlement_version
+    return view

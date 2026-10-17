@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """prove_agnes_image_prompt_floor.py -- deterministic prompt-band quality gate
-for Agnes Image 2.1 Flash image prompts.
+for Agnes Image image prompts (default model agnes-image-2.5-flash; explicit
+legacy pin agnes-image-2.1-flash). The gate is model-agnostic: it checks the
+prompt, not the model ID; model resolution lives in scripts/resolve_model.py.
 
 Authority: Spec §5 (Prompt Policy), §10.5 (Agnes Image), §14 (Validators).
 

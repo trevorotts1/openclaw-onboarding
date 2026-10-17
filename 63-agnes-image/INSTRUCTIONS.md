@@ -32,7 +32,8 @@ DO NOT PROCEED PAST THIS POINT WITHOUT TYP CONFIRMED.
 AGNES IMAGE - HOW TO USE THE ENDPOINT (DAILY USAGE GUIDE)
 ══════════════════════════════════════════════════════════════════
 
-This document explains how to use the Agnes Image 2.1 Flash endpoint day to day.
+This document explains how to use the Agnes Image endpoint day to day
+(default model agnes-image-2.5-flash; explicit legacy pin agnes-image-2.1-flash).
 If the credential is not confirmed yet, go to INSTALL.md first. For the complete
 parameter list, the full output-dimension table, and the pricing/tier model, see
 agnes-image-full.md in this same folder.
@@ -62,7 +63,7 @@ Headers on every call:
   Authorization: Bearer $AGNES_AI_API_KEY
   Content-Type: application/json
 
-Model name: agnes-image-2.1-flash
+Model name: agnes-image-2.5-flash (default). Explicit legacy pin: agnes-image-2.1-flash.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TEXT-TO-IMAGE

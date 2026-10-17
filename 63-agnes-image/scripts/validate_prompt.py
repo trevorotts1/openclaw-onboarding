@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""validate_prompt.py -- model-aware prompt validator for Agnes Image 2.1 Flash.
+"""validate_prompt.py -- model-aware prompt validator for the Agnes Image models
+(default agnes-image-2.5-flash; explicit legacy pin agnes-image-2.1-flash).
 
 Authority: SPEC.md "Build contract for detailed image prompts" (F32, program
 social-planner-september-eighth); Spec §5 (Prompt Policy), §10.5 (Agnes Image),
@@ -9,8 +10,8 @@ social-planner-september-eighth); Spec §5 (Prompt Policy), §10.5 (Agnes Image)
 TWO bands, scoped (the F32 social-planner override does NOT change bands for
 unrelated skills):
 
-- GENERAL Agnes path (default): vendor cap for Agnes Image 2.1 Flash is
-  NOT_PUBLISHED. Prompts < 5,000 chars: thin stub (warn, non-fatal). 5,000-9,000:
+- GENERAL Agnes path (default): vendor cap for the Agnes Image models
+  (2.5 Flash default, 2.1 Flash legacy) is NOT_PUBLISHED. Prompts < 5,000 chars: thin stub (warn, non-fatal). 5,000-9,000:
   target zone (pass). 9,000-19,000: upper house band (pass). > 19,000: above
   house preferred max (warn, non-fatal — vendor cap NOT_PUBLISHED).
 
@@ -50,7 +51,7 @@ import unicodedata
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-SUPPORTED_MODELS = {"agnes-image-2.1-flash"}
+SUPPORTED_MODELS = {"agnes-image-2.5-flash", "agnes-image-2.1-flash"}
 
 # GENERAL (non-social-planner) house band — unchanged by F32.
 HOUSE_MIN_CHARS = 5000
@@ -104,7 +105,7 @@ def sha256_of(prompt: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def evaluate_prompt(prompt: str, model: str = "agnes-image-2.1-flash",
+def evaluate_prompt(prompt: str, model: str = "agnes-image-2.5-flash",
                     logo: bool = False, style_ref: bool = False,
                     identity_ref: bool = False,
                     scope: str = "general") -> Dict[str, any]:
@@ -285,6 +286,10 @@ def run_self_tests() -> int:
         ("A" * 19001, "agnes-image-2.1-flash", False, False, False, "social-planner", 2, None),
         # 13. astral chars: 4500 emoji = 4500 code points (9000 UTF-16 units) -> FAIL on code points
         ("🦄" * 4500, "agnes-image-2.1-flash", False, False, False, "social-planner", 2, None),
+        # 14. Default model 2.5, general scope thin stub -> exit 0, THIN_STUB
+        ("Stub " * 60, "agnes-image-2.5-flash", False, False, False, "general", 0, "THIN_STUB"),
+        # 15. Text model ID rejected by the image validator -> exit 2
+        ("A" * 6000, "agnes-2.5-flash", False, False, False, "general", 2, None),
     ]
 
     failed = 0
@@ -305,7 +310,7 @@ def run_self_tests() -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Validate Agnes Image prompt.")
     parser.add_argument("--self-test", action="store_true", help="Run deterministic test fixtures.")
-    parser.add_argument("--model", default="agnes-image-2.1-flash", help="Target model.")
+    parser.add_argument("--model", default="agnes-image-2.5-flash", help="Target model (default: agnes-image-2.5-flash; explicit legacy pin agnes-image-2.1-flash is preserved).")
     parser.add_argument("--file", help="Path to prompt text file.")
     parser.add_argument("--stdin", action="store_true", help="Read prompt from stdin.")
     parser.add_argument("--logo", action="store_true", help="Require logo I2I intent check.")
