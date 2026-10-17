@@ -21,13 +21,14 @@
 //   4. npm run build compiles the runtime (tsc) and bundles the CLI
 //      (esbuild) into runtime/dist/.
 //   5. The build products are verified to exist.
-// Usage: node install-runtime.mjs [--root <skill-folder>]
+// Usage: node install-runtime.mjs [--root <skill-folder>] [--check-prereqs]
 // Exit codes: 0 installed and built, 1 preflight or install failure.
 
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isSupportedCouncilRuntimeNode, verifyCouncilSqlite } from "./node-runtime-preflight.mjs";
 
 const args = process.argv.slice(2);
 const rootIdx = args.indexOf("--root");
@@ -41,16 +42,16 @@ function fail(message) {
   process.exit(1);
 }
 
-// 1. Node preflight against the runtime package's declared engines.
-const [major, minor] = process.versions.node.split(".").map(Number);
-const enginesOk =
-  (major === 20 && minor >= 19) ||
-  (major === 22 && minor >= 13) ||
-  major >= 24;
-if (!enginesOk) {
-  fail(`preflight: Node.js ^20.19.0 || ^22.13.0 || >=24 required, found ${process.version}`);
+// 1. Preflight the exact executing Node before npm or disk mutation.
+if (!isSupportedCouncilRuntimeNode(process.version)) {
+  fail(`preflight: Council runtime requires Node.js ^22.13.0 || >=24 with node:sqlite; found ${process.version}`);
 }
-console.log(`PASS preflight: Node.js ${process.version}`);
+try {
+  await verifyCouncilSqlite();
+} catch (error) {
+  fail(`preflight: node:sqlite read/write unavailable in ${process.execPath} (${error instanceof Error ? error.message : String(error)})`);
+}
+console.log(`PASS preflight: Node.js ${process.version} and in-memory SQLite read/write (${process.execPath})`);
 
 // 2. Read the runtime package and derive the exact pinned package set.
 const pkgPath = join(runtimeDir, "package.json");
@@ -59,6 +60,12 @@ if (!existsSync(pkgPath)) {
 }
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 console.log(`INFO runtime package identity: ${pkg.name}@${pkg.version} (private=${pkg.private})`);
+
+// A safe diagnostic path for CI and bootstrap; never installs or builds.
+if (args.includes("--check-prereqs")) {
+  console.log("RUNTIME-PREREQS: PASS (no installation performed)");
+  process.exit(0);
+}
 
 const pins = [];
 for (const section of ["dependencies", "devDependencies"]) {
