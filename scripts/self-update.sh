@@ -45,6 +45,7 @@ EX_9ROUTER=24
 
 SELF="$0"
 MODE_DETACHED=0
+ROLL_ID=""
 TARGET_VERSION=""
 NINE9ROUTER_TARGET="${NINEROUTER_TARGET:-}"
 PASSTHRU=()
@@ -62,8 +63,11 @@ GH_AUTH="PENDING"
 usage() {
   sed -n '2,30p' "$SELF"
   echo ""
-  echo "Usage: self-update.sh --target-version X.Y.Z [--9router-target VERSION]"
-  echo "       self-update.sh --target-version X.Y.Z --foreground   (no detach; for tests)"
+  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION]"
+  echo "       self-update.sh --roll-id ID --openclaw-target X.Y.Z --foreground   (no detach; for tests)"
+  echo ""
+  echo "  --openclaw-target   also accepted as --target-version"
+  echo "  --ninerouter-target also accepted as --9router-target"
   exit "$1"
 }
 
@@ -83,6 +87,7 @@ write_status() {  # step exit_code last_line
   t="$STATUS.tmp.$$"
   {
     printf 'step=%s\n' "$1"
+    printf 'roll_id=%s\n' "${ROLL_ID:-}"
     printf 'pid=%s\n' "$$"
     printf 'started_utc=%s\n' "$STARTED"
     printf 'updated_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -90,7 +95,7 @@ write_status() {  # step exit_code last_line
     printf 'last_line=%s\n' "$3"
     printf 'gh_auth=%s\n' "$GH_AUTH"
     printf 'runner_version=%s\n' "$VERSION"
-  } > "$t" 2>/dev/null && mv -f "$t" "$STATUS" 2>/dev/null
+  } > "$t" 2>/dev/null && chmod 600 "$t" 2>/dev/null && mv -f "$t" "$STATUS" 2>/dev/null
   return 0
 }
 
@@ -108,11 +113,14 @@ finish() {  # exit_code step
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --target-version)
-      [ "$#" -ge 2 ] || { echo "self-update.sh: --target-version needs a value" >&2; exit "$EX_REFUSE"; }
+    --roll-id)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: --roll-id needs a value" >&2; exit "$EX_REFUSE"; }
+      ROLL_ID="$2"; shift 2 ;;
+    --openclaw-target|--target-version)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: $1 needs a value" >&2; exit "$EX_REFUSE"; }
       TARGET_VERSION="$2"; shift 2 ;;
-    --9router-target)
-      [ "$#" -ge 2 ] || { echo "self-update.sh: --9router-target needs a value" >&2; exit "$EX_REFUSE"; }
+    --ninerouter-target|--9router-target)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: $1 needs a value" >&2; exit "$EX_REFUSE"; }
       NINE9ROUTER_TARGET="$2"; shift 2 ;;
     --detached)    MODE_DETACHED=1; shift ;;
     --foreground)  MODE_DETACHED=1; shift ;;
@@ -120,6 +128,13 @@ while [ "$#" -gt 0 ]; do
     *) echo "self-update.sh: unknown argument: $1 (try --help)" >&2; exit "$EX_REFUSE" ;;
   esac
 done
+
+# The roll id becomes a FILENAME, so it may not carry a path separator or a
+# leading dot. Anything else is a refusal, never a sanitized guess.
+case "${ROLL_ID:-}" in
+  "") ;;
+  *[!A-Za-z0-9._-]*|.*) echo "self-update.sh: REFUSED — --roll-id may contain only A-Z a-z 0-9 . _ - and may not start with '.'" >&2; exit "$EX_REFUSE" ;;
+esac
 
 # ── root, log, status ────────────────────────────────────────────────────────
 
@@ -134,9 +149,24 @@ else
   exit "$EX_REFUSE"
 fi
 
-mkdir -p "$ROOT/logs" 2>/dev/null || true
-LOG="$ROOT/logs/self-update.log"
-STATUS="$ROOT/self-update.status"
+# One status file and one log per ROLL, so two rolls on one box can never
+# overwrite each other's run. Without a roll id the legacy single-file names
+# are kept.
+if [ -n "$ROLL_ID" ]; then
+  STATUS_DIR="$ROOT/self-update"
+  ( umask 077; mkdir -p "$STATUS_DIR" ) 2>/dev/null || {
+    echo "self-update.sh: REFUSED — cannot create $STATUS_DIR" >&2; exit "$EX_REFUSE"; }
+  chmod 700 "$STATUS_DIR" 2>/dev/null || true
+  LOG="$STATUS_DIR/$ROLL_ID.log"
+  STATUS="$STATUS_DIR/$ROLL_ID.status"
+else
+  mkdir -p "$ROOT/logs" 2>/dev/null || true
+  LOG="$ROOT/logs/self-update.log"
+  STATUS="$ROOT/self-update.status"
+fi
+( umask 077; : >> "$LOG" ) 2>/dev/null || {
+  echo "self-update.sh: REFUSED — cannot write $LOG" >&2; exit "$EX_REFUSE"; }
+chmod 600 "$LOG" 2>/dev/null || true
 STARTED="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 IS_DOCKER=0
@@ -148,8 +178,8 @@ IS_MAC=0
 # non-zero exit, not swallowed by a 0 from a launcher that already backgrounded
 # a child destined to refuse.
 if [ -z "$TARGET_VERSION" ] && [ "$IS_DOCKER" = 0 ]; then
-  log "REFUSED: no --target-version (the trigger must pass the version; it is never discovered)"
-  write_status "preflight" "$EX_REFUSE" "no --target-version"
+  log "REFUSED: no --openclaw-target (the trigger must pass the version; it is never discovered)"
+  write_status "preflight" "$EX_REFUSE" "no --openclaw-target"
   exit "$EX_REFUSE"
 fi
 if ! command -v curl >/dev/null 2>&1; then
@@ -167,8 +197,9 @@ fi
 
 if [ "$MODE_DETACHED" = 0 ]; then
   PASSTHRU=(--detached)
-  [ -n "$TARGET_VERSION" ] && PASSTHRU=(--target-version "$TARGET_VERSION" "${PASSTHRU[@]}")
-  [ -n "$NINE9ROUTER_TARGET" ] && PASSTHRU=(--9router-target "$NINE9ROUTER_TARGET" "${PASSTHRU[@]}")
+  [ -n "$ROLL_ID" ] && PASSTHRU=(--roll-id "$ROLL_ID" "${PASSTHRU[@]}")
+  [ -n "$TARGET_VERSION" ] && PASSTHRU=(--openclaw-target "$TARGET_VERSION" "${PASSTHRU[@]}")
+  [ -n "$NINE9ROUTER_TARGET" ] && PASSTHRU=(--ninerouter-target "$NINE9ROUTER_TARGET" "${PASSTHRU[@]}")
 
   if command -v setsid >/dev/null 2>&1; then
     setsid nohup bash "$SELF" "${PASSTHRU[@]}" </dev/null >>"$LOG" 2>&1 &
@@ -184,7 +215,7 @@ fi
 
 # ── preflight (detached child) ───────────────────────────────────────────────
 
-log "START runner v$VERSION pid=$$ root=$ROOT"
+log "START runner v$VERSION pid=$$ root=$ROOT roll=${ROLL_ID:-none} openclaw=${TARGET_VERSION:-none} ninerouter=${NINE9ROUTER_TARGET:-none}"
 
 if [ ! -d "$ROOT" ]; then
   log "REFUSED: OpenClaw root vanished ($ROOT)"
