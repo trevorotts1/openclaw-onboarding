@@ -840,21 +840,25 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > into the `/api/health/deep` advisory shape (`inventory_advisory`) the same
 > way `cc_board.reconcile()`'s output already does (B-U13/U27, verified).
 >
-> **THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
-> SET of funnel ids for a location. Neither the official GHL public API (no
-> Funnels endpoint exists there — checked against Skill 44's own
-> `endpoints.py`) nor the proven internal SPA-canvas REST family
-> (`ghl_rest_canvas.py`, which only proves fetch-a-known-funnel-by-id and
-> list-pages-within-a-known-funnel) documents a "list every funnel for a
-> location" call. `funnel_lister` is a REQUIRED caller-supplied dependency
-> with no default live implementation (`live_funnel_lister_over_browser_
-> manager` raises `NotImplementedError` rather than ever fabricate a funnel
-> list) — wiring + proving a live discovery route (most likely a DOM-snapshot
-> walk of the Sites -> Funnels list, same discipline as
-> `ghl_selector_drift_probe.py`'s `finder`) is a live leg owed to the operator,
-> parallel to U22. `live_page_lister_over_rest_canvas` (the pages-within-a-
-> known-funnel half) IS wired to the already-proven `ghl_rest_canvas.page_
-> list` step, ready the moment a funnel id is available.
+> **THE FORMER LIVE GAP IS CLOSED AT BUILD TIER (S06-07, doc 19 W3)**:
+> discovering the SET of funnel ids for a location. Doc 19 (W3) corrects
+> the claim this block used to carry: the official GHL public API DOES
+> document funnel/page READ endpoints (`GET /funnels/funnel/list` and
+> `GET /funnels/page`), captured from the public documentation in S06-07
+> step 1. The supported public reads live in `tools/ghl_funnels_read.py`
+> (services origin, Bearer LOCATION PIT via the shared resolver,
+> fail-closed pagination) and are wired as the inventory defaults
+> (`live_funnel_lister_over_public_api` / `live_page_lister_over_public_
+> api`, behind `ghl_inventory.py --enumerate`). NO public WRITE API for
+> funnels/pages is documented or claimed: create stays on the internal
+> canvas / browser rails, and internal routes stay labeled internal.
+> `live_funnel_lister_over_browser_manager` remains as the still-unproven
+> BROWSER route sketch (it still raises `NotImplementedError`); it is no
+> longer the only route, just not a proven one. LIVE PROOF of the public
+> reads is still owed (LIVE_PROOF_PENDING: no approved test location for
+> these reads), parallel to U22. `live_page_lister_over_rest_canvas`
+> (the pages-within-a-known-funnel half over the INTERNAL canvas family)
+> remains wired and labeled internal.
 >
 > **Scheduled maintenance-window sweep (U31/B-U17).** The retention half
 > above is entirely live-wiring-free today (compress-only, zero live
@@ -867,7 +871,7 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > well-formedness + installer idempotency + the mandatory `--no-deliver` flag
 > against a fake CLI, no network — a maintenance-window retention tick must
 > never fan out as a client-facing announcement). The live registration + the
-> live page-enumeration half (blocked on the funnel-discovery gap above) are
+> live page-enumeration half (live proof of the public reads still pending; see the S06-07 block above) are
 > DEFERRED TO the operator.
 >
 > **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,

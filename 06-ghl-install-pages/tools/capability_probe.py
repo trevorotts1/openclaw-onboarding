@@ -752,6 +752,19 @@ def _extension_expected_source(env: Dict[str, str]) -> str:
 # Declared API operations (spec 05 sections 3-4): what the skill's adapters
 # implement, labeled DECLARED — a capability report is not a live call, and
 # nothing here claims a live proof that did not happen in this run.
+#
+# S06-07 reconciliation (NQ1/NQ5): the two public funnel READ operations
+# below (funnels.list, funnels.page.list) are implemented by
+# tools/ghl_funnels_read.py behind ghl_inventory's seams. When this
+# declaration was first written, no adapter existed for them, so the
+# blanket "adapters implement" framing was ahead of the code for those two
+# entries; it is accurate now, and they remain declared-not-live-proven
+# (no approved test location exists for these reads; LIVE_PROOF_PENDING).
+# Authority split, stated once here: this record is the DECLARED capability
+# snapshot; the code is authoritative for what is implemented; each unit's
+# evidence is authoritative for live proof. The internal entries below stay
+# labeled internal: a different surface from the public reads (different
+# origin, auth model, and version).
 _DECLARED_API_OPERATIONS: Dict[str, Any] = {
     "verification": "declared-not-live-proven",
     "public": [

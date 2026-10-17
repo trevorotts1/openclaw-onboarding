@@ -173,9 +173,29 @@ class ObjectRoute:
     create_api_exists: bool    # False → browser is the ONLY create rail
     verify: str                # read-back verification contract (plain English)
     note: str = ""
+    # S06-07: declared READ rails for this object type, kept BESIDE the
+    # write rails: execute_write never attempts them, and every read step
+    # carries can_create=False. Empty when no read surface is registered.
+    read_rails: List[RailStep] = field(default_factory=list)
 
     def rail_names(self) -> List[str]:
         return [s.rail for s in self.rails]
+
+
+def _public_inventory_read_step() -> RailStep:
+    """The S06-07 public inventory READ step (doc 19 W3): one read-only
+    services.* step naming both public reads. can_create=False: this step
+    can never create anything. It gives the inventory read a declared
+    router surface with a tier disclosure, beside (never inside) the
+    write rails."""
+    return RailStep(
+        Rail.REST_SERVICES, Tier.REST, Token.LOCATION_PIT,
+        "GET /funnels/funnel/list + GET /funnels/page "
+        "(public API read, tools/ghl_funnels_read.py)",
+        False,
+        "S06-07: implemented at build tier, declared-not-live-proven "
+        "(LIVE_PROOF_PENDING); reads only",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +334,10 @@ def _matrix() -> Dict[str, ObjectRoute]:
         idempotency_key="funnel_workspace_url",
         create_api_exists=False,
         verify="sealed render_check (200 + marker + no render errors)",
+        note="create_api_exists stays False: doc 19 W3 documents public "
+        "READS only, no public write API. The public inventory read is "
+        "registered under read_rails (S06-07).",
+        read_rails=[_public_inventory_read_step()],
     )
     # website shares the funnel rail (Part-B deltas only)
     m["website"] = ObjectRoute(
@@ -321,13 +345,20 @@ def _matrix() -> Dict[str, ObjectRoute]:
         idempotency_key="funnel_workspace_url",
         create_api_exists=False,
         verify=m["funnel"].verify,
-        note="Websites tab is an <a> (not role=tab); two-card create modal",
+        note="Websites tab is an <a> (not role=tab); two-card create modal. "
+        "Public inventory READ registered under read_rails (S06-07); "
+        "create_api_exists stays False (no public write API, doc 19 W3).",
+        read_rails=[_public_inventory_read_step()],
     )
     m["page"] = ObjectRoute(
         "page", list(m["funnel"].rails),
         idempotency_key="page_id",
         create_api_exists=False,
         verify=m["funnel"].verify,
+        note="create_api_exists stays False: doc 19 W3 documents public "
+        "READS only, no public write API. The public inventory read is "
+        "registered under read_rails (S06-07).",
+        read_rails=[_public_inventory_read_step()],
     )
 
     m["media"] = ObjectRoute(
@@ -444,6 +475,16 @@ def route(object_type: str) -> ObjectRoute:
             f"unknown GHL object type {object_type!r}; known: {object_types()}"
         )
     return _MATRIX[key]
+
+
+def read_route(object_type: str) -> List[RailStep]:
+    """Return the declared READ rails for an object type (S06-07).
+
+    Read rails live BESIDE the write rails on the ObjectRoute: they are
+    never attempted by `execute_write` (a write orchestrator) and every
+    read step carries can_create=False. An object type with no registered
+    read surface returns an empty list."""
+    return list(route(object_type).read_rails)
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +784,7 @@ def matrix_as_dict() -> dict:
             "verify": r.verify,
             "note": r.note,
             "rails": [asdict(s) for s in r.rails],
+            "read_rails": [asdict(s) for s in r.read_rails],
         }
     return out
 
