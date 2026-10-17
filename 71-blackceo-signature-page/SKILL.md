@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.9
+version: 1.2.10
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -81,7 +81,9 @@ Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Be
 
 Stage IDs (canonical, from `references/stage-contract.json`):
 
-`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify`
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
+
+The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
 
 Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages. For itemized stages the gate also exposes the item commands `check-item` / `close-item` / `block-item` (see `references/item-gate-spec.md`): an item closes only from its own validators and reviews, and a stage close fans in its items by name. Review scores are Review Receipt v2 records: they live in `private/reviews/<stage>/<item-id>.review.json`, written by `scripts/write_review.py` from the reviewing session, and the gate validates them at close. A browser-using stage cannot close with unaccounted sessions; REPORT.md carries the hygiene line (see `references/browser-hygiene.md`).
 

@@ -1,0 +1,44 @@
+{
+  "steps_visited": [
+    "Opt-in",
+    "Order",
+    "Book"
+  ],
+  "form_submissions": [
+    {
+      "form_id": "FORM-1",
+      "performed": true,
+      "submissions_count": 1,
+      "test_contact_id": "FIXTURE-CONTACT-1",
+      "live_charge_made": false
+    },
+    {
+      "form_id": "FORM-2",
+      "performed": true,
+      "submissions_count": 1,
+      "test_contact_id": "FIXTURE-CONTACT-1",
+      "live_charge_made": false
+    },
+    {
+      "form_id": "FORM-3",
+      "performed": true,
+      "submissions_count": 1,
+      "test_contact_id": "FIXTURE-CONTACT-1",
+      "live_charge_made": false
+    }
+  ],
+  "live_charge_made": false,
+  "order_step": {
+    "rendered": true,
+    "product_id": "PR-1",
+    "price": 497
+  },
+  "booking_step": {
+    "rendered": true,
+    "calendar_shown": true
+  },
+  "screenshots": [
+    "ghl-install-test/evidence/desktop.png",
+    "ghl-install-test/evidence/mobile.png"
+  ]
+}
