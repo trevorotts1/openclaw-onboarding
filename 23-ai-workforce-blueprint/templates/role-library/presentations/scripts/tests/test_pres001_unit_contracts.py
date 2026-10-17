@@ -42,13 +42,15 @@ from presentation_job import fanout  # noqa: E402
 # ---------------------------------------------------------------------------
 
 MANIFEST_FANOUT_PHASES = (
-    "P4-COPY", "P-U-DESIGN-SALES", "P-U-DESIGN-CHECKOUT", "P-U-DESIGN-VSL",
+    "P4-COPY",
     "P-PROMPT-QC", "P-STYLE-SPEC", "P-IMAGE-QC", "P9-SPEECH",
 )
 # P4-PROMPT also declares a manifest fanout but NEVER reaches the generic
 # dispatch path (dispatch_one routes it to its own dedicated per-slide loop
 # before the fanout branch) — it owns a different, pre-existing contract and
-# is out of scope here; only the eight generic-path phases need contracts.
+# is out of scope here; only the five generic-path phases need contracts.
+# (The three P-U-DESIGN-* fanouts were generic-path phases until they retired
+# with the Path A fragment chains, owner ruling 2026-10-15.)
 
 
 @pytest.mark.parametrize("phase_id", MANIFEST_FANOUT_PHASES)
@@ -66,9 +68,9 @@ def test_p4_copy_scope_is_section_and_qc_slide():
     assert D._unit_contract_for("P4-COPY").scope == "section"
     assert D._unit_contract_for("P-PROMPT-QC").scope == "slide"
     assert D._unit_contract_for("P-IMAGE-QC").scope == "slide"
-    # the P-U-DESIGN fanouts are by=slide in the manifest (one design prompt
-    # per slide), NOT by=file -- scope must agree with the manifest.
-    for pid in ("P-U-DESIGN-SALES", "P-U-DESIGN-CHECKOUT", "P-U-DESIGN-VSL"):
+    # the remaining by=slide fanouts agree with the manifest: slide scope,
+    # NOT by=file -- scope must agree with the manifest.
+    for pid in ("P-STYLE-SPEC", "P9-SPEECH"):
         assert D._unit_contract_for(pid).scope == "slide"
 
 
