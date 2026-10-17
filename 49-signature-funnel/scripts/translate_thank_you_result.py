@@ -182,10 +182,12 @@ def _check_manifest(man: Any) -> Dict[str, Any]:
             raise TranslationError(
                 f"run manifest field 'native_bindings_ref.{f}' is "
                 "missing")
-    if not isinstance(nb["envelope_ref"], str) or not nb["envelope_ref"]:
+    if nb["envelope_ref"] is not None and \
+            (not isinstance(nb["envelope_ref"], str) or
+             not nb["envelope_ref"]):
         raise TranslationError("run manifest field "
                                "'native_bindings_ref.envelope_ref' is "
-                               "not a non-empty string")
+                               "neither null nor a non-empty string")
     prov = man["provenance"]
     if not isinstance(prov, dict):
         raise TranslationError("run manifest field 'provenance' is not "

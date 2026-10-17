@@ -225,6 +225,37 @@ def main() -> int:
             "install/live claims from the S82 document are capped at "
             "locally_verified / L2")
 
+    # Case 9: a real S82 v0.3.0 no-envelope run manifest (delta D-1):
+    # native_bindings_ref.envelope_ref is null, the emitter's normal
+    # plain-run shape, which the manifest schema expressly permits.
+    # The translation must succeed and carry the null through verbatim.
+    # The manifest staged below is the shipped fixture manifest with
+    # its review, bindings and provenance blocks set to the real
+    # no-envelope run's values; it deep-equals the real emitter's
+    # plain-run output (translator real-manifest verification,
+    # instance B).
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        man = load("thank-you-run-manifest.json")
+        man["independent_review"] = {"status": "none", "reviewer": None,
+                                     "verdict": None, "record_ref": None}
+        man["native_bindings_ref"] = {"envelope_ref": None,
+                                      "entitlement_version": None}
+        man["provenance"] = {"snapshot_ref": None, "map_ref": None}
+        out_path = stage(td, man=man)
+        proc = run(td)
+        print("no-envelope stdout:", proc.stdout.strip())
+        say(proc.returncode == 0,
+            f"no-envelope real manifest (envelope_ref null) translates "
+            f"(got {proc.returncode}: {proc.stdout.strip()})")
+        out = json.loads(out_path.read_text(encoding="utf-8"))
+        say(out["native_bindings_ref"] is None,
+            "no-envelope output carries envelope_ref null verbatim as "
+            "native_bindings_ref")
+        say(receipts.validate_result(out, req0) == [],
+            "no-envelope output passes collect_launch_receipts."
+            "validate_result with zero problems")
+
     print("TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
