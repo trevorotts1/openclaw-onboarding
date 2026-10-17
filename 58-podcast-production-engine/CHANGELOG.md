@@ -1,5 +1,41 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## v1.0.18 - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
+
+- Model selection doctrine applied: this skill no longer prescribes any model by name. Runtime model selection resolves as (1) the client's explicit choice for the task, (2) the client's configured default model, (3) a stop with a clear ask-the-client message. Where an old prescription carried a real rationale, it is kept as a recommendation with its reason, as guidance the client can override, never wired as a fallback value.
+- `config/models.json` (now v2.0.0): the named tier chains are replaced by the `selection` policy block, `client_defaults` (shipped unset), and a `providers` capability registry (provider lanes, base urls, credential labels only; no model names). The `deny_patterns` refusal list is unchanged and still armed.
+- `scripts/model_router.py`: new resolution order (client choice via route context or the PODCAST_MODEL_CHOICE / PODCAST_CONTENT_MODEL / PODCAST_QC_JUDGE_MODEL env labels, then the client's configured defaults, then ClientChoiceRequired, new exit 5). A client-owned config carrying its own per-tier chain is honored as that client's configured default set. The embedded self-test's chain mechanics now run against a synthetic client fixture with example ids.
+- `scripts/guard-no-anthropic-runtime.py` JOB 2: routing assertions rewritten for the selection policy (selection block present with the ask-the-client stop, deny list armed and complete, configured entries deny-clean, judge default distinct from the content default). The old named-cascade assertions are removed with the cascade.
+- `scripts/tests/test_model_router.py`: the tests that asserted the old named-model doctrine are updated alongside the router (the shipped config resolves nothing and asks the client; a client choice beats the configured default); chain mechanics run against the same synthetic client fixture.
+- `config/cost-model.json` (v1.0.1): the schema note now describes a per-model reference price registry keyed by model id, with a note that the operator adds a row for a client-configured model that has none. All price values are unchanged.
+- Prose and config notes across SKILL.md, the modes, the modules, presets, questionnaires, the payload schema, and the smoke-endpoint placeholder now state the client-choice pattern instead of the old named cascade.
+
+## v1.0.17 - 2026-10-14 - fix(podcast): intake-bridge ledger checksum ordering
+
+- repo-91 (`scripts/webhook/ledger.py`): `_persist_record` re-stamps `_checksum` as the last write to a ledger record, using `podcast_state.py`'s documented formula (SHA-256 over the canonical JSON of every other field). The webhook layer writes the bridge note, the flow binding, a duplicate redelivery and an operator retry onto the same record that `podcast_state.py` already stamped, so the stored stamp went stale and the next transition was refused with "ledger checksum MISMATCH" and rolled back. The formula is unchanged, a record that carries no checksum yet is written unchanged, and no existing record is rewritten.
+- repo-91 (`scripts/tests/test_intake_bridge_checksum.py`): regression test that bridges a `_test` payload through `intake_handler._bridge_and_record`, then closes it with `podcast_state.py fail`, and asserts the close is accepted and the record verifies. A designated test intake keeps its terminal ledger "test" state (the merged test-state rule), so the test asserts the close is accepted at the SQLite layer and the record still verifies, not that the ledger record's own state moves to `failed`. Discrimination control: 3 of 3 fail on the merged tree with the exact live error when the ordering fix is reverted, and 3 of 3 fail on pinned base `37344f5`.
+- repo-14: `skill-version.txt` and the SKILL.md frontmatter move to v1.0.17 together, with this entry. One writer owns the Skill 58 version files; the root version file is left to the merge train.
+
+## v1.0.16 - 2026-10-14 - fix(podcast): fourteen QC-passed engine fixes in one batch
+
+Nine QC-passed fix branches merged in one batch, plus the single-writer Skill 58 version bump.
+
+- repo-01 (`scripts/podbean_publish.sh`): the publish script picks the Podbean show by production mode after loading the box secrets, and refuses a draft show in proxy mode.
+- repo-02 (`scripts/podcast_step_driver.py`): the step driver emits runnable Step 10, 15, 16 and 17 plus the content commands, carrying mode, show, release date, cover prompt and the default directories.
+- repo-03 (`scripts/webhook/mapper.py`): the intake mapper carries `visual_description` through and rejects an unfilled `SET_AT_PROVISIONING` placeholder instead of publishing it.
+- repo-04 (`scripts/webhook/intake_handler.py`): the duplicate-guest guard runs for Interview mode only, so a Personal re-run is never blocked by it.
+- repo-05 (`scripts/podcast_step_driver.py`, `modes/personal.md`): Personal mode skips the Step 16 link-back, so the episode URL field never fires workflow 04.
+- repo-06 (`scripts/caf/enrollment/enroll.py`): enrollment resolves workflows 04 and 06 to the single PUBLISHED workflow carrying that exact name.
+- repo-07 (`scripts/ghl_credential_gate.py`): the Step 0 credential gate reads the box secrets files.
+- repo-08 (`wire.sh`): `wire.sh` loads `PODCAST_INTAKE_INBOUND_SECRET`, so activation health check B5 can pass.
+- repo-09 (`scripts/alert-dedup.py`): founder alerts fall back to the fleet operator escalation chat when the primary destination is not configured.
+- repo-10 (`scripts/provision-podcast-client.sh`): the provisioner pushes the snapshot to an explicit client location, keeps a truthful ledger, and installs a working idempotent smoke cron.
+- repo-11 (`scripts/activate-podcast-fb-workflows.py`, `scripts/verify-podcast-ghl-workflows.py`): the internal-rail workflow readers match the exact current template names, page past the 200-item cap, and prefer the copy carrying the expected status.
+- repo-12 (`PODCAST-SNAPSHOT-BUILD-MANIFEST.md`, `config/podcast-snapshot-registry.json`): SOP-02 carries the per-client 04/06 publish step, and manifest Section J plus the registry state what is actually live.
+- n8n-02 (`config/n8n/`): the checked-in n8n exports match the deployed publish rail and standing-check, with two behavior tests pinning them.
+- box lane 01 (`scripts/podcast-smoke-test.py`, `scripts/podcast_state.py`, `scripts/webhook/intake_handler.py`): the intake bridge writes its ledger to the right directory, preserves test state, and isolates its own self-test.
+- repo-14: `skill-version.txt` and the SKILL.md frontmatter move to v1.0.16 together, with this entry. One writer owns the Skill 58 version files; the root version file is left to the merge train.
+
 ## v1.0.14 - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
 
 - `scripts/generate_cover.sh` (Step 10) now calls Skill 74's CLI (`kie_live_adapter.py submit`, `wait`, `save`, `--mode active --json`) for the cover job, found as a sibling skill folder. If Skill 74 is not installed the step exits 2 with a clear message; there is no fallback to a second client.

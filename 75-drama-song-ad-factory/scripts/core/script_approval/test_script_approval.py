@@ -60,7 +60,7 @@ def test_question_renders_last_with_right_count_and_text():
 
 
 def test_recap_and_change_by_number():
-    base = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]   # spend takes a dollar amount
+    base = IC.example_replies()     # the story brief is typed, the choices picked, spend a dollar amount
     recap = IC.conversation(base)["message"]
     assert "%d. Script Approval: Yes, show me first" % N in recap
     st = IC.conversation(base + [str(N)])                      # change the last line
@@ -78,9 +78,18 @@ def test_script_message_shape():
     assert "[End]" not in m and "*" not in m and "#" not in m
 
 
+#: BUILD-PLAN W1-method-song-U1: a run missing the pace order is refused at
+#: dispatch (PACE_TURNS_REQUIRED) on every run, so this dispatching request
+#: carries one and its style carries both approved directions.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
+
+
 def _req_and_plan():
-    plan = LF.plan(60, (15, 20))
-    return R.build_request("soul-ballad", RSHEET, CLIENT, "T", 58, hook_plan={"true_at_beat": "the_world"}), plan
+    plan = dict(LF.plan(60, (15, 20)), pace_change=PACE_ORDER)
+    return (R.build_request("soul-ballad", RSHEET, CLIENT, "T", 58,
+                            hook_plan={"true_at_beat": "the_world"}, pace_plan=PACE_ORDER), plan)
 
 
 def _run(rec, calls):

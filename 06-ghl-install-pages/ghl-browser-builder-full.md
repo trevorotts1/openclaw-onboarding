@@ -1,10 +1,15 @@
-# GoHighLevel Browser-Driven Page / Funnel / Website Builder — Hardened Reference (v3.0)
+# GoHighLevel Browser-Driven Page / Funnel / Website Builder — Hardened Reference (v4.0)
 
-**Engine:** `agent-browser` (Vercel Labs, Skill 03) PRIMARY, headless + isolated
-`--session`. Playwright (self-hosted) FALLBACK for known-hard flows only.
-**This replaces the raw-Playwright-only stack** of the previous reference
-(`ghl-install-pages-full.md`, v2.0), aligning Skill 06 to the Skill 03
-agent-browser-first convention (GOAL §2.2 / §4.2.2).
+**Engine:** OpenClaw Chrome extension PRIMARY (the OpenClaw browser's
+extension driver on the operator's paired, already signed-in Chrome).
+`agent-browser` (Vercel Labs, Skill 03) is the FALLBACK lane, headless +
+isolated `--session`, gateway-only. Playwright (self-hosted) is the scripted
+escape hatch for known-hard flows and the CDP hybrid for cross-origin
+iframe drag. **v4.0 (2026-10-13) makes the extension the default** — it now
+drives the real signed-in browser better than an isolated session does; the
+v3.0 agent-browser-first order is superseded. The v3.0 reference replaced
+the raw-Playwright-only stack of the previous reference
+(`ghl-install-pages-full.md`, v2.0).
 
 > **D6 — HEADLESS-ONLY, HARD GUARD (non-negotiable, dev OR client).** Never open
 > a VISIBLE browser window — taking over a screen is forbidden, especially on a
@@ -109,8 +114,39 @@ eval-steps INSIDE the seeded agent-browser:
 
 ## 1. ENGINE + MODEL + ISOLATION
 
-### 1.1 PRIMARY: agent-browser (Vercel Labs), headless
-- Already the repo's sanctioned tool (Skill 03) — no new dependency.
+### 1.1 PRIMARY: OpenClaw Chrome extension (the operator's paired Chrome)
+- The OpenClaw browser's extension driver: the extension relays the
+  operator's real, already signed-in Chrome to the local OpenClaw browser
+  service. Drive it with `openclaw browser` (the extension-driver profile;
+  on the operator box that is the default profile).
+- **Starts logged in by construction (D7 holds).** The session IS the
+  operator's signed-in Chrome session, so no seed is needed to start logged
+  in. The build never renders a login form; if a GHL Sign-in form appears in
+  a shared tab, treat it exactly like a failed seed: STOP per §2 / A1 EDGE
+  rules. Never fill it.
+- **Version-gated.** Before any run, `bash
+  scripts/check-openclaw-extension-version.sh` must exit 0 (extension
+  installed + current), and the capability probe re-checks currency before
+  it will select this lane. A missing or stale extension STOPs the run with
+  the update path named; lane changes happen at probe time, never silently
+  mid-run.
+- **Operator keeps tab control.** The extension shares eligible tabs (all
+  eligible tabs, or only the OpenClaw tab group; per-tab pause/allow is the
+  operator's call). A run works in tabs it opens itself and, at teardown,
+  closes ONLY the tabs it opened and releases the tabs it attached. The
+  operator's own tabs and windows are left exactly as found: no stray
+  automation windows, no leftover shared tabs.
+- **Frames.** Cross the builder's nested-editor iframe boundary (gate #12)
+  with frame-scoped snapshots (`--frame`) and resolve every runtime gate
+  from the live snapshot, exactly as on any lane (D8). Cross-origin iframe
+  DRAG still belongs to the hybrid lane (§1.3): the probe's iframeDrag
+  contract routes that step to Lane 2b without changing the build's primary
+  lane.
+
+### 1.2 FALLBACK: agent-browser (Vercel Labs), headless, gateway-only
+- The repo's sanctioned tool (Skill 03) — no new dependency. This is the
+  fallback lane: used when the extension channel is unavailable or a flow
+  defeats it, and the only lane on pre-2.0 OpenClaw hosts.
 - **HEADLESS-FORCED (D6)** — every invocation passes `--headed false` and runs
   with `AGENT_BROWSER_HEADED` unset. `--headed` is NEVER used here, not even for
   two-factor (see §2 — the headless token seed means no login form is rendered).
@@ -160,7 +196,7 @@ line via `python3 tools/ghl_builder.py browser-cmd --session <c> snapshot -i`
 (prepends `--headed false`; refuses with exit 75 if the env would force headed OR
 if no `browser_session()` is active).
 
-### 1.2 FALLBACK: Playwright (self-hosted, scripted)
+### 1.3 ESCAPE HATCH: Playwright (self-hosted, scripted)
 Drop to a deterministic Playwright script ONLY for flows too fiddly for
 ref-clicking (drag-drop canvas widgets, file uploads, a CodeMirror/Monaco value
 set that agent-browser cannot reach). Use `launchPersistentContext()` (never
@@ -179,20 +215,27 @@ Both engines may point at **Browserbase** as a remote CDP backend (`-p
 browserbase`) for fully detached/offloaded runs — that is the cloud tier, not a
 different engine.
 
-### 1.3 Model (client-provider doctrine — Ollama Cloud preferred, OpenRouter backup; thinking=HIGH; NEVER Anthropic)
-- **PRIMARY (browser control + tool calls + QC): MiniMax 3** — the
-  snapshot→pick-ref→act→verify build loop and every tool/REST call. Ollama Cloud
-  preferred (`…:cloud`, baseUrl `ollama.com`), OpenRouter as backup. The build
+### 1.4 Model (client-provider doctrine — Ollama Cloud preferred, OpenRouter backup; thinking=HIGH; NEVER Anthropic)
+- **PRIMARY (browser control + tool calls + QC):** Model: the client's choice,
+  or the client's configured default model, for the
+  snapshot→pick-ref→act→verify build loop and every tool/REST call. The build
+
   loop is deterministic Python (REST canvas + gates), so the model only has to
-  drive tool calls reliably — MiniMax 3 is the tool-calling primary, PROBE-GATED
-  by `tools/model_router.py` because MiniMax priors are flagged-suspect (probe =
-  a tiny task that REQUIRES a tool-call/JSON return).
-- **ESCALATION (reasoning over the raw snapshot): DeepSeek V4.1 Flash or GLM 5.2** —
-  only for a NEEDS-LIVE-SELECTOR ambiguity / unseen UI variant / recovery pause.
-  Ollama Cloud preferred (`ollama/deepseek-v4.1-flash:cloud`), OpenRouter backup
-  (`openrouter/deepseek/deepseek-v4.1-flash`). thinking/reasoning effort = HIGH.
-- **Page/HTML content writing or a broken-code fix: GLM 5.2** — Ollama Cloud
-  preferred, OpenRouter backup (matches the install-pages doc §10 STEP 3).
+  drive tool calls reliably. Recommendation: a model with reliable tool
+  calling, because every step of the loop is a tool call; PROBE-GATED by
+  `tools/model_router.py` because a model that answers with plausible text
+  instead of a real tool call silently wastes a build (probe = a tiny task
+  that REQUIRES a tool-call/JSON return). QC additionally requires a
+  vision-capable model, because QC reads screenshots.
+- **ESCALATION (reasoning over the raw snapshot):** Model: the client's choice,
+  or the client's configured default model; only for a NEEDS-LIVE-SELECTOR
+  ambiguity / unseen UI variant / recovery pause. Recommendation: a model with
+  strong reasoning and a large context window, because escalation reasons over
+  the full raw snapshot. thinking/reasoning effort = HIGH.
+- **Page/HTML content writing or a broken-code fix:** Model: the client's
+  choice, or the client's configured default model. Recommendation: strong
+  code generation and reliable tool calling, because the fix-loop edits code
+  in tight iterations (matches the install-pages doc §10 STEP 3).
 - **Mechanical only — model-agnostic (client's configured/default model):**
   `ghl_builder.py` ledger/manifest/verify, file reads, URL/string checks. NEVER
   live UI navigation.
@@ -202,8 +245,11 @@ different engine.
 - Every dispatch NAMES its model in the agent name; declare the agent count up
   front with a hard cap.
 
-### 1.4 Silent / detached
-Headless, ONE canonical `--session` (never a per-iteration name). Long live-test
+### 1.5 Silent / detached
+Applies to the agent-browser lane (the gateway owns detachment). On the
+extension lane the browser is the operator's live Chrome: runs attach to it,
+are never detached from it, and teardown is §1.1's close-what-you-opened
+rule. Headless, ONE canonical `--session` (never a per-iteration name). Long live-test
 runs fire DETACHED THROUGH THE GATEWAY so the detached subtree OWNS the
 lock+lease+TTL+teardown-trap and a detach-and-exit can never orphan a browser:
 ```
@@ -439,6 +485,11 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 `runtime` gate by live snapshot before acting.
 
 ### A0. Preflight
+- A0.0 Engine preflight (every lane decision happens HERE, before anything
+  opens): `bash scripts/check-openclaw-extension-version.sh` must exit 0,
+  and the capability probe's `selectedLane` must name the lane this build
+  will use. A STOP from the preflight ends the run. If the probe selected
+  the fallback lane, its warning says why (extension missing or behind).
 - A0.1 Auth: `seed-ghl-auth.py --check` must report `refresh-token` — that is the
   ONLY automatic auth path. Any other result (`none`) means **STOP**: the operator
   re-grabs the client's refresh token (Token Grabber). The check NEVER authorizes
@@ -446,7 +497,10 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 - A0.2 Payloads exist on disk, one per page, self-contained (inline CSS/`<style>`,
   no React/build deps). `ghl_builder.build_manifest` enforces non-empty + file
   exists. A payload too rich for a code block → route to Mode 2 (Part C).
-- A0.3 Launch isolated session, HEADLESS-FORCED (D6): `unset
+- A0.3 Launch the session for the selected lane. Lane 1 (extension): no
+  separate launch: `openclaw browser` attaches to the paired Chrome; open a
+  fresh tab for the run and close it at teardown. Lane 2: launch isolated
+  session, HEADLESS-FORCED (D6): `unset
   AGENT_BROWSER_HEADED` then `agent-browser --headed false --session <client> set
   viewport 1440 900` then open. (Playwright fallback: `launchPersistentContext`,
   never `launch`, **`headless=True`**, `--disable-blink-features=AutomationControlled`.)
@@ -456,6 +510,10 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
   `{name, path, payload_path, mode}` — the loop driver AND resume ledger key.
 
 ### A1. Session — token-seed ONLY (no UI login)
+- LANE NOTE: on Lane 1 (extension) the session is the operator's already
+  signed-in Chrome; skip the seed and verify per A1.2/A1.3. The seed below
+  is the Lane 2 path, and the recovery path whenever a session is not
+  logged in. The EDGE rules below bind every lane.
 - A1.1 Seed auth via §2 (`seed-ghl-auth.py` → `inject-ghl-auth.sh`) BEFORE
   navigating. `inject-ghl-auth.sh` opens the origin ONCE (`--pre-open`, so
   IndexedDB exists + the SPA mounts), then activates IN-APP via

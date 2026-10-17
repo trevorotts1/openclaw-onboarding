@@ -104,6 +104,27 @@ Like the watchdog (Super Spec 8.3), this module never writes state.json or
 anything else inside a run dir -- the engine owns those, and a supervisor that
 scribbles on the state it is judging cannot be trusted about it. The ledger, the
 event log, the alarm file, and restart stdout all live under the scan root.
+
+ITEM 9(b) -- the one exception, and its fences. PD-TEST-155's launch-time
+reclaim (phases.readmit_retryable_phases) re-opens a phase left `running`
+by a dead engine, but it only fires when an engine next starts -- which, on
+exactly the paths where this module refuses to restart (a stale run, a
+restart budget already spent), is never. The phase meanwhile holds its
+whole subtree in waiting_dependency, invisibly, forever. So an --apply
+supervise pass reclaims such phases itself, through the SAME adjudication
+and the SAME record the launch path uses (readmit_retryable_phases in its
+supervisor mode) -- never a second, drifting orphan definition, and never
+a hand-rolled state writer: the write goes through the engine's own
+StateStore under the run's own RunLock. The disposition differs from the
+launch path's on purpose: the launch path re-opens to PENDING because an
+engine is starting NOW to service the phase; here no engine is coming, so
+the phase is marked FAILED with the orphan reason and its subtree is
+released to the run's normal failure path. The fences: --apply only (a
+report-only pass detects and reports, and writes nothing); the worker
+verdict must be DEAD or ledger-reconciled in-flight (the engine provably
+not running -- behind a live holder nothing here touches state); the
+phase's own worker adjudication must not honour a live worker
+(dispatcher.running_worker_owner_state, fail-closed).
 """
 
 from __future__ import annotations
@@ -643,6 +664,106 @@ def _restart(scan_root: Path, run_dir: Path,
                   f"{refuse_why or ''}{handed_off}")
 
 
+def _orphaned_running_phases(run_dir: Path, state: Dict[str, Any]) -> list:
+    """Item 9(b) detection (read-only): the phases this run records as
+    `running` whose worker adjudication does NOT honour a live worker --
+    the PD-TEST-155 orphan shape.
+
+    Shares phases._running_worker_owner_state and its honoured set with the
+    launch-time reclaim, so the sweep and the startup path can never
+    disagree about what an orphan is. Returns [(phase_id, owner_detail)].
+    A tree whose phases module will not import detects NOTHING: guessing
+    orphanhood on a degraded install is how live phases get reclaimed out
+    from under their workers."""
+    try:
+        from . import phases as _phases
+    except Exception:  # noqa: BLE001 -- degraded tree: detect nothing
+        return []
+    out = []
+    for ps in state.get("phases") or []:
+        if not isinstance(ps, dict):
+            continue
+        if ps.get("status") != "running":
+            continue
+        pid = ps.get("id")
+        if not pid:
+            continue
+        owner_state, owner_detail = _phases._running_worker_owner_state(
+            run_dir, pid)
+        if owner_state in _phases._RUNNING_OWNER_HONOURED_STATES:
+            continue
+        out.append((pid, owner_detail))
+    return out
+
+
+def _reclaim_orphaned_running(run_dir: Path, apply: bool) -> list:
+    """Item 9(b): reclaim this dead run's orphaned `running` phases.
+
+    Report-only: detection only -- the records returned carry
+    applied=False and nothing is written anywhere (the D2 read-only pin
+    covers this path too). --apply: the reclaim itself, delegated to the
+    launch path's own mechanism (phases.readmit_retryable_phases,
+    supervisor mode) under the run's RunLock through the engine's
+    StateStore. RunLock contention (its die() is a SystemExit) stands the
+    reclaim down: somebody owns this run after all, and a later pass
+    retries. Returns one record per reclaimed (or detected) phase."""
+    st = _read_json(run_dir / "state.json")
+    if not isinstance(st, dict):
+        return []
+    detected = _orphaned_running_phases(run_dir, st)
+    if not detected:
+        return []
+    if not apply:
+        return [{"phase": pid, "orphan_detail": detail, "applied": False}
+                for pid, detail in detected]
+    try:
+        from . import phases as _phases
+        from .state import StateStore, RunLock
+    except Exception:  # noqa: BLE001 -- degraded tree: report, never guess
+        return [{"phase": pid, "orphan_detail": detail, "applied": False}
+                for pid, detail in detected]
+    # RunLock creates .job.lock when none exists (the NO_LOCK shape). Left
+    # behind, that file names THIS pass's pid, and a later pass's
+    # worker_liveness would read it as a live-or-recycled pid puzzle
+    # instead of the clean NO_LOCK it replaces. So when the reclaim
+    # created the file, remove it again on the way out -- but only while
+    # it still carries OUR pid (or nothing): a holder that took the lock
+    # after us rewrote it with its own pid, and that file is theirs.
+    lock_path = run_dir / LOCK_FILENAME
+    lock_preexisting = lock_path.is_file()
+    records = None
+    try:
+        with RunLock(run_dir):
+            store = StateStore(run_dir)
+            fresh = store.load()
+            records = _phases.readmit_retryable_phases(
+                fresh, orphan_running_disposition="failed",
+                only_orphaned_running=True)
+            if records:
+                store.save(fresh)
+    except SystemExit:
+        # RunLock refused (EXIT_LOCK_HELD) or the state would not load:
+        # the reclaim stands down, exactly like this sweep's locked-run
+        # skips elsewhere. A later pass retries.
+        records = None
+    except Exception:  # noqa: BLE001 -- a reclaim failure never ends the pass
+        records = None
+    finally:
+        if not lock_preexisting:
+            try:
+                content = lock_path.read_text(encoding="utf-8").split()
+                if not content or content[0] == str(os.getpid()):
+                    lock_path.unlink()
+            except OSError:
+                pass
+    if records is None:
+        return []
+    return [{"phase": r.get("phase"),
+             "orphan_detail": r.get("reclaimed_orphaned_running"),
+             "applied": True}
+            for r in records]
+
+
 def supervise(
     scan_root: Path,
     scan_depth: int = 3,
@@ -668,6 +789,10 @@ def supervise(
     (ledger, jsonl, alarms) are written only under --apply. Note the ledger is
     also what carries the restart budget across passes, so report-only passes
     never consume or clear it.
+
+    Item 9(b): under --apply, a pass also reclaims orphaned `running`
+    phases in dead runs (module docstring, ITEM 9(b)); a report-only pass
+    only detects and reports them.
 
     Returns EXIT_SUPERVISOR_NO_RUNS (14) when zero state.json files were found
     (UNDETERMINED -- a wrong --scan-root must never read as a healthy fleet; this
@@ -702,6 +827,10 @@ def supervise(
     # reconciliations. visible in the summary line like every other count.
     stalled_count = 0
     reconciled = 0
+    # Item 9(b) counters: orphaned `running` phases reclaimed under --apply,
+    # or merely detected in a report-only pass.
+    orphans_reclaimed = 0
+    orphans_detected = 0
     # PRES-019 exit-code input: a stalled alarm is a NOT-a-pass verdict even
     # with zero restarts attempted (EXIT_SUPERVISOR_STALLED, state.py).
     rc_stalled = False
@@ -820,6 +949,38 @@ def supervise(
         dead += 1
         phase = st.get("current_phase", "?")
         job_id = st.get("job_id", "?")
+
+        # ITEM 9(b): orphaned-running reclaim. A phase left `running` by
+        # this dead engine holds its subtree in waiting_dependency, and
+        # the launch-time reclaim (phases.readmit_retryable_phases) only
+        # fires when an engine next starts -- which the stale branch and
+        # the budget-exhausted branch below both refuse to arrange. So the
+        # reclaim happens HERE, before either branch can stand down:
+        # detected on every pass, applied only under --apply, through the
+        # launch path's own mechanism (see _reclaim_orphaned_running).
+        for rec in _reclaim_orphaned_running(run_dir, apply):
+            if rec.get("applied"):
+                orphans_reclaimed += 1
+                _emit(scan_root, "orphan_reclaimed", run_dir,
+                      f"phase {rec['phase']} was left running by a dead "
+                      f"engine ({rec['orphan_detail']}) -- reclaimed as "
+                      f"FAILED with the orphan reason; its subtree is "
+                      f"released to the run's normal failure path instead "
+                      f"of waiting on it forever",
+                      extra={"phase": rec["phase"],
+                             "orphan": rec["orphan_detail"]},
+                      notify=True, to_disk=apply)
+            else:
+                orphans_detected += 1
+                _emit(scan_root, "orphan_detected", run_dir,
+                      f"phase {rec['phase']} looks orphaned "
+                      f"({rec['orphan_detail']}) -- report-only pass, NOT "
+                      f"reclaimed; re-run with --apply to reclaim it as "
+                      f"failed and release its subtree",
+                      extra={"phase": rec["phase"],
+                             "orphan": rec["orphan_detail"]},
+                      notify=True, to_disk=apply)
+
         idle_hours: Optional[float] = None
         updated = st.get("updated_at")
         if isinstance(updated, str):
@@ -994,7 +1155,9 @@ def supervise(
           f"escalation, never cancellation) "
           f"-- {restarted} restarted, {deferred} deferred by backoff, "
           f"{refused} refused by a live lease or an uncurable manifest pin, "
-          f"{reported_only} withheld (report-only), {alarmed} alarming", flush=True)
+          f"{reported_only} withheld (report-only), {alarmed} alarming; "
+          f"{orphans_reclaimed} orphaned running phase(s) reclaimed, "
+          f"{orphans_detected} detected (report-only)", flush=True)
 
     if alarmed:
         return EXIT_SUPERVISOR_ALARM

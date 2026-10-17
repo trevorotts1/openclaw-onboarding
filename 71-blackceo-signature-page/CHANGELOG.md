@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased - 2026-10-14 - Ruling 6: Signature Grade Block conformed to selective saturation
+
+- `assets/brand/signature-grade-block.txt`: saturation prose conformed to the Secret Super Sauce doctrine (Image Guide v5 Sauce sections 2, 3, 23.2, 23.10; Guide section 8) under owner Ruling 6 (2026-10-14): the hero color and its one supporting accent are pushed to roughly 140 percent of natural while neutrals, skin, whites, blacks, and shadow detail stay protected; the former instruction to push global saturation is removed. The block's opening, structure, single-paragraph form, and closing lines are unchanged, and the verbatim mechanism (the block must START Element F in `SECRET_SAUCE_ONLY`) is unchanged.
+- `tests/fixtures/prompt_good.txt`: the embedded copy of the block conformed identically (byte-identical to the canonical file, verified).
+- `references/BlackCEO-Page-Brand-Law.md`: Signature Grade Block section annotated with the Ruling 6 conformance and the supersession of the archived global-push wording.
+- No gate, validator, threshold, or schema changed; grade thresholds stay `null`.
+
 ## 1.2.7 - 2026-10-09 - operator wording scrub
 
 - Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).

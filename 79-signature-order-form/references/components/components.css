@@ -1,0 +1,42 @@
+/* S79 checkout components (draft, fixture level).
+   Brand values come from Skill 71 brand tokens at install time; the token
+   names below are the binding contract, the values shown are neutral
+   fallbacks for standalone review only. No dark styling: bright, human,
+   per the owner's standing design rules. */
+:root {
+  --sig-color-ink: #1c2733;
+  --sig-color-accent: #b8860b;
+  --sig-color-surface: #ffffff;
+  --sig-color-soft: #f6f3ec;
+  --sig-color-border: #d8d2c4;
+  --sig-color-error: #a11f1f;
+  --sig-font-body: Georgia, "Times New Roman", serif;
+  --sig-font-ui: "Helvetica Neue", Arial, sans-serif;
+  --sig-radius: 10px;
+  --sig-space: 16px;
+}
+.sig-checkout { font-family: var(--sig-font-ui); color: var(--sig-color-ink); background: var(--sig-color-surface); }
+.sig-checkout h2, .sig-checkout h3 { font-family: var(--sig-font-body); }
+.sig-offer-details, .sig-order-bump, .sig-guarantee-terms, .sig-selection-summary {
+  border: 1px solid var(--sig-color-border); border-radius: var(--sig-radius);
+  background: var(--sig-color-soft); padding: var(--sig-space); margin: 0 0 var(--sig-space);
+}
+.sig-price-line { display: flex; justify-content: space-between; gap: 12px; }
+.sig-due-now { font-weight: 700; font-size: 1.1rem; }
+.sig-schedule { margin: 8px 0 0; padding-left: 20px; }
+.sig-disclosure { font-size: 0.9rem; }
+.sig-bump-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.sig-bump-toggle input[type="checkbox"] { width: 22px; height: 22px; margin-top: 2px; flex: none; }
+.sig-bump-suppressed, .sig-bump-unavailable { font-style: italic; }
+.sig-status-region { min-height: 1.4em; }
+.sig-status-error { color: var(--sig-color-error); font-weight: 600; }
+.sig-change-package { display: inline-block; margin-top: 8px; }
+.sig-native-slot { border: 2px dashed var(--sig-color-border); border-radius: var(--sig-radius); padding: var(--sig-space); background: var(--sig-color-surface); }
+@media (max-width: 640px) {
+  .sig-price-line { flex-direction: column; gap: 2px; }
+  .sig-bump-toggle input[type="checkbox"] { width: 26px; height: 26px; }
+}
+.sig-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Scoped under .sig-checkout (doc 16 section 6): component CSS must not
+   restyle native Convert and Flow controls elsewhere on the page. */
+.sig-checkout :focus-visible { outline: 3px solid var(--sig-color-accent); outline-offset: 2px; }

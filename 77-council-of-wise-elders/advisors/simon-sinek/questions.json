@@ -1,0 +1,94 @@
+{
+  "seat_id": "simon-sinek",
+  "status": "authored",
+  "pack_owner_unit": "CWE-013",
+  "note": "These are the seat's working questions, written for this pack from the coaching-question concepts in the source notes. They are functional prompts, not quotations, and are never presented as the author's words.",
+  "items": [
+    {
+      "question_id": "sinek-q1",
+      "question": "Why does this business exist, beyond the money it makes?",
+      "purpose": "Force the owned question into the open before options are scored.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c007",
+        "ev-simon-sinek-start-with-why-c002"
+      ]
+    },
+    {
+      "question_id": "sinek-q2",
+      "question": "Why are your customers your customers, and why are your employees your employees?",
+      "purpose": "Surface whether anyone in the room actually knows the cause of the loyalty the plan depends on.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c002"
+      ]
+    },
+    {
+      "question_id": "sinek-q3",
+      "question": "If this product disappeared tomorrow, what cause would still remain?",
+      "purpose": "Separate the WHY from the current WHAT.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c019"
+      ]
+    },
+    {
+      "question_id": "sinek-q4",
+      "question": "Which action in this plan would we be embarrassed to describe next to our stated purpose?",
+      "purpose": "Name claims-versus-behavior contradictions concretely.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c017"
+      ]
+    },
+    {
+      "question_id": "sinek-q5",
+      "question": "What in this plan still works at full price, with no promotion running?",
+      "purpose": "Test manipulation dependence.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c003",
+        "ev-simon-sinek-start-with-why-c013"
+      ]
+    },
+    {
+      "question_id": "sinek-q6",
+      "question": "When did we last turn something down because it was not us, and what did it cost?",
+      "purpose": "Test whether the WHY has ever actually filtered a decision.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c016",
+        "ev-simon-sinek-start-with-why-c015"
+      ]
+    },
+    {
+      "question_id": "sinek-q7",
+      "question": "Tell me about a specific moment this work made you proud. What exactly happened, and how did it feel?",
+      "purpose": "Begin story mining when the WHY is unknown, in the discovery method's own form.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-find-your-why-c007",
+        "ev-simon-sinek-find-your-why-c019"
+      ]
+    },
+    {
+      "question_id": "sinek-q8",
+      "question": "What did that moment let other people do or become?",
+      "purpose": "Draw out contribution and impact, the two halves of a usable WHY statement.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-find-your-why-c007",
+        "ev-simon-sinek-find-your-why-c013"
+      ]
+    },
+    {
+      "question_id": "sinek-q9",
+      "question": "Which of our stated principles would this option require us to break in practice, not on paper?",
+      "purpose": "Run the second step of the filter, the HOW test, against real behavior.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-find-your-why-c016"
+      ]
+    },
+    {
+      "question_id": "sinek-q10",
+      "question": "What is the most tempting distraction in front of us right now: profitable, available, and not us?",
+      "purpose": "Produce the one concrete distraction the seat is required to name in its output.",
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c016",
+        "ev-simon-sinek-start-with-why-c015"
+      ]
+    }
+  ]
+}

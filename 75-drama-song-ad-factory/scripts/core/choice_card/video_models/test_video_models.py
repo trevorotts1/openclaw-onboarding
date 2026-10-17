@@ -21,9 +21,15 @@ from catalog_calculator import card_render as CR  # noqa: E402
 
 NAMES = ["MiniMax H3", "Seedance 2.5", "Seedance 2.0 Mini", "Google Veo 3.1"]
 
+#: DSR-105: the five typed story-brief answers that open the card, plus the
+#: 1-based line numbers of the two questions these tests move around.
+BRIEF = IC.example_replies()[:len(IC.BRIEF_IDS)]
+LENGTH_N = [q["id"] for q in IC.QUESTIONS].index("length") + 1
+MODEL_N = [q["id"] for q in IC.QUESTIONS].index("model") + 1
+
 
 def _model_turn(length_reply):
-    return IC.conversation(["1", length_reply, "1", "1"])["message"]
+    return IC.conversation(BRIEF + ["1", length_reply, "1", "1"])["message"]
 
 
 def _fake74(model, units):
@@ -99,16 +105,17 @@ def test_question_price_equals_card_with_real_skill_74_registry_prices():
 
 
 def test_recap_line_is_plain_and_priced():
-    msg = IC.conversation(["1", "3", "1", "1", "2", "$25", "1", "1", "1"])["message"]
+    msg = IC.conversation(BRIEF + ["1", "3", "1", "1", "2", "$25", "1", "1", "1"])["message"]
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
-    assert "5. Video model: Seedance 2.5 - about $%d.%02d" % (cents // 100, cents % 100) in msg, msg
+    assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
 
 
 def test_changing_length_reprices_the_recap():
-    # nine answers (60 s, Seedance 2.5), recap, change line 2 (length), pick 3 minutes
-    msg = IC.conversation(["1", "1", "1", "1", "2", "$25", "1", "1", "1", "2", "3"])["message"]
+    # fourteen answers (60 s, Seedance 2.5), recap, change LENGTH_N, pick 3 minutes
+    msg = IC.conversation(BRIEF + ["1", "1", "1", "1", "2", "$25", "1", "1", "1"]
+                          + [str(LENGTH_N), "3"])["message"]
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
-    assert "5. Video model: Seedance 2.5 - about $%d.%02d" % (cents // 100, cents % 100) in msg, msg
+    assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
 
 
 # ---- payload tests: lock -> dispatch -> the request Skill 74 would submit ----
@@ -153,7 +160,7 @@ def _dispatch_choice(n, first_frame=None):
     tmp = tempfile.mkdtemp(prefix="vm-")
     state, ledger = os.path.join(tmp, "state.db"), os.path.join(tmp, "spend.db")
     L.init_run(ledger, "run-vm", 10000)
-    IC.conversation(["1", "1", "1", "1", str(n)], state_store=state, run_id="run-vm")   # the client answers; run state is written
+    IC.conversation(BRIEF + ["1", "1", "1", "1", str(n)], state_store=state, run_id="run-vm")   # the client answers; run state is written
     req = VM.request_for_run(state, "run-vm", "A woman sings at a kitchen window. " * 6, 8, "9:16", first_frame)
     req["storyboard"] = {"shots": [{"shot_id": "s1", "status": "storyboard_approved"}],
                          "review": {"outcome": "pass", "reason_code": "storyboard-accepted"}}
@@ -231,7 +238,7 @@ def test_client_pick_reaches_card_row_and_dispatch_payload_for_every_model():
         assert env["outcome"] == "ok" and sub["model"] == kie and sub["input"]["resolution"] == res, (n, env, sub)
         tmp = tempfile.mkdtemp(prefix="vm-")
         state = os.path.join(tmp, "state.db")
-        IC.conversation(["1", "1", "1", "1", str(n)], state_store=state, run_id="r")
+        IC.conversation(BRIEF + ["1", "1", "1", "1", str(n)], state_store=state, run_id="r")
         text, _ok = CR.render({"length": "60 seconds"}, _fake74, state_store=state, run_id="r")   # no card field: run state decides
         assert "Video model: %s" % row in " ".join(text.split()), text
 
@@ -239,7 +246,7 @@ def test_client_pick_reaches_card_row_and_dispatch_payload_for_every_model():
 def test_dispatch_stamps_the_chosen_resolution_over_a_wrong_one():
     tmp = tempfile.mkdtemp(prefix="vm-")
     state = os.path.join(tmp, "state.db")
-    IC.conversation(["1", "1", "1", "1", "2"], state_store=state, run_id="r")
+    IC.conversation(BRIEF + ["1", "1", "1", "1", "2"], state_store=state, run_id="r")
     req = {"model": "bytedance/seedance-2-5", "input": {"prompt": "x", "duration": 8, "resolution": "1080p"}}
     assert VM.apply_locked_choice(req, ML.read_locked_model(state, "r"))["input"]["resolution"] == "720p"
 

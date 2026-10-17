@@ -1,0 +1,590 @@
+{
+ "schema_version": "1.0",
+ "item": "MG-034",
+ "tool": "qc.py",
+ "tool_version": "1.0.0",
+ "generatedAt": "2026-10-15T05:20:17.175747+00:00",
+ "mode": "package",
+ "job_id": "fixture-vsl-desktop",
+ "artifact_path": "renders/final.mp4",
+ "artifact_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+ "artifact_bytes": 62659,
+ "verdict": "fail",
+ "exit_code": 6,
+ "first_error_category": "MG_QC_FAILED",
+ "plan": {
+  "job_id": "fixture-vsl-desktop",
+  "fps": 30,
+  "total_frames": 180,
+  "total_samples": 288000,
+  "canvas": [
+   1920,
+   1080
+  ],
+  "audio_mode": "inherited",
+  "video_profile": "h264_opaque"
+ },
+ "inputs": {
+  "manifest": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/manifest.json",
+   "sha256": "3c9c939880334eadfe41ce4ff05f0373ca54ea90a01c6a22ae3a6b0b739b25be"
+  },
+  "plan": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json",
+   "sha256": "0940ae092d5bf573bbfe303490e68d205c2d55f9d72ed80a85c2ef6a26705d43"
+  },
+  "coverage": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/review/fixture-vsl-desktop__coverage.json",
+   "sha256": "9b0b8b27fcc084dcf510d89acc6779d00d4554cef381512cc82ac3e78bf9d494"
+  },
+  "assets": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/assets.json",
+   "sha256": "0126d5401e2cd5953ca59bcbd4540bad57905558ff3aa893013a18a32d6e1205"
+  }
+ },
+ "checks": [
+  {
+   "id": "tools.available",
+   "title": "ffmpeg and ffprobe are runnable",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "ffmpeg and ffprobe both answered -version with exit 0",
+   "command": "ffmpeg -version; ffprobe -version",
+   "exit_status": [
+    0,
+    0
+   ],
+   "observed": {
+    "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
+    "tool_paths": {
+     "ffmpeg": "/usr/bin/ffmpeg",
+     "ffprobe": "/usr/bin/ffprobe"
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json"
+  },
+  {
+   "id": "inputs.plan",
+   "title": "planned truth loads and agrees",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "compiled timeline and sidecar agree on fps, totals, and job id; MG-023 resolved audio mode inherited",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "job_id": "fixture-vsl-desktop",
+    "fps": 30,
+    "total_frames": 180,
+    "total_samples": 288000,
+    "duration_seconds": 6.0,
+    "audio_mode": "inherited",
+    "audio_owner": "parent",
+    "loudness_target": null,
+    "job_ids": {
+     "timeline": "fixture-vsl-desktop",
+     "sidecar": "fixture-vsl-desktop",
+     "manifest": "fixture-vsl-desktop"
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json"
+  },
+  {
+   "id": "artifact.exists",
+   "title": "final artifact exists",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "final artifact present at 62659 bytes",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4",
+    "bytes": 62659
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.hash",
+   "title": "artifact sha256 recorded",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "sha256 of the exact bytes under review is recorded in the report header and binds every other record",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "bytes": 62659
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.probe",
+   "title": "artifact probes cleanly",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "ffprobe parsed the container and found a video stream",
+   "command": "ffprobe -v error -show_streams -show_format -of json /home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4",
+   "exit_status": 0,
+   "observed": {
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264"
+     }
+    ],
+    "format": "mov,mp4,m4a,3gp,3g2,mj2"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.decode",
+   "title": "artifact decodes end to end",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "every stream decoded to the end with no error",
+   "command": "ffmpeg -v error -i /home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4 -f null -",
+   "exit_status": 0,
+   "observed": {
+    "error_lines": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "plan.dimensions",
+   "title": "final dimensions match the plan canvas",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact dimensions equal the plan canvas 1920x1080",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected": {
+     "width": 1920,
+     "height": 1080,
+     "aspect": 1.7778,
+     "source": "manifest.canvas"
+    },
+    "observed": {
+     "width": 1920,
+     "height": 1080,
+     "aspect": 1.7778
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "plan.fps",
+   "title": "final fps matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact frame rate matches the compiled plan",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_fps": 30.0,
+    "observed_fps": 30.0,
+    "avg_frame_rate": "30/1"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "plan.frame_count",
+   "title": "decoded frame count matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "decoded frame count equals the compiled total",
+   "command": "ffprobe -v error -show_streams -show_format -of json -count_frames /home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4",
+   "exit_status": 0,
+   "observed": {
+    "expected_frames": 180,
+    "decoded_frames": 180
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "plan.duration",
+   "title": "final duration matches the compiled duration",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact duration is within 0.12s of the compiled duration",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_seconds": 6.0,
+    "observed_seconds": 6.0,
+    "tolerance_seconds": 0.12
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "plan.streams",
+   "title": "stream inventory matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "stream inventory matches the resolved plan",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_audio": false,
+    "observed_audio": false,
+    "audio_mode": "inherited",
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264"
+     }
+    ]
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "audio.decode",
+   "title": "final audio decodes for measurement",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the artifact has no audio stream; there is no audio to decode (plan.streams judges whether that absence is correct)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "audio.duration",
+   "title": "audio length matches the compiled total samples",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no audio stream to measure; plan.streams judges whether the plan expected one",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json"
+  },
+  {
+   "id": "audio.clipping",
+   "title": "encoded audio does not clip",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no audio stream; nothing can clip",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json"
+  },
+  {
+   "id": "audio.loudness",
+   "title": "loudness verified where the mode applies",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "loudness is verified only for an independent final mix (MG-023 mode own); this job's mode is inherited, so no loudness target exists to fail against. The mode's own promise is judged by audio.mode_promise",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "inherited",
+    "loudness_target": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json"
+  },
+  {
+   "id": "audio.final_words",
+   "title": "final spoken content is present in the mix",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the compiled plan places no narration; there is no spoken content to verify",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "placed_narration": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/timeline-sidecar.json"
+  },
+  {
+   "id": "audio.score_audible",
+   "title": "the chosen score is audible where nothing speaks",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no own-mode score to verify (mode inherited, music False)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "inherited",
+    "music": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/plan.json"
+  },
+  {
+   "id": "audio.mode_promise",
+   "title": "the artifact keeps its audio mode's promise",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "mode inherited: the insert carries no audio, so the parent soundtrack cannot be duplicated",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "inherited",
+    "audio_stream_present": false,
+    "exclusions": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "video.black",
+   "title": "no unapproved black intervals",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no black intervals detected",
+   "command": "ffmpeg -i /home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4 -vf blackdetect=d=0.50:pix_th=0.10 -an -f null -",
+   "exit_status": 0,
+   "observed": {
+    "detected_intervals_frames": [],
+    "approved_dark_intervals_frames": [],
+    "approval_sources": [
+     "timeline event final-hold (hold_start at frame 75, scene bar-01)",
+     "scene spec bar-01 motion hold (source frames 75..180)"
+    ],
+    "uncovered_intervals_frames": [],
+    "threshold": {
+     "min_seconds": 0.5,
+     "pixel_threshold": 0.1
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "video.freeze",
+   "title": "no unapproved frozen intervals",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no unapproved frozen intervals (1 detected, all covered by plan approvals)",
+   "command": "ffmpeg -i /home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4 -vf freezedetect=n=0.003:d=1.00 -an -f null -",
+   "exit_status": 0,
+   "observed": {
+    "detected_intervals_frames": [
+     [
+      75,
+      180
+     ]
+    ],
+    "approved_freeze_intervals_frames": [
+     [
+      75,
+      180
+     ],
+     [
+      75,
+      180
+     ]
+    ],
+    "approval_sources": [
+     "timeline event final-hold (hold_start at frame 75, scene bar-01)",
+     "scene spec bar-01 motion hold (source frames 75..180)"
+    ],
+    "uncovered_intervals_frames": [],
+    "threshold": {
+     "min_seconds": 1.0,
+     "noise": 0.003
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "video.alpha",
+   "title": "alpha matches the declared export profile",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact alpha agrees with profile h264_opaque",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "video_profile": "h264_opaque",
+    "profile_source": "manifest.delivery",
+    "pix_fmt": "yuv420p",
+    "alpha_pixel_format": false,
+    "alpha_varies": false
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4"
+  },
+  {
+   "id": "review.receipt",
+   "title": "review receipt (MG-031 coverage) binds this artifact",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "coverage record for job fixture-vsl-desktop is complete and binds the artifact's exact sha256",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "coverage_path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/review/fixture-vsl-desktop__coverage.json",
+    "record_job_id": "fixture-vsl-desktop",
+    "verdict": "complete",
+    "record_video": {
+     "bytes": 62659,
+     "duration_seconds": 6.0,
+     "fps": "30/1",
+     "height": 1080,
+     "path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/renders/final.mp4",
+     "probed_frames": 180,
+     "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+     "width": 1920
+    },
+    "review_record": {
+     "label": null,
+     "rough_layout_only": false,
+     "engine": null
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/review/fixture-vsl-desktop__coverage.json"
+  },
+  {
+   "id": "package.assets",
+   "title": "declared assets are present and hash-true",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "all 0 declared assets are present and hash-true",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "assets": [],
+    "assets_path": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/assets.json"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/assets.json"
+  },
+  {
+   "id": "package.fonts",
+   "title": "declared fonts resolve without substitution",
+   "mandatory": true,
+   "status": "FAIL",
+   "code": "QC_FONT_UNRESOLVED",
+   "category": "MG_QC_FAILED",
+   "message": "font requirement font-fixture-sans (family 'fixture-sans', substitution forbidden) does not resolve to an installed family; fontconfig would substitute a different face",
+   "command": "fc-list : family",
+   "exit_status": 0,
+   "observed": {
+    "fonts": [
+     {
+      "id": "font-fixture-sans",
+      "family_alias": "fixture-sans",
+      "source": "runtime_registry",
+      "status": "unresolved"
+     }
+    ],
+    "installed_family_count": 1535
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/produce1/insert-job/assets.json"
+  },
+  {
+   "id": "package.lint",
+   "title": "static lint record consumed (MG-030)",
+   "mandatory": false,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no MG-030 lint report was supplied (--lint-report); lint is produced by the runtime lint layer, and QC consumes its record when one exists",
+   "command": null,
+   "exit_status": null,
+   "observed": {},
+   "evidence": null
+  },
+  {
+   "id": "package.motion_proof",
+   "title": "motion-proof record consumed (MG-032)",
+   "mandatory": false,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "motion-proof record records a pass",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "motion_proof_path": "/home/hatch/workspace/skill72-v2/scratch-mg037/qc2/motion-proof-record.json",
+    "verdict": "pass",
+    "pass": null,
+    "label": null,
+    "rough_layout_only": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg037/qc2/motion-proof-record.json"
+  },
+  {
+   "id": "process.registry",
+   "title": "no live render processes remain registered to this job (MG-029)",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the MG-029 process registry holds no records for job fixture-vsl-desktop (no fixture-vsl-desktop.json): the isolation layer recorded no render processes for this job, so there are no registered processes to account for",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "registry_dir": "/home/hatch/.local/state/motion-render/processes",
+    "registry_file": "/home/hatch/.local/state/motion-render/processes/fixture-vsl-desktop.json",
+    "job_id": "fixture-vsl-desktop",
+    "records_found": 0,
+    "registry_file_present": false
+   },
+   "evidence": null
+  }
+ ],
+ "summary": {
+  "total": 27,
+  "pass": 18,
+  "fail": 1,
+  "skipped_with_reason": 8,
+  "not_run": 0,
+  "failed_checks": [
+   "package.fonts"
+  ],
+  "mandatory_not_run": []
+ }
+}

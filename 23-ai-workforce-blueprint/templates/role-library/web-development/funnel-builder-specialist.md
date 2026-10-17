@@ -184,6 +184,10 @@ This role contributes to the company revenue cascade by: **architecting and opti
 | **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" | `~/.openclaw/skills/06-ghl-install-pages/` | `universal-sops/form-craft/` |
 | **49** signature-funnel | "build my funnel" · "signature funnel" · "3/5/7 step funnel" | `~/.openclaw/skills/49-signature-funnel/` | `universal-sops/funnel-craft/` |
 | **62** cinematic-web-funnel-engine | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" | `~/.openclaw/skills/62-cinematic-web-funnel-engine/` | `universal-sops/funnel-craft/` · `universal-sops/website-craft/` · `universal-sops/video-pipeline-craft/` |
+| **78** signature-product-selection | "build a product selection page" · "compare my packages" · "a page to choose between my packages" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |
+| **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" | `~/.openclaw/skills/79-signature-order-form/` | `universal-sops/funnel-craft/` |
+| **80** signature-upsell | "build my upsell pages" · "add an upsell to my launch" · "build the upsell flow for my launch" | `~/.openclaw/skills/80-signature-upsell/` | `universal-sops/funnel-craft/` |
+| **82** signature-thank-you | "build a thank you page" · "order confirmation page" · "page customers see after buying" | `~/.openclaw/skills/82-signature-thank-you/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -277,7 +281,7 @@ This role contributes to the company revenue cascade by: **architecting and opti
 **Prerequisites (state assumed already true; if not, STOP):**
 - Skills 01 (Teach-Yourself), 02 (Backup), 03 (agent-browser installed), and 05 (GoHighLevel account exists) are complete. Skill 08 (Vercel) only matters for Mode-2 iframe embeds.
 - You are operating on the CLIENT's box with the CLIENT's own funded credentials and the CLIENT's own captured refresh token. The operator's keys must NEVER appear here.
-- Model discipline: run the build loop on **MiniMax 3** (browser control + tool calls: snapshot -> pick-ref -> act -> verify; Ollama Cloud preferred, OpenRouter backup, thinking=HIGH). Escalate to **DeepSeek V4.1 Flash** (or GLM 5.2) ONLY for a live-selector ambiguity / unseen UI variant / recovery that needs reasoning. Use a **fast-tier model** for mechanical work only (ledger/manifest/verify, file reads, URL checks) — never for live UI. Declare the exact agent count + each agent's model up front with a hard cap. Long live runs fire DETACHED; the agent EXITS and resumes from the ledger (Step 16).
+- Model discipline: run the build loop on the client's chosen model, or their configured default (browser control + tool calls: snapshot -> pick-ref -> act -> verify; Ollama Cloud preferred, OpenRouter backup, thinking=HIGH). Escalate to the client's chosen heavy-tier model ONLY for a live-selector ambiguity / unseen UI variant / recovery that needs reasoning. Use a **fast-tier model** for mechanical work only (ledger/manifest/verify, file reads, URL checks), never for live UI. Declare the exact agent count + each agent's model up front with a hard cap. Long live runs fire DETACHED; the agent EXITS and resumes from the ledger (Step 16).
 
 **Steps (numbered — each has ACTION, VERIFY, and FAILURE/ABORT). Resolve every `runtime` gate by a fresh live snapshot before acting; never hardcode invented CSS.**
 

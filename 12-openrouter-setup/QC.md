@@ -42,12 +42,9 @@ jq -r '.agents.defaults.model.fallbacks[]' ~/.openclaw/openclaw.json
 
 - [ ] `OPENROUTER_API_KEY` exists in config or documented env storage
 - [ ] Key format starts with `sk-or-`
-- [ ] Primary model is exactly `openrouter/minimax/minimax-m2.7`
-- [ ] Fallback list includes at least these models:
-  - `openrouter/xiaomi/mimo-v2-pro`
-  - `openrouter/google/gemini-3.1-flash-lite-preview`
-  - `openrouter/moonshotai/kimi-k2.6`
-  - `openrouter/google/gemini-3-flash-preview`
+- [ ] Primary model is exactly the model the client chose at install (or the client's configured default model, if the client made no separate choice), and that choice is recorded in the install notes
+- [ ] Fallback list contains exactly the fallback models the client chose at install, in the order the client approved
+- [ ] A client choice or a configured-default resolution is recorded for the primary model and for every fallback slot (no slot is silently filled with a model the client did not choose)
 - [ ] No fallback entry uses `openrouter/auto`
 
 ---
@@ -58,24 +55,16 @@ jq -r '.agents.defaults.model.fallbacks[]' ~/.openclaw/openclaw.json
 jq '.agents.defaults.models | keys' ~/.openclaw/openclaw.json
 ```
 
-Verify these keys exist inside `.agents.defaults.models`:
+Verify the keys inside `.agents.defaults.models` match the client's choices:
 
-- [ ] `openrouter/minimax/minimax-m2.7`
-- [ ] `openrouter/xiaomi/mimo-v2-pro`
-- [ ] `openrouter/google/gemini-3-flash-preview`
-- [ ] `openrouter/google/gemini-3.1-pro-preview`
-- [ ] `openrouter/google/gemini-3.1-flash-lite-preview`
-- [ ] `openrouter/moonshotai/kimi-k2.6`
-- [ ] `openrouter/z-ai/glm-5`
-- [ ] `openrouter/deepseek/deepseek-v3.2`
-- [ ] `openrouter/deepseek/deepseek-r1-0528:free`
-- [ ] `openrouter/xiaomi/mimo-v2-omni`
-- [ ] `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
+- [ ] An entry exists for the primary model the client chose
+- [ ] An entry exists for every fallback model the client chose
+- [ ] No entry exists for a model the client did not choose (no fixed roster is required; the client's recorded choices are the roster)
 
 Also verify each model object stays minimal.
 
 ```bash
-jq '.agents.defaults.models["openrouter/minimax/minimax-m2.7"]' ~/.openclaw/openclaw.json
+jq --arg p "$(jq -r '.agents.defaults.model.primary' ~/.openclaw/openclaw.json)" '.agents.defaults.models[$p]' ~/.openclaw/openclaw.json
 ```
 
 - [ ] Model entries only use allowed fields such as `params`, `alias`, or `streaming`
@@ -112,7 +101,7 @@ Fail this skill if any of these happen:
 - [ ] Backup was skipped
 - [ ] Config JSON is invalid
 - [ ] `OPENROUTER_API_KEY` is missing or malformed
-- [ ] Primary model is not `openrouter/minimax/minimax-m2.7`
+- [ ] Primary model is not the model the client chose, or no client choice / configured default is recorded for the primary slot
 - [ ] `openrouter/auto` appears anywhere in config
 - [ ] Credits endpoint fails
 
@@ -125,7 +114,7 @@ Pass only if all of the following are true:
 - [ ] Files and version are correct
 - [ ] Backup exists and config JSON is valid
 - [ ] API key is stored correctly
-- [ ] Primary plus required fallback models are configured
+- [ ] Primary plus the client-chosen fallback models are configured
 - [ ] Credits endpoint succeeds
 - [ ] No banned `openrouter/auto` entry exists
 

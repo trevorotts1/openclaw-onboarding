@@ -34,9 +34,9 @@ unchanged by the lane model). Lane table: SKILL.md "Adaptive browser lanes".
 
 | Capability class | Host has | Build method |
 |---|---|---|
-| standard | agent-browser only (no Playwright) | agent-browser only (Lane 1); cross-origin drag features GATED — they need the hybrid |
-| full | agent-browser + Playwright | agent-browser PRIMARY + Playwright CDP hybrid for iframe drag/drop (Lane 1b) |
-| experimental | OpenClaw ≥ 2026.8.1 + browser plugin | OpenClaw managed browser `openclaw browser` + `--frame` — proposed upgrade, not wired as Skill 6 PRIMARY |
+| extension | OpenClaw ≥ 2026.8.1 + browser plugin + OpenClaw Chrome extension installed and current in the operator's Chrome | OpenClaw browser extension lane (Lane 1, PRIMARY/default); cross-origin drag features still need the Playwright hybrid |
+| standard | agent-browser only (no Playwright) | agent-browser fallback lane (Lane 2); cross-origin drag features GATED — they need the hybrid |
+| full | agent-browser + Playwright | agent-browser fallback lane + Playwright CDP hybrid for iframe drag/drop (Lane 2b) |
 | future | CUA plugin present | CUA — NOT in Skill 6 yet; future last resort only |
 
 The VPS mount row and the first-hour ground-truth pair above stay

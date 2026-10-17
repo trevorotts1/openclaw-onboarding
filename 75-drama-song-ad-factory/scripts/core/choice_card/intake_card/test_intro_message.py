@@ -63,14 +63,14 @@ def test_not_shown_on_resume_or_recap():
     st = _state()
     json.dump({"intro_shown": True, "keep": 1}, open(st, "w"))
     assert card("--run-state-file", st).startswith("Question 1 of ")   # resume
-    n = len(IC.QUESTIONS)
-    assert "Here is what you picked" in card("--run-state-file", st, *[x for r in ["1"] * 5 + ["$25"] + ["1"] * (n - 6) for x in ("--reply", r)])
+    assert "Here is what you picked" in card("--run-state-file", st,
+                                             *[x for r in IC.example_replies() for x in ("--reply", r)])
     assert json.load(open(st))["keep"] == 1                            # state kept
 
 
 def test_not_shown_once_replies_exist():
     st = _state()                                  # fresh file, but client already replied
-    assert card("--run-state-file", st, "--reply", "1").startswith("Question 2 of ")
+    assert card("--run-state-file", st, "--reply", IC.example_replies()[0]).startswith("Question 2 of ")
     assert not os.path.exists(st)
 
 

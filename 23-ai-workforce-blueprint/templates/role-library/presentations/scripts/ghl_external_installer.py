@@ -29,9 +29,9 @@ THREE PHASES, TWO ADAPTER FAMILIES:
       working/sales-checkout/ghl_build_receipt.json.
   P-U-GHL-VSL    (Skill 06 canonical page-install path):
       vsl.html -> VSL page. Reuses the sales verified funnel_id when this
-      run already pushed sales+checkout (mirrors
-      vsl_builder.resolve_shared_funnel_id); otherwise its own funnel.
-      Receipt: working/vsl/ghl_build_receipt.json.
+      run already installed sales+checkout (this module's own
+      shared_funnel_id(), proven from the sales install receipt);
+      otherwise its own funnel. Receipt: working/vsl/ghl_build_receipt.json.
   P-U-FORM-GATE  (Skill 44 supported form/workflow operations):
       vsl-gate-form-spec.json (SKILL44_WIDGET -> FORM: Email + First Name +
       Cell Phone custom fields, Form-Submitted -> zhc_vsl_engaged tag
@@ -870,7 +870,9 @@ def _validate_gate_receipts(run_dir: Path, data: dict, scope: dict,
 # ---------------------------------------------------------------------------
 def shared_funnel_id(run_dir: Path) -> Optional[str]:
     """This run's verified sales funnel, when P-U-GHL-SALES already proved
-    one (mirrors vsl_builder.resolve_shared_funnel_id)."""
+    one. This is the one-funnel rule's only home since the builder-side copy
+    was retired (FIX-PLAN Item 23, 2026-10-14): the answer is proven from
+    the sales install receipt's own validate_receipt(), never self-report."""
     ok, _detail, data = validate_receipt(run_dir, PHASE_GHL_SALES)
     if not ok:
         return None

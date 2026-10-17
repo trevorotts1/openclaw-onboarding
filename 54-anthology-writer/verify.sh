@@ -23,9 +23,39 @@
 # Usage:  bash 54-anthology-writer/verify.sh [--quiet] [--verbose]
 #   --quiet     suppress per-check output; print only the summary
 #   --verbose   print full command output (including stdout) for every check
+#   stamp-pin   recompute the enforcement-set hash and write ENGINE-PIN.sha256
+#               (update-skills.sh runs this after every skill copy)
 # Exit:   0 = all checks passed;  nonzero = at least one check failed.
 # ==============================================================================
 set -uo pipefail
+
+# -- stamp-pin: recompute ENGINE-PIN.sha256 over scripts/ENFORCEMENT-FILES.list
+# in list order — the SAME list and cat|sha256 recipe anthology-entry.sh GATE 3
+# (AF-AW-HASH-PIN) enforces, so the stamp can never drift from the gate.
+# A missing listed file is a hard exit 4: never mint a pin over an absent file.
+if [ "${1:-}" = "stamp-pin" ]; then
+    _S54="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+    _LIST="$_S54/scripts/ENFORCEMENT-FILES.list"
+    [ -f "$_LIST" ] || { echo "verify stamp-pin: missing enforcement list $_LIST" >&2; exit 4; }
+    _FILES=()
+    while IFS= read -r _f; do
+        [ -n "$_f" ] || continue
+        [ -f "$_S54/$_f" ] || { echo "verify stamp-pin: missing enforcement candidate $_S54/$_f" >&2; exit 4; }
+        _FILES+=("$_S54/$_f")
+    done < "$_LIST"
+    [ "${#_FILES[@]}" -gt 0 ] || { echo "verify stamp-pin: empty enforcement list" >&2; exit 4; }
+    if command -v sha256sum >/dev/null 2>&1; then
+        _H="$(cat "${_FILES[@]}" | sha256sum | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        _H="$(cat "${_FILES[@]}" | shasum -a 256 | awk '{print $1}')"
+    else
+        echo "verify stamp-pin: no sha256 tool" >&2; exit 4
+    fi
+    [ -n "$_H" ] || { echo "verify stamp-pin: empty digest" >&2; exit 4; }
+    printf '%s\n' "$_H" > "$_S54/ENGINE-PIN.sha256"
+    echo "verify stamp-pin: ENGINE-PIN.sha256 written ($_H)"
+    exit 0
+fi
 
 QUIET=0
 VERBOSE=0
@@ -500,7 +530,10 @@ echo "  -- version-consistency check --"
 MANIFEST_VER=$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["skill_version"])' "$SKILL_DIR/ANTHOLOGY-MANIFEST.json" 2>/dev/null)
 TXT_VER=$(tr -d ' \t\n' < "$SKILL_DIR/skill-version.txt" 2>/dev/null)
 SKILLMD_VER=$(head -10 "$SKILL_DIR/SKILL.md" | grep '^version:' | sed 's/version: *//' | tr -d ' \t\n' 2>/dev/null)
-CHANGELOG_VER=$(head -5 "$SKILL_DIR/CHANGELOG.md" | grep -E '^## [0-9]' | head -1 | sed 's/^## *//' | sed 's/ .*//' | tr -d '\n' 2>/dev/null)
+# Latest header, accepting the formats CI's G2 accepts too: "## 1.4.10",
+# "## v2.0.5" and "## [v2.0.5]" (the old '^## [0-9]' rejected the v-prefix the
+# CHANGELOG actually uses, so this check could never read the top entry).
+CHANGELOG_VER=$(head -5 "$SKILL_DIR/CHANGELOG.md" | grep -E '^## \[?v?[0-9]' | head -1 | sed 's/^## *//' | sed 's/ .*//' | sed 's/^\[//; s/\]$//' | tr -d '\n' 2>/dev/null)
 ver_fails=0
 for pair in "ANTHOLOGY-MANIFEST.json:$MANIFEST_VER" "skill-version.txt:$TXT_VER" "SKILL.md:$SKILLMD_VER" "CHANGELOG.md:$CHANGELOG_VER"; do
     src="${pair%%:*}" val="${pair##*:}"

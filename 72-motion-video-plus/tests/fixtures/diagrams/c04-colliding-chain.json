@@ -1,0 +1,137 @@
+{
+  "schema_version": "2.0",
+  "id": "c04-colliding-chain",
+  "component_id": "C04",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "copy": {
+    "headline": "A chain that cannot fit one frame",
+    "disclosure": "Illustrative mechanism. The diagram shows the process; it does not prove a business outcome."
+  },
+  "diagram": {
+    "pattern": "flow_through",
+    "nodes": [
+      {
+        "id": "agreement",
+        "label": "Collect the signed agreement",
+        "kind": "input"
+      },
+      {
+        "id": "payment",
+        "label": "Verify the payment method",
+        "kind": "stage"
+      },
+      {
+        "id": "schedule",
+        "label": "Schedule the onboarding call",
+        "kind": "stage"
+      },
+      {
+        "id": "welcome",
+        "label": "Prepare the welcome package",
+        "kind": "stage"
+      },
+      {
+        "id": "workspace",
+        "label": "Configure the client workspace",
+        "kind": "stage"
+      },
+      {
+        "id": "review",
+        "label": "Run the quality review",
+        "kind": "stage"
+      },
+      {
+        "id": "report",
+        "label": "Deliver the final report",
+        "kind": "stage"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-agreement-payment",
+        "source": "agreement",
+        "target": "payment",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-payment-schedule",
+        "source": "payment",
+        "target": "schedule",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-schedule-welcome",
+        "source": "schedule",
+        "target": "welcome",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-welcome-workspace",
+        "source": "welcome",
+        "target": "workspace",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-workspace-review",
+        "source": "workspace",
+        "target": "review",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-review-report",
+        "source": "review",
+        "target": "report",
+        "kind": "flow"
+      }
+    ],
+    "subject": {
+      "id": "client-001",
+      "label": "Client",
+      "path_node_ids": [
+        "agreement",
+        "payment",
+        "schedule",
+        "welcome",
+        "workspace",
+        "review",
+        "report"
+      ]
+    },
+    "selected_branch_edge_id": null,
+    "relief": null,
+    "timing": {
+      "start_frame": 15,
+      "end_frame_exclusive": 135,
+      "hold_to_frame_exclusive": 180
+    },
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    }
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "collide-timeline",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "client-001"
+      ],
+      "frame": 0,
+      "expected_values": [
+        15,
+        135,
+        180,
+        180
+      ],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    }
+  ]
+}

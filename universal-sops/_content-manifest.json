@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-12T16:49:14Z",
-  "file_count": 115,
+  "generated_at": "2026-10-16T19:07:31Z",
+  "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "510bb4333de3c01bd94fb60a35cd7fcb39106ab467eadf64268ff2c43686947a",
@@ -15,6 +15,10 @@
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
       "bytes": 9146
+    },
+    "SOP-COUNCIL-01-COUNCIL-OF-WISE-ELDERS-DELIBERATION.md": {
+      "sha256": "aff6f43bfe88a72298ce8c39628164c73626a4f93ef69acf90b55be7d807da01",
+      "bytes": 3434
     },
     "SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md": {
       "sha256": "e17f39b4fc2d894954aebf58e3186a4794aad1322f39e3d705bce840911412b9",
@@ -33,8 +37,8 @@
       "bytes": 7408
     },
     "anthology-craft/SOP-ANTHOLOGY-01-ENGINE-RUNBOOK.md": {
-      "sha256": "674d761859a0912be3ea6bf8571dd0b94dc0b4da9e8eb7af6a1bfb3e74313aa1",
-      "bytes": 13950
+      "sha256": "004caec2d4241cb57abb7bb6dffa658b5b882df408e5997e02ba4fd0b15c1f41",
+      "bytes": 14613
     },
     "anthology-craft/SOP-ANTHOLOGY-02-CLIENT-ONBOARDING.md": {
       "sha256": "3f0217aea3e6e71bdb2494bea1a7dac4ba340d3b01defa1f9324edd97c530c8d",
@@ -153,16 +157,16 @@
       "bytes": 4931
     },
     "form-craft/FORM-PIPELINE-MANIFEST.json": {
-      "sha256": "7f79dd88dc1b1ce75cc3d63f743147985a139b9b6ceb31e127605a4bea1f7dcd",
-      "bytes": 9017
+      "sha256": "f5fa3da222d8751c2b8f8ce6911475eb531595731e01f2bf6ff1d0b14eeda73f",
+      "bytes": 9302
     },
     "form-craft/MASTER-FORM-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "771aa0c2b242145eef8eaf1d94b8f51876792b5be7746020c1c59347463f9f7e",
-      "bytes": 5183
+      "sha256": "0bd13d1ba8729c5f27f557a97ecb573bd00f2a490de93e9e73705e6271da8f2c",
+      "bytes": 5232
     },
     "form-craft/README.md": {
-      "sha256": "edfb54589a0271cd3932d5b08a11541bfbcb146e5d41750eb994f23afc2d99f7",
-      "bytes": 8953
+      "sha256": "88f9829cc4f8ff1fd7c69bd9b7c2630c022ceebd642f1bf26d9e8d72e419be00",
+      "bytes": 9171
     },
     "form-craft/SOP-FORM-01-INTAKE.md": {
       "sha256": "a32d22a91322528970b8f81697a89fe3ca7545c680678a63c2f9cc97ae60af0f",
@@ -197,8 +201,8 @@
       "bytes": 5277
     },
     "funnel-craft/README.md": {
-      "sha256": "634e29ff810a243fea63b8f75380c5fb3c19742ac678e546007bab3b78f07729",
-      "bytes": 6915
+      "sha256": "69a02bcc163a973fdb1fc54042e6f53265bcabe574e435678cf28403c2e8150e",
+      "bytes": 7514
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
@@ -233,8 +237,8 @@
       "bytes": 3209
     },
     "podcast-craft/SOP-PODCAST-01-ENGINE-RUNBOOK.md": {
-      "sha256": "3fcf7949ba00189bbd6969ff9ac95127de474d0e8fc49c9272ee1d963bd68a66",
-      "bytes": 23017
+      "sha256": "c4497417084598ad17bcffd87ba08f29f08b0d3122fd861fc8d002f96ad125fb",
+      "bytes": 23486
     },
     "podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md": {
       "sha256": "497f7ee3233aebc9b7466c8a70d8aa8e4d090b21f6a23a1dab41680c6243c7f1",
@@ -249,12 +253,12 @@
       "bytes": 12327
     },
     "podcast-craft/SOP-PODCAST-05-EPISODE-QC.md": {
-      "sha256": "a016211837c64b11b940fa463eb56b7df636888459cdac904b17bdf69bd47d8d",
-      "bytes": 11639
+      "sha256": "0c2f3faefc283b19fded7514e4b7fabce6a66e42beb22e2e03b6f8c76a58a63c",
+      "bytes": 11802
     },
     "podcast-craft/SOP-PODCAST-06-BOOK-TEASER.md": {
-      "sha256": "062a57abb52ede5aae98ff2f14509426997a2688a798ee8aee1fcea9d51f3b1e",
-      "bytes": 12351
+      "sha256": "406d0f311e57ba9d976ebcacda034d46de738cf64f3175ba5cb45d5b6efff3d6",
+      "bytes": 12617
     },
     "podcast-craft/SOP-PODCAST-07-ACTIVATION-RESCUE.md": {
       "sha256": "6e332c63e7ba1f3e992213e08aeb4fb47d6e3d3c9ecb155938c9de41aef49a52",
@@ -301,12 +305,12 @@
       "bytes": 12168
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "c2f2394b11739a532a5d197bff8361a2223a7a17c4d122504c92adf81996b1cd",
-      "bytes": 142915
+      "sha256": "ae7beda950416b64b59e8a9d2d30bbba25937e424f2d3f86d6a3e7a6ce9a86b5",
+      "bytes": 148222
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "fe9421351aa32bd2755737989c774b2f2d0112f5fe41a6354f7e66d4b8b5bfdd",
-      "bytes": 201685
+      "sha256": "a77e09c8293c50d23f76eb287bb1f9d8594791fd722b9df10d2a240a20787f40",
+      "bytes": 206977
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -317,8 +321,8 @@
       "bytes": 5951
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
-      "sha256": "b47691a86750e247b0994d079c2f77d8636ec9ac9ffcf67762799e401c555523",
-      "bytes": 19643
+      "sha256": "8acc5195ebb0d1779aed3b382356f47a4762c92275851dee0b40508bee7060e0",
+      "bytes": 19705
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
       "sha256": "6803532f25db7b19b7c8e2bacb0d9b3e5923aaf3cd9a9a8c8c2e4bba827109ae",
@@ -337,8 +341,8 @@
       "bytes": 11790
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "862fc9b97030e6bf9ae6d4d078a611d24053d3a94dee0ad0ea7de528c827661d",
-      "bytes": 14314
+      "sha256": "d7700b7491e153f3c78eb37a3c6af348e2c833ab885e08784d15d69eabd8289b",
+      "bytes": 14366
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",

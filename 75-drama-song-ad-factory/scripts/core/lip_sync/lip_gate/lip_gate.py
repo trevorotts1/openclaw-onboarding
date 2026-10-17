@@ -4,7 +4,8 @@ best-practice rules LSR001 folded in by LSC001).
 The measurement is sync_check.py (a faithful port of the fixer window's validated
 lipsync_check_v2): mouth opening vs the voice envelope, lag +-10 frames, clip cut
 to the audio length, chance test by rolls of the same audio, lookalike other lines
-dropped, corr floor 0.40, margin floor 0, SYNCED at margin >= 0.05, WEAK between.
+dropped, corr floor 0.40 (0.35 on a cartoon look, approved by Trevor 2026-10-13),
+margin floor 0, SYNCED at margin >= 0.05, WEAK between.
 
 Trevor's looser verdicts ("loosen the checks so it's not as strict"):
   SYNCED     -> PASS
@@ -69,7 +70,8 @@ LIP_HELD_FOR_PERSON = "LIP_HELD_FOR_PERSON"   # UNDETERMINED: a person looks at 
 IMPROVED_INPUT = {
     "line": "single clean line (no internal pause > 0.5 s)",
     "crop": "front-facing tight face crop",
-    "image": "still image, lips relaxed and very slightly parted",
+    "image": "front-facing head-and-shoulders, lips gently closed or slightly "
+             "parted, no teeth showing, nothing over the mouth",
     "lead_in_s": 0.30,
     "tail_s": 0.20,
 }
@@ -109,15 +111,19 @@ def kling_prompt(kind, who="woman", emotion=None, mode="lifelike-3d"):
 measure = SC.measure_sync
 
 
-def judge(m, sung=False):
+def judge(m, sung=False, look=None):
     """Adds verdict (PASS / ACCEPT_WITH_FLAG / FAIL / UNDETERMINED / UNMEASURABLE),
     grade (SYNCED / WEAK / NOT_SYNCED / UNMEASURABLE), reasons (FAIL or
-    UNDETERMINED causes) and flags (ACCEPT_WITH_FLAG notes for the receipt)."""
-    g, v = SC.grade(m), SC.verdict(m, sung)
+    UNDETERMINED causes) and flags (ACCEPT_WITH_FLAG notes for the receipt).
+
+    `look` is the run's look: a cartoon look grades the corr test against
+    sync_check.CARTOON_CORR_FLOOR (0.35) instead of 0.40. Nothing else moves,
+    so wrong audio and the trial B take still FAIL for a cartoon look."""
+    g, v = SC.grade(m, look), SC.verdict(m, sung, look)
     hard = list(m.get("hard_defects") or [])      # defects a person saw: garbled face, hand over mouth
     if hard and g != SC.UNMEASURABLE:
         v = FAIL
-    why = ["LIP_%s" % t.upper() for t in SC.fail_tests(m)] if g == SC.NOT_SYNCED else []
+    why = ["LIP_%s" % t.upper() for t in SC.fail_tests(m, look)] if g == SC.NOT_SYNCED else []
     if g == SC.UNMEASURABLE:
         why = [LIP_UNMEASURED]
     flags = []
@@ -151,7 +157,7 @@ def score(j):
 
 def run_gate(line_id, generate, measure_clip, source_image=None, image_check=None,
              sung=False, retry_input=None, prior_jobs=0, make_strip=None,
-             advisory=None, acquire=None, person_verdict=None):
+             advisory=None, acquire=None, person_verdict=None, look=None):
     """Orchestrate at most MAX_TRIES (2) paid kling/ai-avatar-standard jobs for
     one segment. Injected providers, so mocked runs cost $0.
 
@@ -162,6 +168,8 @@ def run_gate(line_id, generate, measure_clip, source_image=None, image_check=Non
         text across the chest, a hand over the mouth): that makes it a FAIL.
     sung: this line is SUNG. A sung line that is not PASS is UNDETERMINED and
         stops there (held for a person, no automatic paid redo).
+    look: the run's look, passed to judge: a cartoon look grades the corr test
+        against CARTOON_CORR_FLOOR (0.35). Omitted = today's 0.40 everywhere.
     prior_jobs: paid lip-sync jobs already made for this segment under ANY name
         variant (lipsync_clips.count_jobs). Tries left = 2 - prior_jobs; none
         left raises LipTryLimit before anything is spent.
@@ -198,7 +206,8 @@ def run_gate(line_id, generate, measure_clip, source_image=None, image_check=Non
                                             "image check gave no verdict")],
             line_id)
     spec1 = dict(IMPROVED_INPUT, source_image=source_image, **{"try": 1})
-    attempts = [_attempt(spec1, generate, measure_clip, sung, advisory, acquire, line_id)]
+    attempts = [_attempt(spec1, generate, measure_clip, sung, advisory, acquire,
+                         line_id, look=look)]
     flag = None
     person = person_verdict or ("DEFECT" if attempts[0]["judge"].get("hard_defects") else None)
     if person:
@@ -208,7 +217,7 @@ def run_gate(line_id, generate, measure_clip, source_image=None, image_check=Non
             input_fingerprint=_fp(spec2), prior_fingerprints=[_fp(spec1)])
         if ok and retry_input:
             attempts.append(_attempt(spec2, generate, measure_clip, sung, advisory,
-                                     acquire, line_id))
+                                     acquire, line_id, look=look))
         else:
             flag = "RETRY_REFUSED (%s): try 2 needs a changed input; kept try 1" % (why or LP.SAME_INPUT)
     return _row(line_id, attempts, flag, make_strip, prior_jobs)
@@ -218,13 +227,13 @@ def _fp(spec):
     return repr(sorted((k, repr(v)) for k, v in spec.items() if k != "try"))
 
 
-def _attempt(spec, generate, measure_clip, sung, advisory, acquire, line_id):
+def _attempt(spec, generate, measure_clip, sung, advisory, acquire, line_id, look=None):
     # every paid submit goes through the KIE pacing bucket (20 new jobs / 10 s)
     clip = _LG.kie_request(lambda: generate("kling", spec),
                            "lipsync %s try %s" % (line_id, spec.get("try")),
                            generation=True, acquire=acquire)
     try:
-        j = judge(measure_clip(clip), sung)
+        j = judge(measure_clip(clip), sung, look)
     except Exception as e:          # Unmeasured from mouth_landmarks, bad input
         if str(e).startswith(LIP_UNMEASURED) or isinstance(e, ValueError):
             j = unmeasured(e)

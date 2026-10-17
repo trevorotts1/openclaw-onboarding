@@ -1,8 +1,12 @@
 name: Video pipeline lockstep (Movie Producer)
 
 # Makes the Movie Producer (Video Production) anti-bypass layer fail loud forever.
-# Mirrors presentations-lockstep.yml (sync/test/Guard A) + class-kit-gate.yml
-# (GOOD/BAD fixture self-test). Any non-zero exit blocks the merge.
+# Mirrors the former presentations-lockstep.yml (sync/test/Guard A) +
+# class-kit-gate.yml (GOOD/BAD fixture self-test). Both were deleted as
+# standalone workflows on 2026-10-08 in the CIO002 CI consolidation; their
+# checks live on in scripts/ci/fast-guards.d/presentations-lockstep.sh and
+# scripts/ci/fast-guards.d/class-kit-gate.sh, run by fast-guards.yml.
+# Any non-zero exit blocks the merge.
 #
 #   1. video_sync_check.py        — manifest <-> driver/build_check <-> ruleset <-> SOP
 #                                    lockstep; exit 4 on drift.

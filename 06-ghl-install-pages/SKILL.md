@@ -2,14 +2,16 @@
 name: ghl-install-pages
 description: >
   How to deploy HTML pages into GoHighLevel (Go High Level) or Convert and Flow
-  using browser automation. This skill teaches the AI agent how to use
-  agent-browser (Vercel Labs, Skill 03) as the primary engine — Playwright as a
-  fallback — to start a session already logged-in via a seeded Firebase token,
+  using browser automation. This skill teaches the AI agent how to use the
+  OpenClaw Chrome extension (the OpenClaw browser's extension driver, on the
+  operator's paired, already signed-in Chrome) as the primary engine, with
+  agent-browser (Vercel Labs, Skill 03) as the fallback engine and Playwright
+  as the scripted escape hatch, to start a session already logged-in,
   navigate the funnel/website page builder, paste code, save, preview, and
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.26"
+  version: "v27.1.29"
   priority: HIGH
 ---
 
@@ -21,12 +23,20 @@ This skill is about deploying finished HTML code into the GoHighLevel (Go High
 Level) or Convert and Flow page builder using browser automation. The AI agent
 drives the browser, pastes the code, and handles all the clicks and navigation.
 
-> **ENGINE (v3.0 overhaul):** PRIMARY = `agent-browser` (Vercel Labs, the
-> repo-sanctioned tool from Skill 03), run **headless** with an **isolated
-> `--session <client>`** so it never touches a personal browser. FALLBACK =
-> self-hosted Playwright, a scripted escape hatch for known-hard flows only.
-> The previous raw-Playwright-only stack is replaced. The full hardened
-> procedure is in `ghl-browser-builder-full.md` (v3.0).
+> **ENGINE (v4.0 default, operator decision 2026-10-13):** PRIMARY = the
+> **OpenClaw Chrome extension**: the OpenClaw browser's extension driver on
+> the operator's paired, already signed-in Chrome, driven via
+> `openclaw browser`. The extension is the default because it now drives the
+> real signed-in browser better than an isolated session does. FALLBACK =
+> `agent-browser` (Vercel Labs, Skill 03) through the mandatory
+> `tools/browser_manager.sh` gateway, headless with an isolated
+> `--session <client>`, for when the extension channel is unavailable or a
+> flow defeats it. Playwright stays the scripted escape hatch for known-hard
+> flows and the CDP hybrid for cross-origin iframe drag. The full hardened
+> procedure is in `ghl-browser-builder-full.md`. **Standing preflight:**
+> `scripts/check-openclaw-extension-version.sh` must exit 0 before any
+> install run; an absent or out-of-date extension STOPs the run with the
+> update path named.
 
 > **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
 > **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
@@ -139,7 +149,11 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 
 - Teach Yourself Protocol (TYP) must be learned first (skill 01)
 - Backup Protocol must be learned first (skill 02)
-- agent-browser must be installed (skill 03) - PRIMARY browser engine
+- OpenClaw Chrome extension installed in the operator's Chrome and CURRENT
+  (`bash scripts/check-openclaw-extension-version.sh` exits 0) - PRIMARY
+  browser engine (the OpenClaw browser extension driver)
+- agent-browser must be installed (skill 03) - FALLBACK browser engine
+  (via the `tools/browser_manager.sh` gateway)
 - GHL Setup must be complete (skill 05) - the account must already exist
 - Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
 - Playwright installed - FALLBACK engine for known-hard flows
@@ -220,18 +234,22 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 10. **Publishing** - NEVER publish without explicit user approval. Always send
     a deployment report with screenshots first.
 11. **Role-aware model_router** - `tools/model_router.py` assigns a model to
-    every subtask before execution via an Ollama-Cloud-first ladder (five
-    roles; aliases in parentheses). `content` = `ollama/kimi-k2.6:cloud` →
-    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4.1-flash (universal backup) →
-    Gemini 3.5 Flash (last resort); `html`
-    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4.1-flash →
-    Gemini 3.5 Flash (last resort); `reasoning` (`funnel`) = GLM 5.2 then
-    DeepSeek V4.1 Flash (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
-    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud`
-    → `openrouter/minimax/minimax-m3` (probe-gated) →
-    `openrouter/deepseek/deepseek-v4.1-flash` → `google/gemini-3.5-flash` (last
-    rung); `qc` (vision) = MiniMax M3 (probe-gated) → Gemini 3.5 Flash last
-    resort. MiniMax M2 is PURGED — it never appears in any rung. The
+    every subtask before execution. Model: the client's choice, or the
+    client's configured default model, for every role (five roles; aliases in
+    parentheses: `content`, `html` (`code`), `reasoning` (`funnel`),
+    `execution`, `qc`). The router prescribes no model by name: it resolves
+    the client's explicit choice for the task first, then the client's
+    configured default model, and stops with an ask-the-client message when
+    neither is configured. Recommendations (guidance only, the client can
+    override): content, a model with a large context window, because it
+    drafts full page and slide copy in one pass; html/code, strong code
+    generation and reliable tool calling, because the fix-loop edits code in
+    tight iterations; reasoning, strong reasoning and a large context window,
+    because funnel planning holds the whole structure at once; execution,
+    reliable tool calling, because the drive loop issues a tool call on every
+    step (probe-gated to prove it before the role runs); qc, a vision-capable
+    model, because QC reads screenshots and rendered DOM (probe-gated).
+    MiniMax M2 is PURGED, it never appears in any rung. The
     router is wired into `tools/v2_dispatcher.py` (role selection at every
     dispatch entry) and `ghl_verify` (`select_html_repair_model` /
     `select_qc_model` seam functions); no subtask runs without a model
@@ -383,14 +401,17 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
      generates recommended answers on request, then confirms before proceeding;
      output written to the task manifest before build starts.
-   - `model_router.py` - role-aware model selector (Ollama-Cloud-first); called
+   - `model_router.py` - role-aware model selector; called
      by `v2_dispatcher.py` and `ghl_verify` to assign a model to every subtask
-     before execution. Role → ladder: `content` → `ollama/kimi-k2.6:cloud` →
-     `openrouter/moonshotai/kimi-k2.6` → DeepSeek V4.1 Flash (universal backup);
-     `html`/`code` → GLM 5.2 → DeepSeek V4.1 Flash (universal backup); `reasoning` →
-     GLM 5.2 / DeepSeek V4.1 Flash; `execution` → MiniMax M3 probe-gated →
-     DeepSeek V4.1 Flash; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
-     at Gemini 3.5 Flash as last resort. MiniMax M2 is PURGED from every rung.
+     before execution. Model: the client's choice, or the client's configured
+     default model (per role: `MODEL_ROUTER_CHOICE_<ROLE>` /
+     `MODEL_ROUTER_DEFAULT`); no model is prescribed by name, and resolution
+     stops with an ask-the-client message when the client has configured
+     neither. Per-role recommendations (guidance only) live in the module
+     docstring: large context for content and reasoning, strong code
+     generation for html/code, reliable tool calling for execution
+     (probe-gated), a vision-capable model for qc (probe-gated). MiniMax M2 is BANNED
+     fleet-wide and is never used.
 6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
 7. **INSTRUCTIONS.md** - Operational quick-start.
@@ -408,10 +429,16 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 
 ## Critical Things to Know
 
-- PRIMARY engine is agent-browser, headless, with an isolated `--session
-  <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
-  the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
-- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+- PRIMARY engine is the OpenClaw Chrome extension: the OpenClaw browser's
+  extension driver on the operator's paired, already signed-in Chrome (driven
+  via `openclaw browser`). The session starts logged in by construction; a
+  rendered GHL login form on ANY lane is the D7 stop signal, never a form to
+  fill. The extension must be CURRENT: `scripts/check-openclaw-extension-version.sh`
+  gates every install run. FALLBACK engine is agent-browser, headless, with
+  an isolated `--session <client>` (NO-COMINGLING), routed only through the
+  gateway below. Playwright is the scripted escape hatch only; if you use
+  it, `launchPersistentContext()` never `launch()`.
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop. (This lifecycle governs the FALLBACK agent-browser lane.)
   Route EVERY agent-browser call through the single mandatory
   gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
   then `... eval|open|snapshot ...`); NEVER invoke `agent-browser` directly and
@@ -460,15 +487,17 @@ Lanes are selected per host by the capability probe — never assumed:
 
 | # | Lane | Cross-origin drag? |
 |---|------|--------------------|
-| 1 | agent-browser via `browser_manager` (PRIMARY, pin 0.27.0) | Partial without Playwright |
-| 1b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
-| 2 | OpenClaw managed browser `openclaw browser` + `--frame` | Proposed upgrade — experimental, not wired as PRIMARY |
+| 1 | OpenClaw Chrome extension (`openclaw browser`, extension driver on the paired signed-in Chrome) (PRIMARY) | Partial without Playwright |
+| 2 | agent-browser via `browser_manager` (FALLBACK, pin 0.27.0) | Partial without Playwright |
+| 2b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
 | 3 | Playwright-only | Degraded escape hatch |
 | 4 | REST / fallback-ladder | Content ops without UI drag |
 | 5 | CUA | NOT in Skill 6 yet — future last resort only |
 
 Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
-is the runtime source of truth. Capability-class mapping and lane detail live in
+is the runtime source of truth. The probe selects Lane 1 only when the extension
+is installed and current; otherwise it falls to Lane 2 and warns, naming the
+preflight script. Capability-class mapping and lane detail live in
 `ENV-MATRIX.md` ("Capability classes").
 
 - Always verify you are in the correct sub-account before building

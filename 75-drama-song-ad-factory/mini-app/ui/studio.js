@@ -131,14 +131,144 @@ const state = {
   orders: [],
   order: null,          // the project on screen
   questions: [],        // from getQuestions()
+  visible: [],          // those questions that are on now (shows_when), in card order
+  visibleFrom: null,    // the questions list `visible` was built from
   qIndex: 0,            // which question screen
   picks: [],            // selected option number, as a string
   texts: [],            // typed answer for a free-text option
   replies: [],          // what the box replays: option number, or the typed text
+  agnesRemembered: "unknown",   // session.agnes_remembered — "yes", "no", "unknown"
+  agnesProgress: null,          // session.agnes_progress — the Agnes job's record
   locked: false,
   delivery: null,
   deliveryVerdict: null,
 };
+
+// ── which screens are on: the `shows_when` the card exports (SPEC B1) ────────
+// Every screen the intake_card `studio-json` export carries a `shows_when`
+// condition ({"purpose": [1]}, {"agnes_remembered": ["unknown","yes"],
+// "length_s_max": 300}); the page evaluates it rather than guessing, so a screen
+// a purpose never asks is never rendered. A condition this page does not know
+// hides the screen — a question is never shown on a guess.
+export function screenIsOn(screen, questions = [], answers = {}, agnesRemembered = "unknown") {
+  const rule = screen && screen.shows_when;
+  if (!rule || !Object.keys(rule).length) return true;
+  const purpose = ((questions || []).find((q) => q.id === "purpose") || {}).options || [];
+  for (const [key, allowed] of Object.entries(rule)) {
+    const list = Array.isArray(allowed) ? allowed : [allowed];
+    if (key === "purpose") {
+      // A rule naming every purpose option (the export's `_EVERY_PURPOSE`) is no
+      // restriction at all; a narrower one only bites once PURPOSE has an answer,
+      // because until then there is no purpose to rule the screen out with.
+      if (!purpose.length || list.length >= purpose.length) continue;
+      const answer = answers.purpose;
+      if (answer == null || answer === "") return false;
+      if (!list.some((n) => String(n) === String(answer))) return false;
+    } else if (key === "agnes_remembered") {
+      if (!list.some((v) => String(v) === String(agnesRemembered || "unknown"))) return false;
+    } else if (key === "length_s_max") {
+      // 7- and 10-minute episodes are KIE-only, so AGNES is asked only while the
+      // chosen length is one Agnes can make (SPEC A15, `length_s_max` 300 s).
+      const seconds = chosenLengthSeconds(questions, answers);
+      if (seconds == null || seconds > Number(allowed)) return false;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The length the client picked, in seconds, read off the option text the card
+// itself offers ("60 seconds", "3 minutes + 60s and 90s clips") — never a second
+// length table beside `length_formula`.
+function chosenLengthSeconds(questions, answers) {
+  for (const id of ["episode_length", "length"]) {
+    const answer = answers[id];
+    if (answer == null || answer === "") continue;
+    const screen = (questions || []).find((q) => q.id === id);
+    const option = ((screen && screen.options) || []).find((o) => String(o.n) === String(answer));
+    const found = /(\d+)\s*(second|minute)/i.exec(String((option && option.text) || ""));
+    return found ? Number(found[1]) * (/minute/i.test(found[2]) ? 60 : 1) : null;
+  }
+  return null;
+}
+
+// The screens that are on, in the card's own order: PURPOSE first, its one
+// follow-up right after it, EPISODE LENGTH in LENGTH's own slot, SHAPE right
+// after the length screen, AGNES after VIDEO STYLE — the placement of
+// `intake_card._shaped` (METHOD-INTEGRATION 3.2), so the replies this page
+// saves sit at the positions the bridge replays. The SET of screens comes only
+// from `shows_when`; an unplaced screen lands last rather than vanishing.
+function shapeScreens(questions, answers, agnesRemembered) {
+  const on = (questions || []).filter((q) => screenIsOn(q, questions, answers, agnesRemembered));
+  const get = (id) => on.find((q) => q.id === id);
+  const out = [];
+  const put = (q) => { if (q && !out.includes(q)) out.push(q); };
+  put(get("purpose"));
+  put(get("permission") || get("where"));
+  for (const base of questions || []) {
+    if (base.id === "length") {
+      // EPISODE LENGTH for a campaign sits in LENGTH's own slot, and SHAPE
+      // right behind it — at that position whether LENGTH itself is on or not,
+      // because a campaign answers EPISODE LENGTH instead of LENGTH.
+      put(get("episode_length") || get("length"));
+      put(get("shape"));
+      continue;
+    }
+    if (["purpose", "episode_length", "permission", "where", "shape", "agnes"].includes(base.id)) continue;
+    put(get(base.id));
+    if (base.id === "look") put(get("agnes"));
+  }
+  on.forEach(put);
+  return out;
+}
+
+// The list rebuilt from the answers so far: the same walk `intake_card.
+// conversation()` takes, reply by reply, so a saved draft replays identically.
+export function visibleScreens(questions, replies = [], agnesRemembered = "unknown") {
+  const answers = {};
+  let list = shapeScreens(questions, answers, agnesRemembered);
+  for (const reply of replies || []) {
+    const at = Object.keys(answers).length;
+    if (reply == null || reply === "" || at >= list.length) break;
+    answers[list[at].id] = reply;
+    list = shapeScreens(questions, answers, agnesRemembered);
+  }
+  return list;
+}
+
+// ── the Agnes progress line on the project card (SPEC A11) ───────────────────
+// SPEC A11's own two sentences. The only reason the quota ledger writes today
+// is the daily reset, so it carries its words here; any other reason is printed
+// as it arrives — the page never invents a reason it was not given.
+const WAITING_WORDS = { "agnes-quota-next-day": "waiting for tomorrow's Agnes time" };
+
+function clockAt(iso) {
+  const at = new Date(String(iso));
+  if (Number.isNaN(at.getTime())) return "";
+  const h = at.getHours();
+  return `${h % 12 || 12}:${String(at.getMinutes()).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+}
+
+export function agnesProgressLine(progress) {
+  if (!progress || typeof progress !== "object") return "";
+  const total = Number(progress.clips_total);
+  const done = Number(progress.clips_done);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(done)) return "";
+  if (progress.waiting_reason) {
+    const why = WAITING_WORDS[String(progress.waiting_reason)] || `waiting (${progress.waiting_reason})`;
+    const at = clockAt(progress.next_continue_utc);
+    return at ? `${why}, continues at ${at}` : why;
+  }
+  const low = Number(progress.eta_minutes_low);
+  const high = Number(progress.eta_minutes_high);
+  const eta = low > 0 ? low : high > 0 ? high : 0;
+  if (!eta) return `Making your video clips: ${done} of ${total} done`;
+  const h = Math.floor(eta / 60);
+  const m = eta % 60;
+  const left = h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
+  return `Making your video clips: ${done} of ${total} done — about ${left} to go`;
+}
 
 const el = (tag, attrs = {}, children = []) => {
   const node = document.createElement(tag);
@@ -233,10 +363,15 @@ async function loadQuestions() {
 const isFreeTextOption = (o) => /^reply with/i.test(String(o.detail || "").trim());
 
 function hydrateReplies(replies) {
+  // The list is rebuilt from these replies (SPEC B1), so every index below is
+  // an index into the list on display, never into the whole export.
+  const list = visibleScreens(state.questions, replies || [], state.agnesRemembered);
+  state.visible = list;
+  state.visibleFrom = state.questions;
   state.picks = [];
   state.texts = [];
-  replies.forEach((r, i) => {
-    const q = state.questions[i];
+  (replies || []).forEach((r, i) => {
+    const q = list[i];
     if (!q || r == null || r === "") return;
     const pick = q.options.find((o) => String(o.n) === String(r));
     if (pick) { state.picks[i] = String(pick.n); return; }
@@ -245,8 +380,19 @@ function hydrateReplies(replies) {
   });
 }
 
+// The screens that are on right now. The list is rebuilt when the questions
+// themselves change (or nothing has been built yet) — an answer changes it
+// through `answerChanged`, never through a re-render, so an answer in progress
+// is never thrown away by drawing the page again.
+function screens() {
+  if (state.questions.length && (state.visibleFrom !== state.questions || !state.visible.length)) {
+    hydrateReplies(state.replies);
+  }
+  return state.visible;
+}
+
 function replyFor(i) {
-  const q = state.questions[i];
+  const q = state.visible[i];
   const pick = state.picks[i];
   if (!q || !pick) return "";
   const opt = q.options.find((o) => String(o.n) === String(pick));
@@ -254,16 +400,31 @@ function replyFor(i) {
   return String(pick);
 }
 
-const currentReplies = () => state.questions.map((_, i) => replyFor(i));
+const currentReplies = () => state.visible.map((_, i) => replyFor(i));
 
 function firstUnanswered() {
-  for (let i = 0; i < state.questions.length; i++) if (!replyFor(i)) return i;
-  return state.questions.length;
+  for (let i = 0; i < state.visible.length; i++) if (!replyFor(i)) return i;
+  return state.visible.length;
 }
 
 function ensurePick(i) {
-  const q = state.questions[i];
+  const q = state.visible[i];
   if (q && !state.picks[i] && q.options.length === 1) state.picks[i] = String(q.options[0].n);
+}
+
+// One option was picked on screen `i`. PURPOSE rebuilds the list that follows
+// it, so everything after that screen is dropped — the card does the same
+// (SPEC B1: "every answer after it has to be given again").
+function answerChanged(i, value) {
+  state.picks[i] = value;
+  if (state.visible[i] && state.visible[i].id === "purpose") {
+    state.picks.length = i + 1;
+    state.texts.length = i + 1;
+  }
+  state.replies = currentReplies();
+  hydrateReplies(state.replies);
+  state.qIndex = Math.min(i, Math.max(0, state.visible.length - 1));
+  render();
 }
 
 async function saveDraft() {
@@ -284,7 +445,7 @@ async function advance() {
   }
   state.replies = currentReplies();
   await saveDraft();
-  if (i + 1 >= state.questions.length) { setPage("recap"); return; }
+  if (i + 1 >= state.visible.length) { setPage("recap"); return; }
   state.qIndex = i + 1;
   render();
 }
@@ -295,14 +456,14 @@ async function startOrder() {
   hydrateReplies(state.replies);
   state.replies = currentReplies();
   const next = firstUnanswered();
-  if (next >= state.questions.length) { setPage("recap"); return; }
+  if (next >= state.visible.length) { setPage("recap"); return; }
   state.qIndex = next;
   setPage("questions");
 }
 
 function goAnswer() {
   hydrateReplies(state.replies);
-  state.qIndex = Math.min(firstUnanswered(), state.questions.length - 1);
+  state.qIndex = Math.min(firstUnanswered(), Math.max(0, state.visible.length - 1));
   setPage("questions");
 }
 
@@ -362,19 +523,27 @@ function projectList() {
   }))];
 }
 
-function answerBox(value, onInput) {
+function answerBox(value, onInput, question) {
   const wrap = el("div", {});
   const id = "q-answer";
-  wrap.append(el("label", { for: id, text: "Your answer" }));
-  const input = el("input", { id, type: "text", autocomplete: "off" });
-  input.value = value;
-  input.addEventListener("input", () => onInput(input.value));
-  wrap.append(input);
+  // A story-brief answer is a sentence — an audience and an action, a character
+  // description, a list of photos — so it gets room to be one. The BUDGET's
+  // "a different maximum" is a dollar amount and stays a single line. The
+  // question's own `typed` flag decides; the option text is never sniffed.
+  const typed = Boolean(question && question.typed);
+  wrap.append(el("label", { for: id, text: typed ? "Your answer, in your own words" : "Your answer" }));
+  const box = typed
+    ? el("textarea", { id, rows: "3", autocomplete: "off" })
+    : el("input", { id, type: "text", autocomplete: "off" });
+  box.value = value;
+  box.addEventListener("input", () => onInput(box.value));
+  wrap.append(box);
   return wrap;
 }
 
 function pageQuestions() {
-  if (!state.questions.length) {
+  const list = screens();
+  if (!list.length) {
     return [
       el("h1", { text: "Tell us about your video" }),
       el("div", { class: "refusal", text: "The questions are not here yet. Nothing you typed has been lost — go home and try again." }),
@@ -382,8 +551,8 @@ function pageQuestions() {
     ];
   }
 
-  const i = state.qIndex;
-  const q = state.questions[i];
+  const i = Math.min(state.qIndex, list.length - 1);
+  const q = list[i];
   ensurePick(i);
   const chosen = q.options.find((o) => String(o.n) === String(state.picks[i] || ""));
 
@@ -394,7 +563,7 @@ function pageQuestions() {
     const id = `q-${q.id}-${o.n}`;
     const input = el("input", { id, type: "radio", name: `q-${q.id}`, value: String(o.n) });
     if (String(state.picks[i]) === String(o.n)) input.checked = true;
-    input.addEventListener("change", () => { state.picks[i] = String(o.n); render(); });
+    input.addEventListener("change", () => answerChanged(i, String(o.n)));
     fieldset.append(el("label", { class: "option", for: id }, [
       input,
       el("span", {}, [
@@ -405,25 +574,26 @@ function pageQuestions() {
     ]));
   }
   if (chosen && isFreeTextOption(chosen)) {
-    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }));
+    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }, q));
   }
 
   return [
     el("h1", { text: q.label || "Your question" }),
-    el("p", { class: "muted", text: `${i + 1} of ${state.questions.length}. Your answer saves when you tap Next.` }),
+    el("p", { class: "muted", text: `${i + 1} of ${list.length}. Your answer saves when you tap Next.` }),
     el("div", { class: "card" }, [fieldset]),
     el("div", { class: "actions" }, [
       i > 0
         ? secondary("Back", () => { state.qIndex = i - 1; render(); })
         : secondary("Home", () => setPage("start")),
-      primary(i + 1 >= state.questions.length ? "Read the recap" : "Next", () => advance()),
+      primary(i + 1 >= list.length ? "Read the recap" : "Next", () => advance()),
     ]),
   ];
 }
 
 function pageRecap() {
   if (state.locked) return pageReceived();
-  if (!state.questions.length) {
+  const list = screens();
+  if (!list.length) {
     return [
       el("h1", { text: "Read this back, then lock it in" }),
       el("div", { class: "refusal", text: "There is nothing to recap yet. Start your order from the home screen." }),
@@ -432,7 +602,7 @@ function pageRecap() {
   }
 
   const replies = currentReplies();
-  const rows = state.questions.map((q, i) => {
+  const rows = list.map((q, i) => {
     const li = el("li", {});
     const b = el("button", {
       type: "button", class: "btn secondary",
@@ -496,6 +666,21 @@ function timelineFor(order) {
   })))];
 }
 
+// The Agnes job's own record for this project (SPEC A11): the service reports
+// it per project — keyed by order id, or as the record itself when there is one
+// project — and until the service reports it at all, there is no line to show.
+function progressFor(order) {
+  const all = state.agnesProgress;
+  if (!all || typeof all !== "object") return null;
+  if (order && order.order_id && all[order.order_id]) return all[order.order_id];
+  return Object.prototype.hasOwnProperty.call(all, "clips_total") ? all : null;
+}
+
+function progressNodes(order) {
+  const line = agnesProgressLine(progressFor(order));
+  return line ? [el("p", { text: line })] : [];
+}
+
 function pageProject() {
   const order = state.order || state.orders[0];
   const nodes = [el("h1", { text: "Your project" })];
@@ -510,6 +695,7 @@ function pageProject() {
     el("h2", { text: order.title || "Your video" }),
     el("p", { text: `Status: ${statusWords(order)}` }),
     ...timelineFor(order),
+    ...progressNodes(order),
   ]));
 
   const approvalsCard = el("div", { class: "card" }, [el("h2", { text: "Your approvals" })]);
@@ -671,6 +857,11 @@ async function boot() {
       state.orders = Array.isArray(session.orders) ? session.orders : [];
       state.replies = Array.isArray(session.draft && session.draft.replies)
         ? [...session.draft.replies] : [];
+      // The remembered Agnes answer and the Agnes job's progress ride the same
+      // session (W2-wiring-U3). Absent until that lands: "unknown" keeps AGNES
+      // on the card (its shows_when names "unknown") and no progress line shows.
+      state.agnesRemembered = session.agnes_remembered || "unknown";
+      state.agnesProgress = session.agnes_progress || null;
     } catch (err) {
       announce(serviceMessage(err));
     }
@@ -678,7 +869,7 @@ async function boot() {
       await loadQuestions();
       hydrateReplies(state.replies);
       const next = firstUnanswered();
-      if (next >= state.questions.length) state.page = "recap";
+      if (next >= state.visible.length) state.page = "recap";
       else if (state.page === "questions") state.qIndex = next;
     }
   } else {

@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: "3.7.1"
+version: "3.7.2"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -146,28 +146,28 @@ QC: Final.
 
 ## Usage
 
-Spawn the Content Publishing Engine via OpenClaw subagent runtime (model must be from the Ollama-Cloud-first chain — see `shared-utils/select_model.py --purpose-tier mid`):
+Spawn the Content Publishing Engine via OpenClaw subagent runtime (model resolved from the client's own configured models, Ollama-Cloud-first, see `shared-utils/select_model.py --purpose-tier mid`):
 
 ```
-sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="ollama/minimax-m2.7:cloud"
+sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="<the client's selected mid-tier model, or their configured default model>"
 ```
 
-Fallback if Ollama Cloud Minimax isn't available: `model="openrouter/xiaomi/mimo-v2-pro"`. Never hardcode the OpenRouter option as the primary.
+If the client has not selected a model for this tier and no default is configured, ask the client which model to use before spawning. Never hardcode a provider-specific model as the primary.
 
 The subagent will read `identity.md`, pull credentials from `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, run the 15+6 agent pipeline (Research → Create → Produce → Schedule → Publish), upload finished media to the client's GHL Media Library, and return public CDN links. Social posting follows the Tier 0→3 ladder (see `references/playbook.md` Section 17): when Skill 44 is installed it posts via the `caf` CLI (Tier 0) first, then GHL MCP (Tier 1/2), then raw REST as a last resort.
 
 ### Per-role model tiering (client providers only — NEVER Anthropic/Claude)
 
-The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-agent's model to its job — **Ollama Cloud is the preference, the OpenRouter equivalent is the backup, and reasoning effort is HIGH**:
+The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-agent's model to its job: **each role uses the model the client selected for it, or the client's configured default model. Ollama Cloud is the provider preference, the OpenRouter equivalent is the backup, and reasoning effort is HIGH**:
 
-| Role group | Job type | Model (Ollama Cloud preferred → OpenRouter backup) |
+| Role group | Job type | Model (the client's choice, or their configured default model) |
 |---|---|---|
-| Researcher, Strategist | high reasoning / strategy | DeepSeek V4.1 Flash **or** GLM 5.2 |
-| Writer, Editor, Image Prompt Engineer, Email Designer (article/script/HTML/caption copy) | content & HTML writing | GLM 5.2 |
-| Publisher (GHL tool-calls / scheduling) + all 6 QC agents | browser control / tool-calls / QC | MiniMax 3 |
+| Researcher, Strategist | high reasoning / strategy | Client's choice, or their configured default model. Recommendation: a high-reasoning model, because these roles do strategy work |
+| Writer, Editor, Image Prompt Engineer, Email Designer (article/script/HTML/caption copy) | content & HTML writing | Client's choice, or their configured default model. Recommendation: a strong long-form writing model, because these roles produce copy and HTML |
+| Publisher (GHL tool-calls / scheduling) + all 6 QC agents | browser control / tool-calls / QC | Client's choice, or their configured default model. Recommendation: a model with reliable tool calling, because these roles drive browser control and tool-calls |
 | Video Producer (FFmpeg), Audio Generator, media upload | mechanical (no model judgement) | client's configured/default model |
 
-Resolve concrete model IDs via `shared-utils/select_model.py` (Ollama-Cloud-first). NEVER recommend, hardcode, or default any client agent to an Anthropic/Claude model (Opus/Sonnet/Haiku/`claude-*`) — every client runs their own providers (Ollama Cloud / OpenRouter).
+Resolve concrete model IDs via `shared-utils/select_model.py`, which resolves against the client's own configured models (Ollama-Cloud-first). If the client has not selected a model for a role and no default is configured, ask the client which model to use. NEVER recommend, hardcode, or default any client agent to an Anthropic/Claude model (Opus/Sonnet/Haiku/`claude-*`): every client runs their own providers (Ollama Cloud / OpenRouter).
 
 ### Provider-first model policy (F31 — binding)
 

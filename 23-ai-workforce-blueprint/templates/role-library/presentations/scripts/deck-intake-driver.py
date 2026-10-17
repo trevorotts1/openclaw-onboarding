@@ -1138,6 +1138,176 @@ def _import_resource_profile():
         return None
 
 
+def _import_route_honesty():
+    """Import presentation_job.route_honesty beside this driver.
+
+    Fail-soft on the same terms as _import_resource_profile(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed.
+    The honesty block is presentation and record, never a gate: losing it
+    must never lose the client's answers."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import route_honesty as _rh  # noqa: PLC0415
+        return _rh
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [ROUTE-HONESTY] presentation_job.route_honesty is not "
+              f"importable from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) "
+              f"-- the numeric honesty block for an Ollama route cannot be "
+              f"presented or recorded on this box. Fix the deploy; the "
+              f"interview itself proceeds.", file=sys.stderr)
+        return None
+
+
+def _route_honesty_pre_state():
+    """The honesty block's pre-answer state for the resource_plan turn:
+    whether it is owed, and the selection signature it is owed against,
+    read BEFORE the plan-tier / model-plan recorders below mutate the
+    profile. The decision recorder compares this against the selection in
+    force after the answer -- that comparison IS the accept/decline
+    verdict, so reading it after the recorders would erase the very
+    change it exists to detect. Fail-soft: None means no offer was
+    tracked for this answer and no decision will be recorded."""
+    rh = _import_route_honesty()
+    if rh is None or not rh.flag_enabled():
+        return None
+    try:
+        rp = _import_resource_profile()
+        prof = rp.load_profile() if rp is not None else {}
+        return {"owed": rh.block_owed(prof),
+                "signature": rh.selection_signature(prof)}
+    except Exception:  # noqa: BLE001 -- presentation state never kills intake
+        return None
+
+
+def _record_route_honesty(pre_state, entries) -> None:
+    """Record the client's route decision (FIX 18) after the resource_plan
+    answer has been durably recorded by the plan-tier / model-plan
+    recorders. Fail-soft with a loud WARN, deliberately unlike the
+    recorders above: the decision record is VISIBILITY over an answer
+    that already landed -- refusing the answer itself at this point
+    would punish the client for a bookkeeping failure, and the profile
+    write order (tier, then model plan, then this) means the answer is
+    already on disk either way."""
+    if not pre_state or not pre_state.get("owed"):
+        return
+    rh = _import_route_honesty()
+    if rh is None:
+        return
+    try:
+        answers = _answer_view(entries)
+        slides = rh.coerce_deck_slides(
+            answers.get("slide_count"), answers.get("SLIDE_COUNT"),
+            answers.get("client_requested_slide_count"))
+        rh.record_route_decision(pre_signature=pre_state.get("signature"),
+                                 pre_owed=True, deck_slides=slides,
+                                 source="intake")
+    except Exception as exc:  # noqa: BLE001 -- visibility must never kill intake
+        print(f"  WARN  [ROUTE-HONESTY] could not record the route decision "
+              f"({exc.__class__.__name__}: {exc}) -- the client's plan "
+              f"answer above IS recorded; only the honesty decision record "
+              f"is missing, so the block may be shown once more.",
+              file=sys.stderr)
+
+
+def _import_model_freshness():
+    """Import presentation_job.model_freshness beside this driver.
+
+    Fail-soft on the same terms as _import_route_honesty(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed.
+    The freshness check is presentation and record, never a gate: losing
+    it must never lose the client's answers."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import model_freshness as _mf  # noqa: PLC0415
+        return _mf
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [MODEL-FRESHNESS] presentation_job.model_freshness "
+              f"is not importable from {SCRIPTS_DIR} "
+              f"({exc.__class__.__name__}: {exc}) -- the model freshness "
+              f"check cannot run or be recorded on this box. Fix the "
+              f"deploy; the interview itself proceeds.", file=sys.stderr)
+        return None
+
+
+#: The client's explicit freshness decision, carried as a labelled
+#: segment of the resource_plan answer ("model_freshness: switch" /
+#: "keep" / "defer"). It is parsed HERE, out of the raw answer text,
+#: rather than derived from the plan the answer records: silence must
+#: stay silence (the offer stays pending, which is a state, not a
+#: decision), and only an explicit label is the client's act.
+_FRESHNESS_DECISION_RE = re.compile(
+    r"(?:model[ _-]?freshness|freshness)\s*(?:decision)?\s*[:=]\s*"
+    r"(switch|keep|defer)\b", re.IGNORECASE)
+
+
+def _freshness_decision_label(text: str) -> Optional[str]:
+    match = _FRESHNESS_DECISION_RE.search(str(text or ""))
+    return match.group(1).lower() if match else None
+
+
+def _record_model_freshness(text: str) -> Optional[Dict[str, Any]]:
+    """FIX 31 (B11 Hook A): the freshness beat of the resource_plan turn,
+    run AFTER the model plan is recorded and immediately after the
+    route-honesty decision -- the check is against the just-saved
+    profile, never before it.
+
+    (1) An explicit decision label in THIS answer settles the offer that
+    was outstanding when the turn began (the most recent pending offer),
+    through record_freshness_decision -- the single decision writer.
+    (2) The check itself runs and is recorded at the intake surface; a
+    successor found becomes a pending offer.
+
+    Returns the block cmd_answer presents in THIS turn's response
+    ({"offers", "decision", "text"}): the decision's own message when a
+    decision was recorded (a refused switch tells the client, in plain
+    terms, that the switch could not be applied and why), plus the text
+    of a newly found offer. No decision label and no offer means None:
+    the offer from an earlier detection stays pending, which the
+    _emit_question seam re-presents at the next resource_plan turn.
+    Fail-soft with a loud WARN, on _record_route_honesty's terms: the
+    client's answer is already recorded above, and a freshness failure
+    must never un-record it or block the interview."""
+    mf = _import_model_freshness()
+    if mf is None:
+        return None
+    try:
+        if not mf.flag_enabled():
+            return None
+        decision = None
+        outcome = _freshness_decision_label(text)
+        if outcome:
+            rp = _import_resource_profile()
+            prof = rp.load_profile() if rp is not None else {}
+            offers = mf.pending_offers(prof)
+            if offers:
+                decision = mf.record_freshness_decision(
+                    offers[-1].get("check_id"), outcome)
+        verdict = mf.intake_check()
+        found = (verdict or {}).get("offers") or []
+        if decision is None and not found:
+            return None
+        block: Dict[str, Any] = {"offers": found, "decision": decision,
+                                 "text": ""}
+        parts = []
+        if decision is not None:
+            parts.append(str(decision.get("message") or ""))
+        if found:
+            parts.append(str(found[0].get("text") or ""))
+        block["text"] = "\n\n".join(p for p in parts if p)
+        return block
+    except Exception as exc:  # noqa: BLE001 -- visibility must never kill intake
+        print(f"  WARN  [MODEL-FRESHNESS] could not run or record the "
+              f"freshness check ({exc.__class__.__name__}: {exc}) -- the "
+              f"client's plan answer above IS recorded; only the "
+              f"freshness check is missing, so it will run again at the "
+              f"next surface.", file=sys.stderr)
+        return None
+
+
 def _import_capacity():
     """Import presentation_job.capacity beside this driver.
 
@@ -1211,6 +1381,15 @@ def _emit_configuration_pending(run_dir: Path, pending_providers: List[str],
                 "the run is NOT blocked — already configured routes proceed"),
             "state": CONFIGURATION_PENDING_EVENT,
             "owner": "presentation-intake",
+            # FIX-PLAN Item 10: the park-class vocabulary owned by
+            # presentation_job.auto_resume. This wait is a CLIENT-ACTION
+            # park: the missing resource-plan answer is owed by the client,
+            # it never auto-resumes, and the run waits on the client. The
+            # "owner" field above names the emitting subsystem and is kept
+            # for existing readers; "waiting_on" names the actor who must
+            # act, which is what Item 33b's conversational layer keys on.
+            "park_class": "client_action",
+            "waiting_on": "client",
             "source": "deck-intake-driver",
         })
     try:
@@ -1378,6 +1557,28 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
         if plan and plan in (cap.PLANS_BY_PROVIDER.get(provider) or ()):
             matched.append((provider, plan))
     if not matched:
+        # Owner ruling 2026-10-15: a NO_CAP provider (deepseek-direct,
+        # openrouter) never OWES a plan answer, so it is never in `pending`
+        # -- but a tier label the client states for one it OWNS is still
+        # their answer to record, as metadata through record_plan_answer's
+        # BYOK branch (it changes no ceiling; there is none). Without this
+        # arm, a merged turn naming a DeepSeek tier ("plan: v4-flash") is
+        # refused whole and the model plan riding in the same answer is
+        # dropped with it -- the refusal below exists to prevent exactly
+        # that accept-and-drop shape.
+        try:
+            prof = rp.load_profile()
+            owned_nocap = [cap.normalize_provider(pid)
+                           for pid in (prof.get("providers") or {})]
+        except Exception:  # noqa: BLE001 -- metadata matching is best-effort
+            owned_nocap = []
+        for provider in owned_nocap:
+            if provider and provider in cap.NO_CAP_PROVIDERS \
+                    and provider not in pending:
+                plan = cap.normalize_plan(raw, provider)
+                if plan:
+                    matched.append((provider, plan))
+    if not matched:
         offers = "; ".join(
             f"{p}: {', '.join(cap.PLANS_BY_PROVIDER.get(p) or ()) or '(none)'}"
             for p in pending)
@@ -1403,6 +1604,66 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
     return 0
 
 
+def _variant_match_from_client_inventory(variant: str):
+    """Resolve a DeepSeek variant word against the CLIENT'S wired inventory.
+
+    The variant word ("flash" / "pro") is the client's shorthand for a tier
+    of THEIR OWN DeepSeek inventory, never a pinned model id: the recorded
+    workhorse is the client's own selected model, the exact id their box
+    wires on deepseek-direct. Returns (model_id, wired_models) with
+    model_id None when the inventory holds no unique match, so the caller
+    refuses at intake with the inventory named instead of recording a
+    model nobody chose.
+    """
+    rp = _import_resource_profile()
+    if rp is None:
+        return None, []
+    try:
+        profile = rp.load_profile()
+    except Exception:  # noqa: BLE001 -- an unreadable store is no inventory
+        return None, []
+    providers = (profile or {}).get("providers") or {}
+    entry = providers.get("deepseek-direct") or providers.get("deepseek") or {}
+    wired = [str(m) for m in (entry.get("wired_models") or []) if str(m).strip()]
+
+    def _norm(model_id: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", model_id.lower())
+
+    def _version_token(model_id: str) -> float:
+        m = re.search(r"(\d+(?:\.\d+)*)", model_id)
+        if not m:
+            return 0.0
+        parts = m.group(1).split(".")
+        try:
+            return float(parts[0]) + (float(parts[1]) / 100.0
+                                      if len(parts) > 1 else 0.0)
+        except ValueError:
+            return 0.0
+
+    # The two words name the two ends of the client's OWN wired DeepSeek
+    # inventory: "flash" is the lighter tier, "pro" the stronger one. A
+    # pro-named id wins outright; otherwise the tiers split the wired
+    # flash family by version (the stronger sibling carries the higher
+    # version token). One wired model total: both words name it -- there
+    # is no tier choice to make on a one-model box.
+    flash_family = [m for m in wired if "flash" in _norm(m)]
+    pro_named = [m for m in wired
+                 if "pro" in _norm(m) and "flash" not in _norm(m)]
+    if variant == "flash":
+        if len(flash_family) == 1:
+            return flash_family[0], wired
+        if len(flash_family) >= 2:
+            return min(flash_family, key=_version_token), wired
+        return None, wired
+    if len(pro_named) == 1:
+        return pro_named[0], wired
+    if len(flash_family) >= 2:
+        return max(flash_family, key=_version_token), wired
+    if len(flash_family) == 1 and len(wired) == 1:
+        return flash_family[0], wired
+    return None, wired
+
+
 def _record_client_model_plan(derived: Dict[str, Any],
                               entries: Dict[str, Any]) -> int:
     """Persist the resource_plan turn's model subfields as a client model plan.
@@ -1425,10 +1686,23 @@ def _record_client_model_plan(derived: Dict[str, Any],
     # FIX 61.2: client picks the DeepSeek variant (flash|pro) and OpenRouter model.
     deepseek_variant = _clean(derived.get("deepseek_variant")).lower()
     openrouter_model = _clean(derived.get("openrouter_model"))
-    if deepseek_variant == "flash":
-        picks["workhorse"] = "deepseek-flash@deepseek-direct"
-    elif deepseek_variant == "pro":
-        picks["workhorse"] = "deepseek-v4.1-flash@deepseek-direct"
+    if deepseek_variant in ("flash", "pro"):
+        # The variant word records the CLIENT'S OWN selected model, resolved
+        # against the client's wired deepseek-direct inventory -- never a
+        # pinned id translated from the word. No unique wired match: refuse
+        # AT INTAKE with the inventory named (the standing doctrine for a
+        # declaration this box cannot serve), so the client names the exact
+        # model (model@provider) instead.
+        match, wired = _variant_match_from_client_inventory(deepseek_variant)
+        if match is None:
+            print(json.dumps({"error": (
+                f"deepseek_variant {deepseek_variant!r} names no unique model "
+                f"in the client's wired deepseek-direct inventory "
+                f"({', '.join(wired) if wired else 'none probed'}): name the "
+                f"exact model as model@provider, or run the capacity probe "
+                f"so the inventory names it")}))
+            return 1
+        picks["workhorse"] = f"{match}@deepseek-direct"
     if not any(picks.values()) and not thinking and not openrouter_model:
         return 0  # every slot omitted: the department defaults stand
 
@@ -1472,6 +1746,149 @@ def _record_client_model_plan(derived: Dict[str, Any],
                                    f"({exc.__class__.__name__}): {exc}"}))
         return 1
     return 0
+
+
+#: The fleet-shape question's identity on the configuration_pending event
+#: stream: the missing field a fleet_shape event names. The question is not
+#: a bank turn (see _record_system_gauge_and_fleet_question), so the bank
+#: carries no literal for it; the name is the event vocabulary's own.
+_FLEET_SHAPE_FIELD = "fleet_shape"
+
+
+def _emit_fleet_shape_question(run_dir: Path, question: Dict[str, Any],
+                               session_hint: str = "") -> List[dict]:
+    """Append the ONE owed fleet-shape question to the run's
+    configuration_pending event stream.
+
+    WHY AN EVENT AND NOT A BANK TURN. The fleet-shape question is asked
+    ONCE, at the gauge moment (the resource_plan turn), and its answer is a
+    profile-level fact recorded through resource_profile's own channels
+    (record_fleet_shape: the client's answer, the install-time
+    $PRESENTATION_FLEET_SHAPE declaration, certain detection). The bank is
+    the ceiling of 23 conversational turns (Trevor ruling) and carries
+    deck-content and per-deck axes; a 24th bank turn for an install-level
+    question would break that ceiling for a question most installs never
+    owe (detection settles fleet-mac outright, and a recorded shape is
+    never re-asked). The configuration_pending stream is this driver's
+    durable channel for exactly this shape of debt -- a question the client
+    owes, named with its next action, that never blocks the run (PRES-006)
+    -- so the fleet question is asked there, in the same vocabulary
+    (park_class client_action, waiting_on client: FIX-PLAN Item 10's park
+    classes). There is no per-provider row: the shape is one install-level
+    fact, owed once.
+
+    Never raises into the intake flow: the event is VISIBILITY, never a
+    gate; a failed append is reported on stderr and the turn proceeds."""
+    base = (os.environ.get("PRESENTATION_INTAKE_BASE_URL") or "").rstrip("/")
+    session_id = session_hint or ""
+    resume = f"{base}/s/{session_id}" if base else f"/s/{session_id}"
+    candidates = [str(c) for c in (question.get("candidates") or [])]
+    event = {
+        "event": CONFIGURATION_PENDING_EVENT,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "session_id": session_id,
+        "run_dir": str(run_dir),
+        "field": _FLEET_SHAPE_FIELD,
+        "missing_field": _FLEET_SHAPE_FIELD,
+        "question": question.get("question"),
+        "candidates": candidates,
+        "resume_url": resume,
+        "next_action": (
+            "answer the fleet-shape question for this install (one of: "
+            + ", ".join(candidates)
+            + "); the run is NOT blocked -- the gauge already recorded "
+              "what detection could measure and the shape stays honestly "
+              "unrecorded until the answer lands"),
+        "state": CONFIGURATION_PENDING_EVENT,
+        "owner": "presentation-intake",
+        # FIX-PLAN Item 10 park-class vocabulary, as on the PRES-006
+        # events: the answer is owed by the client and never auto-resumes.
+        "park_class": "client_action",
+        "waiting_on": "client",
+        "source": "deck-intake-driver",
+    }
+    try:
+        out = run_dir / _CONFIG_EVENTS_RELPATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"  WARN  [FLEET-SHAPE] could not append the fleet-shape "
+              f"question event ({exc.__class__.__name__}: {exc}) -- the "
+              f"question is still owed, only its durable record is "
+              f"missing.", file=sys.stderr)
+    return [event]
+
+
+def _record_system_gauge_and_fleet_question(run_dir: Path,
+                                              session_hint: str = "") -> None:
+    """FIX-PLAN Item 17 (B27 driver-wiring follow-up): THE SYSTEM GAUGE at
+    the resource_plan moment, plus the ONE fleet-shape question when one is
+    still owed.
+
+    B27 built record_system_gauge() / fleet_shape_question() at the profile
+    layer and named this turn as their production hook in so many words:
+    the resource_plan moment is the gauge moment, and the wiring is "one
+    call to record_system_gauge() at that moment, plus asking
+    fleet_shape_question() when it returns a question". Before this wire,
+    nothing in production called either function: the gauge was never taken
+    at intake (a later run started from unmeasured assertion instead of the
+    remembered measurement), and the fleet-shape question was never asked
+    (a Linux container's shape stayed unrecorded forever, so the gauge's
+    per-shape budget derivation -- the container budget and the host
+    ceiling it was sliced from -- never had its input).
+
+    ORDER, and why. The gauge FIRST: record_system_gauge() resolves the
+    shape itself (a shape already recorded wins; a valid
+    $PRESENTATION_FLEET_SHAPE declaration is recorded as declared and
+    locked; a certain detection is recorded as detected), so asking after
+    gauging never puts a question the gauge just settled.
+    fleet_shape_question() then returns a question exactly when one is
+    still owed (an ambiguous Linux container) and None otherwise. The
+    inputs are the functions' own defaults BY DESIGN: the manifest names
+    no driver-supplied readings, record_system_gauge() measures the box
+    itself (the hardware snapshot, detection, and the capacity refresh's
+    pure resolve_capacity() reading -- zero discovery, per PRES-015),
+    and fleet_shape_question() reads the same profile and detection.
+
+    PLACEMENT. At the END of the resource_plan block, after the plan tier,
+    the run mode and the model plan have all landed: a REFUSED answer (any
+    of those returning rc=1) never half-lands a gauge either -- the same
+    never-half-land rule this block already keeps. Re-answering the turn
+    re-gauges (record_system_gauge's own contract: a stale or superseded
+    gauge is overwritten, never trusted) and re-states a still-owed
+    question on the event stream, append-only like every
+    configuration_pending event.
+
+    FAILURE POSTURE. record_system_gauge() never raises for a measurement
+    (its readers degrade to notes); a store failure here is reported
+    LOUDLY on stderr and the turn still completes -- the gauge is a
+    measurement, not a client declaration, so it must not refuse the
+    client's resource_plan answer the way an unrecordable plan tier is
+    refused. Silence is the only unacceptable outcome."""
+    rp = _import_resource_profile()
+    if rp is None:
+        return  # already announced loudly on stderr by the importer
+    try:
+        rp.record_system_gauge()
+    except Exception as exc:  # noqa: BLE001 -- a gauge failure is loud, never fatal
+        print(f"  WARN  [SYSTEM-GAUGE] record_system_gauge() failed "
+              f"({exc.__class__.__name__}: {exc}) -- this run starts from "
+              f"unmeasured truth and the fleet shape may stay unrecorded. "
+              f"The resource_plan answer itself was recorded.",
+              file=sys.stderr)
+        return
+    try:
+        question = rp.fleet_shape_question()
+    except Exception as exc:  # noqa: BLE001 -- same posture as the gauge
+        print(f"  WARN  [FLEET-SHAPE] fleet_shape_question() failed "
+              f"({exc.__class__.__name__}: {exc}) -- the gauge was "
+              f"recorded; whether a fleet-shape question is owed is "
+              f"unknown for this run.", file=sys.stderr)
+        return
+    if question is not None:
+        _emit_fleet_shape_question(run_dir, question,
+                                   session_hint=session_hint)
 
 
 #: The client's RUN-MODE declaration (FIX 11: ultra|standard|economy). It
@@ -1686,6 +2103,9 @@ def cmd_answer(args) -> int:
     # with the SAME shape the drift-side waiver builder reads (validated +
     # normalized + answer), then apply the legacy special handlers.
     structured_intake_writes: Dict[str, Any] = {}
+    # FIX 31: the freshness block this answer's response presents, set by
+    # the resource_plan branch below and attached to `extra` at the end.
+    _freshness_offer: Optional[Dict[str, Any]] = None
     if qdef.get("subfields"):
         err = validate_labeled_enums(qdef, text)
         if err:
@@ -1762,6 +2182,14 @@ def cmd_answer(args) -> int:
         # directory): the P4-PROMPT fan-out children re-resolve routes in a
         # separate process that inherits the profile path but has no run_dir.
         if qid == "resource_plan":
+            # FIX 18 ROUTE HONESTY -- capture the pre-answer offer state
+            # FIRST, before any recorder below mutates the profile: whether
+            # the numeric honesty block is owed for this account, and the
+            # selection signature it is owed against. The decision is
+            # recorded after the model plan lands (see _record_route_honesty
+            # below); without this snapshot the comparison that produces
+            # the accept/decline verdict has nothing to compare against.
+            _honesty_pre = _route_honesty_pre_state()
             # CLIENT PLAN TIER (F5) -- FIRST, because it is the ask-once lock.
             # Before this wire, production intake recorded the model plan and
             # the run mode and NOTHING about the plan tier, so the profile lock
@@ -1783,6 +2211,29 @@ def cmd_answer(args) -> int:
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
+            # FIX 18: the answer just recorded IS the client's decision
+            # about the route the honesty block priced for them -- kept
+            # Ollama means declined, moved off Ollama means accepted, and
+            # either way the run proceeds on their selection. Recorded
+            # LAST and fail-soft (see the helper): a refused answer above
+            # never reaches this, and a failure here never un-records the
+            # answer.
+            _record_route_honesty(_honesty_pre, entries)
+            # FIX 31 MODEL FRESHNESS (B11 Hook A) -- immediately after
+            # the route-honesty decision, against the profile the
+            # recorders above just saved: an explicit decision label in
+            # this answer settles the outstanding offer first, then the
+            # check runs and any offer it finds is presented in THIS
+            # turn's response (attached to `extra` below). Fail-soft:
+            # a freshness failure never un-records the answer.
+            _freshness_offer = _record_model_freshness(text)
+            # FIX-PLAN Item 17 (B27 follow-up): THE GAUGE MOMENT. With the
+            # turn's declarations landed, take the remembered system gauge
+            # and ask the one fleet-shape question if it is still owed --
+            # the production hook B27 named for record_system_gauge() /
+            # fleet_shape_question(). See that function for the contract.
+            _record_system_gauge_and_fleet_question(
+                run_dir, session_hint=str(run_dir.name))
 
         # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
         # is required + block_gate and therefore asked on EVERY deck (unlike
@@ -1857,6 +2308,11 @@ def cmd_answer(args) -> int:
     # include this turn instead of going stale (or, under the old bug, being
     # silently destroyed). Never silent: stderr NOTICE + a JSON field below.
     extra: Dict[str, Any] = {}
+    if _freshness_offer is not None:
+        # FIX 31: the freshness offer (or the decision's own message,
+        # including a refused switch's plain reason) rides THIS turn's
+        # response, under the same turn's numbers.
+        extra["model_freshness"] = _freshness_offer
     if already_complete:
         envelope, warning = _finalize_transcript_envelope(run_dir)
         extra["post_completion_append"] = True
@@ -1943,6 +2399,64 @@ def _emit_question(qdef: Dict[str, Any],
         output["default"] = default
     if extra:
         output.update(extra)
+
+    # FIX 18 ROUTE HONESTY: the resource_plan turn carries the numeric
+    # honesty block when it is owed -- once per account-level answer set,
+    # and route_honesty owns that state machine (asked, remembered, and
+    # re-opened only by a changed selection). The block rides AFTER the
+    # bank's own help text and as its own field, so a consumer can present
+    # either. The showing is recorded (status "offered") at presentation
+    # time; the decision is recorded in cmd_answer when the turn is
+    # answered. B11 SEAM: B11's freshness offer for this same turn
+    # attaches immediately after this block, in this same output, under
+    # these numbers (route_honesty.py's docstring names the seam).
+    if qdef.get("id") == "resource_plan":
+        rh = _import_route_honesty()
+        if rh is not None:
+            try:
+                rp = _import_resource_profile()
+                prof = rp.load_profile() if rp is not None else {}
+                slides = rh.coerce_deck_slides(
+                    answers.get("slide_count"), answers.get("SLIDE_COUNT"),
+                    answers.get("client_requested_slide_count"))
+                pend = rh.pending_honesty(prof, deck_slides=slides)
+                if pend.get("owed") and pend.get("block"):
+                    output["route_honesty"] = pend["block"]
+                    output["help"] = (
+                        (help_text + "\n\n") if help_text else ""
+                    ) + pend["block"]
+                    rh.note_block_shown(deck_slides=slides, source="intake")
+            except Exception as exc:  # noqa: BLE001 -- presentation never kills intake
+                print(f"  WARN  [ROUTE-HONESTY] could not present the "
+                      f"honesty block ({exc.__class__.__name__}: {exc}) -- "
+                      f"the turn itself is unaffected.",
+                      file=sys.stderr)
+        # FIX 31 MODEL FRESHNESS: a pending offer (detected at an
+        # earlier intake check or at launch) is presented with THIS
+        # turn, immediately after the route_honesty block above, under
+        # the same numbers. Presentation only: the pending state is
+        # read from the profile, no new check runs here, and nothing is
+        # decided by showing it -- the client's answer (an explicit
+        # "model_freshness: switch|keep|defer" label in the
+        # resource_plan answer) is what cmd_answer records.
+        mf = _import_model_freshness()
+        if mf is not None:
+            try:
+                if mf.flag_enabled():
+                    rp = _import_resource_profile()
+                    prof = rp.load_profile() if rp is not None else {}
+                    block = mf.pending_offer_block(prof)
+                    if block:
+                        output["model_freshness"] = block
+                        output["help"] = (
+                            (output.get("help") + "\n\n")
+                            if output.get("help") else ""
+                        ) + block["text"]
+            except Exception as exc:  # noqa: BLE001 -- presentation never kills intake
+                print(f"  WARN  [MODEL-FRESHNESS] could not present the "
+                      f"pending freshness offer "
+                      f"({exc.__class__.__name__}: {exc}) -- the turn "
+                      f"itself is unaffected.", file=sys.stderr)
 
     print(json.dumps(output, indent=2))
     return 0
@@ -3044,7 +3558,7 @@ def _decline_present(answers):
     """True when any waiver toggle carries an explicit client "no"."""
     for key in ("want_teleprompter", "want_speech_script", "want_ghl_upload",
                 "want_audio_deliverable", "want_sales_checkout",
-                "want_vsl_page"):
+                "want_vsl_page", "want_email_sequences"):
         val = answers.get(key)
         if isinstance(val, bool):
             if val is False:
@@ -3072,7 +3586,8 @@ def _refine_condition_met(qdef, answers, selected):
         if qdef["id"] == "decline_context":
             toggles = ("want_teleprompter", "want_speech_script",
                        "want_ghl_upload", "want_audio_deliverable",
-                       "want_sales_checkout", "want_vsl_page")
+                       "want_sales_checkout", "want_vsl_page",
+                       "want_email_sequences")
             if _decline_present(answers):
                 return True
             if all(answers.get(t) is not None for t in toggles):
@@ -3091,7 +3606,8 @@ def _refine_condition_met(qdef, answers, selected):
         # only skippable turn, so it is skipped exactly then.
         toggles = ("want_teleprompter", "want_speech_script",
                    "want_ghl_upload", "want_audio_deliverable",
-                   "want_sales_checkout", "want_vsl_page")
+                   "want_sales_checkout", "want_vsl_page",
+                   "want_email_sequences")
         if _decline_present(answers):
             return True
         if all(answers.get(t) is not None for t in toggles):
@@ -3212,7 +3728,8 @@ def _residual_skippable(qdef, answers):
     if qdef["id"] == "decline_context":
         toggles = ("want_teleprompter", "want_speech_script",
                    "want_ghl_upload", "want_audio_deliverable",
-                   "want_sales_checkout", "want_vsl_page")
+                   "want_sales_checkout", "want_vsl_page",
+                   "want_email_sequences")
         if not _decline_present(answers) and all(
                 answers.get(t) is not None for t in toggles):
             return True

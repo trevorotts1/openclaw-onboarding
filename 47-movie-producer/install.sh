@@ -230,13 +230,51 @@ echo ""
 # verification.
 echo "--- Step 6: Write Rule-Zero budget cap into config.yaml ---"
 CONFIG_FILE="$OPENMONTAGE_DIR/config.yaml"
-CONFIG_FILE="$CONFIG_FILE" python3 - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
+# FIX (venv): Step 3 `make setup` installs PyYAML into the clone's OWN virtualenv
+# (OpenMontage Makefile: ensure-venv -> VENV_DIR=.venv), so a bare `python3` with
+# a clean system interpreter has no yaml and this step aborted with "PyYAML is
+# required ... installed by make setup". Run the writer with the very interpreter
+# `make setup` provisions; fall back to python3 only when no clone venv exists.
+#
+# FIX (round 2, PRF-003): the OpenMontage Makefile's RUN_PYTHON also honours an
+# already-active $VIRTUAL_ENV / $CONDA_PREFIX, so an operator running inside that
+# make-created environment must not fall through to bare python3. Priority is the
+# clone venv, then $VIRTUAL_ENV/bin/python, then $CONDA_PREFIX/bin/python, then
+# python3. A candidate qualifies ONLY when it is executable AND can actually
+# `import yaml` — an executable path alone never proved it could write config.yaml.
+# The first qualifier wins and is used for the Step 6 heredoc below.
+# >>> STEP6-PY-PROBE-BEGIN (extracted verbatim by the PRF-003 evidence harness) >>>
+OM_PYTHON=""
+for _om_py in \
+  "$OPENMONTAGE_DIR/.venv/bin/python" \
+  "$OPENMONTAGE_DIR/.venv/Scripts/python.exe" \
+  "${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}" \
+  "${CONDA_PREFIX:+$CONDA_PREFIX/bin/python}" \
+  "$(command -v python3 || true)"
+do
+  [ -n "$_om_py" ] || continue
+  [ -x "$_om_py" ] || continue
+  if "$_om_py" -c 'import yaml' >/dev/null 2>&1; then
+    OM_PYTHON="$_om_py"
+    break
+  fi
+done
+if [ -z "$OM_PYTHON" ]; then
+  red "No python interpreter: neither $OPENMONTAGE_DIR/.venv/bin/python nor python3 on PATH."
+  info "Re-run Step 3 (cd $OPENMONTAGE_DIR && make setup) to recreate the clone venv, then re-run install.sh."
+  info "No candidate could \`import yaml\` — checked the clone .venv, \$VIRTUAL_ENV, \$CONDA_PREFIX and python3."
+  exit 1
+fi
+# <<< STEP6-PY-PROBE-END <<<
+info "Step 6 python: $OM_PYTHON (yaml-capable; clone .venv, then \$VIRTUAL_ENV, then \$CONDA_PREFIX, then python3)"
+CONFIG_FILE="$CONFIG_FILE" "$OM_PYTHON" - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
 import os, sys
 try:
     import yaml
 except ImportError:
-    sys.stderr.write("PyYAML is required to write config.yaml (installed by make setup). "
-                     "Run `pip install pyyaml` and re-run install.sh.\n")
+    sys.stderr.write("PyYAML is required to write config.yaml (installed by make setup into "
+                     "the clone venv). Re-run Step 3 (cd %s && make setup) and re-run install.sh.\n"
+                     % os.path.dirname(os.path.abspath(os.environ["CONFIG_FILE"])))
     sys.exit(1)
 
 path = os.environ["CONFIG_FILE"]
@@ -286,7 +324,7 @@ echo "--- Step 7: Provider routing verification ---"
 ( cd "$OPENMONTAGE_DIR" && make preflight 2>/dev/null ) || {
   yellow "make preflight returned non-zero or is not available — verify provider routing manually:"
   info "  cd $OPENMONTAGE_DIR"
-  info "  python3 -c \"from tools.tool_registry import get_registry; r=get_registry(); [print(c, [(t.provider, str(t.get_status())) for t in r.get_by_capability(c)]) for c in ['image_generation','video_generation']]\""
+  info "  \"$OM_PYTHON\" -c \"from tools.tool_registry import get_registry; r=get_registry(); [print(c, [(t.provider, str(t.get_status())) for t in r.get_by_capability(c)]) for c in ['image_generation','video_generation']]\""
 }
 echo ""
 

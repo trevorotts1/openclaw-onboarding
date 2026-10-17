@@ -579,6 +579,31 @@ const ANSWER_STORE_TARGETS = {
   client_notes: "deck_brief.CLIENT_NOTES",
 };
 
+// Item 13: six pre_presentation_capture fields are DERIVED here, never
+// asked. The record stamps each one's provenance (source answer or
+// constant + the rule) so no consumer mistakes a synthesized value for
+// something the client said. A field the client actually answered (a
+// question whose storeOn routes to it) is NOT listed: it carries its own
+// answer. The same map, word for word, is stamped by the hosted page
+// (pages/index.html) and the box-side writer (bridge/intake_writer.py).
+const DERIVED_PRE_CAPTURE_PROVENANCE = {
+  REPRESENTATION_MIX: { source: "audience", rule: "Derived from the audience answer: the stated audience stands as the representation mix. No separate representation-mix question is asked." },
+  AUDIENCE_COMPOSITION_NOTE: { source: "audience", rule: "Derived from the audience answer, which doubles as the audience composition note. No separate composition question is asked." },
+  GROUNDED_CONTENT: { source: "offer_name", rule: "Derived from the offer name answer, the grounded content anchor. No separate grounded-content question is asked." },
+  VISUAL_MIX: { source: "constant", rule: "Fixed default 'mix'. No visual-mix question is asked." },
+  DARK_OK: { source: "constant", rule: "Fixed default false (light design). No dark-mode question is asked." },
+  HOOK_SEED: { source: "transformation_promise", rule: "Derived from the transformation promise answer, which seeds the hook. No separate hook question is asked." },
+};
+
+function derivedFieldProvenance(pre) {
+  const out = {};
+  for (const k of Object.keys(DERIVED_PRE_CAPTURE_PROVENANCE)) {
+    if (pre && Object.prototype.hasOwnProperty.call(pre, k)) continue;
+    out[k] = DERIVED_PRE_CAPTURE_PROVENANCE[k];
+  }
+  return out;
+}
+
 const DECK_TYPE_BY_PRESENTATION_TYPE = {
   from_scratch: { deck_type: "webinar", creation_mode: "from_scratch", presentation_mode: "general", audience_mode: "STANDARD" },
   content_personal: { deck_type: "webinar", creation_mode: "content_personal", presentation_mode: "one-person", audience_mode: "PERSONAL" },
@@ -638,6 +663,7 @@ export function assembleValidatedIntake(payload, answeredRows, session) {
       HOOK_SEED: brief.TRANSFORMATION_PROMISE || "",
       ...pre,
     },
+    derived_field_provenance: derivedFieldProvenance(pre),
     deck_brief: brief,
     intake: intakeFlat,
     answers,
@@ -856,6 +882,12 @@ function isValidTokenShapeLike(id) {
  * the row, one per session) so discovery paginates a scoped index instead of
  * rescanning shared mutable queue JSON.
  */
+// Canonical record shape (PRES-006): the upsell flags live in
+// pre_presentation_capture — ANSWER_STORE_TARGETS above, the session
+// assembler, the hosted page, and the box-side contract all agree. They
+// used to be listed here as deck_brief fields and read out of deck_brief,
+// so a canonically shaped POST /api/intake always 422'd on two fields
+// that were present, just in their canonical section.
 const REQUIRED_BRIEF_FIELDS = [
   "OFFER_NAME",
   "NAMED_METHODOLOGY",
@@ -865,6 +897,8 @@ const REQUIRED_BRIEF_FIELDS = [
   "CTA_ACTION",
   "TONE",
   "FINAL_PRICE",
+];
+const REQUIRED_PRE_CAPTURE_FIELDS = [
   "WANT_SALES_CHECKOUT",
   "WANT_VSL_PAGE",
 ];
@@ -876,6 +910,10 @@ function validateIntakeCompleteness(intake) {
   for (const f of REQUIRED_BRIEF_FIELDS) {
     const v = brief[f];
     if (v === undefined || v === null || (typeof v === "string" && !v.trim())) missing.push("deck_brief." + f);
+  }
+  for (const f of REQUIRED_PRE_CAPTURE_FIELDS) {
+    const v = pre[f];
+    if (v === undefined || v === null || (typeof v === "string" && !v.trim())) missing.push("pre_presentation_capture." + f);
   }
   if (!pre.PRESENTATION_TYPE || (typeof pre.PRESENTATION_TYPE === "string" && !pre.PRESENTATION_TYPE.trim())) {
     missing.push("pre_presentation_capture.PRESENTATION_TYPE");

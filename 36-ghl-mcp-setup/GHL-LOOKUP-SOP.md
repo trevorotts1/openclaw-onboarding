@@ -43,18 +43,19 @@ Sub-agent:    call `caf contacts get <contactId>` (CLI) OR raw HTTPS (Tier 3)
 
 ---
 
-## RULE 2 — Lookup model: deepseek-v4-flash (direct) primary; free fallback
+## RULE 2: Lookup model: the client's choice, or their configured default model (direct, low-cost; never a metered `:cloud` model)
 
 When the orchestrator calls the official MCP (`contacts_get-contacts`,
 `contacts_search-contacts`) and a model inference step is needed to parse the result or
 decide the next action:
 
-- **Primary model:** `deepseek-v4-flash` (direct, cheap, fast — NOT a `:cloud` metered
-  model).
+- **Model:** the client's choice, or their configured default model, where it is a direct
+  (non-`:cloud`) model. If neither is set, ask the client which model to use for lookups.
+- **Recommendation:** a direct, cheap, fast model, NOT a `:cloud` metered model, because a
+  contact lookup is a data-retrieval task, not a reasoning task.
 - **Fallback:** any free/low-cost provider available in the session.
-- **NEVER:** use a `:cloud` metered model (e.g. `deepseek-v4.1-flash:cloud`,
-  `ollama-cloud/...`) for a cheap read-only lookup. A contact lookup is not a reasoning
-  task — it is a data-retrieval task. Metered cloud models for lookups waste quota.
+- **NEVER:** use a `:cloud` metered model for a cheap read-only lookup. Metered cloud
+  models for lookups waste quota.
 
 ---
 
@@ -201,7 +202,7 @@ decision table.
 
 | Primary | Fallback | Last resort |
 |---|---|---|
-| Tier 0: `caf contacts search/get` (CLI, works in orchestrator AND sub-agent) | Tier 1: orchestrator MCP `contacts_get-contacts` / `contacts_search-contacts` (deepseek-v4-flash, dual Accept header, Version: 2021-07-28) | Tier 3: raw HTTPS — mandatory dual Accept + correct Version header + no `grep -P` |
+| Tier 0: `caf contacts search/get` (CLI, works in orchestrator AND sub-agent) | Tier 1: orchestrator MCP `contacts_get-contacts` / `contacts_search-contacts` (the client's selected lookup model or configured default, dual Accept header, Version: 2021-07-28) | Tier 3: raw HTTPS: mandatory dual Accept + correct Version header + no `grep -P` |
 
 **Why Tier 0 CLI is preferred for lookups:**
 
@@ -245,7 +246,7 @@ fallback — it is the ONLY path for page content.
 ```
 Task: contact lookup
   → Tier 0 caf contacts search/get
-  → (if caf unavailable) Tier 1 MCP in orchestrator (deepseek-v4-flash)
+  → (if caf unavailable) Tier 1 MCP in orchestrator (the client's selected lookup model or configured default)
   → (if MCP unavailable) Tier 3 raw HTTPS (dual Accept + correct Version + python3 parsing)
 
 Task: workflow BUILD or EDIT
@@ -300,7 +301,8 @@ correct before proceeding:
 - **`grep -P` in any shell script on a Mac client** — BSD grep has no `-P`. Use
   `python3 -c "import json,sys; ..."` or `jq`.
 - **Metered `:cloud` model for a contact lookup** — lookups are cheap data-retrieval
-  tasks. Use `deepseek-v4-flash` (direct) or equivalent free model.
+  tasks. Use the client's selected direct (non-metered) model, their configured default
+  model, or an equivalent free model.
 - **Routing a workflow BUILD through the community MCP** — the public `/workflows/` API
   is read-only. The community MCP's `ghl_create_workflow` is unverified and likely
   non-functional. Use Skill 44 internal Build API.
@@ -321,14 +323,14 @@ correct before proceeding:
 
 ```
 GHL LOOKUP SOP (skill 36 / 2026-06-14):
-- Lookup in orchestrator: Tier 0 caf → Tier 1 MCP (deepseek-v4-flash, dual Accept, Version: 2021-07-28) → Tier 3 raw HTTPS
+- Lookup in orchestrator: Tier 0 caf → Tier 1 MCP (the client's selected lookup model or configured default, dual Accept, Version: 2021-07-28) → Tier 3 raw HTTPS
 - Sub-agent lookup: ONLY caf CLI or raw HTTPS — no MCP tools
 - Raw HTTP: MUST include BOTH "Accept: application/json, text/event-stream" AND "Version: 2021-07-28" — missing text/event-stream = HTTP 406
 - No grep -P on macOS — use python3 -c / jq
 - Fail-fast preflight: check API_KEY + LOCATION_ID before any call
 - BUILD = Skill 44 internal Build API (Firebase token) → Tier 4 = Skill 6 GATED managed builder (ghl_workflow_builder.py via browser_manager.sh), NOT bare agent-browser; genuinely dead token → ghl_auth.py Tier-2 self-heal, NOT Tier 4; NEVER build via MCP
 - Funnel page content = browser-only (Tier 4) always
-- No metered :cloud model for lookups — deepseek-v4-flash direct or free fallback
+- No metered :cloud model for lookups: the client's selected direct model, their configured default, or a free fallback
 - Disclosure required: [GHL tier used: N — tool_name]
 Full ref: 36-ghl-mcp-setup/GHL-LOOKUP-SOP.md
 ```

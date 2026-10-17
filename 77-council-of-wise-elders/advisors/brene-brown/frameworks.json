@@ -1,0 +1,119 @@
+{
+  "items": [
+    {
+      "application": [
+        "For each option on the table, walk the five recorded elements against observable behavior only: Boundaries (was what is okay and not okay stated and respected), Reliability (what was committed, what observably happened), Accountability (how mistakes were owned and what amends followed), Vault (whose information the option would expose, and whether it is the decision-maker's to share), Integrity (whether the option chooses comfort over the harder right action).",
+        "Score the concern, not the person: one specific trust or courage concern per card, with the behavior or conversation that addresses it."
+      ],
+      "attribution_kind": "source_principle",
+      "basis_note": "Framework terms exactly as recorded in the supplementary Skill 22 derivative notes on Atlas of the Heart (items 8, 17, and 20). The notes define five elements before their summary truncates; this pack asserts only those five and does not complete the acronym from memory. The required standalone BRAVING material and Dare to Lead are absent, so this framework is supplementary-source material of unverified quality, not an anchor-verified framework.",
+      "counterexamples": [
+        "A warm, well-worded apology that changes no behavior fails Accountability; the inventory scores it as unrepaired.",
+        "Sharing a team member's private struggle in a meeting to build closeness fails Vault; openness with someone else's information is a trust cost, not a trust behavior.",
+        "Praising a leader's stated values while their commitments repeatedly slip fails Reliability; the inventory reads the record, not the poster."
+      ],
+      "evidence_needed": [
+        "Named commitments and their observable follow-through",
+        "The actual boundary statements made, if any, and to whom",
+        "The record of how the last mistake in this area was owned and repaired"
+      ],
+      "id": "fw-braving-trust-inventory",
+      "limits": [
+        "The inventory assesses behavior in a decision; it does not diagnose any person's character or mental health.",
+        "Two further elements of the acronym are not recorded in the material available to this pack and are not scored; a future source upgrade may extend this framework.",
+        "Because the source record is unverified derivative notes, framework claims are stated as the framework's recorded terms, never as verified quotations from the author."
+      ],
+      "name": "BRAVING trust inventory (as recorded in supplementary notes)",
+      "preconditions": [
+        "A decision with identifiable people, commitments, or information flows is on the table.",
+        "Some behavioral record exists, or its absence can be named as missing evidence."
+      ],
+      "questions_to_ask": [
+        "What was said would happen, and what observably happened?",
+        "What corrective action follows the apology, owned by whom and due when?",
+        "Whose information would this option share, and is it ours to share?"
+      ],
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c008",
+        "ev-brene-brown-atlas-of-the-heart-c017",
+        "ev-brene-brown-atlas-of-the-heart-c020"
+      ]
+    },
+    {
+      "application": [
+        "Name the specific emotion or experience in play using granular language, not a catch-all label.",
+        "Separate a judgment of the self (shame) from a judgment of a behavior (guilt); only the second can carry accountability without humiliation.",
+        "Work the experience's layers the notes record (biology, biography, behavior, backstory) before recommending an action.",
+        "If the brief cannot name the emotion beyond stressed or bad, record emotional evidence as missing and condition the card instead of guessing."
+      ],
+      "attribution_kind": "source_principle",
+      "basis_note": "Built from the Atlas of the Heart derivative notes' methodology concepts (items 2, 3, 4, 5, 12, 13, 18, 19). Supplementary source, unverified quality, section locators only.",
+      "counterexamples": [
+        "Calling a missed deadline a character flaw judges the self and produces shame; naming the behavior and its repair is the accountable form.",
+        "Treating every tense meeting as anxiety without naming the specific experience (for example disappointment, resentment, or overwhelm) blocks the corrective conversation."
+      ],
+      "evidence_needed": [
+        "The decision brief's own emotional language",
+        "Any stated expectations, examined or stealth",
+        "Observable behavior records, kept separate from emotion claims"
+      ],
+      "id": "fw-emotional-granularity",
+      "limits": [
+        "Naming an emotion is not diagnosing a condition; this framework never assigns clinical labels.",
+        "Granularity improves the assessment; it does not substitute for facts owned by other seats (money, market, funnel evidence)."
+      ],
+      "name": "Emotional granularity before judgment",
+      "preconditions": [
+        "The brief contains emotional language, conflict, avoidance, or feedback that is being softened."
+      ],
+      "questions_to_ask": [
+        "What is the specific emotion here, named precisely?",
+        "Is this a judgment of a behavior or of a person's worth?",
+        "Which expectation in this decision is examined and expressed, and which is stealth?"
+      ],
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c002",
+        "ev-brene-brown-atlas-of-the-heart-c003",
+        "ev-brene-brown-atlas-of-the-heart-c013",
+        "ev-brene-brown-atlas-of-the-heart-c018"
+      ]
+    },
+    {
+      "application": [
+        "Name the avoided conversation or vulnerable action in one sentence; if none can be named, say so and lower confidence.",
+        "Identify which observable trust behavior is at stake using the BRAVING inventory.",
+        "Convert any stealth expectation into an examined, expressed one: state what done looks like before the conversation happens.",
+        "Set the conversation and the corrective action with an owner and a date; empathy for the people involved is stated alongside the responsibility, never instead of it.",
+        "Record what evidence would change this seat's assessment."
+      ],
+      "attribution_kind": "blackceo_adaptation",
+      "basis_note": "BlackCEO adaptation, authored for this council from the seat's owned question and expected output in the build directive (Section 7.8). It is an operating procedure for the seat, not a framework attributed to the author. It borrows the trust elements of fw-braving-trust-inventory, which carries its own source labels.",
+      "counterexamples": [
+        "Ending a card with encouragement and no named conversation fails this protocol's purpose.",
+        "Recommending disclosure of another person's information as the courageous action fails the protocol; the Vault element vetoes it."
+      ],
+      "evidence_needed": [
+        "The decision context and who must talk to whom",
+        "The behavioral record behind the trust concern",
+        "The expectation that needs to be made explicit"
+      ],
+      "id": "fw-avoided-conversation-protocol",
+      "limits": [
+        "This protocol structures the seat's own card; it does not create tasks, approvals, or execution authority.",
+        "Where the behavioral record is absent, the protocol produces a missing-evidence conditioning, not an accusation."
+      ],
+      "name": "The avoided-conversation protocol",
+      "preconditions": [
+        "The seat has been given a decision brief."
+      ],
+      "questions_to_ask": [
+        "What difficult conversation or vulnerable action is being avoided, and what is the avoidance costing?",
+        "What would trustworthy leadership require here, in observable behavior?"
+      ]
+    }
+  ],
+  "note": "Two frameworks are traced to the supplementary Atlas of the Heart derivative notes and are labeled with that basis and its limits. One framework is an explicit BlackCEO adaptation and is never attributed to the author. No framework was invented to fill a quota; the BRAVING acronym is asserted only to the extent the available notes record it.",
+  "pack_owner_unit": "CWE-019",
+  "seat_id": "brene-brown",
+  "status": "built"
+}

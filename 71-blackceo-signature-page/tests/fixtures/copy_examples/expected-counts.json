@@ -1,0 +1,131 @@
+{
+ "source": "Transcribed from the 'Measured example counts' tables of Standard v6 (guide lines ~1645-1662) and Long-Form v6 (guide lines ~2394-2414). Row sums were re-verified against the guides' published complete-page totals at build time.",
+ "standard": {
+  "guide_file": "BlackCEO-Signature-Landing-Page-Standard-v6.md",
+  "paths": {
+   "A": {
+    "sections_words": {
+     "1": 37,
+     "2": 31,
+     "3": 33,
+     "4": 34,
+     "5": 29,
+     "6": 24,
+     "7": 104,
+     "8": 23,
+     "9": 24,
+     "10": 25,
+     "11": 140,
+     "12": 131
+    },
+    "complete_page_words": 635
+   },
+   "B": {
+    "sections_words": {
+     "1": 42,
+     "2": 31,
+     "3": 29,
+     "4": 35,
+     "5": 29,
+     "6": 24,
+     "7": 104,
+     "8": 26,
+     "9": 25,
+     "10": 25,
+     "11": 142,
+     "12": 131
+    },
+    "complete_page_words": 643
+   },
+   "C": {
+    "sections_words": {
+     "1": 41,
+     "2": 32,
+     "3": 33,
+     "4": 35,
+     "5": 27,
+     "6": 22,
+     "7": 107,
+     "8": 24,
+     "9": 25,
+     "10": 27,
+     "11": 139,
+     "12": 131
+    },
+    "complete_page_words": 643
+   }
+  },
+  "path_b_section_chars": {
+   "1": 224,
+   "2": 183,
+   "3": 188,
+   "4": 202
+  },
+  "path_b_chars_source": "The assembled example's per-section AI notes ('Actual audience-facing count') in Standard v6; character counts are published only for Sections 1-4."
+ },
+ "long-form": {
+  "guide_file": "BlackCEO-Signature-Landing-Page-Long-Form-v6.md",
+  "paths": {
+   "A": {
+    "sections_words": {
+     "1": 67,
+     "2": 131,
+     "2A": 152,
+     "3": 135,
+     "3A": 138,
+     "4": 138,
+     "4A": 157,
+     "5": 306,
+     "6": 140,
+     "7": 294,
+     "8": 135,
+     "9": 150,
+     "10": 125,
+     "11": 240,
+     "12": 487
+    },
+    "complete_page_words": 2795
+   },
+   "B": {
+    "sections_words": {
+     "1": 69,
+     "2": 134,
+     "2A": 153,
+     "3": 136,
+     "3A": 143,
+     "4": 137,
+     "4A": 157,
+     "5": 320,
+     "6": 136,
+     "7": 284,
+     "8": 135,
+     "9": 150,
+     "10": 131,
+     "11": 250,
+     "12": 491
+    },
+    "complete_page_words": 2826
+   },
+   "C": {
+    "sections_words": {
+     "1": 67,
+     "2": 133,
+     "2A": 151,
+     "3": 135,
+     "3A": 144,
+     "4": 136,
+     "4A": 146,
+     "5": 320,
+     "6": 138,
+     "7": 275,
+     "8": 134,
+     "9": 156,
+     "10": 131,
+     "11": 250,
+     "12": 481
+    },
+    "complete_page_words": 2797
+   }
+  }
+ }
+}

@@ -8,6 +8,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))
+from choice_card.intake_card import intake_card as IC  # noqa: E402
 try:                                   # pytest imports the character_library
     from character_library import character_library as CL  # noqa: E402
 except ImportError:                    # PACKAGE (dir has __init__.py) first;
@@ -72,8 +74,9 @@ class RoundTrip(unittest.TestCase):
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn("saved with us", out)
-            self.assertIn("Question 1 of 10 - AI MODELS", out)
-            self.assertIn("Question 2 of 10 - ", out)
+            n = len(IC.QUESTIONS)          # five story-brief questions then the nine choices (DSR-105)
+            self.assertIn("Question %d of %d - AI MODELS" % (len(IC.BRIEF_IDS) + 1, n), out)
+            self.assertIn("Question 2 of %d - " % n, out)
 
 
 if __name__ == "__main__":

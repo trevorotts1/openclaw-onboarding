@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """U5 — the shared studio bridge (one file for OpenClaw boxes and Claude Code).
 
-Reuses the mint/renew/sync shape of `intake-miniapp/bridge/intake_bridge.py`
+Reuses the mint/renew/sync shape of `intake/interview-app/bridge/intake_bridge.py`
 and the durable-outbox shape of `scripts/core/cc_sync.py`. It is NOT a new
 framework, scheduler, dashboard or management app.
 
@@ -15,13 +15,16 @@ It speaks the U2 service contract verbatim (branch unit/U2, head 8f344a1d):
     GET  /api/studio/health
     POST /api/studio/enroll                      {enrollment_secret, label?}   no key
     POST /api/studio/link                        header x-ds-key  {rotate}
-    POST /api/studio/checkin                     header x-ds-key
+    POST /api/studio/checkin                     header x-ds-key  {agnes_remembered, agnes_progress?}
     GET  /api/studio/orders/<id>                 header x-ds-key
-    POST /api/studio/orders/<id>/state           header x-ds-key  {event}
+    POST /api/studio/orders/<id>/state           header x-ds-key  {event, reason?}
     POST /api/studio/uploads                     header x-ds-key  {channel, ...}
     POST /api/studio/orders                      header x-ds-key  {title, order_id?}
 
-`event` is one of claim | needs_you | answer | ready | deliver | done.
+`event` is one of claim | needs_you | answer | ready | deliver | done | cancel.
+The check-in carries the client's remembered Agnes answer and, while a run's
+Agnes job is active, that run's small progress record (SPEC A11) - neither is a
+secret, and the key never rides on either.
 
 SECRETS: the presented key comes from env `DS_KEY` first, else the state
 folder's `machine.key` (SPEC §2/§6) — never argv, never a file the caller names
@@ -37,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import os
 import pathlib
@@ -638,6 +642,162 @@ def _board_epic(skill_root, order_id, title):
         pass
 
 
+#: The card's own step line: the one place its question count is written out
+#: (`intake_card.render_step`). A recap, a waiting answer or a locked-in run
+#: prints no step line at all.
+QUESTION_LINE = re.compile(r"Question (\d+) of (\d+)")
+
+
+def _skill_core(skill_root):
+    """`<skill 75>/scripts/core` on `sys.path`, so the bridge reads the skill's
+    own modules instead of carrying a second copy of any of them."""
+    core = str(pathlib.Path(skill_root).expanduser() / "scripts" / "core")
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    return core
+
+
+# --- the Agnes records on the check-in (SPEC A2, A11) ------------------------
+
+def remembered_agnes(skill_root, client_dir):
+    """The client's remembered Agnes answer: "yes", "no" or "unknown" (SPEC A2).
+
+    Read through `agnes_access`, the one module that owns
+    `<client data folder>/agnes.json` - never a second reader of that file. A
+    skill copy that has no such module yet reads "unknown", which is exactly what
+    the card and the studio page show for a client who has not answered, so the
+    two can never disagree with this. Only the stored answer leaves here: never a
+    key, never a plan, never the file itself.
+    """
+    _skill_core(skill_root)
+    try:
+        from agnes_access import agnes_access as AG  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 - a copy without the module still checks in
+        return "unknown"
+    try:
+        answer = AG.remembered(client_dir)
+    except (OSError, TypeError, ValueError):
+        return "unknown"
+    return answer if answer in ("yes", "no") else "unknown"
+
+
+def active_agnes_progress(runs_root):
+    """The run under `runs_root` still making Agnes clips, and its
+    `control/agnes-progress.json` (SPEC A11).
+
+    That record is the small one `agnes_quota.progress` writes - clips done and
+    total, in flight, waiting reason, ETA, updated time - no secret and no key on
+    it. Returns None while no run has an unfinished job, so the ordinary
+    check-in still carries its one field and no more.
+    """
+    try:
+        runs = [p for p in pathlib.Path(runs_root).expanduser().iterdir()
+                if p.is_dir() and ORDER_ID.fullmatch(p.name)]
+    except OSError:
+        return None
+    picked, picked_at = None, -1.0
+    for run in runs:
+        path = run / "control" / "agnes-progress.json"
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            seen = path.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        total, done = record.get("clips_total"), record.get("clips_done")
+        if not isinstance(total, int) or not isinstance(done, int) or done >= total:
+            continue                      # finished, or not a progress record
+        if seen > picked_at:
+            picked, picked_at = (run.name, record), seen
+    if picked is None:
+        return None
+    order_id, record = picked
+    return dict(record, order_id=order_id)
+
+
+def checkin_body(skill_root, runs_root, client_dir=None):
+    """The check-in body (SPEC A11): the remembered Agnes answer, and the active
+    run's progress record while its Agnes job is still running."""
+    body = {"agnes_remembered": remembered_agnes(skill_root, client_dir)}
+    progress = active_agnes_progress(runs_root)
+    if progress is not None:
+        body["agnes_progress"] = progress
+    return body
+
+
+# --- the replay guard (SPEC B1) ----------------------------------------------
+
+def _question_mismatch(skill_root, replies, client_dir=None):
+    """`(answers the card accepted, questions it asked)` when the replies cannot
+    complete the question list, else None.
+
+    The card rebuilds that list from these replies with `_shaped`
+    (SPEC B1) - the same rebuild the studio page's `shows_when` screens were
+    built from - so a set the card cannot finish means the phone showed a
+    different list than this card asks. Replaying anyway would answer one screen
+    with another screen's number: a shifted run, which is what this refuses.
+
+    The card is the judge, never a list this bridge re-derives (its shape can
+    differ from a second `_shaped` call over `QUESTIONS`, and counting against a
+    re-derived list refuses orders the card itself completed). The test: drop the
+    trailing recap confirmation the studio page appends
+    (`mini-app/ui/studio.js:470`), replay the rest, and read the card's own
+    "Question N of M" step line. No step line means the card reached its recap,
+    its waiting answer or a locked-in run - it completed whatever it asked. A
+    step line with fewer accepted answers than questions means it ran out, or a
+    reply did not fit and the rest shifted: that is the refusal, and those are
+    the two counts named back. Extra replies past a complete list are absorbed by
+    the card itself (a "change line N" or a recap), never a mismatch here.
+
+    None when the installed card has no purpose flow to count against, and None
+    on any card fault: a claim never dies on this import. The guard stays inert
+    until the card that defines the shaped list ships (O-card-wiring).
+    """
+    _skill_core(skill_root)
+    try:
+        from choice_card.intake_card import intake_card as IC  # noqa: PLC0415
+        if getattr(IC, "_shaped", None) is None:
+            return None
+        if "purpose_flow" not in inspect.signature(IC.conversation).parameters:
+            return None
+        given = [str(r) for r in replies]
+        if given and given[-1].strip().lower() in \
+                tuple(getattr(IC, "_YES", ()) or ("yes",)):
+            given = given[:-1]           # the recap confirmation is not an answer
+        if not given:
+            return None
+        state = IC.conversation(given, client_dir=client_dir, purpose_flow=True)
+    except Exception:  # noqa: BLE001 - never stop a claim on a card import
+        return None
+    if state.get("done"):
+        return None                                    # the card locked these in
+    found = QUESTION_LINE.search(str(state.get("message") or ""))
+    if not found:
+        return None                                    # the card reached its recap
+    questions = int(found.group(2))
+    accepted = len(state.get("answers") or [])
+    if questions <= 0 or accepted >= questions:
+        return None
+    return accepted, questions
+
+
+def _refuse_mismatch(base, key, order_id, mismatch):
+    """Refuse a replay whose reply count cannot complete the question list, and
+    cancel the order with that reason on it: the run never starts shifted."""
+    given, questions = mismatch
+    reason = ("REPLAY_QUESTION_MISMATCH: %d replies cannot complete the %d "
+              "questions of this card" % (given, questions))
+    status, out = _http("POST",
+                        base.rstrip("/") + "/api/studio/orders/%s/state" % order_id,
+                        key=key, body={"event": "cancel", "reason": reason})
+    cancelled = bool(status and status // 100 == 2 and out.get("ok"))
+    _emit({"code": "REPLAY_QUESTION_MISMATCH", "message": reason,
+           "order_id": order_id, "replies": given, "questions": questions,
+           "cancelled": cancelled})
+    return EXIT["refused"]
+
+
 def _replay(skill_root, run_dir, replies):
     """Hand every reply back to the card, in order. argv list, never a shell."""
     factory = (pathlib.Path(skill_root).expanduser() / "scripts" / "core"
@@ -663,6 +823,45 @@ def _replay(skill_root, run_dir, replies):
     return EXIT["ok"], factory
 
 
+def _ensure_run_state(skill_root, run_dir, order_id):
+    """The run's state authority, created through the ONE writer (`state_store`).
+
+    poll claims the order and replays the card, so the run folder exists and
+    holds the client's answers; the very next command the agent is told to run
+    (`factory.py next`) reads `control/state.sqlite3` (factory.py:501) and
+    answers `state-file-missing` when it is not there. So poll creates it here,
+    with the SAME `state_store.Store` INSTRUCTIONS step 5 writes through -- never
+    a second writer, never a hand-written sqlite file. `init_run` is
+    INSERT-OR-IGNORE, so a run already initialised stays untouched.
+
+    Returns the stage list on success, or None when the store exists but
+    refused the write (the poll then fails loudly instead of printing a `next`
+    that cannot work). A skill copy with no store at all -- a test stub, a
+    partial install -- warns on stderr and returns `[]`: the order still reaches
+    the agent, who can run intake properly.
+    """
+    _skill_core(skill_root)
+    try:
+        from state_store import Store  # noqa: PLC0415
+        from batch_mode.batch import STAGES  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 - a store-less copy still runs
+        sys.stderr.write("studio_bridge: this skill copy has no state store "
+                         "(%s); the run has no state authority yet\n"
+                         % str(exc)[:200])
+        return []
+    db = pathlib.Path(run_dir) / "control" / "state.sqlite3"
+    stages = [str(s[0]) for s in STAGES]
+    try:
+        with Store(db) as store:
+            store.init_run(order_id, stages)
+    except Exception as exc:  # noqa: BLE001 - a refused write fails the claim
+        _emit({"code": "RUN_STATE_FAILED",
+               "message": "could not create the run state through state_store:"
+                          " %s" % str(exc)[:300],
+               "path": str(db)})
+        return None
+    return stages
+
 def cmd_poll(args):
     """Check in, claim one waiting order, replay it, print one JSON line."""
     key = load_key()
@@ -675,7 +874,8 @@ def cmd_poll(args):
                "message": "no studio address; pass --base-url or run enroll"})
         return EXIT["refused"]
 
-    status, out = _http("POST", base + "/api/studio/checkin", key=key, body={})
+    status, out = _http("POST", base + "/api/studio/checkin", key=key,
+                        body=checkin_body(args.skill_root, args.runs, args.client_dir))
     if status // 100 != 2 or not out.get("ok"):
         return _refusal(out, status, "check-in")
     line = out.get("line")
@@ -706,7 +906,18 @@ def cmd_poll(args):
     title = str(order.get("title") or title)
     client_id = str(order.get("client_id") or "")
 
-    run_dir = pathlib.Path(args.runs).expanduser() / order_id
+    # Before the run folder exists at all: a reply count that cannot complete
+    # the card's question list replays shifted answers, so the order is
+    # cancelled with that reason instead and nothing is written (SPEC B1).
+    mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
+                                  args.client_dir)
+    if mismatch is not None:
+        return _refuse_mismatch(base, key, order_id, mismatch)
+
+    # Absolute, always: the poll line's `next` is meant to be run as printed,
+    # from wherever the agent happens to be (a relative --runs would otherwise
+    # print a relative run_dir and a next that resolves somewhere else).
+    run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
     control = run_dir / "control"
     control.mkdir(parents=True, exist_ok=True)
     # The run dir knows WHERE the studio is; it never holds the key.
@@ -714,6 +925,10 @@ def cmd_poll(args):
         json.dumps({"order_id": order_id, "client_id": client_id,
                     "title": title, "base_url": base}, sort_keys=True) + "\n",
         encoding="utf-8")
+
+    # The run's state authority, at claim time, so the very next command works.
+    if _ensure_run_state(args.skill_root, run_dir, order_id) is None:
+        return EXIT["error"]
 
     code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
     if code != EXIT["ok"]:
@@ -864,6 +1079,9 @@ def main(argv=None):
     po = sub.add_parser("poll", help="check in, claim one order, replay it, print one JSON line")
     po.add_argument("--skill-root", required=True, help="skill 75 root R")
     po.add_argument("--runs", required=True, help="runs directory D; the order becomes D/<order_id>")
+    po.add_argument("--client-dir", default="",
+                    help="the client data folder holding agnes.json; empty reads the "
+                         "remembered Agnes answer as unknown (SPEC A2)")
     po.add_argument("--base-url", default=None)
     po.add_argument("--db", default=None, help="claim ledger (default: <state folder>/studio.db)")
     po.set_defaults(func=cmd_poll)

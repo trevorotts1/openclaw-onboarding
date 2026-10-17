@@ -1,0 +1,193 @@
+{
+ "schema_version": "1.0",
+ "section": "Directive Section 17.4 reference registry, shipped by MG-044",
+ "item": "MG-044",
+ "calibration_status": "CALIBRATION_PENDING and ENGINEERING_FIXTURE_ONLY: every approval-eligible reference in this registry awaits the owner's personal review and approval or rejection of specific exemplars. Scores recorded here are provisional engineering scores from the shipped MG-033 rubric tooling; they are not owner approval, and no reference in this registry is owner approved.",
+ "note": "Approval states are exactly the Section 17.3 states. approved_event_ref is null for every reference: no owner approval event exists for any exemplar in this suite, and crew or tool scores are never owner approval. Scores are the provisional MG-033 rubric scores of the named review records, or, where a reference has no review record, the registry-level scores whose basis is stated in the entry.",
+ "references": [
+  {
+   "actual_test_result": "MG-044 image-components suite: assertions 3 of 3 PASS from decoded frames (tests/evidence/mg044/measurements.json); review record validates under scripts/review_rubric.py (SUCCEEDED).",
+   "approved_event_ref": null,
+   "approved_event_ref_reason": "No owner approval event exists; the reference ships CALIBRATION_PENDING until the owner personally approves the exemplar.",
+   "clip_file": {
+    "path": "sequence/clips/beat1-c01.mp4",
+    "sha256": "c4766e50b33ce6f92a94373b789deade1612303e172b8d3e777f8733940a5f4f"
+   },
+   "design_revision": "fixture-design-1.0.0 (authored fixture palette and type scale)",
+   "engine": "hyperframes",
+   "expected_failure_codes": [
+    "MG_PLANNER_COVERAGE",
+    "MG_PLANNER_EXCEPTION_MISSING"
+   ],
+   "frame_files": [
+    "components/frames/c01-f0.png",
+    "components/frames/c01-f60.png",
+    "components/frames/c01-f149.png"
+   ],
+   "known_bad_counterpart": {
+    "gate_record": "negatives/decorative-substitution/gate-record.json",
+    "kind": "The image-led and mechanism beats replaced by bullet-list text cards with decorative motion only."
+   },
+   "mode": "standalone_video",
+   "purpose": "Image-led statement reference (C01): an approved subject uncovered by its own mask reveal, subject integrity and deliberate crop, readable opening and proof frames.",
+   "reference_id": "VREF-01",
+   "render_revision": "mg044 render of the MG-005 acceptance scene through the shipped Hyperframes adapter",
+   "scores": {
+    "asset_relevance": 8,
+    "composition": 7,
+    "data_proof_integrity": 8,
+    "destination_fit": 7,
+    "finishing": 7,
+    "motion_clarity": 9,
+    "record": "components/c01/review-record.json",
+    "typography_readability": 7,
+    "visual_storytelling": 7
+   },
+   "source_files": [
+    "tests/fixtures/image-components/c01-reveal.scene.json",
+    "tests/fixtures/image-components/subject.svg"
+   ],
+   "status": "CALIBRATION_PENDING"
+  },
+  {
+   "actual_test_result": "MG-032 evaluator verdict pass on this render (widths agree three ways at frames 0, 45, 75, 179); MG-033 demonstration review and the suite's package review both validate under scripts/review_rubric.py (SUCCEEDED).",
+   "approved_event_ref": null,
+   "approved_event_ref_reason": "No owner approval event exists; the reference ships ENGINEERING_FIXTURE_ONLY until the owner personally approves the fixture visually (Section 17.3).",
+   "clip_file": {
+    "path": "modes/powerpoint_graphic/clip.mp4",
+    "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f"
+   },
+   "design_revision": "fixture-design-1.0.0 (Section 16 mode fixture design)",
+   "engine": "remotion",
+   "expected_failure_codes": [
+    "MG_FAKE_MOTION"
+   ],
+   "frame_files": [
+    "components/frames/c05-f0.png",
+    "components/frames/c05-f45.png",
+    "components/frames/c05-f75.png",
+    "components/frames/c05-f179.png"
+   ],
+   "known_bad_counterpart": {
+    "gate_record": "negatives/static-chart/gate-record.json",
+    "kind": "The same chart rendered static at final widths from frame 0 with only the headline moving (the MG-032 decoy)."
+   },
+   "mode": "powerpoint_graphic",
+   "purpose": "C05 bar comparison fixture reference: the Section 17.2 proof states at 30 fps (frames 0, 15, 45, 75, 150, 179; widths [0,0,0], half [240,360,600], final [480,720,1200], held).",
+   "reference_id": "VREF-02",
+   "render_revision": "deterministic production render, sha256 1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f (identical across MG-032, MG-033, MG-035, and MG-037 records)",
+   "scores": {
+    "asset_relevance": 7,
+    "composition": 6,
+    "data_proof_integrity": 9,
+    "destination_fit": 8,
+    "finishing": 7,
+    "motion_clarity": 9,
+    "record": "modes/powerpoint_graphic/review-record.json",
+    "typography_readability": 7,
+    "visual_storytelling": 6
+   },
+   "source_files": [
+    "tests/fixtures/modes/powerpoint_graphic/scenes/bar-01.json",
+    "tests/fixtures/modes/powerpoint_graphic/data/bars.json",
+    "tests/fixtures/modes/powerpoint_graphic/design.json"
+   ],
+   "status": "ENGINEERING_FIXTURE_ONLY"
+  },
+  {
+   "actual_test_result": "MG-032 transit case verdict pass (assertions at frames 30, 75, 170 agree across spec, geometry, and decoded raster); MG-017 record stands.",
+   "approved_event_ref": null,
+   "approved_event_ref_reason": "No owner approval event exists; the reference ships CALIBRATION_PENDING until the owner personally approves the exemplar.",
+   "clip_file": null,
+   "clip_file_reason": "No standalone C04 clip is retained in this suite; the transit proof is the MG-032 case record with its 120-frame clip measured in that suite's work area, plus the three decoded frames in this registry.",
+   "design_revision": "fixture-design-1.0.0 (MG-017 flow fixture)",
+   "engine": "remotion",
+   "expected_failure_codes": [
+    "MG_PLANNER_COVERAGE",
+    "MG_PLANNER_EXCEPTION_MISSING"
+   ],
+   "frame_files": [
+    "components/frames/c04-f30.png",
+    "components/frames/c04-f75.png",
+    "components/frames/c04-f170.png"
+   ],
+   "known_bad_counterpart": {
+    "gate_record": "negatives/decorative-substitution/gate-record.json",
+    "kind": "The mechanism beat replaced by a bullet list (beat-mechanism-as-bullets in the staged storyboard)."
+   },
+   "mode": "standalone_video",
+   "purpose": "Object-through-mechanism reference (C04): one persistent object travels intake, decision, execution with its identity and causal order proven from decoded frames.",
+   "reference_id": "VREF-03",
+   "render_revision": "MG-017 fixture render, measured in tests/evidence/mg017 and tests/evidence/mg032",
+   "scores": {
+    "asset_relevance": 8,
+    "basis": "Registry-level scores recorded by the suite reviewer from the MG-032 evaluator record (transit assertions) and the MG-017 measurements and frames; no separate MG-033 bundle review was run for this fixture, and the scores are provisional like all scores in this suite.",
+    "composition": 7,
+    "data_proof_integrity": 8,
+    "destination_fit": 7,
+    "finishing": 7,
+    "motion_clarity": 9,
+    "typography_readability": 7,
+    "visual_storytelling": 7
+   },
+   "source_files": [
+    "tests/evidence/mg017/measurements.json"
+   ],
+   "status": "CALIBRATION_PENDING"
+  },
+  {
+   "actual_test_result": "The mechanism stand-in renders and measures as declared (tests/evidence/mg044/measurements.json, c02 cases PASS). The reference itself remains blocked: no real product asset exists to approve.",
+   "approved_event_ref": null,
+   "approved_event_ref_reason": "BLOCKED_ASSET: no actual approved product screenshot exists. The C02 example in this suite is a clearly labeled fictional product screen that proves the mechanism only; it is never described as real proof.",
+   "clip_file": {
+    "path": "sequence/clips/beat5-detail.mp4",
+    "sha256": "4e22bbf170395ada780a0e864bb4f10ce7aa737576d3e5897e7bf81898bdbe36"
+   },
+   "design_revision": "mg044 fictional product fixture (authored for the C02 bundle)",
+   "engine": "hyperframes",
+   "expected_failure_codes": [],
+   "frame_files": [
+    "components/frames/c02-f0.png",
+    "components/frames/c02-f60.png",
+    "components/frames/c02-f150.png"
+   ],
+   "known_bad_counterpart": null,
+   "mode": "standalone_video (reference sequence beat 5); component example C02",
+   "purpose": "Real product detail reference (C02): an authentic product view whose annotation follows the correct detail, on an actual approved product screenshot.",
+   "reference_id": "VREF-04",
+   "render_revision": "mg044 mechanism stand-in render (fictional fixture)",
+   "scores": null,
+   "scores_reason": "No scores are recorded: scoring the fictional stand-in as if it were real product proof would misrepresent it. The mechanism's decoded-frame measurements stand in tests/evidence/mg044/measurements.json.",
+   "source_files": [
+    "tests/fixtures/image-components/c02-detail.scene.json",
+    "tests/fixtures/image-components/product.svg"
+   ],
+   "status": "BLOCKED_ASSET"
+  },
+  {
+   "actual_test_result": "The MG-032 depth case stands as the control: a depth claim with no occlusion or depth evidence is refused (MG_CAPABILITY_UNSUPPORTED, exit 3), recorded in tests/evidence/mg032/measurements.json.",
+   "approved_event_ref": null,
+   "approved_event_ref_reason": "No owner approval event exists, and no artifact exists to approve: C10 has no registered bundle on this base.",
+   "clip_file": null,
+   "clip_file_reason": "No artifact exists; C10 (spatial/depth) is unavailable in the catalog.",
+   "design_revision": null,
+   "engine": "qualified-native-integration",
+   "expected_failure_codes": [
+    "MG_CAPABILITY_UNSUPPORTED"
+   ],
+   "frame_files": [],
+   "known_bad_counterpart": {
+    "gate_record": "tests/evidence/mg032/measurements.json (case depth_refused_no_evidence)",
+    "kind": "A depth claim asserted with no occlusion or depth evidence."
+   },
+   "mode": "standalone_video",
+   "purpose": "Genuine spatial/depth reference (C10): layers or objects establishing front/back, containment, or scale with occlusion and perspective evidence.",
+   "reference_id": "VREF-05",
+   "render_revision": null,
+   "scores": null,
+   "scores_reason": "No artifact exists to score.",
+   "source_files": [],
+   "status": "CALIBRATION_PENDING"
+  }
+ ]
+}

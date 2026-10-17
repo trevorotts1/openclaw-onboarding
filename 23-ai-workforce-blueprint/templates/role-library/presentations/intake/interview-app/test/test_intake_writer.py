@@ -58,7 +58,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "time_to_result": "8w", "audience": "A",
                            "cta_action": "book a call", "tone": "Teacher",
                            "final_price": "$1", "speech_speed_preference": "default",
-                           "want_sales_checkout": "yes", "want_vsl_page": "no"}}
+                           "want_sales_checkout": "yes", "want_vsl_page": "no",
+                           "want_email_sequences": "no"}}
         intake = iw.assemble_intake(raw, run_id="R2")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R2"
@@ -195,7 +196,8 @@ class TestIntakeWriter(unittest.TestCase):
                         "time_to_result": "8w", "audience": "A",
                         "cta_action": "book a call", "tone": "Teacher",
                         "final_price": "$1", "speech_speed_preference": "default",
-                        "want_sales_checkout": "yes", "want_vsl_page": "no"},
+                        "want_sales_checkout": "yes", "want_vsl_page": "no",
+                        "want_email_sequences": "no"},
             # PRES-006: the completeness gate reads the canonical paths, so the
             # record itself must be a COMPLETE production-shape intake (the
             # browser always sends deck_brief + pre_presentation_capture). The
@@ -206,7 +208,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "TONE": "Teacher", "FINAL_PRICE": "$1"},
             "pre_presentation_capture": {"PRESENTATION_TYPE": "signature",
                                          "WANT_SALES_CHECKOUT": "yes",
-                                         "WANT_VSL_PAGE": "no"},
+                                         "WANT_VSL_PAGE": "no",
+                                         "WANT_EMAIL_SEQUENCES": "no"},
         }
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R7"
@@ -232,6 +235,68 @@ class TestIntakeWriter(unittest.TestCase):
         intake = iw.assemble_intake(shaped)
         self.assertEqual(intake["deck_brief"]["OFFER_NAME"], "Shaped")
         self.assertEqual(intake["pre_presentation_capture"]["DARK_OK"], False)
+
+    def test_derived_field_provenance_stamped_for_synthesized_six(self):
+        # Item 13: the six mandatory pre-capture fields are derived, never
+        # asked. The assembled record must say so, field by field, with the
+        # source answer (or "constant") and the rule.
+        raw = {
+            "answers": {
+                "presentation_type": "signature",
+                "offer_name": "The Momentum Method",
+                "transformation_promise": "stuck -> unstoppable",
+                "audience": "women entrepreneurs",
+                "cta_action": "book a call",
+                "tone": "Inspirational",
+                "final_price": "$497",
+                "speech_speed_preference": "default",
+                "want_sales_checkout": "yes",
+                "want_vsl_page": "no",
+            }
+        }
+        intake = iw.assemble_intake(raw, run_id="R1")
+        prov = intake.get("derived_field_provenance") or {}
+        self.assertEqual(set(prov), set(iw.MANDATORY_PRE_CAPTURE))
+        self.assertEqual(prov["REPRESENTATION_MIX"]["source"], "audience")
+        self.assertEqual(prov["AUDIENCE_COMPOSITION_NOTE"]["source"], "audience")
+        self.assertEqual(prov["GROUNDED_CONTENT"]["source"], "offer_name")
+        self.assertEqual(prov["VISUAL_MIX"]["source"], "constant")
+        self.assertEqual(prov["DARK_OK"]["source"], "constant")
+        self.assertEqual(prov["HOOK_SEED"]["source"], "transformation_promise")
+        for field, spec in prov.items():
+            self.assertTrue(spec["rule"], f"rule text for {field}")
+
+    def test_derived_field_provenance_kept_from_frontend_record(self):
+        # A frontend-shaped record that already carries provenance (the
+        # hosted page stamps its own synthesis) keeps it verbatim.
+        stamped = {"VISUAL_MIX": {"source": "constant", "rule": "page rule"}}
+        shaped = {
+            "intake": {
+                "interview_confirmed": True,
+                "deck_brief": {"OFFER_NAME": "Shaped"},
+                "pre_presentation_capture": {"VISUAL_MIX": "mix"},
+                "derived_field_provenance": stamped,
+            }
+        }
+        intake = iw.assemble_intake(shaped)
+        self.assertEqual(intake["derived_field_provenance"], stamped)
+
+    def test_derived_field_provenance_computed_for_unstamped_frontend_record(self):
+        # A frontend-shaped record WITHOUT provenance gets it computed:
+        # fields present in pre_presentation_capture that no answer maps
+        # to were synthesized by the producer.
+        shaped = {
+            "intake": {
+                "interview_confirmed": True,
+                "deck_brief": {"OFFER_NAME": "Shaped", "AUDIENCE": "someone"},
+                "pre_presentation_capture": {"VISUAL_MIX": "mix", "DARK_OK": False},
+                "answers": {"offer_name": "Shaped", "audience": "someone"},
+            }
+        }
+        intake = iw.assemble_intake(shaped)
+        prov = intake.get("derived_field_provenance") or {}
+        self.assertEqual(set(prov), {"VISUAL_MIX", "DARK_OK"})
+        self.assertEqual(prov["VISUAL_MIX"]["source"], "constant")
 
 
 if __name__ == "__main__":

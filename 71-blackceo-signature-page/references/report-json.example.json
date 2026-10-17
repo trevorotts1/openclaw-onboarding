@@ -1,0 +1,269 @@
+{
+  "schema_version": "1.0",
+  "run_id": "da3f43ec-5c7b-52c5-a28e-60eb97aac84d",
+  "generated_at": "2026-10-14T02:05:00Z",
+  "page_name": "Example Signature Page",
+  "brand_id": "blackceo",
+  "client": "example-client",
+  "host_shape": "fleet-contabo",
+  "overall": "complete",
+  "review_mode": {
+    "mode": "SELF-REVIEWED",
+    "reviewer_sessions": 1,
+    "author_sessions": 1,
+    "overlap_stages": [
+      "visual-mockup"
+    ],
+    "line": "Review mode: SELF-REVIEWED (reviewer sessions overlap author sessions on stages: visual-mockup)"
+  },
+  "stages": [
+    {
+      "stage": "intake",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T14:04:00Z",
+      "duration_s": 240,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "intake/artifact-01.bin": "327645ea2522440a6e7b1c66f60a34bb15615133558b84b60adc3613fbc51e5c"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "copy",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T15:34:00Z",
+      "duration_s": 5400,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "copy/artifact-01.bin": "72b23e63f0a5684d1aa58ad1ab8af3fcba303ba84067a5afe950882c93368d5c"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "font-action-plan",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T15:49:00Z",
+      "duration_s": 900,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "font-action-plan/artifact-01.bin": "11a1a86dc7f84132acbdfee5ba710af361d86412cc72efe00d9d237fad549ca6"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "desktop-wireframe",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T16:34:00Z",
+      "duration_s": 2700,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "desktop-wireframe/artifact-01.bin": "8dde58df3fc3c90e45d6d344dcbe39e3296fcf1f81e502df3a37ca427f827108"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "mobile-tablet",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T17:04:00Z",
+      "duration_s": 1800,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "mobile-tablet/artifact-01.bin": "4e680d9a5e267749a7636f8f1e71033fc56b013edac0592631df8c82f340dd7a"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "visual-mockup",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T19:04:00Z",
+      "duration_s": 7200,
+      "scores_summary": {
+        "criteria_count": 5,
+        "min": 8.0,
+        "mean": 8.6
+      },
+      "cost": null,
+      "artifact_hashes": {
+        "visual-mockup/artifact-01.bin": "ef7176cee9e1511313ab74545224baf927f56ceb24e321b86882373d15bd67ec"
+      },
+      "review_files": [
+        "private/reviews/visual-mockup/stage.review.json"
+      ]
+    },
+    {
+      "stage": "image-inventory-prompts",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T20:04:00Z",
+      "duration_s": 3600,
+      "scores_summary": {
+        "criteria_count": 5,
+        "min": 8.0,
+        "mean": 8.6
+      },
+      "cost": null,
+      "artifact_hashes": {
+        "image-inventory-prompts/artifact-01.bin": "5b996a1c50324ef0d4aebb2e04554a243d8a98ae314dc8b62f7f1be62fb95e7f"
+      },
+      "review_files": [
+        "private/reviews/image-inventory-prompts/stage.review.json"
+      ]
+    },
+    {
+      "stage": "image-generation-qc",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T21:19:00Z",
+      "duration_s": 4500,
+      "scores_summary": {
+        "criteria_count": 5,
+        "min": 8.0,
+        "mean": 8.6
+      },
+      "cost": {
+        "provider": "kie",
+        "credits_used": 132.5
+      },
+      "artifact_hashes": {
+        "image-generation-qc/artifact-01.bin": "49fd19bea51ef61f6e0d9109ad229bc0117e19730d726b4e2e30679c4407ec7d"
+      },
+      "review_files": [
+        "private/reviews/image-generation-qc/stage.review.json"
+      ]
+    },
+    {
+      "stage": "image-map-upload",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T21:39:00Z",
+      "duration_s": 1200,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "image-map-upload/artifact-01.bin": "6b8417f413e2d9e246730b175a9a46331f73069504811fc6d4447005393603c8"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "final-mockups",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-13T23:09:00Z",
+      "duration_s": 5400,
+      "scores_summary": {
+        "criteria_count": 5,
+        "min": 8.0,
+        "mean": 8.6
+      },
+      "cost": null,
+      "artifact_hashes": {
+        "final-mockups/artifact-01.bin": "08bfd0d5971a276064c46f3cbd4650a23f4cd4cd4962afdc44d5a96148d15bad"
+      },
+      "review_files": [
+        "private/reviews/final-mockups/stage.review.json"
+      ]
+    },
+    {
+      "stage": "responsive-html",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-14T00:59:00Z",
+      "duration_s": 6600,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "responsive-html/artifact-01.bin": "6edf9c5f813db2682d5456300b84d35d57c288d7a658869c2de9509347c3b068"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "ghl-install-test",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-14T01:49:00Z",
+      "duration_s": 3000,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "ghl-install-test/artifact-01.bin": "8356d13ea1d3f0a2da48ec528e89aad71ad811940692130bf8982d2dc9a1f519"
+      },
+      "review_files": []
+    },
+    {
+      "stage": "publish-verify",
+      "status": "PASS",
+      "receipt_status": "pass",
+      "closed_at": "2026-10-14T01:59:00Z",
+      "duration_s": 600,
+      "scores_summary": null,
+      "cost": null,
+      "artifact_hashes": {
+        "publish-verify/artifact-01.bin": "d3e994be626f36249ff4f4887357a251971455ff5637b62fe5a15d591f0dca5a"
+      },
+      "review_files": []
+    }
+  ],
+  "warnings": [
+    "image grade thresholds are uncalibrated (grade.min_mean_saturation / grade.min_luma_std are null): validate_image_grade.py emitted WARN measurements only"
+  ],
+  "owner_blocked": [],
+  "waivers": [],
+  "hygiene": {
+    "status": "not_recorded",
+    "opened": null,
+    "closed": null,
+    "orphans_found": null,
+    "reaped": null,
+    "unaccounted": null,
+    "headed_launches": null
+  },
+  "totals": {
+    "cost_by_provider": {
+      "kie": 132.5
+    },
+    "slowest_stages": [
+      {
+        "stage": "visual-mockup",
+        "duration_s": 7200
+      },
+      {
+        "stage": "responsive-html",
+        "duration_s": 6600
+      },
+      {
+        "stage": "copy",
+        "duration_s": 5400
+      }
+    ]
+  },
+  "artifacts": {
+    "intake/artifact-01.bin": "327645ea2522440a6e7b1c66f60a34bb15615133558b84b60adc3613fbc51e5c",
+    "copy/artifact-01.bin": "72b23e63f0a5684d1aa58ad1ab8af3fcba303ba84067a5afe950882c93368d5c",
+    "font-action-plan/artifact-01.bin": "11a1a86dc7f84132acbdfee5ba710af361d86412cc72efe00d9d237fad549ca6",
+    "desktop-wireframe/artifact-01.bin": "8dde58df3fc3c90e45d6d344dcbe39e3296fcf1f81e502df3a37ca427f827108",
+    "mobile-tablet/artifact-01.bin": "4e680d9a5e267749a7636f8f1e71033fc56b013edac0592631df8c82f340dd7a",
+    "visual-mockup/artifact-01.bin": "ef7176cee9e1511313ab74545224baf927f56ceb24e321b86882373d15bd67ec",
+    "image-inventory-prompts/artifact-01.bin": "5b996a1c50324ef0d4aebb2e04554a243d8a98ae314dc8b62f7f1be62fb95e7f",
+    "image-generation-qc/artifact-01.bin": "49fd19bea51ef61f6e0d9109ad229bc0117e19730d726b4e2e30679c4407ec7d",
+    "image-map-upload/artifact-01.bin": "6b8417f413e2d9e246730b175a9a46331f73069504811fc6d4447005393603c8",
+    "final-mockups/artifact-01.bin": "08bfd0d5971a276064c46f3cbd4650a23f4cd4cd4962afdc44d5a96148d15bad",
+    "responsive-html/artifact-01.bin": "6edf9c5f813db2682d5456300b84d35d57c288d7a658869c2de9509347c3b068",
+    "ghl-install-test/artifact-01.bin": "8356d13ea1d3f0a2da48ec528e89aad71ad811940692130bf8982d2dc9a1f519",
+    "publish-verify/artifact-01.bin": "d3e994be626f36249ff4f4887357a251971455ff5637b62fe5a15d591f0dca5a"
+  },
+  "compare_sheets": [
+    "responsive-html/compare/desktop.png",
+    "responsive-html/compare/mobile.png"
+  ]
+}

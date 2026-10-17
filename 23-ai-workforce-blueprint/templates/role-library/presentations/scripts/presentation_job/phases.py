@@ -40,6 +40,13 @@ from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, H
 from . import heal
 from . import persona
 from . import curate as _curate
+# ITEM 15 (swarm FORCING): the width controller. Defensive, matching the
+# optional-import pattern used across this package: a tree without the
+# module keeps the pre-Item-15 ready-queue width verbatim.
+try:
+    from . import width_controller as _width_controller
+except ImportError:  # pragma: no cover - pre-Item-15 trees force nothing
+    _width_controller = None  # type: ignore[assignment]
 
 
 _ENGINE_ATTESTED_BY_PREFIX = "engine:"
@@ -503,6 +510,21 @@ class PhaseExecutorContractError(RuntimeError):
 # old warn-and-skip that advanced every phase unverified.
 class VerifierImportError(RuntimeError):
     """FIX 17: phase_verifiers could not be imported -- the run aborts, unverified."""
+
+
+# ---------------------------------------------------------------------------
+# FIX-PLAN Item 16: named error for an undeclared fanout width reaching plan
+# construction. A phase that declares a `fanout` field but no `workers` in
+# the manifest would run its fan-out at the Phase.workers fallback of 1
+# (serial). Item 11 (B23) made that condition loud (Manifest.fanout_width_warnings
+# at load, sync_check W2 at advisory level, the run record); Item 16 promotes
+# it: the drift gate fails on it (sync_check W2 as a drift class) and the
+# engine refuses to plan a run over it (Engine._refuse_undeclared_fanout_widths).
+# Manifest.load stays non-fatal and the fallback stays 1, so scratch and
+# legacy manifests still parse; the refusal lives here, at plan time.
+# ---------------------------------------------------------------------------
+class UndeclaredFanoutWidthError(RuntimeError):
+    """FIX-PLAN Item 16: a fanout phase in the run's plan declares no workers width."""
 
 
 # ---------------------------------------------------------------------------
@@ -975,7 +997,10 @@ def _verdict_check_ids(text: str) -> set:
     return {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(text or "")}
 
 
-def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def readmit_retryable_phases(state: Dict[str, Any], *,
+                             orphan_running_disposition: str = "pending",
+                             only_orphaned_running: bool = False
+                             ) -> List[Dict[str, Any]]:
     """Reset FAILED/QUARANTINED phases -- and verifier-parked BLOCKED phases
     (PD-TEST-135) -- to PENDING so the next run re-enters them.
     Returns one record per re-admitted phase; each record is also
@@ -990,7 +1015,28 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     `orphaned_park_marker` / `orphaned_park_marker_retired`).
 
     Called from __main__._reset_parked_state, the shared --run/--resume
-    unpark helper (FIX 22), so both entry verbs stay identical."""
+    unpark helper (FIX 22), so both entry verbs stay identical.
+
+    ITEM 9(b) -- THE SUPERVISOR-SWEEP MODE. supervisor.supervise() calls this
+    with only_orphaned_running=True and orphan_running_disposition="failed"
+    when it finds, mid-run, a phase left `running` by a dead engine on a path
+    where it will NOT restart one (stale run, restart budget spent). The
+    adjudication is this function's own -- same _running_worker_owner_state
+    verdict, same honoured set, same reclaim record -- because a second,
+    drifting orphan definition is exactly what PD-TEST-155's fix forbids.
+    Two deliberate differences, both forced by the caller's shape:
+      * only_orphaned_running: FAILED/QUARANTINED/verifier-BLOCKED phases are
+        NOT touched. Re-admitting them is the startup path's job, where a
+        fresh engine exists to service the pending phase; a sweep that
+        flipped them with no engine present would just re-bury them.
+      * disposition "failed": the startup path re-opens to PENDING because
+        an engine is starting NOW to service it. The sweep's whole premise
+        is that no engine is coming, so PENDING would leave the subtree in
+        waiting_dependency forever -- the forever state being fixed. FAILED
+        is terminal-bad (_phase_terminal_bad), so the subtree is released
+        to the run's normal failure path, with the orphan reason recorded
+        as the phase's failed_reason.
+    The defaults preserve the startup path's behaviour exactly."""
     run_dir = state.get("run_dir") or "."
     readmitted: List[Dict[str, Any]] = []
     for ps in state.get("phases") or []:
@@ -998,6 +1044,8 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not pid:
             continue
         status = ps.get("status")
+        if only_orphaned_running and status != PHASE_STATUS_RUNNING:
+            continue
         _reclaimed_running: Optional[str] = None
         if status == PHASE_STATUS_RUNNING:
             # PD-TEST-155: a phase left `running` by an engine that died mid-wait
@@ -1072,7 +1120,20 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
                 run_dir, pid)
         ps.setdefault("readmissions", []).append(record)
         ps["readmitted_at"] = record["at"]
-        ps["status"] = PHASE_STATUS_PENDING
+        if _reclaimed_running and orphan_running_disposition == "failed":
+            # ITEM 9(b) supervisor disposition (see the docstring): no
+            # engine is coming to service this phase, so it is marked
+            # FAILED with the orphan reason -- terminal-bad, releasing its
+            # subtree to the normal failure path -- instead of PENDING,
+            # which would re-bury the subtree in waiting_dependency.
+            ps["status"] = PHASE_STATUS_FAILED
+            ps["failed_reason"] = (
+                f"orphaned running phase reclaimed by the supervisor "
+                f"sweep: {_reclaimed_running}")
+            ps["failed_at"] = record["at"]
+            record["orphan_disposition"] = "failed"
+        else:
+            ps["status"] = PHASE_STATUS_PENDING
         readmitted.append(record)
     if readmitted:
         state.setdefault("resume_readmissions", []).extend(readmitted)
@@ -2826,9 +2887,26 @@ class Engine:
         # failed twice with visible output -- and its stderr is exactly what
         # classify_failure needs (a bare "exit 146" names no class; the 402 the
         # executor printed does).
-        _final_attempt = heal.HEAL_CAP_TRANSIENT
         _captured = None
-        for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
+        # ITEM 9(d): rung 1's RETRY budget is per phase per rolling window
+        # (heal.HEAL_WINDOW_HOURS, auto_resume's precedent), not per engine
+        # invocation. Transient attempts a previous invocation already
+        # spent are persisted in this phase's heal_events, so a
+        # crash-looping phase arrives here with its retries already gone
+        # instead of a fresh slice. The ONE floor: a phase always gets a
+        # single primary execution attempt per invocation. Rung 1's first
+        # attempt is the phase's own work, not a heal, and the pinned
+        # PD-TEST-060/080 property -- a re-admitted phase EXECUTES on
+        # resume, so a deployed repair can actually reach it -- forbids
+        # locking a phase out of executing at all. What the persisted
+        # budget removes is the RETRYING: with the window spent, one failed
+        # attempt goes straight to the class dispatch below, and rungs
+        # 2/3/4 (pure heals, capped the same way in heal.py) refuse too.
+        _prior_transient = heal.heal_attempts_in_window(ps, rung=1)
+        _attempts_this_invocation = max(
+            1, heal.HEAL_CAP_TRANSIENT - _prior_transient)
+        _final_attempt = _attempts_this_invocation
+        for attempt in range(1, _attempts_this_invocation + 1):
             try:
                 # FIX-21 (D21): process-group exec with cleanup — on budget expiry the
                 # whole group dies, so a timed-out phase never leaves a stray orphan.
@@ -2902,7 +2980,7 @@ class Engine:
                                  f"{phase.id} retrying — attempt {attempt} of "
                                  f"{heal.HEAL_CAP_TRANSIENT} ({reason}).",
                                  stage=phase.id)
-            if attempt < heal.HEAL_CAP_TRANSIENT:
+            if attempt < _attempts_this_invocation:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
 
         # FIX 10: class-dispatch the exhaustion. The reason from the LAST
@@ -2910,7 +2988,7 @@ class Engine:
         # alternate-provider rung (cap x1, ledger records route_change with
         # both providers -- the QC FIX 10 proof row), any other class falls
         # through to the alternate-route rung (cap x1) exactly as before.
-        last_reason = reason  # always bound: HEAL_CAP_TRANSIENT >= 1 attempt ran
+        last_reason = reason  # always bound: >= 1 attempt ran (Item 9(d) floor)
         if heal.classify_failure(last_reason) == heal.FAILURE_PROVIDER_ERROR:
             with self._state_lock:
                 rc_pf = heal.rung2_provider_failover(self, phase, last_reason,
@@ -4324,11 +4402,60 @@ class Engine:
                 "eta_measured_phases": sum(1 for p in remaining_ids if p in observed),
                 "updated_at": utcnow(),
             }
+            # ITEM 15: planned vs target vs current width for the phase
+            # pool, with the binding constraint named -- the run record's
+            # answer to "why is it running at N".
+            _rq_swarm = getattr(self, "_rq_swarm", None)
+            if _rq_swarm is not None:
+                payload["swarm"] = {
+                    "planned_width": _rq_swarm.get("planned_width"),
+                    "target_width": _rq_swarm.get("target_width"),
+                    "current_width": len(running),
+                    "binding_constraint": _rq_swarm.get("binding_constraint"),
+                    "binding_value": _rq_swarm.get("binding_value"),
+                    "shortfall": bool(_rq_swarm.get("shortfall")),
+                    "caps": _rq_swarm.get("caps"),
+                }
             with self._state_lock:
                 self.state["ready_queue"] = payload
                 self.store.save(self.state)
         except Exception as exc:  # noqa: BLE001 — reporting must never break scheduling
             self.report.event("warn", f"ready-queue report failed: {exc!r}")
+
+    def _swarm_width_decision(self, plan: dict) -> Optional[dict]:
+        """ITEM 15 (swarm FORCING): the ready queue's width as a DECISION.
+
+        The plan width for the phase pool is the run mode's operator
+        ceiling (Item 15's formula: as wide as the hard caps allow),
+        bounded by capacity.py's reserve-adjusted `available` for the run
+        (a positive int; the UNBOUNDED sentinel contributes no term) and
+        by the text-class hardware budget when hardware_budget holds a
+        MEASURED snapshot (its live memory-pressure verdict included; an
+        UNMEASURED snapshot contributes no term, per that module's own
+        doctrine that an absence is never evidence for a lower width).
+        Returns None when the controller is unavailable or faults, in
+        which case the caller keeps the pre-Item-15 width verbatim."""
+        if _width_controller is None:
+            return None
+        try:
+            hw_budget = None
+            try:
+                from . import hardware_budget as _hb
+                snap = _hb.cached_snapshot()
+                if str(snap.get("status")) == "MEASURED":
+                    hw_budget = _hb.budget_for_class("text", snap)
+            except Exception:  # noqa: BLE001 -- unmeasured: no term
+                hw_budget = None
+            mode = _width_controller.active_mode()
+            ceiling = _width_controller.mode_operator_ceiling(mode)
+            return _width_controller.decide_width(
+                ceiling if ceiling is not None else 1,
+                mode=mode, mode_ceiling=ceiling,
+                capacity_available=plan.get("available"),
+                hardware_budget=hw_budget,
+                work_class="text")
+        except Exception:  # noqa: BLE001 -- a controller fault never breaks scheduling
+            return None
 
     def _run_ready_queue(self, phases: List[Phase], plan: dict) -> List[Tuple[str, int]]:
         """PRES-036 step 1: the durable ready queue + persistent supervised
@@ -4356,6 +4483,32 @@ class Engine:
             # UNBOUNDED (a real measurement): width is bounded by ready work,
             # never by the sentinel literal (same contract as the wave loop).
             available = 8
+        # ITEM 15 (swarm FORCING): the pool width is a width-controller
+        # TARGET, reached and held by the persistent pool below (finished
+        # members are reaped every cycle and their slots refill from the
+        # ready set, so a member that dies mid-phase is replaced by the
+        # next admission, never by a narrower pool). An UNBOUNDED capacity
+        # no longer collapses to the hard-coded 8 above: the target is the
+        # mode operator ceiling, bounded by the measured capacity when
+        # there is one and by the hardware budget's live verdict. The
+        # `available = 8` fallback survives ONLY for when the controller
+        # itself is unavailable. The decision is recorded on the run
+        # record (state["ready_queue"]["swarm"], via
+        # _write_ready_queue_state) and on the event stream; a hard cap
+        # below the plan is a named swarm.shortfall event.
+        self._rq_swarm = self._swarm_width_decision(plan)
+        if self._rq_swarm is not None:
+            available = max(1, int(self._rq_swarm["target_width"]))
+            self.report.event(
+                "swarm.width",
+                f"ready queue width target {available} "
+                f"(planned {self._rq_swarm['planned_width']}, bound by "
+                f"{self._rq_swarm['binding_constraint']}="
+                f"{self._rq_swarm['binding_value']})")
+            if self._rq_swarm.get("shortfall") and _width_controller is not None:
+                self.report.event(
+                    "swarm.shortfall",
+                    _width_controller.shortfall_reason(self._rq_swarm))
         total = len(phases)
         failed_rcs: List[Tuple[str, int]] = []
         wave_of = {}
@@ -4440,6 +4593,36 @@ class Engine:
         return failed_rcs
 
     # -- the loop ---------------------------------------------------------
+    def _refuse_undeclared_fanout_widths(self, phases: List[Phase]) -> None:
+        """FIX-PLAN Item 16 (plan-time half): refuse to plan a run whose plan
+        carries a fanout phase with no declared workers width.
+
+        The condition is B23's substrate, Phase.workers_declared: the phase's
+        manifest entry carries a `fanout` dict but no usable `workers` key.
+        Its fan-out would run at the fallback width of 1, a serial pocket
+        inside a parallel pipeline, with the declaration nowhere on record.
+        Item 11 made the condition loud (Manifest.load warnings, sync_check
+        W2 advisory, the run record); Item 16 makes it a refusal here and a
+        drift failure at the gate (sync_check W2 as a drift class).
+
+        Only the phases THIS run will execute are judged: the caller passes
+        the selected, applicability-filtered, non-deferred plan set, so a
+        phase routed around or deferred out of this run is not planned and
+        cannot refuse it. Raises UndeclaredFanoutWidthError naming every
+        offending phase."""
+        undeclared = [p for p in phases
+                      if p.fanout is not None and not p.workers_declared]
+        if not undeclared:
+            return
+        names = ", ".join(p.id for p in undeclared)
+        raise UndeclaredFanoutWidthError(
+            f"undeclared fanout width: fanout phase(s) {names} declare no "
+            f"workers in PIPELINE-MANIFEST.json, so the fan-out width would "
+            f"fall back to 1 (serial). FIX-PLAN Item 16: declare workers on "
+            f"each fanout phase (the phase's own fanout batch_width, or an "
+            f"explicit 1 for a deliberately serial phase) before planning a "
+            f"run over it. Plan refused; no phase has run.")
+
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
         # U024 — sacred-structure warn check, once at engine start-up.
         # DELIBERATELY NON-BLOCKING: a structure drift is a signal to a human,
@@ -4506,6 +4689,13 @@ class Engine:
                 print(f"DEFER {p.id}: defers_unless ({p.defers_unless or ''}) "
                       "not satisfied — skipped for this run.", flush=True)
             phases = [p for p in phases if p.id not in deferred_ids]
+
+        # FIX-PLAN Item 16: plan-time refusal. The plan set is final now
+        # (selected, applicability-filtered, non-deferred); a fanout phase in
+        # it with no declared workers width refuses the run here, before the
+        # client ack and before any phase executes, on both the wave path
+        # and the serial rollback path below.
+        self._refuse_undeclared_fanout_widths(phases)
 
         if not self.state.get("sent", {}).get("ack"):
             # B2b: use the SAME client-visible filtering the per-phase

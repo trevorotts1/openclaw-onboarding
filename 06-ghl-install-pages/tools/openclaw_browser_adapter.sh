@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# openclaw_browser_adapter.sh — Lane 2 adapter: maps Skill 06 builder calls onto
-# the OpenClaw MANAGED browser CLI (`openclaw browser …`). Plan ref P1-12 /
-# 9.7-6 / Appendix A.
+# openclaw_browser_adapter.sh — Lane 1 adapter: maps Skill 06 builder calls onto
+# the OpenClaw browser CLI (`openclaw browser …`, extension driver). Plan ref
+# P1-12 / 9.7-6 / Appendix A.
 #
-# LANE POLICY (load-bearing — read before wiring): Lane 2 is an EXPERIMENTAL
-# UPGRADE ONLY. It is NEVER selected by default. The capability probe
-# (tools/capability_probe.py) is the sole decider: this adapter runs only when
-# the probe has selected the `openclaw_managed_browser` lane, and even then it
-# REFUSES (exit 75) unless `lanes.openclaw_managed_browser.cliWorks` is `true`
-# in the capability JSON. The PRIMARY lane stays agent-browser via
-# browser_manager.sh (pin 0.27.0); do not remove that pin until Lane 2 is
-# proven equivalent on real GHL builds (plan Part 7).
+# LANE POLICY (load-bearing — read before wiring): this adapter serves
+# Lane 1, the PRIMARY lane since the operator decision of 2026-10-13 (the
+# OpenClaw Chrome extension is Skill 6's default engine). The capability
+# probe (tools/capability_probe.py) is the sole decider: this adapter runs
+# only when the probe has selected the `openclaw_managed_browser` lane, and
+# even then it REFUSES (exit 75) unless
+# `lanes.openclaw_managed_browser.cliWorks` is `true` in the capability JSON
+# and the extension is installed and current. agent-browser via
+# browser_manager.sh (pin 0.27.0) is the FALLBACK lane; do not remove that
+# pin, it carries every host the extension lane cannot.
 #
 # WHY AN ADAPTER: Skill 6's builder speaks a small verb vocabulary (status /
 # start / open / snapshot / click / type / frame-snapshot / stop). This file is

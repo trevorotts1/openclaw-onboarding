@@ -31,7 +31,8 @@ SONG_N = IDS.index("song") + 1
 def ANS(song="1", upto=None):
     """Replies for every card question in order (AI models, length ... script): the
     spend question takes a dollar amount, SONG APPROVAL takes ``song``, the rest take 1."""
-    r = ["$25" if i == "spend" else song if i == "song" else "1" for i in IDS]
+    r = IC.example_replies()                     # the story brief is typed, the choices picked
+    r[SONG_N - 1] = song
     return r if upto is None else r[:upto]
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
@@ -78,19 +79,33 @@ def sheet_for(style):
 
 
 _FIRST_WORD_S = 4.0      # the first aligned word's start; the hook window opens at 13.4 s
-PLAN = LF.plan(90, (15, 20))
+#: BUILD-PLAN W1-method-song-U1: both pace turns are mandatory and measured on
+#: EVERY run, so a run missing the pace order is refused at dispatch
+#: (PACE_TURNS_REQUIRED). Every dispatching fixture here carries one.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
+PLAN = dict(LF.plan(90, (15, 20)), pace_change=PACE_ORDER)
 SCRIPT = "One closed door. She Found Power in the Climb. Get the book. Link below."
 HOOKTXT = " ".join(HOOK)
 _W = "one closed door oo-o-oh i am not small i never was one seed of truth made me strong " \
      "i am not small i never was i am not small i never was she found power in the climb get the book link below".split()
 # WWR3INTFIX U1: the take's measured windows scale with the 88-second card, so
 # every hook block the 88 s sheet declares lands inside a sung window.
+#: The MEASURED gear change of a fully-measured take (music_qc.pace_change
+#: windows): the drop at the ordered seam and a return to the opening groove at
+#: the second seam. Both turns are required and measured on EVERY run
+#: (BUILD-PLAN W1-method-song-U1), so an offered take carries them like it
+#: carries its segments and aligned words.
+PACE_EVIDENCE = {"pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
+                 "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
+                 "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
 GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 3, "source": "measured"},
                      {"delivery": "sung", "start": 3, "end": 80, "source": "measured"},
                      {"delivery": "spoken", "start": 80, "end": 86, "source": "measured"}],
         "aligned_words": [{"word": w, "startS": 3 + i, "endS": 3.5 + i} for i, w in enumerate(_W)],
         "detector": "singing_detector 2.0.0", "duration_s": 87.5, "music_under_speech_ratio": 0.6,
-        "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
+        "tail_rms_dbfs": -30.0, "first_sung_s": 2.5, **PACE_EVIDENCE}
 
 
 def _suno_words(lyrics, duration_s=87.5):
@@ -121,7 +136,7 @@ def _tag(path):
 def _pipeline(tmp, bad_first=(), bad_always=()):
     """Run the Yes path with a fake generator. Returns (results, calls, barrier_ok)."""
     reqs = SC.build_requests("rnb-flow", sheet_for("rnb-flow"), CLIENT, "T", RNB_LEN,
-                             hook_plan={"true_at_beat": "the_world"})
+                             hook_plan={"true_at_beat": "the_world"}, pace_plan=PACE_ORDER)
     calls, seen, lock = {}, set(), threading.Lock()
     barrier = threading.Barrier(3, timeout=10)
 
@@ -148,7 +163,9 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
 
 def test_card_has_song_approval_after_storyboard():
     labels = [q["label"] for q in IC.QUESTIONS]
-    assert N == 9 and labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
+    # five story-brief questions then the nine production choices (DSR-105)
+    assert N == 14 and labels[:5] == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS"], labels
+    assert labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
     block = IC.render_card().split("\n\n")[SONG_N - 1].split("\n")
     assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_N, N)
     assert block[1] == "Do you want to hear and pick the song before any video is made?"

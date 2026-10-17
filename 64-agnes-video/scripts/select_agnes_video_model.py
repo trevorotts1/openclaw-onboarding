@@ -8,9 +8,9 @@ on stdout. Same input -> byte-identical output (fixed key order in the dump).
 VERDICT SHAPE (exit 0 for every routing outcome; validity lives in the JSON):
 
   {
-    "model": "agnes-video-2.5-flash" | "agnes-video-v2.0" | "unsupported",
+    "model": "agnes-video-2.5-flash" | "unsupported",
     "valid": true | false,
-    "mode": "text" | "keyframe" | "reference" | "ti2vid" | "keyframes" | null,
+    "mode": "text" | "keyframe" | "reference" | null,
     "reason": "<one sentence>",
     "warnings": ["..."],
     "handoff": null | {"provider": "kie", "model_hint": null}
@@ -22,61 +22,72 @@ EXIT CODES (documented contract):
   3  internal error (determinism guard in --self-test only)
 
 INPUT FIELDS (all optional; unknown/extra fields are ignored):
-  explicit_model      "agnes-video-2.5-flash" | "agnes-video-v2.0" | other
+  explicit_model      "agnes-video-2.5-flash" | "agnes-video-v2.0" (RETIRED —
+                      always refused) | anything else (refused)
   requested_seconds   int, str, or integer float ("5" / 5 / 5.0). Flash
-                      seconds are vendor STRINGS "4"-"12"; V2.0 duration is
-                      frame/fps-driven. Sub-4s or non-numeric values are
+                      seconds are vendor STRINGS "4"-"12"; over 12 s is
+                      refused with "split into clips of 12 s or less" (the
+                      only Agnes model that took longer clips, v2.0, was
+                      retired 2026-09-25). Sub-4s or non-numeric values are
                       rejected (no approved model honors them as given).
-  size / resolution   "720P"/"720p"/"480p"/"1080p"/"1080P" (case-insensitive)
+  size / resolution   "720P"/"720p" only; "480p"/"1080p" are refused (they
+                      were V2.0 tiers — V2.0 retired 2026-09-25)
   aspect_ratio        e.g. "16:9"
-  width, height       ints — a V2.0 contract when explicit
-  frame_rate          int 1-60 (V2.0)
-  num_frames          int (V2.0; <=441 and 8n+1)
-  negative_prompt     string (V2.0-only field)
-  inference_steps     int (V2.0 num_inference_steps)
-  seed                int — BOTH models accept it; never forces V2.0
+  width, height       V2.0-only contract — refused (Flash is size 720P only)
+  frame_rate          V2.0-only — refused
+  num_frames          V2.0-only — refused
+  negative_prompt     V2.0-only — refused
+  inference_steps     V2.0-only — refused
+  seed                int — accepted; never forces a V2.0 route
   first_frame, last_frame  keyframe frame URLs (Flash keyframe mode)
   image_refs          count (int) or list of URLs — reference images
   audio_refs          count (int) or list of URLs — reference audios
   video_refs          count (int) or list of URLs — reference videos
-  mode / intent       "text" | "keyframe" | "reference" | "ti2vid" | "keyframes"
+  mode / intent       "text" | "keyframe" | "reference" ("ti2vid" and
+                      "keyframes" were V2.0 modes — V2.0 is retired, so they
+                      no longer route anywhere)
   allow_kie_handoff   true | false — video-reference input hands off to KIE
                       Video (Skill 67) ONLY when this flag is true
 
-DECISION ORDER (spec 11.4, verbatim sequence):
+DECISION ORDER (spec 11.4 sequence; v2.0 retired by the vendor 2026-09-25):
  1. explicit Flash  -> validate Flash; incompatible => valid=false, model STAYS
-                       Flash (never a silent switch to V2.0)
- 2. explicit V2.0   -> validate V2.0; incompatible => valid=false, explain
- 3. video refs      -> unsupported by both Agnes models => valid=false
+                       Flash (never a silent switch to another model)
+ 2. explicit v2.0   -> valid=false: the vendor retired it 2026-09-25
+ 3. any other name  -> valid=false (the full paid agnes-video-2.5 is never
+                       auto-selected either)
+ 4. video refs      -> unsupported by Agnes => valid=false
                        (handoff to KIE only when allow_kie_handoff=true);
                        never silently converted into image references
- 4. 480p / 1080p    -> V2.0
- 5. width/height    -> V2.0
- 6. num_frames / frame_rate / negative_prompt / inference_steps -> V2.0
- 7. requested >12s  -> V2.0 only if derivable frames <=441 on the 8n+1 grid;
-                       otherwise explain tradeoff (split clips);
-                       sub-4s / non-numeric seconds -> rejected (no model
+ 5. more than 5 image refs -> valid=false (Flash max 5; the old V2.0-keyframe
+                       fallback is gone with V2.0 — reference vs keyframe are
+                       different semantics anyway)
+ 6. requested >12s  -> valid=false, "split into clips of 12 s or less"
+                       (sub-4s / non-numeric seconds -> rejected: no model
                        honors the value as given)
+ 7. 480p / 1080p, width/height, num_frames / frame_rate / negative_prompt /
+    inference_steps -> valid=false (V2.0-only surface; V2.0 retired 2026-09-25)
  8. 4-12s 720P plain text -> Flash, mode "text"
  9. first/last frame 4-12s 720P -> Flash, mode "keyframe"
 10. audio refs (valid Flash size/seconds) -> Flash, mode "reference"
 11. up to 5 true image refs (valid Flash) -> Flash, mode "reference"
-12. seed alone -> does NOT force V2.0; Flash default (warn)
-13. both valid, no explicit model -> Flash default (tiebreak)
+12. seed alone -> Flash default (warn; seed never forces another model)
+13. nothing else said, no explicit model -> Flash default (tiebreak)
 
-SEMANTIC GUARD: a 6-image reference request is NEVER reinterpreted as a V2.0
+SEMANTIC GUARD: a 6-image reference request is NEVER reinterpreted as a
 keyframe job (reference vs keyframe are different semantics): valid=false with
-an explanatory reason. EXCEPTION: if the request EXPLICITLY states mode
-keyframes/keyframe and the request fits V2.0's contract, the explicit-keyframe
-path governs (equivalent to an explicit V2.0 intent).
+an explanatory reason. The former exception — an explicit mode keyframes
+request falling through to V2.0 — no longer applies: V2.0 was retired
+2026-09-25, so no approved Agnes video model takes more than 5 image refs.
 
-LONG-CLIP DERIVATION (rule 7): frames = smallest 8n+1 >= requested_seconds *
-frame_rate (frame_rate default 24). 18s @ 24fps = 432 raw -> 433 (8*54+1,
-18.04s); 13s @ 24fps = 312 -> 313 (13.04s). If raw > 441: not achievable in one
-clip (e.g. 20s @ 24fps = 480) -> valid=false; split clips or lower frame_rate.
+RETIRED MODEL: agnes-video-v2.0 was retired by the vendor on 2026-09-25
+23:59:59 (UTC+8) — "Migrate to the Agnes Video 2.5 series"
+(https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md). The router never
+selects it: an explicit v2.0 name, a v2.0-only request surface, or any
+requested_seconds over 12 all return valid=false. The only approved Agnes
+video model is agnes-video-2.5-flash (720P, seconds "4"-"12").
 
-MODEL FACTS (first-party, verified 2026-08-26; machine-readable copy in
-models.json):
+MODEL FACTS (first-party: Flash verified 2026-08-26, registry refreshed
+2026-10-15; machine-readable copy in models.json):
   Flash  agnes-video-2.5-flash — seconds STRING "4"-"12" default "5"; size ONLY
          "720P" (else HTTP 400 "size must be 720P"); aspect ratios
          [21:9,16:9,4:3,1:1,3:4,9:16]; modes text/keyframe/reference; keyframe
@@ -85,11 +96,11 @@ models.json):
          supported ("videos is not supported"); n only 1; width/height/
          num_frames/frame_rate/negative_prompt/inference_steps are NOT Flash
          fields.
-  V2.0   agnes-video-v2.0 — width default 1152, height default 768;
-         num_frames <=441 and 8n+1; frame_rate 1-60; num_inference_steps int;
-         seed int; negative_prompt str; image single URL (i2v) or
-         extra_body.image[] + extra_body.mode=keyframes; tiers 480p/720p/1080p;
-         ratios [16:9,9:16,1:1,4:3,3:4]; seconds = num_frames/frame_rate.
+  V2.0   agnes-video-v2.0 — RETIRED by the vendor 2026-09-25 23:59:59 (UTC+8).
+         Its surface (width/height, num_frames 8n+1 <= 441, frame_rate 1-60,
+         inference_steps, negative_prompt, 480p/720p/1080p tiers,
+         seconds = num_frames/frame_rate) is kept here only so the router can
+         NAME and refuse it; nothing routes to it and nothing selects it.
 
 --self-test: runs the fixture suite (spec 18.5 + semantic guards), prints one
 line per fixture, exits 0 only if ALL pass.
@@ -100,15 +111,22 @@ import os
 import sys
 
 FLASH = "agnes-video-2.5-flash"
-V20 = "agnes-video-v2.0"
+V20 = "agnes-video-v2.0"          # RETIRED — named only so the router can refuse it
 UNSUPPORTED = "unsupported"
 
 FLASH_SECONDS = {"4", "5", "6", "7", "8", "9", "10", "11", "12"}
 FLASH_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
-V20_SIZES = {"480p", "720p", "1080p"}
-V20_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"]
-V20_MAX_FRAMES = 441
-DEFAULT_FPS = 24
+V20_RETIRED_ON = "2026-09-25"
+V20_RETIRED_URL = "https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md"
+SPLIT_ADVICE = "split into clips of 12 s or less"
+
+
+def v20_refusal(detail):
+    """One sentence: what the request asked for, and why no approved model gives it."""
+    return ("%s; agnes-video-v2.0 — the only Agnes video model with that "
+            "surface — was retired by the vendor on %s 23:59:59 (UTC+8), so "
+            "the only approved model is %s (size 720P, seconds \"4\"-\"12\") [%s]"
+            % (detail, V20_RETIRED_ON, FLASH, V20_RETIRED_URL))
 
 
 class Verdict(object):
@@ -215,22 +233,11 @@ def seconds_tuple(raw):
     return sec_str, int(sec_str)
 
 
-def grid_ceiling(raw_frames):
-    """Smallest num_frames on the 8n+1 grid >= raw_frames, or None if > 441."""
-    if raw_frames is None:
-        return None
-    if raw_frames > V20_MAX_FRAMES:
-        return None
-    if (raw_frames - 1) % 8 == 0:
-        return raw_frames
-    return ((raw_frames + 7) // 8) * 8 + 1
-
-
 # ── Flash validation (decision step 1) ────────────────────────────────────
 
 def validate_flash(p, v):
     """Explicit Flash request. On ANY incompatibility: v.model STAYS Flash and
-    v.valid=False (spec: never silently switch to V2.0)."""
+    v.valid=False (spec: never silently switch to another model)."""
 
     def fail(reason):
         v.model = FLASH
@@ -247,9 +254,12 @@ def validate_flash(p, v):
 
     sec = norm_seconds(p.get("requested_seconds"))
     if sec is not None and sec not in FLASH_SECONDS:
+        advice = ("%s" % SPLIT_ADVICE) if int(sec) > 12 else \
+            "no approved model honors that value as given"
         return fail(
             "explicit_model agnes-video-2.5-flash is incompatible with seconds "
-            "%s: Flash seconds are the string range 4-12 — no silent switch" % sec)
+            "%s: Flash seconds are the string range 4-12 — no silent switch; "
+            "%s" % (sec, advice))
 
     ar = p.get("aspect_ratio")
     if ar is not None and ar not in FLASH_RATIOS:
@@ -317,140 +327,15 @@ def validate_flash(p, v):
     return v
 
 
-# ── V2.0 validation and routing (decision steps 2, 4, 5, 6, 7) ────────────
+# ── the retired model's request surface (decision steps 2, 4-7) ──
 
-def route_v20(p, v, via_step):
-    """V2.0 path used by explicit V2.0 and by auto-routes (rules 4-7).
-    Derives num_frames when seconds > 12 (rule 7); validates otherwise."""
-    sec_str, sec = seconds_tuple(p.get("requested_seconds"))
-    has_num_frames = p.get("num_frames") is not None
-    explicit = str(p.get("explicit_model", "") or "").strip() == V20
 
-    # Rule 7 derivation: seconds > 12 with no explicit num_frames.
-    if sec is not None and sec > 12 and not has_num_frames:
-        fps = as_int(p.get("frame_rate")) or DEFAULT_FPS
-        # fps may be given as a V2.0 field (rule 6) and must be in 1-60.
-        if not 1 <= fps <= 60:
-            v.model = V20
-            v.valid = False
-            v.reason = ("%s: frame_rate %r invalid — V2.0 range is 1-60"
-                        % (via_step, p.get("frame_rate")))
-            return v
-        raw = sec * fps
-        frames = grid_ceiling(raw)
-        if frames is None:
-            v.model = UNSUPPORTED
-            v.valid = False
-            v.reason = ("requested_seconds %d at frame_rate %d needs %d frames, "
-                        "above the V2.0 cap of %d — not achievable in one clip; "
-                        "split into multiple clips or lower frame_rate"
-                        % (sec, fps, int(raw), V20_MAX_FRAMES))
-            return v
-        actual = frames / float(fps)
-        p = dict(p)
-        p["num_frames"] = frames
-        p["frame_rate"] = fps
-        v.model = V20
-        v.valid = True
-        v.mode = "ti2vid"
-        v.reason = ("requested_seconds %d exceeds Flash max 12 — V2.0 with "
-                    "derived num_frames %d at frame_rate %d (%.2fs) within the "
-                    "%d-frame cap on the 8n+1 grid" % (sec, frames, fps, actual,
-                                                       V20_MAX_FRAMES))
-        if actual < sec - 0.01:
-            v.warnings.append(
-                "derived %d frames at %d fps yields %.2fs, slightly under "
-                "requested %ds — request a longer clip or split" % (frames, fps,
-                                                                    actual, sec))
-        return v
-
-    # Non-derived path: validate the V2.0 contract.
-    v.model = V20
-    v.valid = True
-
-    w = p.get("width")
-    h = p.get("height")
-    if w is not None and (as_int(w) is None or w <= 0):
-        v.valid = False
-        v.reason = "%s: width %r invalid (positive integer expected; vendor default 1152)" % (via_step, w)
-        return v
-    if h is not None and (as_int(h) is None or h <= 0):
-        v.valid = False
-        v.reason = "%s: height %r invalid (positive integer expected; vendor default 768)" % (via_step, h)
-        return v
-
-    nf = as_int(p.get("num_frames"))
-    if p.get("num_frames") is not None and nf is None:
-        v.valid = False
-        v.reason = "%s: num_frames %r is not an integer" % (via_step, p.get("num_frames"))
-        return v
-    if nf is not None and (nf > V20_MAX_FRAMES or nf % 8 != 1):
-        v.valid = False
-        v.reason = ("%s: num_frames %d invalid — must be <= %d AND on the 8n+1 "
-                    "grid (e.g. 81, 121, 241, 441)" % (via_step, nf, V20_MAX_FRAMES))
-        return v
-
-    fr = as_int(p.get("frame_rate"))
-    if p.get("frame_rate") is not None and (fr is None or not 1 <= fr <= 60):
-        v.valid = False
-        v.reason = "%s: frame_rate %r invalid — V2.0 range is 1-60" % (via_step, p.get("frame_rate"))
-        return v
-
-    steps = p.get("inference_steps")
-    if steps is not None and as_int(steps) is None:
-        v.valid = False
-        v.reason = "%s: inference_steps %r is not an integer" % (via_step, steps)
-        return v
-
-    seed = p.get("seed")
-    if seed is not None and as_int(seed) is None:
-        v.valid = False
-        v.reason = "%s: seed %r is not an integer" % (via_step, seed)
-        return v
-
-    size = norm_size(p.get("size") or p.get("resolution") or None)
-    # norm_size canonicalizes 720p/720P -> "720P" (the Flash spelling); V2.0's
-    # tier spelling is "720p" — same tier, map before the membership check.
-    if size == "720P":
-        size = "720p"
-    if size is not None and size not in V20_SIZES:
-        v.valid = False
-        v.reason = "%s: size %s invalid — V2.0 tiers are 480p/720p/1080p" % (via_step, size)
-        return v
-
-    ar = p.get("aspect_ratio")
-    if ar is not None and ar not in V20_RATIOS:
-        v.valid = False
-        v.reason = "%s: aspect_ratio %s not in V2.0's [16:9,9:16,1:1,4:3,3:4]" % (via_step, ar)
-        return v
-
-    # V2.0 has no seconds enum. Explicit V2.0 with a bare seconds value and no
-    # num_frames cannot honor the requested duration deterministically: explain
-    # (rule: no silent switch, no fabricated frames). Auto-routes
-    # (size/fields-led) accept the vendor's normalization path with a warning.
-    if sec is not None and nf is None and explicit:
-        v.valid = False
-        v.reason = ("explicit V2.0: requested_seconds %s without num_frames — "
-                    "V2.0 duration is frame/fps-driven; provide num_frames "
-                    "(<= %d, 8n+1)" % (sec, V20_MAX_FRAMES))
-        return v
-
-    mode = str(p.get("mode") or p.get("intent") or "").lower()
-    if mode in ("keyframe", "keyframes"):
-        v.mode = "keyframes"
-    elif mode in ("text", "ti2vid", "i2v", "image-to-video"):
-        v.mode = "ti2vid"
-    else:
-        v.mode = "ti2vid"
-    v.reason = "%s: V2.0 request validated" % via_step
-    if nf is not None and fr is not None:
-        v.reason += " (num_frames %d, frame_rate %d)" % (nf, fr)
-    elif nf is not None:
-        v.reason += " (num_frames %d)" % nf
-    if sec is not None and nf is None and not explicit:
-        v.warnings.append(
-            "no num_frames: V2.0 duration is frame/fps-driven and will be "
-            "normalized by the service — read returned seconds/size_mapping")
+def refuse_v20(p, v, detail):
+    """A v2.0-only request surface: no approved model serves it any more."""
+    v.model = UNSUPPORTED
+    v.valid = False
+    v.mode = None
+    v.reason = v20_refusal(detail)
     return v
 
 
@@ -463,93 +348,99 @@ def route(p, v):
     if explicit == FLASH:
         return validate_flash(p, v)
 
-    # STEP 2: explicit V2.0 — validate; explain on incompatibility.
+    # STEP 2: explicit v2.0 — retired by the vendor 2026-09-25; always refused.
     if explicit == V20:
-        return route_v20(p, v, "explicit V2.0")
+        v.model = UNSUPPORTED
+        v.valid = False
+        v.mode = None
+        v.reason = v20_refusal("explicit_model agnes-video-v2.0 is no longer available")
+        return v
 
-    if explicit and explicit not in (FLASH, V20):
+    if explicit:
         v.model = UNSUPPORTED
         v.valid = False
         v.reason = ("explicit_model %s is not an approved Agnes video model "
-                    "(approved: agnes-video-2.5-flash, agnes-video-v2.0) — "
-                    "never auto-select full agnes-video-2.5" % explicit)
+                    "(the only approved model is agnes-video-2.5-flash; "
+                    "agnes-video-v2.0 was retired on %s) — never auto-select "
+                    "full agnes-video-2.5" % (explicit, V20_RETIRED_ON))
         return v
 
     vid_count = count_refs(p.get("video_refs"))
     img_count = count_refs(p.get("image_refs"))
     aud_count = count_refs(p.get("audio_refs"))
-    mode = str(p.get("mode") or p.get("intent") or "").lower()
 
-    # STEP 3: video-reference input — neither Agnes model supports it.
+    # STEP 4: video-reference input — no Agnes model supports it.
     if vid_count > 0:
         v.model = UNSUPPORTED
         v.valid = False
         v.mode = None
         if as_bool(p.get("allow_kie_handoff")):
             v.handoff = {"provider": "kie", "model_hint": None}
-            v.reason = ("%d video reference(s): neither agnes video model "
+            v.reason = ("%d video reference(s): no Agnes video model "
                         "supports video references — handed off to KIE Video; "
                         "video refs are never silently converted to image refs"
                         % vid_count)
         else:
-            v.reason = ("%d video reference(s): neither agnes-video-2.5-flash "
-                        "nor agnes-video-v2.0 supports video references (vendor "
-                        "HTTP 400 'videos is not supported') — use KIE Video; "
-                        "not silently converted to image references" % vid_count)
+            v.reason = ("%d video reference(s): no approved Agnes video model "
+                        "supports video references (vendor HTTP 400 'videos is "
+                        "not supported') — use KIE Video; not silently "
+                        "converted to image references" % vid_count)
         return v
 
-    # SEMANTIC GUARD: 6+ image refs must not become a V2.0 keyframe job unless
-    # the request itself explicitly asks for keyframes (then V2.0 governs).
-    if img_count > 5 and mode not in ("keyframe", "keyframes"):
+    # STEP 5: SEMANTIC GUARD — 6+ image refs are never reinterpreted as a
+    # keyframe job (reference vs keyframe are different semantics), and with
+    # v2.0 retired no approved model takes more than 5 image refs at all.
+    if img_count > 5:
         v.model = UNSUPPORTED
         v.valid = False
         v.mode = None
-        v.reason = ("%d image refs exceed Flash max 5; choosing V2.0 keyframes "
-                    "would change the semantics (reference vs keyframe) — do "
-                    "not silently convert; re-ask or use KIE Video" % img_count)
+        v.reason = ("%d image refs exceed Flash max 5 (vendor HTTP 400 'images "
+                    "length must not exceed 5'); re-reading them as keyframes "
+                    "would change the semantics (reference vs keyframe) and the "
+                    "only model that did that, agnes-video-v2.0, was retired on "
+                    "%s — use at most 5 image refs, or use KIE Video"
+                    % (img_count, V20_RETIRED_ON))
         return v
-    if img_count > 5 and mode in ("keyframe", "keyframes"):
-        return route_v20(p, v, "explicit keyframes request")
 
     size = norm_size(p.get("size") or p.get("resolution") or None)
-
-    # STEP 4: 480p / 1080p -> V2.0
-    if size in ("480p", "1080p"):
-        return route_v20(p, v, "480p/1080p requirement")
-
-    # STEP 5: explicit width/height -> V2.0
-    if p.get("width") is not None or p.get("height") is not None:
-        return route_v20(p, v, "explicit width/height")
-
-    # STEP 6 + 7: V2.0-only fields, or seconds > 12 (derivation inside).
-    has_v20_field = (p.get("num_frames") is not None or p.get("frame_rate") is not None
-                     or p.get("negative_prompt") is not None
-                     or p.get("inference_steps") is not None)
     # Numerical source of truth: canonical string + int for requested_seconds.
     sec_str, sec = seconds_tuple(p.get("requested_seconds"))
-    if has_v20_field or (sec is not None and sec > 12):
-        step_label = "V2.0-only field present" if has_v20_field else "requested > 12s"
-        return route_v20(p, v, step_label)
+
+    # STEP 6: requested_seconds > 12 — no approved model takes a longer clip.
+    if sec is not None and sec > 12:
+        v.model = UNSUPPORTED
+        v.valid = False
+        v.mode = None
+        v.reason = ("requested_seconds %d exceeds the Flash maximum of 12 s, "
+                    "and agnes-video-v2.0 — the only Agnes model that took a "
+                    "longer clip — was retired by the vendor on %s — %s"
+                    % (sec, V20_RETIRED_ON, SPLIT_ADVICE))
+        return v
+
+    # STEP 7: the v2.0-only request surface.
+    if size in ("480p", "1080p"):
+        return refuse_v20(p, v, "size %s is a V2.0 tier and Flash takes 720P only" % size)
+    if p.get("width") is not None or p.get("height") is not None:
+        return refuse_v20(p, v, "width/height are V2.0-only fields and Flash takes size 720P only")
+    for field in ("num_frames", "frame_rate", "negative_prompt", "inference_steps"):
+        if p.get(field) is not None:
+            return refuse_v20(p, v, "%s is a V2.0-only field" % field)
 
     has_frames = bool(p.get("first_frame") or p.get("last_frame"))
-    sec_str = norm_seconds(p.get("requested_seconds"))
-    # Seconds guard: a numeric requested_seconds is a Flash enum value ("4"-"12")
-    # or a >12s value routed to V2.0 derivation above. Anything else (sub-4s,
-    # non-numeric) is honored by NO approved model as given — reject, do not
-    # silently fall back to the Flash default seconds.
+    # Seconds guard: a numeric requested_seconds is a Flash enum value ("4"-
+    # "12"); anything else (sub-4s, non-numeric) is honored by NO approved
+    # model as given — reject, do not silently fall back to the Flash default.
     if p.get("requested_seconds") is not None and sec_str is None:
         v.model = UNSUPPORTED
         v.valid = False
         v.reason = ("requested_seconds %r is not a number — Flash seconds "
-                    "are the string range 4-12; V2.0 duration is "
-                    "frame/fps-driven" % p.get("requested_seconds"))
+                    "are the string range 4-12" % p.get("requested_seconds"))
         return v
     if p.get("requested_seconds") is not None and int(sec_str) < 4:
         v.model = UNSUPPORTED
         v.valid = False
         v.reason = ("requested_seconds %s below Flash minimum 4 — Flash "
-                    "seconds are the string range 4-12; V2.0 duration is "
-                    "frame/fps-driven (num_frames/frame_rate)" % sec_str)
+                    "seconds are the string range 4-12" % sec_str)
         return v
     flash_sec_ok = sec_str is None or sec_str in FLASH_SECONDS
     size_ok_720 = size is None or size == "720P"
@@ -565,10 +456,9 @@ def route(p, v):
         if sec_str is None:
             v.warnings.append('no requested_seconds — Flash default seconds is "5"')
         if p.get("seed") is not None:
-            # spec 11.4 rule 12: seed alone never forces V2.0 — warn
+            # spec 11.4 rule 12: seed alone never forces another model — warn
             v.warnings.append("seed with no explicit model — Flash default "
-                              "applied (both models accept seed; it does not "
-                              "force V2.0)")
+                              "applied (seed does not force another model)")
         return v
 
     # STEP 9: first/last frame 4-12s 720P -> Flash keyframe
@@ -598,23 +488,23 @@ def route(p, v):
                     "-> Flash reference mode" % img_count)
         return v
 
-    # STEP 12: seed ALONE -> does not force V2.0; Flash default (warn)
+    # STEP 12: seed ALONE -> Flash default (warn)
     if p.get("seed") is not None:
         v.model = FLASH
         v.valid = True
         v.mode = "text"
-        v.reason = ("seed-only request: both models accept seed, no V2.0-only "
-                    "field present — Flash default applied")
+        v.reason = ("seed-only request: no V2.0-only field present — Flash "
+                    "default applied")
         v.warnings.append("seed with no explicit model — Flash default applied "
-                          "(seed does not force V2.0)")
+                          "(seed does not force another model)")
         return v
 
-    # STEP 13: both valid, no explicit model -> Flash default (tiebreak)
+    # STEP 13: no explicit model -> Flash default (the only approved model)
     v.model = FLASH
     v.valid = True
     v.mode = "text"
     v.reason = ("no explicit model and no V2.0-only field: Flash default "
-                "(tiebreak when both models are valid)")
+                "(the only approved Agnes video model)")
     return v
 
 
@@ -628,35 +518,38 @@ GOLDEN = [
      FLASH, True, "keyframe", "keyframe", None),
     ({"requested_seconds": "5", "size": "720P", "audio_refs": 1},
      FLASH, True, "reference", "audio", None),
+    # 480p/1080p were V2.0 tiers; V2.0 retired 2026-09-25 -> refused
     ({"size": "1080p", "intent": "text"},
-     V20, True, "ti2vid", "1080p", None),
+     UNSUPPORTED, False, None, "720P only", None),
     ({"num_frames": 121, "frame_rate": 24},
-     V20, True, "ti2vid", "V2.0-only field", None),
+     UNSUPPORTED, False, None, "V2.0-only field", None),
+    # any request over 12 s -> refused with the split advice
     ({"requested_seconds": 18, "frame_rate": 24, "size": "1080p"},
-     V20, True, "ti2vid", "441", None),
+     UNSUPPORTED, False, None, SPLIT_ADVICE, None),
     ({"video_refs": 1},
      UNSUPPORTED, False, None, "video reference", None),
     ({"explicit_model": "agnes-video-2.5-flash", "size": "1080p"},
      FLASH, False, None, "explicit model wins over auto-correction", None),
-    # semantic guard: 6 images is NOT auto-reinterpreted as V2.0 keyframes
+    # semantic guard: 6 images are NEVER reinterpreted as keyframes
     ({"requested_seconds": "5", "size": "720P", "image_refs": 6},
      UNSUPPORTED, False, None, "semantics", None),
-    # explicit keyframes + V2.0-legal frames: explicit mode governs
+    # ...not even when the request says mode keyframes (V2.0 is gone)
     ({"num_frames": 121, "image_refs": 6, "mode": "keyframes"},
-     V20, True, "keyframes", "keyframes", None),
-    # 13s -> V2.0 derivation attempt
+     UNSUPPORTED, False, None, "semantics", None),
+    # 13s / 15s / 18s / 20s -> split into clips of 12 s or less
     ({"requested_seconds": 13, "size": "720P"},
-     V20, True, "ti2vid", "derived", None),
-    # derivation impossible: 20s @ 24fps = 480 > 441
+     UNSUPPORTED, False, None, SPLIT_ADVICE, None),
     ({"requested_seconds": 20, "frame_rate": 24, "size": "720P"},
-     UNSUPPORTED, False, None, "split", None),
-    # seed alone -> Flash default with warning (rule 12: seed never forces V2.0)
+     UNSUPPORTED, False, None, SPLIT_ADVICE, None),
+    ({"requested_seconds": "15"},
+     UNSUPPORTED, False, None, SPLIT_ADVICE, None),
+    # seed alone -> Flash default with warning (rule 12: seed forces nothing)
     ({"requested_seconds": "7", "size": "720P", "seed": 42},
      FLASH, True, "text", "Flash default", "seed with no explicit model"),
-    # explicit V2.0 + negative_prompt -> V2.0 valid
+    # explicit V2.0 -> refused: retired by the vendor 2026-09-25
     ({"explicit_model": "agnes-video-v2.0", "negative_prompt": "blurry",
       "num_frames": 121, "frame_rate": 24},
-     V20, True, "ti2vid", "validated", None),
+     UNSUPPORTED, False, None, "retired by the vendor", None),
     # explicit Flash + num_frames -> invalid, model STAYS Flash
     ({"explicit_model": "agnes-video-2.5-flash", "num_frames": 121},
      FLASH, False, None, "not a Flash field", None),
@@ -666,27 +559,26 @@ GOLDEN = [
     # Flash seconds enum: 13 invalid under explicit Flash
     ({"explicit_model": "agnes-video-2.5-flash", "requested_seconds": "13"},
      FLASH, False, None, "4-12", None),
-    # V2.0 off-grid num_frames invalid under explicit V2.0
+    # explicit V2.0 with off-grid frames: refused for the retirement reason
     ({"explicit_model": "agnes-video-v2.0", "num_frames": 120},
-     V20, False, None, "8n+1", None),
-    # V2.0 at max frames valid
+     UNSUPPORTED, False, None, "retired by the vendor", None),
+    # the whole V2.0 surface is refused, however well formed
     ({"num_frames": 441, "frame_rate": 24},
-     V20, True, "ti2vid", "validated", None),
+     UNSUPPORTED, False, None, "V2.0-only field", None),
     # exactly 5 true image refs valid Flash
     ({"requested_seconds": "6", "size": "720P", "image_refs": 5},
      FLASH, True, "reference", "5 image reference", None),
     # unknown explicit model: never auto-selects full paid agnes-video-2.5
     ({"explicit_model": "agnes-video-2.5"},
      UNSUPPORTED, False, None, "approved", None),
-    # regression: V2.0 accepts size 720p (case-insensitive tier spelling)
+    # V2.0-only fields refuse before the size they came with
     ({"num_frames": 81, "frame_rate": 24, "size": "720p"},
-     V20, True, "ti2vid", "validated", None),
+     UNSUPPORTED, False, None, "V2.0-only field", None),
     ({"num_frames": 81, "frame_rate": 24, "size": "720P"},
-     V20, True, "ti2vid", "validated", None),
-    # regression: explicit V2.0 + bare seconds (no num_frames) is invalid —
-    # V2.0 has no seconds enum; never silently fabricate frames
+     UNSUPPORTED, False, None, "V2.0-only field", None),
+    # regression: explicit V2.0 + bare seconds is refused, never fabricated
     ({"explicit_model": "agnes-video-v2.0", "requested_seconds": "5", "size": "720P"},
-     V20, False, None, "frame/fps-driven", None),
+     UNSUPPORTED, False, None, "retired by the vendor", None),
     # regression: sub-4s seconds is below Flash minimum — reject, do not
     # silently fall back to the Flash default seconds "5"
     ({"requested_seconds": 3},
@@ -697,11 +589,10 @@ GOLDEN = [
     # regression: integer-float seconds equals its int form (5.0 == "5" -> Flash)
     ({"requested_seconds": 5.0, "size": "720P"},
      FLASH, True, "text", "Flash-compatible", None),
-    # regression: integer-float >12s drives V2.0 derivation (18.0 == 18)
+    # regression: integer-float over 12s is refused the same way (18.0 == 18)
     ({"requested_seconds": 18.0, "frame_rate": 24},
-     V20, True, "ti2vid", "derived", None),
+     UNSUPPORTED, False, None, SPLIT_ADVICE, None),
 ]
-
 
 def _route_payload(payload):
     v = Verdict()

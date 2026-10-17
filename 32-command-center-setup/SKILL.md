@@ -1,6 +1,6 @@
 ---
 name: command-center-setup
-version: "v13.1.55"
+version: "v13.1.60"
 description: Deploy the ZeroHumanWorkforce Command Center dashboard for a client — one deployment per client with its own Vercel deployment, CloudFlare Access app, Telegram supergroup with topics, and data store. Includes one-time install, runtime execution guide, and QC rubric (gate 8.5).
 ---
 
@@ -37,7 +37,7 @@ For an explicit client “resume my interview” or expired-link request, run th
 
 The shell remains governed by canonical interview/build/closeout state. The client answers in their own interview, resumes durable Q/A and can export a reference document. Completion triggers the existing build handoff; unavailable dependencies remain pending for recovery. Full activation/closeout requires actual verified artifacts and delivery, not a flag alone.
 
-See [launch and recovery](../docs/interview-launch-recovery.md). Never bypass client isolation, the build gate or the closeout gate to make a screen appear ready.
+The no-send startability gate (`verify-tenant-readiness.py --startability --no-send`) is what a sign-off claims instead of "the pm2 command returned zero": canonical process online in the expected app directory, exact local health payload, authenticated public readiness with a registered Access identity, and a real minted invitation whose ticket is discarded. The gate refuses to run without `--no-send`, and it re-checks the CURRENT state — a historic ledger flag is never accepted as proof. Guide Step 4.4 records it as ledger key `4.4`. See [launch and recovery](../docs/interview-launch-recovery.md). Never bypass client isolation, the build gate or the closeout gate to make a screen appear ready.
 
 ## What This Skill Is About
 

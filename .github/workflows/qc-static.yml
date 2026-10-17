@@ -2372,8 +2372,11 @@ jobs:
               # 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
               # (same ~/clawd legacy loops; retire in lockstep with the
               # canonicals after fleet migration). Byte-identicality is
-              # enforced by the vendored-blob compare step in
-              # presentations-lockstep.yml (Fix 29); embedding_engine.py is a
+              # enforced by the vendored-blob compare step (Fix 29) in
+              # scripts/ci/fast-guards.d/presentations-lockstep.sh, run by
+              # fast-guards.yml (folded there from the former
+              # presentations-lockstep.yml workflow, deleted 2026-10-08 in
+              # the CIO002 consolidation); embedding_engine.py is a
               # deliberate re-export shim and is excluded.
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py",
@@ -2498,8 +2501,11 @@ jobs:
               # 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
               # (same ~/clawd legacy loops; retire in lockstep with the
               # canonicals after fleet migration). Byte-identicality is
-              # enforced by the vendored-blob compare step in
-              # presentations-lockstep.yml (Fix 29); embedding_engine.py is a
+              # enforced by the vendored-blob compare step (Fix 29) in
+              # scripts/ci/fast-guards.d/presentations-lockstep.sh, run by
+              # fast-guards.yml (folded there from the former
+              # presentations-lockstep.yml workflow, deleted 2026-10-08 in
+              # the CIO002 consolidation); embedding_engine.py is a
               # deliberate re-export shim and is excluded.
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py",

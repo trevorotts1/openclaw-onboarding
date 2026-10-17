@@ -27,6 +27,38 @@ if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SELF_DIR"
+
+# Enforcement set — the same files social-media-entry.sh GATE 3 hashes, in the
+# same order verify.sh section 7 checks. Declared ONCE here so the stamp-pin
+# subcommand and the drift check can never disagree with each other.
+ENGINE_FILES=(run_social_media.py scripts/preflight_gate.py scripts/prove_bands.py
+    scripts/validate_contract.py scripts/scrub_gate.py scripts/build_manifest.py
+    scripts/ledger.py scripts/label_deliverables.py scripts/defer_stub.py
+    scripts/mc_board.py)
+
+# -- stamp-pin: recompute ENGINE-PIN.sha256 over ENGINE_FILES (the entry's GATE 3
+# set) in canonical order. update-skills.sh calls this after every skill copy so a
+# box never lands with a stale pin that would refuse dispatch. A missing listed
+# file is a hard exit 4: never mint a pin over an absent file.
+if [ "${1:-}" = "stamp-pin" ]; then
+    _FILES=()
+    for _f in "${ENGINE_FILES[@]}"; do
+        [ -f "$SELF_DIR/$_f" ] || { echo "verify stamp-pin: missing enforcement candidate $SELF_DIR/$_f" >&2; exit 4; }
+        _FILES+=("$SELF_DIR/$_f")
+    done
+    if command -v sha256sum >/dev/null 2>&1; then
+        _H="$(cat "${_FILES[@]}" | sha256sum | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        _H="$(cat "${_FILES[@]}" | shasum -a 256 | awk '{print $1}')"
+    else
+        echo "verify stamp-pin: no sha256 tool" >&2; exit 4
+    fi
+    [ -n "$_H" ] || { echo "verify stamp-pin: empty digest" >&2; exit 4; }
+    printf '%s\n' "$_H" > "$SELF_DIR/ENGINE-PIN.sha256"
+    echo "verify stamp-pin: ENGINE-PIN.sha256 written ($_H)"
+    exit 0
+fi
+
 FAILS=0
 step() { echo; echo "=== $* ==="; }
 ok()   { echo "  OK: $*"; }
@@ -236,11 +268,8 @@ then ok "19 prompt hashes match the pin"; else bad "a shipped prompt drifted fro
 
 # ---------------------------------------------------------------------------
 step "7/7 engine-pin + no-Anthropic + no-n8n-runtime scans"
-# engine hash pin (the same set social-media-entry.sh GATE 3 enforces)
-ENGINE_FILES=(run_social_media.py scripts/preflight_gate.py scripts/prove_bands.py
-    scripts/validate_contract.py scripts/scrub_gate.py scripts/build_manifest.py
-    scripts/ledger.py scripts/label_deliverables.py scripts/defer_stub.py
-    scripts/mc_board.py)
+# engine hash pin (ENGINE_FILES, declared at the top of this file: the same set
+# social-media-entry.sh GATE 3 enforces and verify.sh stamp-pin re-mints)
 if command -v shasum >/dev/null 2>&1; then H="$(cat "${ENGINE_FILES[@]}" | shasum -a 256 | awk '{print $1}')"
 elif command -v sha256sum >/dev/null 2>&1; then H="$(cat "${ENGINE_FILES[@]}" | sha256sum | awk '{print $1}')"
 else H=""; fi

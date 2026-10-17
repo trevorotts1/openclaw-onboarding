@@ -4,8 +4,12 @@
      macOS client box: USER-LEVEL periodic Drama Studio bridge poller (no sudo).
      install-timer.sh expands the placeholders and copies it to
        ~/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
-     The operator then registers it (install-timer.sh never registers anything):
-       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
+     install-timer.sh in register mode then loads it (check-first: an
+     already-loaded job with an unchanged plist is success and changes nothing):
+       launchctl bootstrap gui/$(id -u) <that plist>
+     Every other mode writes files only and prints that command. A root that is
+     not the contract root is a fixture: the command is printed, never executed.
+     (No double hyphen in this comment: XML forbids one inside a comment.)
 
      DIRECT SHELL: ProgramArguments is [/bin/sh, run-timer.sh]. launchd runs the
      shell script and nothing else — no Claude, no claude-nine, no model, no

@@ -484,6 +484,28 @@ REPIN_LOG_RELATIVE = ("working", "logs", "repin.log")
 REPIN_TIMEOUT_S = 120.0
 
 
+#: PRES-039: dispatch() refuses when the engine compatibility preflight
+#: fails (AF-ENGINE-STALE-DUPLICATE / AF-ENGINE-CONTRACT-DRIFT) -- joins
+#: the -1..-11 refusal family. Nothing spawned. A stale PYTHONPATH
+#: duplicate or a contract-drifted copy must never be silently imported
+#: at dispatch.
+#: NUMBERING: the CC vendored copy numbers this sentinel -8, but in THIS
+#: (canonical) tree -8 is DISPATCH_OCR_REFUSED (FIX 33) and -9..-11 are
+#: taken, so the engine sentinel takes the next free value, -12.
+#: engine_origin._check_contract asserts THIS value in this file; the
+#: check and the launcher travel together from this tree (Item 7
+#: generated sync), so the pair cannot drift apart silently.
+DISPATCH_ENGINE_REFUSED = -12
+
+#: CLI exit code for DISPATCH_ENGINE_REFUSED.
+EXIT_ENGINE_REFUSED = 13
+
+ENGINE_AUTOFAIL_CODES = (
+    "AF-ENGINE-STALE-DUPLICATE",
+    "AF-ENGINE-CONTRACT-DRIFT",
+)
+
+
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
 #: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
 #: to proceed AT, not a ceiling this account was proven to support. Checking
@@ -1321,6 +1343,94 @@ def model_plan_gate(run_path: Path, mode: Optional[str] = None) -> Optional[int]
     return None
 
 
+def _announce_route_honesty(run_path: Path) -> None:
+    """FIX 18 ROUTE HONESTY -- the launch restatement of the intake honesty
+    block (FIX-PLAN Item 18: the block fires at the resource_plan moment
+    AND again at launch). Prints the run's Ollama numbers, the speed
+    warning and the recorded route decision as part of the pre-launch
+    summary (beside the model-plan banner above and the mode line below),
+    and writes the .route-honesty.json sidecar -- the same record
+    launch_plan.py writes on the poller --new path, so both dispatch
+    paths leave the same evidence.
+
+    A summary, never a second ask and never a gate: the decision was the
+    client's at intake, and the launch proceeds on their selection either
+    way. Best-effort throughout -- any failure is a stderr note, never a
+    refused launch. B11 SEAM: B11's freshness summary line prints
+    immediately after this call, inside the same pre-launch summary."""
+    try:
+        try:
+            from . import route_honesty as _rh
+        except ImportError:
+            import route_honesty as _rh  # type: ignore[no-redef]
+    except ImportError:
+        return  # no honesty module deployed: pre-fix launch, byte-for-byte
+    try:
+        if not _rh.flag_enabled():
+            return
+        try:
+            from . import resource_profile as _rp
+        except ImportError:
+            import resource_profile as _rp  # type: ignore[no-redef]
+        profile = _rp.load_profile()
+        slides = None
+        try:
+            intake_path = run_path / "working" / "copy" / "intake.json"
+            if intake_path.is_file():
+                intake = json.loads(intake_path.read_text(encoding="utf-8"))
+                if isinstance(intake, dict):
+                    slides = _rh.coerce_deck_slides(
+                        intake.get("client_requested_slide_count"),
+                        intake.get("SLIDE_COUNT"), intake.get("slide_count"))
+        except (OSError, ValueError):
+            slides = None
+        summary = _rh.launch_summary(profile=profile, deck_slides=slides)
+        if summary is None:
+            return
+        print(f"launcher: {summary['text']}", flush=True)
+        _rh.write_launch_sidecar(run_path, profile=profile,
+                                 deck_slides=slides)
+    except Exception as exc:  # noqa: BLE001 -- a summary never blocks a launch
+        print(f"launcher: route honesty summary unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+
+
+def _announce_model_freshness(run_path: Path, mode: Optional[str] = None) -> None:
+    """FIX 31 MODEL FRESHNESS -- the pre-run model freshness check
+    (B11's Hook B), called immediately after _announce_route_honesty()
+    inside the same pre-launch summary, exactly where B28's seam names
+    it. Runs for --new and --resume alike: it checks the provider
+    catalogs for the client's selected families, writes the
+    .model-freshness.json run record (accumulating across dispatches),
+    updates the profile only under the design's narrow launch rule
+    (a new pending offer, or a withdrawn one), and prints the freshness
+    summary line. The line is a RECORD, not an offer: a successor found
+    here waits in the profile for the client's next interactive
+    surface. It never presents a choice, never switches a model, and
+    has NO refusal return value -- dispatch ignores everything but the
+    printed lines, and a check that could not be made lands in the
+    record as unknown-offline while the run proceeds on the recorded
+    selection."""
+    try:
+        try:
+            from . import model_freshness as _mf
+        except ImportError:
+            import model_freshness as _mf  # type: ignore[no-redef]
+    except ImportError:
+        return  # no freshness module deployed: pre-fix launch, byte-for-byte
+    try:
+        if not _mf.flag_enabled():
+            return
+        verdict = _mf.launch_check(run_path, mode=mode)
+        if verdict is None:
+            return
+        for line in _mf.launch_summary_lines(verdict):
+            print(line, flush=True)
+    except Exception as exc:  # noqa: BLE001 -- a check never blocks a launch
+        print(f"launcher: model freshness check unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+
+
 def _as_text(chunk) -> str:
     """subprocess captures come back as str, bytes or None depending on where
     the exception was raised. All three have to land in the log readably."""
@@ -1541,7 +1651,10 @@ def dispatch(
         (AF-CREDIT-PREFLIGHT, nothing spawned), -7 when the notify transport
         is unconfigured (AF-NOTIFY-UNCONFIGURED, FIX 22 fail-closed,
         nothing spawned), -11 when a resume needed an auto-repin and the
-        repin failed (AF-MANIFEST-REPIN-FAILED, F2, nothing spawned).
+        repin failed (AF-MANIFEST-REPIN-FAILED, F2, nothing spawned),
+        -12 when the PRES-039 engine preflight refused
+        (AF-ENGINE-STALE-DUPLICATE / AF-ENGINE-CONTRACT-DRIFT, nothing
+        spawned).
         The function returns immediately when background=True.
     """
     # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
@@ -1564,6 +1677,29 @@ def dispatch(
     if not engine_entry.is_file():
         print(f"launcher: engine entry not found at {engine_entry}", file=sys.stderr)
         return -1
+
+    # PRES-039: compatibility preflight BEFORE every other gate -- a stale
+    # PYTHONPATH duplicate or a contract-drifted copy refuses here
+    # (AF-ENGINE-STALE-DUPLICATE / AF-ENGINE-CONTRACT-DRIFT), never dispatch.
+    try:
+        try:
+            from . import engine_origin as _engine_origin
+        except ImportError:
+            import engine_origin as _engine_origin  # direct file run
+        _pf_code, _pf_report = _engine_origin.preflight()
+        print(f"launcher: {_engine_origin.format_origin_line(_pf_report['origin'])}",
+              flush=True)
+        if _pf_code != 0:
+            print(f"launcher: REFUSING to dispatch -- "
+                  f"{_pf_report.get('autofail')}: {_pf_report.get('detail')}",
+                  file=sys.stderr)
+            return DISPATCH_ENGINE_REFUSED
+    except ImportError:
+        # engine_origin module absent (pre-PRES-039 tree): record
+        # UNDETERMINED, never silently claim provenance. Dispatch proceeds --
+        # the gate it would enforce did not exist when that copy was made.
+        print("launcher: engine origin UNDETERMINED (engine_origin module "
+              "absent, pre-PRES-039 copy)", flush=True)
 
     run_path = Path(run_dir).expanduser().resolve()
 
@@ -1711,6 +1847,23 @@ def dispatch(
     _plan_refusal = model_plan_gate(run_path, mode=mode)
     if _plan_refusal is not None:
         return _plan_refusal
+
+    # FIX 18 ROUTE HONESTY -- the launch restatement, immediately after
+    # the model-plan gate and before the mode-plan block: with the
+    # capacity line and the credit line above, the model-plan banner and
+    # the mode line below, this forms the pre-launch summary. It reports
+    # the recorded route decision and proceeds on the client's selection;
+    # it is not a gate and returns nothing. (B11's freshness line joins
+    # at exactly this point, immediately after the honesty summary.)
+    _announce_route_honesty(run_path)
+
+    # FIX 31 MODEL FRESHNESS -- B11's Hook B, immediately after the
+    # route-honesty summary above and before the mode-plan block: the
+    # pre-run catalog check and its one summary line, inside the same
+    # pre-launch summary. A record, never a gate, never a refusal (see
+    # _announce_model_freshness): the run proceeds on the client's
+    # recorded selection whatever the check finds.
+    _announce_model_freshness(run_path, mode=mode)
 
     # FIX 11 MODE PLAN -- the run's mode is stamped as an honest launch plan:
     # concurrency from the measured client ceiling (Ultra never above the
@@ -2108,6 +2261,8 @@ def main(argv: Optional[list] = None) -> int:
             return EXIT_MODEL_PLAN_UNSATISFIED
         if rc == DISPATCH_REPIN_FAILED:
             return EXIT_REPIN_FAILED
+        if rc == DISPATCH_ENGINE_REFUSED:
+            return EXIT_ENGINE_REFUSED
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel,
@@ -2134,6 +2289,8 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_MODEL_PLAN_UNSATISFIED
     if pid == DISPATCH_REPIN_FAILED:
         return EXIT_REPIN_FAILED
+    if pid == DISPATCH_ENGINE_REFUSED:
+        return EXIT_ENGINE_REFUSED
     return 0 if pid > 0 else 1
 
 

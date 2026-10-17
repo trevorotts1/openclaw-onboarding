@@ -98,7 +98,7 @@ You may NEVER use these flags or commands during an install:
 - `--break-system-packages` (pip)
 - `--no-verify` (git commits, npm)
 - `--no-gpg-sign` (git)
-- Model name substitution (don't swap `kimi-k2.6` for `kimi-k2.6` because "I think the older one is more stable")
+- Model name substitution (don't swap one named model version for another because "I think the older one is more stable")
 - Invented steps (don't add a step that's not in INSTALL.md)
 - Destructive git ops without explicit owner consent: `git push --force`, `git reset --hard origin/main` (on shared branches), `git branch -D`
 - `rm -rf` outside `/tmp/` or other clearly-scratch locations
@@ -237,17 +237,14 @@ If the folder is not found, create it at the canonical path (`$HOME/Downloads/op
 
 ---
 
-## 🔴 Rule 10 — Model selection priority (cost-aware)
+## 🔴 Rule 10: Model selection (client choice, cost-aware)
 
-When the master orchestrator selects a model for sub-agents or for itself, it follows this priority (cheapest acceptable wins):
+The client selects the model. When the master orchestrator needs a model for sub-agents or for itself, it uses, in order: (1) the model the client explicitly chose for the role, (2) the client's configured default model (`agents.defaults.model`), (3) neither: ASK the owner (below). No specific model is prescribed by name anywhere in this contract.
 
-1. **Subscription / OAuth-based models (no per-call cost):**
-   - `openai-codex/gpt-5.5` (OAuth via OpenClaw Pi)
-   - `codex/gpt-5.5` (OAuth via Codex.app — required for Computer Use)
-   - Anthropic Claude on Pro subscription (if configured)
-2. **Ollama cloud models (very low cost):**
-   - `ollama/kimi-k2.6:cloud` — preferred for orchestration when subscription unavailable
-   - `ollama/deepseek-v4.1-flash:cloud` — preferred for sub-agents (30-min timeout)
+Recommendation (cost): among the models the client has available, prefer the cheapest acceptable route, in this order: subscription / OAuth-based routes (no per-call cost), then Ollama Cloud models (very low cost), then OpenRouter (priced per token), then direct provider APIs (more expensive). Two role notes, both recommendations with their reasons:
+
+- Orchestration: a subscription route is recommended when available, because orchestration runs continuously and per-call cost compounds.
+- Sub-agents: a very-low-cost cloud model is recommended, because sub-agents run under a 30-minute timeout at high volume, so per-token pricing dominates.
 
    > ⚠ **Provider-prefix caveat.** The `ollama/` prefix is valid ONLY on a box that registers
    > `models.providers.ollama`. A box onboarded with `--auth-choice ollama-cloud` registers
@@ -257,12 +254,6 @@ When the master orchestrator selects a model for sub-agents or for itself, it fo
    > "Unknown model … Ollama requires authentication", which misdirects diagnosis to the
    > client's credentials. Always derive the prefix from the box. Verify with
    > `scripts/verify-model-pins.py`.
-3. **OpenRouter (priced per token):**
-   - `openrouter/xiaomi/mimo-v2-pro` with `reasoning: true`
-   - `openrouter/moonshot/kimi-k2.6` with `thinking: high`
-4. **Direct provider APIs (more expensive):**
-   - `deepseek/deepseek-v4.1-flash`
-   - Last resort only
 
 **Forbidden by default:**
 - `claude-opus-*` (Anthropic API) — too expensive unless the owner explicitly requests it for a specific task

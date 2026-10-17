@@ -1,25 +1,38 @@
 ---
 name: agnes-image
 description: >
-  Setup and API reference for Agnes Image 2.1 Flash, a synchronous
-  text-to-image and image-to-image generation endpoint on the Agnes AI
+  Setup and API reference for the Agnes image models — agnes-image-2.5-flash
+  (the Token Plan image model) and agnes-image-2.1-flash — synchronous
+  text-to-image and image-to-image generation endpoints on the Agnes AI
   platform (apihub.agnes-ai.com). One API key, one POST, one JSON response
   with an image URL or Base64 — no task polling.
 metadata:
-  version: "2.1.2"
+  version: "2.1.6"
   priority: HIGH
 ---
 
-# Agnes Image 2.1 Flash — Setup and API Reference
+# Agnes Image 2.5 Flash & 2.1 Flash — Setup and API Reference
 
-Agnes Image 2.1 Flash is a single image-generation model on the Agnes AI
+The Agnes image models are image-generation models on the Agnes AI
 platform (Sapiens AI). You send ONE POST request with a prompt and a size, and
 the response comes back in the same call with a finished image — as a URL or as
 Base64. There is no "create a task, then poll" step: the image endpoint is
 SYNCHRONOUS.
 
-Model name: `agnes-image-2.1-flash`. Endpoint:
+Model names: `agnes-image-2.5-flash` and `agnes-image-2.1-flash`. Endpoint:
 `POST https://apihub.agnes-ai.com/v1/images/generations`.
+
+## Which Model
+
+| Model | Role | Token Plan quota | Rate limit (Token Plan, allowed/effective) | Source read |
+|---|---|---|---|---|
+| `agnes-image-2.5-flash` | The **Token Plan image model** — the only image id tokenplan.md names today | **4,000 images/day**, identical on Starter/Plus/Pro, reset 00:00 UTC | RPM 1K 120/100, **2K 120/80**, 3K 2/1, 4K 2/1 — treat 2K as ~80 requests/minute and HTTP 429 as the live authority | [agnes-image-25-flash.md](https://wiki.agnes-ai.com/en/docs/agnes-image-25-flash.md), 2026-10-15 |
+| `agnes-image-2.1-flash` | Retained — still documented and still callable | 4,000 images/day | same tiers; 3K/4K effective 1/minute | [agnes-image-21-flash.md](https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md), 2026-08-26 |
+
+Both models share the endpoint, the `1K`/`2K`/`3K`/`4K` × ratio dimension table,
+the house prompt bands below and the reference-image field (`extra_body.image[]`).
+`models.json` carries one registry entry per model. Request `agnes-image-2.5-flash`
+unless an upstream skill or the caller pins `agnes-image-2.1-flash` explicitly.
 
 ## When to Use This Skill
 
@@ -66,6 +79,15 @@ Enforcement & Validation:
 python3 63-agnes-image/scripts/validate_prompt.py --file working/prompts/<id>.txt
 ```
 
+## Signature Launch Prompt Policy
+
+Signature Launch requests carry the named policy `signature_launch_completeness`
+(`scripts/launch_prompt_policy.py`): completeness of the required information
+elements governs, length is telemetry, and only a verified vendor ceiling is
+enforced (the Agnes vendor cap is NOT_PUBLISHED; never truncate a prompt to fit
+an imagined limit and never pad to reach a cosmetic count). The house bands
+above remain the legacy profile for legacy consumers.
+
 ## Image-to-Image for Logos (MANDATORY)
 
 When an image prompt involves the client's LOGO, wordmark, brand mark, monogram,
@@ -79,16 +101,23 @@ this:
 python3 63-agnes-image/scripts/validate_prompt.py --file prompt.txt --logo
 ```
 
-When a logo reference triggers an I2I call, the style-reference-only directive is
-MANDATORY: "Use the attached images only as style reference for color grading,
-lighting, and composition -- do not copy their subjects, faces, or text." Pass
-`--style-ref` to enforce this.
+Reference purpose governs the instruction (per-reference, never global): a
+logo/identity reference PRESERVES the approved mark (see the identity rule in
+`references/prompt-policy.md`); the style-reference-only directive belongs on
+STYLE references only and must never be applied to a logo/identity reference.
+Pass `--identity-ref` for a logo reference and `--style-ref` only when the
+reference is style-only.
 
-## Style-Reference-Only Directive (MANDATORY when reference images attached)
+## Reference Purposes and Their Directives
 
-Whenever ANY reference image is attached for style guidance (not just logos), the
-prompt MUST carry the style-reference-only directive verbatim:
+Classify every reference image by purpose before writing the prompt:
+`style`, `logo`, `identity`, `composition`, or an explicitly approved mix.
+Only a STYLE reference carries the style-reference-only directive verbatim:
 `Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text.`
+A logo/identity reference instead carries the preserve-the-mark rule: reproduce
+the approved mark exactly, never a do-not-copy directive. A style-only reference
+must never transfer another person's identity; preserve real-person likeness
+only from authorized supplied assets.
 
 ## Prerequisites
 
@@ -133,7 +162,8 @@ prompt MUST carry the style-reference-only directive verbatim:
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** — you are here. Start with this file.
-2. **models.json** — machine-readable capability registry for `agnes-image-2.1-flash`.
+2. **models.json** — machine-readable capability registry for `agnes-image-2.5-flash`
+   and `agnes-image-2.1-flash`.
 3. **references/prompt-policy.md** — prompt policy, house bands, and expansion guide.
 4. **references/api-patterns.md** — request patterns, payload gotchas, and error handling.
 5. **references/qc.md** — visual quality control checklist and retry ladder.
@@ -167,12 +197,14 @@ prompt MUST carry the style-reference-only directive verbatim:
   echo, cat, or log the value.
 - **Rate limits are per account tier — read them live.** Do not bake a numeric
   request/day cap into any logic. If the account is on a paid Token Plan the
-  daily quotas apply; on the free/default tier only requests-per-minute apply.
+  daily quotas apply (**4,000 images/day**, see the table above); on the
+  free/default tier only requests-per-minute apply.
   Treat a 429 as the authority and back off. Full details in `references/api-patterns.md`.
 - **Vendor prompt cap is NOT_PUBLISHED.** Do not invent a vendor cap.
   House operating policy targets 5,000–19,000 characters (~9,000 target). Short user
   prompts are expanded, not rejected. Run `scripts/validate_prompt.py` before calls.
 - **Logo requests MUST use image-to-image.** When a prompt involves the client's
   logo, wordmark, or existing brand image, use I2I (pass the logo as a reference
-  image via `extra_body.image[]`), never text-to-image. Add the mandatory
-  style-reference-only directive whenever reference images are attached.
+  image via `extra_body.image[]`), never text-to-image. Reference instructions
+  are per-purpose: preserve-the-mark for logo/identity references,
+  style-reference-only directive for style references only.

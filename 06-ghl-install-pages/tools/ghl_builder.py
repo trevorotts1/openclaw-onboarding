@@ -3,7 +3,8 @@
 browser-driven Funnel / Website / Page builder (Skill 06 overhaul).
 
 THIS IS THE GLUE, NOT THE CLICKER. The actual UI navigation is performed by the
-AGENT at runtime using agent-browser (PRIMARY) or Playwright (FALLBACK), driven
+AGENT at runtime using the OpenClaw Chrome extension (PRIMARY lane),
+agent-browser (FALLBACK lane), or Playwright (escape hatch), driven
 by live snapshots and the gate registry (gates.json, D8). This module owns the
 deterministic, mechanical parts so they are never improvised:
 

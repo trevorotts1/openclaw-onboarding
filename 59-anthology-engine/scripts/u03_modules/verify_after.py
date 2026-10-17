@@ -608,9 +608,27 @@ def _self_test_body(dev) -> None:
     caf = _FakeCaf(custom_values=golden_cv, pipelines=golden_pipes)
 
     stamp = check_stamp(field_map)
-    assert stamp["verdict"] == "PASS", "template-state stamp must PASS: %s" % stamp["detail"]
-    assert stamp["template_state"] is True, "committed map must be template state"
+    assert stamp["verdict"] == "PASS", "the on-disk map stamp must PASS: %s" % stamp["detail"]
     assert stamp["total"] == len(want_keys)
+    # BOTH disk states are legal and must verify: the committed template (all
+    # resolved slots null -> key-only) and the provisioned-box stamp (every
+    # field_key byte-equal to its intended_key, every field_id non-empty).
+    # What is NEVER legal is a half-stamp or a drifted stamp (fixtures 1 and
+    # 2 below). A provisioned box must not read as drift here.
+    tmpl_map = copy.deepcopy(field_map)
+    for f in tmpl_map["provisioning"]["fields"]:
+        f["field_key"] = None
+        f["field_id"] = None
+    tmpl_stamp = check_stamp(tmpl_map)
+    assert tmpl_stamp["verdict"] == "PASS" and tmpl_stamp["template_state"] is True, \
+        "the template state must verify PASS as template state: %s" % tmpl_stamp["detail"]
+    stamped_map = copy.deepcopy(field_map)
+    for i, f in enumerate(stamped_map["provisioning"]["fields"]):
+        f["field_key"] = f.get("intended_key")
+        f["field_id"] = "fld_stamp_%d" % i
+    stamped_stamp = check_stamp(stamped_map)
+    assert stamped_stamp["verdict"] == "PASS" and stamped_stamp["template_state"] is False, \
+        "a coherent full stamp must verify PASS as a stamped state: %s" % stamped_stamp["detail"]
 
     cv = check_custom_values(caf, "loc_fx", contract)
     assert cv["verdict"] == "PASS", "golden custom values: %s" % cv["detail"]
@@ -641,7 +659,9 @@ def _self_test_body(dev) -> None:
 
     # ---- attack fixtures: every mutation REFUSED / FAIL-recorded ----
     # 1. half-stamped slot (field_key resolved, field_id missing) -> drift
-    partial = copy.deepcopy(field_map)
+    #    (built from the NULL-slot template copy so the attack fires on BOTH
+    #    legal disk states, stamped box included)
+    partial = copy.deepcopy(tmpl_map)
     partial["provisioning"]["fields"][0]["field_key"] = want_keys[0]
     stamp = check_stamp(partial)
     assert stamp["verdict"] == "FAIL", "half-stamped slot must FAIL"
@@ -792,7 +812,9 @@ def _self_test_body(dev) -> None:
         "plan must carry the standard pipeline name"
 
     dev.write("verify_after self-test: OK (field-map coherence %d keys == "
-              "total_keys, golden all-PASS + aggregate exit 0, 17 attack "
+              "total_keys, BOTH legal stamp states verified (template "
+              "null-slots and the provisioned full stamp), golden all-PASS + "
+              "aggregate exit 0, 17 attack "
               "fixtures refused or FAIL-recorded (partial-stamp/stamped-key-"
               "drift/custom-value-missing/custom-value-real/custom-value-extra/"
               "non-list-read/pipeline-absent/pipeline-renamed/scope-denied/"

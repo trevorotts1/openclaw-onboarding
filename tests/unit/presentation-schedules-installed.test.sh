@@ -31,11 +31,19 @@
 #   (E) RENDER        -- functional: the Mac branch writes a VALID LaunchAgent
 #                        with the scheduler contract (label, argv, 600s, log,
 #                        SCAN_ROOT, PATH, notify transport).
-#   (F) F12c NOT ARMED-- PRESENTATION_SUPERVISE_APPLY is ABSENT by default
-#                        (supervisor report-only), PRESENT when the operator
-#                        exports it, and PRESERVED across a re-run so a roll can
-#                        neither arm what an operator did not nor disarm what
-#                        they did.
+#   (F) ARMING (PRES-019)-- PRESENTATION_SUPERVISE_APPLY follows the PRES-019
+#                        resolution order: an explicit operator value wins
+#                        (parsed, so 0/false render NOTHING), a value already
+#                        in the installed plist is PRESERVED across a re-run,
+#                        and when nobody said anything the recovery health
+#                        gate decides. This suite's staged department is NOT
+#                        recovery-ready (no recovery_gate.py / supervisor /
+#                        auto_resume / lease staged), so the gate fails and
+#                        the default render is ABSENT (report-only); a
+#                        separately staged recovery-ready department renders
+#                        ARMED (=1) by default. (F12c's original
+#                        absent-by-default doctrine is superseded by PRES-019;
+#                        see lib-presentation-schedules.sh.)
 #   (G) NO FABRICATION-- OWNER_CHAT_ID is rendered only from a resolved NUMERIC
 #                        source; a non-numeric one is discarded, not shipped.
 #   (H) IDEMPOTENT    -- two runs leave one valid plist, reloaded, not stacked.
@@ -282,14 +290,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# (F) F12c NOT ARMED by default; armed on request; PRESERVED across a re-run
+# (F) SUPERVISOR APPLY (F12c as amended by PRES-019): health-gated default;
+# armed on request; PRESERVED across a re-run
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- (F) SUPERVISOR APPLY (F12c) ---"
+echo "--- (F) SUPERVISOR APPLY (F12c / PRES-019) ---"
 if [ -f "$PLIST" ]; then
   [ "$(plist_get env/PRESENTATION_SUPERVISE_APPLY)" = "<ABSENT>" ] \
-    && pass "F1: PRESENTATION_SUPERVISE_APPLY ABSENT by default — supervisor is report-only (F12c is gated on F2)" \
-    || fail "F1: PRESENTATION_SUPERVISE_APPLY is $(plist_get env/PRESENTATION_SUPERVISE_APPLY) — apply-mode armed early burns the 3-restart budget on manifest-pin deaths"
+    && pass "F1: PRESENTATION_SUPERVISE_APPLY ABSENT on the sandbox department -- the PRES-019 recovery health gate fails there (no recovery surface staged), so the default render is report-only" \
+    || fail "F1: PRESENTATION_SUPERVISE_APPLY is $(plist_get env/PRESENTATION_SUPERVISE_APPLY) -- the sandbox department is not recovery-ready, so the PRES-019 health gate must leave the default render report-only (ABSENT)"
 
   rm -f "$PLIST"
   set +e; PRESENTATION_SUPERVISE_APPLY=1 run_watchdog_installer; set -e
@@ -302,6 +311,58 @@ if [ -f "$PLIST" ]; then
   [ "$(plist_get env/PRESENTATION_SUPERVISE_APPLY)" = "1" ] \
     && pass "F3: a re-run with no apply in the environment PRESERVED the armed value" \
     || fail "F3: a re-run DISARMED the operator's supervisor (got $(plist_get env/PRESENTATION_SUPERVISE_APPLY)) — a roll must never undo live operator configuration"
+fi
+
+# ---------------------------------------------------------------------------
+# (F4) PRES-019 HEALTH-GATED DEFAULT -- a recovery-ready department ARMS
+# ---------------------------------------------------------------------------
+# The half of PRES-019 that F1 cannot see: when the operator said nothing,
+# no plist value is carried, and the department on disk IS recovery-ready
+# (entry script + the real recovery_gate.py + supervisor/auto_resume/lease
+# + a co-located notify transport, launchctl stubbed on PATH), the health
+# gate passes and the default render carries PRESENTATION_SUPERVISE_APPLY=1.
+echo ""
+echo "--- (F4) PRES-019 HEALTH-GATED DEFAULT: recovery-ready arms ---"
+if [ -f "$SCHED_LIB" ]; then
+  HEALTHY="$SANDBOX/healthy-dept"
+  mkdir -p "$HEALTHY/presentation_job"
+  cp "$DEPT_SRC/presentation-watchdog.plist.template" "$HEALTHY/" 2>/dev/null || true
+  printf '#!/bin/sh\nexit 0\n' > "$HEALTHY/presentation-watchdog.sh"
+  printf '#!/bin/sh\nexit 0\n' > "$HEALTHY/presentation-intake-poll.sh"
+  printf '#!/usr/bin/env python3\n' > "$HEALTHY/presentation-notify.py"
+  printf '#!/usr/bin/env python3\n' > "$HEALTHY/presentation_job.py"
+  chmod +x "$HEALTHY/presentation-watchdog.sh" "$HEALTHY/presentation-intake-poll.sh"
+  # PRES-035 modules (real copies, same as the main fixture) plus the real
+  # PRES-019 gate module; the recovery modules are presence-checked only.
+  for _m in __init__.py pipeline_interp.py oc_paths.py recovery_gate.py; do
+    cp "$DEPT_SRC/presentation_job/$_m" "$HEALTHY/presentation_job/$_m" 2>/dev/null || true
+  done
+  unset _m
+  for _m in supervisor.py auto_resume.py lease.py; do
+    printf '#!/usr/bin/env python3\n' > "$HEALTHY/presentation_job/$_m"
+  done
+  unset _m
+  rm -f "$PLIST"; : > "$LAUNCHCTL_LOG"
+  set +e
+  LAUNCHCTL_LOG="$LAUNCHCTL_LOG" \
+  PATH="$STUB:$PATH" \
+  OPENCLAW_PLATFORM=mac \
+  OPENCLAW_ROOT="$SANDBOX/root" \
+  OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
+  PRESENTATIONS_SCRIPTS_SRC="$HEALTHY" \
+  bash -c 'set -euo pipefail; source "$1"; install_watchdog_schedule' _ "$SCHED_LIB" \
+    > "$SANDBOX/healthy.out" 2>&1
+  F4_RC=$?
+  set -e
+  if [ "$F4_RC" -ne 0 ]; then
+    fail "F4: install_watchdog_schedule on a recovery-ready department returned $F4_RC -- output: $(head -5 "$SANDBOX/healthy.out" | tr '\n' ' ')"
+  elif [ ! -f "$PLIST" ]; then
+    fail "F4: recovery-ready department wrote NO LaunchAgent -- output: $(head -5 "$SANDBOX/healthy.out" | tr '\n' ' ')"
+  elif [ "$(plist_get env/PRESENTATION_SUPERVISE_APPLY)" = "1" ]; then
+    pass "F4: a recovery-ready department with no operator value renders PRESENTATION_SUPERVISE_APPLY=1 by default (PRES-019 health gate armed it)"
+  else
+    fail "F4: recovery-ready department rendered PRESENTATION_SUPERVISE_APPLY=$(plist_get env/PRESENTATION_SUPERVISE_APPLY) -- the PRES-019 health gate should have ARMED the default"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

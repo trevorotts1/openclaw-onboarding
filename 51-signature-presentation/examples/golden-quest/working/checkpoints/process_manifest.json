@@ -73,7 +73,7 @@
       "rc": 0,
       "passed": true,
       "cmd": "python3 $REPO/51-signature-presentation/scripts/prove_sp_intake.py $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json",
-      "output": "== Signature Presentation :: 8-Questions-in-ONE-block intake gate ==\nsource: $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json\nRESULT: PASS \u2014 all 8 Questions + frame question delivered as ONE block; frame set."
+      "output": "== Signature Presentation :: 8-Questions atomic-RECORD intake gate ==\nsource: $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json\nRESULT: PASS \u2014 all 8 Questions + frame question present, committed as ONE atomic record; frame set."
     },
     "P-SP-INTAKE-TRACE": {
       "rc": 0,

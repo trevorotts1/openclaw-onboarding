@@ -16,7 +16,15 @@ triggers:
   - "create my AI company structure"
   - "set up my departments"
   - "hire my AI team"
-version: 27.1.26
+  - "can she start the interview"
+  - "can <client> start the interview"
+  - "where is the interview link"
+  - "what is the link"
+  - "is the link working"
+  - "my interview link expired"
+  - "resume my interview"
+  - "can the interview start"
+version: 27.1.29
 ---
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
@@ -32,6 +40,16 @@ Required read order:
 6. CORE_UPDATES.md - what to add to your workspace files
 
 **Branding questions - single source of truth:** `interview/branding-questions.json` defines the structured branding question set (ids, prompts, storage targets, drill requirements). The Command Center vendors a copy of this file. INSTRUCTIONS.md Phase 3 themes reference the question ids. Do NOT hardcode branding question prompts anywhere outside that file.
+
+
+**Interview STATUS questions use a shorter authoritative read order.** For "can she start", "what is the link", "is the link working", "my link expired", "resume" and every startability question, read **SKILL.md then the authoritative INSTRUCTIONS.md before answering** — an actual build still requires all six reads above. Then state THREE separate facts, never one:
+1. the stable public bookmark `https://<host>/interview` (does not authenticate by itself);
+2. the privately minted sign-in link (issued per invitation; `--mint-only` proves issuance and discards the ticket);
+3. verified delivery to the owner (acknowledged gateway message).
+
+Install, invitation delivery, provider answer and workforce completion are four further facts and are never reported as one.
+
+**⛔ Never derive "no interview link" from a local port probe.** Probing `127.0.0.1:4000` (or any local port) says nothing about the interview link, its validity or its delivery. The authoritative answers are the exact authenticated public readiness receipt, the invitation route, and the scoped delivery receipt. **A down application is a Command Center deployment fault** — a missing or stale `build-inventory.json` refuses at start with exit 78 — never a workforce-completion fault and never a 9Router fault.
 
 Do NOT run the scaffold script or create any folders before completing all 6 reads.
 Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
@@ -115,15 +133,9 @@ The Command Center reads:
 
 **This skill MUST run on a heavy-reasoning model.** The decisions it makes (department structure, specialist determination, persona alignment) shape the entire company. Wrong choices cascade into everything.
 
-**Model selection is DYNAMIC** via `shared-utils/select_model.py --purpose-tier heavy`. The selector resolves the best available model in this priority order, walking down only if the higher one is missing from the client's `openclaw.json`:
+**Model selection is DYNAMIC** via `shared-utils/select_model.py --purpose-tier heavy`. The model is the client's choice: ask the client which model they want to use for this skill. If the client has already configured a default model in their `openclaw.json`, use the client's configured default model. Do not prescribe a specific model by name.
 
-1. **Ollama Cloud Kimi** (`ollama/kimi-k*:cloud`, latest version, thinking=high) - PREFERRED, lowest cost per call
-2. **OpenRouter Kimi** (`openrouter/moonshot/kimi-k*`, thinking=high)
-3. **Ollama Cloud DeepSeek V*-pro** (`ollama/deepseek-v*-pro:cloud`)
-4. **OpenRouter DeepSeek V*-pro** (`openrouter/deepseek/deepseek-v*-pro`, thinking=high)
-5. **OAuth GPT** (`codex/gpt-*` or `openai-codex/gpt-*`, whatever the client's latest version is - 5.3, 5.4, 5.5, 5.10, etc.)
-
-The selector auto-picks the highest version number in each chain entry. When a new Kimi or GPT version ships and the client adds it to their config, this skill picks it up automatically - no edit needed.
+Recommendation: a heavy-reasoning model with high thinking enabled, because the decisions this skill makes shape the entire company and wrong choices cascade into everything. A subscription-billed cloud model usually gives the lowest cost per call for this workload. The recommendation is guidance only; the client can override it with any model they prefer.
 
 **ABSOLUTE RULE:** Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Filter applied at every tier of the selector.
 
@@ -132,7 +144,7 @@ The selector auto-picks the highest version number in each chain entry. When a n
 **If the selector returns Tier 5 (owner-input-required):**
 The install agent shows the owner a plain-English prompt asking which model to use. The skill is still installed; only the model-binding waits on the owner's reply.
 
-**Research model:** When the AI offers to research industry best practices, it uses `openrouter/perplexity/sonar-pro-search` for the research pass - that model is purpose-built for live web research and is kept separate from the reasoning chain above.
+**Research model:** When the AI offers to research industry best practices, the research pass uses the client's chosen research model, or the client's configured default model if they have set one. Recommendation: a search-grounded research model, because the research pass needs live web results rather than reasoning alone. Keep the research model separate from the reasoning model above so research quality does not depend on the reasoning choice.
 
 **RESEARCH IS FOR ENRICHMENT, NOT FABRICATION:** The agent may research the owner's website, public materials, and industry best practices to DEEPEN and REINFORCE the interview - to ask better questions, add industry context, and PROPOSE draft answers for the owner to confirm or correct. The owner must still review and confirm every answer in a live session. Research must NEVER be used to auto-finalize or fabricate answers the owner did not give. Option B = a research-assisted interview the owner actively confirms, NOT a no-interview build. This is the positive complement to the NO INTERVIEW FABRICATION rule above - both rules are binding and neither weakens the other.
 

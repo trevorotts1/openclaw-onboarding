@@ -1,14 +1,140 @@
 {
   "format": "studio-json",
   "version": 0,
-  "question_count": 9,
+  "question_count": 20,
   "questions": [
+    {
+      "id": "offer",
+      "label": "OFFER",
+      "question": "What are we promoting? Give the exact name of your offer.",
+      "price": null,
+      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
+      "typed": true,
+      "options": [
+        {
+          "n": 1,
+          "text": "Type it in",
+          "detail": "Reply with your own words.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "link",
+      "label": "OFFER LINK",
+      "question": "What web address should the video send people to? Paste it rather than typing it from memory.",
+      "price": null,
+      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
+      "typed": true,
+      "options": [
+        {
+          "n": 1,
+          "text": "Type it in",
+          "detail": "Reply with your own words.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "audience",
+      "label": "AUDIENCE",
+      "question": "Who is this video for, and what should they do after watching it?",
+      "price": null,
+      "example": "\"Women 35-55 who want a second income. Register for my free masterclass.\" One audience, one action.",
+      "typed": true,
+      "options": [
+        {
+          "n": 1,
+          "text": "Type it in",
+          "detail": "Reply with your own words.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "character",
+      "label": "CHARACTER",
+      "question": "Who stars in your video? Describe them by name, age, look and clothing.",
+      "price": null,
+      "example": "\"1. A warm 40-year-old braider named Tasha with locs, wearing a denim apron.\" Name, age, look, clothing.",
+      "typed": true,
+      "options": [
+        {
+          "n": 1,
+          "text": "Type it in",
+          "detail": "Reply with your own words.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "photos",
+      "label": "PHOTOS",
+      "question": "Which photos or proof should we use - your logo, a product shot, a testimonial? Reply \"none\" if you have none.",
+      "price": null,
+      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
+      "typed": true,
+      "options": [
+        {
+          "n": 1,
+          "text": "Type it in",
+          "detail": "Reply with your own words.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
     {
       "id": "models",
       "label": "AI MODELS",
       "question": "Which AI should build your video, and which should check the work? OpenRouter is recommended because it's faster; Ollama works too.",
       "price": null,
       "example": "\"1. Recommended setup.\" Short, clear, done.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -24,7 +150,15 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "length",
@@ -32,6 +166,7 @@
       "question": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
       "price": null,
       "example": "\"60 seconds. It's for Instagram.\" The length and the reason.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -68,7 +203,14 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "music",
@@ -76,6 +218,7 @@
       "question": "Which sound fits your story?",
       "price": null,
       "example": "\"Soul Rise. It starts with the problem and ends hopeful.\" The style and the reason.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -98,7 +241,15 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "look",
@@ -106,6 +257,7 @@
       "question": "How should your video look? Tap a link to watch a sample.",
       "price": null,
       "example": "\"Lifelike 3D. I want it to look real.\" Your choice and your reason.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -142,7 +294,15 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "model",
@@ -150,6 +310,7 @@
       "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
       "price": "Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
       "example": "\"MiniMax H3. Good quality at a fair price.\"",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -179,7 +340,15 @@
           "price": "$3.31",
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "spend",
@@ -187,6 +356,7 @@
       "question": "What's the most you want to spend on this video? Reply with a dollar amount, like $25.",
       "price": null,
       "example": "\"1. The recommended price.\" Clear, and it includes the redo allowance.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -195,7 +365,15 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "storyboard",
@@ -203,6 +381,7 @@
       "question": "Do you want to approve the storyboard before any video is made?",
       "price": null,
       "example": "\"Approved. Change shot 4 to show the storefront.\"",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -218,7 +397,15 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "song",
@@ -226,6 +413,7 @@
       "question": "Do you want to hear and pick the song before any video is made?",
       "price": null,
       "example": "\"Version B. I can't stop humming the chorus.\" Choice and reason.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -241,7 +429,15 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
     },
     {
       "id": "script",
@@ -249,6 +445,7 @@
       "question": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
       "price": null,
       "example": "\"Approved. Change 'free class' to 'free masterclass'.\" Clear and specific.",
+      "typed": false,
       "options": [
         {
           "n": 1,
@@ -264,7 +461,244 @@
           "price": null,
           "recommended": false
         }
-      ]
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "purpose",
+      "label": "PURPOSE",
+      "question": "What is this video for?",
+      "price": null,
+      "example": "\"Grow my business.\" You want the whole package from one production.",
+      "typed": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "Grow my business",
+          "detail": "the full package: a full episode for your YouTube channel, plus 60-second and 90-second trailers that send people to the full episode, and 60-second and 90-second ad clips that sell your product or service on Facebook, YouTube and TikTok.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "Tell a client's success story",
+          "detail": "turn a real client's own words into a short drama.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "Teach a lesson",
+          "detail": "turn one point from your course or webinar into a song people remember.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "A video for social media",
+          "detail": "a paid ad or a free post, made to fit the app you pick.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "episode_length",
+      "label": "EPISODE LENGTH",
+      "question": "How long should the full episode be? Your 60-second and 90-second trailers and ad clips are included.",
+      "price": null,
+      "example": "\"3 minutes.\" The shortest episode that still earns two good trailers.",
+      "typed": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "3 minutes",
+          "detail": "one full story with room for the turn and the offer.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "5 minutes",
+          "detail": "a deeper story with more of the solution at work.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "7 minutes",
+          "detail": "a fuller episode with another real step of the solution. (made with KIE, not Agnes)",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "10 minutes",
+          "detail": "the long version, a full show episode. (made with KIE, not Agnes)",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1
+        ]
+      }
+    },
+    {
+      "id": "shape",
+      "label": "SHAPE",
+      "question": "How should your video be framed?",
+      "price": null,
+      "example": "\"Vertical.\" Your audience watches on a phone.",
+      "typed": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "Vertical",
+          "detail": "phones, Reels, Shorts, TikTok.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "Wide",
+          "detail": "YouTube on a TV or a computer.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "id": "permission",
+      "label": "PERMISSION",
+      "question": "Do you have your client's permission to use their testimonial?",
+      "price": null,
+      "example": "\"Yes.\" Your client is happy to be quoted.",
+      "typed": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "Yes",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 2,
+          "text": "No - pause this order until I have it.",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "where",
+      "label": "WHERE",
+      "question": "Where will this video run?",
+      "price": null,
+      "example": "\"Facebook or Instagram - paid ad.\" One vertical video fits Reels, Stories and the feed there.",
+      "typed": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "Facebook or Instagram - paid ad.",
+          "detail": "",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "TikTok - paid ad.",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "LinkedIn - paid ad.",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "A free post - Reels, Stories or YouTube Shorts.",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          4
+        ]
+      }
+    },
+    {
+      "id": "agnes",
+      "label": "AGNES",
+      "question": "Do you have a paid Agnes subscription (Starter, Plus or Pro), and should it make this video's pictures and clips?",
+      "price": null,
+      "example": "\"Yes - use my Agnes plan.\" You have a plan and you want it used.",
+      "typed": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "Yes - use my Agnes plan.",
+          "detail": "Agnes video is 720p, a little softer than the studio's standard models, and the song and the talking close-ups still use the studio's providers.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "No - use the studio's standard models.",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "agnes_remembered": [
+          "unknown",
+          "yes"
+        ],
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "length_s_max": 300
+      }
     }
   ]
 }

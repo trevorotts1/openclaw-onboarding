@@ -1,0 +1,65 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "hero-image",
+      "path": "media/hero.png",
+      "sha256": "9444f152163701e75b6425b5a5e495dc1fb303bfd5d14321a440dcbb7c93e070",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "rights/hero-client-supplied",
+      "focal_point": {
+        "x": 0.72,
+        "y": 0.3
+      }
+    },
+    {
+      "id": "client-logo",
+      "path": "media/logo.png",
+      "sha256": "c91f1c3ba1bd8023cd333d3fa6a0d4783f6a595ceb0d31d910c149ae7327945c",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "rights/logo-brand-owner",
+      "focal_point": null
+    },
+    {
+      "id": "data-chart",
+      "path": "media/chart.jpg",
+      "sha256": "010d5dd3c6d18024cb4162de4d97ae543c0fea170e78db8d950bd71729e1134b",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "rights/chart-internal",
+      "focal_point": null
+    },
+    {
+      "id": "mood-reference",
+      "path": "media/mood.svg",
+      "sha256": "73abd62e62ea0451960f6850aac737ab934f44353bea8f3e16c8fdc0ed41d445",
+      "kind": "svg",
+      "usage": "reference_only",
+      "rights_ref": "rights/mood-internal",
+      "focal_point": null
+    },
+    {
+      "id": "poster-derivative",
+      "path": "media/poster-derivative.png",
+      "sha256": "97de9524b84f324781ddc77e433fa377aa140bc4e25a09510976f009b631fc86",
+      "kind": "image",
+      "usage": "approved_derivative",
+      "rights_ref": "rights/derivative-poster",
+      "focal_point": null
+    }
+  ],
+  "font_requirements": [
+    {
+      "id": "font-fixture-sans",
+      "source": "runtime_registry",
+      "family_alias": "fixture-sans",
+      "weights": [
+        400,
+        700
+      ],
+      "substitution": "forbidden"
+    }
+  ]
+}

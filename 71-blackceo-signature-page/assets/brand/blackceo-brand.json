@@ -25,6 +25,19 @@
     "Image-led sections use the image at the wireframe's full slot width; no shrunken images floating in empty space.",
     "The B masthead / CEO logo appears in the first viewport."
   ],
+  "layout_thresholds": {
+    "note": "Item 15 (FIX-PLAN.md) defaults, read by scripts/validate_page.py. Values are the plan defaults, not calibrated numbers: calibration against Trevor's accepted live pages is pending under the Amendment 6 hold. card_grid_allowlist entries match a sibling group's parent selector, its structure signature, or both joined by a space. single_cta_design is the brand-declared exemption for the guide-prescribed single CTA treatment (Amendment 6, Item 15 delta a).",
+    "signature_monotony_max_share": 0.60,
+    "image_ratio_same_class_tolerance": 0.05,
+    "image_ratio_min_images": 3,
+    "centering_max_share": 0.70,
+    "card_grid_min_repetitions": 3,
+    "card_grid_size_tolerance": 0.02,
+    "empty_width_min_span": 0.60,
+    "cta_size_tolerance_px": 2,
+    "single_cta_design": false,
+    "card_grid_allowlist": []
+  },
   "banned_page_patterns": [
     "beige or off-white minimalism outside the Cream token", "Inter or system fonts",
     "small identical black rectangular buttons on every CTA", "40% or more of a section's width left empty at 1440px",

@@ -1,0 +1,59 @@
+{
+    "copy_rules": [
+        "Client copy is rendered ONLY from the client-safe park record (label, needed, waiting_on) and from verified delivery records. The raw blocked reason, park class names, phase ids, and AF codes never appear in client copy.",
+        "client_action parks speak to the client in plain words: what is needed, in the client's terms. operator_action and transient_infra parks send the client NOTHING as if it were their move (see silent_classes).",
+        "Every message the layer sends is recorded in the run record (conversation-receipt.json) before it counts as sent.",
+        "Consent posture on every form this system ships: all consent boxes required to proceed, unchecked by default, benefit-first copy (owner ruling, 2026-10-13). The front door captures the conversation consent posture; it never re-asks a captured posture."
+    ],
+    "delivery_followup": {
+        "booking": {
+            "ask": "Would you like me to book your review call now? I will offer you a few times and confirm the one you pick.",
+            "machinery": "Booked through Skill 44 calendars under Skill 38's smart-booking protocol (protocols/smart-booking-protocol.md); any workflow created goes through Skill 44 and must pass the TRINITY gate.",
+            "purpose": "presentation review call"
+        },
+        "boundary": "This is the CONVERSATIONAL follow-up only. The email sequence half of post-delivery follow-up is an election under FIX-PLAN Item 33c (Skill 50), deployed draft-only through Skill 44 after human approval; it is not part of this seam and no email is sent from here.",
+        "touches": [
+            {
+                "id": "T1",
+                "template": "Your presentation is ready, and thank you for trusting us with it. Final quality score: {qc_score}/10. You will find it at: {destinations}. Everything is confirmed in place. Take a look when you are ready, and tell me what you think.",
+                "when": "At verified delivery (after the delivery notification, SOP 9.3)"
+            },
+            {
+                "id": "T2",
+                "template": "A quick check-in on your presentation package: did everything open and play the way you expected? If anything looks off, tell me here and we will make it right.",
+                "when": "One follow-up window later (Skill 38 quiet hours and the F15 frequency cap govern the exact send time)"
+            },
+            {
+                "id": "T3",
+                "template": "When you are ready, I can book a short review call so we walk through the deck together and note anything you want adjusted. Just say the word and I will offer you times.",
+                "when": "After T2, once, then the sequence ends"
+            }
+        ]
+    },
+    "doctrine": "38-conversational-ai-system/protocols/presentations-conversational-layer-protocol.md",
+    "format": "conversation-templates",
+    "frontdoor": {
+        "greeting": "Hello, and welcome. I help get presentations started here. If you would like a presentation built for you, I can get you to the right place in about a minute.",
+        "handoff": "Perfect, that is everything I need. Your intake is ready here: {intake_link}. The intake walks you through the presentation questions one at a time, and everything you enter there goes straight into your build. I will be back here if anything pauses along the way.",
+        "not_qualified": "No problem at all. If a presentation is not what you were after today, nothing has been started and there is nothing to cancel. If you change your mind, just come back and say hello.",
+        "qualification": [
+            "Just to make sure I point you the right way: you are here because you would like a presentation created for you, is that right?",
+            "And you are the person this presentation is for (or you are arranging it for them)?",
+            "Last thing from me: is it all right for us to keep this conversation going here about your presentation, including follow-ups by message? Once you confirm, I will hand you straight to the intake, which is where the presentation questions themselves live."
+        ]
+    },
+    "owner": "Presentations department (FIX-PLAN Item 33b)",
+    "park_notice": {
+        "by_need": {
+            "resource_plan": "Your presentation is paused. {needed} Just reply here with your answer and the work picks right back up. Everything you already sent us is saved.",
+            "style_pick": "Your presentation is paused. {needed} Just reply here with A, B or C and the work picks right back up. Everything you already sent us is saved."
+        },
+        "client_action": "Your presentation is paused. {needed} Everything you already sent us is saved, and the work done so far is kept.",
+        "resumed": "Thank you. We have what we need and your presentation is moving again. We will let you know as soon as the next step is ready.",
+        "silent_classes": {
+            "operator_action": "NO client message. The wait belongs to the operating team; the operator is notified through the existing park machinery (auto_resume notify_park_wait). The run record states the client surface was silent and why.",
+            "transient_infra": "NO client message. A temporary problem is retrying on its own under the bounded auto-resume cadence; there is nothing for the client to do and nothing to ask them for."
+        }
+    },
+    "version": "1.0"
+}

@@ -62,7 +62,7 @@ Receives completed routing packages and cross-department handoffs from the Maste
 - Escalations to the CEO must meet the defined escalation threshold
 
 **Recommended model type:** Language + Reasoning
-**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4.1-flash:cloud` (primary), `openrouter/deepseek/deepseek-v4.1-flash` (fallback for clients with OpenRouter), `openai-codex/gpt-5.4`
+**Model:** the client's choice, or their configured default model (never Anthropic, by policy). Recommendation: a heavy-reasoning model with a large context window, because orchestration holds routing rationale and cross-department context for the whole company.
 
 **Core SOPs to build:**
 - 01-How-to-QC-a-Routing-Decision.md

@@ -1,0 +1,1 @@
+{"$id":"urn:blackceo:motion:asset:2.0","$ref":"contracts-v2.schema.json#/$defs/assets","$schema":"https://json-schema.org/draft/2020-12/schema","description":"Thin entrypoint for the V2 asset manifest contract. The canonical definition lives in contracts-v2.schema.json under $defs/assets; do not hand-maintain a divergent copy here."}

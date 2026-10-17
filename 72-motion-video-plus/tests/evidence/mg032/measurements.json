@@ -1,0 +1,217 @@
+{
+  "item": "MG-032",
+  "section": "Directive MG-032: prove actual subject motion, not decorative activity",
+  "cases": {
+    "c05_positive": {
+      "verdict": "pass",
+      "exit_code": 0,
+      "video": "/home/hatch/workspace/skill72-v2/wt-mg032/shared-utils/motion-render-runtime/.runtime/mg032-tests/render-c05/renders/remotion/final.mp4",
+      "video_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+      "frame_45": {
+        "expected": [
+          240,
+          360,
+          600
+        ],
+        "geometry_measured": [
+          240,
+          360,
+          600
+        ],
+        "raster_measured": [
+          240,
+          360,
+          600
+        ]
+      },
+      "clip_frames": 60,
+      "context_change": {
+        "mean_abs_diff": 0.04,
+        "frames": [
+          0,
+          75
+        ]
+      },
+      "proof_record": "/home/hatch/workspace/skill72-v2/wt-mg032/shared-utils/motion-render-runtime/.runtime/mg032-tests/proofs/c05-positive/proof-record.json"
+    },
+    "decoy_static_chart": {
+      "verdict": "fail",
+      "exit_code": 6,
+      "category": "MG_FAKE_MOTION",
+      "context_change_mean_abs_diff": 5.11,
+      "frame_45_raster_measured": [
+        480,
+        720,
+        1200
+      ],
+      "frame_45_expected": [
+        240,
+        360,
+        600
+      ],
+      "detail": "subject bar-a: decoded width 480px, expected 240px (tolerance 2); subject bar-b: decoded width 720px, expected 360px (tolerance 2); subject bar-c: decoded width 1200px, expected 600px (tolerance 2); subject bar-a did not move between the initial and proof states (decoded 480px -> 480px): the chart is static at this checkpoint whatever else in the frame is moving; subject bar-b did not move between the initial and proof states (decoded 720px -> 720px): the chart is static at this checkpoint whatever else in the frame is moving; subject bar-c did not move between the initial and proof states (decoded 1200px -> 1200px): the chart is static at this checkpoint whatever else in the frame is moving"
+    },
+    "c04_mechanism": {
+      "verdict": "pass",
+      "exit_code": 0,
+      "assertions": [
+        {
+          "frame": 30,
+          "expected": [
+            581.31,
+            540
+          ],
+          "geometry_measured": [
+            581.31,
+            540
+          ],
+          "raster_measured": [
+            579.71,
+            510.12
+          ]
+        },
+        {
+          "frame": 75,
+          "expected": [
+            949.75,
+            540
+          ],
+          "geometry_measured": [
+            949.75,
+            540
+          ],
+          "raster_measured": [
+            948.9,
+            510.72
+          ]
+        },
+        {
+          "frame": 170,
+          "expected": [
+            1441,
+            540
+          ],
+          "geometry_measured": [
+            1441,
+            540
+          ],
+          "raster_measured": [
+            1440,
+            509.71
+          ]
+        }
+      ],
+      "clip_frames": 120
+    },
+    "depth_refused_no_evidence": {
+      "verdict": "refused",
+      "exit_code": 3,
+      "category": "MG_CAPABILITY_UNSUPPORTED",
+      "finding": "this case claims depth (front/back or perspective), and a depth claim requires occlusion or depth evidence (catalog C10 minimum proof: occlusion/perspective evidence plus readable final composition); the evidence plan provides neither, so the claim cannot pass"
+    },
+    "depth_refused_empty_occlusion": {
+      "verdict": "refused",
+      "exit_code": 3,
+      "category": "MG_CAPABILITY_UNSUPPORTED"
+    },
+    "depth_refused_map_only": {
+      "verdict": "refused",
+      "exit_code": 3,
+      "category": "MG_CAPABILITY_UNSUPPORTED"
+    },
+    "occlusion_positive": {
+      "verdict": "pass",
+      "exit_code": 0,
+      "occlusion": [
+        {
+          "frame": 10,
+          "subject_id": "hero-object",
+          "occluder_id": "pillar",
+          "expected_visible_fraction": 1,
+          "measured_visible_fraction": 1,
+          "verdict": "pass"
+        },
+        {
+          "frame": 90,
+          "subject_id": "hero-object",
+          "occluder_id": "pillar",
+          "expected_visible_fraction": 0.2,
+          "measured_visible_fraction": 0.2,
+          "verdict": "pass"
+        },
+        {
+          "frame": 170,
+          "subject_id": "hero-object",
+          "occluder_id": "pillar",
+          "expected_visible_fraction": 1,
+          "measured_visible_fraction": 1,
+          "verdict": "pass"
+        }
+      ],
+      "clip_frames": 161
+    },
+    "human_judgment": {
+      "missing": {
+        "verdict": "needs_human_judgment",
+        "exit_code": 3
+      },
+      "approved": {
+        "verdict": "pass",
+        "exit_code": 0
+      },
+      "rejected": {
+        "verdict": "fail",
+        "exit_code": 6
+      }
+    },
+    "incomplete_bundle": {
+      "verdict": "fail",
+      "exit_code": 6,
+      "category": "MG_COVERAGE_INCOMPLETE",
+      "bundle_verdict": "incomplete"
+    },
+    "hash_mismatch": {
+      "verdict": "refused",
+      "exit_code": 9,
+      "category": "MG_HASH_MISMATCH"
+    },
+    "foreign_job": {
+      "verdict": "refused",
+      "exit_code": 9,
+      "category": "MG_FOREIGN_JOB"
+    },
+    "rough_label_gate": {
+      "verdict": "fail",
+      "exit_code": 6,
+      "category": "MG_COVERAGE_INCOMPLETE"
+    },
+    "schema_invalid": {
+      "verdict": "refused",
+      "exit_code": 2,
+      "category": "MG_SCHEMA_INVALID"
+    },
+    "catalog_declarations": {
+      "c04": {
+        "subjects": "traveling_object: the mechanism's single traveling subject (diagram.subject.id), one persistent identity for the whole sequence",
+        "measurement": "accent_centroid: the accent centroid inside a window around the resolved subject position on the decoded frame, checked against the frame functions' position and the scene's declared subject_identity assertions",
+        "transformation": "path_transit",
+        "depthPolicy": "not_claimed"
+      },
+      "c05": {
+        "subjects": "data_marks: one bar per dataset row, identified by the scene's bar subject ids (bar-<row id>)",
+        "measurement": "accent_run_extent: the contiguous accent run inside each bar's row region on the decoded frame, checked against the MG-015 chart-scale derivation and the component's instrumented widths",
+        "transformation": "linear_reveal",
+        "depthPolicy": "not_claimed"
+      }
+    }
+  },
+  "runtime": {
+    "lockId": "lock-314fc289b233ca9e",
+    "remotionVersion": "4.0.535",
+    "sharedRuntimeDir": "/home/hatch/workspace/skill72-v2/wt-mg032/shared-utils/motion-render-runtime"
+  },
+  "cases_summary": {
+    "passed": 14,
+    "failed": 0
+  }
+}

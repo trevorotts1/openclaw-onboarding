@@ -7,34 +7,45 @@
 # WHAT IT DOES
 #   Renders mac/com.blackceo.drama-studio-bridge.plist.template or
 #   hostinger|contabo/drama-studio-timer.cron.template into the platform's
-#   install path, and (with --apply) writes ONLY those files.
+#   install path, and (with --apply) writes ONLY those files. With --register it
+#   also ARMS the scheduler: the Mac LaunchAgent is loaded with `launchctl
+#   bootstrap`, and the Hostinger/Contabo crontab gains exactly one tagged
+#   `*/2 ... /bin/sh <abs script> >> <log> 2>&1` line (any previous tagged line
+#   is removed first, so a second run cannot double the timer).
 #
 # WHAT IT NEVER DOES — the hard line
-#   It NEVER registers anything: no `launchctl bootstrap/bootout/kickstart`, no
-#   `crontab -`, no `systemctl`, no `pm2`, no Task Scheduler. It touches no
-#   scheduling surface and installs/loads/enables nothing. The operator runs the
-#   one registration command that --dry-run PRINTS; this script only prints it.
-#   There is no code path here that arms a timer.
+#   Every mode except --register touches no scheduling surface at all: no
+#   `launchctl`, no `crontab -`, no `systemctl`, no `pm2`, no Task Scheduler, no
+#   sudo. --register is check-first and idempotent: when the timer is already
+#   installed and correct it changes nothing and exits 0. It never arms a
+#   scratch/fixture install either — pass --root a directory that is NOT the
+#   platform's contract root and --register writes the files, PRINTS the
+#   scheduler command and arms nothing. That is how this is proven without
+#   spending a launchd slot or a container: fixtures first, never a bare install.
 #
 # MODES
 #   --dry-run   (DEFAULT) render in memory, print the plan + the registration
-#               command the OPERATOR would run, write nothing, exit 0.
+#               command, write nothing, exit 0.
 #   --apply     write the rendered script + definition files under the target
-#               root only. Still registers nothing.
+#               root only. Registers nothing.
 #   --check-identity  validate a user/HOME pair against the platform contract and
 #               exit 0 (ok) / 1 (wrong user or wrong path). Used by the checker.
-#   --register  ALWAYS refused (exit 2): registration belongs to the operator on
-#               the box, never to this repository script.
+#   --register  install the timer AND arm it. exit 0 when the timer is installed
+#               or already installed; exit 2 only for a genuine refusal (wrong
+#               identity, unsupported platform, missing template). It keeps
+#               accepting --platform and the existing --root/--home/--skill-root/
+#               --identity-user/--identity-home.
 #
 # Reuses the shape of platform/mac/service-selfheal/install-service-remediate.sh
-# (sed-expanded template -> LaunchAgents plist) and of
+# (sed-expanded template -> launchctl bootstrap, already-loaded = success) and of
 # platform/vps/service-selfheal/install-host-watchdog-cron.sh (an idempotent
-# `*/N ... /bin/sh <abs script> >> <log> 2>&1` crontab line).
+# `*/N ... /bin/sh <abs script> >> <log> 2>&1` crontab line, old line replaced).
 #
 # Usage:
 #   bash install-timer.sh --platform mac [--dry-run|--apply] [--root DIR] [--home DIR]
 #   bash install-timer.sh --platform hostinger --apply
 #   bash install-timer.sh --platform contabo --dry-run
+#   bash install-timer.sh --platform mac --register
 #   bash install-timer.sh --platform mac --check-identity --identity-user U --identity-home H
 set -euo pipefail
 
@@ -60,7 +71,7 @@ while [ $# -gt 0 ]; do
     --skill-root) SKILL_ROOT="${2:-}"; shift 2 ;;
     --identity-user) ID_USER="${2:-}"; shift 2 ;;
     --identity-home) ID_HOME="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -124,17 +135,6 @@ if [ "$MODE" = "check-identity" ]; then
   exit 1
 fi
 
-if [ "$MODE" = "register" ]; then
-  echo "refused: this repository script never registers a timer." >&2
-  echo "         Registration is a deliberate operator action on the box:" >&2
-  case "$PLATFORM" in
-    mac)       echo "           launchctl bootstrap gui/\$(id -u) $SEL_HOME/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist" >&2 ;;
-    hostinger) echo "           docker exec -u node <container> sh -c 'crontab /data/.openclaw/scripts/drama-studio-timer.cron'" >&2 ;;
-    contabo)   echo "           docker exec -u node <container> sh -c 'crontab /home/node/.openclaw/scripts/drama-studio-timer.cron'" >&2 ;;
-  esac
-  exit 2
-fi
-
 # ---- resolve paths ----------------------------------------------------------
 case "$PLATFORM" in
   mac)
@@ -157,7 +157,10 @@ case "$PLATFORM" in
     DEST_SCRIPT="$SCRIPTS_DIR/run-timer.sh"
     DEST_CRON="$SCRIPTS_DIR/drama-studio-timer.cron"
     TEMPLATE="$HERE/hostinger/drama-studio-timer.cron.template"
-    STORE_DIR="$SEL_HOME/$STATE_SUBPATH"
+    # Root-derived, like mac and contabo: with the contract root (/data) this is
+    # exactly $SEL_HOME/.drama-studio, so a real install is unchanged; a scratch
+    # --root keeps every fixture write inside that scratch.
+    STORE_DIR="$SEL_ROOT/$STATE_SUBPATH"
     LOG_PATH="$SEL_ROOT/.openclaw/logs/drama-studio-timer.log"
     SCRIPT_PATH="$DEST_SCRIPT"
     PATH_VAL="/data/.npm-global/bin:/data/linuxbrew/.linuxbrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -176,7 +179,13 @@ case "$PLATFORM" in
     ;;
 esac
 
-[ -f "$TEMPLATE" ] || { echo "template not found: $TEMPLATE" >&2; exit 1; }
+if [ ! -f "$TEMPLATE" ]; then
+  echo "template not found: $TEMPLATE" >&2
+  # A missing template is a genuine --register refusal (exit 2); the other modes
+  # keep their historical exit 1.
+  if [ "$MODE" = "register" ]; then exit 2; fi
+  exit 1
+fi
 
 render() {
   sed -e "s|__SCRIPT_PATH__|${SCRIPT_PATH}|g" \
@@ -190,12 +199,31 @@ render() {
       "$TEMPLATE"
 }
 
-# Registration command printed for the OPERATOR; never executed here.
+# The single executable line of a rendered crontab definition: every comment and
+# blank line in the template is documentation, the last remaining line is the job.
+cron_definition_line() {
+  printf '%s\n' "$1" | sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' | tail -1
+}
+
+# The current crontab exactly as the register step sees it. In a fixture root the
+# file under that root stands in for `crontab -l`, so proving idempotency never
+# reads, writes or clobbers a real crontab.
+cron_get() {
+  if [ "$FIXTURE" = 1 ]; then
+    cat "$CRONTAB_FIXTURE" 2>/dev/null || true
+  else
+    crontab -l 2>/dev/null || true
+  fi
+}
+
+RENDERED="$(render)"
+
+# Registration entry point for the platform. `--register` runs the scheduler
+# step itself; this is what the operator is shown for a manual arm.
 reg_command() {
   case "$PLATFORM" in
-    mac)       printf 'launchctl bootstrap gui/$(id -u) %s\n' "$DEST_PLIST" ;;
-    hostinger) printf "docker exec -u node <container> sh -c 'crontab %s'\n" "$DEST_CRON" ;;
-    contabo)   printf "docker exec -u node <container> sh -c 'crontab %s'\n" "$DEST_CRON" ;;
+    mac) printf 'launchctl bootstrap gui/$(id -u) %s\n' "$DEST_PLIST" ;;
+    *)   printf 'bash %s --platform %s --register\n' "$HERE/install-timer.sh" "$PLATFORM" ;;
   esac
 }
 
@@ -222,28 +250,154 @@ if [ "$MODE" = "dry-run" ]; then
   esac
   echo "  log      : $LOG_PATH"
   echo "  direct   : /bin/sh $SCRIPT_PATH  (no model, no interactive session)"
-  echo "  operator registration command (NOT run by this script):"
+  echo "  register with (this dry run arms nothing):"
   echo "    $(reg_command)"
-  render >/dev/null
+  if [ "$PLATFORM" = "mac" ]; then
+    echo "  rendered plist:"
+    printf '%s\n' "$RENDERED" | sed -e 's/^/    /'
+  else
+    echo "  rendered crontab line:"
+    printf '    %s\n' "$(cron_definition_line "$RENDERED")"
+  fi
   exit 0
 fi
 
-# ---- --apply: write files ONLY. No scheduling surface, ever. ----------------
-validate_identity "$SEL_USER" "$SEL_HOME" || exit 1
+# ---- identity gate for every write ------------------------------------------
+if [ "$MODE" = "register" ]; then
+  if ! validate_identity "$SEL_USER" "$SEL_HOME"; then
+    echo "refused: --register needs a valid $PLATFORM identity (see above)" >&2
+    exit 2
+  fi
+else
+  validate_identity "$SEL_USER" "$SEL_HOME" || exit 1
+fi
+
+# ---- write the definition files (shared by --apply and --register) ----------
+# CHANGED=0 means every file on disk was already byte-identical: that is what
+# makes a second run a no-op instead of a rewrite.
+CHANGED=0
+put_file() {  # put_file <path> <mode> <content>
+  if [ -f "$1" ] && [ "$(cat "$1")" = "$3" ]; then
+    echo "unchanged $1"
+    return 0
+  fi
+  mkdir -p "$(dirname "$1")"
+  printf '%s\n' "$3" > "$1"
+  chmod "$2" "$1"
+  echo "wrote $1"
+  CHANGED=1
+}
+
+mkdir -p "$(dirname "$LOG_PATH")" "$STORE_DIR"
+if [ "$PLATFORM" = "mac" ]; then
+  put_file "$DEST_PLIST" 644 "$RENDERED"
+else
+  mkdir -p "$SCRIPTS_DIR"
+  if cmp -s "$HERE/run-timer.sh" "$DEST_SCRIPT" 2>/dev/null; then
+    echo "unchanged $DEST_SCRIPT"
+  else
+    cp "$HERE/run-timer.sh" "$DEST_SCRIPT"
+    chmod 700 "$DEST_SCRIPT"
+    echo "wrote $DEST_SCRIPT"
+    CHANGED=1
+  fi
+  put_file "$DEST_CRON" 600 "$RENDERED"
+fi
+
+if [ "$MODE" != "register" ]; then
+  echo "files written. NOT registered. To register, run:"
+  echo "  $(reg_command)"
+  exit 0
+fi
+
+# ---- --register: arm the scheduler. Check-first, idempotent. ----------------
+# A root that is not the platform's contract root is a scratch/fixture install:
+# write the files, PRINT the scheduler command, arm nothing. A real box never
+# passes --root at all (or passes its own contract root), so it arms normally.
+if [ "$SEL_ROOT" != "$DEF_ROOT" ]; then
+  FIXTURE=1
+  echo "fixture root: '$SEL_ROOT' is not the $PLATFORM contract root '$DEF_ROOT'."
+  echo "  files written; the scheduler command below is PRINTED, not executed."
+else
+  FIXTURE=0
+fi
 
 if [ "$PLATFORM" = "mac" ]; then
-  mkdir -p "$(dirname "$DEST_PLIST")" "$(dirname "$LOG_PATH")" "$STORE_DIR"
-  render > "$DEST_PLIST"
-  chmod 644 "$DEST_PLIST"
-  echo "wrote $DEST_PLIST"
-else
-  mkdir -p "$SCRIPTS_DIR" "$(dirname "$LOG_PATH")" "$STORE_DIR"
-  cp "$HERE/run-timer.sh" "$DEST_SCRIPT"
-  chmod 700 "$DEST_SCRIPT"
-  render > "$DEST_CRON"
-  chmod 600 "$DEST_CRON"
-  echo "wrote $DEST_SCRIPT"
-  echo "wrote $DEST_CRON"
+  LABEL="com.blackceo.drama-studio-bridge"
+  GUI="gui/$(id -u)"
+  BOOTSTRAP="launchctl bootstrap $GUI $DEST_PLIST"
+  if [ "$FIXTURE" = 1 ]; then
+    if [ "$CHANGED" = 0 ]; then
+      echo "already installed: $DEST_PLIST already holds the rendered definition."
+    else
+      echo "installed $DEST_PLIST"
+    fi
+    echo "  nothing loaded here; to arm it on the real box: $BOOTSTRAP"
+    exit 0
+  fi
+  if launchctl print "$GUI/$LABEL" >/dev/null 2>&1; then
+    if [ "$CHANGED" = 0 ]; then
+      echo "already installed and loaded: $LABEL"
+      exit 0
+    fi
+    echo "definition changed; re-loading $LABEL"
+    launchctl bootout "$GUI/$LABEL" 2>/dev/null || true
+  fi
+  # An already-loaded job is success (the pre-check above races with nothing, but
+  # launchctl itself can report the same condition) — install-service-remediate.sh
+  # treats a loaded job as the target state too.
+  if launchctl bootstrap "$GUI" "$DEST_PLIST"; then
+    echo "loaded $LABEL"
+    exit 0
+  fi
+  if launchctl print "$GUI/$LABEL" >/dev/null 2>&1; then
+    echo "already loaded: $LABEL"
+    exit 0
+  fi
+  echo "refused: launchctl bootstrap failed for $DEST_PLIST" >&2
+  exit 2
 fi
-echo "files written. NOT registered. To register, the operator runs:"
-echo "  $(reg_command)"
+
+# ---- Hostinger / Contabo: one tagged, de-duplicated crontab line ------------
+CRON_TAG="drama-studio-timer"
+CRON_LINE="$(cron_definition_line "$RENDERED")"
+[ -n "$CRON_LINE" ] || { echo "refused: rendered definition has no executable line" >&2; exit 2; }
+CRONTAB_FIXTURE="$SCRIPTS_DIR/.crontab-installed"
+
+if [ "$FIXTURE" = 0 ]; then
+  command -v crontab >/dev/null 2>&1 || { echo "refused: crontab not found on this $PLATFORM install" >&2; exit 2; }
+fi
+
+CURRENT="$(cron_get)"
+if [ -n "$CURRENT" ]; then
+  # Drop every previous line that belongs to this timer, then re-append ours, so
+  # a second run can never double the timer. `|| true` because grep exits 1 when
+  # it filters out EVERY line, which under `set -o pipefail` would abort here.
+  KEPT="$(printf '%s\n' "$CURRENT" | grep -vF "$CRON_TAG" || true)"
+else
+  KEPT=""
+fi
+if [ -n "$KEPT" ]; then
+  # $'...' because $(printf ...) would strip the trailing newline and glue the
+  # two jobs onto one line — which is exactly how a merge goes wrong.
+  DESIRED="$KEPT"$'\n'"$CRON_LINE"
+else
+  DESIRED="$CRON_LINE"
+fi
+
+if [ "$DESIRED" = "$CURRENT" ]; then
+  echo "already installed: the '$CRON_TAG' crontab entry is present exactly once."
+  echo "  nothing changed."
+  exit 0
+fi
+
+if [ "$FIXTURE" = 1 ]; then
+  printf '%s\n' "$DESIRED" > "$CRONTAB_FIXTURE"
+  echo "installed $CRONTAB_FIXTURE (fixture stand-in for the node user's crontab)."
+else
+  printf '%s\n' "$DESIRED" | crontab -
+  echo "installed the '$CRON_TAG' crontab entry for user '$SEL_USER'."
+fi
+echo "  scheduled line:"
+printf '    %s\n' "$CRON_LINE"
+exit 0

@@ -15,9 +15,11 @@ This suite exercises the real thing, end to end, with fixture identities only:
                      receipt (the missing-manifest failure, reproduced).
   2. MISSING TRIPLE — against a real running app whose fixture registry entry
                      lacks issuer/audience/subjects: authenticated readiness is
-                     200/ready:true while the actual invitation route refuses
-                     409 access_identity_unregistered — the registration-
-                     dependent issuance failure, reproduced.
+                     503/ready:false with access_identity_unregistered in
+                     `missing` and capabilities.enrollment=false (items 07+13),
+                     while the actual invitation route refuses 409
+                     access_identity_unregistered — the registration-dependent
+                     issuance failure, reproduced.
   3. REAL MINT     — a second real run with the full Access triple: the REAL
                      onboarding validator (`shared-utils/interview_invitation.py`
                      resolve_public_origin + issue_invitation, real curl) reaches
@@ -423,7 +425,7 @@ class BuildGuard(unittest.TestCase):
 
 
 class MissingAccessTriple(unittest.TestCase):
-    """readiness 200/ready:true + actual invitation route 409 access_identity_unregistered."""
+    """readiness 503/ready:false (items 07+13) + actual invitation route 409 access_identity_unregistered."""
 
     @classmethod
     def setUpClass(cls):
@@ -458,10 +460,22 @@ class MissingAccessTriple(unittest.TestCase):
         except urllib.error.HTTPError as err:
             return err.code, json.loads(err.read().decode()), f.requests[before:]
 
-    def test_01_readiness_is_ready_but_issuance_is_refused(self):
+    def test_01_readiness_is_not_ready_and_issuance_is_refused(self):
+        # Post items 07 + 13 contract (CC batch PR #541 folds #537): the
+        # incomplete Access triple is a machine-readable NOT-ready verdict on
+        # readiness itself — 503, ready=false, the allowlisted reason in
+        # `missing`, and the capability keys telling the truth about issuance —
+        # while the actual invitation route keeps the same precise 409.
         status, receipt, _ = self._call('/api/auth/interview-ready')
-        record('missing_triple_readiness_200', status == 200 and receipt.get('ready') is True,
-               f'status={status} ready={receipt.get("ready")}')
+        caps = receipt.get('capabilities') or {}
+        record('missing_triple_readiness_503',
+               status == 503 and receipt.get('ready') is False
+               and 'access_identity_unregistered' in (receipt.get('missing') or []),
+               f'status={status} ready={receipt.get("ready")} missing={receipt.get("missing")}')
+        record('missing_triple_capabilities_tell_the_truth',
+               caps.get('enrollment') is False and caps.get('invitationIssuable') is False
+               and caps.get('signingSecretConfigured') is True,
+               f'enrollment={caps.get("enrollment")} invitationIssuable={caps.get("invitationIssuable")} signingSecretConfigured={caps.get("signingSecretConfigured")}')
         mstatus, mbody, _ = self._call('/api/auth/interview-invitation', method='POST',
                                        body={'recipientHash': hashlib.sha256(RECIPIENT.encode()).hexdigest()})
         record('missing_triple_invitation_409_access_identity_unregistered',

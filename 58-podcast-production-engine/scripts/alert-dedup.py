@@ -157,13 +157,22 @@ SEV_DECISION = "decision"  # QC three-strike, cost_hold; ALWAYS send, per-episod
 SEV_DIGEST = "digest"      # aged-out, daily-cap deferral, soft-ceiling; batched to daily flush
 VALID_SEVERITIES = (SEV_STATUS, SEV_DECISION, SEV_DIGEST)
 
-# Only these env names may ever resolve a target, and every one of them is an
+# Only these names may ever resolve a target, and every one of them is an
 # OPERATOR / FOUNDER channel. A client chat id is never consulted here.
-FOUNDER_TARGET_ENV = (
+# The three long-standing names keep their historic contract: whatever the
+# process environment carries there is used verbatim (boxes and tests ship
+# free-form values). ESCALATION_TARGET_ENV is the name provisioning actually
+# writes on a box (force-update.sh notify_operator), so it is also the one name
+# the box config file is allowed to answer with - and its value must look like a
+# real chat id or it counts as unset, so a tombstone such as
+# REMOVED-OPERATOR-CHAT-ID never becomes a send target.
+_LEGACY_FOUNDER_TARGET_ENV = (
     "PODCAST_FOUNDER_ALERT_CHAT",
     "OPERATOR_TELEGRAM_CHAT_ID",
     "FOUNDER_TELEGRAM_CHAT_ID",
 )
+ESCALATION_TARGET_ENV = "OPERATOR_ESCALATION_CHAT_ID"
+FOUNDER_TARGET_ENV = _LEGACY_FOUNDER_TARGET_ENV + (ESCALATION_TARGET_ENV,)
 
 # The SENDING channel account is pinned to the operator bot so that on a client
 # box the founder alert never rides (or leaks through) the client's own default
@@ -462,14 +471,60 @@ def _daily(state: dict, client: str) -> dict:
 # ---------------------------------------------------------------------------
 # gateway send (the ONLY egress; founder/operator target only)
 # ---------------------------------------------------------------------------
+def _is_chat_id(value: str) -> bool:
+    """True only for a real chat id: digits with an optional leading '-'.
+
+    Anything else - a tombstone like REMOVED-OPERATOR-CHAT-ID, a name, an empty
+    string - is NOT a target and must never be handed to the gateway."""
+    s = str(value).strip()
+    core = s[1:] if s.startswith("-") else s
+    return bool(core) and core.isdigit()
+
+
+def _box_escalation_chat_id() -> str | None:
+    """The escalation chat id from the FIRST existing box openclaw.json.
+
+    Nothing exports these alert names into the process environment of every box,
+    so the box config file is where a client box really carries the escalation
+    channel. Only that ONE key is pulled out - no other value of the config is
+    read, kept or logged - and a missing, unreadable or malformed config simply
+    yields None instead of raising. The first existing file is authoritative:
+    a tombstone such as REMOVED-OPERATOR-CHAT-ID in it means UNSET, not "keep
+    looking".
+
+    ponytail: only ESCALATION_TARGET_ENV is answered from the file; scan the
+    rest of FOUNDER_TARGET_ENV there if a box ever provisions those names in
+    config alone and never in this process's environment.
+    """
+    for cand in (Path.home() / ".openclaw" / "openclaw.json",
+                 Path("/data/.openclaw/openclaw.json")):
+        try:
+            if not cand.is_file():
+                continue
+            with open(cand, "r", encoding="utf-8") as fh:
+                cfg = json.load(fh)
+            v = ((cfg.get("env") or {}).get("vars") or {}) \
+                .get(ESCALATION_TARGET_ENV)
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+        if isinstance(v, str) and v.strip() and _is_chat_id(v):
+            return v.strip()
+        return None
+    return None
+
+
 def _resolve_founder_target(explicit: str | None) -> str | None:
     if explicit:
         return explicit
     for name in FOUNDER_TARGET_ENV:
         v = os.environ.get(name)
-        if v:
+        if not v or not str(v).strip():
+            continue
+        v = str(v).strip()
+        # Legacy names stay verbatim; the escalation name must be a chat id.
+        if name in _LEGACY_FOUNDER_TARGET_ENV or _is_chat_id(v):
             return v
-    return None
+    return _box_escalation_chat_id()
 
 
 def _mask_target(target: str | None) -> str:
@@ -1058,7 +1113,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         "podcast_engine.alerts overrides")
         sp.add_argument("--founder-chat", help="explicit founder/operator target "
                         "(else $PODCAST_FOUNDER_ALERT_CHAT / "
-                        "$OPERATOR_TELEGRAM_CHAT_ID / $FOUNDER_TELEGRAM_CHAT_ID)")
+                        "$OPERATOR_TELEGRAM_CHAT_ID / $FOUNDER_TELEGRAM_CHAT_ID / "
+                        "$OPERATOR_ESCALATION_CHAT_ID, else the box "
+                        "openclaw.json env.vars entry for "
+                        "$OPERATOR_ESCALATION_CHAT_ID)")
         sp.add_argument("--dry-run", action="store_true",
                         help="run all dedup logic and print the decision but never "
                         "invoke the gateway")

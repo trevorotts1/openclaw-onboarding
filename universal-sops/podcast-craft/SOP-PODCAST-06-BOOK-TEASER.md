@@ -31,12 +31,11 @@ Using the person's survey answers, their improved answers from the frozen Resear
 
 The teaser prose is written on the runtime content tier, thinking set to high, consistent with the skill's content routing policy in `config/models.yaml`:
 
-1. Kimi 2.6 on Ollama Cloud (thinking high)
-2. GLM 5.2 on Ollama Cloud (thinking high)
-3. the OpenRouter equivalents of the two, in the same order
-4. Gemini 3.1 Flash Lite as the final fallback (default thinking)
+1. The client's explicit choice for the content tier.
+2. If the client has not chosen one, the client's configured default model.
+3. If neither exists, stop and ask the client which model to use; never silently substitute a named model.
 
-Fall back through that priority order when a tier is unavailable, and record any substitution in the delivery report. The router refuses any model id on the deny-pattern list; a substitution that would match the deny list is a hard error, never a fallback. Nothing from the build-time provider ever writes a client teaser; that boundary is enforced at the merge gate by `guard-no-anthropic-runtime.py`, not by prose. The render step makes no model call at all, so writing is the only billable part of this module and it draws from the shared per-episode content-token budget.
+Thinking is set to high on whichever model resolves. Recommendation: a model with strong long-form writing, because the teaser must read like the opening of a real book. Fall back to the client's configured fallback model when the resolved model is unavailable, and record any substitution in the delivery report. The router refuses any model id on the deny-pattern list; a substitution that would match the deny list is a hard error, never a fallback. Nothing from the build-time provider ever writes a client teaser; that boundary is enforced at the merge gate by `guard-no-anthropic-runtime.py`, not by prose. The render step makes no model call at all, so writing is the only billable part of this module and it draws from the shared per-episode content-token budget.
 
 ## 4. THE FABRICATION BOUNDARY (HARD)
 
@@ -75,7 +74,7 @@ Exit codes: 0 pass, 2 a text or PDF mechanical check failed, 3 usage or IO error
 
 ## 8. TEASER CHECKLIST (reproduced in the delivery report; Interview mode only)
 
-- [ ] Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's own first-person voice, ending on a cliffhanger, on the content tier (Kimi 2.6 then GLM 5.2, thinking high).
+- [ ] Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's own first-person voice, ending on a cliffhanger, on the content tier (the client's chosen model, or the client's configured default model, thinking high).
 - [ ] No fabricated biography, achievement, institution, date, or life story.
 - [ ] Rendered as a book-typeset PDF, no font below fourteen point, three pages or fewer, verified from the rendered PDF by `render_book_teaser.py`.
 - [ ] PDF uploaded to Convert and Flow media storage via Tier 3 REST; public URL HEAD-verified.

@@ -1,11 +1,15 @@
 # Presentation Interview app — deployable source + question wiring
 
 The **Presentation Interview app**: a Cloudflare-hosted intake frontend that asks
-16 intake questions one at a time (7-9 core, hard cap 20), shows a segmented
-**"Question N of 16"** progress bar, captures a **logo** ("no logo on file —
-provide one or build without?") and **image links**, and on **Submit** stores the
-answers on the box and **pushes them to the presentation department** (starting
-the kanban flow — no shortcuts).
+the generated intake questions one at a time (21 in the current contract set;
+the count derives from the set itself, there is no hardcoded cap), shows a
+segmented **"Question N of TOTAL"** progress bar, captures a **logo** ("no logo
+on file: provide one or build without?") and **image links**, and on **Submit**
+delivers the finished brief to the **presentation department** (starting the
+kanban flow, no shortcuts). Opened through a bridge-minted capability link it
+runs the worker's session contract (each answer saved server-side as it is
+given, completion assembled and queued by the worker); opened directly it
+uses the standalone sink/download flow described under Submit trigger.
 
 This directory is the deployable source + question wiring that lives in the repo.
 The working copy lives at `Downloads/GAUNTLET-LOOP-WORK/LOOP2B-INTERVIEW-APP/app`.
@@ -30,9 +34,18 @@ Edit the canonical JSONs, not the app, to change what a client is asked:
   `vsl_page_declined_reason` order 22.06); the standalone file keeps its own
   legacy orders 7.6/7.61/7.7/7.71.
 
-`payload/build_questions_payload.py` selects the curated 15-question set by id
-(`DEFAULT_CURATED`) and projects the UI fields from these canonical files. The
-app's `questions.json` is a snapshot of that projection.
+`payload/build_questions_payload.py` selects the curated question set by id
+(`DEFAULT_CURATED`, 19 entries at this contract version) and projects the UI
+fields from these canonical files. The app's `questions.json` is a snapshot
+of that projection.
+
+> **Signature set (B10 S8, deferral discharged):** the `--set signature`
+> payload (Skill 51's `sp-8-questions.json`) is ported into this builder
+> by PR #2069 (branch `martin/pres-fix-signature-port`), which
+> discharges the deferral this note previously recorded. Until PR #2069
+> merges, the deprecated miniapp's `payload/build_questions_payload.py`
+> remains the signature path on main. The gated D5 deletion of the
+> miniapp tree remains gated on Trevor's explicit go under D5.
 
 ## Files
 
@@ -160,12 +173,27 @@ python3 test/test_pres008_durable_states.py
 python3 payload/build_questions_payload.py --selftest
 ```
 
+The full battery (these plus the PRES-006/PRES-023/PRES-024 suites, the
+deployed-r2 suites, the branded page session-flow test, the UI generation
+check, and the u054 a11y gate) runs in CI under
+`.github/workflows/presentation-intake-guard.yml`. Two suites are
+cross-repo harnesses and run in the Command Center repo's context, not
+here: `test/test_dept_start_handoff.mjs` (needs `CC_ROOT`) and
+`test/test_operator_contract_handoff.py` (needs a local CC checkout).
+
 ## Deploy
 
-See the `intake-miniapp` DEPLOY.md (same Worker + D1 + Pages pattern). Fill the
-`<PLACEHOLDER>` tokens in `worker/wrangler.toml` at deploy time. Suggested host:
-`presentation-interview.<FLEET_DOMAIN>`. Secrets: `INTAKE_ADMIN_TOKEN`,
-`COMMAND_CENTER_URL`, `CC_DEPT_START_TOKEN`.
+The LIVE deployment is the R2-backed single Worker in `deployed-r2/` (name
+`presentation-intake`, R2 bucket `presentation-intake`, UI served via Worker
+Static Assets) — see `deployed-r2/README.md` and the D2/D3 reconciliation
+section below. Do NOT deploy from `worker/` (the D1-backed design; its
+wrangler.toml says so itself: it would take over the live API) and do NOT
+follow `../../intake-miniapp/DEPLOY.md` (the deprecated mini-app's Worker + D1
++ Pages pattern; D1 was never provisionable). Deploy only with Trevor's
+explicit go (the repo direction is deployed → git, never the reverse).
+Secrets on the live Worker (per `deployed-r2/wrangler.toml`): `INTAKE_ADMIN_TOKEN`,
+`COMMAND_CENTER_URL` (optional), `CC_HANDOFF_SECRET` (REQUIRED for
+`/api/dept-start`), `CC_DEPT_START_TOKEN` (optional).
 
 ## D2/D3 reconciliation — canonical status (added 2026-08-19)
 
@@ -182,10 +210,17 @@ intake app, not `../../intake-miniapp/`.** Per Wave D / Units D2+D3 of
    `Downloads/GAUNTLET-LOOP-WORK/LOOP2B-INTERVIEW-APP/app` as its deployed
    copy — a first-party claim the mini-app's README does not make about itself
    against the same working copy.
-3. **The repo's own wiring references this app**, not the mini-app:
-   `DEPARTMENT-COUNTS-CANONICAL.md` cites `DEPT/intake/interview-app/` as "the
-   deployed interview app" and names `intake/interview-app/bridge/intake_bridge.py`
-   as the module `cc_board.ingest_deck_task()` is reached through.
+3. **The repo's own wiring references this app**, not the mini-app: the
+   department's director SOP and this app's own box-side commands (above)
+   drive `intake/interview-app/bridge/intake_bridge.py`
+   (`new` / `resume` / `list` / `poll`), and `cc_board.ingest_deck_task()`
+   is reached through it.
+
+   *(Correction, FIX-PLAN Item 14: an earlier version of this leg cited
+   `DEPARTMENT-COUNTS-CANONICAL.md` as naming this app "the deployed
+   interview app". A direct check of that document (426 lines) finds no
+   mention of interview-app at all; the citation was wrong and has been
+   removed. Legs 1 and 2 above are the load-bearing evidence.)*
 
 `../../intake-miniapp/README.md`'s self-description as "the primary intake
 surface" predates this evidence and is now marked deprecated there, pointing

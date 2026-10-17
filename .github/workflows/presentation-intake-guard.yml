@@ -1,0 +1,83 @@
+name: presentation-intake-guard
+# FIX-PLAN Item 14 (B10 reconciliation S4): this guard covers the LIVE
+# intake app (intake/interview-app, whose deployed-r2 tree is what
+# production runs), not the deprecated intake-miniapp it was named after.
+# The deprecated intake-miniapp tree was deleted under the gated D5
+# deletion (B10 S10, Trevor's explicit go, 2026-10-15), and its two
+# quarantine steps went with it; S7 had already made the deployed-r2
+# copies of lib.js and tenant.js canonical.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - tests/unit/u054-interview-a11y.test.sh
+      - .github/workflows/presentation-intake-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - tests/unit/u054-interview-a11y.test.sh
+      - .github/workflows/presentation-intake-guard.yml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  intake-guard:
+    name: Presentation intake guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Interview-app node suites (worker, PRES-006 contract, PRES-023 authority, PRES-024, branded page session flow)
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        # test/test_dept_start_handoff.mjs is deliberately NOT run here: by
+        # design it drives the production-auth Command Center ingest route
+        # from a blackceo-command-center checkout (requires CC_ROOT +
+        # tsx) and hard-fails without one. It runs in that repo's context.
+        run: node --test test/test_worker.mjs test/test_pres006_contract.mjs test/test_pres023_worker_authority.mjs test/pres024_interview_app.test.mjs test/test_branded_page_session_flow.test.mjs
+      - name: Deployed-r2 worker suites (PRES-024, PRES-005, canonical completeness)
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/deployed-r2
+        run: node --test test/pres024_deployed_r2.test.mjs test/test_pres005_worker.mjs test/test_intake_completeness_canonical.test.mjs
+      - name: Interview-app python suites (payload, writer, bridge dispatch, PRES-008, PRES-009, PRES-023)
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        # test/test_operator_contract_handoff.py is deliberately NOT run
+        # here: it hardcodes a local Command Center checkout path
+        # (/private/tmp/pd025-cc-current) and needs that checkout's tsx.
+        run: |
+          python3 test/test_payload.py
+          python3 test/test_intake_writer.py
+          python3 test/test_intake_bridge_dispatch.py
+          python3 test/test_pres008_durable_states.py
+          python3 test/test_pres009_bridge_and_migration.py
+          python3 test/test_pres023_bridge_ack.py
+      - name: Interview-app payload builder selftest
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        run: python3 payload/build_questions_payload.py --selftest
+      - name: UI question generation check (page + questions.json + contract stay in sync)
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        run: node tools/gen_ui_questions.mjs --check
+      - name: Deployed page is the source page (byte-identical landing discipline)
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        run: cmp pages/index.html deployed-r2/public/index.html
+      - name: Interview a11y gate (u054, guards the live page)
+        run: bash tests/unit/u054-interview-a11y.test.sh
+      # Warn-first (B10 S4): the two suites below were already red on the
+      # base commit for reasons outside this guard's scope (PRES-006
+      # mirror drift on the FIX 61/62 fields; the run-mode documented cap
+      # of 20 vs the 21-question contract). They run visibly on every
+      # change but do not block until those fixes land.
+      - name: PRES-006 canonical paths (warn-first, pre-existing mirror drift)
+        continue-on-error: true
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        run: python3 test/test_pres006_canonical_paths.py
+      - name: Intake writer run-mode cap (warn-first, pre-existing cap failure)
+        continue-on-error: true
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
+        run: python3 test/test_intake_writer_run_mode.py

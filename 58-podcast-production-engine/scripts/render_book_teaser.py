@@ -6,8 +6,9 @@
 #
 # WHAT THIS IS
 #   A deterministic typesetter and verifier. It takes teaser prose that was
-#   ALREADY WRITTEN on the runtime content tier (Kimi 2.6, then GLM 5.2, thinking
-#   high, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite) and lays it
+#   ALREADY WRITTEN on the runtime content tier (the client's chosen model, or
+#   their configured default model, per the selection policy in
+#   config/models.json) and lays it
 #   out as a book-typeset PDF. This script writes NO prose, makes NO model call,
 #   opens NO network socket, and touches NO MCP tier. Same input, same layout.
 #   Its runtime cost is 0.00 dollars.

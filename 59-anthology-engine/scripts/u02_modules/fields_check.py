@@ -298,11 +298,16 @@ def _fake_field_map():
 
 def _golden_fields(field_map: dict) -> list:
     """A live listing that EXACTLY matches the map's intended keys — with
-    resolved field_id slots so the id-consistency surface is also exercised."""
+    resolved field_id slots so the id-consistency surface is also exercised.
+    The record ids are read FROM the map's own field_id stamp when that slot
+    is resolved (a provisioned box stamps real GHL ids) and fabricated
+    ('fld_%d') only when the slot is still null (the committed template), so
+    the golden fixture is internally consistent on BOTH legal disk states and
+    the id-drift attack below still fires on a genuine divergence."""
     return [{"fieldKey": f.get("intended_key"),
              "name": f.get("create_name"),
              "dataType": f.get("data_type", "LARGE_TEXT"),
-             "id": "fld_%d" % i}
+             "id": f.get("field_id") or ("fld_%d" % i)}
             for i, f in enumerate(_contract_inventory(field_map))]
 
 
@@ -450,6 +455,38 @@ def _self_test_body(dev) -> None:
     report = check_fields_live(_FakeCaf(fields=golden), "loc_fx", template)
     assert report["verdict"] == "PASS", "template map key-only check must PASS"
 
+    # 13. THE PROVISIONED-BOX STATE — the OTHER legal disk state: every
+    #     resolved slot stamped by the provisioner. The id-consistency surface
+    #     then runs, and PASSes when the stamped ids ARE the live ids (the
+    #     provisioner writes back exactly what it read). A stamped map is a
+    #     legitimate tree, never a drift.
+    stamped = copy.deepcopy(field_map)
+    for i, f in enumerate(stamped["provisioning"]["fields"]):
+        f["field_key"] = f.get("intended_key")
+        f["field_id"] = "fld_live_%d" % i
+    stamped_golden = _golden_fields(stamped)
+    report = check_fields_live(_FakeCaf(fields=stamped_golden), "loc_fx", stamped)
+    assert report["verdict"] == "PASS" and report["mismatched"] == [], \
+        "a fully-stamped map whose ids match the live ids must PASS: %s" \
+        % report["detail"]
+    # ... and a stamped map whose pinned id DIVERGES from the live id still
+    # fails (genuine drift is never tolerated just because the tree is stamped)
+    diverged = copy.deepcopy(stamped_golden)
+    diverged[0]["id"] = "fld_SOMEONE_ELSES"
+    report = check_fields_live(_FakeCaf(fields=diverged), "loc_fx", stamped)
+    assert report["verdict"] == "FAIL" and any("field_id" in m for m in report["mismatched"]), \
+        "a stamped map with a diverged live id must FAIL"
+
+    # 14. a DELETED inventory row -> the total_keys contract refuses the map
+    #     (fail-closed STOP, never a blind pass over a shrunken inventory)
+    shrunk = copy.deepcopy(field_map)
+    shrunk["provisioning"]["fields"] = shrunk["provisioning"]["fields"][1:]
+    try:
+        check_fields_live(_FakeCaf(fields=golden), "loc_fx", shrunk)
+        raise AssertionError("a deleted inventory row was NOT refused")
+    except FieldsCheckError:
+        pass
+
     # ---- plan: offline, no network, exact key list ----
     buf2 = io.StringIO()
     with contextlib.redirect_stdout(buf2):
@@ -459,11 +496,12 @@ def _self_test_body(dev) -> None:
     assert p["keys"] == want_keys, "plan must list the intended keys in order"
 
     dev.write("fields_check self-test: OK (field-map coherence %d keys == "
-              "total_keys, golden all-PASS + verify_live exit 0, 12 attack "
+              "total_keys, golden all-PASS + verify_live exit 0, 14 attack "
               "fixtures refused or FAIL-recorded (fieldKey-mutated/"
               "field-deleted/field-extra/field_id-drift/empty-listing/"
               "non-list-read/no-inventory/total_keys-drift/scope-denied/"
-              "edge-block/transport/template-null-slots), no-writes, "
+              "edge-block/transport/template-null-slots/stamped-map-both-"
+              "ways/deleted-inventory-row), no-writes, "
               "masked-location, plan offline)\n" % total)
 
 

@@ -1,0 +1,236 @@
+{
+  "artifact": "skill-77-cross-repo-compatibility-manifest",
+  "directive_sections": [
+    "16",
+    "26",
+    "27"
+  ],
+  "evidence": {
+    "batteries": "fixtures/ (negotiation matrix, T060 stale worker, T115 clean install, T116 not-ready, preservation, rollback)",
+    "descriptor_snapshots": "descriptors/onb-canonical.json, descriptors/cc-composed.json, descriptors/nine99-distribution.json (derived from the accepted trees by fixtures/derive-descriptors.mjs)",
+    "runner": "fixtures/run-all.mjs writes a reproducible evidence receipt with input hashes, per-battery verdicts, and counts read from the battery logs"
+  },
+  "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
+  "negotiation": {
+    "advisory_codes": {
+      "MIGRATION_ID_UNALLOCATED": "The Command Center council migration number is still the integration placeholder PENDING_INTEGRATION_ALLOCATION_CWE005; no numbered migration may be claimed.",
+      "PEER_AHEAD_OF_COHORT": "A peer is newer than the accepted cohort while remaining contract-compatible.",
+      "VISUAL_EXPERIENCE_NOT_READY": "Portable core compatibility holds, but the paired visual experience must not be reported ready for this combination."
+    },
+    "decisions": [
+      "compatible",
+      "compatible-portable",
+      "not-ready"
+    ],
+    "product_refusal_codes_relied_on": {
+      "COUNCIL_ROUTE_UNAVAILABLE": "A run on an uncomposed route refuses rather than falling back silently.",
+      "PERSISTENCE_AUTHORITY_MODE_MISMATCH": "Core persistence refusal when an installation profile records a different authority mode than the caller requested, including the standalone composition refusing a managed profile.",
+      "PERSISTENCE_OPERATION_CONFLICT": "Core persistence refusal when a fenced operation write presents a stale expected state version.",
+      "PERSISTENCE_SCHEMA_UNAVAILABLE": "Core persistence refusal when the profile or the canonical schema is unreadable or absent; the store is not opened and no mode is inferred.",
+      "PERSISTENCE_STATE_CONFLICT": "Core persistence refusal when a writer presents a stale expected state version; the write is rejected and the stored state is unchanged (T060).",
+      "RUN_AUTHORIZATION_REQUIRED": "A session start with no valid run grant is refused (HTTP 403 in the Command Center surface); starting without a grant never creates a shadow path around authorization."
+    },
+    "refusal_codes": {
+      "COMPAT_AUTHORITY_MODE_MISMATCH": "The requested authority mode differs from the mode recorded at installation; authority is never repointed or forked silently.",
+      "COMPAT_COMPONENT_MISSING": "A required component descriptor is absent; nothing was started.",
+      "COMPAT_CONTRACT_VERSION_MISMATCH": "contract_package_version differs across the pair; payloads must not be exchanged.",
+      "COMPAT_REGISTRY_CONTRACT_MISMATCH": "The Command Center declares a different endpoint registry contract than the cohort requires.",
+      "COMPAT_REGISTRY_CONTRACT_MISSING": "The Command Center declares no council endpoint registry contract (older Command Center); the new skill reports not-ready and starts no shadow session (T116).",
+      "COMPAT_ROLE_AMBIGUOUS": "The two sides do not resolve to one skill side and one Command Center side.",
+      "COMPAT_SCHEMA_VERSION_UNSUPPORTED": "A session exchange surface schema version differs across the pair; the named surface must not be exchanged.",
+      "COMPAT_TREE_IDENTITY_MISMATCH": "A skill tree matches no recorded canonical or distribution identity; it is treated as an unrecorded tree and refused."
+    },
+    "rules": [
+      {
+        "check": "Both components are present and exactly one is the skill side and one is the Command Center side.",
+        "id": "N1",
+        "on_fail": "COMPAT_COMPONENT_MISSING or COMPAT_ROLE_AMBIGUOUS"
+      },
+      {
+        "check": "A skill tree identity (canonical or distribution) matches a recorded identity in this manifest: aggregate hash and file count, and for the distribution its recorded canonical source commit equals the cohort canonical commit.",
+        "id": "N2",
+        "on_fail": "COMPAT_TREE_IDENTITY_MISMATCH"
+      },
+      {
+        "check": "contract_package_version is exactly equal on both sides.",
+        "id": "N3",
+        "on_fail": "COMPAT_CONTRACT_VERSION_MISMATCH"
+      },
+      {
+        "check": "The Command Center declares the cohort endpoint registry contract. An older Command Center with no council registry contract is the T116 case.",
+        "id": "N4",
+        "on_fail": "COMPAT_REGISTRY_CONTRACT_MISSING when absent, COMPAT_REGISTRY_CONTRACT_MISMATCH when different"
+      },
+      {
+        "check": "For every session exchange surface, the schema version declared by the Command Center contracts copy equals the skill side version.",
+        "id": "N5",
+        "on_fail": "COMPAT_SCHEMA_VERSION_UNSUPPORTED"
+      },
+      {
+        "check": "The requested authority mode equals the mode recorded in the installation profile when a profile exists.",
+        "id": "N6",
+        "on_fail": "COMPAT_AUTHORITY_MODE_MISMATCH"
+      },
+      {
+        "check": "Skill version skew with an equal contract package version: the portable core may run, but the newer visual experience must not be reported ready (directive Section 26 step 7).",
+        "id": "N7",
+        "on_fail": "advisory VISUAL_EXPERIENCE_NOT_READY, decision compatible-portable"
+      },
+      {
+        "check": "The Command Center migration id is still the integration placeholder. Negotiation proceeds, but no participant may claim a numbered Command Center migration has run.",
+        "id": "N8",
+        "on_fail": "advisory MIGRATION_ID_UNALLOCATED"
+      },
+      {
+        "check": "A peer ahead of the accepted cohort with an equal contract package version is portable-compatible; cohort claims wait for that peer's own acceptance.",
+        "id": "N9",
+        "on_fail": "advisory PEER_AHEAD_OF_COHORT, decision compatible-portable"
+      }
+    ],
+    "session_start_rule": "A paired session may start only when negotiation returns compatible or compatible-portable. A not-ready decision is final for that attempt: the adapter reports the typed refusal codes, starts no session, creates no session state, and writes nothing to either store. Negotiation itself is pure: it reads descriptors and this manifest and performs no writes."
+  },
+  "persistence_contract": {
+    "authority_modes": [
+      "standalone",
+      "managed"
+    ],
+    "authority_rule": "One installation has one authoritative store. The mode is recorded in council-profile.json in the council data directory at first open and is never switched silently: opening with a different mode fails with PERSISTENCE_AUTHORITY_MODE_MISMATCH, and a managed profile opened through the standalone composition refuses rather than opening a second, divergent store.",
+    "cc_migration_allocated": false,
+    "cc_migration_id": "PENDING_INTEGRATION_ALLOCATION_CWE005",
+    "config_schema_version": "wise-elders.persistence-config/v1",
+    "local_store_schema_version": "wise-elders.local-store/v1",
+    "onb_store_migration_id": "council-0001",
+    "onb_store_migration_name": "council_scoped_storage_schema",
+    "profile_schema_version": "wise-elders.installation-profile/v1",
+    "schema_rule": "The canonical council schema is additive (IF NOT EXISTS throughout). Applying it on open is the restart and self-heal path and a no-op when the schema is current. A store whose canonical schema is absent after migration refuses to open with PERSISTENCE_SCHEMA_UNAVAILABLE."
+  },
+  "purpose": "Machine-readable compatibility manifest for Skill 77 (Council of Wise Elders) across its three repositories, per directive Section 27.1. It binds the accepted release cohort by exact commit and content hash, states the wire and persistence contracts the cohort shares, and defines the version-negotiation rules and typed refusal codes that release adapters apply before any paired session may start. No version number in this manifest is guessed: every value is derived from the accepted trees by fixtures/derive-descriptors.mjs and checked against this manifest by the negotiation battery.",
+  "release_cohort": {
+    "cohort_id": "skill77-final-cohort-2026-10-16",
+    "members": [
+      {
+        "archive": {
+          "bytes": 979759,
+          "file": "council-of-wise-elders.skill",
+          "sha256": "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c"
+        },
+        "commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
+        "component": "onb-skill",
+        "repository": "trevorotts1/openclaw-onboarding",
+        "role": "canonical skill tree and portable core",
+        "runtime_package": {
+          "name": "@blackceo/wise-elders-core",
+          "version": "0.1.0"
+        },
+        "skill_folder": "77-council-of-wise-elders",
+        "skill_version": "v1.0.0",
+        "tree_identity": {
+          "aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+          "file_count": 309
+        }
+      },
+      {
+        "cc_migration_allocated": false,
+        "cc_migration_id": "PENDING_INTEGRATION_ALLOCATION_CWE005",
+        "commit": "c1a1418bd1ea160efcb44f574f431c121b554409",
+        "component": "command-center",
+        "contract_package_version": "wise-elders.core/1.0.0",
+        "council_route_groups": [
+          "advisors",
+          "capabilities",
+          "exports",
+          "models",
+          "sessions",
+          "settings"
+        ],
+        "endpoint_registry_contract": "wise-elders.endpoint-contract/v1",
+        "repository": "blackceo-command-center",
+        "role": "managed state authority and visual experience host"
+      },
+      {
+        "canonical_source_commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
+        "commit": "60efc20ec2a273b26c78d911394967f0390db120",
+        "component": "nine99-distribution",
+        "distribution_identity": {
+          "aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+          "file_count": 310
+        },
+        "intentional_distribution_differences": "Recorded in installer-registration/council-vendoring.json (999-setup) and DISTRIBUTION-RECONCILIATION.json inside the vendored folder: private_scope items dropped and sentences scrubbed under CWE-012 acceptance condition 3. A distribution tree is a valid skill identity only with exactly its recorded aggregate; any other aggregate is an unrecorded tree and is refused.",
+        "repository": "999-setup",
+        "role": "vendored distribution of the canonical skill for 999-setup installs",
+        "skill_version": "v1.0.0",
+        "vendored_path": ".claude/skills/council-of-wise-elders"
+      }
+    ],
+    "statement": "The three members below are the current accepted cohort. They were accepted independently and are deployed independently. No Git operation and no installer step makes the three repositories atomic; Section 27.3 of the directive is explicit that intermediate states are normal and each one is handled by the negotiation rules in this manifest."
+  },
+  "rollback": {
+    "data_backup": "A backup is a byte-for-byte copy of the council data directory taken while no writer is active, plus a hash inventory of every file in it. The inventory is the restore receipt's baseline.",
+    "data_restore": "Stop writers, replace the data directory contents with the backup copy, reopen through the normal store open path (profile check, additive schema apply, schema probe), then verify every session journal hash chain. A restore that fails verification is reported, never papered over.",
+    "receipt_fields": [
+      "backup_inventory_sha256",
+      "file_count",
+      "session_ids",
+      "state_versions",
+      "checkpoint_ids",
+      "journal_chain_verification",
+      "restored_inventory_sha256",
+      "verdict"
+    ],
+    "session_continuity": "Session IDs, session state versions, job checkpoints, event history, settings, and verdicts live in the data directory and therefore survive a tree rollback unchanged. A session paused at a checkpoint before a rollback resumes from that checkpoint after the rollback, under the same session ID, when a valid run grant is presented.",
+    "tree_rollback": "Restore the previous recorded tree identity (canonical aggregate or distribution aggregate) in place of the current tree. Data directories are outside every tree and are not part of a tree rollback."
+  },
+  "runtime_verified": false,
+  "schema_version": "skill77.compatibility-manifest/v1",
+  "unit": "CWE-041",
+  "update_paths": {
+    "canonical_cc_path": "The canonical skill tree in openclaw-onboarding is the source. The distributable archive is rebuilt from it by 77-council-of-wise-elders/scripts/build-bundles.mjs; 999-setup re-vendors from the accepted canonical commit with scripts/vendor-council-bundle.mjs and records the reconciliation; the Command Center consumes the shared contract package version and deploys on its own schedule. Updates replace installed trees only. Council data directories are never inside an installed tree and are never touched by a tree update.",
+    "intermediate_states": [
+      {
+        "handling": "Standalone installs run the new core against existing data directories: the additive schema apply is a no-op or a forward-safe heal, the installation profile is unchanged, and sessions, settings, and history are preserved. Paired starts negotiate: an older Command Center whose contract package version differs returns not-ready with COMPAT_CONTRACT_VERSION_MISMATCH and no session starts.",
+        "state": "Canonical skill updated; Command Center and 999 distribution not yet updated."
+      },
+      {
+        "handling": "An older skill whose contract package version still matches negotiates compatible-portable with VISUAL_EXPERIENCE_NOT_READY: the portable core works and the visual experience is not reported ready until the cohort matches. A contract mismatch is not-ready.",
+        "state": "Command Center updated; installed skill not yet updated."
+      },
+      {
+        "handling": "The previous installed copy keeps its recorded distribution identity and keeps working under the same rules. Negotiation accepts recorded identities only; a partially copied or hand-edited tree matches no recorded identity and is refused with COMPAT_TREE_IDENTITY_MISMATCH.",
+        "state": "999 distribution re-vendored; a given machine still runs the previous installed copy."
+      },
+      {
+        "handling": "Rollback replaces a tree or an app build only. Negotiation re-runs against the rolled-back descriptor: combinations that no longer satisfy the rules return not-ready instead of degrading silently, and no data directory is migrated backward or forked.",
+        "state": "One repository rolled back; the others stay."
+      }
+    ]
+  },
+  "wire_contract": {
+    "contract_package_version": "wise-elders.core/1.0.0",
+    "endpoint_registry_contract": "wise-elders.endpoint-contract/v1",
+    "schema_versions": {
+      "approval": "wise-elders.approval/v1",
+      "brief": "wise-elders.brief/v1",
+      "card": "wise-elders.card/v1",
+      "diagnostic_policy": "wise-elders.diagnostic-retention-policy/v1",
+      "endpoint": "wise-elders.endpoint-contract/v1",
+      "event": "wise-elders.event/v1",
+      "grant": "wise-elders.run-grant/v1",
+      "job_checkpoint": "wise-elders.job-checkpoint/v1",
+      "operation_receipt": "wise-elders.operation-receipt/v1",
+      "preview": "wise-elders.run-preview/v1",
+      "session": "wise-elders.session/v1",
+      "session_state": "wise-elders.session-state/v1",
+      "settings": "wise-elders.settings/v1",
+      "verdict": "wise-elders.verdict/v1"
+    },
+    "session_exchange_surfaces": [
+      "session",
+      "brief",
+      "card",
+      "verdict",
+      "grant",
+      "preview",
+      "event"
+    ]
+  }
+}

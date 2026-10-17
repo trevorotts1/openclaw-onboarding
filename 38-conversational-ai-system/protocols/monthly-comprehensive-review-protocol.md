@@ -145,10 +145,11 @@ Reply IGNORE to dismiss permanently.
 
 ## Recommended model
 
-Same as Weekly Tune-up — highest-reasoning model available. This is
-deep analytical work across 30 days of data. Use DeepSeek V4.1 Flash
-thinking:max, Kimi 2.6+ via Ollama Cloud, or current top-reasoning
-model. Configure in `openclaw.json` under `monthly_review.model`.
+Model: the client's choice, or the client's configured default model
+(configured in `openclaw.json` under `monthly_review.model`). Same
+recommendation as Weekly Tune-up: the highest-reasoning model available to
+the client, with thinking set to max, because this is deep analytical work
+across 30 days of data. Guidance only, never a prescription.
 
 ## Implementation
 

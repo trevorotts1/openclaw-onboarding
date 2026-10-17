@@ -104,9 +104,13 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
   if [[ -z "$COMPANY_NAME" ]]; then
     echo "run-full-install.sh: missing company name" >&2; exit 1
   fi
-  if [[ -z "$CONTACT_EMAIL" ]]; then
-    echo "run-full-install.sh: missing contact email" >&2; exit 1
-  fi
+  # Item 06: an ABSENT contact email is a PENDING state, not a usage error.
+  # run-full-install no longer requires the third argument — the launch gate
+  # classifies a placeholder/absent email as launch-pending (exit 8) before any
+  # Access registration or invitation attempt, and register-access already
+  # refuses to derive Access subjects from a pending+ placeholder. Never invent
+  # a sign-in identity here.
+  : "${CONTACT_EMAIL:=}"
 fi
 
 # Resolve the actual OS/topology and preserve the selected installation roots.
@@ -443,6 +447,74 @@ cc_pm2_start_canonical() {
   fi
 }
 
+# _phase6_pm2_online — the CANONICAL app is online with a live pid.
+# `pm2 start` returning zero proves only that pm2 accepted the command; the
+# child may still be starting, may already have exited, or may never have bound.
+_phase6_pm2_online() {
+  pm2 jlist 2>/dev/null | CC_PHASE6_APP="$CC_PM2_NAME" python3 -c "
+import json,os,sys
+try: procs=json.load(sys.stdin)
+except Exception: sys.exit(1)
+name=os.environ['CC_PHASE6_APP']
+for p in procs:
+    if p.get('name')==name and p.get('pid') and p.get('pm2_env',{}).get('status')=='online':
+        sys.exit(0)
+sys.exit(1)"
+}
+
+# _phase6_manifest_verifies — the source-valid manifest exists AND the live
+# source tree still vouches for the served artifact (PRES-046). Never written
+# by hand; verified through CC's own library.
+_phase6_manifest_verifies() {
+  local inv="$DASHBOARD_DIR/.next/build-inventory.json"
+  local lib="$DASHBOARD_DIR/scripts/lib/build-inventory.sh"
+  [[ -f "$inv" && -f "$lib" ]] || return 1
+  bash "$lib" --verify "$DASHBOARD_DIR" >/dev/null 2>&1
+}
+
+# cc_phase6_serving_proof — phase 6 is DONE only when the box is proven serving.
+# Item 03: a zero exit from `pm2 start` used to set commandCenterPhase6Done=true
+# while the child was still starting — the install log showed pm2 start at line
+# 1228 and `phase=6 done` one second later at 1240, with zero health probes in
+# between, and the child then exited 78 (missing build-inventory.json).
+#
+# Three independent checks, all required:
+#   (a) canonical process online on two probes `wait_s` apart (an unrelated or
+#       short-lived listener fails this),
+#   (b) local /api/health answers the EXACT payload (status=ok, no pending
+#       migrations, no gap) via cc_live_health_ok,
+#   (c) the content manifest exists and verifies against the live source tree.
+#
+# A CURRENT PRES-046 refusal receipt (exit 78) is classified as rebuild /
+# config-repair required and returns 2 — never a blind restart loop.
+# Timeout returns 1; the caller must keep pending state, never stamp done.
+cc_phase6_serving_proof() {
+  local attempts="${1:-30}" wait_s="${2:-2}" attempt=0 rc=0
+  local refused="$DASHBOARD_DIR/.cc-state/cc-start-refused.json"
+  while (( attempt < attempts )); do
+    attempt=$((attempt+1))
+    if _phase6_pm2_online && sleep "$wait_s" && _phase6_pm2_online && cc_live_health_ok && _phase6_manifest_verifies; then
+      log "INFO" "phase=6 serving proof passed: canonical process online, local health exact, manifest verifies (attempt $attempt)"
+      return 0
+    fi
+    # Deterministic refusal: a fresh receipt means cc-start exited 78 for a
+    # content reason. Restarting cannot fix it, so stop and classify.
+    if [[ -f "$refused" ]]; then
+      local _rstat _rmtime
+      _rmtime=$(stat -f %m "$refused" 2>/dev/null) || _rmtime=$(stat -c %Y "$refused" 2>/dev/null) || _rmtime=0
+      local ref_age=$(( $(date +%s) - ${_rmtime:-0} ))
+      if (( ref_age < 300 )); then
+        log "ERROR" "phase=6 serving proof: cc-start refused deterministically (PRES-046 exit 78) — rebuild/config-repair required, NOT a restart loop. Receipt: $refused"
+        return 2
+      fi
+    fi
+    log "WARN" "phase=6 serving proof: not proven serving yet (attempt $attempt/$attempts)"
+    sleep "$wait_s"
+  done
+  log "ERROR" "phase=6 serving proof timed out after $attempts probes — phase stays pending; this is NOT a done state"
+  return 1
+}
+
 # ======================================================================
 # CC CONVERGE DURABLE GUARDS — Kanban-dead recurrence fix (v12.9.31)
 # ======================================================================
@@ -528,19 +600,35 @@ _cc_is_retired_ollama_flash() {
   [[ "$m" =~ $re ]]
 }
 
-# _cc_retired_successor — echo the LIVE successor of a retired id, keeping its
-# provider prefix: ollama-cloud/deepseek-v4.1-flash, else ...deepseek-v4.1-flash:cloud.
-_cc_retired_successor() {
-  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
-    ollama-cloud/*) printf 'ollama-cloud/deepseek-v4.1-flash' ;;
-    ollama/*)       printf 'ollama/deepseek-v4.1-flash:cloud' ;;
-    *)              printf 'deepseek-v4.1-flash:cloud' ;;
-  esac
+# _cc_box_default_model: echo THIS box's configured default TEXT model id
+# (agents.defaults.model.primary, or the plain-string agents.defaults.model),
+# or empty when the box has none. Read from the box's own openclaw.json:
+# never a hardcoded model name.
+_cc_box_default_model() {
+  [[ -n "${OC_CONFIG:-}" && -f "${OC_CONFIG:-}" ]] || { printf ''; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
+  jq -r '
+    (if (.agents.defaults.model | type) == "object"
+     then (.agents.defaults.model.primary? // "")
+     else (.agents.defaults.model? // "") end)
+    | select(type == "string")
+  ' "${OC_CONFIG:-}" 2>/dev/null | head -n 1
 }
 
-# _cc_live_model_id — echo the id unchanged, or its live successor when retired.
+# _cc_live_model_id: echo the id unchanged when it is live. When the id is a
+# RETIRED Ollama deepseek-v4-flash id, no successor is prescribed by name:
+# resolve instead to THIS box's configured default model. Echoes empty when
+# the box has no usable configured default, so callers skip the dead id.
 _cc_live_model_id() {
-  if _cc_is_retired_ollama_flash "${1:-}"; then _cc_retired_successor "$1"; else printf '%s' "${1:-}"; fi
+  if _cc_is_retired_ollama_flash "${1:-}"; then
+    local def
+    def="$(_cc_box_default_model)"
+    if [[ -n "$def" ]] && ! _cc_is_retired_ollama_flash "$def"; then
+      printf '%s' "$def"
+    fi
+  else
+    printf '%s' "${1:-}"
+  fi
 }
 
 # cc_resolve_sovereign_model — echo the box's OWN primary TEXT model id (or empty
@@ -553,7 +641,11 @@ _cc_live_model_id() {
 # NEVER a hardcoded shared model — everything is read from THIS box's config.
 cc_resolve_sovereign_model() {
   if [[ -n "${CC_SOVEREIGN_DEFAULT_MODEL:-}" ]] && _cc_model_is_sovereign "$CC_SOVEREIGN_DEFAULT_MODEL"; then
-    _cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL"; return 0
+    local env_live
+    env_live="$(_cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL")"
+    if [[ -n "$env_live" ]]; then printf '%s' "$env_live"; return 0; fi
+    # The operator override names a RETIRED id and the box's configured
+    # default cannot stand in for it: fall through to the config candidates.
   fi
   [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
@@ -733,15 +825,23 @@ PYASSIGN
   return 1
 }
 
-# cc_env_correct_retired — when KEY holds a RETIRED Ollama deepseek-v4-flash id,
-# replace it with its live successor (every update). Any other value is left
-# untouched. Echoes "corrected(<old> -> <new>)" or nothing. Returns 0 either way.
+# cc_env_correct_retired: when KEY holds a RETIRED Ollama deepseek-v4-flash id,
+# replace it with THIS box's configured default model (agents.defaults.model
+# in the box's own openclaw.json): no successor model is prescribed by name.
+# When the box has no usable configured default, the retired value is left
+# untouched and the echo says so, so the operator can ask the client to choose
+# a model. Any other value is left untouched. Echoes "corrected(<old> -> <new>)",
+# "retired-unresolved(<old>)", or nothing. Returns 0 either way.
 cc_env_correct_retired() {
   local file="$1" key="$2" cur new tmp
   cur="$(cc_env_get "$file" "$key" 2>/dev/null || true)"
   [[ -n "$cur" ]] || return 0
   _cc_is_retired_ollama_flash "$cur" || return 0
-  new="$(_cc_retired_successor "$cur")"
+  new="$(_cc_live_model_id "$cur")"
+  if [[ -z "$new" || "$new" == "$cur" ]]; then
+    printf 'retired-unresolved(%s)' "$cur"
+    return 0
+  fi
   tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 0
   grep -vE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" > "$tmp" 2>/dev/null || true
   if mv "$tmp" "$file"; then
@@ -1119,7 +1219,10 @@ cc_ensure_fresh_build() {
 
   if [[ "$need_build" -eq 0 ]]; then
     log "INFO" "cc-build: .next bundle is fresh vs source — skipping rebuild (idempotent)"
-    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+    # Item 02: this function no longer stamps commandCenterBuildFresh. An mtime
+    # says nothing about whether build-inventory.json exists or matches the
+    # source; every routing path stamps the key from `build-inventory.sh
+    # --verify` (the content oracle) instead.
     return 0
   fi
 
@@ -1129,16 +1232,62 @@ cc_ensure_fresh_build() {
     # Verify a FRESH BUILD_ID landed (mtime >= build start) — guards against a
     # build that exits 0 yet produced no new output.
     if [[ -f "$nextid" ]] && [[ "$(_cc_mtime "$nextid")" -ge "$build_start" ]]; then
-      log "INFO" "cc-build: next build done — fresh .next/BUILD_ID verified"
-      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+      log "INFO" "cc-build: next build done — fresh .next/BUILD_ID landed (return-code signal only; commandCenterBuildFresh is stamped from content verification, never from this timestamp)"
       return 0
     fi
     log "WARN" "cc-build: npm run build exited 0 but .next/BUILD_ID is missing/stale"
   else
     log "WARN" "cc-build: npm run build FAILED (see $LOG_FILE)"
   fi
-  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
   if [[ -f "$nextid" ]]; then return 1; else return 2; fi
+}
+
+# cc_fresh_deploy_atomic — FRESH-INSTALL DEPLOY (hardening plan item 02).
+#
+# The old fresh path ran a bare `npm run build` and treated a fresh .next/BUILD_ID
+# mtime as proof of success. cc-start.sh's content gate (PRES-046) demands
+# .next/build-inventory.json, which a bare build never writes — so a fresh box
+# could finish "built" and still exit 78 on first boot. A green build followed
+# by a deterministic startup refusal.
+#
+# This routes the fresh deploy through CC's OWN atomic-deploy path instead:
+# private candidate build, frozen-source proof, IMMUTABLE manifest written by
+# scripts/lib/build-inventory.sh (never hand-written, never skipped), atomic
+# promotion, pm2 switch with --update-env (this shell's already-provisioned
+# env), health check, auto-rollback on failure. Same Node runtime (atomic
+# resolves scripts/lib/node-runtime.sh itself) and same port (--port below).
+#
+# Reached ONLY after service env, migrations and canonical company binding —
+# the exact point where the old bare build used to run. There is no legacy
+# `npm run build` fallback here: an un-inventoriable checkout must fail loudly.
+#
+# Returns 0 only when atomic-deploy reports GREEN (its own exit contract:
+# 0 green, 1 rolled back to the prior release, 2 pre-flight/build/manifest
+# failure with nothing promoted, 3 new build live but health indeterminate).
+# Any non-zero is a real failure for the caller to fail_install — never a
+# timestamp-only success, never a blind restart loop.
+cc_fresh_deploy_atomic() {
+  local atomic="$DASHBOARD_DIR/scripts/atomic-deploy.sh" bash4 rc
+  if [[ ! -f "$atomic" ]]; then
+    log "ERROR" "phase=6 (fresh): $atomic missing — this checkout cannot be inventoried-atomically deployed, and item 02 forbids the bare 'npm run build' fallback (it produces no manifest, so cc-start would exit 78 on first boot)."
+    return 1
+  fi
+  bash4="$(_cc_resolve_bash4)" || bash4=""
+  if [[ -z "$bash4" ]]; then
+    log "ERROR" "phase=6 (fresh): no bash 4+ available to run $atomic — refusing the un-inventoried legacy build path (item 02)."
+    return 1
+  fi
+  cc_reconcile_pm2_names
+  log "INFO" "phase=6 (fresh): inventoried atomic deployment — $bash4 $atomic --app-dir $DASHBOARD_DIR --pm2-app $CC_PM2_NAME --port $DASHBOARD_PORT"
+  "$bash4" "$atomic" --app-dir "$DASHBOARD_DIR" --pm2-app "$CC_PM2_NAME" --port "$DASHBOARD_PORT" >>"$LOG_FILE" 2>&1
+  rc=$?
+  case "$rc" in
+    0) log "INFO" "phase=6 (fresh): atomic-deploy GREEN — immutable manifest written, service health-verified, nothing half-deployed"; return 0 ;;
+    1) log "ERROR" "phase=6 (fresh): atomic-deploy rolled back — the prior release was restored and verified green instead (a degraded old build, NOT a fresh deployment); see $LOG_FILE"; return 1 ;;
+    2) log "ERROR" "phase=6 (fresh): atomic-deploy pre-flight/build/manifest failure — candidate discarded, live release untouched; see $LOG_FILE"; return 1 ;;
+    3) log "ERROR" "phase=6 (fresh): atomic-deploy new build live but health INDETERMINATE — not a success; see $LOG_FILE"; return 1 ;;
+    *) log "ERROR" "phase=6 (fresh): atomic-deploy unexpected exit $rc; see $LOG_FILE"; return 1 ;;
+  esac
 }
 
 # cc_verify_db_parity — DATA-08 decoy-DB guard, wired into deploy.
@@ -1391,7 +1540,8 @@ cc_resolve_pinned_target() {
 #      on a failed post-check) — so even the last-resort tier never leaves a
 #      half-updated CC standing.
 # Sets state keys .commandCenterLastUpdateVerified AND .commandCenterBuildFresh
-# (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build, and the
+# (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build (they stamp
+# commandCenterBuildFresh from build-inventory --verify), and the
 # FINAL degraded check requires commandCenterBuildFresh.
 # Returns 0 if the RUNNING CC ends the call healthy (/api/health 200, status ok,
 # migrations current) — a failed rebuild in this call is then a WARNING, not a
@@ -1474,10 +1624,14 @@ cc_route_update_through_canonical_path() {
     # auto-rollback internally via atomic-deploy.sh).
     build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
     health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
-    if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+    # Item 02: a fresh BUILD_ID timestamp is NOT deploy proof. Require the served
+    # content to verify against this tree (the oracle cc-start.sh enforces).
+    if cc_served_build_current && [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
       [[ "$snapshotted" -eq 1 ]] && rm -rf "$snapshot_dir" 2>/dev/null || true
     else
-      log "ERROR" "phase=6 (update-only): tier-3 post-update assertion FAILED (BUILD_ID mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code) — reverting via manual snapshot restore (no atomic-deploy.sh available on this box)"
+      log "ERROR" "phase=6 (update-only): tier-3 post-update assertion FAILED (content-verify + BUILD_ID mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code) — reverting via manual snapshot restore (no atomic-deploy.sh available on this box)"
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
       if [[ "$snapshotted" -eq 1 ]]; then
         rm -rf "$DASHBOARD_DIR/.next" 2>/dev/null || true
         mv "$snapshot_dir" "$DASHBOARD_DIR/.next" 2>/dev/null \
@@ -1488,6 +1642,19 @@ cc_route_update_through_canonical_path() {
         log "ERROR" "phase=6 (update-only): CRITICAL — no pre-update snapshot existed (first deploy on this box); cannot revert. Manual intervention required."
       fi
     fi
+  fi
+
+  # ---- Item 02: content, not timestamp. The served bundle must verify against
+  # this tree (build-inventory.sh --verify — the same oracle cc-start.sh's
+  # PRES-046 gate runs). This is what stamps commandCenterBuildFresh now that
+  # cc_ensure_fresh_build no longer stamps it. Tier 1/2 return before this line
+  # only on the early CC_AT_PIN pass, which never stamps.
+  if cc_served_build_current; then
+    log "INFO" "phase=6 (update-only): content verification PASSED — served .next verifies against $DASHBOARD_DIR (build-inventory VERIFIED)"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+  else
+    log "WARN" "phase=6 (update-only): content verification FAILED — served .next does not verify against $DASHBOARD_DIR (missing/mismatched/obsolete manifest) — commandCenterBuildFresh=false"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
   fi
 
   # ---- Final assertion (belt-and-suspenders for ALL tiers): BUILD_ID must be
@@ -1506,8 +1673,11 @@ cc_route_update_through_canonical_path() {
   # about the one thing it exists to answer.
   build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
   health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
-  if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
-    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
+  # Item 02: the timestamp+HTTP verdict alone can no longer declare a fresh build
+  # — the content must verify too (a fresh BUILD_ID beside a mismatched or
+  # hand-written manifest is exactly the item-02 failure).
+  if cc_served_build_current && [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier content VERIFIED + BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
     [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true | .commandCenterBuildFresh = true' 2>/dev/null || true
     return 0
   fi
@@ -2281,6 +2451,21 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
+  # Item 02: commandCenterBuildFresh used to be stamped only by the build helper,
+  # which this branch never calls - so an already-done box could not be re-proved
+  # content-valid. The content oracle answers it directly.
+  if cc_served_build_current; then
+    state_set '.commandCenterBuildFresh = true'
+  else
+    state_set '.commandCenterBuildFresh = false'
+    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) - commandCenterBuildFresh=false"
+  fi
+  # Item 03: re-verify on every skip. A box whose serving proof later fails
+  # (exit 78, health gone) must not keep reporting done forever.
+  if ! cc_phase6_serving_proof 3 2; then
+    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
+    log "ERROR" "phase=6: previously-done box no longer passes serving proof - pending state recorded"
+  fi
 else
   mkdir -p "$(dirname "$DASHBOARD_DIR")"
   if [[ ! -d "$DASHBOARD_DIR/.git" ]]; then
@@ -2304,15 +2489,16 @@ else
     cc_load_launch_environment
   fi
   cc_prepare_database_environment
-  # (1) build the `.next` bundle so `next start` serves code matching the checkout
-  # (registers the intake-advance + backlog-redispatch sweeps). A fresh full
-  # install has NO `.next` at all — so a hard build failure with no usable bundle
-  # is fatal here (next start would EADDR/no-build crash-loop otherwise).
-  cc_ensure_fresh_build; _bfrc=$?
-  if [[ "$_bfrc" -ge 2 ]]; then
-    fail_install "phase=6: next build failed and no usable .next bundle exists — next start would crash-loop (see $LOG_FILE)"
-  elif [[ "$_bfrc" -eq 1 ]]; then
-    log "WARN" "phase=6: next build failed but a prior .next bundle exists — continuing (board may be stale; resume cron retries)"
+  # (1) FRESH DEPLOY — item 02. Build + manifest + promotion + pm2 switch now go
+  # through CC's own atomic-deploy path (which also registers the intake-advance
+  # + backlog-redispatch sweeps, compiled INTO .next). It runs AFTER service env,
+  # migrations and canonical company binding, so its health check proves a box
+  # that is actually startable, not merely built.
+  # The bare `npm run build` + BUILD_ID-timestamp proof is gone: a bare build
+  # writes no build-inventory.json, so cc-start's PRES-046 content gate refused
+  # the very deploy the installer had just called successful.
+  if ! cc_fresh_deploy_atomic; then
+    fail_install "phase=6: inventoried atomic deployment failed — the fresh Command Center was not deployed green (no manifest / rolled back / health indeterminate). This is NOT a fresh deployment; see $LOG_FILE. Not retried by a restart loop."
   fi
 
   log "INFO" "phase=6: npm run db:push (runs migrations via getDb())"
@@ -2357,8 +2543,22 @@ else
   fi
   pm2 save >>"$LOG_FILE" 2>&1 || true
 
-  state_set '.commandCenterPhase6Done = true'
-  log "INFO" "phase=6 dashboard-deploy: done"
+  # Item 03: `pm2 start` returning zero is NOT serving proof. Require the
+  # canonical process online, the exact local health payload and a source-valid
+  # manifest before the phase may be stamped done.
+  if cc_phase6_serving_proof 30 2; then
+    state_set '.commandCenterPhase6Done = true'
+    state_set '.commandCenterPhase6Pending = null'
+    log "INFO" "phase=6 dashboard-deploy: done (serving proof passed)"
+  else
+    _sp_rc=$?
+    if [[ "$_sp_rc" -eq 2 ]]; then
+      state_set '.commandCenterPhase6Pending = "rebuild-required"'
+      fail_install "phase=6: cc-start refused deterministically (PRES-046 exit 78) — rebuild/config-repair required. The receipt at $DASHBOARD_DIR/.cc-state/cc-start-refused.json names the reason. Restarting cannot fix it; commandCenterPhase6Done was NOT set."
+    fi
+    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
+    log "ERROR" "phase=6: serving proof did not pass (child start/health/manifest) — commandCenterPhase6Done stays unset. Re-run the installer once the box serves /api/health."
+  fi
 fi
 
 # ----------------------------------------------------------------------
@@ -2398,6 +2598,18 @@ log "INFO" "phase=6j cc-watchdog: done"
 # unambiguous. The STATE FIELD is renamed commandCenterPhase6bStatus →
 # commandCenterPhase6hStatus, but the READ falls back to the old key so the
 # duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
+# cc_interview_email_pending — item 06: a placeholder or absent contactEmail
+# means the CONFIRMED intake owner email was never collected. That is launch
+# pending, never a sign-in identity: register-access refuses to build Cloudflare
+# Access subjects from it (pending+ guard at the register-access stage) and the
+# invitation can never be minted until a real address lands.
+cc_interview_email_pending() {
+  case "$(state_get '.contactEmail')" in
+    pending+*|"") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 log "INFO" "phase=6h tunnel: starting"
 if [[ "$UPDATE_ONLY" == "true" && -z "$(state_get '.launchBootstrap')" ]]; then
   log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
@@ -2424,6 +2636,15 @@ else
       log "WARN" "phase=6h: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
       state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
     else
+      # Item 06: decide BEFORE the request stamp. Never mark "requested" and
+      # never POST a pending+ placeholder as the client's contactEmail — that
+      # status is terminal for the re-POST guard, so a skipped run must record
+      # "email-pending" instead and converge on the run where the confirmed
+      # address exists. No invented sign-in identity anywhere.
+      if cc_interview_email_pending; then
+        state_set '.commandCenterPhase6hStatus = "email-pending"'
+        log "WARN" "phase=6h: contactEmail is a pending+ placeholder or empty — NOT registering the tunnel (no invented contact identity); re-run once the confirmed owner email exists"
+      else
       log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
       # Record the request before the external effect. Interrupted/ambiguous calls
       # reconcile via the authenticated readiness probe; never blindly re-POST.
@@ -2445,6 +2666,7 @@ else
         # The requested URL was scoped before deployment; no .env-exists guessing.
         state_set '.commandCenterPhase6hStatus = "created"'
         log "INFO" "phase=6h tunnel: created; awaiting authenticated public verification"
+      fi
       fi
     fi
   fi
@@ -2519,6 +2741,15 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
   # multi-signal corroboration — the flag alone is set even on the fabricating path).
   INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
   if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
+    # Item 06: placeholder/absent owner email is decided FIRST — before any
+    # Access registration, readiness probe or invitation attempt, which would
+    # all fail anyway. Completed interviews are untouched by this branch.
+    if cc_interview_email_pending; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "owner-email-pending"'
+      log "WARN" "Interview launch pending: the confirmed intake owner email is absent (contactEmail is a pending+ placeholder or empty) — no Access identity can be registered and no invitation may be claimed. Collect the owner's real email, then re-run run-full-install.sh with it as the third argument."
+      echo "INTERVIEW_LAUNCH_PENDING: owner email not confirmed — AI Workforce interview has NOT started and is NOT complete. No invitation exists." >&2
+      exit 8
+    fi
     if ! cc_launch_stage prebuild; then
       state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "foundation-pending"'
       log "WARN" "Interview launch pending: explicit lane/consent or foundation verification missing; see $LOG_FILE"
@@ -2573,7 +2804,7 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
     log "INFO" "startability gate: canonical process online, local health exact, authenticated public readiness with registered Access identity, invitation minted and ticket discarded (nothing sent)"
     log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
     state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
-    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview is NOT complete (never claim completion from this state). Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
     exit 0
   fi
   log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."

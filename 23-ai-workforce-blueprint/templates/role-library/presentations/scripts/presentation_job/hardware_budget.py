@@ -554,6 +554,190 @@ def refresh_snapshot() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# FIX-PLAN Item 17: fleet-shape detection.
+#
+# Trevor's fleet runs three shapes, named exactly (never renamed):
+#   fleet-mac       -- the client's own Mac, OpenClaw running natively;
+#   fleet-hostinger -- the client's own Hostinger VPS, OpenClaw in Docker;
+#   fleet-contabo   -- one container sliced from the SHARED Contabo host
+#                      Trevor owns (many clients, one host ceiling).
+#
+# What the CODE can tell from inside the box:
+#   * macOS (sys.platform == "darwin") is fleet-mac, certainly: native
+#     hardware read, no container layer.
+#   * A Linux CONTAINER (/.dockerenv or /run/.containerenv, a container
+#     runtime in /proc/1/cgroup, the OpenClaw root under /data, or a cgroup
+#     limit below the host's RAM) is one of the two container shapes -- but
+#     NOTHING readable from inside the container says whether the host is
+#     the client's own Hostinger VPS or Trevor's shared Contabo server.
+#     Detection therefore returns shape=None with BOTH candidates and the
+#     shape is asked ONCE and recorded (resource_profile.record_fleet_shape)
+#     instead of guessed. Guessing here would be worse than useless: the
+#     two shapes carry different budget derivations (a contabo container's
+#     neighbours share its host ceiling; a hostinger box is single-tenant).
+#   * A Linux host with no container signals is none of the three shapes
+#     the fleet names; detection says so and the profile gauges live with
+#     the shape recorded as unknown.
+#
+# Detection is file reads only (no subprocess, no network) and never raises.
+# ---------------------------------------------------------------------------
+FLEET_MAC = "fleet-mac"
+FLEET_HOSTINGER = "fleet-hostinger"
+FLEET_CONTABO = "fleet-contabo"
+FLEET_SHAPES: Tuple[str, ...] = (FLEET_MAC, FLEET_HOSTINGER, FLEET_CONTABO)
+CONTAINER_FLEET_SHAPES: Tuple[str, ...] = (FLEET_HOSTINGER, FLEET_CONTABO)
+
+
+def host_ram_bytes() -> Tuple[Optional[int], str]:
+    """The HOST's total RAM, ignoring any cgroup limit.
+
+    Distinct from _linux_ram()'s total on purpose: that reader lets a
+    cgroup limit win (the container's budget), which is the right budget
+    number and the wrong CEILING number. fleet-contabo's profile records
+    both the container budget and the host ceiling it was sliced from, so
+    the ceiling needs this un-limited reading: /proc/meminfo MemTotal on
+    Linux (the host's RAM as the kernel reports it to the container),
+    the native total on macOS (where host and budget are the same box)."""
+    if sys.platform == "darwin":
+        return _mac_ram_bytes()
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as fh:
+            for row in fh:
+                if row.startswith("MemTotal:"):
+                    return int(row.split()[1]) * 1024, "/proc/meminfo MemTotal"
+    except (OSError, ValueError, IndexError) as exc:
+        return None, f"/proc/meminfo MemTotal unreadable: {exc.__class__.__name__}"
+    return None, "/proc/meminfo carried no MemTotal row"
+
+
+def _cgroup_limit_bytes() -> Tuple[Optional[int], str]:
+    """This container's cgroup memory limit, or (None, reason) when no
+    limit is set/readable. v2 first, then v1 -- the same order _linux_ram
+    reads them."""
+    lims: Dict[str, Tuple[Optional[int], str]] = {}
+    try:
+        lims = _cgroup2_limits()
+    except Exception:  # noqa: BLE001 -- probing must never raise
+        lims = {}
+    if lims.get("mem_max", (None, ""))[0] is not None:
+        return lims["mem_max"]
+    try:
+        lims = _cgroup1_limits()
+    except Exception:  # noqa: BLE001
+        lims = {}
+    if lims.get("mem_max", (None, ""))[0] is not None:
+        return lims["mem_max"]
+    return None, "no cgroup memory limit readable (v2 or v1)"
+
+
+def container_signals() -> Dict[str, Any]:
+    """The raw container evidence, named signal by signal.
+
+    Every value is a reading, never an inference: `container` is the OR of
+    the positive signals, `cgroup_limited` is the narrower fact that a
+    cgroup limit exists AND sits below the host's RAM (the fleet-contabo
+    slicing signature, and also true of a capped hostinger container --
+    which is exactly why it cannot separate the two container shapes)."""
+    signals: Dict[str, Any] = {
+        "dockerenv": Path("/.dockerenv").is_file(),
+        "containerenv": Path("/run/.containerenv").is_file(),
+        "proc1_cgroup_container": False,
+        "data_root": Path("/data/.openclaw").is_dir(),
+    }
+    try:
+        signals["proc1_cgroup_container"] = bool(re.search(
+            r"(^|/)(docker|kubepods|libpod)(/|[-.])",
+            Path("/proc/1/cgroup").read_text(encoding="utf-8"), re.M))
+    except OSError:
+        signals["proc1_cgroup_container"] = False
+    limit, limit_src = _cgroup_limit_bytes()
+    host, host_src = host_ram_bytes()
+    signals["cgroup_limit_bytes"] = limit
+    signals["cgroup_limit_source"] = limit_src
+    signals["host_ram_bytes"] = host
+    signals["host_ram_source"] = host_src
+    signals["cgroup_limited"] = bool(
+        limit is not None and host is not None and limit < host)
+    signals["container"] = bool(
+        signals["dockerenv"] or signals["containerenv"]
+        or signals["proc1_cgroup_container"] or signals["cgroup_limited"])
+    return signals
+
+
+def detect_fleet_shape() -> Dict[str, Any]:
+    """Which fleet shape is this box? An honest answer, never a guess.
+
+    Returns {shape, candidates, certain, platform, container,
+    container_budget_bytes, host_ceiling_bytes, signals, evidence}:
+      shape     -- "fleet-mac" when the code can tell; otherwise None.
+      candidates-- the shapes still possible when shape is None (both
+                   container shapes for a Linux container; [] when this
+                   box matches no named shape at all).
+      evidence  -- one plain sentence per signal that fired, so the
+                   recorded profile can say WHY it believes its shape.
+
+    container_budget_bytes is the cgroup limit when one exists (the
+    container's own budget); host_ceiling_bytes is the host's total RAM
+    (on a Mac, the box itself). Both are measurements; either may be None
+    when unreadable, and a None is recorded as unknown, never filled in."""
+    signals = container_signals()
+    out: Dict[str, Any] = {
+        "shape": None,
+        "candidates": [],
+        "certain": False,
+        "platform": sys.platform,
+        "container": bool(signals.get("container")),
+        "container_budget_bytes": signals.get("cgroup_limit_bytes"),
+        "host_ceiling_bytes": signals.get("host_ram_bytes"),
+        "signals": signals,
+        "evidence": [],
+    }
+    if sys.platform == "darwin":
+        out["shape"] = FLEET_MAC
+        out["candidates"] = [FLEET_MAC]
+        out["certain"] = True
+        out["container"] = False
+        out["container_budget_bytes"] = None
+        out["evidence"] = [
+            "platform is darwin (macOS): OpenClaw runs natively on the "
+            "client's own Mac, no container layer -- fleet-mac",
+            f"host RAM read natively: {signals.get('host_ram_source')}",
+        ]
+        return out
+    if sys.platform.startswith("linux"):
+        fired = [name for name in ("dockerenv", "containerenv",
+                                   "proc1_cgroup_container", "data_root",
+                                   "cgroup_limited")
+                 if signals.get(name)]
+        if signals.get("container"):
+            out["candidates"] = list(CONTAINER_FLEET_SHAPES)
+            out["evidence"] = [
+                "Linux container signals fired: " + ", ".join(fired),
+                "a Linux container is one of the two container fleet "
+                "shapes, but nothing readable from inside the container "
+                "says whether the host is the client's own Hostinger VPS "
+                "(fleet-hostinger) or the shared Contabo host "
+                "(fleet-contabo): the shape is asked once and recorded, "
+                "never guessed",
+            ]
+            return out
+        out["evidence"] = [
+            "Linux with no container signals (no /.dockerenv, no "
+            "container runtime in /proc/1/cgroup, no cgroup limit below "
+            "host RAM): this box matches none of the three named fleet "
+            "shapes, so the profile records the shape as unknown and "
+            "gauges live",
+        ]
+        return out
+    out["evidence"] = [
+        f"platform {sys.platform!r} is neither darwin nor linux: no "
+        "fleet shape can be asserted; the profile records unknown and "
+        "gauges live",
+    ]
+    return out
+
+
+# ---------------------------------------------------------------------------
 # class budgets
 # ---------------------------------------------------------------------------
 def _min_int(values: List[Optional[int]]) -> Optional[int]:

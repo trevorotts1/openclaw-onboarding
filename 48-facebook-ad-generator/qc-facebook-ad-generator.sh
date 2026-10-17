@@ -4,13 +4,39 @@
 # post-install client box as HARD assertions. Exits 0 in repo/CI AND on an installed
 # box; FAILS loudly only on a real defect.
 set -u
-PASS=0; FAIL=0; WARN=0
+PASS=0; FAIL=0; WARN=0; PREFLAG=0
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${SKILL_DIR}/.."
+# FIX-PRF-001 (replaces the FIX-S36-38 directory marker): repo-level artifacts resolve
+# through a PER-FILE candidate chain, never through "[ -d .github ] || [ -d .git ]". A
+# deployed box can carry a STALE $REPO_ROOT/.github/ tree while the SPECIFIC asserted
+# files are absent, and the old directory gate then re-armed the original client-install
+# aborts (it could also silently skip an assertion that had to run). resolve_repo_path
+# <relative/path> returns the FIRST existing candidate, in order:
+#   (1) $REPO_ROOT/<path>
+#   (2) $HOME/.openclaw/onboarding/<path>
+#   (3) scripts/ paths only: $HOME/.openclaw/scripts/<path> (scripts/-stripped, then bare)
+# It prints nothing and returns 1 when no candidate exists, so every caller below turns
+# that into a loud FAIL: nothing passes and nothing silently skips.
+resolve_repo_path() {
+  local _rel="$1" _c
+  for _c in "${REPO_ROOT}/${_rel}" "${HOME}/.openclaw/onboarding/${_rel}"; do
+    [ -f "${_c}" ] && { printf '%s\n' "${_c}"; return 0; }
+  done
+  case "${_rel}" in
+    scripts/*)
+      for _c in "${HOME}/.openclaw/scripts/${_rel#scripts/}" "${HOME}/.openclaw/scripts/${_rel}"; do
+        [ -f "${_c}" ] && { printf '%s\n' "${_c}"; return 0; }
+      done
+      ;;
+  esac
+  return 1
+}
 
 red()   { printf "\033[31m%s\033[0m\n" "$1"; }
 green() { printf "\033[32m%s\033[0m\n" "$1"; }
 yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
+blue()  { printf "\033[34m%s\033[0m\n" "$1"; }
 
 assert() {
   if eval "$2" >/dev/null 2>&1; then green "  PASS -- $1"; PASS=$((PASS+1));
@@ -36,8 +62,8 @@ for f in SKILL.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md \
 done
 
 # ---- The enforcement spine (single source of truth + foreman + checks + ruleset) ----
-AD_MANIFEST="${REPO_ROOT}/universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
-AD_RULESET="${REPO_ROOT}/universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md"
+AD_MANIFEST="$(resolve_repo_path "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json")"
+AD_RULESET="$(resolve_repo_path "universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md")"
 AD_DRIVER="${SKILL_DIR}/scripts/ad_director.py"
 AD_BUILDCHK="${SKILL_DIR}/scripts/ad_build_check.py"
 AD_SYNC="${SKILL_DIR}/scripts/ad_sync_check.py"
@@ -48,11 +74,11 @@ AD_RECOVERY_TEST="${SKILL_DIR}/scripts/test_ad_recovery.py"
 CC_BOARD="${SKILL_DIR}/scripts/cc_board.py"
 CC_BOARD_TEST="${SKILL_DIR}/scripts/test_cc_board.py"
 AD_MODELSOV="${SKILL_DIR}/scripts/ad_model_sovereignty.py"
-AD_UNPARK="${REPO_ROOT}/scripts/unpark-ad-run.sh"
+AD_UNPARK="$(resolve_repo_path "scripts/unpark-ad-run.sh")"
 AD_FIXTURES="${SKILL_DIR}/test-fixtures/make-ad-fixtures.sh"
 # Paid fixtures need a synthetic key + stubbed balance (a keyless paid run aborts, exit 4).
 AD_STUB="${SKILL_DIR}/test-fixtures/run-foreman-stubbed.py"
-AD_CI="${REPO_ROOT}/.github/workflows/ad-pipeline-lockstep.yml"
+AD_CI="$(resolve_repo_path ".github/workflows/ad-pipeline-lockstep.yml")"
 
 assert "AD-PIPELINE-MANIFEST.json present (single source of truth)" "[ -f \"${AD_MANIFEST}\" ]"
 assert "MASTER-AD-QC-AUTOFAIL-RULESET.md present" "[ -f \"${AD_RULESET}\" ]"
@@ -66,27 +92,41 @@ assert "test_ad_recovery.py recovery proof suite present" "[ -f \"${AD_RECOVERY_
 assert "cc_board.py producer-side board caller present" "[ -f \"${CC_BOARD}\" ]"
 assert "test_cc_board.py board-caller test suite present" "[ -f \"${CC_BOARD_TEST}\" ]"
 assert "ad_model_sovereignty.py no-Anthropic/model-tier gate present" "[ -f \"${AD_MODELSOV}\" ]"
-assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
+if [ -n "${AD_UNPARK}" ]; then
+  assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
+else
+  red "  FAIL -- unpark-ad-run.sh operator un-park tool present (no candidate resolved: \$REPO_ROOT, ~/.openclaw/onboarding, ~/.openclaw/scripts)"; FAIL=$((FAIL+1))
+fi
 assert "make-ad-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${AD_FIXTURES}\" ]"
-assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
+if [ -n "${AD_CI}" ]; then
+  assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
+else
+  red "  FAIL -- ad-pipeline-lockstep.yml CI workflow present (no candidate resolved: \$REPO_ROOT, ~/.openclaw/onboarding)"; FAIL=$((FAIL+1))
+fi
 
 # ---- The enforcement code must parse ----
 for py in "${AD_DRIVER}" "${AD_BUILDCHK}" "${AD_SYNC}" "${AD_GUARDA}" "${AD_TEST}" \
           "${AD_RECOVERY}" "${AD_RECOVERY_TEST}" "${AD_MODELSOV}"; do
   assert "$(basename "$py") parses" "python3 -c \"import ast; ast.parse(open('${py}').read())\""
 done
-assert "unpark-ad-run.sh is valid bash" "bash -n \"${AD_UNPARK}\""
+if [ -n "${AD_UNPARK}" ]; then
+  assert "unpark-ad-run.sh is valid bash" "bash -n \"${AD_UNPARK}\""
+else
+  red "  FAIL -- unpark-ad-run.sh is valid bash (no candidate resolved; bash -n is never run on an empty path)"; FAIL=$((FAIL+1))
+fi
 
 # ---- The 8 creative SOPs exist ----
 for n in 01-INTAKE 02-OVERLAYS 03-PICK-10 04-PRIMARY-TEXT 05-HEADLINES \
          06-IMAGE-PROMPTS 07-TARGETING 08-DELIVERY; do
-  assert "SOP-FBAD-${n}.md present" "[ -f \"${REPO_ROOT}/universal-sops/fb-ad-craft/SOP-FBAD-${n}.md\" ]"
+  AD_SOP_N="$(resolve_repo_path "universal-sops/fb-ad-craft/SOP-FBAD-${n}.md")"
+  assert "SOP-FBAD-${n}.md present" "[ -f \"${AD_SOP_N}\" ]"
 done
 
 # ---- The 2 new role seats exist ----
-RLP="${REPO_ROOT}/23-ai-workforce-blueprint/templates/role-library/paid-advertisement"
-assert "facebook-instagram-ad-run-producer role present" "[ -f \"${RLP}/facebook-instagram-ad-run-producer.md\" ]"
-assert "direct-response-ad-copywriter role present" "[ -f \"${RLP}/direct-response-ad-copywriter.md\" ]"
+AD_ROLE_PRODUCER="$(resolve_repo_path "23-ai-workforce-blueprint/templates/role-library/paid-advertisement/facebook-instagram-ad-run-producer.md")"
+AD_ROLE_COPYWRITER="$(resolve_repo_path "23-ai-workforce-blueprint/templates/role-library/paid-advertisement/direct-response-ad-copywriter.md")"
+assert "facebook-instagram-ad-run-producer role present" "[ -f \"${AD_ROLE_PRODUCER}\" ]"
+assert "direct-response-ad-copywriter role present" "[ -f \"${AD_ROLE_COPYWRITER}\" ]"
 
 # ---- The manifest must declare the 10 ordered stages ----
 assert "AD-PIPELINE-MANIFEST declares 10 ordered stages (S0-INTAKE..PUBLISH)" \
@@ -141,5 +181,5 @@ assert "No literal long API-key value committed in skill payload" \
   "! grep -rIE '(KIE_API_KEY|GOHIGHLEVEL_API_KEY)\\s*=\\s*[\"'\"'\"']?[A-Za-z0-9]{20,}' \"${SKILL_DIR}\" 2>/dev/null | grep -qv 'YOUR_CLIENT'"
 
 echo ""
-echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings ==="
+echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings | $PREFLAG pre-install notes ==="
 [ "$FAIL" -gt 0 ] && { red "Skill 48 QC FAILED"; exit 1; } || { green "Skill 48 QC PASS"; exit 0; }

@@ -198,6 +198,7 @@ This role contributes to the company revenue cascade by: **accelerating revenue 
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **44** convert-and-flow-operator | "build a workflow" · "automate this" · "an order-bump" | `~/.openclaw/skills/44-convert-and-flow-operator/` | `universal-sops/funnel-automation-build-quality-rubric.md/` |
+| **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" | `~/.openclaw/skills/79-signature-order-form/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -300,7 +301,7 @@ This role contributes to the company revenue cascade by: **accelerating revenue 
 
 1. **STEP 0 — Model pre-flight (before you touch anything that writes).**
    - Action: Look at your current session's active model + thinking level.
-   - Verify: If the active model is a lighter/faster model (mini, flash, deepseek-flash, or any non-high-reasoning model) OR thinking is not HIGH, send the owner this exact recommendation ONCE: "GHL workflow builds are complex and error-prone on lighter models. It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. deepseek-v4.1-flash or GLM 5.2) with thinking set to HIGH before proceeding. Say 'proceed anyway' to continue, or switch first and re-run." Do not repeat it the same session after acknowledgement.
+   - Verify: If the active model is a lighter/faster model (any non-high-reasoning model) OR thinking is not HIGH, send the owner this exact recommendation ONCE: "GHL workflow builds are complex and error-prone on lighter models. It is HIGHLY RECOMMENDED to switch to a high-reasoning model with thinking set to HIGH before proceeding. Say 'proceed anyway' to continue, or switch first and re-run." Do not repeat it the same session after acknowledgement.
    - Failure/abort: This is a recommendation, NOT a hard block — proceed once surfaced. EXCEPTION: if Step 16 (QC) later flags a HALLUCINATION-class fail, this flips to a HARD REQUIREMENT and the redo MUST be on a high-reasoning model at thinking=HIGH (see Step 18).
 
 1.5. **STEP 0.4 — Template-first automation match — reuse before reinvent (MANDATORY; flexibility = guide-not-rule).** Before PLAN MODE builds the strategist's outline from scratch, consult the shipped **automation template library** — 28 proven email/SMS/multichannel sequences in `44-convert-and-flow-operator/automation-templates/` (categories: welcome-indoctrination, sales-close-sequences, engagement-broadcast, funnel-specific-followups, multichannel-automation), each carrying the `sequence`, `copy_persona`, `ghl_build`, and `flexibility` contract.
@@ -603,7 +604,7 @@ For this role, the authoritative sources are:
 - Forrester (forrester.com) — CRM and sales automation research, technology ROI analysis, workflow automation best practices
 
 **Tier 3 — Real-time / competitive intelligence:**
-- Perplexity Sonar Pro Search — Real-time research on automation platform updates, API changes, and new integration capabilities
+- Web research (the client's chosen research model): real-time research on automation platform updates, API changes, and new integration capabilities
 - Deep Research Department — {{COMPANY_NAME}} internal research team for custom analysis of automation opportunities and competitive process comparisons
 - Product Hunt / G2 — User reviews of automation tools, integration platforms, and CRM add-ons
 - LinkedIn — Automation professionals and CRM admin communities sharing practical solutions

@@ -17,7 +17,9 @@ guard-rail over the already-shipped fail-closed suites:
 
 Rules under guard (fix-plan lines 388-400):
   1. Do not require OpenClaw 2.0 or CUA for Skill 6 to be considered installed
-  2. Do not remove agent-browser PRIMARY until Lane 2 is proven equivalent on GHL
+  2. OpenClaw Chrome extension is PRIMARY (operator decision 2026-10-13 —
+     supersedes the earlier "agent-browser PRIMARY until Lane 2 is proven
+     equivalent" guard); agent-browser is the fallback lane, never removed
   3. Do not silent-fallback CUA
   4. Fail closed when zero browser lanes
   5. Preserve TOKEN-ONLY default auth
@@ -80,15 +82,16 @@ def test_rule1_agent_browser_only_box_is_qc_passable():
 def test_rule1_install_step1_does_not_require_openclaw_2x_or_cua():
     """INSTALL.md Step 1 must not name OpenClaw 2.x or CUA as an install gate.
     Mentions are allowed ONLY in the negative/doctrine form (the literal
-    'Do NOT require OpenClaw 2.0 or CUA' sentence and the pre-2.0 lane row)."""
+    'Do NOT require the extension lane or CUA' sentence, revised 2026-10-13
+    when the extension became PRIMARY, and the pre-2.0 lane row)."""
     src = _read(_INSTALL_MD)
     # The pre-2.0 row is REQUIRED to exist: an old OpenClaw does not block.
     assert "Pre-2.0 OpenClaw + agent-browser" in src, (
         "INSTALL.md lost its pre-2.0-OpenClaw lane row (rule 1)")
     # The doctrine sentence is REQUIRED to exist (the guard text itself).
     assert re.search(
-        r"Do NOT require OpenClaw 2\.0 or CUA", src), (
-        "INSTALL.md lost the 'Do NOT require OpenClaw 2.0 or CUA' doctrine")
+        r"Do NOT require the extension lane or CUA", src), (
+        "INSTALL.md lost the 'Do NOT require the extension lane or CUA' doctrine")
     # The Prerequisites Verification list (the actual install gate) must not
     # demand CUA or OpenClaw 2.x. Extract that list and assert absence.
     block = src.split("## Prerequisites Verification", 1)[1]
@@ -100,30 +103,35 @@ def test_rule1_install_step1_does_not_require_openclaw_2x_or_cua():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Rule 2 — agent-browser stays PRIMARY until Lane 2 is proven equivalent
+# Rule 2 — OpenClaw Chrome extension is PRIMARY (2026-10-13); agent-browser
+# is the fallback lane and stays installed
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_rule2_lane_selection_priority_keeps_agent_browser_primary():
-    """Lane 1 (agent_browser) still heads the 9.6 priority table; lane 2 is
-    only reached when agent-browser is absent."""
+def test_rule2_lane_selection_priority_puts_extension_first():
+    """Lane 1 (openclaw extension) heads the priority table when the
+    extension is installed and current; agent_browser is the fallback lane
+    (probe suite, revised 2026-10-13 table)."""
     proc = _pytest("tests/test_capability_probe.py", "-k", "lane_selection")
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
-def test_rule2_install_names_agent_browser_primary():
-    """INSTALL.md Step 1 keeps agent-browser as the PRIMARY lane header, and
-    the OpenClaw managed browser stays marked not-yet-PRIMARY (alt/experimental)."""
+def test_rule2_install_names_extension_primary():
+    """INSTALL.md Step 1 names the OpenClaw Chrome extension as the PRIMARY
+    lane (operator decision 2026-10-13), agent-browser as the FALLBACK lane,
+    and wires the standing extension version preflight into Step 1."""
     src = _read(_INSTALL_MD)
     assert re.search(
-        r"Step 1: Set Up the Browser Lane — agent-browser \(PRIMARY\)", src), (
-        "INSTALL.md Step 1 no longer names agent-browser PRIMARY (rule 2)")
+        r"Step 1: Set Up the Browser Lane — OpenClaw Chrome Extension \(PRIMARY\)", src), (
+        "INSTALL.md Step 1 no longer names the extension PRIMARY (rule 2)")
     assert re.search(
-        r"agent-browser \(Vercel Labs\) is the PRIMARY engine", src), (
-        "INSTALL.md no longer states agent-browser is the PRIMARY engine (rule 2)")
-    # Lane 2 downgrade marker (experimental, not Skill 6 PRIMARY) must remain.
+        r"The OpenClaw Chrome extension is the PRIMARY engine", src), (
+        "INSTALL.md no longer states the extension is the PRIMARY engine (rule 2)")
     assert re.search(
-        r"not yet wired as Skill 6 PRIMARY", src), (
-        "INSTALL.md lost the 'managed browser not yet Skill 6 PRIMARY' marker (rule 2)")
+        r"agent-browser \(Vercel Labs, Skill 03\) is the FALLBACK lane", src), (
+        "INSTALL.md no longer states agent-browser is the FALLBACK lane (rule 2)")
+    # The standing extension version preflight must be wired into Step 1.
+    assert "check-openclaw-extension-version.sh" in src, (
+        "INSTALL.md Step 1 lost the extension version preflight (rule 2)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

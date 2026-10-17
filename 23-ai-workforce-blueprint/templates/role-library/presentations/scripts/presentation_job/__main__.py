@@ -36,6 +36,7 @@ from .supervisor import supervise as _run_supervise, DEFAULT_MAX_RESTARTS, DEFAU
 from .board import BoardMirror
 from .sweep import reconcile_sweep, _find_run_dirs_multi
 from . import diagnose
+from . import engine_origin as _engine_origin
 from . import persona
 from .vocab import CANONICAL_PRESENTATION_TYPES
 
@@ -275,6 +276,17 @@ def cmd_new(args, scripts_dir: Path) -> int:
     manifest = Manifest(manifest_path)
     manifest.verify_source()
 
+    # PRES-039: fail the compatibility preflight BEFORE dispatch state is
+    # written -- a stale PYTHONPATH duplicate or a contract-drifted copy must
+    # refuse here, never silently import below (Engine/BoardMirror import
+    # this same package; by then the wrong copy is already bound).
+    _pf_code, _pf_report = _engine_origin.preflight()
+    _origin = _pf_report["origin"]
+    if _pf_code != 0:
+        die(_pf_code,
+            f"{_pf_report.get('autofail')}: {_pf_report.get('detail')}\n"
+            f"  {_engine_origin.format_origin_line(_origin)}")
+
     state = {
         "schema_version": STATE_SCHEMA_VERSION,
         "job_id": "pj_" + sha256_text(f"{run_dir}{utcnow()}")[:26],
@@ -283,6 +295,14 @@ def cmd_new(args, scripts_dir: Path) -> int:
         "manifest_path": str(manifest_path),
         "manifest_version": manifest.version,
         "manifest_sha256": manifest.sha256,
+        # PRES-039: engine commit/package origin recorded in each run.
+        "engine_origin": _origin,
+        # FIX-PLAN Item 11 (B23): the run record carries the manifest's
+        # undeclared-fanout-width warnings (empty list when every fanout
+        # phase declares workers). A run created under a manifest with an
+        # undeclared fanout width says so in its own record, instead of the
+        # width silently falling back to 1 (serial) for that phase.
+        "fanout_width_warnings": list(manifest.fanout_width_warnings),
         "presentation_type": ptype,
         "requester": intake.get("requester") or {},
         "intake": intake,
@@ -304,6 +324,11 @@ def cmd_new(args, scripts_dir: Path) -> int:
     print(f"created {state['job_id']} in {run_dir}")
     print(f"  manifest v{manifest.version} ({len(manifest.phases)} phases) "
           f"pinned at {manifest.sha256[:12]}")
+    print(f"  {_engine_origin.format_origin_line(_origin)}")
+    # FIX-PLAN Item 11 (B23): the same warnings stamped into the run record
+    # above are printed at creation, in verify_source's WARN style.
+    for warning in manifest.fanout_width_warnings:
+        print(f"WARN: {warning}", file=sys.stderr)
     return EXIT_OK
 
 
@@ -563,6 +588,14 @@ def cmd_status(args) -> int:
     print(f"job      : {st['job_id']}")
     print(f"run dir  : {st['run_dir']}")
     print(f"manifest : v{st.get('manifest_version')} @ {str(st.get('manifest_sha256'))[:12]}")
+    _eo = st.get("engine_origin") or {}
+    if _eo:
+        print(f"engine   : distributor={_eo.get('distributor')} "
+              f"role={_eo.get('copy_role')} "
+              f"digest={str(_eo.get('package_digest'))[:12]} "
+              f"commit={str((_eo.get('distributor_commit') or {}).get('commit', '?'))[:12]}")
+    else:
+        print("engine   : origin NOT RECORDED (pre-PRES-039 run)")
     print(f"terminal : {st.get('terminal') or 'in progress'}")
     # PRES-019 (step 4): a CONFIGURATION-PENDING park is reported as PENDING
     # -- owner and next action named -- never as working. The stamp is
@@ -608,6 +641,14 @@ def cmd_status(args) -> int:
     if undelivered:
         print(f"UNDELIVERABLE messages: {len(undelivered)} "
               "(the requester was NOT told — see F2)")
+    # Item 9(e): dead-lettered notifications are part of the run's report,
+    # not a jsonl a human has to know to grep -- same one-line surfacing as
+    # the undeliverable queue above, and the watchdog reports the count on
+    # its normal cadence as well.
+    dead_lettered = st.get("dead_letter")
+    if dead_lettered:
+        print(f"DEAD-LETTERED messages: {len(dead_lettered)} "
+              "(the requester was NOT told -- see state['dead_letter'])")
     return EXIT_OK
 
 
@@ -1135,6 +1176,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if getattr(args, "invalidate_phase", None):
         return cmd_invalidate_phase(args, scripts_dir)
 
+    # PRES-039: compatibility preflight runs BEFORE the lease and the lock
+    # so a stale shadow or drifted copy refuses identically for --run/
+    # --resume/--close (not only --new). Prints the recorded run origin
+    # when present (inside the lock, after the state load below).
+    _pf_code, _pf_report = _engine_origin.preflight()
+    if _pf_code != 0:
+        die(_pf_code,
+            f"{_pf_report.get('autofail')}: {_pf_report.get('detail')}\n"
+            f"  {_engine_origin.format_origin_line(_pf_report['origin'])}")
+
     # -----------------------------------------------------------------------
     # FIX 18 — the engine refuses to run without a lease it holds.
     #   Every launch path funnels through here for --run/--resume/--close and
@@ -1181,6 +1232,16 @@ def main(argv: Optional[List[str]] = None) -> int:
       with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
+        _recorded = state.get("engine_origin") or {}
+        if _recorded:
+            print(_engine_origin.format_origin_line(
+                {**_pf_report["origin"],
+                 "package_digest": _recorded.get("package_digest",
+                                                _pf_report["origin"]["package_digest"]),
+                 "distributor_commit": _recorded.get("distributor_commit")},
+            ).replace("engine origin:", "engine origin (run recorded):"),
+                flush=True)
+        print(_engine_origin.format_origin_line(_pf_report["origin"]), flush=True)
         # FIX 13: the engine records its own pid so the poller's
         # "already running" check sees runs started through the canonical
         # entry (which runs the engine directly, not via the launcher).

@@ -330,17 +330,11 @@ _find_key "GOOGLE_API_KEY" || _find_key "GEMINI_API_KEY"
 ```
 If missing, you MUST add your Google API key to `~/.openclaw/secrets/.env`. The multimodal embedding engine will crash without it.
 
-### Phase 1 — Large-context model (Ollama Cloud preferred, OpenRouter fallback)
+### Phase 1 - Large-context model (client's choice, or client's configured default)
 
-Phase 1 needs a large-context model for book extraction. The pipeline uses `shared-utils/select_model.py` which enforces this priority order:
+Phase 1 needs a large-context model for book extraction. No model is prescribed by name: ask the client which model they want to use, or use the client's configured default model (`agents.defaults.model` in their `openclaw.json`). The pipeline resolves the model at run time via `shared-utils/select_model.py`. Recommendation: a large-context model on a subscription-billed route where available, because extraction passes whole books at once and subscription billing keeps per-book cost flat.
 
-1. **Ollama Cloud Kimi** (`ollama/kimi-k*:cloud`, 262K context) - PREFERRED. Subscription pricing, no per-call cost beyond Ollama plan.
-2. **Ollama Cloud DeepSeek V*-pro** (`ollama/deepseek-v*-pro:cloud`, 1M context) - Largest context, also subscription-billed.
-3. **OpenRouter Kimi** (`openrouter/moonshot/kimi-k*`, 262K context) - Per-token billed fallback when Ollama Cloud is unavailable.
-4. **OpenRouter DeepSeek V*-pro** (`openrouter/deepseek/deepseek-v*-pro`, 1M context) - Per-token billed largest-context fallback.
-5. **OAuth GPT** (`codex/gpt-*` or `openai-codex/gpt-*`, 196K context) - Subscription, used if no Ollama/OpenRouter Kimi available.
-
-Check which models are available:
+Which provider keys are needed depends on the route of the client's chosen or configured default model. Check which are present:
 ```bash
 _find_key() {
   local key_name="$1"
@@ -360,19 +354,19 @@ _find_key() {
   return 1
 }
 
-echo "Model availability (Ollama Cloud preferred):"
-_find_key "OLLAMA_API_KEY" && echo "  ✓ Tier 1/2 (Ollama Cloud Kimi / DeepSeek-pro) available"
-_find_key "OPENROUTER_API_KEY" && echo "  ✓ Tier 3/4 (OpenRouter fallbacks) available"
+echo "Provider key availability (the resolved model's route decides which one is required):"
+_find_key "OLLAMA_API_KEY" && echo "  ✓ Ollama Cloud route available"
+_find_key "OPENROUTER_API_KEY" && echo "  ✓ OpenRouter route available"
 # Codex OAuth checked in Step 4 above
 ```
 
-At least ONE model must be available. If none are found, the install cannot proceed.
+The key for the resolved model's route must be present. If the client has neither chosen a model nor configured a default, ask them which model to use before proceeding.
 
-### Phase 2 — Heavy reasoning model (same chain as Phase 1)
-Phase 2 uses the same `select_model.py --purpose-tier heavy` chain. Ollama Cloud first, OpenRouter only as fallback. **Do not configure Phase 2 to call OpenRouter directly** — the selector handles tier walk automatically.
+### Phase 2 - Heavy reasoning model (same resolution as Phase 1)
+Phase 2 uses the same `select_model.py --purpose-tier heavy` resolution: the client's choice, or the client's configured default model. **Do not configure Phase 2 to call a provider directly** - the selector handles resolution automatically.
 
-### GPT-5.3 Codex (Phase 3)
-Routes via OpenClaw OAuth. Check:
+### OAuth GPT route (only when the resolved model uses it)
+If the client's chosen or configured default model routes via OpenClaw OAuth (an OAuth GPT model), check the token:
 ```bash
 cat ~/.openclaw/agents/main/agent/auth-profiles.json | python3 -c "
 import json,sys,datetime
@@ -683,41 +677,57 @@ else:
 
 If no PDFs exist yet, skip this sub-step - extraction will be tested on the first real book run.
 
-### 8b - Verify model connectivity (Ollama Cloud preferred, OpenRouter fallback)
+### 8b - Verify model connectivity (the client's chosen or configured default model)
 
-The pipeline uses `shared-utils/select_model.py` which enforces Ollama-Cloud-first priority. Verify which tier is available:
+The pipeline resolves its model via `shared-utils/select_model.py`: the client's choice, or the client's configured default model. No model is prescribed by name, so verify the model the client actually resolved. First read it from the client's configuration (if the client named a specific model for this skill, set `MODEL_ID` to that model instead):
 
-**Tier 1 (PREFERRED): Ollama Cloud Kimi**
+```bash
+MODEL_ID="$(python3 -c "
+import json,os
+cfg=json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
+m=cfg.get('agents',{}).get('defaults',{}).get('model')
+print(m.get('primary','') if isinstance(m,dict) else (m or ''))
+")"
+echo "Resolved model: ${MODEL_ID:-NONE CONFIGURED}"
+```
+
+If `MODEL_ID` is empty, STOP: ask the client which model to use, or have them set `agents.defaults.model` in `openclaw.json`, then re-run this step. Do not substitute a model of your own choosing.
+
+**If the resolved model routes via Ollama Cloud (ID starts with `ollama/`):**
 ```bash
 OLLAMA_KEY="$(grep OLLAMA_API_KEY ~/.openclaw/secrets/.env 2>/dev/null | cut -d= -f2 || python3 -c "import json; print(json.load(open('${HOME}/.openclaw/openclaw.json')).get('models',{}).get('providers',{}).get('ollama',{}).get('apiKey',''))")"
+BARE_MODEL="${MODEL_ID#ollama/}"
 curl -s https://ollama.com/api/chat \
   -H "Authorization: Bearer $OLLAMA_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"kimi-k2.6:cloud","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"stream":false}' \
-  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Tier 1 (Ollama Cloud Kimi):', r.get('message',{}).get('content','FAILED'))"
+  -d "{\"model\":\"$BARE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with only: CONNECTED\"}],\"stream\":false}" \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Ollama Cloud (resolved model):', r.get('message',{}).get('content','FAILED'))"
 ```
 
-**Tier 2 (FALLBACK): OpenRouter Kimi — only used when Ollama Cloud Kimi is unavailable**
+**If the resolved model routes via OpenRouter (ID starts with `openrouter/`):**
 ```bash
+BARE_MODEL="${MODEL_ID#openrouter/}"
 curl -s https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
   -H "Content-Type: application/json" \
-  -d '{"model":"moonshotai/kimi-k2","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
-  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Tier 2 (OpenRouter Kimi):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
+  -d "{\"model\":\"$BARE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with only: CONNECTED\"}],\"max_tokens\":10}" \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); print('OpenRouter (resolved model):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
 ```
 
-**Expected:** Tier 1 (Ollama Cloud Kimi) should connect. The selector only walks down to OpenRouter if Tier 1 is unavailable in the client's openclaw.json.
+**If the resolved model routes via OAuth GPT (ID starts with `codex/` or `openai-codex/`):** the connectivity test is confirming the OAuth token is valid and not expired (Step 4 check above).
 
-### 8c - Verify Phase 2 model connectivity (same Ollama-first chain)
+**Expected:** the resolved model replies CONNECTED (or, for the OAuth route, shows a future expiration date).
 
-Phase 2 uses the same heavy-reasoning chain as Phase 1 — Ollama Cloud Kimi preferred, OpenRouter Kimi as fallback, DeepSeek V*-pro as tertiary. The selector picks whichever the client has. Use the Tier 1 / Tier 2 tests above. **Do not call OpenRouter as the primary verification** — that contradicts the Ollama-Cloud-first policy.
-If it fails, verify OPENROUTER_API_KEY is correct.
+### 8c - Verify Phase 2 model connectivity (same resolution as Phase 1)
 
-### 8d - Verify Phase 3 model connectivity (Codex OAuth)
+Phase 2 uses the same model resolution as Phase 1: the client's choice, or the client's configured default model. Use the 8b test above against the Phase 2 resolution.
+If it fails, verify the API key for the resolved model's route is correct.
 
-Phase 3 uses OpenClaw OAuth routing, so the connectivity test is confirming the token is valid and not expired (already done in Step 4). If the Codex OAuth check in Step 4 returned a future expiration date, Phase 3 is ready.
+### 8d - Verify Phase 3 model connectivity (same resolution as Phase 1)
 
-If the primary Phase 3 model is unavailable, the pipeline auto-falls-back through the heavy chain via `select_model.py`. Fallback triggers: API error, rate limit (429), HTTP timeout (60 min for Phase 3 as of v9.5.2, 30 min for Phases 1/2), or output under 5,000 characters.
+Phase 3 uses the same model resolution as Phase 1. If the resolved model routes via OpenClaw OAuth, the connectivity test is confirming the token is valid and not expired (already done in Step 4). For other routes, use the 8b test.
+
+If the resolved Phase 3 model fails mid-run, the pipeline re-resolves via `select_model.py` with the failed model excluded. Fallback triggers: API error, rate limit (429), HTTP timeout (60 min for Phase 3 as of v9.5.2, 30 min for Phases 1/2), or output under 5,000 characters.
 
 ### 8e - Verify output directory structure
 
@@ -745,9 +755,9 @@ Run Book Intelligence Pipeline on: [book title or path to PDF]
 
 This triggers the full sequence:
 1. **Text extraction** - pdfplumber extracts to `text/[book-slug].txt`
-2. **Phase 1 (resolved via `select_model.py --purpose-tier heavy`)** — Ollama DeepSeek V4.1 Flash / Ollama Kimi 2.6 preferred (latest versions auto-detected). Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
-3. **Phase 2 (DeepSeek V3.2-Speciale)** - Spawns sub-agent with analysis prompt + extraction notes. Output: `personas/[author]-[book-slug]/analysis-notes.md`
-4. **Phase 3 (OAuth GPT preferred, latest Codex version auto-detected)** — Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. Falls back to Ollama Cloud Kimi (latest) on OAuth failure.
+2. **Phase 1 (resolved via `select_model.py --purpose-tier heavy`)** - The client's choice, or the client's configured default model. Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
+3. **Phase 2 (same resolution as Phase 1)** - Spawns sub-agent with analysis prompt + extraction notes. Output: `personas/[author]-[book-slug]/analysis-notes.md`
+4. **Phase 3 (same resolution as Phase 1)** - Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. On failure, the selector re-resolves with the failed model excluded.
 5. **Gemini Engine indexing** - Runs `python3 ~/.openclaw/scripts/gemini-indexer.py` to make the new persona searchable.
 
 **Verify each phase completed** by checking:
@@ -834,9 +844,9 @@ Run through this checklist:
 - [ ] ebooklib installed
 - [ ] Calibre ebook-convert available
 - [ ] Master files folder located or created
-- [ ] Ollama Cloud key confirmed (`OLLAMA_API_KEY` or `models.providers.ollama.apiKey` in openclaw.json) — PRIMARY for Phase 1 + 2
-- [ ] OpenRouter API key confirmed — fallback only, used when Ollama Cloud is unavailable
-- [ ] Codex OAuth token confirmed and not expired (Phase 3 primary)
+- [ ] API key for the resolved model's route confirmed (for example `OLLAMA_API_KEY` or `models.providers.ollama.apiKey` in openclaw.json for an Ollama Cloud model, `OPENROUTER_API_KEY` for an OpenRouter model)
+- [ ] If additional configured models could serve as runtime fallbacks, their route keys are confirmed too
+- [ ] Resolved model connectivity verified in Step 8b (and Codex OAuth token confirmed if the resolved model uses the OAuth route)
 - [ ] Gemini Vector Database coaching-personas installed — prebuilt asset downloaded + SHA256 verified (Step 5), OR local embedding fallback completed
 - [ ] Gemini Engine test query returns results
 - [ ] Core files updated per CORE_UPDATES.md (Step 7)

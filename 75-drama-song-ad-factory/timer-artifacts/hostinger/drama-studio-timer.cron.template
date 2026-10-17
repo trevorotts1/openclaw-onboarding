@@ -4,10 +4,15 @@
 # on the container's persistent volume at
 #   /data/.openclaw/scripts/drama-studio-timer.cron
 # so it survives `docker compose up -d --force-recreate` (the volume is
-# persistent; the container layer is not). The operator installs it by handing
-# this file to the container's `node` user crontab — install-timer.sh only
-# PRINTS that command, it never runs it:
+# persistent; the container layer is not).
+#
+# ARMING: `install-timer.sh --register` merges ONE line of this definition into
+# the `node` user's crontab, removing any previous line carrying the tag
+# `drama-studio-timer` first, so a second run never doubles the timer. It runs
+# check-first and exits 0 when the line is already there. Every other mode only
+# writes files and prints the command. Manual equivalent (also de-duplicating):
 #   docker exec -u node <container> sh -c 'crontab /data/.openclaw/scripts/drama-studio-timer.cron'
+# (that whole-file form replaces the crontab; --register preserves it.)
 #
 # DIRECT SHELL: the command is [/bin/sh, run-timer.sh] with an explicit minimal
 # environment. No Claude, no claude-nine, no model, no interactive session, no
@@ -20,4 +25,7 @@
 #   __HOME__        -> /data          (persistent HOME for the node user)
 #   __PATH__        -> container PATH with the persistent npm-global first
 #   __STORE_DIR__   -> /data/.drama-studio
-__SCHEDULE__ HOME=__HOME__ PATH=__PATH__ DS_PLATFORM=hostinger DS_STATE_DIR=__STORE_DIR__ /bin/sh __SCRIPT_PATH__ >> __LOG_PATH__ 2>&1
+#
+# The trailing `# drama-studio-timer` is the de-duplication TAG: --register
+# strips any crontab line containing it before appending this one.
+__SCHEDULE__ HOME=__HOME__ PATH=__PATH__ DS_PLATFORM=hostinger DS_STATE_DIR=__STORE_DIR__ /bin/sh __SCRIPT_PATH__ >> __LOG_PATH__ 2>&1 # drama-studio-timer

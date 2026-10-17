@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.26"
+ONBOARDING_VERSION="v27.1.29"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1227,14 +1227,30 @@ oc_remove_tree_guarded() {
 # folder, is copied out before the wipe and put back after the copy. The
 # wiring pass then re-runs the skill's own re-resolve (preflight.sh), which
 # honors the pins and refreshes every non-pinned tier. A path the new release
-# SHIPS is never overwritten: a shipped default always beats stale box state.
+# SHIPS is never overwritten: a shipped default always beats stale box state --
+# except for the paths listed by oc_skill_box_state_overrides_shipped.
 # ----------------------------------------------------------
 # >>> SKILL-BOX-STATE-BEGIN  (extracted verbatim by tests/unit/updater-preserves-skill-box-state.test.sh)
 # One relative path per line. Consumers read it line by line, so a path may
 # contain spaces.
 oc_skill_box_state_paths() {
   case "${1:-}" in
-    59-anthology-engine) echo "model-map.json" ;;
+    59-anthology-engine) printf '%s\n' "model-map.json" "config/field-map.json" ;;
+  esac
+  return 0
+}
+
+# Subset of the allow-list whose box copy wins over a file the release SHIPS.
+# 59's config/field-map.json is the provisioner's stamp target:
+# anthology_registry.py provision-fields writes field_key / field_id /
+# verified_at / location_masked into it in place, and verify-fields exits 1 on
+# a template-state file. The repo ships the pristine template, so the default
+# "shipped beats stale box state" rule re-templated every stamped box on every
+# roll (the recurring 2026-10 wound). For these paths only, the saved box copy
+# is put back OVER the shipped file; every other path keeps the default rule.
+oc_skill_box_state_overrides_shipped() {
+  case "${1:-}" in
+    59-anthology-engine) echo "config/field-map.json" ;;
   esac
   return 0
 }
@@ -1270,6 +1286,8 @@ EOF
 # Put the stash back into skill dir $2 wherever the file is missing, then drop
 # the stash. An existing file is never overwritten: after a normal copy it is
 # one the release ships; after a refused removal it is the untouched original.
+# EXCEPTION: a path listed by oc_skill_box_state_overrides_shipped is restored
+# OVER the shipped file (see that function for why).
 # The stash is kept ONLY when a copy back failed, because it is then the last
 # copy of the owner's state, and the log names where it is.
 oc_skill_box_state_restore() {
@@ -1279,6 +1297,15 @@ oc_skill_box_state_restore() {
     [ -n "$_rel" ] || continue
     [ -f "$_OC_BOXSTATE_STASH/$_rel" ] || continue
     if [ -e "$_live/$_rel" ]; then
+      if oc_skill_box_state_overrides_shipped "$_name" | grep -qxF "$_rel"; then
+        if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel" 2>/dev/null; then
+          echo "    box state preserved over the shipped template: $_name/$_rel"
+        else
+          echo "    ! box state NOT restored (copy failed): $_name/$_rel -- saved copy kept at $_OC_BOXSTATE_STASH/$_rel" >&2
+          _keep=1
+        fi
+        continue
+      fi
       echo "    box state NOT restored over an existing file: $_name/$_rel"
       continue
     fi
@@ -2024,7 +2051,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.26 - safe_json_edit
+# v27.1.28 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -6331,7 +6358,7 @@ PYEOF
     # the "132 loose files dumped into ~/.openclaw/skills/" flatten bug.
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
-    cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
+    cp -R "${SKILL_DIR%/}" "$SKILLS_DIR/"
     oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
 
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
@@ -6381,7 +6408,7 @@ PYEOF
   _SHAREDUTILS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/shared-utils" ]; then
     mkdir -p "$SKILLS_DIR/shared-utils"
-    cp -r "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
+    cp -R "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
     chmod +x "$SKILLS_DIR/shared-utils/"*.sh "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
     # v20.0.11: VERIFY the refresh actually landed every source top-level entry.
     # shared-utils/ (incl. sop-embed-once/) is NOT covered by the A3 numbered-skill
@@ -6514,7 +6541,7 @@ PYEOF
     # than it started with, which is how the "✓ universal-sops refreshed" line
     # below came to be printed over a truncated tree.
     oc_remove_tree_guarded "$SKILLS_DIR/universal-sops" "SOP tree"
-    if ! cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
+    if ! cp -R "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
       _UNIVERSALSOPS_STATUS="fail"
     fi
     # PARITY WITH shared-utils (v20.0.11). This tree is rm -rf'd first, so a
@@ -8454,6 +8481,75 @@ PYEOF
       else
         echo "    ⚠ enrollment/cron reconciliation reported a wiring failure for $SKILL_NAME (see $LOG_FILE) -- next pass retries it"
       fi
+    fi
+
+    # DSR-101: Drama Studio enrollment + the 2-minute pickup timer (skill 75).
+    #
+    # shared-bridge/studio_bridge.py refuses BOTH `link` and `poll` until the
+    # box holds a machine key ("no machine key; run enroll first"), and the only
+    # thing that creates that key is `studio_bridge.py enroll` with
+    # DS_ENROLLMENT_SECRET in env. Nothing in the install path called it, so a
+    # client's personal studio link could never resolve on this box.
+    #
+    # NOT sentinel-gated, for the same reason as the RR-028 block above: what is
+    # being reconciled is BOX STATE (a key file, a loaded timer), not software
+    # files. Gating it to once-per-version-bump would mean a box whose cron an
+    # operator removed, or whose enroll failed while the studio was down, stayed
+    # dead until the next version number -- the "shipped but never delivered"
+    # failure class. Both legs are idempotent by construction (an existing
+    # machine key short-circuits enroll; `--register` answers 0 when the timer
+    # is already installed), so running them on every pass is safe.
+    #
+    # Fail-soft by design: no DS_ENROLLMENT_SECRET skips enrollment (exit 0,
+    # one line, box untouched) and a `--register` refusal (exit 2) only warns.
+    # A client box must never fail to update because the operator has not
+    # injected a studio secret.
+    if [ -d "$SKILL_DIR/shared-bridge" ]; then
+      echo "    Drama Studio: enrolling this box + registering the 2-minute pickup timer (skill 75, idempotent)..."
+      _dsr_rc=0
+      bash "$SKILL_DIR/shared-bridge/enroll-on-install.sh" 2>&1 | tee -a "$LOG_FILE" || _dsr_rc=$?
+      if [ "$_dsr_rc" -ne 0 ]; then
+        # The helper is fail-soft and exits 0 on every documented path, so a
+        # non-zero means the helper itself broke, not that the studio said no.
+        echo "    ⚠ drama-studio enrollment step could not run (rc=$_dsr_rc; see $LOG_FILE) -- next pass retries it"
+      fi
+
+      # Timer platform, auto-detected the way the timer's own contract names it:
+      # mac, or the two Docker flavours by their persistent home (Hostinger
+      # /data, Contabo /home/node). Anything else is reported, never guessed.
+      _dsr_platform=""
+      case "$(uname -s 2>/dev/null)" in
+        Darwin) _dsr_platform="mac" ;;
+        Linux)
+          case "${HOME:-}" in
+            /data)      _dsr_platform="hostinger" ;;
+            /home/node) _dsr_platform="contabo" ;;
+            *)
+              if [ -d "/data" ]; then
+                _dsr_platform="hostinger"
+              elif [ -d "/home/node" ]; then
+                _dsr_platform="contabo"
+              fi
+              ;;
+          esac
+          ;;
+      esac
+
+      if [ -z "$_dsr_platform" ]; then
+        echo "    ⚠ Drama Studio pickup timer: platform not determined (mac / hostinger / contabo) -- timer NOT registered; re-run on a box the timer contract recognises"
+      else
+        _dsr_timer_rc=0
+        bash "$SKILL_DIR/timer-artifacts/install-timer.sh" --platform "$_dsr_platform" --register 2>&1 | tee -a "$LOG_FILE" || _dsr_timer_rc=$?
+        if [ "$_dsr_timer_rc" -eq 0 ]; then
+          echo "    ✓ Drama Studio pickup timer registered ($_dsr_platform, every 120s)"
+        else
+          # Exit 2 is the documented "this refuses to register" answer. It is a
+          # warning, never a failure: the operator registers the timer by hand
+          # (timer-artifacts/README.md) and the roll continues normally.
+          echo "    ⚠ install-timer.sh --register refused for $_dsr_platform (rc=$_dsr_timer_rc) -- timer NOT registered; register it by hand per timer-artifacts/README.md. Roll continues."
+        fi
+      fi
+      unset _dsr_platform _dsr_timer_rc _dsr_rc
     fi
 
     # Per-skill idempotency sentinel
@@ -11225,7 +11321,7 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       # Command Center scripts are the measured source of root-run python on
       # these boxes, so Skill 32 is where root-owned __pycache__ appears first.
       oc_remove_tree_guarded "$SKILLS_DIR/32-command-center-setup" "skill"
-      cp -r "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
+      cp -R "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
   fi

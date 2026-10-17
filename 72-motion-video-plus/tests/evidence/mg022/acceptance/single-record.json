@@ -1,0 +1,62 @@
+{
+  "example": "single",
+  "mode": "plan",
+  "output": "tests/evidence/mg022/outputs/single.mp4",
+  "expected_frames": 90,
+  "probe_frames": 90,
+  "recount_frames": 90,
+  "duration_seconds": 3.0,
+  "expected_duration_seconds": 3.0,
+  "stream_map": [
+    {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 320,
+      "height": 180,
+      "sample_rate": null
+    },
+    {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "48000"
+    }
+  ],
+  "last_frame_sha256": "bdba60cb2671de16fe32573eb6e71b5f8a8064ef31e23baceb5852ae495110a1",
+  "inputs": [
+    [
+      "scene",
+      "a",
+      0
+    ],
+    [
+      "narration",
+      "n1",
+      1
+    ]
+  ],
+  "media_provenance": {
+    "syntheticSegments": false,
+    "engines": {
+      "a": null
+    }
+  },
+  "narration_segment_presence": [
+    {
+      "id": "n1",
+      "toneHz": 440,
+      "planned_window_seconds": [
+        0.0,
+        3.0
+      ],
+      "mid_segment_band_amplitude": 8171.3,
+      "final_quarter_band_amplitude": 8168.9,
+      "present_mid": true,
+      "present_at_planned_end": true,
+      "proof_kind": "tone segment presence, not speech intelligibility"
+    }
+  ]
+}

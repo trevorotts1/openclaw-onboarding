@@ -13,6 +13,23 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+
+## v27.1.19 - 2026-10-13 - refactor: client-choice model doctrine across Skill 06 routing
+
+- Removed every prescribed model name from the Skill 06 routing doctrine. Models are now resolved from the client's own configuration: the client's explicit choice for the task first, then the client's configured default model; when neither is configured, resolution stops with an ask-the-client message instead of silently pinning a named model. Per-role recommendations (context size, code generation, tool calling, vision) are kept as guidance with their reasons, never as defaults or fallbacks in code.
+- `tools/model_router.py`: both ladder builders replaced by a single client-resolution hook (`resolve_client_models`); the router self-check now asserts the resolution behavior (choice before default, unconfigured stop, no prescribed names). `tools/ghl_form_builder.py` and `tools/ghl_survey_builder.py`: ladders built at plan time through the same hook. `tools/ghl_verify.py` seam docstrings, `SKILL.md`, `ghl-browser-builder-full.md`, and `ghl-install-pages-full.md` updated to the same pattern. Skill version bumped to v27.1.28 (repo-locked pair: `skill-version.txt` + SKILL.md metadata).
+
+## v27.1.18 - 2026-10-13 - feat: OpenClaw Chrome extension becomes the default browser engine
+
+- Operator decision (2026-10-13): the OpenClaw Chrome extension is now Skill 6's PRIMARY/default browser engine — the OpenClaw browser's extension driver on the operator's paired, already signed-in Chrome, driven via `openclaw browser`. agent-browser (Skill 03) is demoted to the FALLBACK lane (gateway discipline unchanged); Playwright stays the scripted escape hatch and the CDP hybrid for cross-origin iframe drag.
+- `tools/capability_probe.py`: the OpenClaw lane is selected FIRST, and only when the extension is installed and current (new disk-only extension probe reading Chrome profiles' Secure Preferences; expected version from `SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION` or the locally bundled extension manifest). `fallbackChain` follows the new order. Tests updated + a fixture Chrome profile added; new test covers the extension-behind case.
+- New standing preflight `scripts/check-openclaw-extension-version.sh`: exit 0 = installed and current; exit 2 = missing or behind, with the Chrome Web Store update path printed. Wired into SKILL.md (ENGINE block + preflight), `ghl-browser-builder-full.md` (new §1.1 + A0.0), INSTALL.md (Step 1), DAY-0-CARD.md (Step 1), QC.md, and PREREQS.json (new `tool-openclaw-chrome-extension` prerequisite; `runtime-openclaw-2-browser` is now the required PRIMARY-lane runtime).
+- Doctrine text updated in SKILL.md, `ghl-browser-builder-full.md` (§1 renumbered: 1.1 extension PRIMARY, 1.2 agent-browser FALLBACK, 1.3 Playwright escape hatch), INSTALL.md, INSTRUCTIONS.md, QC.md, ENV-MATRIX.md (new `extension` capability class), DAY-0-CARD.md, OPERATOR-LIVE-CHECKLIST.md, CORE_UPDATES.md. Token-only auth (D7), runtime snapshot gates (D8), publish-with-approval, and fallback-lane singleton/teardown discipline are unchanged.
+- NOT in this change: `ghl-install-pages-full.md` and the compiled `ghl-install-pages.skill` package are retained historical/packaged artifacts and regenerate from the canonical docs; `skill-version.txt` and SKILL.md `metadata.version` are the repo-locked pair rolled by `scripts/bump-version.sh` at merge time and are deliberately untouched.
+
+
+---
+
 ## v27.1.17 - 2026-10-12 - fix: reconcile-cron job on a throwaway $HOME path is repaired on Hostinger too (SK6003)
 
 - `scripts/install-github-archive-reconcile-cron.sh`: repair now covers Hostinger (`/data`) as well as Contabo (`~/.openclaw`); `~/clawd/skill6-fix` links to `/data/clawd/skill6-fix` on Hostinger. Tests: `TestPersistentPathSK6002` Hostinger repair and link.

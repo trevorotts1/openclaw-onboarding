@@ -1,6 +1,8 @@
-# Agnes Image 2.1 Flash — Full API Reference
+# Agnes Image — Full API Reference (default model 2.5 Flash)
 
-The complete reference for the Agnes Image 2.1 Flash endpoint: model name,
+The complete reference for the Agnes Image endpoint (default model
+`agnes-image-2.5-flash`; explicit legacy pin `agnes-image-2.1-flash` shares the
+same contract): model name,
 endpoint, headers, every request parameter, the full output-dimension table,
 working curl examples (text-to-image and image-to-image, URL and Base64), the
 response shape, error handling, prompting guidance, the pricing/tier/rate-limit
@@ -14,7 +16,7 @@ Official docs index: https://wiki.agnes-ai.com/llms.txt
 
 | Field | Value |
 |-------|-------|
-| Model | `agnes-image-2.1-flash` |
+| Model | `agnes-image-2.5-flash` (default); `agnes-image-2.1-flash` (explicit legacy pin) |
 | Endpoint | `POST https://apihub.agnes-ai.com/v1/images/generations` |
 | Pattern | SYNCHRONOUS — one request, one response with the finished image |
 | Auth | `Authorization: Bearer <AGNES_AI_API_KEY>` |
@@ -56,7 +58,7 @@ Never place a real key in shared docs, commits, or logs.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `model` | string | Yes | Model name. Use `agnes-image-2.1-flash`. |
+| `model` | string | Yes | Model name. Use `agnes-image-2.5-flash` (default) or an explicit legacy pin `agnes-image-2.1-flash`. |
 | `prompt` | string | Yes | Text instruction for generation or editing. |
 | `size` | string | Yes | Output size TIER. Recommended: `1K`, `2K`, `3K`, `4K`. Legacy exact sizes such as `1024x768` are accepted, but unsupported exact sizes may be normalized to the nearest tier. |
 | `ratio` | string | No | Aspect ratio, paired with a tier `size`. One of `1:1`, `3:4`, `4:3`, `16:9`, `9:16`, `2:3`, `3:2`, `21:9`. Default `1:1`. |
@@ -118,7 +120,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "A luminous floating city above a misty canyon at sunrise, cinematic realism, wide-angle composition, rich architectural details, soft golden light, high visual density",
     "size": "2K",
     "ratio": "16:9",
@@ -137,7 +139,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "A clean product photo of a glass cube on a white studio background, soft shadows, high detail",
     "size": "1K",
     "ratio": "1:1",
@@ -154,7 +156,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "Transform the scene into a rain-soaked cyberpunk night with neon reflections while preserving the original composition",
     "size": "2K",
     "ratio": "16:9",
@@ -174,7 +176,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "Make the object matte black while preserving the original composition",
     "size": "1K",
     "extra_body": {
@@ -196,7 +198,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "Make the object orange while preserving the original composition",
     "size": "1K",
     "extra_body": {
@@ -310,10 +312,10 @@ Do NOT place `response_format` at the top level:
 
 ```json
 // WRONG
-{ "model": "agnes-image-2.1-flash", "prompt": "A futuristic city", "size": "1K", "response_format": "url" }
+{ "model": "agnes-image-2.5-flash", "prompt": "A futuristic city", "size": "1K", "response_format": "url" }
 
 // CORRECT
-{ "model": "agnes-image-2.1-flash", "prompt": "A futuristic city", "size": "1K", "extra_body": { "response_format": "url" } }
+{ "model": "agnes-image-2.5-flash", "prompt": "A futuristic city", "size": "1K", "extra_body": { "response_format": "url" } }
 ```
 
 ---

@@ -1,0 +1,29 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "product-front",
+      "path": "images/product-front.jpg",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "fixture-rights",
+      "focal_point": {
+        "x": 0.5,
+        "y": 0.4
+      }
+    }
+  ],
+  "font_requirements": [
+    {
+      "id": "font-fixture-sans",
+      "source": "runtime_registry",
+      "family_alias": "fixture-sans",
+      "weights": [
+        400,
+        700
+      ],
+      "substitution": "forbidden"
+    }
+  ]
+}

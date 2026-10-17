@@ -160,6 +160,13 @@ def main() -> None:
     parser.add_argument("--naming-map", default=None,
                         help="Path to department-naming-map.json (auto-resolved if omitted)")
     parser.add_argument("--dry-run",    action="store_true", help="Print changes, do not write")
+    parser.add_argument("--model-primary", default=None,
+                        help="The client's chosen primary model for this department "
+                             "(default: the client's configured default model from "
+                             "agents.defaults.model in openclaw.json)")
+    parser.add_argument("--model-fallbacks", default=None,
+                        help="Comma-separated fallback model ids chosen by the client "
+                             "(default: the fallbacks of the client's configured default model)")
     args = parser.parse_args()
 
     # ── Resolve naming map ───────────────────────────────────────────────────
@@ -265,6 +272,55 @@ def main() -> None:
             info(f"Department '{args.dept}' already in extension-registry sidecar. Skipping.")
             sys.exit(0)
 
+    # ── Resolve the department model: the client's choice, or their
+    # configured default. No model is prescribed by name here. An explicit
+    # --model-primary (with optional --model-fallbacks) is the client's choice
+    # for this department; otherwise the entry inherits the client's own
+    # configured default model (agents.defaults.model in openclaw.json).
+    # If neither exists, registration still completes and records NO model
+    # (empty primary): registration is the department ledger, not a model
+    # prescription, and the fleet-critical sidecar write (plus the legacy
+    # root-block self-heal) must never be gated on model configuration. The
+    # department's model resolves from the client's choice or configured
+    # default when it first runs, and that run stops and asks the client if
+    # neither exists by then. Never invent a model.
+    _banned = ("anthropic", "claude")
+    def _is_banned(mid: str) -> bool:
+        low = str(mid).lower()
+        return any(b in low for b in _banned)
+    _fallbacks: list = []
+    if args.model_primary:
+        _primary = args.model_primary.strip()
+        if args.model_fallbacks:
+            _fallbacks = [f.strip() for f in args.model_fallbacks.split(",") if f.strip()]
+    else:
+        _dm = ((config.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(_dm, dict):
+            _primary = str(_dm.get("primary") or "").strip()
+            _fb = _dm.get("fallbacks")
+            if isinstance(_fb, list):
+                _fallbacks = [str(f).strip() for f in _fb if str(f).strip()]
+        elif isinstance(_dm, str):
+            _primary = _dm.strip()
+        else:
+            _primary = ""
+    if not _primary:
+        info("No model recorded for this department: the client has not chosen "
+             "one (--model-primary) and no default model is configured "
+             "(agents.defaults.model) in openclaw.json. Registering with an "
+             "empty model primary; the model resolves from the client's choice "
+             "or configured default when the department first runs, and that "
+             "run stops and asks the client if neither exists by then.")
+    if _is_banned(_primary):
+        die(f"Resolved primary model '{_primary}' is an Anthropic or Claude model, "
+            "which the fleet never uses for pipeline agents. Ask the client to "
+            "choose a different model.")
+    _kept_fallbacks = [f for f in _fallbacks if not _is_banned(f)]
+    if len(_kept_fallbacks) != len(_fallbacks):
+        info("Dropped Anthropic/Claude fallback id(s); the fleet never uses them.")
+    _fallbacks = _kept_fallbacks
+
+
     # ── Build routing entry ──────────────────────────────────────────────────
     # N31 compliant: model MUST be an object with primary + fallbacks
     new_routing_entry = {
@@ -274,12 +330,8 @@ def main() -> None:
         "description": description,
         "registered_at": datetime.now(timezone.utc).isoformat(),
         "model": {
-            "primary": "ollama/kimi-k2.6:cloud",
-            "fallbacks": [
-                "openrouter/moonshotai/kimi-k2.6",
-                "ollama/deepseek-v4.1-flash:cloud",
-                "openrouter/deepseek/deepseek-v4.1-flash",
-            ],
+            "primary": _primary,
+            "fallbacks": _fallbacks,
         },
     }
 

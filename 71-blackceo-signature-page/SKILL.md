@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.7
+version: 1.2.10
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -81,13 +81,16 @@ Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Be
 
 Stage IDs (canonical, from `references/stage-contract.json`):
 
-`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify`
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
 
-Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages.
+The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
+
+Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages. For itemized stages the gate also exposes the item commands `check-item` / `close-item` / `block-item` (see `references/item-gate-spec.md`): an item closes only from its own validators and reviews, and a stage close fans in its items by name. Review scores are Review Receipt v2 records: they live in `private/reviews/<stage>/<item-id>.review.json`, written by `scripts/write_review.py` from the reviewing session, and the gate validates them at close. A browser-using stage cannot close with unaccounted sessions; REPORT.md carries the hygiene line (see `references/browser-hygiene.md`).
 
 ### Copy
 
 - Select **Standard** or **Long-Form**; do not silently merge both.
+- The copy stage writes from the Brand Law and exactly one copy guide: the one the run's intake `copy_version` selects. Never open the other version's guide in a copy run, and never carry a rule from one version into the other (the Standard's per-step character limits are the standing example). Structure is enforced by `scripts/validate_copy_structure.py` against the matching spec in `references/copy-specs/`; the reviewer scores against that spec and the matching emotional-quality extract.
 - Copy leads layout; never shorten approved copy to fit a template.
 - Keep internal framework labels/counts in the private review source only.
 - Derive a clean publication source with no private production labels.
@@ -97,6 +100,7 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 ### Design / wireframes / mockups
 
 - Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
+- The `desktop-wireframe` and `mobile-tablet` stages must produce `section-plan.json` as a required output.
 - Build complete desktop first, then intentionally reflow mobile/tablet; do not merely shrink desktop.
 - Resist generic AI-page patterns: repetitive cards, identical section geometry, generic SaaS gradients, sterile stock-office scenes, repeated center alignment, and same-ratio imagery everywhere.
 - Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
@@ -124,8 +128,8 @@ Read only what the stage contract's `reads` field names for image stages (the v5
 Non-negotiables:
 
 - one image-map entry -> one complete prompt -> one independently generated asset -> one correctly named file;
-- production prompt length follows the KIE prompt budget (`07-kie-setup/references/kie-common-rules.md` rule 12): 95 to 100 percent of the chosen model's character maximum, never below 80 percent, read from Skill 74 `prompt-budget` and never from memory. This supersedes the older 5,000-20,000 house band, the 8,000-14,000 working target and the 19,000 compatibility ceiling;
-- never silently truncate a prompt or disable validation; fix a budget failure by adding or cutting the exact characters `prompt-budget --check` reports;
+- production prompt length is governed by element completeness: a production prompt carries every applicable element in full. Length is telemetry, recorded per prompt, and never a target: no percentage of any maximum is required and no floor applies. A model's VERIFIED character cap is a hard ceiling only. A prompt under 2,000 characters is flagged for manual re-inspection (a tripwire, not a failure). Padding a prompt to reach a length is itself a failure (padding detection in `validate_prompt.py`);
+- never silently truncate a prompt or disable validation; fix a completeness failure by completing the missing elements in full;
 - in `SECRET_SAUCE_ONLY`, the prompt's color-grade element starts with the Signature Grade Block from `assets/brand/signature-grade-block.txt`, verbatim (`scripts/validate_prompt.py --sauce-only` enforces it);
 - use camera, lens, aperture/depth, composition, subject placement, lighting, posture/expression, fashion, skin/hair, color-grade, typography-as-image, and negative-space intelligence where applicable;
 - preserve real-person identity and recurring-character continuity;
@@ -133,7 +137,7 @@ Non-negotiables:
 - keep one page-level Art Direction coherent while varying shot/view scale, ratio, environment, posture, scene type, and intensity;
 - never pass human research-lineage names downstream when a style library requires branded, descriptive execution grammar.
 
-Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages; it checks anatomy, placeholders, padding and the grade block) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map. The length budget is decided by Skill 74 `prompt-budget --check` for the chosen model (rule 12); if the validator's own length check ever disagrees with it, the budget wins.
+Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages; it checks anatomy, placeholders, padding and the grade block) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map. Length is telemetry: `validate_prompt.py` records it and applies only the VERIFIED-cap ceiling; element completeness, not length, gates the stage.
 
 ### Image and video engine routing
 
@@ -149,7 +153,7 @@ Paid-call approvals, client-owned credentials, provider limits, and retry rules 
 
 ## Swarm execution
 
-Run stages as `references/swarm-plan.md` defines: one agent per item, reviewers start when their item lands, never fixed-size chunks. Every agent writes its receipt to `private/receipts/` and its files to the run folder. The orchestrator learns results only from `stage_gate.py check/close` output, never from an agent's chat reply. No re-read or recovery lanes.
+Long stages fan out under `scripts/swarm_runner.py`, specified in `references/swarm-plan.md`. Items are the unit of work: an image's generation starts when its prompt item closes (gate commands `check-item` / `close-item`, `references/item-gate-spec.md`). The runner schedules per-item briefs from `references/swarm-briefs/`, bounds KIE starts at 20 per 10 seconds per account, retries each item once in its failure class's lane, and closes items only from observed results through the stage gate. Blocked items are named at fan-in, never silently stalled.
 
 ## QC and repair
 
@@ -170,7 +174,7 @@ Read `references/qc-contract.md`.
 
 ## Reporting
 
-Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED — except derived fonts: brand fonts missing are derived-and-documented per `font_policy` and reviewed, never blocked (the reviewer's approval of `fonts_source`/`font_rationale`/`font_reviewer` in the bible is the confirmation, and an unapproved derived-font bible still ships nothing).
+Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. REPORT.md carries the review-mode stamp line (INDEPENDENT / SELF-REVIEWED / UNKNOWN) computed by the gate from the run's Review Receipt v2 records. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED — except derived fonts: brand fonts missing are derived-and-documented per `font_policy` and reviewed, never blocked (the reviewer's approval of `fonts_source`/`font_rationale`/`font_reviewer` in the bible is the confirmation, and an unapproved derived-font bible still ships nothing).
 
 ## Installation / maintenance boundary
 

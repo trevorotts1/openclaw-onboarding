@@ -1,0 +1,44 @@
+{
+  "accessibility": "role=dialog aria-modal, labelled heading, visible close control with aria-label, labelled fields with autocomplete/inputmode, Escape/close/overlay dismissal, focus moves into the dialog and is restored to the originating CTA, role=alert error region, role=status pending/verified regions.",
+  "dependencies": [
+    {
+      "component": "design-tokens",
+      "file": "tokens/tokens.py",
+      "sha256": "33e0f77a6525121b2fffba0666d9ab1397575070a95ca0e0459449fe4b92c356"
+    },
+    {
+      "component": "shared-styles",
+      "file": "design.css",
+      "sha256": "68f6084ba8e86cb32622bbf799b49b16a518c4c348481dcbe2f992200cda2cce"
+    }
+  ],
+  "doc": "16_SHARED_COMPONENTS_BRAND_AND_QC.md + 07_SKILL_71_LANDING_PAGE_UPDATE_SPEC.md",
+  "doc_sections": [
+    "16:1",
+    "16:5",
+    "16:6",
+    "07:4"
+  ],
+  "events": [
+    {
+      "detail": "interest-capture payload {event, component, component_version, fields{first_name,last_name,email,phone}, native_field_map, consent, valid, validation_errors}",
+      "name": "sl:interest-capture"
+    },
+    {
+      "detail": "consumer receipt, dispatched only after the delivery adapter calls markVerified() with a verified native submission or approved API receipt",
+      "name": "sl:interest-verified"
+    }
+  ],
+  "files": {
+    "README.md": "579e886539c0fb11383298f841e9559ede1a23879762c1fbd0a99cf58cadcce7",
+    "interest_popup.js": "3dd182dbef56edbf330bcc90be7d2b0ff2a5a843e440721b66971ac99b5cb11d",
+    "interest_popup.py": "ec9e4928e1a05c50e18c62f68069f1a75241283ab5a9842c0ea62fdf2f3ddc75",
+    "js_harness.js": "b5c9dfeba6712ba3c50d4bcd9e40918ff66b58b25a3b1f237cd4a8af1417b480",
+    "test_interest_popup.py": "cd99e6cfd32bfe0c433e5ebe983edfeea30ef48dd44d93cf43ca442c3f4218b9"
+  },
+  "inputs": "config {id_prefix, heading, intro, submit_label, pending_text, verified_text, error_text, consent_statements[{id, text, required}]} + brand token resolution for CSS variables.",
+  "name": "interest-popup",
+  "outputs": "Popup dialog markup (sl- namespaced) + interest-capture payload via build_interest_capture().",
+  "owner": "S71",
+  "version": "1.0.0"
+}

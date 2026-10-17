@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "assets": {
+    "hero-image": {
+      "source": "client_supplied",
+      "rights_status": "client_supplied",
+      "role": "hero_image",
+      "media_type": "image/png",
+      "dimensions": {
+        "width": 800,
+        "height": 600
+      },
+      "crop": {
+        "allowed": true,
+        "min_visible_fraction": 0.85
+      },
+      "protected_regions": [
+        {
+          "x": 0.65,
+          "y": 0.15,
+          "width": 0.22,
+          "height": 0.3,
+          "label": "subject face"
+        }
+      ],
+      "permitted_edits": [
+        "crop",
+        "resize"
+      ],
+      "placement": {
+        "form": "full_frame_background"
+      }
+    },
+    "client-logo": {
+      "source": "client_supplied",
+      "rights_status": "owned",
+      "role": "brand_logo",
+      "media_type": "image/png",
+      "dimensions": {
+        "width": 400,
+        "height": 200
+      },
+      "protected_regions": [
+        {
+          "x": 0.02,
+          "y": 0.3,
+          "width": 0.45,
+          "height": 0.4,
+          "label": "logo mark"
+        }
+      ],
+      "permitted_edits": [
+        "resize"
+      ],
+      "placement": {
+        "form": "overlay_corner"
+      }
+    },
+    "data-chart": {
+      "source": "created_in_house",
+      "rights_status": "owned",
+      "role": "data_evidence",
+      "media_type": "image/jpeg",
+      "dimensions": {
+        "width": 1024,
+        "height": 768
+      },
+      "permitted_edits": [
+        "crop"
+      ],
+      "placement": {
+        "form": "full_frame"
+      }
+    },
+    "mood-reference": {
+      "source": "created_in_house",
+      "rights_status": "owned",
+      "role": "mood_reference",
+      "media_type": "image/svg+xml",
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "permitted_edits": []
+    },
+    "poster-derivative": {
+      "source": "derived_in_house",
+      "rights_status": "owned",
+      "role": "poster_frame",
+      "media_type": "image/png",
+      "dimensions": {
+        "width": 800,
+        "height": 450
+      },
+      "derived_from": "hero-image",
+      "approval_ref": "approval/poster-derivative-fixture-01",
+      "permitted_edits": [
+        "crop",
+        "resize"
+      ],
+      "placement": {
+        "form": "poster"
+      }
+    }
+  }
+}

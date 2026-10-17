@@ -219,6 +219,11 @@ CACHE_FRESH_SECONDS = 24 * 3600
 # separately and always comes FIRST.
 # --------------------------------------------------------------------------- #
 ENV_FILE_PATHS: List[str] = [
+    # Provisioning and the fleet keep the podcast keys here; ~/clawd/secrets/.env
+    # is only a symlink to this on the operator box, so list it directly first.
+    os.path.expanduser("~/.openclaw/secrets/.env"),
+    os.path.expanduser("~/.openclaw/secrets.env"),
+    "/data/.openclaw/secrets/.env",
     os.path.expanduser("~/clawd/secrets/.env"),
     os.path.expanduser("~/.openclaw/.env"),
     "/data/.openclaw/.env",

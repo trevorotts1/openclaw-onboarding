@@ -51,3 +51,16 @@ Route delegation through these seams; do not duplicate the receiving skill's pro
 - **GHL delivery:** delegate media/page build to **Skill 6 `ghl-install-pages`**, the existing GHL delivery rail.
 - **Vercel:** use **Skill 8 `vercel-setup`** when that hosting target is selected and configured.
 - **Browser automation:** use the repo's managed browser path / Skill 3 conventions when graphical browser work is required.
+
+## Pinned externals
+
+Some authorities this skill obeys live outside the skill: Skill 07's
+KIE common rules, `shared-utils/kie_prompt_enforcer.py`, Skill 74's
+live adapter, and Skill 66's model registry. The exact git blob SHA
+this version of the skill was verified against, for each one, is
+pinned in `references/external-authorities.json`.
+`scripts/check_authority_pins.py` (also run by `verify.sh`) hashes
+the installed counterpart of each pin and prints PIN OK or PIN DRIFT;
+drift is a warning, not a failure, but it is never invisible.
+Updating a pin is a deliberate act: change the SHA, bump `checked_on`,
+and note it in the skill CHANGELOG.

@@ -24,7 +24,11 @@ command -v jq >/dev/null 2>&1 || { echo "$P FATAL: jq not on PATH" >&2; exit 1; 
 
 awk '/^_cc_mtime\(\)/{p=1} p{print} p&&/^}$/{exit}' "$RFI" > "$TMP/fn.sh"
 awk '/^cc_route_update_through_canonical_path\(\)/{p=1} p{print} p&&/^}$/{exit}' "$RFI" >> "$TMP/fn.sh"
+# Item 02: the router stamps commandCenterBuildFresh from this content oracle,
+# so it must be sourced too (it shells out to build-inventory.sh --verify).
+awk '/^cc_served_build_current\(\)/{p=1} p{print} p&&/^}$/{exit}' "$RFI" >> "$TMP/fn.sh"
 grep -q '^cc_route_update_through_canonical_path()' "$TMP/fn.sh" || { echo "$P FATAL: function not found" >&2; exit 1; }
+grep -q '^cc_served_build_current()' "$TMP/fn.sh" || { echo "$P FATAL: cc_served_build_current not found" >&2; exit 1; }
 FILTER="$(python3 - "$RFI" <<'PY'
 import re, sys
 m = re.search(r"DEGRADED_PHASES=\"\$\(jq -r '(.*?)' \"\$STATE_FILE\"", open(sys.argv[1]).read(), re.S)
@@ -33,8 +37,15 @@ PY
 )"
 [[ -n "$FILTER" ]] || { echo "$P FATAL: FINAL jq filter not found" >&2; exit 1; }
 
-mkdir -p "$TMP/bin" "$TMP/app"
+mkdir -p "$TMP/bin" "$TMP/app/scripts/lib"
 printf '#!/bin/sh\nprintf %%s "${CURL_CODE:-200}"\n' > "$TMP/bin/curl"; chmod +x "$TMP/bin/curl"
+
+# Item 02: commandCenterBuildFresh is stamped from CONTENT (build-inventory
+# --verify), not from a BUILD_ID timestamp, so the fixture checkout now carries
+# the same scripts/lib/build-inventory.sh a real CC checkout has. STUB_INV_RC
+# is the pass/fail lever (0 = VERIFIED, 1 = MISMATCH).
+printf '#!/bin/sh\nexit "${STUB_INV_RC:-0}"\n' > "$TMP/app/scripts/lib/build-inventory.sh"
+chmod +x "$TMP/app/scripts/lib/build-inventory.sh"
 
 run_update() { # run_update <update.sh body> -> prints the FINAL degraded list
   printf '#!/usr/bin/env bash\n%s\n' "$1" > "$TMP/app/update.sh"
@@ -61,6 +72,15 @@ out="$(run_update 'cd "$CC_APP_DIR"; sleep 1; mkdir -p .next; touch .next/BUILD_
 out="$(run_update 'cd "$CC_APP_DIR"; mkdir -p .next; touch -t 202001010000 .next/BUILD_ID')"
 [[ "$out" == *"ccBuildFresh(6)"* ]] && pass "rolled-back update stays degraded ($out)" \
   || fail "rolled-back update not flagged: '$out'"
+
+# Item 02: a FRESH timestamp with CONTENT THAT DOES NOT VERIFY must stay
+# degraded — the timestamp alone can no longer prove the deployment.
+old_stub="$TMP/app/scripts/lib/build-inventory.sh"
+printf '#!/bin/sh\nexit "${STUB_INV_RC:-1}"\n' > "$old_stub"   # mismatch by default
+out="$(run_update 'cd "$CC_APP_DIR"; sleep 1; mkdir -p .next; touch .next/BUILD_ID')"
+[[ "$out" == *"ccBuildFresh(6)"* ]] && pass "fresh BUILD_ID + content MISMATCH -> still degraded ($out)" \
+  || fail "content mismatch was masked by a fresh timestamp: '$out'"
+printf '#!/bin/sh\nexit "${STUB_INV_RC:-0}"\n' > "$old_stub"   # restore VERIFIED default
 
 echo "$P Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

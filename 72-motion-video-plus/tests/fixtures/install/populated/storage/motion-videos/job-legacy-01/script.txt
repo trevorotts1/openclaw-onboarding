@@ -1,0 +1,1 @@
+Acme launch narration script (fixture).

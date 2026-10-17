@@ -9,7 +9,7 @@
   "snapshots": {
     "v1": {
       "snapshot_id": "IEmFFkIngiskcfJk9MH6",
-      "cut_from": "CjxATjhv9Gt21qSqURIt (pre-2026-07-10 workflow fixes)",
+      "cut_from": "CjxATjhv9Gt21qSqURIt (refreshed in place 2026-09-19T17:19:39Z; same id)",
       "status": "live-in-n8n",
       "blocked_on": [],
       "superseded_by": "v2"

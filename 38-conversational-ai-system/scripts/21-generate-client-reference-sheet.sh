@@ -65,6 +65,7 @@ placeholders = [
     'CLIENT_BUSINESS_NAME', 'CLIENT_FIRST_NAME', 'PUBLIC_HOSTNAME',
     'ROUTE_ID', 'HOOKS_TOKEN', 'WORKFLOW_ID', 'CHANNEL',
     'INDUSTRY_CONTEXT', 'DESIRED_OUTCOME', 'MASTER_FILES_DIR',
+    'CLIENT_MODEL',
 ]
 for ph in placeholders:
     val = os.environ.get(ph, '')
@@ -283,8 +284,57 @@ substitute_template() {
   INDUSTRY_CONTEXT="$INDUSTRY_CONTEXT" \
   DESIRED_OUTCOME="$DESIRED_OUTCOME" \
   MASTER_FILES_DIR="$MASTER_FILES_DIR" \
+  CLIENT_MODEL="$CLIENT_MODEL" \
   python3 "$PY_SUB" "$tpl"
 }
+
+# ----- resolve the client model for the sheet (selection doctrine) -----
+# The operator's explicit choice (CLIENT_MODEL / SKILL38_MODEL) first, else the
+# routing agent's configured model in openclaw.json, else the client's
+# configured default model (agents.defaults.model). If none resolve, the sheet
+# carries a clearly-marked ask-the-client placeholder where the model belongs
+# (the same pattern as the hooks-token placeholder below); a named model is
+# never substituted silently.
+CLIENT_MODEL="${CLIENT_MODEL:-${SKILL38_MODEL:-}}"
+if [ -z "$CLIENT_MODEL" ]; then
+  for _cfg in "${OPENCLAW_CONFIG:-}" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
+    [ -n "$_cfg" ] && [ -f "$_cfg" ] || continue
+    CLIENT_MODEL="$(python3 - "$_cfg" "${AGENT_ID:-main}" <<'PYEOF_INNER'
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    print("")
+    sys.exit(0)
+agents = cfg.get("agents") or {}
+aid = sys.argv[2] if len(sys.argv) > 2 else "main"
+
+def prim(m):
+    if isinstance(m, dict):
+        return m.get("primary") or ""
+    return m if isinstance(m, str) else ""
+
+model = ""
+entries = agents.get("entries") or {}
+if isinstance(entries.get(aid), dict):
+    model = prim(entries[aid].get("model"))
+if not model:
+    for a in agents.get("list") or []:
+        if isinstance(a, dict) and a.get("id") == aid:
+            model = prim(a.get("model"))
+            break
+if not model:
+    model = prim((agents.get("defaults") or {}).get("model"))
+print(model)
+PYEOF_INNER
+)"
+    [ -n "$CLIENT_MODEL" ] && break
+  done
+fi
+if [ -z "$CLIENT_MODEL" ]; then
+  CLIENT_MODEL="CLIENT MODEL NOT SET: ask the client which model to use, or set the client's configured default model"
+  echo "WARN: no client model resolved for the reference sheet; the sheet carries an ask-the-client placeholder where the model belongs." >&2
+fi
 
 # ----- render the 4 sections to staged files -----
 SEC1="$STAGE_DIR/.reference-sheet.rendered.md"
@@ -444,7 +494,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "match": "%s",\n' "$REF_HOOK_NAME"
   printf '  "action": "agent",\n'
   printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
-  printf '  "model": "ollama/deepseek-v4.1-flash:cloud",\n'
+  printf '  "model": "%s",\n' "$CLIENT_MODEL"
   printf '  "wakeMode": "now",\n'
   printf '  "name": "GHL Sales Inbound",\n'
   printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'
@@ -509,7 +559,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "match": "%s",\n' "$REF_HOOK_NAME"
   printf '  "action": "agent",\n'
   printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
-  printf '  "model": "ollama/deepseek-v4.1-flash:cloud",\n'
+  printf '  "model": "%s",\n' "$CLIENT_MODEL"
   printf '  "wakeMode": "now",\n'
   printf '  "name": "GHL Sales Inbound",\n'
   printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'

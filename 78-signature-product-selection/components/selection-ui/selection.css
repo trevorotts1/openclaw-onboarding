@@ -1,0 +1,91 @@
+/* Skill 78 selection UI component. Owner: S78 (comparison matrix component,
+   doc 16). Namespaced sl78- classes and --sl78-* token variables only: no
+   broad resets, nothing that can collide with native GHL form styling.
+   Brand values arrive through the token variables, set by the brand loader
+   (S71). The defaults below are structural system colors (CanvasText,
+   Canvas, Highlight, GrayText) so the component renders legibly with no
+   brand loaded; they are not a client palette and every one of them is
+   overridden by the brand loader at installation. The error color is a
+   functional constant (error signaling), not a brand value. */
+.sl78-selection {
+  --sl78-ink: CanvasText;
+  --sl78-accent: Highlight;
+  --sl78-surface: Canvas;
+  --sl78-border: GrayText;
+  --sl78-focus: Highlight;
+  --sl78-error: #b00020; /* functional error red, not a brand color */
+  --sl78-radius: 12px;
+  color: var(--sl78-ink);
+  background: var(--sl78-surface);
+  font-family: inherit;
+}
+.sl78-selection * { box-sizing: border-box; }
+.sl78-offers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.sl78-offer {
+  border: 2px solid var(--sl78-border);
+  border-radius: var(--sl78-radius);
+  padding: 1rem;
+  display: block;
+  cursor: pointer;
+}
+.sl78-offer:focus-within {
+  outline: 3px solid var(--sl78-focus);
+  outline-offset: 2px;
+}
+.sl78-offer[data-selected="true"] {
+  border-color: var(--sl78-accent);
+  box-shadow: 0 0 0 1px var(--sl78-accent);
+}
+.sl78-offer input[type="radio"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--sl78-accent);
+}
+.sl78-offer input[type="radio"]:focus-visible {
+  outline: 3px solid var(--sl78-focus);
+  outline-offset: 2px;
+}
+.sl78-price { font-weight: 700; }
+.sl78-schedule { border: 0; margin: 0.5rem 0 0; padding: 0; }
+.sl78-schedule legend { font-weight: 600; padding: 0; }
+.sl78-schedule-option { display: block; padding: 0.25rem 0; }
+.sl78-fit { font-style: italic; }
+.sl78-exclusions { color: var(--sl78-ink); }
+.sl78-recommended-badge {
+  display: inline-block;
+  border: 1px solid var(--sl78-accent);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.85rem;
+}
+.sl78-error {
+  color: var(--sl78-error);
+  border: 2px solid var(--sl78-error);
+  border-radius: var(--sl78-radius);
+  padding: 0.75rem 1rem;
+}
+.sl78-reconfirm {
+  border: 2px solid var(--sl78-focus);
+  border-radius: var(--sl78-radius);
+  padding: 0.75rem 1rem;
+}
+.sl78-matrix { border-collapse: collapse; width: 100%; }
+.sl78-matrix th, .sl78-matrix td {
+  border: 1px solid var(--sl78-border);
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+/* Mobile: stacked offers. The comparison moves into a disclosure, but
+   material exclusions are rendered OUTSIDE it and are never hidden. */
+@media (max-width: 640px) {
+  .sl78-offers { grid-template-columns: 1fr; }
+  .sl78-matrix-wrap { display: block; }
+}

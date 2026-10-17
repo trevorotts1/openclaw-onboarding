@@ -30,6 +30,7 @@
 """Intake ledger with atomic exclusive-create claim, dedup, and quarantine."""
 
 import argparse
+import hashlib
 import json
 import os
 import secrets
@@ -45,6 +46,17 @@ STATES = ("received", "needs_input", "researching", "writing", "qc", "art", "aud
           "publishing", "enrolling", "complete", "queued_credit_out", "aged_out",
           "failed", "test")
 TERMINAL = ("complete", "failed", "aged_out")
+
+# U035: podcast_state.py stamps this integrity checksum onto the ledger record:
+# SHA-256 of the canonical JSON (sorted keys, no whitespace) of every OTHER field.
+# The formula is documented there (verify_checksum / _sync_ledger) and is unchanged
+# here; it is restated because the two layers speak as separate processes and this
+# file is the webhook side of that contract. The checksum is the LAST field written,
+# so every later write to a stamped record must re-stamp it -- otherwise
+# podcast_state.verify_checksum refuses the next transition with "ledger checksum
+# MISMATCH" and rolls that transition back (the bridge note, the flow binding, a
+# duplicate redelivery and an operator retry all pass through _persist_record).
+CHECKSUM_KEY = "_checksum"
 
 # Only safe metadata is copied into the record file; answer text (potential PII)
 # lives only in the sibling .payload.json, so a dashboard read never sees answers.
@@ -139,7 +151,25 @@ def _new_record(job_key, canonical, state):
     return rec
 
 
+def _seal_checksum(rec):
+    """U035: (re-)stamp the integrity checksum over every field but the checksum
+    itself, using podcast_state.py's documented formula. Returns the rec."""
+    obj = {k: v for k, v in rec.items() if k != CHECKSUM_KEY}
+    canonical = json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    rec[CHECKSUM_KEY] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return rec
+
+
 def _persist_record(job_key, rec, base=None):
+    # Single last write to a record. Re-stamp an already-stamped record here, so a
+    # bridged job can still be closed: podcast_state stamps _checksum when it
+    # mirrors its own status, and every webhook-layer field written AFTER that
+    # (the bridge note in _bridge_and_record, the flow binding in _launch_pipeline,
+    # a duplicate or retry) used to be persisted with the previous stamp, which made
+    # the next podcast_state transition fail closed with "ledger checksum MISMATCH".
+    # Records that carry no _checksum yet (pre-U035) are written unchanged.
+    if CHECKSUM_KEY in rec:
+        _seal_checksum(rec)
     _write_private(record_path(job_key, base), json.dumps(rec, indent=2, sort_keys=True))
 
 

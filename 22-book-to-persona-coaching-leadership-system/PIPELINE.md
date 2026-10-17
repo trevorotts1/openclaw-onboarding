@@ -9,15 +9,15 @@
 PDF → Text Extraction (pdfplumber, free) → .txt file
                                               ↓
                               Phase 1: Smart model selection (Extraction)
-                              → shared-utils/select_model.py picks latest Kimi
-                                (Ollama Cloud preferred → OpenRouter → OAuth GPT → DeepSeek V4+)
+                              → shared-utils/select_model.py resolves the client's
+                                choice, or the client's configured default model
                                 Anthropic FORBIDDEN. Stops & asks owner if no match.
                                     ↓ extraction-notes.md
                               Phase 2: Smart model selection (Analysis)
-                                Same Kimi-first chain as Phase 1.
+                                Same client-choice/default resolution as Phase 1.
                                     ↓ analysis-notes.md
-                              Phase 3: OAuth GPT preferred (Synthesis)
-                                Latest Kimi as fallback. Never Anthropic.
+                              Phase 3: Smart model selection (Synthesis)
+                                Same client-choice/default resolution. Never Anthropic.
                                     ↓ persona-blueprint.md  (distilled two-sided persona)
                               Phase 3b: Same chain as Phase 3 (Playbook Appendix)
                                 Preserves the book's reusable copy/funnel assets at full fidelity.
@@ -52,20 +52,17 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ## Phase 1 - Extraction (Smart Model Selection)
 
-**Model selection is DYNAMIC.** No model is hardcoded in this skill. The agent calls `shared-utils/select_model.py` which walks `openclaw.json` and picks the best available model in this priority order:
+**Model selection is DYNAMIC.** No model is hardcoded in this skill, and no model is prescribed by name. Ask the client which model they want to use for this phase. If the client has already configured a default model, use the client's configured default model. The agent calls `shared-utils/select_model.py`, which resolves the client's choice, or the client's configured default model, from the client's own `openclaw.json`:
 
-1. **Ollama Cloud DeepSeek V4.1 Flash or latest (Tier 1, PREFERRED)** — `ollama/deepseek-v4.1-flash:cloud` or higher version. 1M context window, subscription-billed, smartest for long-context book extraction.
-2. **Ollama Cloud Kimi 2.6 or latest (Tier 2, PREFERRED)** — `ollama/kimi-k2.6:cloud` or higher version. 262K context, subscription-billed, smartest for compact extraction.
-3. **OpenRouter DeepSeek V4.1 Flash or latest (Tier 3, FALLBACK)** — `openrouter/deepseek/deepseek-v4.1-flash` or higher. Same DeepSeek V4.1 Flash model, per-token billed. Used only when Ollama Cloud DeepSeek V4.1 Flash is unavailable.
-4. **OpenRouter Kimi 2.6 or latest (Tier 4, FALLBACK)** — `openrouter/moonshot/kimi-k2.6` or higher. Same Kimi model, per-token billed. Used only when Ollama Cloud Kimi is unavailable.
-5. **OAuth GPT (Tier 5, LAST RESORT)** — `codex/gpt-*` or `openai-codex/gpt-*`, highest version. ChatGPT subscription, no per-call cost. Used when neither Ollama Cloud nor OpenRouter has Kimi or DeepSeek V*-pro.
-6. **STOP and ask the owner (Tier 6)** — if none of the above are in the client's `openclaw.json`, the selector prompts: *"Which model should I use for Book-to-Persona Phase 1? Reply with the model ID."* The install continues without blocking; the skill is wired once the owner answers.
+1. **Client's explicit choice** - the model the client named for this skill or phase always wins.
+2. **Client's configured default model** - `agents.defaults.model` in the client's `openclaw.json`, used when the client has not named a specific model for this phase.
+3. **STOP and ask the owner** - if neither exists in the client's `openclaw.json`, the selector prompts: *"Which model should I use for Book-to-Persona Phase 1? Reply with the model ID."* The pipeline does not start, and no model is substituted silently. The install continues without blocking; the skill is wired once the owner answers.
 
-**The rule in plain English:** prefer Ollama DeepSeek V4.1 Flash or Kimi 2.6 (or whatever the latest version of each is). If the client doesn't have Ollama Cloud, fall back to the OpenRouter version of THE SAME MODEL (DeepSeek V4.1 Flash / Kimi 2.6). Never default to a different model just because OpenRouter is configured — same model family, different route.
+**Recommendation (guidance only - the client's selection always wins):** a model with a large context window, because extraction passes the whole book text in a single call and a small-window model forces chunking and loses cross-chapter patterns; on a subscription-billed route where the client has one, because per-book cost stays flat instead of scaling with book length; and via a direct route rather than an aggregator when the same model is configured both ways, because the direct route is usually cheaper for the identical model.
 
-**ABSOLUTE RULE:** Never select Anthropic models (`anthropic/claude-*`). The selector filters them out at every tier.
+**ABSOLUTE RULE:** Never select Anthropic models (`anthropic/claude-*`). The selector filters them out at every step.
 
-**Auto-adapts to new versions:** When Ollama Kimi 2.7 or 3.0 ships and the client adds it, the selector automatically picks the higher version. No skill update needed.
+**Auto-adapts:** When the client configures a newer model, the selector resolves it with no skill update needed.
 
 **How to invoke from the install agent:**
 ```bash
@@ -99,21 +96,23 @@ python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" \
 
 **Large book handling:**
 - Books over 200,000 characters: pass first 200,000 chars (covers most books)
-- A Kimi 2.6+ context window (262K tokens, 96K max output) safely handles this with room for the system prompt. If the selector lands on a DeepSeek V4 tier instead, the 128K context still handles most book chunks; very large books may need additional chunking — see "Chunking" below.
+- Whether that fits in one call depends on the resolved model's context window; a large-window model handles it with room for the system prompt, while a smaller-window model needs the book chunked first - see "Chunking" below. The pipeline never picks a model for its window size; it only sizes the input to the model the client chose or configured.
 
 ---
 
 ## Phase 2 - Analysis (Smart Model Selection)
 
-**Model selection:** Same `shared-utils/select_model.py` chain as Phase 1. Priority: Ollama Cloud DeepSeek V4.1 Flash (1M context, smartest for analysis) → Ollama Cloud Kimi 2.6 → OpenRouter DeepSeek V4.1 Flash → OpenRouter Kimi 2.6 → OAuth GPT. Never Anthropic.
+**Model selection:** Same `shared-utils/select_model.py` resolution as Phase 1: the client's choice, or the client's configured default model. Never Anthropic. If nothing is configured, the selector stops and asks the owner which model to use.
 
-**Why this changed:** v10.2.0 made the priority explicit at the model-family level — DeepSeek V4.1 Flash is the preferred Phase 2 model (1M context handles full-book analysis without chunking), and Kimi 2.6 is the smart-extraction alternate. Both come from Ollama Cloud first; the same models from OpenRouter only fire when the Ollama copy isn't configured. v9.5.0 had already retired the hardcoded `deepseek/deepseek-v3.2` Phase 2 model — v10.2.0 just makes the Ollama-first preference for the new DeepSeek V4.1 Flash and Kimi 2.6 explicit.
+**Recommendation:** a strong-reasoning model with a large context window, because Phase 2 works over the full extraction notes at once rather than page by page.
 
-**Route + API key:** Depends on which model the selector picks. Ollama → local Ollama daemon. OpenRouter → `OPENROUTER_API_KEY` in `~/.openclaw/secrets/.env`. OAuth → OpenClaw OAuth (no API key needed).
+**Why this changed:** Earlier versions prescribed specific models for this phase (v9.5.0 retired a hardcoded Phase 2 model in favor of a named preference order; v10.2.0 revised that order). Named prescriptions went stale as models rotated, so selection is now the client's choice or configured default, resolved by the selector at run time.
+
+**Route + API key:** Depends on which model the selector resolves. Ollama → local Ollama daemon. OpenRouter → `OPENROUTER_API_KEY` in `~/.openclaw/secrets/.env`. OAuth → OpenClaw OAuth (no API key needed).
 **Context:** 128K–1M tokens depending on the selected model.
 **Max output:** 8K–128K tokens depending on selection.
 **Prompt:** agent-prompts/analysis-agent-prompt.md
-**Cost estimate:** ~$0.30–$0.80 per book on DeepSeek V4; ~$0.20–$0.60 on Ollama Cloud Kimi; ~$1–$3 on OAuth GPT.
+**Cost estimate:** Varies with the resolved model and route. Subscription-billed routes are typically flat per book; per-token routes scale with the size of the extraction notes.
 **Expected output:** `analysis-notes.md` (3,000+ characters)
 
 **What it analyzes (12 dimensions):**
@@ -143,26 +142,22 @@ python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" \
 
 ---
 
-## Phase 3 - Synthesis (Smart Model Selection — OAuth GPT Preferred)
+## Phase 3 - Synthesis (Smart Model Selection)
 
-**Model selection:** `shared-utils/select_model.py` with `--purpose "Phase 3 synthesis"`. Phase 3 prefers OAuth GPT for the synthesis pass because subscription cost is zero per call. Selection priority:
+**Model selection:** `shared-utils/select_model.py` with `--purpose "Phase 3 synthesis"`. Same resolution as Phases 1 and 2: the client's choice, or the client's configured default model. No model is prescribed by name. If nothing is configured, STOP and ask the owner which model to use.
 
-1. **OAuth GPT (Tier 3, PREFERRED for Phase 3)** — `codex/gpt-*` or `openai-codex/gpt-*`, highest version available. Subscription-billed, no per-call charge.
-2. **Ollama Cloud Kimi (Tier 1)** — `ollama/kimi-k*:cloud`, latest version. Used as fallback if no OAuth GPT.
-3. **OpenRouter Kimi (Tier 2)** — `openrouter/moonshot/kimi-k*`.
-4. **DeepSeek V4+ (Tier 4)** — last resort.
-5. **STOP and ask owner** if nothing matches.
+**Recommendation:** a subscription-billed model where the client has one, because synthesis is the longest generation in the pipeline and subscription billing carries no per-call cost.
 
 NEVER Anthropic.
 
-**Route:** Depends on selected model. OAuth GPT uses OpenAI Responses API via OpenClaw OAuth (ChatGPT subscription, NOT API key). Ollama uses local Ollama daemon. OpenRouter uses `OPENROUTER_API_KEY`.
+**Route:** Depends on the resolved model. An OAuth GPT model uses the OpenAI Responses API via OpenClaw OAuth (ChatGPT subscription, NOT API key). Ollama uses the local Ollama daemon. OpenRouter uses `OPENROUTER_API_KEY`.
 **Context:** 196K–1M tokens depending on selection.
 **Max output:** 96K–128K tokens depending on selection.
 **Prompt:** agent-prompts/synthesis-agent-prompt.md
-**Cost estimate:** $0 per call on OAuth GPT (covered by subscription). ~$0.50–$1 per book on Ollama Cloud Kimi. ~$2–$5 per book on OpenRouter Kimi or DeepSeek V4.
+**Cost estimate:** $0 per call on a subscription-billed route (covered by the subscription). Per-token routes vary with output length; synthesis is the longest output in the pipeline.
 **Expected output:** `persona-blueprint.md` (10,000+ characters, all 14 sections)
 
-**Runtime fallback** (when the primary selection fails mid-execution): the selector re-runs with the failed model excluded, walking down the tier list. Same triggers as before:
+**Runtime fallback** (when the resolved model fails mid-execution): the selector re-runs with the failed model excluded and resolves the next model from the client's remaining configured models. Same triggers as before:
 - API error or rate limit (429)
 - Timeout — Phase 1/2 use 30-minute HTTP timeouts; Phase 3 uses 60 min. Sub-agents that wrap these phases must allow ≥ 30 minutes wall time (60 preferred) to avoid premature kills (v9.5.2)
 - Output under 5,000 characters (truncated)
@@ -339,7 +334,7 @@ python3 ~/.openclaw/scripts/gemini-indexer.py
     "phase1": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase2": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
-    "phase3_model_used": "<actual model ID resolved by select_model.py, e.g. openai-codex/gpt-5.5 or ollama/kimi-k2.6:cloud>",
+    "phase3_model_used": "<actual model ID resolved by select_model.py from the client's choice or configured default>",
     "phase3_selector_tier": "1 | 2 | 3 | 4 | 5-owner-input",
     "phase3_categories_updated": true,
     "phase3_reindexed": true,
@@ -358,8 +353,8 @@ python3 ~/.openclaw/scripts/gemini-indexer.py
 | Phase | Per Book | 7 Parallel Batch | Total (21 books) |
 |-------|----------|-----------------|------------------|
 | Text extraction | 5-200 sec | ~3 min | ~3 min (all parallel) |
-| Phase 1 (selected model — typically Kimi) | 3-8 min | ~8 min | ~25 min |
-| Phase 2 (selected model — typically Kimi or DeepSeek) | 2-5 min | ~5 min | ~18 min |
+| Phase 1 (selected model) | 3-8 min | ~8 min | ~25 min |
+| Phase 2 (selected model) | 2-5 min | ~5 min | ~18 min |
 | Phase 3 (selected model — typically OAuth GPT) | 5-12 min | ~12 min | ~40 min |
 | Gemini Engine indexing | 1-2 min | ~2 min | ~5 min |
 | **Total** | | | **~1.5 hours** |

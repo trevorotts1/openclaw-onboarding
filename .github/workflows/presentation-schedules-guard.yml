@@ -20,10 +20,20 @@ name: presentation-schedules-guard
 # watchdog script must make the installer REFUSE and write nothing) so it cannot
 # degrade into a check that passes on everything.
 #
-# It also pins F12c: PRESENTATION_SUPERVISE_APPLY must stay ABSENT by default.
-# Arming the supervisor's restart before F2 (auto-repin on manifest change) is
-# deployed makes each restart a --resume that dies on the manifest pin, burning
-# the 3-restart budget in ~30 minutes and alarming.
+# It also pins the supervisor-arming rule, F12c as amended by PRES-019.
+# F12c's original doctrine (PRESENTATION_SUPERVISE_APPLY stays ABSENT by
+# default, because arming the restart before F2 auto-repin is deployed makes
+# each restart a --resume that dies on the manifest pin, burning the
+# 3-restart budget in ~30 minutes and alarming) is SUPERSEDED. PRES-019
+# resolves the value in order: an explicit operator setting wins (parsed,
+# so 0/false genuinely disarm and render nothing), a value already rendered
+# into the installed plist is preserved across rolls, and when nobody said
+# anything the recovery health gate decides -- a box proven recovery-ready
+# is ARMED at install, and any failed gate keeps it report-only with the
+# failed gate named. The guard's sandbox stages a department WITHOUT the
+# recovery surface, so the gate fails there and the pinned default render
+# is report-only; the suite also pins the armed default render on a staged
+# recovery-ready department.
 
 on:
   push:

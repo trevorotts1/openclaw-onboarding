@@ -1,0 +1,51 @@
+{
+  "demonstration": {
+    "artifact": "C05 fixture render by the production Remotion adapter, proven by MG-032 (case c05-bar-reveal-landscape)",
+    "author": "remotion-production-adapter",
+    "dashboard_sha256": "e36b8d741b25f1c6000d43b4f28d4f220a6eefeb9034d163921d64e37494e9f8",
+    "defects": [
+      "COMP-1 (major)",
+      "TYPO-1 (minor)",
+      "TYPO-2 (minor)",
+      "DEST-1 (minor)"
+    ],
+    "evidence_package": {
+      "files": {
+        "demo/coverage.json": "424a305a27c8fcf75cbe0c8ef3b41107934e72f3522374debc4082160f5a55f3",
+        "demo/frames/f0.png": "e82ea5dfa0be7a2ed37b82bd546b9b8391fde517bc86c81b0aef339dac0cacba",
+        "demo/frames/f179.png": "c55c6331b02af2502f0b1a6796226d76d8d9e95d1d5786d06f07aa4750c14152",
+        "demo/frames/f45.png": "31365a2ef5c093f10a50e2036c885046b7fbe4480a88a4ed48160ac59b12f7d0",
+        "demo/frames/f75.png": "85b5eeb5062a01db27848afaf612910e2af0ac1c60c6adfe3891e872db2672f3",
+        "demo/metrics.json": "8ee929e2e6956ae58b2fd213f5bfd8c8b7e3e02dbfff60e183526c416245c865",
+        "demo/proof-record.json": "61bd0b2dff10689b82b60764ca2a20390e9d039496e6eb922ecd4972eeb6af1f"
+      },
+      "note": "Copied byte-for-byte from the MG-032 run artifacts in the wt-mg032 worktree runtime scratch so every citation in the review record resolves inside this repository."
+    },
+    "gate_passes": false,
+    "job_id": "fixture-powerpoint-graphic",
+    "provisional": true,
+    "reference": {
+      "calibration_state": "ENGINEERING_FIXTURE_ONLY",
+      "reference_id": "VREF-02"
+    },
+    "review_record_sha256": "9d8c66a587178e9e1cb22619cb738088d9bf3a171100f05cae84a6e994996e43",
+    "reviewer": "mg033-demonstration-reviewer",
+    "scores": {
+      "asset_relevance": 7,
+      "composition": 6,
+      "data_proof_integrity": 9,
+      "destination_fit": 8,
+      "finishing": 7,
+      "motion_clarity": 9,
+      "typography_readability": 7,
+      "visual_storytelling": 6
+    },
+    "validation": "scripts/review_rubric.py validate tests/evidence/mg033/review-record.json exited 0 with zero findings",
+    "verdict": "another_round",
+    "video_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f"
+  },
+  "item": "MG-033",
+  "schema_version": "1.0",
+  "section": "Directive MG-033: rebuild the creative rubric around the actual viewer experience",
+  "tooling_tests": "tests/unit/test_review_rubric.py (36 tests): valid records, ship gate, trend cap with persistent defect, dropped defect, self-approval, incomplete and foreign coverage, vision-incapable sign-off, audio evidence, ten against pending and fixture-only calibration, unproven owner approval, provisional mismatch, round limit, remediation order including the same-severity first-seen tiebreak, trend cap against the earliest scored round that carried a defect, dashboard rendering, CLI exit codes"
+}

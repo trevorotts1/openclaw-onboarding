@@ -1,0 +1,487 @@
+{
+  "notes": [
+    "Absence is recorded, never filled: the two required anchors are bibliographic stubs below because no content from them exists in the authorized source export; a stub acknowledges the title, it does not ingest it.",
+    "The Atlas of the Heart record below is the CWE-011 export's own record reshaped to the strict Section 8.3 contract: provenance fields the export leaves unknown stay null, and its content_sha256 is the export's hash of the Skill 22 derivative extraction-notes artifact, not of the book. retrieved_at is the CWE-011 export time, when this material was packaged for the build.",
+    "The export carries 190 quotation candidates for Atlas of the Heart. None are carried into this pack. Per CWE-012, every real-tree candidate was rejected QUOTE_TEXT_NOT_IN_SOURCE (the packages retain no source text) and candidates are never upgraded.",
+    "Evidence units keep the export's evidence IDs and section locators so every concept in this pack traces back to the export package (content_sha256 b36bcb4d9f9e6f73da50fcf6a3429e4b92cf130e1cb6006f4c8b67b21e8b5a71) one step further."
+  ],
+  "pack_owner_unit": "CWE-019",
+  "records": [
+    {
+      "basis": "foundational book",
+      "note": "Required anchor. Absent from the CWE-011 Skill 22 export: no persona package exists for this work (supply gap, bypass lane). No content from this work has been ingested or verified, and no quotation or locator is claimed.",
+      "record_status": "bibliographic_only",
+      "title": "Dare to Lead",
+      "verification_status": "not_ingested"
+    },
+    {
+      "basis": "documented framework material, located per source record",
+      "note": "Required anchor. Absent as a standalone record in the CWE-011 Skill 22 export (supply gap, bypass lane). A supplementary summary of BRAVING elements appears inside the Atlas of the Heart derivative notes (items 8 and 17) and is carried in this pack as supplementary evidence only; it does not satisfy this anchor. Research seed A09 (directive Section 39.5): the BRAVING Inventory page, https://brenebrown.com/resources/the-braving-inventory/, recorded as a starting-evidence seed only; it was not ingested by this unit and is not a substitute for this anchor.",
+      "record_status": "bibliographic_only",
+      "title": "Documented BRAVING material",
+      "verification_status": "not_ingested"
+    },
+    {
+      "allowed_scope": "shared_pack",
+      "canonical_url": null,
+      "content_sha256": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb",
+      "credited_authors": [
+        "Brené Brown"
+      ],
+      "edition_or_publication_date": null,
+      "evidence": [
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c001",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 1: Author Background and Authority"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The derivative notes identify the author as a research professor at the University of Houston, in the Graduate College of Social Work, and a visiting professor in management at the University of Texas at Austin. This pack makes no biographical claims from this unit.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity",
+            "rule-name-the-emotion-precisely"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c002",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: The Central Problem"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes describe the book's central problem as emotional illiteracy and disconnection: in the research the notes describe, people asked to name emotions as they were experiencing them named very few, an average of three across the surveys.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity",
+            "rule-name-the-emotion-precisely"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c003",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: The Root Cause of Human Struggle"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes attribute the root struggle to a lack of emotional granularity: the inability to recognize and name specific emotions and experiences.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c004",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 4: The Complete Methodology"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes describe a methodology that maps 87 emotions and experiences across 13 categories, called places we go, works them through four layers, and practices meaningful connection through three core skill sets.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c005",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 5: Non-Negotiable Principles"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record language as a portal to meaning-making, connection, healing, learning, and self-awareness: the words available for an experience bound what can be understood and communicated about it.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c006",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 6: The Transformation Arc"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes describe a transformation arc from a limited emotional vocabulary and emotional illiteracy toward granular naming of experience and meaningful connection.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-avoided-conversation-protocol"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c007",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 7: Coaching Questions"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes collect coaching questions for emotional awareness, including which emotions and experiences emerge most often and which ones people struggle to name or label.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-braving-trust-inventory",
+            "rule-trust-is-observable-behavior",
+            "rule-apology-requires-amends",
+            "rule-vault-before-disclosure"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c008",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 8: Tools, Exercises, and Practices"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes summarize a BRAVING framework for trust. Five elements are defined in the available text: Boundaries (respecting boundaries, and asking what is okay and not okay), Reliability (doing what you say you will do, and staying aware of competencies and limitations), Accountability (owning mistakes, apologizing, and making amends), Vault (not sharing information or experiences that are not yours to share, and keeping confidences), and Integrity (choosing courage over comfort). The note summary is truncated at that point in the export; any further elements are not recorded in the material available to this pack and are not asserted.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c009",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 9: Objection Handling and Resistance"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record an explicit rejection of a no-regrets posture: living without reflection is distinguished from living with courage, and regret is treated as material for learning rather than something to deny.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c010",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 10: Author Voice and Language"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes describe signature phrasing patterns in the author's voice, including naming concepts with first-person constructions. This pack records the observation for differentiation purposes only; it does not imitate the patterns or present them as quotations.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c011",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 11: Direct Quotes"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes collect direct quotations, including lines from other thinkers quoted inside the book. None are carried into this pack as verified quotations; all remain unverified candidates under the CWE-012 ruling.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c012",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 12: The Repeatable Execution System"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes describe a repeatable navigation method: identify which of the 13 places the experience belongs to, then work the layers of that experience before choosing a response.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity",
+            "rule-name-the-emotion-precisely"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c013",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 13: The Quality Bar"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes set an emotional granularity standard: the ability to distinguish among many specific emotions and experiences, for example envy from jealousy, rather than defaulting to a few broad labels such as happy, sad, and mad.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fp-shame-as-feedback"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c014",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 14: Non-Negotiable Execution Rules"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record a non-negotiable rule against using shame or humiliation as instruments: they are named as tools of oppression and are never treated as effective tools for change.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fp-numbing-and-armor"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c015",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 15: Failure Patterns"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record failure patterns including emotional numbing (using work, food, caretaking, or other means to avoid anxiety and vulnerability) and perfectionism used as armor against exposure.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fp-stealth-expectations",
+            "fw-avoided-conversation-protocol"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c016",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 16: Decision Logic"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record decision logic for expectations: determine whether an expectation is examined and expressed or stealth and unexamined; an unexamined expectation gets a reality check by stating what you want the outcome to look like. The notes also record relabeling anxious bodily sensations as excitement to shift the experience.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-braving-trust-inventory"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c017",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 17: Self-Review Protocol"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record a BRAVING self-check for self-trust. The item fully visible in the available text asks, for Boundaries, whether you respected your own boundaries and were clear about what is okay and what is not okay.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c018",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 18: Definition of Done"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes define done for individual emotional processing as accurately naming the specific emotion with granular language, identifying its biology, biography, behavior, and backstory, and having moved from reactive to responsive.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-emotional-granularity"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c019",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 19: The Amateur-to-Expert Gap"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes contrast a three-emotion vocabulary (happy, sad, mad) with a granular one, including the distinction between shame as a judgment of the self and guilt as a judgment of a behavior, and between stress and overwhelm.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        },
+        {
+          "claim_ids": [
+            "fw-braving-trust-inventory"
+          ],
+          "evidence_id": "ev-brene-brown-atlas-of-the-heart-c020",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "item 20: Professional Application"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The notes record professional applications: BRAVING used for trust-building in teams and leadership development, explicit expectation clarity in project management, and shame resilience in feedback cultures, with accountability differentiated from shaming. The note summary is truncated after that point in the export; nothing beyond it is asserted.",
+          "seat_id": "brene-brown",
+          "source_id": "src-brene-brown-atlas-of-the-heart",
+          "source_version": "320651ff70d72a77f41aa3aa50999f8fb78d25bb0c939e0a10e0a40f6dbef5bb"
+        }
+      ],
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: Author Background and Authority"
+        },
+        {
+          "kind": "section",
+          "value": "item 2: The Central Problem"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: The Root Cause of Human Struggle"
+        },
+        {
+          "kind": "section",
+          "value": "item 4: The Complete Methodology"
+        },
+        {
+          "kind": "section",
+          "value": "item 5: Non-Negotiable Principles"
+        },
+        {
+          "kind": "section",
+          "value": "item 6: The Transformation Arc"
+        },
+        {
+          "kind": "section",
+          "value": "item 7: Coaching Questions"
+        },
+        {
+          "kind": "section",
+          "value": "item 8: Tools, Exercises, and Practices"
+        },
+        {
+          "kind": "section",
+          "value": "item 9: Objection Handling and Resistance"
+        },
+        {
+          "kind": "section",
+          "value": "item 10: Author Voice and Language"
+        },
+        {
+          "kind": "section",
+          "value": "item 11: Direct Quotes"
+        },
+        {
+          "kind": "section",
+          "value": "item 12: The Repeatable Execution System"
+        },
+        {
+          "kind": "section",
+          "value": "item 13: The Quality Bar"
+        },
+        {
+          "kind": "section",
+          "value": "item 14: Non-Negotiable Execution Rules"
+        },
+        {
+          "kind": "section",
+          "value": "item 15: Failure Patterns"
+        },
+        {
+          "kind": "section",
+          "value": "item 16: Decision Logic"
+        },
+        {
+          "kind": "section",
+          "value": "item 17: Self-Review Protocol"
+        },
+        {
+          "kind": "section",
+          "value": "item 18: Definition of Done"
+        },
+        {
+          "kind": "section",
+          "value": "item 19: The Amateur-to-Expert Gap"
+        },
+        {
+          "kind": "section",
+          "value": "item 20: Professional Application"
+        }
+      ],
+      "original_speaker": null,
+      "private_asset_id": null,
+      "publisher_or_host": null,
+      "quality": "unverified",
+      "retrieved_at": "2026-10-14T13:41:09.438Z",
+      "rights_status": "reference_only",
+      "source_id": "src-brene-brown-atlas-of-the-heart",
+      "source_type": "book",
+      "work_id": "work-atlas-of-the-heart",
+      "work_title": "Atlas of the Heart"
+    }
+  ],
+  "seat_id": "brene-brown",
+  "status": "built"
+}

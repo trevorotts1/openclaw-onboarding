@@ -25,8 +25,8 @@
 # Fleet rules honored by this file:
 #   - No build-house model provider id of any kind anywhere: this is a pure state
 #     writer; it calls no model at all, so the no-runtime-model-provider guard has
-#     nothing to flag. Runtime content routing (Ollama Cloud Kimi, GLM, OpenRouter,
-#     Gemini) lives in the pipeline modules, never here.
+#     nothing to flag. Runtime content routing (the client's chosen model, or
+#     their configured default model) lives in the pipeline modules, never here.
 #   - No em dash characters. No triple backtick fences in any produced output.
 #   - Never prints a stored secret value. The single intentional secret emission is
 #     `token mint`, which returns a freshly generated raw token exactly once (per
@@ -840,6 +840,11 @@ def published_jobs_for_guest(conn, client_id: str, contact_id: str,
     reached an audience: a publish timestamp, a Podbean permalink, or status
     `complete`. Any one of those means an episode for this guest is live.
 
+    Interview mode only. In Personal mode every episode carries the client's
+    own contact id, so an unfiltered match would refuse every Personal episode
+    after the first one for that client. Personal duplicates are already caught
+    by the per-submission fingerprint (job_key) idempotency check.
+
     The canonical fold happens in Python, not SQL: SQLite's LOWER() is
     ASCII-only and cannot strip punctuation. The candidate set is one client's
     already-published episodes, which is small and indexed (idx_pj_contact).
@@ -849,7 +854,8 @@ def published_jobs_for_guest(conn, client_id: str, contact_id: str,
         return []
     rows = conn.execute(
         "SELECT job_id, contact_id, episode_title, podbean_permalink, "
-        "publish_timestamp, status FROM podcast_jobs WHERE client_id = ? AND ("
+        "publish_timestamp, status FROM podcast_jobs WHERE client_id = ? AND mode = "
+        "'interview_style_podcast' AND ("
         "publish_timestamp IS NOT NULL OR podbean_permalink IS NOT NULL "
         "OR status = 'complete')",
         (client_id,),
@@ -997,8 +1003,12 @@ def assert_release_gates(conn, job_id: str, row, to_status: str) -> list:
 
     blocks = []
 
-    prior = published_jobs_for_guest(conn, row["client_id"], row["contact_id"],
-                                     exclude_job_id=job_id)
+    # Interview mode only: in Personal mode every episode carries the client's
+    # own contact id, so an unfiltered match would block every episode after
+    # the first. Personal duplicates are caught by the fingerprint check.
+    prior = (published_jobs_for_guest(conn, row["client_id"], row["contact_id"],
+                                      exclude_job_id=job_id)
+             if row["mode"] == "interview_style_podcast" else [])
     if prior:
         first = prior[0]
         where = (first["podbean_permalink"] or first["publish_timestamp"]
@@ -1286,7 +1296,9 @@ def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
             record = json.loads(raw)
             if isinstance(record, dict) and ROSTER_CHECKSUM_KEY in record:
                 verify_checksum(raw)
-        record["state"] = ledger_state
+        # A designated test intake stays in the terminal ledger "test" state.
+        if record.get("state") != "test":
+            record["state"] = ledger_state
         record["updated_at"] = iso(now_utc())
         record["sqlite_job_id"] = job_id
         # U035: embed an integrity checksum so truncation / corruption is
@@ -1389,7 +1401,10 @@ def cmd_create(conn, args):
     # see the same guest stored the other way. Compare the guest's real,
     # canonical identity instead. An ALREADY PUBLISHED episode for this guest is
     # a hard stop, not a warning the pipeline may walk past.
-    already = published_jobs_for_guest(conn, args.client_id, args.contact_id)
+    # Interview mode only: in Personal mode contact_id is the client's own
+    # contact, so this would refuse every Personal episode after the first.
+    already = (published_jobs_for_guest(conn, args.client_id, args.contact_id)
+               if args.mode == "interview_style_podcast" else [])
     if already and not _release_granted(args.contact_id):
         first = already[0]
         where = (first["podbean_permalink"] or first["publish_timestamp"]

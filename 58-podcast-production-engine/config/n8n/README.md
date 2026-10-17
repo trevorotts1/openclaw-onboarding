@@ -92,9 +92,9 @@ PUBLISH  --  MASTER SPEC v1`, unit U12):
   reaches this file.
 - Every Gmail node's HTML message body (which is built from live-execution
   expressions only, never a literal) is replaced with a one-line placeholder
-  comment in this export; the `sendTo` fields are kept because they are
-  either an expression (`={{ ...client_email }}`, success/failure paths) or
-  the operator's own address (refusal paths  --  never a client's).
+  comment in this export; the `sendTo` fields are kept; every one is the
+  operator's own address (Skill 58 silence doctrine: the publish rail never
+  emails a client; Convert and Flow owns every customer message).
 - Credentials appear only as `{id, name}` reference pairs, exactly as the n8n
   API returns them  --  the API never serves credential secret values over
   these endpoints, so there was no value to strip: `Podcast Publish Gate

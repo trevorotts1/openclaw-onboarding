@@ -71,5 +71,4 @@ table in lockstep with the engine's preflight + the QC script.
 **Client-runtime note:** every deterministic check (`_run_preflight`, `qc-built-form.sh`, `render_check`)
 is stdlib-only, model-free — it runs identically on a client box using no model at all. Generation
 (field resolution / plan) runs on the CLIENT's own configured provider chain, never Anthropic, never
-operator keys. Browser control + vision QC use MiniMax M3 (probe-gated) -> DeepSeek V4.1 Flash; MiniMax M2
-is BANNED.
+operator keys. Browser control + vision QC use the client's chosen vision-capable model (probe-gated), or the client's configured default model; MiniMax M2 is BANNED.

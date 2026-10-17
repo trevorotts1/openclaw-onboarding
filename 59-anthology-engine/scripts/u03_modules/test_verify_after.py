@@ -44,6 +44,15 @@ _C = "clau" + "de-"
 BANNED = re.compile(_C + r"|" + _A + r"/|us\." + _A + r"\.", re.I)
 
 FIELD_MAP = reg.load_field_map(va.FIELD_MAP_PATH)
+# THE ON-DISK MAP CARRIES EITHER LEGAL STATE: the committed template (every
+# resolved slot null) on a fresh tree, or the provisioned per-box stamp (every
+# field_key == its intended_key, every field_id non-empty) on a box that has
+# run the provisioner. Fixtures that need the TEMPLATE state normalize it here
+# instead of assuming the on-disk file is the template.
+TEMPLATE_MAP = copy.deepcopy(FIELD_MAP)
+for _row in TEMPLATE_MAP["provisioning"]["fields"]:
+    _row["field_key"] = None
+    _row["field_id"] = None
 CONTRACT = json.loads(va.CONTRACT_PATH.read_text(encoding="utf-8"))
 WANT_KEYS = va._contract_intended_keys(FIELD_MAP)
 TOTAL = va._contract_total(FIELD_MAP)
@@ -81,10 +90,21 @@ def test_contract_coherent():
 # ---------------------------------------------------------------------------
 # Gate 1 -- the resolved field-map STAMP (filesystem write-back).
 # ---------------------------------------------------------------------------
-def test_stamp_template_state_is_legal_pass():
+def test_stamp_on_disk_map_verifies_in_whichever_legal_state():
+    """The shipped file is EITHER the template or a provisioned stamp; both
+    verify, and the template_state flag must agree with the inventory."""
     report = va.check_stamp(FIELD_MAP)
     assert report["verdict"] == "PASS", report["detail"]
-    assert report["template_state"] is True, "the committed map must be template state"
+    assert report["total"] == len(WANT_KEYS)
+    assert report["stamped_drift"] == []
+    assert report["template_state"] is (report["resolved"] == 0), (
+        "template_state must agree with the resolved-slot count")
+
+
+def test_stamp_template_state_is_legal_pass():
+    report = va.check_stamp(TEMPLATE_MAP)
+    assert report["verdict"] == "PASS", report["detail"]
+    assert report["template_state"] is True, "the template state must verify"
     assert report["total"] == len(WANT_KEYS) and report["resolved"] == 0
     assert report["stamped_drift"] == []
 
@@ -101,7 +121,7 @@ def test_stamp_fully_resolved_coherent_state_passes():
 
 
 def test_stamp_half_stamped_slot_fails():
-    partial = copy.deepcopy(FIELD_MAP)
+    partial = copy.deepcopy(TEMPLATE_MAP)
     partial["provisioning"]["fields"][0]["field_key"] = WANT_KEYS[0]
     report = va.check_stamp(partial)
     assert report["verdict"] == "FAIL", "a resolved slot without a field_id must FAIL"

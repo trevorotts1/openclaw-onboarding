@@ -1,0 +1,248 @@
+{
+  "content": {
+    "schema_version": "1.0",
+    "id": "job-ppt-quarter",
+    "message": "Bookings doubled after the new onboarding flow shipped.",
+    "headline": "Bookings doubled this quarter",
+    "support": "The full breakdown, with the numbers behind every claim.",
+    "cta": "Book your strategy call"
+  },
+  "variants": [
+    {
+      "schema_version": "1.0",
+      "id": "ppt-full-slide",
+      "contentId": "job-ppt-quarter",
+      "destination": "powerpoint_full_slide",
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "exportAspect": {
+        "w": 16,
+        "h": 9
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1920x1080",
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 128,
+          "box": {
+            "x": 120,
+            "y": 80,
+            "width": 1680,
+            "height": 340
+          }
+        },
+        {
+          "id": "support",
+          "role": "essential_support",
+          "ref": {
+            "field": "support"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 120,
+            "y": 480,
+            "width": 1400,
+            "height": 190
+          },
+          "font": {
+            "family": "Liberation Sans",
+            "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "weight": 400
+          }
+        },
+        {
+          "id": "cta",
+          "role": "cta",
+          "ref": {
+            "field": "cta"
+          },
+          "sizePx": 96,
+          "box": {
+            "x": 120,
+            "y": 760,
+            "width": 1250,
+            "height": 130
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "id": "ppt-inset",
+      "contentId": "job-ppt-quarter",
+      "destination": "powerpoint_inset",
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "exportAspect": {
+        "w": 16,
+        "h": 9
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1920x1080",
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 128,
+          "box": {
+            "x": 120,
+            "y": 80,
+            "width": 1680,
+            "height": 340
+          }
+        },
+        {
+          "id": "support",
+          "role": "essential_support",
+          "ref": {
+            "field": "support"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 120,
+            "y": 480,
+            "width": 1400,
+            "height": 190
+          },
+          "font": {
+            "family": "Liberation Sans",
+            "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "weight": 400
+          }
+        },
+        {
+          "id": "cta",
+          "role": "cta",
+          "ref": {
+            "field": "cta"
+          },
+          "sizePx": 96,
+          "box": {
+            "x": 120,
+            "y": 760,
+            "width": 1250,
+            "height": 130
+          }
+        }
+      ],
+      "placement": {
+        "kind": "inset",
+        "display": {
+          "widthPx": 960,
+          "heightPx": 540
+        },
+        "slide": {
+          "widthPx": 1920,
+          "heightPx": 1080,
+          "widthMm": 338.667,
+          "heightMm": 190.5
+        }
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "id": "ppt-inset-mm",
+      "contentId": "job-ppt-quarter",
+      "destination": "powerpoint_inset",
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "exportAspect": {
+        "w": 16,
+        "h": 9
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1920x1080",
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 128,
+          "box": {
+            "x": 120,
+            "y": 80,
+            "width": 1680,
+            "height": 340
+          }
+        },
+        {
+          "id": "support",
+          "role": "essential_support",
+          "ref": {
+            "field": "support"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 120,
+            "y": 480,
+            "width": 1400,
+            "height": 190
+          },
+          "font": {
+            "family": "Liberation Sans",
+            "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "weight": 400
+          }
+        },
+        {
+          "id": "cta",
+          "role": "cta",
+          "ref": {
+            "field": "cta"
+          },
+          "sizePx": 96,
+          "box": {
+            "x": 120,
+            "y": 760,
+            "width": 1250,
+            "height": 130
+          }
+        }
+      ],
+      "placement": {
+        "kind": "inset",
+        "displayMm": {
+          "widthMm": 169.333,
+          "heightMm": 95.25
+        },
+        "slide": {
+          "widthPx": 1920,
+          "heightPx": 1080,
+          "widthMm": 338.667,
+          "heightMm": 190.5
+        }
+      }
+    }
+  ]
+}
