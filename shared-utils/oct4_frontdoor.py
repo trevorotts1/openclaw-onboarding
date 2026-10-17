@@ -164,6 +164,18 @@ def run_repair_runner(skills_dir: Path) -> dict:
             "missing": missing, "failing": failing}
 
 
+def _health_gate_path(skills_dir: Path) -> Path | None:
+    """The updater delivers scripts/ to <root>/scripts/, so the gate is at
+    <root>/scripts/health/. Keep the old <skills>/scripts/health/ location as
+    a fallback for boxes already laid out that way."""
+    root = skills_dir.parent if skills_dir.name == "skills" else skills_dir  # agent-pull-fix: R6
+    for base in (root, skills_dir):  # agent-pull-fix: R6
+        p = base / HEALTH_GATE_SH  # agent-pull-fix: R6
+        if p.is_file():
+            return p
+    return None
+
+
 def run_health_gate(skills_dir: Path) -> dict:
     """Stage G: the library-standard health gate (issue #11). Read-only.
 
@@ -171,8 +183,8 @@ def run_health_gate(skills_dir: Path) -> dict:
     one item failed; 5 = cannot tell (undetermined — reported, never read as
     a pass); anything else = the gate itself failed to run.
     """
-    p = skills_dir / HEALTH_GATE_SH
-    if not p.is_file():
+    p = _health_gate_path(skills_dir)  # agent-pull-fix: R6
+    if p is None:
         return {"present": False, "path": HEALTH_GATE_SH}
     r = _run(["bash", str(p)], timeout=900)
     verdict = r["meaning"]
@@ -246,6 +258,20 @@ def _selftest() -> int:
             assert run_health_gate(sd)["meaning"] == "pass"
             full = run_full_stage(sd)
             assert full["status"] in ("ok", "ran-with-notes"), full  # author stage absent here -> notes
+        # 4b. the gate resolves where the updater DELIVERS it (<root>/scripts/
+        #     health/), and the old <skills>/ location still works as fallback.
+        with tempfile.TemporaryDirectory() as td3:
+            root3 = Path(td3)
+            legacy = root3 / "skills" / HEALTH_GATE_SH
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text('#!/bin/sh\nexit 0\n')
+            assert run_health_gate(root3 / "skills")["meaning"] == "pass"
+            delivered = root3 / HEALTH_GATE_SH
+            delivered.parent.mkdir(parents=True, exist_ok=True)
+            delivered.write_text('#!/bin/sh\nexit 1\n')
+            assert run_health_gate(root3 / "skills")["meaning"] == "fail"  # delivered wins
+            delivered.unlink()
+            assert run_health_gate(root3 / "skills")["meaning"] == "pass"  # legacy fallback
     # 5. _oc_root honors OPENCLAW_ROOT
     old = os.environ.get("OPENCLAW_ROOT")
     os.environ["OPENCLAW_ROOT"] = "/nonexistent-oc-root"
