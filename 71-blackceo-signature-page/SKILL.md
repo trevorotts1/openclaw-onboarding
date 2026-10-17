@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.13
+version: 1.2.14
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -154,7 +154,7 @@ Ask whether the owner/client has an explicit image-engine preference when genera
 - The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13; GPT Image 2.5 Sunburst today). The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
 - If **Agnes** is explicitly selected/available, use **Skill 63 `agnes-image`**.
 - If another configured provider is explicitly selected, honor it if the current client environment supports it.
-- `stage_gate.py close image-generation-qc` requires the receipt's `transport` block (Skill 74, mode active, task ids, model ids, preflight and budget results, N43 ratios); a hand-rolled createTask has no such receipt and cannot close the stage.
+- `stage_gate.py close image-generation-qc` requires the receipt's `transport` block, with a per-provider branch (A23): on the KIE route, Skill 74, mode active, the real KIE task ids, model ids, preflight and budget results, N43 ratios; on the Agnes route (Skill 63, only when intake records `image_engine: "agnes"`), the synchronous shape: `task_id` null or omitted, `request_id` only if Agnes returned one, mode `sync`, no polling artefacts, and never a KIE task ID (Agnes issues none; attaching one fails the gate). A hand-rolled createTask has no such receipt and cannot close the stage.
 
 Paid-call approvals, client-owned credentials, provider limits, and retry rules remain owned by the executing provider skill and fleet policy.
 

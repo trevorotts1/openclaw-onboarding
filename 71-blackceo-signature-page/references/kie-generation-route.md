@@ -92,6 +92,51 @@ Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.
 `credits_before` and `credits_after` come from `kie_live_adapter.py credits`, never from an estimate.
 When the client selected Agnes, `skill` and `policy` are both `63-agnes-image` and `cost.provider` is `agnes`.
 
+### Per-provider branch (A23; reconciled matrix Q10)
+
+The transport-block requirement above is the **KIE branch**. It does not
+apply to Agnes, and an Agnes receipt must never be forced into its shape:
+
+- **KIE branch** (`74-kie-live-adapter`, or the claude-nine `kie` alias):
+  every task requires the real KIE `task_id` the KIE API returned, backed
+  by its own `receipts/kie74/<task_id>.json` result file, with
+  `mode: "active"`, preflight, budget, model and N43 ratio evidence as
+  above. A KIE task with no task identifier fails the gate by name.
+- **Agnes branch** (`63-agnes-image`, only when `intake.json` records
+  `image_engine: "agnes"`): Agnes generation is synchronous and the
+  provider issues **no task ID**. The honest per-task shape is
+  `task_id` present with value `null`, or the key omitted entirely —
+  both are honest absence and both are accepted; `request_id` is
+  recorded only when the provider actually returned one; a declared
+  mode (on the transport block or the task) is `"sync"`, never the
+  Skill 74 `"active"` mode; and the task carries no polling artefacts
+  (no poll-loop evidence exists for a synchronous result, and none may
+  be demanded or fabricated). Example (values are placeholders):
+
+  ```json
+  "transport": {
+    "skill": "63-agnes-image",
+    "policy": "63-agnes-image",
+    "mode": "sync",
+    "tasks": [
+      {"file": "image-generation-qc/Image-01.png", "task_id": null,
+       "request_id": "<id returned by Agnes, if any>",
+       "model_id": "agnes-image-2.5-flash", "mode": "sync"}
+    ]
+  },
+  "cost": {"provider": "agnes", "credits_before": 0, "credits_after": 0}
+  ```
+
+  The gate **refuses** an Agnes task that carries any non-null
+  `task_id`, any non-null KIE-named identifier field, a declared mode
+  other than `"sync"`, or any polling artefact. No code path mints,
+  defaults, or back-fills a task ID for Agnes: the absence is the
+  record. This matches Skill 63's `validate_receipt` rules (Agnes
+  receipt `task_id` always explicit null; any non-null task ID or
+  KIE-named field on an Agnes receipt refused; the real task ID
+  required on a KIE receipt). No `receipts/kie74/` file is required —
+  or meaningful — for an Agnes task.
+
 ## 4. Video
 
 Skill 71 has no video stage today. If an approved page plan includes a hero or background clip, the same
