@@ -5,7 +5,7 @@
   "title": "Signature Launch approved-domain record",
   "properties": {
     "schema_version": {
-      "const": "1.1"
+      "const": "1.2"
     },
     "tenant_id": {
       "type": "string",
@@ -250,6 +250,40 @@
           "source_kind",
           "source_ref",
           "test_only"
+        ]
+      }
+    },
+    "delivery_bindings": {
+      "type": "object",
+      "description": "OPTIONAL per-entitlement delivery binding (S82-DEC-DELIVERYURL-01, S49): keyed by entitlement_id, one binding per entitlement, read by Skill 44's fulfillment-map producer (CR-S82-003) for granted entitlements. Absence of the key, and absence of an entitlement's entry within it, are the only encodings of 'unbound'; an unbound entitlement keeps the producer's pre-binding behavior exactly. An empty object is refused by the validator (absence is the one encoding of 'no bindings'). A binding's delivery_url may be null: the kind is bound, no destination is recorded yet. Values are per-launch commercial facts recorded at plan approval; the field is plan-approved content inside the plan document hash, which excludes only status and plan_approval_ref.",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Delivery binding",
+        "properties": {
+          "delivery_kind": {
+            "enum": [
+              "access",
+              "download",
+              "schedule_included_service"
+            ]
+          },
+          "delivery_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "pattern": "^https://\\S+$"
+          }
+        },
+        "required": [
+          "delivery_kind",
+          "delivery_url"
         ]
       }
     },
