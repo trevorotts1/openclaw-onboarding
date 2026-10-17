@@ -16,13 +16,13 @@
 | T. D. Jakes | `jakes-instinct` | Extraction notes + analysis notes + persona blueprint |
 | Oprah Winfrey | No registered existing Skill22 book-persona folder | Council seat retained. Do not add a new advisor as substitute |
 | Tiffany Aliche | `aliche-get-good-with-money` | Existing persona blueprint |
-| Russell Brunson | `brunson-marketing-secrets-blackbook`, `brunson-network-marketing-secrets`, `russell-brunson-lead-funnels`, `russell-brunson-the-funnel-hackers-cookbook`, `russell-brunson-traffic-secrets` | First two have extraction and analysis notes; three others have blueprints |
+| Russell Brunson | `brunson-marketing-secrets-blackbook`, `brunson-network-marketing-secrets`, `russell-brunson-lead-funnels`, `russell-brunson-the-funnel-hackers-cookbook`, `russell-brunson-traffic-secrets` | First four have extraction notes, analysis notes and blueprints; Traffic Secrets has a blueprint without separate extraction notes |
 | Michelle Obama | `obama-becoming`, `obama-light-we-carry` | Extraction notes + analysis notes + persona blueprint for both |
 | Brené Brown | `brown-atlas-of-heart` | Extraction notes + analysis notes + persona blueprint |
 | Dr. Dennis Kimbro | `kimbro-the-wealth-choice`, `kimbro-what-makes-great-great` | Existing persona blueprints |
 | Les Brown | No registered existing Skill22 book-persona folder | Council seat retained. Do not add a new advisor as substitute |
 
-**Count as of audit:** 14 existing registered persona books across 7 of the 9 Council seats: 8 with extraction notes and blueprints, 6 blueprint-only. This count is based on the current repository registry and tracked files. A user's local Skill 22 system may also hold additional authorized book originals or notes not committed here; do not interpret repository absence as proof that the user has never supplied a book elsewhere.
+**Count as of audit:** 14 existing registered persona books across 7 of the 9 Council seats: **10 with extraction notes and blueprints, 4 blueprint-only**. This count is based on the current repository registry and tracked files. A user's local Skill 22 system may also hold additional authorized book originals or notes not committed here; do not interpret repository absence as proof that the user has never supplied a book elsewhere.
 
 ## Preserve availability, evaluate evidence independently
 
