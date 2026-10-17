@@ -15,7 +15,7 @@
 
 Write a complete, image-specific production prompt, not a short wish list. The picture must perform the persuasive job assigned by the actual page copy and wireframe. It must also belong to the client's visual world. Neither beautiful generic photography nor a long prompt that describes the wrong scene passes. **By default, the finished visual must pass the active page-level Art Direction fidelity gate and the applicable BlackCEO Secret Super Sauce blend gate. If no external Art Direction is selected, the Secret Super Sauce is the default governing aesthetic.**
 
-**Every individual final image prompt must use 95 to 100 percent of the chosen model's character maximum and never fall below 80 percent of it** (owner order 2026-10-05, `07-kie-setup/references/kie-common-rules.md` rule 12; this replaces the earlier 5,000-20,000 house range). The maximum comes from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id>` (live schema, registry fallback), never from memory. For GPT Image 2.5 (maximum 20,000) the floor is 16,000 and the target is 19,000 to 20,000. This is not the combined length of the prompt document. Two short prompts do not become compliant by being put in one file. A prompt over the maximum fails. The same rule applies to complete replacement/edit prompts used to repair an image; do not quietly send a short repair instruction that discards the approved specification. Verbatim fields (text a model speaks or sings exactly) follow their own rule and have no floor.
+**Every individual final image prompt must use 95 to 100 percent of the chosen model's character maximum and never fall below 80 percent of it.** This band is Skill 71's native authoring target: it is the KIE prompt-budget band (`07-kie-setup/references/kie-common-rules.md` rule 12, owner order 2026-10-05), adopted for this skill by owner Decision 1 (2026-10-15), which supersedes Amendment 6 Part C's element-completeness-only length position wherever the two conflict; this replaces the earlier 5,000-20,000 house range. The maximum comes from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id>` (live schema, registry fallback), never from memory. For GPT Image 2.5 (maximum 20,000) the floor is 16,000 and the target is 19,000 to 20,000. This is not the combined length of the prompt document. Two short prompts do not become compliant by being put in one file. A prompt over the maximum fails. The same rule applies to complete replacement/edit prompts used to repair an image; do not quietly send a short repair instruction that discards the approved specification. Verbatim fields (text a model speaks or sings exactly) follow their own rule and have no floor.
 
 The five teaching prompts near the end are shorter than this budget and are teaching models only; a real production prompt is expanded with real scene, light, material, crop and negative detail until it lands in the budget, never padded.
 
@@ -1961,10 +1961,10 @@ No repository file is changed merely because this manual was written. Do not rep
 
 | Topic | Current retrieved repository | This signature-page workflow | Required handling |
 |---|---|---|---|
-| Prompt length | `visual_long`: 2,500-19,000; `text_bearing_long`: 5,000-19,000 (older repository bands) | Every individual prompt: 95 to 100 percent of the model maximum, never below 80 percent (rule 12) | Rule 12 governs signature-page KIE prompts and supersedes the older bands and the earlier 5,000-20,000 house range. Read the maximum from `prompt-budget`; fix exit 3 by adding the reported characters and exit 4 by cutting them. Never disable the gate or silently truncate. |
-| Quality threshold | Prompt QC: average >=8.5, no criterion below 7; image QC: average >=8.5 plus zero auto-fails | Anything below 8 must be repaired | Retain the repository's stricter 8.5 average for prompts/images and raise every applicable individual criterion to >=8. General page-stage work requires >=8 on each required criterion. No average cancels an auto-fail. |
+| Prompt length | `visual_long`: 2,500-19,000; `text_bearing_long`: 5,000-19,000 (older repository bands) | Every individual prompt: 95 to 100 percent of the model maximum, never below 80 percent (rule 12) | Rule 12 governs signature-page KIE prompts and supersedes the older bands and the earlier 5,000-20,000 house range. The difference this row used to document, between the guide's band and the skill validator's former element-completeness-only length position (Amendment 6 Part C), stands reconciled by owner Decision 1 (2026-10-15): the band is the skill's native authoring target and the validator renders the same verdict. Read the maximum from `prompt-budget`; fix exit 3 by adding the reported characters and exit 4 by cutting them. Never disable the gate or silently truncate. |
+| Quality threshold | Prompt QC: average >=8.5, no criterion below 7; image QC: average >=8.5 plus zero auto-fails | Anything below 8 must be repaired | Retain the vendored 8.5 average for prompts/images (Skill 71's own bar, carried in this guide's QC section and `references/qc-contract.md`; Update Plan Item 21) and raise every applicable individual criterion to >=8. General page-stage work requires >=8 on each required criterion. No average cancels an auto-fail. |
 
-The model's own character maximum is the ceiling (20,000 for GPT Image 2.5). The older 19,000 runtime ceiling and 5,000 floor are superseded by rule 12. The teaching examples here are below the budget floor and are not production prompts. These differences are documented instead of silently reconciled. [R1, R3, R6, R8]
+The model's own character maximum is the ceiling (20,000 for GPT Image 2.5). The older 19,000 runtime ceiling and 5,000 floor are superseded by rule 12. The teaching examples here are below the budget floor and are not production prompts. The prompt-length difference this appendix documented is reconciled by owner Decision 1 (2026-10-15), which adopted the rule 12 band as the skill's native authoring target; the remaining differences are documented instead of silently reconciled. [R1, R3, R6, R8]
 
 The repository's Social Planner 9,000-19,000 override is scoped to that system, not a rule that replaces all Graphics work. This guide is for signature-page assets. Do not import unrelated social-post routing automatically. [R8]
 
@@ -2507,7 +2507,7 @@ Harmony comes from the brand, emotional arc, typography system, recurring materi
 
 ## 10. Write for the actual section, not just its number
 
-The next section lessons retain the legacy document's copy-to-image connection, pain intensity, fashion presence, and distinct benefit treatment. The long-form solution lessons are new translations required by the newer framework. The three short applications in each lesson are **concept fragments**, not full prompts. Expand a chosen concept into all ten elements and 5,000-20,000 characters before generation.
+The next section lessons retain the legacy document's copy-to-image connection, pain intensity, fashion presence, and distinct benefit treatment. The long-form solution lessons are new translations required by the newer framework. The three short applications in each lesson are **concept fragments**, not full prompts. Expand a chosen concept into all ten elements, in full, authored to the model's rule 12 band (95 to 100 percent of its character maximum, never below the 80 percent floor) by genuine specification, before generation.
 
 Do not assign an image where the wireframe specifies typography only. Do not generate extra images to satisfy an obsolete "one image per section" instruction. The public images contain none of the private section titles below.
 
@@ -2781,7 +2781,9 @@ Hash the normalized submitted string. Keep the count, SHA-256 and image ID in th
 
 ### C. Prompt QC
 
-Prompt QC remains independent from prompt authorship. Score each applicable criterion 1-10 and apply repository auto-fails. **Pass requires average >=8.5 for Graphics prompts, every applicable individual criterion >=8 under Trevor's house rule, and zero auto-fails.**
+**Vendored scoring bar (Skill 71's own; Update Plan Item 21, Decision 5):** prompts and generated images are scored against the bar stated in this QC section and in `references/qc-contract.md`: average at least 8.5, every applicable individual criterion at least 8, and zero auto-fails. The skill carries this standard itself; the bar is not deferred to any external repository.
+
+Prompt QC remains independent from prompt authorship. Score each applicable criterion 1-10 and apply the auto-fails. **Pass requires average >=8.5, every applicable individual criterion >=8 under Trevor's house rule, and zero auto-fails.**
 
 Required criteria:
 
@@ -2841,6 +2843,8 @@ Before scoring the Secret Sauce, score the actual rendered image against the one
 
 Any visible trait imported from a second Creative Direction family is a style-drift defect. Repair the leaked dimension; do not rewrite successful content.
 
+**Fidelity-gate governing rule (Update Plan Item 28 / proposal P8):** When a style library supplies its own fidelity apparatus, that apparatus governs the style-level verdict for images under that selection. The guide's fidelity gate governs the page-level verdict (coherence across the page's images) and remains the only gate when no library apparatus applies. The two verdicts are recorded separately in the review; neither silently overrides the other.
+
 ### BlackCEO Secret Super Sauce blend pixel gate
 
 Score the eight checks below according to the Page Visual Bible. A dimension marked **FULL** uses the normal Secret Sauce expectation. A dimension marked **ADAPT** is scored against its documented translation target. A dimension marked **SUPPRESS** is N/A and must not be reintroduced merely to chase a higher score.
@@ -2857,7 +2861,7 @@ Score the eight checks below according to the Page Visual Bible. A dimension mar
 
 A gloomy or pain-oriented image can pass with darker jewel tones, smaller areas of high chroma, lower-key lighting, a more restrained hero color, or - when the active style requires it - a deliberately monochrome/restrained treatment. It fails if the result is accidentally flat, muddy, generic, materially weak or visually unart-directed rather than intentionally faithful to the selected system.
 
-**Pass:** every applicable dimension >=8, repository image-QC average >=8.5, and no automatic failure. Automatic failures include production labels on the image, missing or extra people, a collage instead of an individual asset, incorrect required text, invented/mutated logo, anatomy defects, wrong dimensions, unapproved identity substitution, or missing actual generation provenance. If a format conversion/crop is done after an earlier pass, inspect the final delivery pixels too; this is a changed artifact, not an unnecessary repeat review.
+**Pass:** every applicable dimension >=8, image-QC average >=8.5 under the vendored bar in section C above, and no automatic failure. Automatic failures include production labels on the image, missing or extra people, a collage instead of an individual asset, incorrect required text, invented/mutated logo, anatomy defects, wrong dimensions, unapproved identity substitution, or missing actual generation provenance. If a format conversion/crop is done after an earlier pass, inspect the final delivery pixels too; this is a changed artifact, not an unnecessary repeat review.
 
 Repair the actual defect. The Prompt Author changes failed direction; the Generation Operator does not improvise a new scene. An authorized local crop or grade preserves the master and records the operation. A targeted image edit must keep unaffected content and repeat the full governing image specification. Do not secretly remove a required person or prop to make a crop easier. Apply the same failed-only repair rule and existing stricter repository escalation trigger.
 

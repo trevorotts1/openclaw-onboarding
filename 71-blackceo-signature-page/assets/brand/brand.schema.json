@@ -67,21 +67,27 @@
         "masthead_files": {"type": "string", "minLength": 1}
       }
     },
-    "founder_photos": {"type": "string", "minLength": 1},
+    "founder_photos": {
+      "type": ["string", "array"],
+      "minLength": 1,
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "description": "The supplied founder photo(s) the page validator's founder check (scripts/validate_page.py founder_allowed_hashes) matches the rendered founder image against. One entry, or a list of entries; EVERY entry must be in exactly one of the three forms founder_allowed_hashes accepts: (1) a bare 64-character hex SHA-256 of the photo file; (2) a 'sha256:' value carrying that hash; (3) the path of an existing photo file (the validator hashes the file's bytes). No other form is accepted: a prose entry (path plus description plus hash) is not a form, and scripts/write_intake.py refuses it at intake naming the entry and these forms (update plan Item 10), instead of letting it surface at the first page validation. Until the photo is supplied, the value is the unsupplied marker (TREVOR_MUST_SUPPLY or CLIENT_MUST_SUPPLY), which the must-supply gate reports; it is not a form error."
+    },
     "people_rule": {"type": "string", "minLength": 1},
     "default_creative_direction": {"type": "string", "enum": ["SECRET_SAUCE_ONLY"]},
     "grade": {
       "type": "object",
       "additionalProperties": false,
       "required": ["block_file", "min_mean_saturation", "min_luma_std"],
-      "description": "Signature grade screen thresholds enforced by scripts/validate_image_grade.py (Items 8 and 9, Calibration Redesign Rulings 1 to 3). Calibration is PER FAMILY and PER POSTURE CLASS: the nested `floors` block carries, for each rendering family (photographic, cinematic, visual-artist), a FULL class (color floors), an ADAPT class (a two-sided saturation/colorfulness band plus a luma_std tonal floor, optionally provisional), and non-color floors (luma_std, sharpness) pooled across the family's postures. SUPPRESS never carries color floors (Guide section 13). Brand calibration requires per-family anchors for every family in families_used; there is no family-scoped calibration mode (Ruling 2). Every threshold is a floor (or, for ADAPT, a band bound; for max_protected_saturation, a ceiling): a generated image measuring outside it FAILS the screen. A threshold set to null (or a class/family block absent) is UNCALIBRATED: the screen prints that metric's measurements as WARN and applies no gate for it, and the production gate refuses to close image-generation-qc for a non-test run while min_mean_saturation or min_luma_std is null (Item 8 close rule). Thresholds are never invented: they are derived by scripts/calibrate_grade.py from Trevor's approved gold set (assets/brand/gold-set/, floor = gold-set 5th percentile x 0.95 within the family and class), printed as a proposal, and written into the brand file only after Trevor approves or adjusts them. Transition: the flat keys below remain the production gate's close-rule keys and the validator's legacy fallback; at approval time the photographic family's FULL floors are mirrored into them alongside the nested write. Two further checks in the screen are unconditional and need no threshold: near-duplicate detection (8x8 average hash, Hamming distance 4 or less fails unless the pair is declared in the inventory's continuity_group) and native-ratio + crop-plan truth against the inventory (Amendment 6).",
+      "description": "Signature grade screen thresholds enforced by scripts/validate_image_grade.py (Items 8 and 9, Calibration Redesign Rulings 1 to 3). Calibration is PER FAMILY and PER POSTURE CLASS: the nested `floors` block carries, for each rendering family (photographic, cinematic, visual-artist), a FULL class (color floors), an ADAPT class (a two-sided saturation/colorfulness band plus a luma_std tonal floor, optionally provisional), and non-color floors (luma_std, sharpness) pooled across the family's postures. SUPPRESS never carries color floors (Guide section 13). Brand calibration requires per-family anchors for every family in families_used; there is no family-scoped calibration mode (Ruling 2). Every threshold is a floor (or, for ADAPT, a band bound): a generated image measuring outside it FAILS the screen. The one exception is max_protected_saturation, a ceiling that is WARN-only whether or not a value is written (owner ruling S71-OPTION-B, Resolution A, 2026-10-16): an image measuring over the written ceiling prints a WARN naming the measured value and the ceiling, and never fails on that metric. A threshold set to null (or a class/family block absent) is UNCALIBRATED: the screen prints that metric's measurements as WARN and applies no gate for it, and the production gate refuses to close image-generation-qc for a non-test run while min_mean_saturation or min_luma_std is null (Item 8 close rule). Thresholds are never invented: they are derived by scripts/calibrate_grade.py from Trevor's approved gold set (assets/brand/gold-set/, floor = gold-set 5th percentile x 0.95 within the family and class), printed as a proposal, and written into the brand file only after Trevor approves or adjusts them. Transition: the flat keys below remain the production gate's close-rule keys and the validator's legacy fallback; at approval time the photographic family's FULL floors are mirrored into them alongside the nested write. Two further checks in the screen are unconditional and need no threshold: near-duplicate detection (8x8 average hash, Hamming distance 4 or less fails unless the pair is declared in the inventory's continuity_group) and native-ratio + crop-plan truth against the inventory (Amendment 6).",
       "properties": {
         "block_file": {"type": "string", "minLength": 1, "description": "Path to the Signature Grade Block text the prompt validator requires verbatim on sauce-only pages."},
         "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Legacy flat floor for mean HSV saturation (0-1) over the image's 256px working copy. Null = uncalibrated. Kept as the production gate's close-rule key and the validator's legacy fallback for the photographic FULL class; at calibration approval it mirrors floors.photographic.full.min_mean_saturation."},
         "min_luma_std": {"type": ["number", "null"], "minimum": 0, "description": "Legacy flat floor for the standard deviation of luminance (0-255 scale). Null = uncalibrated. Mirrors floors.photographic.noncolor.min_luma_std at approval time (see min_mean_saturation)."},
         "min_sharpness": {"type": ["number", "null"], "minimum": 0, "description": "Item 9: legacy flat floor for sharpness, the variance of Pillow FIND_EDGES over the grayscale 256px working copy. Optional key: absent is treated exactly like null (uncalibrated, WARN only)."},
         "min_colorfulness": {"type": ["number", "null"], "minimum": 0, "description": "Item 9: legacy flat floor for the Hasler-Susstrunk colorfulness metric over the rg/yb opponent channels of the 256px working copy. Optional key: absent is treated exactly like null (uncalibrated, WARN only)."},
-        "max_protected_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Option B selectivity ceiling (Ruling 3): the maximum allowed mean HSV saturation of an image's protected region (near-neutral pixels plus the skin-hue band) for FULL-posture images, enforced as a ceiling. Null or absent = uncalibrated: the screen measures and reports the protected-region saturation and saturated-intrusion share as WARN only. A family's FULL block may carry its own max_protected_saturation, which wins over this brand-wide key. The Item 12 judgment gate remains the enforcement of record for selective saturation; this ceiling is a screen proxy (Sauce 2, 23.2)."},
+        "max_protected_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Option B selectivity ceiling (Ruling 3): the maximum allowed mean HSV saturation of an image's protected region (near-neutral pixels plus the skin-hue band) for FULL-posture images. This metric is WARN-only whether or not a ceiling is written (owner ruling S71-OPTION-B, Resolution A, 2026-10-16): with a ceiling written, an image measuring over it prints a WARN naming the measured value and the ceiling, and never fails on this metric; the ceiling is a screen value the WARN names, not a failure threshold. Null or absent = uncalibrated: the screen measures and reports the protected-region saturation and saturated-intrusion share as WARN only. A family's FULL block may carry its own max_protected_saturation, which wins over this brand-wide key. The Item 12 judgment gate remains the enforcement of record for selective saturation; this ceiling is a screen proxy (Sauce 2, 23.2)."},
         "families_used": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["photographic", "cinematic", "visual-artist"]}, "description": "The rendering families this brand uses, declared once at gold-set designation time. Brand calibration (scripts/calibrate_grade.py) refuses until every family listed here has per-family anchors and a derivable floor set (Ruling 2). Absent: the calibrator falls back to the gold manifest's families_used, then to all three Router families."},
         "floors": {
           "type": "object",
@@ -112,6 +118,29 @@
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1}
+    },
+    "layout_thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Layout metric thresholds read by scripts/validate_page.py; the values are the Item 15 plan defaults, not calibrated numbers. card_grid_allowlist declares mandated editorial structures so the repeated-card-grid metric passes them by declaration instead of flagging them by failure: each entry is a sibling group's parent selector, its structure signature, or the pair joined by a space. Worked examples of the editorial-row class: \"section.persona-rows\" (parent selector), \"div(p,h3,p)\" (structure signature), \"section.letter-body div(p)\" (the pair joined by a space).",
+      "properties": {
+        "note": {"type": "string", "minLength": 1},
+        "signature_monotony_max_share": {"type": "number", "minimum": 0, "maximum": 1},
+        "image_ratio_same_class_tolerance": {"type": "number", "minimum": 0, "maximum": 1},
+        "image_ratio_min_images": {"type": "integer", "minimum": 1},
+        "centering_max_share": {"type": "number", "minimum": 0, "maximum": 1},
+        "card_grid_min_repetitions": {"type": "integer", "minimum": 1},
+        "card_grid_size_tolerance": {"type": "number", "minimum": 0, "maximum": 1},
+        "empty_width_min_span": {"type": "number", "minimum": 0, "maximum": 1},
+        "cta_size_tolerance_px": {"type": "integer", "minimum": 0},
+        "single_cta_design": {"type": "boolean"},
+        "card_grid_allowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1},
+          "description": "Allowlist key forms: parent selector, structure signature, or the pair joined by a space."
+        }
+      }
     },
     "banned_page_patterns": {
       "type": "array",
