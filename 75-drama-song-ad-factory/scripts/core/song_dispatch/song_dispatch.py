@@ -45,6 +45,9 @@ import music_qc as _QC       # noqa: E402  WW-08: the total verdict vocabulary +
 import song_contract as _SC  # noqa: E402
 import script_approval as _SA   # noqa: E402
 import spoken_share as _SS   # noqa: E402
+#: the spoken_share MODULE itself, for the method first-vocal rule the package
+#: ``__init__`` does not re-export (same shape as _RM/_SCM below).
+_SSM = getattr(_SS, "spoken_share", _SS)
 import suno_recipe as _R     # noqa: E402
 #: the recipe MODULE itself, whether core/suno_recipe/ is a package (whose
 #: __init__ re-exports a fixed list) or the bare module on sys.path -- so a new
@@ -294,8 +297,66 @@ def _rap_required(plan, style_id):
 
 
 def _pace_required(plan, take):
-    """True when this run carries an approved pace order (WW-07)."""
-    return bool((plan or {}).get("pace_change") or (take or {}).get("pace_change"))
+    """True on EVERY run, method or not (Trevor 2026-10-13, METHOD-INTEGRATION
+    F4 / conflict C5).
+
+    It used to be "True when this run carries an approved pace order", so a
+    run that ordered no pace change had "nothing to enforce" and PASSed --
+    the gate was optional. Both musical turns are now mandatory and measured:
+    the ERM drop and the second turn at the Hero Shift (on a run with no
+    method block the seams sit on the arc's pain-turn and solution-arrival
+    beats). The gate is therefore a REQUIRED gate of every take everywhere --
+    an unmeasured turn can never reach PASS -- and ANY run, method or not,
+    that carries no pace order at all is refused at dispatch
+    (``PACE_TURNS_REQUIRED``, in ``run_takes``) or records the gate
+    UNMEASURED when it is judged directly.
+    The arguments are kept so no caller changes.
+    """
+    return True
+
+
+def _method_plan(plan):
+    """True when the approved plan carries the run's method block
+    (``control/method.json`` read by the factory). Everything this unit adds
+    for the first vocal is INERT without it: a run with no method block is
+    judged exactly as it is today."""
+    m = (plan or {}).get("method")
+    return isinstance(m, dict) and bool(m)
+
+
+def _erm_apex_s(plan, delivered_s):
+    """The ERM apex of a METHOD run, read off the plan -- no table here.
+
+    SPEC B4's pacing profile picks it: ``feed`` (paid ads, short form, every
+    trailer and ad clip cut from a master) compresses the ERM so the first
+    sung line lands by 15 percent of the runtime; ``story`` (campaign
+    episodes, testimonials, lessons) uses the method's own ERM window, whose
+    midpoint is the apex the plan already carries (``erm_apex_s``, else the
+    window's midpoint). A plan that carries an explicit ``erm_apex_s`` always
+    wins, and a run that carries neither returns None (the caller records
+    UNMEASURED: missing evidence is never PASS)."""
+    m = (plan or {}).get("method")
+    if not isinstance(m, dict) or not m:
+        return None
+
+    def _num(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    if _num(m.get("erm_apex_s")) and float(m["erm_apex_s"]) > 0:
+        return float(m["erm_apex_s"])
+    if str(m.get("profile") or "").strip().lower() == "feed":
+        if isinstance(delivered_s, (int, float)) and delivered_s > 0:
+            return float(delivered_s) * _SS.FIRST_SUNG_TARGET_PCT / 100.0
+        return None
+    w = m.get("erm_window_s")
+    if isinstance(w, (list, tuple)) and len(w) == 2 and all(_num(v) for v in w):
+        return (float(w[0]) + float(w[1])) / 2.0
+    return None
+
+
+def _pace_turns_required_detail():
+    return ("PACE_TURNS_REQUIRED: both pace turns are mandatory and measured "
+            "on every run (Trevor 2026-10-13); this run carries no pace order, "
+            "so the ERM drop and the second turn cannot be measured")
 
 
 def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
@@ -436,17 +497,28 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
         put("rap_audio", rg["verdict"], rg["reason"])
     else:
         put("rap_audio", "PASS", "style %r delivers no rap" % (style_id,))
-    # PACE (music_qc/pace_change): the ordered gear change rides the plan; no
-    # order -> not applicable and it PASSes. An order with missing onset or
-    # energy evidence on the TAKE is UNMEASURED (blocks PASS); evidence that
-    # shows no gear change is FAIL. bpm is reported and never grants a PASS.
+    # PACE (music_qc/pace_change): the ordered gear change rides the plan. An
+    # order with missing onset or energy evidence on the TAKE is UNMEASURED
+    # (blocks PASS); evidence that shows no gear change is FAIL. bpm is
+    # reported and never grants a PASS.
+    #
+    # METHOD C5 (Trevor 2026-10-13, BUILD-PLAN W1-method-song-U1): both turns
+    # are mandatory on EVERY run, so a take that reaches the judge with no
+    # order cannot be told "there is nothing to enforce" -- that verdict is a
+    # PASS, and an unmeasured turn may never reach PASS. The gate records
+    # UNMEASURED (PACE_TURNS_REQUIRED) and blocks, method run or not; every
+    # real run was already refused at dispatch, so this is the direct-judge
+    # seam (and the last line of defence) rather than a second dispatch rule.
     pg = _PC.judge_plan_pace(plan, take.get("pace_before"), take.get("pace_problem"),
                              take.get("pace_after"),
                              envelope=take.get("pace_envelope"),
                              hop_s=take.get("pace_hop_s"),
                              bpm_before=take.get("bpm_before"),
                              bpm_after=take.get("bpm_after"))
-    put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
+    if pg.get("applicable") is False:
+        put("pace_change", "UNMEASURED", _pace_turns_required_detail())
+    else:
+        put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
     have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
     missing = sorted(set(_w(script_words)) - have)
     put("script_words", "FAIL" if missing else "PASS", ("missing %s" % missing[:8]) if missing else "")
@@ -464,7 +536,16 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
     put("clean_ending", "PASS" if isinstance(tail, (int, float)) and tail > NEAR_SILENT_DBFS else "FAIL",
         "final 2 s at %r dBFS" % (tail,))
     fs = take.get("first_sung_s")
-    if isinstance(fs, (int, float)):
+    if _method_plan(plan):
+        # METHOD C3 (Trevor 2026-10-13): on a method run the first sung line
+        # lands at the ERM apex, so the gate is the ERM window -- early AND
+        # late are FAIL -- and never the 15 percent of runtime target, which
+        # would call a method-correct 15 s take "late, redo". One copy of the
+        # rule lives in spoken_share.judge_first_vocal_at_erm.
+        erm_r = _SSM.judge_first_vocal_at_erm(fs, take.get("sung_starts"),
+                                              _erm_apex_s(plan, D))
+        put("first_sung", erm_r["verdict"], erm_r["detail"])
+    elif isinstance(fs, (int, float)):
         j = _SS.judge_seconds(fs, D * _SS.FIRST_SUNG_TARGET_PCT / 100.0, D, only="late")
         put("first_sung", j["verdict"], "%.1f s" % fs)
     else:
@@ -956,14 +1037,32 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # transition, or the internal _pace_plan metadata leaking into any
     # provider-visible field is refused HERE -- nothing is spent. The audio
     # check (D3) runs later, on the exports, inside judge_take.
-    if plan.get("pace_change"):
-        pace_errs = _PC.check_pace_plan(plan["pace_change"])
-        pace_errs += _SCM.check_pace_style(inp.get("style"), plan["pace_change"])
-        if _PC.pace_provider_leak(request):
-            pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
-                             "_pace_plan judging metadata reaches a provider field")
-        if pace_errs:
-            raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
+    #
+    # METHOD C5 (Trevor 2026-10-13, METHOD-INTEGRATION F4): BOTH pace turns are
+    # mandatory and measured, so "this run ordered no pace change" is no longer
+    # "nothing to enforce": a run that carries no pace order at all is refused
+    # HERE, at dispatch, before any spend, with PACE_TURNS_REQUIRED -- the two
+    # turns cannot be measured off a take nobody ordered. BUILD-PLAN
+    # W1-method-song-U1 makes this EVERY run, method or not: `_pace_required`
+    # is True on every run, so the order is as mandatory at dispatch as the
+    # gate is at the judge. A method run names its seams after the blueprint's
+    # own cues (ERM Drop / Hero Shift); a run with no method block names the
+    # arc's pain-turn and solution-arrival beats -- the ORDER is required in
+    # both cases, only its anchor names differ. The first-sung rule and every
+    # other method-only check stay exactly as they are: those run only when
+    # the run carries control/method.json (inert-until-wired).
+    # The order is read the SAME two keys the judge reads (``judge_plan_pace``):
+    # ``pace_change`` (merged from the request's _pace_plan above) or a plan
+    # that carries the runner's own ``_pace_plan`` key (song_choices.cmd_generate).
+    if not (plan.get("pace_change") or plan.get("_pace_plan")):
+        raise DispatchError(_pace_turns_required_detail())
+    pace_errs = _PC.check_pace_plan(plan["pace_change"])
+    pace_errs += _SCM.check_pace_style(inp.get("style"), plan["pace_change"])
+    if _PC.pace_provider_leak(request):
+        pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                         "_pace_plan judging metadata reaches a provider field")
+    if pace_errs:
+        raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
     # D2: when the run answered Yes to SONG APPROVAL the music stage runs as
     # THREE variants, and each variant is generated per variant; the three
     # variants run in PARALLEL lanes (song_choices.plan_units, providerSlots 3,

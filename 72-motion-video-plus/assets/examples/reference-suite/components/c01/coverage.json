@@ -1,0 +1,92 @@
+{
+  "coverage": {
+    "accounted_frames": 150,
+    "covered_frames": 150,
+    "covered_intervals": [
+      {
+        "end_frame_exclusive": 150,
+        "end_seconds": 5.0,
+        "start_frame": 0,
+        "start_seconds": 0.0
+      }
+    ],
+    "omitted_frames": 0,
+    "omitted_intervals": []
+  },
+  "declared_total_frames": 150,
+  "findings": [],
+  "inputs": {
+    "beats": null,
+    "review_record": null,
+    "sidecar": null,
+    "timeline": null
+  },
+  "item": "MG-031",
+  "job_id": "mg044-c01-job",
+  "policy": {
+    "destinations": [],
+    "interval_seconds": 5.0,
+    "sheet_columns": 4,
+    "tile_width": 480
+  },
+  "samples": [
+    {
+      "files": {
+        "full": "frames/full/mg044-c01-job__f0000000.png"
+      },
+      "frame": 0,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": null,
+      "status": "extracted",
+      "time_seconds": 0.0
+    },
+    {
+      "files": {
+        "full": "frames/full/mg044-c01-job__f0000149.png"
+      },
+      "frame": 149,
+      "kind": "final_frame",
+      "ref": null,
+      "required": true,
+      "scene_id": null,
+      "status": "extracted",
+      "time_seconds": 4.967
+    }
+  ],
+  "schema_version": "1.0",
+  "sheets": {
+    "interval": [
+      {
+        "frames": [
+          "mg044-c01-job__f0000000.png"
+        ],
+        "path": "mg044-c01-job__samples__p01.png",
+        "tile_height": 270,
+        "tile_width": 480
+      }
+    ],
+    "targeted": [
+      {
+        "frames": [
+          "mg044-c01-job__f0000149.png"
+        ],
+        "path": "mg044-c01-job__targeted__p01.png",
+        "tile_height": 270,
+        "tile_width": 480
+      }
+    ]
+  },
+  "verdict": "complete",
+  "video": {
+    "bytes": 263711,
+    "duration_seconds": 5.0,
+    "fps": "30/1",
+    "height": 1080,
+    "path": "assets/examples/reference-suite/sequence/clips/beat1-c01.mp4",
+    "probed_frames": 150,
+    "sha256": "c4766e50b33ce6f92a94373b789deade1612303e172b8d3e777f8733940a5f4f",
+    "width": 1920
+  }
+}

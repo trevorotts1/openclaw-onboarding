@@ -1,0 +1,1 @@
+{"compilerOptions":{"declaration":true,"forceConsistentCasingInFileNames":true,"lib":["ES2022"],"module":"ESNext","moduleResolution":"Bundler","outDir":"dist","rootDir":"src","skipLibCheck":true,"strict":true,"target":"ES2022","types":["node"]},"exclude":["dist","tests","node_modules","src/**/*.test.ts"],"include":["src"]}

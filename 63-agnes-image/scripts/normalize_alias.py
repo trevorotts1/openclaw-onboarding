@@ -12,12 +12,20 @@ import json
 import sys
 
 ALIAS_MAP = {
-    "agnes image": "agnes-image-2.1-flash",
-    "agnes image flash": "agnes-image-2.1-flash",
+    # Generic (unpinned) aliases resolve to the current default, 2.5 Flash.
+    "agnes image": "agnes-image-2.5-flash",
+    "agnes image flash": "agnes-image-2.5-flash",
+    "agnes-image-flash": "agnes-image-2.5-flash",
+    "agnes-image": "agnes-image-2.5-flash",
+    # Explicit 2.5 aliases.
+    "agnes image 2.5": "agnes-image-2.5-flash",
+    "agnes image 2.5 flash": "agnes-image-2.5-flash",
+    "agnes-image-25-flash": "agnes-image-2.5-flash",
+    "agnes-image-2.5-flash": "agnes-image-2.5-flash",
+    # Explicit legacy 2.1 pins are preserved, never silently rewritten.
     "agnes image 2.1": "agnes-image-2.1-flash",
     "agnes image 2.1 flash": "agnes-image-2.1-flash",
     "agnes-image-21-flash": "agnes-image-2.1-flash",
-    "agnes-image-flash": "agnes-image-2.1-flash",
     "agnes-image-2.1-flash": "agnes-image-2.1-flash",
 }
 
@@ -34,7 +42,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     if args.self_test:
-        assert normalize("agnes image") == "agnes-image-2.1-flash"
+        assert normalize("agnes image") == "agnes-image-2.5-flash"
+        assert normalize("agnes image 2.5 flash") == "agnes-image-2.5-flash"
         assert normalize("agnes image 2.1 flash") == "agnes-image-2.1-flash"
         assert normalize("agnes-image-21-flash") == "agnes-image-2.1-flash"
         print("normalize_alias.py --self-test: PASS")

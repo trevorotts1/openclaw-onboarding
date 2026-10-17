@@ -1,0 +1,16 @@
+{
+  "url": "http://127.0.0.1:33943/",
+  "fetched_at": "2026-10-16T13:51:39+00:00",
+  "checks": [
+    "status_200: pass",
+    "final_url_match: pass",
+    "private_labels: scanned",
+    "placeholders: scanned",
+    "build_marker: absent"
+  ],
+  "status": 200,
+  "final_url": "http://127.0.0.1:33943/",
+  "bytes": 403,
+  "build_marker": null,
+  "verdict": "pass"
+}

@@ -1,0 +1,159 @@
+{
+  "set": "broken-signature-launch-10",
+  "golden_source": "examples/golden-signature-launch-10/emails.json",
+  "prover": "tools/prove-email.py (worktree branch s50-08-golden, base commit e9aab65; prover unmodified by the fix lane; the candidate branch's S50-06 review_label check is not present in this worktree's prover and the conductor re-proves against the final prover)",
+  "golden_control": {
+    "file": "examples/golden-signature-launch-10/emails.json",
+    "observed_exit_code": 0,
+    "brief_file": "examples/golden-signature-launch-10/brief.json",
+    "brief_observed_exit_code": 0
+  },
+  "all_cases_rejected_with_expected_code": true,
+  "all_cases_rejected_with_only_the_intended_code": true,
+  "cases": [
+    {
+      "case": "one-preview",
+      "file": "examples/broken-signature-launch-10/one-preview/emails.json",
+      "mutation": "Email 1 previews trimmed to a single preview line (the Convert and Flow one-preview default arriving on the two-preview profile).",
+      "expected_code": "AF-EMAIL-PREVIEW-COUNT",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-PREVIEW-COUNT"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-PREVIEW-COUNT",
+          "message": "E1: needs exactly 2 non-empty preview line(s) for this sequence"
+        }
+      ]
+    },
+    {
+      "case": "pair-b-missing-subject",
+      "file": "examples/broken-signature-launch-10/pair-b-missing-subject/emails.json",
+      "mutation": "Email 1 subjects trimmed to Pair A only; Pair B subject dropped.",
+      "expected_code": "AF-EMAIL-SUBJECT-COUNT",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-SUBJECT-COUNT"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-SUBJECT-COUNT",
+          "message": "E1: needs exactly 2 non-empty subject lines (A/B)"
+        }
+      ]
+    },
+    {
+      "case": "sections-missing",
+      "file": "examples/broken-signature-launch-10/sections-missing/emails.json",
+      "mutation": "Email 6 sections[] removed entirely.",
+      "expected_code": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
+          "message": "E6: profile signature_launch_landing_10 requires structured sections[] for before-after-bridge (canonical order: before -> after -> bridge)"
+        }
+      ]
+    },
+    {
+      "case": "sections-reversed",
+      "file": "examples/broken-signature-launch-10/sections-reversed/emails.json",
+      "mutation": "Email 9 sections[] reversed (Action, Desire, Interest, Attention).",
+      "expected_code": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
+          "message": "E9: aida sections are out of canonical order (expected attention -> interest -> desire -> action)"
+        }
+      ]
+    },
+    {
+      "case": "cta-bunched-late",
+      "file": "examples/broken-signature-launch-10/cta-bunched-late/emails.json",
+      "mutation": "Email 1 body rewritten with all three CTAs bunched at the end, just before the signature.",
+      "expected_code": "AF-EMAIL-CTA-PLACEMENT",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-CTA-PLACEMENT"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-CTA-PLACEMENT",
+          "message": "E1: first CTA starts at 91% of the body words; the profile requires it within the first half (beginning)"
+        }
+      ]
+    },
+    {
+      "case": "pain-duplicated",
+      "file": "examples/broken-signature-launch-10/pain-duplicated/emails.json",
+      "mutation": "Email 2 pain_ref set to Email 1's pain_ref (landing.section6.pain.1).",
+      "expected_code": "AF-EMAIL-SLOT-TRACE",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-SLOT-TRACE"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-SLOT-TRACE",
+          "message": "E2: pain_ref 'landing.section6.pain.1' duplicates E1 — each PASTOR email must own a DIFFERENT Section 6 pain point"
+        }
+      ]
+    },
+    {
+      "case": "deadline-invented",
+      "file": "examples/broken-signature-launch-10/deadline-invented/emails.json",
+      "mutation": "Email 5 keeps its approved deadline field (Thursday) but when_provenance is set to 'none', denying the deadline its brief source.",
+      "expected_code": "AF-EMAIL-SLOT-TRACE",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-SLOT-TRACE"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-SLOT-TRACE",
+          "message": "E5: a deadline is declared but when_provenance is 'none' — an invented When is forbidden"
+        }
+      ]
+    },
+    {
+      "case": "placeholder-signature",
+      "file": "examples/broken-signature-launch-10/placeholder-signature/emails.json",
+      "mutation": "Email 10 closing signature replaced with the placeholder token [Founder Name].",
+      "expected_code": "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+      "observed_exit_code": 2,
+      "observed_codes": [
+        "AF-EMAIL-SIGNATURE-PLACEHOLDER"
+      ],
+      "expected_code_present": true,
+      "only_intended_code": true,
+      "failures": [
+        {
+          "code": "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+          "message": "E10: a placeholder signature token is present (use the founder's actual name)"
+        }
+      ]
+    }
+  ]
+}

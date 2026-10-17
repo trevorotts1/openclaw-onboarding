@@ -1,0 +1,67 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-product-tour",
+  "beats": [
+    {
+      "beat_id": "beat-reveal",
+      "idea": "Reveal the real product photograph",
+      "viewer_takeaway": "The product is real and present",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C02",
+      "engine": "hyperframes",
+      "selection_reason": "Image-led reveal; Hyperframes is the default for image-led work",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "device-reveal"
+      ]
+    },
+    {
+      "beat_id": "beat-compare",
+      "idea": "Place the detail photograph beside the full view",
+      "viewer_takeaway": "The dial detail is real and standard",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C02",
+      "engine": "hyperframes",
+      "selection_reason": "Image-led comparison; Hyperframes default for editorial imagery",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "detail-identity"
+      ]
+    },
+    {
+      "beat_id": "beat-emphasis",
+      "idea": "One held promise line",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": null,
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "Emphasis card in the same engine as its scene",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": []
+    }
+  ]
+}

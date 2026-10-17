@@ -1,0 +1,667 @@
+{
+  "notes": [
+    "Absence is recorded, never filled: Think and Grow Rich: A Black Choice is a bibliographic stub below because no content from it exists in the authorized source export; a stub acknowledges the title, it does not ingest it.",
+    "Authorship of the absent anchor is recorded from the directive's source seed registry (Section 39.5, seed A10): the Penguin Random House record for Think and Grow Rich: A Black Choice credits Napoleon Hill and Dennis P. Kimbro. The CWE-011 export's own record for the work listed only Dr. Dennis Kimbro as credited author. This pack follows the publisher seed record for the stub, and attributes no words of either author to the other.",
+    "The two present records below are the CWE-011 export's records reshaped to the strict Section 8.3 contract: provenance fields the export leaves unknown stay null, and each content_sha256 is the export's hash of the Skill 22 derivative artifact persona-blueprint.md, not of the book. retrieved_at is the CWE-011 export time, when this material was packaged for the build.",
+    "Both present sets are blueprint-only: a derivative persona blueprint per book, with section locators into the blueprint, no extraction layer, no page locators, and zero quotation candidates. The export package (content_sha256 71867adb7a5682bf484b814cd20c560f598dec96ddf3734e1a8faf1f5c5ebde2) carries 28 paraphrase concept units; all 28 are carried below with the export's evidence IDs and section locators. Nothing in either blueprint is presented as the book's text, and no slogan-like phrasing inside a blueprint summary is carried into this pack as a quotation.",
+    "Quality for both present records is unverified and rights are reference_only, exactly as exported. Under the CWE-012 binding conditions, this seat's qualification is bibliographic_only, and coverage.json says so."
+  ],
+  "pack_owner_unit": "CWE-020",
+  "records": [
+    {
+      "basis": "foundational book",
+      "credited_authors": [
+        "Napoleon Hill",
+        "Dennis P. Kimbro"
+      ],
+      "note": "Required anchor. Absent from the CWE-011 Skill 22 export: no persona package exists for this work (supply gap, bypass lane). No content from this work has been ingested or verified, and no quotation, locator, or concept is claimed from it. Authorship follows the publisher seed record (directive Section 39.5, seed A10, Penguin Random House), which credits Napoleon Hill and Dennis P. Kimbro as co-authors; the export's record listed only Dr. Dennis Kimbro. Hill's words are never attributed to Kimbro, and Kimbro's words are never attributed to Hill, anywhere in this pack.",
+      "record_status": "bibliographic_only",
+      "title": "Think and Grow Rich: A Black Choice",
+      "verification_status": "not_ingested"
+    },
+    {
+      "allowed_scope": "shared_pack",
+      "canonical_url": null,
+      "content_sha256": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3",
+      "credited_authors": [
+        "Dr. Dennis Kimbro"
+      ],
+      "edition_or_publication_date": null,
+      "evidence": [
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c001",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 1 - Identity & Voice"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint presents the author as a researcher, interviewer, and professor, and describes the book's basis as a seven-year survey of more than 1,000 Black millionaires with focus groups, distilled into a repeatable wealth-building system. This is the blueprint's description, of unverified provenance; this pack makes no biographical claims from it.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fw-seven-laws-of-wealth"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c002",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 2 - Core Philosophy"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's core philosophy: an internal model of money, worth, and possibility drives financial outcomes, and that internal model must end in concrete financial results rather than remain an attitude. Recorded as the author's stated orientation as the blueprint presents it, not as a verified causal claim and never as a guarantee.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fw-seven-laws-of-wealth"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c003",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 3 - Signature Framework"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint names the book's signature framework as the Seven Laws of Wealth, and the available summary records its first law only: the internal model of money must end in financial results. The remaining laws sit in a playbook appendix that is not part of the export; this pack does not enumerate or reconstruct them.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fw-seven-laws-of-wealth"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c004",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 4 - Key Principles"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's key-principles section restates the core philosophy as its first principle: financial reality reflects internal beliefs about money, worth, and possibility. Carried as a blueprint paraphrase concept, not as a verified quotation from the book.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c005",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 5 - Coaching Mode: When to Invoke"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's coaching triggers include a client who feels stuck in a career; its reading is that stuckness can mask a misalignment with the person's gifts, and its response is to diagnose purpose and press for a pivot toward service. Recorded as the blueprint's coaching posture.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fw-diagnose-the-block",
+            "rule-diagnose-before-prescribing"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c006",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 6 - Coaching Mode: How to Respond"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's coaching method opens with an assessment phase: diagnose whether the block is mindset, knowledge, or action before prescribing anything.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fw-net-worth-and-ownership-accounting",
+            "rule-written-net-worth-goal"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c007",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 7 - Task Mode: When to Invoke"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's task mode requires a financial plan to include a written net-worth goal, a minimum savings rate (the blueprint's plan template records 10 percent), and a timeline for ownership income.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fw-net-worth-and-ownership-accounting",
+            "rule-written-net-worth-goal",
+            "fp-unwritten-goal"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c008",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's execution standard sets preconditions before work begins: an explicit decision to pursue wealth, and a specific written net-worth goal.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c009",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 9 - Department Routing"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint routes sales work through service and value: pitches lead with service, closes are ethical and confident, and selling is treated as what sets economic activity in motion. Slogan-like phrasing inside the blueprint summary is not carried into this pack as a quotation.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c010",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 10 - Trigger Phrases & Keywords"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint lists coaching trigger phrases and situations, including feeling stuck, not knowing one's purpose, and running out of money every month.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c011",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 11 - Sample Responses"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's sample coaching response addresses a client stuck in a dead-end job who does not know their purpose; the recorded posture is direct and refuses to leave the client where they are. Sample dialogue in a derivative blueprint is not the author's verified speech, and none of it is reproduced in this pack.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fp-seat-no-therapy-or-diagnosis"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c012",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 12 - Boundaries & Limitations"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint records its own boundary: the methodology addresses mindset and limiting beliefs within a financial context, and it is not a substitute for therapy, trauma healing, or treatment for clinical depression or anxiety.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c013",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 13 - Integration with Other Personas"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's integration section hands needs beyond its principles, for example a detailed step-by-step sales training program, to other personas rather than stretching this one to cover them.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        },
+        {
+          "claim_ids": [
+            "fp-survivorship-reasoning"
+          ],
+          "evidence_id": "ev-dennis-kimbro-the-wealth-choice-c014",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 14 - Quick Reference Card"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's quick reference describes this persona as a tough-love wealth coach and execution governor built from the success patterns of the surveyed millionaires. This pack records that as the blueprint's self-characterization; patterns observed in successful people are observations, not proof that the same path produces the same result for any given client.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-the-wealth-choice",
+          "source_version": "cbe58f89a7774cae406e5ca0a2481c4330357e976d86a886807b1e99b00f08c3"
+        }
+      ],
+      "locators": [
+        {
+          "kind": "section",
+          "value": "Section 1 - Identity & Voice"
+        },
+        {
+          "kind": "section",
+          "value": "Section 2 - Core Philosophy"
+        },
+        {
+          "kind": "section",
+          "value": "Section 3 - Signature Framework"
+        },
+        {
+          "kind": "section",
+          "value": "Section 4 - Key Principles"
+        },
+        {
+          "kind": "section",
+          "value": "Section 5 - Coaching Mode: When to Invoke"
+        },
+        {
+          "kind": "section",
+          "value": "Section 6 - Coaching Mode: How to Respond"
+        },
+        {
+          "kind": "section",
+          "value": "Section 7 - Task Mode: When to Invoke"
+        },
+        {
+          "kind": "section",
+          "value": "Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 9 - Department Routing"
+        },
+        {
+          "kind": "section",
+          "value": "Section 10 - Trigger Phrases & Keywords"
+        },
+        {
+          "kind": "section",
+          "value": "Section 11 - Sample Responses"
+        },
+        {
+          "kind": "section",
+          "value": "Section 12 - Boundaries & Limitations"
+        },
+        {
+          "kind": "section",
+          "value": "Section 13 - Integration with Other Personas"
+        },
+        {
+          "kind": "section",
+          "value": "Section 14 - Quick Reference Card"
+        }
+      ],
+      "original_speaker": null,
+      "private_asset_id": null,
+      "publisher_or_host": null,
+      "quality": "unverified",
+      "retrieved_at": "2026-10-14T13:41:09.493Z",
+      "rights_status": "reference_only",
+      "source_id": "src-dennis-kimbro-the-wealth-choice",
+      "source_type": "book",
+      "work_id": "work-the-wealth-choice",
+      "work_title": "The Wealth Choice"
+    },
+    {
+      "allowed_scope": "shared_pack",
+      "canonical_url": null,
+      "content_sha256": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0",
+      "credited_authors": [
+        "Dr. Dennis Kimbro"
+      ],
+      "edition_or_publication_date": null,
+      "evidence": [
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c001",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 1 - Identity & Voice"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint presents the author as a business professor at Clark Atlanta University and director of its Center for Entrepreneurship, and as co-author of Think and Grow Rich: A Black Choice. Recorded as the blueprint's description, of unverified provenance; this pack makes no biographical claims from it.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c002",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 2 - Core Philosophy"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint records the book's worldview statements as non-negotiable drivers of the persona, opening with an already-rich identity claim. This pack records the orientation without adopting its phrasing as verified quotation and without treating identity claims as financial evidence.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "fw-written-purpose-execution-standard"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c003",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 3 - Signature Framework"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint describes the book's methodology for extraordinary achievement as phased, beginning with a spiritual foundation phase in which success is framed as a birthright. The faith framing is the author's as the blueprint presents it; this seat reports it as such and never makes it a condition of the analysis or a promise of outcomes.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c004",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 4 - Key Principles (7 Principles)"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's first key principle is a conceive-and-believe claim: the mind as cause, circumstances as effect, with vivid belief preceding material results. The celebrated wording of this idea belongs to Napoleon Hill's earlier Think and Grow Rich tradition, the same tradition Kimbro later co-authored an adaptation of. With no verified text in this pack, the concept is recorded without attributing any exact wording to either author.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "fw-diagnose-the-block"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c005",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 5 - Coaching Mode: When to Invoke"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's coaching triggers include a client who feels stuck without knowing why; its reading is that stuckness is often a consciousness problem or a hidden fear, answered by re-anchoring identity and purpose.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "fw-diagnose-the-block",
+            "rule-diagnose-before-prescribing"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c006",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 6 - Coaching Mode: How to Respond"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's coaching response opens with an assessment phase aimed at the root consciousness gap and the hidden payoffs of staying stuck, conducted through structured coaching questions.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "fw-written-purpose-execution-standard"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c007",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 7 - Task Mode: When to Invoke"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint requires a personal mission statement to follow its Dream List process and to contain specific outcomes, a timeline, and the value to be given in return.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "fw-written-purpose-execution-standard"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c008",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's execution standard requires, before work begins, a clear written purpose statement (its A1 statement): the specific outcome, the timeline, and the value to be given in return.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c009",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 9 - Department Routing"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint routes sales as a service discipline: every sales interaction is a service opportunity, and superior sales skill is counted among its named disciplines of wealth. The full list of disciplines is not present in the available summary and is not reconstructed here.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c010",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 10 - Trigger Phrases & Keywords"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint lists coaching triggers including feeling stuck without knowing why, and feeling not good enough.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c011",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 11 - Sample Responses (3 Examples)"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's sample coaching scenario addresses a user who feels stuck in a dead-end job, unsure of purpose, and convinced they are wasting their life. Sample dialogue in a derivative blueprint is not the author's verified speech, and none of it is reproduced in this pack.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "rule-structural-constraints-named",
+            "fp-seat-no-guarantees"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c012",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 12 - Boundaries & Limitations"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint records a boundary this pack treats as load-bearing: the methodology equips individuals to succeed within existing systems through mindset and excellence, and it is not, by itself, an instrument for changing those systems. Material external constraints are therefore facts of a client's situation, never personal failures.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [
+            "fp-seat-no-therapy-or-diagnosis"
+          ],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c013",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 13 - Integration with Other Personas"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's integration section routes blocks that appear to be unresolved trauma or a mental-health crisis to clinical professionals, on the stated ground that the system assumes functional emotional stability.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        },
+        {
+          "claim_ids": [],
+          "evidence_id": "ev-dennis-kimbro-what-makes-the-great-great-c014",
+          "excerpt": null,
+          "kind": "concept",
+          "locator": {
+            "kind": "section",
+            "value": "Section 14 - Quick Reference Card"
+          },
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "paraphrase": "The blueprint's quick reference describes this persona as a no-excuse achievement voice built on the convictions recorded in its core philosophy and key principles. This pack records the self-description and does not adopt its slogans as quotations or its confidence as evidence.",
+          "seat_id": "dennis-kimbro",
+          "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+          "source_version": "f6dfd179345461c31f6f1c03a8d7b5ac3c1b844b0f715850cf17023e43d356e0"
+        }
+      ],
+      "locators": [
+        {
+          "kind": "section",
+          "value": "Section 1 - Identity & Voice"
+        },
+        {
+          "kind": "section",
+          "value": "Section 2 - Core Philosophy"
+        },
+        {
+          "kind": "section",
+          "value": "Section 3 - Signature Framework"
+        },
+        {
+          "kind": "section",
+          "value": "Section 4 - Key Principles (7 Principles)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 5 - Coaching Mode: When to Invoke"
+        },
+        {
+          "kind": "section",
+          "value": "Section 6 - Coaching Mode: How to Respond"
+        },
+        {
+          "kind": "section",
+          "value": "Section 7 - Task Mode: When to Invoke"
+        },
+        {
+          "kind": "section",
+          "value": "Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 9 - Department Routing"
+        },
+        {
+          "kind": "section",
+          "value": "Section 10 - Trigger Phrases & Keywords"
+        },
+        {
+          "kind": "section",
+          "value": "Section 11 - Sample Responses (3 Examples)"
+        },
+        {
+          "kind": "section",
+          "value": "Section 12 - Boundaries & Limitations"
+        },
+        {
+          "kind": "section",
+          "value": "Section 13 - Integration with Other Personas"
+        },
+        {
+          "kind": "section",
+          "value": "Section 14 - Quick Reference Card"
+        }
+      ],
+      "original_speaker": null,
+      "private_asset_id": null,
+      "publisher_or_host": null,
+      "quality": "unverified",
+      "retrieved_at": "2026-10-14T13:41:09.493Z",
+      "rights_status": "reference_only",
+      "source_id": "src-dennis-kimbro-what-makes-the-great-great",
+      "source_type": "book",
+      "work_id": "work-what-makes-the-great-great",
+      "work_title": "What Makes the Great Great"
+    }
+  ],
+  "seat_id": "dennis-kimbro",
+  "status": "built"
+}

@@ -1,0 +1,23 @@
+{
+  "seat_id": "simon-sinek",
+  "name": "Simon Sinek",
+  "order": 1,
+  "role": "purpose and strategic alignment",
+  "owned_question": "Does this decision express why the business exists, and are the proposed actions consistent with that purpose?",
+  "profile_label": "AI perspective inspired by the published work of Simon Sinek. Not the individual and not an endorsement.",
+  "source_basis": [
+    {
+      "basis": "foundational book",
+      "title": "Start with Why"
+    },
+    {
+      "basis": "supplementary book",
+      "title": "Find Your Why"
+    }
+  ],
+  "pack_owner_unit": "CWE-013",
+  "pack_version": "1.0.0",
+  "pack_status": "draft",
+  "qualification": "bibliographic_only",
+  "note": "Authored pack built by CWE-013 from the CWE-011 Skill 22 export package for this seat. pack_status stays draft in the validator's vocabulary because the pack does not claim production readiness: its source foundation qualifies bibliographic_only under the CWE-012 validator (both records quality unverified, provenance of the underlying copies unverified), and coverage.json states that plainly. The pack contains no verified quotations and claims no substantive source coverage."
+}

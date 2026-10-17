@@ -1,0 +1,46 @@
+{
+  "descriptor": "skill77.component-descriptor/v1",
+  "component": "command-center",
+  "role": "command-center",
+  "repository": "blackceo-command-center",
+  "commit": "c1a1418bd1ea160efcb44f574f431c121b554409",
+  "app_package": {
+    "name": "mission-control",
+    "version": "7.3.4"
+  },
+  "contract_package_version": "wise-elders.core/1.0.0",
+  "generated_contracts": {
+    "artifact": "wise-elders.contracts.json-schema",
+    "package_version": "wise-elders.core/1.0.0"
+  },
+  "schema_versions": {
+    "session": "wise-elders.session/v1",
+    "brief": "wise-elders.brief/v1",
+    "card": "wise-elders.card/v1",
+    "verdict": "wise-elders.verdict/v1",
+    "grant": "wise-elders.run-grant/v1",
+    "preview": "wise-elders.run-preview/v1",
+    "event": "wise-elders.event/v1",
+    "diagnostic_policy": "wise-elders.diagnostic-retention-policy/v1",
+    "endpoint": "wise-elders.endpoint-contract/v1",
+    "session_state": "wise-elders.session-state/v1",
+    "job_checkpoint": "wise-elders.job-checkpoint/v1",
+    "settings": "wise-elders.settings/v1",
+    "approval": "wise-elders.approval/v1",
+    "operation_receipt": "wise-elders.operation-receipt/v1"
+  },
+  "endpoint_registry_contract": "wise-elders.endpoint-contract/v1",
+  "council_route_groups": [
+    "advisors",
+    "capabilities",
+    "exports",
+    "models",
+    "sessions",
+    "settings"
+  ],
+  "cc_migration_id": "PENDING_INTEGRATION_ALLOCATION_CWE005",
+  "cc_migration_allocated": false,
+  "authority_modes": [
+    "managed"
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH",
+  "revision": 1,
+  "request_id": "TEST-REQ-U2",
+  "input_hash": "TEST-ONLY-INPUT-HASH",
+  "page_id": "TEST-UPSELL_2",
+  "status": "authored",
+  "artifacts": [
+    {
+      "path": "fixtures/copy-upsell2-public.valid.json",
+      "sha256": "f47f67bc8a1f7aec583589ef775861189bf40a3c80f7ae8136688001708710cb"
+    }
+  ],
+  "author_session": "S80-builder-worker (this build session)",
+  "reviewer_session": null,
+  "independent_review": false,
+  "proof_class": "L1",
+  "blockers": [
+    "Native action binding not yet provisioned (S80-06, Skill 6) - result is authored/local only, NOT installed or live proof."
+  ],
+  "native_bindings_ref": null,
+  "test_only": true,
+  "instance": "upsell_2",
+  "source_hash": "f47f67bc8a1f7aec583589ef775861189bf40a3c80f7ae8136688001708710cb",
+  "approved_offer_mapping": {
+    "offer_id": "TEST-ONLY-U2",
+    "slot": "upsell_2",
+    "native_product_id": null,
+    "native_price_id": null,
+    "amount_minor": 4700,
+    "currency": "USD",
+    "billing_type": "recurring"
+  },
+  "native_action": {
+    "action_id": null,
+    "settings_ref": null,
+    "binding_screenshot_ref": null,
+    "verified_by": "pending_s80_06"
+  },
+  "cta_map": [
+    {
+      "section_number": 1,
+      "cta_text": "TEST ONLY cta section 1",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 2,
+      "cta_text": "TEST ONLY cta section 2",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 3,
+      "cta_text": "TEST ONLY cta section 3",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 4,
+      "cta_text": "TEST ONLY cta section 4",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 5,
+      "cta_text": "TEST ONLY cta section 5",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 6,
+      "cta_text": "TEST ONLY cta section 6",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 7,
+      "cta_text": "TEST ONLY cta section 7",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    },
+    {
+      "section_number": 8,
+      "cta_text": "TEST ONLY cta section 8",
+      "action_ref": "native-one-click:TEST-ONLY-U2"
+    }
+  ],
+  "disclosure_audit": {
+    "amount_matches_native": null,
+    "currency_present": true,
+    "recurring_terms_disclosed": null,
+    "adjacent_to_cta": true,
+    "verdict": "pending_native_binding",
+    "notes": [
+      "TEST ONLY example: audit completes only after S80-06 native binding read-back."
+    ]
+  },
+  "eligibility_check": {
+    "original_purchase_verified": true,
+    "qualifying_purchase_slot": "downsell_1",
+    "entry_context": "from_downsell_1",
+    "verdict": "eligible"
+  },
+  "copy_validation": {
+    "validator": "scripts/validate_upsell_copy.py",
+    "profile_id": "signature-upsell-eight-section",
+    "exit_code": 0,
+    "verdict": "pass",
+    "copy_sha256": "f47f67bc8a1f7aec583589ef775861189bf40a3c80f7ae8136688001708710cb"
+  },
+  "hashes": {
+    "copy_sha256": "f47f67bc8a1f7aec583589ef775861189bf40a3c80f7ae8136688001708710cb",
+    "ui_sha256": null,
+    "asset_sha256": []
+  },
+  "test_outcomes": [
+    {
+      "test_id": "S80-03-validator-fixtures",
+      "level": "L1",
+      "outcome": "pass",
+      "evidence_ref": "tests/test_validate_upsell_copy.py"
+    },
+    {
+      "test_id": "A12-U2-both-entry-paths-native",
+      "level": "L4",
+      "outcome": "not_run",
+      "evidence_ref": null
+    },
+    {
+      "test_id": "A10-route-native",
+      "level": "L3",
+      "outcome": "not_run",
+      "evidence_ref": null
+    }
+  ]
+}

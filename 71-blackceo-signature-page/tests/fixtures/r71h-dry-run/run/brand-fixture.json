@@ -1,0 +1,8 @@
+{
+  "grade": {
+    "min_mean_saturation": 0.1,
+    "min_luma_std": 10.0
+  },
+  "founder_photos": [],
+  "font_policy": {}
+}

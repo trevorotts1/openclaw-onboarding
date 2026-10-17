@@ -1,0 +1,35 @@
+{
+  "schema_version": "2.0",
+  "id": "story-missing-proof",
+  "beats": [
+    {
+      "id": "beat-bars",
+      "scene_id": "bar-01",
+      "job": "Compare three quantities",
+      "viewer_question": "How do the groups compare?",
+      "intended_understanding": "Lengths stay proportional.",
+      "visual_verb": "compare",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "i",
+      "transformation": "t",
+      "final_state": "f",
+      "asset_ids": [],
+      "data_ids": [
+        "bars-illustrative"
+      ],
+      "essential_text": [
+        "Compare the three groups"
+      ],
+      "proof_frames": [
+        75
+      ],
+      "typography_only_exception": null
+    }
+  ]
+}

@@ -14,10 +14,19 @@ lands beside the PDF. It goes to the run's QC folder:
 What the kit holds:
 
   * WHICH VERSION TO POST WHERE -- every video, clip and song file found in
-    the delivery folder, mapped to the platforms that shape travels on;
-  * THE LINK, once big at the top and repeated inside every caption;
-  * a caption for YouTube, Instagram, TikTok and Facebook, plus a suggested
-    hashtag set per platform;
+    the delivery folder, mapped to the platforms that shape travels on, and
+    for every file the GHL destinations it provably fits
+    (``platform_fit.fits``) plus the destinations it is too long for and the
+    cut to use there;
+  * TWO DESTINATIONS, kept apart (SPEC C8): the offer/checkout link, and for
+    a campaign trailer the episode/channel link. A trailer caption never
+    carries the checkout link.
+  * THE LINK, once big at the top and repeated inside every caption (a run
+    with no link -- a lesson with no next step -- says "no link needed");
+  * a caption for YouTube, Instagram, TikTok, Facebook, LinkedIn and
+    Pinterest (never X/Twitter), plus a suggested hashtag set per platform,
+    and per block the researched ``platform_fit`` row and the date it was
+    read;
   * YOUTUBE done properly: title (<= 100 characters), description (with the
     link and the hashtags) and tags (<= 500 characters of tags);
   * CHECKED BEFORE YOU POST: the measured pre-delivery answers and the
@@ -34,13 +43,21 @@ Reused, never re-implemented (DEL-07 reuse list):
   card answers                  card-answers.json (length, shape, offer...)
   captions_burn                 the caption lines are the approved sheet's
                                 own words, byte-identical (build_plan)
+  platform_fit                  which GHL destinations a file fits, its
+                                per-destination verdicts, its researched rows
+                                and the read date on every row (SPEC B3a);
+                                one ffprobe read through ``load_governor``,
+                                degraded to the path-measurable limits when
+                                ffprobe is not on the box
 
 Laws, all fail closed on the client-facing copy:
 
   * no tool name and no model name ever reaches the page (KIT_BANNED_TEXT);
   * no dollar amount and no income promise ever reaches the page;
   * every glyph is at least 12 pt on a white page with dark ink;
-  * the link must resolve (KIT_NO_LINK), the storyboard gate must be open
+  * the link must resolve (KIT_NO_LINK) -- except on a lesson run, whose
+    purpose is "no offer, next step optional", where the kit says
+    "no link needed" instead of refusing; the storyboard gate must be open
     (KIT_STORYBOARD_NOT_APPROVED), the run must have a delivery receipt
     (KIT_DELIVERY_RECEIPT_MISSING) and a script (KIT_NO_SCRIPT);
   * a measured "no" in the delivery checklist refuses the kit
@@ -48,7 +65,9 @@ Laws, all fail closed on the client-facing copy:
     that failed its own gate.
 
 Stdlib only, zero network, zero spend, no absolute operator path, and no
-ffmpeg/ASR import. The PDF is written by this file's own minimal writer so
+ffmpeg/ASR import -- the one local measurement it makes is the ffprobe read
+that ``platform_fit.probe_file`` owns, and it is skipped cleanly when the box
+has no ffprobe. The PDF is written by this file's own minimal writer so
 the kit builds on a client box with no third-party package installed.
 
 Exit codes: 0 built, 2 refused (KIT_*), 1 unexpected error.
@@ -197,10 +216,11 @@ def _read_json(path):
 
 
 def load_run(run_dir):
-    """brief, card answers, script, approvals and the storyboard gate."""
+    """brief, card answers, script, approvals, the storyboard gate and the
+    card's purpose record (``control/method.json``, absent on non-method runs)."""
     run = Path(run_dir) if run_dir else None
     out = {"brief": None, "answers": [], "script": None, "gate": None,
-           "script_approval": None}
+           "script_approval": None, "method": None}
     if run is None or not run.is_dir():
         return out
     out["brief"] = _read_json(run / "brief.json")
@@ -212,7 +232,16 @@ def load_run(run_dir):
     out["gate"] = _read_json(run / "storyboard" / "gate.json")
     out["script_approval"] = _read_json(
         run / "creative" / "script-approval.json")
+    out["method"] = _read_json(run / "control" / "method.json")
     return out
+
+
+def method_purpose(run):
+    """The card's purpose (``campaign`` / ``testimonial`` / ``lesson`` /
+    ``paid_ad`` / ``short_post``), or None on a run the card never recorded."""
+    method = run.get("method") if isinstance(run, dict) else None
+    purpose = method.get("purpose") if isinstance(method, dict) else None
+    return purpose if isinstance(purpose, str) and purpose else None
 
 
 def load_delivery(delivery_dir):
@@ -236,41 +265,96 @@ def load_delivery(delivery_dir):
     return {"receipt": receipt, "files": media, "dir": str(d)}
 
 
+#: Any URL inside a brief field or a README line.
+_URL_RE = re.compile(r"https?://[^\s,;)]+|www\.[^\s,;)]+")
+
+#: The brief fields that may hold the WATCH destination -- the episode or the
+#: channel a trailer sells. Deliberately disjoint from the offer aliases, so
+#: the two records can never silently collapse into one (SPEC C8: the trailer
+#: destination is the episode, never the checkout).
+_EPISODE_KEYS = ("episode_link", "episode_url", "episode", "watch_url",
+                 "watch_link", "channel_url", "channel_link", "channel",
+                 "show_url", "series_url")
+
+
+def _url_in(value):
+    """The first URL inside a string, or None."""
+    if not isinstance(value, str):
+        return None
+    m = _URL_RE.search(value)
+    return m.group(0).rstrip(".") if m else None
+
+
+def _readme_link(delivery, label):
+    """The ``<label>`` line the batch README publishes (format owned by
+    ``batch_zip._readme``), or None."""
+    d = Path(delivery["dir"]) if isinstance(delivery, dict) else None
+    if not d:
+        return None
+    for name in ("README.md", "README.txt", "readme.md", "readme.txt"):
+        p = d / name
+        if not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = re.search(r"%s[^\n:]*:\s*(\S+)" % re.escape(label), text)
+        if m and not m.group(1).startswith("UNMEASURED"):
+            return m.group(1).strip()
+    return None
+
+
 def resolve_link(brief, delivery):
-    """The one link every caption points at. Sources, in order:
+    """The run's TWO destinations, kept as distinct records::
+
+        {"offer":  <checkout / next-step link, or None>,
+         "episode": <episode / channel link, or None>}
+
+    ``offer`` sources, in order:
 
     1. the brief's own link aliases (link / buy_link / purchase_url /
        buy_url / url / website / banner);
     2. a URL inside the offer sentence;
     3. the ``Banner link`` line the batch README publishes
        (format owned by ``batch_zip._readme``).
+
+    ``episode`` sources, in order and never from the offer side:
+
+    1. the brief's watch-side fields (episode_url / channel / show ...);
+    2. the ``Episode link`` line of the delivery README.
+
+    When the run records no separate episode link the record stays None --
+    it is never filled in from the offer link, and an episode link that
+    resolves to the checkout URL is dropped, so a trailer caption can never
+    carry the checkout link.
     """
     brief = brief if isinstance(brief, dict) else {}
+    offer = None
     for key in ("link", "buy_link", "purchase_url", "buy_url", "url",
                 "website", "banner"):
         v = brief.get(key)
         if isinstance(v, str) and v.strip():
-            return v.strip()
-    for key in ("offer", "assets", "title", "action"):
-        v = brief.get(key)
-        if isinstance(v, str):
-            m = re.search(r"https?://[^\s,;)]+|www\.[^\s,;)]+", v)
-            if m:
-                return m.group(0).rstrip(".")
-    d = Path(delivery["dir"]) if isinstance(delivery, dict) else None
-    if d:
-        for name in ("README.md", "README.txt", "readme.md", "readme.txt"):
-            p = d / name
-            if not p.is_file():
-                continue
-            try:
-                text = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            m = re.search(r"Banner link[^\n:]*:\s*(\S+)", text)
-            if m and not m.group(1).startswith("UNMEASURED"):
-                return m.group(1).strip()
-    return None
+            offer = v.strip()
+            break
+    if not offer:
+        for key in ("offer", "assets", "title", "action"):
+            offer = _url_in(brief.get(key))
+            if offer:
+                break
+    if not offer:
+        offer = _readme_link(delivery, "Banner link")
+
+    episode = None
+    for key in _EPISODE_KEYS:
+        episode = _url_in(brief.get(key))
+        if episode:
+            break
+    if not episode:
+        episode = _readme_link(delivery, "Episode link")
+    if episode and episode == offer:
+        episode = None                    # the checkout link is not a trailer
+    return {"offer": offer, "episode": episode}
 
 
 def checklist_summary(receipt):
@@ -425,6 +509,115 @@ def placement_rows(files, shape, length_s):
 
 
 # --------------------------------------------------------------------------- #
+# Which GHL destination each file fits (platform_fit: researched, dated rows)
+# --------------------------------------------------------------------------- #
+
+#: The ``platform_fit`` row each posting block cites. The GHL table carries no
+#: TikTok row, so that block cites none and says so rather than inventing one.
+_BLOCK_ROWS = {
+    "youtube": ("youtube_video", "youtube_short"),
+    "instagram": ("instagram_reel", "instagram_feed", "instagram_story"),
+    "facebook": ("facebook_feed", "facebook_reel", "facebook_story"),
+    "linkedin": ("linkedin_video",),
+    "pinterest": ("pinterest_video_pin",),
+    "tiktok": (),
+}
+
+
+def platform_spec_rows():
+    """The researched rows, or None when the spec table is not on this tree."""
+    try:
+        from platform_fit import platform_fit as PF     # reuse, one table
+    except Exception:                                  # noqa: BLE001 - optional
+        return None
+    try:
+        return PF.load_specs()
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def spec_line(block, rows):
+    """The citation for one posting block: its ``platform_fit`` row(s) and the
+    date each row was read. A channel the table does not research says so,
+    with the table's own read date -- never a guessed limit."""
+    if rows is None:
+        return ("No researched platform spec table on this tree, so no row "
+                "or read date can be cited for this block.")
+    got = [r for r in rows if r.get("placement") in _BLOCK_ROWS.get(block, ())]
+    if not got:
+        dates = sorted({str(r.get("read_utc")) for r in rows if r.get("read_utc")})
+        return ("No platform_fit row for this channel in the researched table "
+                "(table read %s) -- file fit is not measured here."
+                % (dates[-1] if dates else "date not recorded"))
+    return "; ".join("%s -- read %s" % (r.get("label"), r.get("read_utc"))
+                     for r in got)
+
+
+def _probe_file(path, PF):
+    """One ffprobe read of the delivered file, or just the limits the path
+    itself proves (size + container) when ffprobe is not on this box."""
+    try:
+        return PF.probe_file(path)
+    except Exception:                         # noqa: BLE001 - never fatal here
+        p = Path(path)
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = None
+        return {"path": str(p), "duration_s": None, "size_bytes": size,
+                "container": p.suffix.lstrip(".").lower() or None,
+                "format_name": None, "video_codec": None, "audio_codec": None,
+                "width": None, "height": None, "fps": None}
+
+
+def _cut_advice(row, cuts):
+    """The delivered cut to post where this file is too long to go."""
+    hi = row.get("max_seconds")
+    usable = [c for c in cuts if hi is None or c <= hi]
+    if usable:
+        return ("use the %s cut instead"
+                % " or ".join("%d-second" % c for c in usable))
+    return "no delivered cut is short enough for this destination"
+
+
+def file_fit_rows(delivery, length_s, rows):
+    """One record per delivered file: the GHL destinations ``platform_fit.fits``
+    proves it fits, and the destinations that refuse it only for length, with
+    the cut to post there instead."""
+    if rows is None:
+        return []
+    from platform_fit import platform_fit as PF
+    from clip_cutdown import clips_for                # reuse, never re-implement
+    cuts = tuple(clips_for(length_s)) if length_s else ()
+    ghl = [r for r in rows if r.get("kind") == "ghl"
+           and r.get("availability") == "AVAILABLE"]
+    out = []
+    for rel in delivery["files"]:
+        probe = _probe_file(os.path.join(delivery["dir"], rel), PF)
+        fits = set(PF.fits(probe, rows))
+        too_long = []
+        for row in ghl:
+            if row.get("placement") in fits:
+                continue
+            ev = PF.evaluate(row, probe, None)
+            checks = ev.get("checks") or []
+            long_only = [c for c in checks if c.get("name") == "length"
+                         and c.get("verdict") == "FLAG"]
+            blocked = [c for c in checks if c.get("name") in
+                       ("container", "codec", "aspect")
+                       and c.get("verdict") == "FLAG"]
+            if long_only and not blocked:
+                too_long.append({"destination": row.get("label"),
+                                 "reason": long_only[0].get("reason"),
+                                 "use": _cut_advice(row, cuts)})
+        out.append({"file": rel,
+                    "fits": [r.get("label") for r in ghl
+                             if r.get("placement") in fits],
+                    "too_long": too_long})
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Captions, hashtags, the YouTube block
 # --------------------------------------------------------------------------- #
 
@@ -524,7 +717,7 @@ def youtube_block(ctx):
         tag_line = ", ".join(tags)
     head = [l for l in (hook, offer) if l]
     description = "\n\n".join(head)
-    if link not in description:
+    if link and link not in description:
         description += ("\n\nWatch the full story, then take the next step:"
                         "\n%s" % link)
     if yt_tags:
@@ -538,21 +731,45 @@ def youtube_block(ctx):
     }
 
 
+def trailer_caption(hook, offer, links, tags_line=""):
+    """The episode-destination caption for a campaign trailer.
+
+    Fail closed on SPEC C8: the checkout link and the selling sentence never
+    reach a trailer caption, so a hook line that is the offer sentence (the
+    fallback when the script opens with nothing long enough) or that already
+    carries the checkout URL is dropped rather than printed.
+    """
+    checkout = links.get("offer") or ""
+    sell = hook if hook and hook != offer else ""
+    if checkout and sell and checkout in sell:
+        sell = ""
+    episode = links.get("episode")
+    dest = ("Watch the full episode: %s" % episode if episode else
+            "Watch the full episode on your channel.")
+    return "\n\n".join(x for x in (sell, dest, tags_line) if x)
+
+
 def platform_captions(ctx):
-    """One caption per platform, each carrying the link and its hashtags."""
+    """One caption per platform, each carrying the link and its hashtags, plus
+    -- on a run that carries a trailer -- the episode-destination caption,
+    which never carries the checkout link."""
     hook = ctx["hook"]
     offer = ctx["offer"]
     link = ctx["link"]
+    links = ctx["links"]
     tags = ctx["hashtags"]
 
     youtube = ctx["youtube"]
     ig_tags = " ".join(tags["instagram"])
     fb_tags = " ".join(tags["facebook"])
+    li_tags = " ".join(tags["linkedin"])
+    pi_tags = " ".join(tags["pinterest"])
     # the link is written once: never repeat it inside a caption that
     # already contains it (the offer sentence often carries the URL)
-    link_line = "" if link in (hook + " " + offer) else "Link: %s" % link
+    link_line = ("" if not link or link in (hook + " " + offer)
+                 else "Link: %s" % link)
 
-    return {
+    out = {
         "youtube": {
             "caption": youtube["description"],
             "note": "Post the 16:9 video. Put the tags in the Tags field, "
@@ -568,7 +785,7 @@ def platform_captions(ctx):
         "tiktok": {
             "caption": " ".join(
                 x for x in (_truncate(hook, 120), _truncate(offer, 120),
-                            "" if link in (hook + " " + offer) else link)
+                            link_line[6:] if link_line else "")
                 if x),
             "note": "Post the vertical video or the 60-second clip. Keep the "
                     "caption short so it never covers the captions on screen.",
@@ -580,7 +797,32 @@ def platform_captions(ctx):
                     "a page. The link sits in the post text where it is "
                     "clickable.",
         },
+        "linkedin": {
+            "caption": "\n\n".join(
+                x for x in (hook, offer, link_line, li_tags) if x),
+            "note": "Post the video as a normal LinkedIn post -- a vertical "
+                    "file is a regular video there, not a Short. The link "
+                    "sits in the post text where it is clickable.",
+        },
+        "pinterest": {
+            "caption": "\n\n".join(
+                x for x in (hook, offer, link_line, pi_tags) if x),
+            "note": "Pin the vertical file to the board you picked for this "
+                    "ad. The link sits in the Pin description.",
+        },
     }
+
+    if ctx.get("trailers"):
+        for key, block_tags in (("youtube", " ".join(tags["youtube"])),
+                                ("instagram", ig_tags),
+                                ("tiktok", " ".join(tags["tiktok"])),
+                                ("facebook", fb_tags),
+                                ("linkedin", li_tags),
+                                ("pinterest", pi_tags)):
+            out[key]["trailer_caption"] = trailer_caption(
+                hook, offer, links,
+                "" if key == "tiktok" else block_tags)
+    return out
 
 
 def build_kit(ctx):
@@ -592,10 +834,13 @@ def build_kit(ctx):
         "title": ctx["title"],
         "offer": ctx["offer"],
         "link": ctx["link"],
+        "links": ctx["links"],
+        "purpose": ctx.get("purpose"),
         "length_s": ctx["length_s"],
         "shape": ctx["shape"],
         "character": ctx.get("character") or "",
         "placement": ctx["placement"],
+        "platform_fit": ctx["platform_fit"],
         "youtube": ctx["youtube"],
         "captions": ctx["captions"],
         "hashtags": ctx["hashtags"],
@@ -630,11 +875,12 @@ def prepare(run_dir=None, delivery_dir=None, client_dir=None):
                "measured answer(s) still no: %s"
                % ", ".join(sorted(summary["failed"])[:6]))
 
-    link = resolve_link(run.get("brief"), delivery)
-    if not link:
+    links = resolve_link(run.get("brief"), delivery)
+    purpose = method_purpose(run)
+    if not links["offer"] and not links["episode"] and purpose != "lesson":
         refuse("KIT_NO_LINK",
-               "no link in the brief (link/buy_link/url...) and no Banner "
-               "link line in the delivery README")
+               "no link in the brief (link/buy_link/url...), no Banner link "
+               "line in the delivery README and no episode/channel link")
 
     amap = answer_map(run.get("answers"))
     brief = run.get("brief") if isinstance(run.get("brief"), dict) else {}
@@ -668,18 +914,27 @@ def prepare(run_dir=None, delivery_dir=None, client_dir=None):
             ht_parts + ["story", "shortfilm", "originalsong"], 15),
         "tiktok": suggest_hashtags(ht_parts + ["storytime"], 5),
         "facebook": suggest_hashtags(ht_parts, 3),
+        "linkedin": suggest_hashtags(ht_parts, 5),
+        "pinterest": suggest_hashtags(ht_parts, 5),
     }
 
+    spec_rows = platform_spec_rows()
+    link = links["offer"] or links["episode"] or ""
     ctx = {
         "title": title,
         "offer": offer,
         "hook": hook,
         "link": link,
+        "links": links,
+        "purpose": purpose,
+        "trailers": purpose == "campaign" or bool(links["episode"]),
         "length_s": length_s,
         "shape": shape,
         "character": character,
         "files": delivery["files"],
         "placement": placement_rows(delivery["files"], shape, length_s),
+        "platform_fit": file_fit_rows(delivery, length_s, spec_rows),
+        "spec_rows": spec_rows,
         "hashtags": hashtags,
         "checked": {
             "checklist": summary,
@@ -690,6 +945,8 @@ def prepare(run_dir=None, delivery_dir=None, client_dir=None):
     }
     ctx["youtube"] = youtube_block(ctx)
     ctx["captions"] = platform_captions(ctx)
+    for key, block in ctx["captions"].items():
+        block["platform_spec"] = spec_line(key, spec_rows)
     return build_kit(ctx)
 
 
@@ -883,6 +1140,16 @@ def layout(kit):
             draw_row(r)
         y[0] -= 8
 
+    def block_tail(cap):
+        """The two lines every posting block carries: the researched
+        ``platform_fit`` row with the date it was read, and -- on a run that
+        carries one -- the trailer caption for the episode destination."""
+        para(cap.get("platform_spec") or "", size=12.0, colour=COLOUR_SOFT)
+        trailer = cap.get("trailer_caption")
+        if trailer:
+            subhead("Trailer post (episode destination)")
+            panel(trailer.split("\n"), size=12.0)
+
     # ------------------------------------------------------------------ #
     # Page content
     # ------------------------------------------------------------------ #
@@ -901,12 +1168,40 @@ def layout(kit):
     meta = "Kit %s  |  %s  |  %s" % (KIT_NUMBER, length_label, shape_label)
     para(meta, size=12.0, colour=COLOUR_SOFT, after=10.0)
 
-    panel(["The link that goes in every post: %s" % kit["link"]], size=13.0)
+    link_lines = []
+    if kit["link"]:
+        link_lines.append("The link that goes in every post: %s" % kit["link"])
+    episode = (kit.get("links") or {}).get("episode")
+    if episode and episode != kit["link"]:
+        link_lines.append("Trailers point here instead, to the episode and "
+                          "never to the checkout: %s" % episode)
+    if not link_lines:
+        link_lines.append("No link needed for this post.")
+    panel(link_lines, size=13.0)
 
     heading("Which version to post where")
     table([["%s -- %s" % (os.path.basename(r["file"]), r["what"]),
             r["post_where"]] for r in kit["placement"]],
           ("File", "Post it here"), (1.1, 1.0))
+
+    heading("Where each file fits in GHL")
+    ghl_rows = kit.get("platform_fit") or []
+    if not ghl_rows:
+        para("The researched platform table is not installed on this box, so "
+             "the destinations of each file are not measured here.",
+             size=12.0, colour=COLOUR_SOFT)
+    else:
+        table([[os.path.basename(r["file"]),
+                ", ".join(r["fits"]) or "no GHL destination fits this file",
+                "; ".join("%s -- %s" % (t["destination"], t["use"])
+                          for t in r["too_long"]) or "--"]
+               for r in ghl_rows],
+              ("File", "Fits these GHL destinations",
+               "Too long for -- post this instead"), (0.9, 1.1, 1.0))
+        para("In GHL use \"Customize for Each Channel\" to attach the right "
+             "file to each channel, and check each post's published status "
+             "in GHL -- a scheduled post is not proof that it published.",
+             size=12.0, colour=COLOUR_SOFT)
 
     heading("YouTube (do this one properly)")
     yb = kit["youtube"]
@@ -916,19 +1211,24 @@ def layout(kit):
     para(yb["description"], size=12.0, after=8.0)
     subhead("Tags  (%d of 500 characters)" % yb["tags_length"])
     para(yb["tags"], size=12.0)
-    para(kit["captions"]["youtube"]["note"], size=12.0, colour=COLOUR_SOFT)
+    ycap = kit["captions"]["youtube"]
+    para(ycap["note"], size=12.0, colour=COLOUR_SOFT)
+    block_tail(ycap)
 
     for name, key in (("Instagram", "instagram"), ("TikTok", "tiktok"),
-                      ("Facebook", "facebook")):
+                      ("Facebook", "facebook"), ("LinkedIn", "linkedin"),
+                      ("Pinterest", "pinterest")):
         heading(name)
         cap = kit["captions"][key]
         panel(cap["caption"].split("\n"), size=12.0)
         para(cap["note"], size=12.0, colour=COLOUR_SOFT)
+        block_tail(cap)
 
     heading("Suggested hashtags")
     for key, label in (("shared", "Use with any post"),
                        ("instagram", "Instagram"), ("tiktok", "TikTok"),
-                       ("facebook", "Facebook")):
+                       ("facebook", "Facebook"), ("linkedin", "LinkedIn"),
+                       ("pinterest", "Pinterest")):
         tags = kit["hashtags"].get(key) or []
         if tags:
             subhead(label)

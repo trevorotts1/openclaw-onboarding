@@ -37,7 +37,21 @@ QC helpers (same module, used by the final gate):
 - assert_no_dupe_frames(pct)     -> raises ValueError
   "TIMELINE_DUP_FRAMES" when more than DUP_FRAMES_CAP pct are duplicated.
 """
+import os
 import re
+import sys
+
+# Sibling reuse only: the load governor owns every ffmpeg argv, and the
+# cover-scale filter is DEL-14's one crop-in path (never a second copy).
+_here = os.path.dirname(os.path.abspath(__file__))
+_core = os.path.dirname(_here)
+if _core not in sys.path:
+    sys.path.insert(0, _core)
+import load_governor as _LG  # noqa: E402
+_scripts = os.path.dirname(_core)
+if _scripts not in sys.path:
+    sys.path.insert(0, _scripts)
+import video_still_fill as _VSF  # noqa: E402
 
 # Part E E1 "Done when": a conforming master must drop <= 2% of its
 # frames under mpdecimate; a master above this fails the final QC gate.
@@ -52,7 +66,14 @@ TIMELINE_SEGMENT_DUP_FRAMES = "TIMELINE_SEGMENT_DUP_FRAMES"
 # Native output rate per generator (measured on Kiesett's ad: Kling 3/3 at
 # 30, MiniMax H3 13/13 at 24). A segment may carry "fps" itself (wins) or
 # a "model" name matched here by substring.
-NATIVE_FPS = {"kling": 30.0, "minimax": 24.0, "hailuo": 24.0, "h3": 24.0}
+# "agnes": measured, trial A (RESEARCH.md 10 / SPEC A8): agnes-video-2.5-flash
+# returned 704x1280 at 24 fps with an AAC audio track, 243 frames in
+# 10.125 s -- so Agnes goes up to 30 fps by interpolation like MiniMax H3.
+NATIVE_FPS = {"kling": 30.0, "minimax": 24.0, "hailuo": 24.0, "h3": 24.0,
+              "agnes": 24.0}
+
+# The Agnes rate this unit's conform interpolates FROM (SPEC A8, trial A).
+AGNES_NATIVE_FPS = NATIVE_FPS["agnes"]
 
 # E1 reason code, emitted exactly for a dup-ratio gate failure.
 TIMELINE_DUP_FRAMES = "TIMELINE_DUP_FRAMES"
@@ -111,6 +132,38 @@ def _g(x):
     """Compact fps formatting for filter strings (30 -> '30', 29.97 -> '29.97')."""
     s = "%.6g" % float(x)
     return s
+
+# --- SPEC A8: one Agnes clip -> the master frame ---------------------------
+
+def agnes_conform_argv(src, dst, w, h, ffmpeg="ffmpeg", threads=None):
+    """Argv conformance for ONE Agnes clip into the master frame (SPEC A8).
+
+    Trial A measured the Agnes source: 704x1280, 24 fps, H.264, WITH an
+    AAC track (not silent). The master is 30 fps, so this command:
+
+      1. strips the clip's own audio with ``-an`` -- the song is the only
+         audio in the master (SPEC A8 "Audio: stripped");
+      2. motion-interpolates 24 -> 30 with the SAME H3 filter the master
+         render uses (``build_conform_argv``: minterpolate mci, never the
+         plain ``fps`` filter, which duplicates frames and stutters);
+      3. cover-scales to the master frame through
+         ``video_still_fill.cover_crop_filter`` -- lanczos scale-up then
+         crop, so the clip fills 1080x1920 with no blur fill and no
+         letterbox pad (DEL-14), and is never stretched.
+
+    Filter order is load bearing: interpolate FIRST (cheap, at the source
+    size), cover-scale SECOND. Built through the load governor like every
+    other ffmpeg argv (``nice -n 10 ... -threads <=4``).
+
+    Returns an argv ARRAY -- a standalone command, not a filter string,
+    because this conform runs on the clip as its own job.
+    """
+    conform = build_conform_argv(AGNES_NATIVE_FPS, MASTER_FPS)
+    chain = ",".join(p for p in (conform, _VSF.cover_crop_filter(w, h)) if p)
+    return _LG.ffmpeg_argv(
+        ["-y", "-i", str(src), "-an", "-vf", chain,
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(dst)],
+        ffmpeg, threads)
 
 
 def mpdecimate_dup_ratio(stderr_text):

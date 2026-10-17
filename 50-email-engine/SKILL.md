@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: v2.0.0
+version: v2.0.2
 ---
 
 # Email Engine (Skill 50)
@@ -114,6 +114,41 @@ skipped ONLY by a logged owner approval token in
 P4 emits a Skill-44 (Convert & Flow / GoHighLevel) build plan as a **draft workflow** only.
 Nothing sends. A human approves before any send, and the Skill-44 built-workflow QC gate
 (`>= 8.5`) runs on the draft. Scope is workflow email steps only.
+
+## Presentations department integration (election-gated delivery option)
+
+The presentations department offers this skill's sequences as an ELECTION-GATED delivery
+option, beside its sales/checkout and VSL upsell elections (FIX-PLAN Item 33c; department
+doctrine: `presentations/sops/EMAIL-SEQUENCE-BUILDER-SOP.md`). The gate, the draft-only
+posture, and the human approval step are stated identically on both sides:
+
+- **Election gate.** The client is asked at presentation intake
+  (`want_email_sequences`, default NO). Only an explicit "yes" elects the sequences.
+  A "no" is a client waiver and is valid only with the client's own verbatim reason
+  (`email_sequences_declined_reason`): a bare "no" fails closed at the delivery gate
+  (AF-EMAIL-WAIVER-MISSING), and silence is never consent and never a decline. The one
+  election covers both sequences: the 10-email landing-page promo sequence (prepared
+  only when the run also elected the sales/checkout page it serves) and the 12-email
+  high-ticket appointment sequence (the post-delivery follow-up).
+- **Draft package, prepared at delivery.** On an elected run the presentations engine
+  prepares a DRAFT package at delivery time (`working/email/email-brief.json`: sequence
+  definition, audience, trigger, brief answers sourced only from the run record) and
+  hands it to Skill 44's operator surface (`working/email/skill44-handoff.json`). The
+  package is NOT this skill's locked brief: the brief contract's one-block intake
+  attestation (`asked_all_at_once`, `question_block_msg_id`) is captured by this
+  skill's own intake at approval time and is never fabricated by the presentations
+  engine.
+- **Human approval, draft-only.** A human approves at Skill 44's operator surface
+  before this skill runs. On approval this skill executes P1 to P4 through
+  `email-engine-entry.sh`, and P4 emits the DRAFT-ONLY `build-plan.json` for Skill 44;
+  every workflow stays a draft until Skill 44's approval and built-workflow QC gate
+  (>= 8.5) complete. The approval and the resulting workflow id are recorded back into
+  the run record (`working/checkpoints/email.json`). Nothing in this integration sends
+  an email or arms a sequence; hand-rolled senders stay FORBIDDEN
+  (AF-EMAIL-SEND-BYPASS).
+- **Unavailable fallback.** If this skill is not installed on a box, an elected run
+  prepares nothing and the run record states that the election was answered but
+  Skill 50 was unavailable, so no email follow-up is prepared.
 
 ## Client-provider rule (binding)
 

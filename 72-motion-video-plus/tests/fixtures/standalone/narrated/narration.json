@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "job_id": "fixture-standalone-narrated",
+  "kind": "narration_script",
+  "scenes": [
+    {
+      "scene_id": "open-reveal",
+      "text": "Inside every delivery, there is the work itself. Here it is, uncovered in full.",
+      "measured": {
+        "start_sample": 19200,
+        "end_sample": 124800
+      },
+      "voice_ref": "fixture-tone-voice"
+    },
+    {
+      "scene_id": "detail-zoom",
+      "text": "Look closer. The detail chip carries the count that matters.",
+      "measured": {
+        "start_sample": 148800,
+        "end_sample": 249600
+      },
+      "voice_ref": "fixture-tone-voice"
+    },
+    {
+      "scene_id": "proof-chart",
+      "text": "Now the count, on one shared scale. Packed, shipped, and delivered, measured the same way, with nothing rescaled and nothing hidden.",
+      "measured": {
+        "start_sample": 259200,
+        "end_sample": 460800
+      },
+      "voice_ref": "fixture-tone-voice"
+    },
+    {
+      "scene_id": "final-state",
+      "text": "Delivered, measured, and held. That is the whole story, end to end.",
+      "measured": {
+        "start_sample": 480000,
+        "end_sample": 624000
+      },
+      "voice_ref": "fixture-tone-voice"
+    }
+  ]
+}

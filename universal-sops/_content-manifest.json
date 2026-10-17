@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-15T15:48:41Z",
-  "file_count": 115,
+  "generated_at": "2026-10-16T19:07:31Z",
+  "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "510bb4333de3c01bd94fb60a35cd7fcb39106ab467eadf64268ff2c43686947a",
@@ -15,6 +15,10 @@
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
       "bytes": 9146
+    },
+    "SOP-COUNCIL-01-COUNCIL-OF-WISE-ELDERS-DELIBERATION.md": {
+      "sha256": "aff6f43bfe88a72298ce8c39628164c73626a4f93ef69acf90b55be7d807da01",
+      "bytes": 3434
     },
     "SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md": {
       "sha256": "e17f39b4fc2d894954aebf58e3186a4794aad1322f39e3d705bce840911412b9",
@@ -197,8 +201,8 @@
       "bytes": 5277
     },
     "funnel-craft/README.md": {
-      "sha256": "634e29ff810a243fea63b8f75380c5fb3c19742ac678e546007bab3b78f07729",
-      "bytes": 6915
+      "sha256": "69a02bcc163a973fdb1fc54042e6f53265bcabe574e435678cf28403c2e8150e",
+      "bytes": 7514
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
@@ -301,12 +305,12 @@
       "bytes": 12168
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "2a294b21d27aea60ccb79f3b57efa3472cceac35d060ad735799192295f3fd4a",
-      "bytes": 147906
+      "sha256": "ae7beda950416b64b59e8a9d2d30bbba25937e424f2d3f86d6a3e7a6ce9a86b5",
+      "bytes": 148222
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "01af925bb6599b462dcec3268d9f195069e854d9d94af69680379be504e343e1",
-      "bytes": 202606
+      "sha256": "a77e09c8293c50d23f76eb287bb1f9d8594791fd722b9df10d2a240a20787f40",
+      "bytes": 206977
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -337,8 +341,8 @@
       "bytes": 11790
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "0387b261b61187dfbe92d34f93cd1e380f8f9f01f4e516c769e34c57cfebad9d",
-      "bytes": 14314
+      "sha256": "d7700b7491e153f3c78eb37a3c6af348e2c833ab885e08784d15d69eabd8289b",
+      "bytes": 14366
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",

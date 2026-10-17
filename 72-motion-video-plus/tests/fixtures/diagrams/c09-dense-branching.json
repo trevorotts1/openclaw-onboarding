@@ -1,0 +1,167 @@
+{
+  "schema_version": "2.0",
+  "id": "c09-dense-branching",
+  "component_id": "C09",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "copy": {
+    "headline": "Six ways an application can go",
+    "disclosure": "Illustrative decision rule. The diagram shows the rule; it does not prove an outcome."
+  },
+  "diagram": {
+    "pattern": "branching_decision",
+    "nodes": [
+      {
+        "id": "application",
+        "label": "Application",
+        "kind": "input"
+      },
+      {
+        "id": "criteria",
+        "label": "Meets criteria?",
+        "kind": "decision"
+      },
+      {
+        "id": "enroll",
+        "label": "Enroll in the program",
+        "kind": "outcome"
+      },
+      {
+        "id": "nurture",
+        "label": "Send the nurture sequence",
+        "kind": "outcome"
+      },
+      {
+        "id": "followup",
+        "label": "Book a follow-up call",
+        "kind": "outcome"
+      },
+      {
+        "id": "guide",
+        "label": "Send the resource guide",
+        "kind": "outcome"
+      },
+      {
+        "id": "decline",
+        "label": "Decline with feedback",
+        "kind": "outcome"
+      },
+      {
+        "id": "partner",
+        "label": "Refer to a partner",
+        "kind": "outcome"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-application-criteria",
+        "source": "application",
+        "target": "criteria",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-criteria-enroll",
+        "source": "criteria",
+        "target": "enroll",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-criteria-nurture",
+        "source": "criteria",
+        "target": "nurture",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-criteria-followup",
+        "source": "criteria",
+        "target": "followup",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-criteria-guide",
+        "source": "criteria",
+        "target": "guide",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-criteria-decline",
+        "source": "criteria",
+        "target": "decline",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-criteria-partner",
+        "source": "criteria",
+        "target": "partner",
+        "kind": "branch"
+      }
+    ],
+    "subject": {
+      "id": "applicant-002",
+      "label": "Applicant",
+      "path_node_ids": [
+        "application",
+        "criteria",
+        "enroll"
+      ]
+    },
+    "selected_branch_edge_id": "edge-criteria-enroll",
+    "relief": null,
+    "timing": {
+      "start_frame": 10,
+      "end_frame_exclusive": 130,
+      "hold_to_frame_exclusive": 180
+    },
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    }
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "dense-timeline",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "applicant-002"
+      ],
+      "frame": 0,
+      "expected_values": [
+        10,
+        130,
+        180,
+        180
+      ],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "dense-labels",
+      "kind": "text_readability",
+      "subject_ids": [
+        "application",
+        "criteria",
+        "enroll",
+        "nurture",
+        "followup",
+        "guide",
+        "decline",
+        "partner"
+      ],
+      "frame": 179,
+      "expected_values": [
+        0
+      ],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "geometry"
+      ]
+    }
+  ]
+}

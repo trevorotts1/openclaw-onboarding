@@ -1,0 +1,4 @@
+interface:
+  display_name: "Council of Wise Elders"
+  short_description: "Nine source-grounded elder perspectives deliberate on consequential decisions."
+  brand_color: "#D4A646"

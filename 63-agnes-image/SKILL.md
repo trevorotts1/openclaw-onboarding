@@ -7,7 +7,7 @@ description: >
   platform (apihub.agnes-ai.com). One API key, one POST, one JSON response
   with an image URL or Base64 — no task polling.
 metadata:
-  version: "2.1.2"
+  version: "2.1.6"
   priority: HIGH
 ---
 
@@ -79,6 +79,15 @@ Enforcement & Validation:
 python3 63-agnes-image/scripts/validate_prompt.py --file working/prompts/<id>.txt
 ```
 
+## Signature Launch Prompt Policy
+
+Signature Launch requests carry the named policy `signature_launch_completeness`
+(`scripts/launch_prompt_policy.py`): completeness of the required information
+elements governs, length is telemetry, and only a verified vendor ceiling is
+enforced (the Agnes vendor cap is NOT_PUBLISHED; never truncate a prompt to fit
+an imagined limit and never pad to reach a cosmetic count). The house bands
+above remain the legacy profile for legacy consumers.
+
 ## Image-to-Image for Logos (MANDATORY)
 
 When an image prompt involves the client's LOGO, wordmark, brand mark, monogram,
@@ -92,16 +101,23 @@ this:
 python3 63-agnes-image/scripts/validate_prompt.py --file prompt.txt --logo
 ```
 
-When a logo reference triggers an I2I call, the style-reference-only directive is
-MANDATORY: "Use the attached images only as style reference for color grading,
-lighting, and composition -- do not copy their subjects, faces, or text." Pass
-`--style-ref` to enforce this.
+Reference purpose governs the instruction (per-reference, never global): a
+logo/identity reference PRESERVES the approved mark (see the identity rule in
+`references/prompt-policy.md`); the style-reference-only directive belongs on
+STYLE references only and must never be applied to a logo/identity reference.
+Pass `--identity-ref` for a logo reference and `--style-ref` only when the
+reference is style-only.
 
-## Style-Reference-Only Directive (MANDATORY when reference images attached)
+## Reference Purposes and Their Directives
 
-Whenever ANY reference image is attached for style guidance (not just logos), the
-prompt MUST carry the style-reference-only directive verbatim:
+Classify every reference image by purpose before writing the prompt:
+`style`, `logo`, `identity`, `composition`, or an explicitly approved mix.
+Only a STYLE reference carries the style-reference-only directive verbatim:
 `Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text.`
+A logo/identity reference instead carries the preserve-the-mark rule: reproduce
+the approved mark exactly, never a do-not-copy directive. A style-only reference
+must never transfer another person's identity; preserve real-person likeness
+only from authorized supplied assets.
 
 ## Prerequisites
 
@@ -189,5 +205,6 @@ prompt MUST carry the style-reference-only directive verbatim:
   prompts are expanded, not rejected. Run `scripts/validate_prompt.py` before calls.
 - **Logo requests MUST use image-to-image.** When a prompt involves the client's
   logo, wordmark, or existing brand image, use I2I (pass the logo as a reference
-  image via `extra_body.image[]`), never text-to-image. Add the mandatory
-  style-reference-only directive whenever reference images are attached.
+  image via `extra_body.image[]`), never text-to-image. Reference instructions
+  are per-purpose: preserve-the-mark for logo/identity references,
+  style-reference-only directive for style references only.

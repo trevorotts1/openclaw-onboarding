@@ -1,0 +1,92 @@
+{
+  "schema_version": "2.0",
+  "id": "story-mechanism-flow",
+  "beats": [
+    {
+      "id": "beat-traverse",
+      "scene_id": "flow-01",
+      "job": "Follow one work item end to end",
+      "viewer_question": "What happens to a request after it is submitted?",
+      "intended_understanding": "The same item passes intake, decision, and execution in order.",
+      "visual_verb": "traverse",
+      "subject_ids": [
+        "work-item"
+      ],
+      "representation": "mechanism",
+      "explanatory": true,
+      "initial_state": "The item waits at the intake gate; the path ahead is dim.",
+      "transformation": "The item travels the path, lighting each stage as it enters.",
+      "proof_state": "The item is inside the decision stage, unchanged in identity.",
+      "final_state": "The item exits execution marked complete.",
+      "asset_ids": [
+        "work-item-photo"
+      ],
+      "data_ids": [],
+      "essential_text": [
+        "Intake",
+        "Decision",
+        "Execution"
+      ],
+      "proof_frames": [
+        30,
+        90,
+        150
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-branch",
+      "scene_id": "flow-01",
+      "job": "Show the decision branch",
+      "viewer_question": "What decides whether the item proceeds?",
+      "intended_understanding": "One gate checks the item and routes it onward or back.",
+      "visual_verb": "connect",
+      "subject_ids": [
+        "work-item",
+        "decision-gate"
+      ],
+      "representation": "diagram",
+      "explanatory": true,
+      "initial_state": "The gate is closed; the return path is faint.",
+      "transformation": "The gate inspects the item and the onward path lights.",
+      "proof_state": "The item is routed onward; the return path stays dark.",
+      "final_state": "The diagram holds with the taken path lit.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Approved",
+        "Returned for detail"
+      ],
+      "proof_frames": [
+        120
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-close",
+      "scene_id": "flow-01",
+      "job": "Close on the outcome",
+      "viewer_question": "What should the viewer remember?",
+      "intended_understanding": "Nothing skips the gate.",
+      "visual_verb": "isolate",
+      "subject_ids": [
+        "closing-line"
+      ],
+      "representation": "typography",
+      "explanatory": false,
+      "initial_state": "The diagram dims behind.",
+      "transformation": "The closing line sets alone.",
+      "proof_state": "The line is the only bright element.",
+      "final_state": "The line holds to the cut.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Every request passes the same gate"
+      ],
+      "proof_frames": [
+        170
+      ],
+      "typography_only_exception": "Closing emphasis card, not an explanatory beat."
+    }
+  ]
+}

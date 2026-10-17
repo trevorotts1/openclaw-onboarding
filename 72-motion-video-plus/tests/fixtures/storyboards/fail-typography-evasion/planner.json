@@ -1,0 +1,90 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-typography-evasion",
+  "beats": [
+    {
+      "beat_id": "beat-chart-token",
+      "idea": "One genuine chart",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C05",
+      "engine": "remotion",
+      "selection_reason": "Parameterized chart; Remotion default",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "final-ratios"
+      ]
+    },
+    {
+      "beat_id": "beat-evade-1",
+      "idea": "Text line 1",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "line-1-legible"
+      ]
+    },
+    {
+      "beat_id": "beat-evade-2",
+      "idea": "Text line 2",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "line-2-legible"
+      ]
+    },
+    {
+      "beat_id": "beat-evade-3",
+      "idea": "Text line 3",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "line-3-legible"
+      ]
+    }
+  ]
+}

@@ -3348,8 +3348,23 @@ def _append_sidecar(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> Non
     path.parent.mkdir(parents=True, exist_ok=True)
     record = dict(record)
     record["at"] = utcnow()
+    # Sidecar records routinely carry capacity-derived values (the routing
+    # stamp's capacity_raw_available): on a no-cap route that value is
+    # capacity's UNBOUNDED sentinel, so the dump routes through
+    # capacity.json_default -- the launcher's own pattern -- and the
+    # sentinel lands as the string "UNBOUNDED" instead of raising.
+    try:
+        from presentation_job import capacity as _cap_sidecar
+        _sidecar_default = _cap_sidecar.json_default
+    except ImportError:
+        try:
+            import capacity as _cap_sidecar  # type: ignore[no-redef]
+            _sidecar_default = _cap_sidecar.json_default
+        except ImportError:
+            _sidecar_default = None
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(record, ensure_ascii=False,
+                            default=_sidecar_default) + "\n")
 
 
 def _stamp_author(run_dir: Path, phase_id: str, target: Path, *,
@@ -4807,8 +4822,19 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         }
         input_path = run_dir / "working" / "checkpoints" / "prompt-wave-input.json"
         input_path.parent.mkdir(parents=True, exist_ok=True)
+        # The routing stamp can carry capacity's UNBOUNDED sentinel
+        # (capacity_raw_available on a no-cap route -- the common case
+        # since the 2026-10-15 DeepSeek no-cap ruling): route the dump
+        # through capacity.json_default, the launcher's own pattern, so it
+        # serializes as the string "UNBOUNDED" instead of raising.
+        try:
+            from presentation_job import capacity as _cap_dump
+            _dump_default = _cap_dump.json_default
+        except ImportError:
+            _dump_default = None
         input_path.write_text(
-            json.dumps(wave_input, indent=2, ensure_ascii=False) + "\n",
+            json.dumps(wave_input, indent=2, ensure_ascii=False,
+                       default=_dump_default) + "\n",
             encoding="utf-8")
 
     # --- invoke the worker ONCE. An unhandled WorkerUsageError (exit-2 class:
@@ -8649,9 +8675,10 @@ def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100,
     THE DEFECT (F4, MEASURED by Fable on this box 2026-09-07, scratch config
     dir, live profile md5 unchanged): this function hard-coded
     `{"provider": "deepseek-direct", "max_concurrent": N}`. deepseek-direct
-    JOINED THE STRUCTURAL CAP TABLE on 2026-09-04 (capacity.CAP_TABLE carries
-    ('deepseek-direct','v4-flash')=2500 and ('deepseek-direct','v4-pro')=500,
-    and capacity.NO_CAP_PROVIDERS shrank to {'openrouter'}). A cap-table
+    JOINED THE STRUCTURAL CAP TABLE on 2026-09-04 (capacity.CAP_TABLE then
+    carried ('deepseek-direct','v4-flash')=2500 and ('deepseek-direct',
+    'v4-pro')=500, and capacity.NO_CAP_PROVIDERS shrank to {'openrouter'};
+    the owner ruling of 2026-10-15 reversed that move). A cap-table
     provider declared WITHOUT a plan hits capacity._resolve_override case 2 --
     "the provider's real ceiling is a physical fact the operator cannot opt out
     of by typing a bigger number" -- and PARKS. So `--declare-capacity 100`,
@@ -8677,8 +8704,12 @@ def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100,
          refusal the operator can act on beats a file that silently drops the
          whole run to capacity.DEFAULT_CONSERVATIVE.
 
-    NO_CAP providers (openrouter) need no plan: _resolve_override case 0
-    honours a declared self-throttle verbatim, so they are never refused here.
+    NO_CAP providers (openrouter, and deepseek-direct since the owner ruling
+    of 2026-10-15 removed its provider cap and returned it to
+    NO_CAP_PROVIDERS) need no plan: _resolve_override case 0 honours a
+    declared self-throttle verbatim, so they are never refused here. The
+    PARK mechanism in the defect above remains the live behaviour for
+    ollama-cloud, the one structural cap-table provider left.
 
     Idempotent, as before: an existing capacity_override.json is NEVER
     overwritten -- it may be the client's own declaration, and this function is
@@ -11261,8 +11292,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--declare-provider", default=None,
                    help="the provider --declare-capacity is about (e.g. ollama-cloud, "
                         "deepseek-direct, openrouter). F4: this used to be hard-coded to "
-                        "deepseek-direct, which PARKS every run since deepseek-direct "
-                        "joined the structural cap table on 2026-09-04")
+                        "deepseek-direct, which PARKED every run while deepseek-direct "
+                        "stood on the structural cap table (2026-09-04 until the owner "
+                        "ruling of 2026-10-15 made it a no-cap provider)")
     p.add_argument("--declare-plan", default=None,
                    help="the plan tier of --declare-provider (e.g. v4-flash, $100/month) "
                         "when this box's detection and resource profile do not already "

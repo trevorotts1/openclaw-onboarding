@@ -1,4 +1,4 @@
-# Agnes Image 2.1 Flash — Prompt Policy & House Bands
+# Agnes Image — Prompt Policy & House Bands (default model 2.5 Flash; legacy 2.1 Flash)
 
 Verification Date: 2026-09-08 (social-planner scoped override F32; prior verification 2026-08-26)
 Authority: SPEC.md "Build contract for detailed image prompts" (program social-planner-september-eighth); Spec §5 & §10.5 (SPEC-hit1.md) for the unscoped base policy.
@@ -109,3 +109,16 @@ The old global style-ref rule ("use attached images only as style reference ... 
 A prompt that assigns a style-only do-not-copy directive to an identity reference, or a preserve-the-mark directive to a style-only reference, is CONTRADICTORY and fails preflight (AF-PROMPT-CONFLICT) before spend. `scripts/validate_prompt.py --style-ref` applies the directive only when the reference is style-only; `--logo` requires identity-role I2I intent and the preserve instruction.
 
 Finished-image OCR, dimensions, brand and crop checks remain mandatory regardless of prompt length.
+
+---
+
+## 7. Signature Launch Profile (named policy)
+
+Signature Launch requests use the named policy `signature_launch_completeness`,
+implemented in `scripts/launch_prompt_policy.py`: required information
+elements must be present; prompt length is telemetry; only a verified vendor
+ceiling is enforced (the Agnes vendor cap remains `NOT_PUBLISHED` above, so no
+ceiling is invented, no prompt is truncated to fit an imagined limit, and
+padding fails). The house bands in this file remain in force under the named
+legacy profile `legacy_house_band` for legacy consumers, and the social
+planner scoped override in section 0 is unchanged.

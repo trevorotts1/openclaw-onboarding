@@ -1,0 +1,219 @@
+{
+  "schema_version": "1.0",
+  "kind": "selection_plan",
+  "outcome": "plan",
+  "tenant_id": "TEST-TENANT-SECOND-BRAND",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH-S78-GOLDEN",
+  "revision": 1,
+  "offers_in_order": [
+    {
+      "offer_id": "MAIN-ESS",
+      "display_name": "TEST ONLY Essential",
+      "intended_buyer": "TEST ONLY self-paced learners",
+      "primary_outcome": "TEST ONLY finish the core course at your own pace",
+      "deliverables": [
+        "TEST ONLY core course",
+        "TEST ONLY community access"
+      ],
+      "limited_deliverables": [
+        {
+          "item": "TEST ONLY group coaching calls",
+          "note": "One call per month"
+        }
+      ],
+      "conditional_deliverables": [],
+      "exclusions": [
+        "Private review sessions are not included"
+      ],
+      "prices": [
+        {
+          "amount_minor": 9700,
+          "approval_status": "approved",
+          "billing_type": "one_time",
+          "currency": "USD",
+          "native_price_id": "TEST-PRICE-ESS",
+          "price_choice_id": "MAIN-ESS-USD",
+          "schedule": [],
+          "terms_source": null
+        }
+      ],
+      "native_product_id": "TEST-PROD-ESS",
+      "cta": "Choose TEST ONLY Essential"
+    },
+    {
+      "offer_id": "MAIN-PRO",
+      "display_name": "TEST ONLY Professional",
+      "intended_buyer": "TEST ONLY founders who want individual feedback",
+      "primary_outcome": "TEST ONLY get your work reviewed twice by a coach",
+      "deliverables": [
+        "TEST ONLY core course",
+        "TEST ONLY community access",
+        "Two private review sessions",
+        "TEST ONLY group coaching calls"
+      ],
+      "limited_deliverables": [],
+      "conditional_deliverables": [],
+      "exclusions": [],
+      "prices": [
+        {
+          "amount_minor": 19700,
+          "approval_status": "approved",
+          "billing_type": "one_time",
+          "currency": "USD",
+          "native_price_id": "TEST-PRICE-PRO",
+          "price_choice_id": "MAIN-PRO-USD",
+          "schedule": [],
+          "terms_source": null
+        }
+      ],
+      "native_product_id": "TEST-PROD-PRO",
+      "cta": "Choose TEST ONLY Professional"
+    },
+    {
+      "offer_id": "MAIN-ELITE",
+      "display_name": "TEST ONLY Elite",
+      "intended_buyer": "TEST ONLY founders who want a private strategy day",
+      "primary_outcome": "TEST ONLY leave with a reviewed plan and a strategy day booked",
+      "deliverables": [
+        "TEST ONLY core course",
+        "TEST ONLY community access",
+        "Two private review sessions",
+        "One private strategy day",
+        "TEST ONLY group coaching calls"
+      ],
+      "limited_deliverables": [],
+      "conditional_deliverables": [],
+      "exclusions": [],
+      "prices": [
+        {
+          "amount_minor": 49700,
+          "approval_status": "approved",
+          "billing_type": "installment",
+          "currency": "USD",
+          "native_price_id": "TEST-PRICE-ELITE",
+          "price_choice_id": "MAIN-ELITE-USD-INST",
+          "schedule": [
+            {
+              "amount_minor": 24850,
+              "due": "today"
+            },
+            {
+              "amount_minor": 24850,
+              "due": "in 30 days"
+            }
+          ],
+          "terms_source": null
+        }
+      ],
+      "native_product_id": "TEST-PROD-ELITE",
+      "cta": "Choose TEST ONLY Elite"
+    }
+  ],
+  "comparison_matrix": {
+    "offer_ids_in_order": [
+      "MAIN-ESS",
+      "MAIN-PRO",
+      "MAIN-ELITE"
+    ],
+    "offer_names": {
+      "MAIN-ESS": "TEST ONLY Essential",
+      "MAIN-PRO": "TEST ONLY Professional",
+      "MAIN-ELITE": "TEST ONLY Elite"
+    },
+    "rows": [
+      {
+        "dimension_item": "TEST ONLY core course",
+        "cells": {
+          "MAIN-ESS": "included",
+          "MAIN-PRO": "included",
+          "MAIN-ELITE": "included"
+        },
+        "notes": {}
+      },
+      {
+        "dimension_item": "TEST ONLY community access",
+        "cells": {
+          "MAIN-ESS": "included",
+          "MAIN-PRO": "included",
+          "MAIN-ELITE": "included"
+        },
+        "notes": {}
+      },
+      {
+        "dimension_item": "TEST ONLY group coaching calls",
+        "cells": {
+          "MAIN-ESS": "limited",
+          "MAIN-PRO": "included",
+          "MAIN-ELITE": "included"
+        },
+        "notes": {
+          "MAIN-ESS": "One call per month"
+        }
+      },
+      {
+        "dimension_item": "Two private review sessions",
+        "cells": {
+          "MAIN-ESS": "not_included",
+          "MAIN-PRO": "included",
+          "MAIN-ELITE": "included"
+        },
+        "notes": {}
+      },
+      {
+        "dimension_item": "One private strategy day",
+        "cells": {
+          "MAIN-ESS": "not_included",
+          "MAIN-PRO": "not_included",
+          "MAIN-ELITE": "included"
+        },
+        "notes": {}
+      }
+    ],
+    "exclusions": [
+      {
+        "offer_id": "MAIN-ESS",
+        "exclusion": "Private review sessions are not included",
+        "visibility": "material"
+      }
+    ]
+  },
+  "recommendation": {
+    "offer_id": "MAIN-PRO",
+    "reason": "Recommended for founders who need individual feedback",
+    "approved_for_publication": true,
+    "placement": "published"
+  },
+  "faq": [
+    {
+      "answer": "TEST ONLY: Yes, before checkout you can go back and choose a different package; nothing is charged on this page.",
+      "question": "TEST ONLY: Can I change packages later?"
+    },
+    {
+      "answer": "TEST ONLY: On the next step, the order form, after you review the exact total.",
+      "question": "TEST ONLY: When am I charged?"
+    }
+  ],
+  "trust_items": [
+    "TEST ONLY: Prices on this page come from the approved catalog for this launch.",
+    "TEST ONLY: This page collects no payment details."
+  ],
+  "asset_list": [
+    {
+      "name": "selection.css",
+      "owner": "S78"
+    },
+    {
+      "name": "selection-ui component",
+      "owner": "S78"
+    }
+  ],
+  "ui_model": {
+    "control": "radio_group",
+    "default_selected": null,
+    "single_selected_state": true,
+    "error_when_none_selected": "Choose a package to continue.",
+    "mobile": "stacked offers; comparison in a disclosure that never hides material exclusions",
+    "collects_payment": false
+  }
+}

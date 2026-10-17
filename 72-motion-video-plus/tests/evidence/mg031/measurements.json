@@ -1,0 +1,45 @@
+{
+  "item": "MG-031",
+  "record": "Verification anchors for the coverage-indexed review bundle builder (scripts/critique_bundle.py), measured on the build box. The unit suite (tests/unit/test_critique_bundle.py) asserts these same properties against fixtures it synthesizes with the same recipe.",
+  "five_minute_fixture": {
+    "video_recipe": "ffmpeg lavfi testsrc2 size=320x180 rate=30 duration=300, drawbox full-frame red enabled between t=290 and t=294, libx264 crf30",
+    "frames": 9000,
+    "duration_seconds": 300.0,
+    "interval_seconds": 5.0,
+    "interval_samples": 60,
+    "total_samples": 74,
+    "defect": {
+      "planted_window_seconds": [
+        290,
+        294
+      ],
+      "sampled_frame": 8700,
+      "sampled_time_seconds": 290.0,
+      "decoded_rgb_means": [
+        253.0,
+        0.0,
+        0.0
+      ],
+      "control_frame": 6000,
+      "control_rgb_means": [
+        119.9,
+        126.3,
+        120.7
+      ]
+    },
+    "coverage": {
+      "covered_frames": 9000,
+      "omitted_frames": 0,
+      "accounted_frames": 9000
+    },
+    "interval_sheet_pages": 4,
+    "frames_per_interval_page": [
+      16,
+      16,
+      16,
+      12
+    ],
+    "targeted_sheet_pages": 1,
+    "verdict": "complete"
+  }
+}

@@ -39,14 +39,16 @@ class TestPayload(unittest.TestCase):
         specs["questions"] += list(bqp.APP_ONLY_QUESTIONS.values())
         payload = bqp.build_curated_payload("RUN1", specs, bqp.DEFAULT_CURATED, store_target)
         ids = [q["id"] for q in payload["questions"]]
-        # 19 core + the two conditional U026 waiver follow-ups (FIX-PLAN
-        # Item 12). The follow-ups are conditional_on a "no", so the set a
-        # client actually answers stays at 19 unless they decline.
-        self.assertLessEqual(len(ids), 21)
+        # Hard cap 20 binds the set WITHOUT the declined-reason waiver
+        # follow-ups (each rides on its toggle's "no"; pinned in the
+        # dedicated test below). Other conditional questions stay counted.
+        waiver_followups = [q for q in payload["questions"]
+                            if q["id"].endswith("_declined_reason")]
+        self.assertLessEqual(len(ids) - len(waiver_followups), 20)
         self.assertGreaterEqual(len(ids), 7) # 7-9 core minimum
         # The mandatory new + derived questions are present.
         for must in ("speech_speed_preference", "want_sales_checkout",
-                     "want_vsl_page", "run_mode",
+                     "want_vsl_page", "want_email_sequences", "run_mode",
                      "sales_checkout_declined_reason",
                      "vsl_page_declined_reason"):
             self.assertIn(must, ids)
@@ -64,6 +66,40 @@ class TestPayload(unittest.TestCase):
             self.assertEqual(q["conditional_on"], {"id": toggle, "equals": "no"})
             self.assertEqual(q["storeOn"], f"pre_presentation_capture.{field}")
             self.assertTrue(q["required"])
+
+    def test_email_election_pair_is_pinned(self):
+        """Item 33c: the Skill 50 email election rides the curated set beside
+        the other upsell elections. The toggle is an opt-in (default "no");
+        its declined-reason follow-up is conditional on the "no", required,
+        and stored at the canonical pre_presentation_capture home -- the
+        same waiver shape as the sales/VSL pairs."""
+        intake_dir = self._canonical_intake_dir()
+        if not (intake_dir / "deck-intake-questions.json").is_file():
+            self.skipTest("canonical deck-intake-questions.json not found - cannot build curated set")
+        specs = {"questions": []}
+        std = json.loads((intake_dir / "deck-intake-questions.json").read_text(encoding="utf-8"))
+        specs["questions"] = std.get("questions", [])
+        store_target = std.get("storeTarget")
+        upsell = intake_dir / "upsell-questions.json"
+        if upsell.is_file():
+            specs["questions"] += json.loads(upsell.read_text(encoding="utf-8")).get("questions", [])
+        specs["questions"] += list(bqp.APP_ONLY_QUESTIONS.values())
+        payload = bqp.build_curated_payload("RUN1", specs, bqp.DEFAULT_CURATED, store_target)
+        by_id = {q["id"]: q for q in payload["questions"]}
+        toggle = by_id["want_email_sequences"]
+        self.assertEqual(toggle["storeOn"], "pre_presentation_capture.WANT_EMAIL_SEQUENCES")
+        self.assertEqual(toggle["default"], "no")   # opt-in only; silence is not an election
+        self.assertEqual(toggle["allowed_values"], ["yes", "no"])
+        self.assertTrue(toggle["required"])
+        reason = by_id["email_sequences_declined_reason"]
+        self.assertEqual(reason["storeOn"], "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON")
+        self.assertEqual(reason["conditional_on"],
+                         {"id": "want_email_sequences", "equals": "no"})
+        self.assertTrue(reason["required"])
+        # The follow-up sits immediately after its toggle in the ask order.
+        ids = [q["id"] for q in payload["questions"]]
+        self.assertEqual(ids.index("email_sequences_declined_reason"),
+                         ids.index("want_email_sequences") + 1)
 
     def test_run_mode_is_projected_from_the_bank_never_hardcoded(self):
         """FIX 11. run_mode is a SUBFIELD of the bank's merged resource_plan

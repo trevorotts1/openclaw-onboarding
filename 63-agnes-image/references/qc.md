@@ -1,4 +1,4 @@
-# Agnes Image 2.1 Flash — Real Image Quality Control (QC)
+# Agnes Image — Real Image Quality Control (QC) (default model agnes-image-2.5-flash)
 
 Authority: Spec §10.7 ("API success alone is insufficient"), Spec §15 (Retry ladder)
 
@@ -28,6 +28,6 @@ A 200 OK from the Agnes API only proves byte delivery. Production release requir
 ## 2. Controlled Retry Ladder (Spec §15)
 
 When visual QC detects a defect:
-1. **Step 1 — Prompt Adjustment**: Refine the prompt (adjust lighting, composition phrasing, or negative constraints) on `agnes-image-2.1-flash`.
+1. **Step 1 — Prompt Adjustment**: Refine the prompt (adjust lighting, composition phrasing, or negative constraints) on the resolved model (default `agnes-image-2.5-flash`; an explicit legacy pin stays on `agnes-image-2.1-flash`).
 2. **Step 2 — Alternate Encoding / Framing**: If using I2I, verify reference image resolution, crop, or switch between URL and Data-URI format.
 3. **Step 3 — Controlled Cap**: Never loop indefinitely or silently burn credits. Stop after 3 failed attempts, log exact failure symptoms, and escalate to operator.

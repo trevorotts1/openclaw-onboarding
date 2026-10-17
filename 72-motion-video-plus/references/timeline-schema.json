@@ -1,0 +1,1 @@
+{"$id":"urn:blackceo:motion:timeline:2.0","$ref":"contracts-v2.schema.json#/$defs/timeline","$schema":"https://json-schema.org/draft/2020-12/schema","description":"Thin entrypoint for the V2 compiled timeline contract. The canonical definition lives in contracts-v2.schema.json under $defs/timeline; do not hand-maintain a divergent copy here."}

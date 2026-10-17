@@ -81,6 +81,7 @@ Run: python3 core/delivery_checklist/test_song_mp3_u14.py
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 import shutil
@@ -1574,6 +1575,156 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
         "checker_version": checker_version or TOOL_VERSION,
         "reviewer": rev,
     }
+
+# ------------------------------------------------- F14 method rows (C6/9)
+#: Method rows the final receipt carries for a run that carries
+#: control/method.json (SPEC C6; conflict C9; METHOD-INTEGRATION F14, gate
+#: E). Method 11.3's four evidence levels, verbatim -- they are NOT
+#: synonyms, and UNAVAILABLE is never PASS.
+METHOD_EVIDENCE_LEVELS = ("planned", "generated", "inspected", "approved")
+#: A PASS may only ride an inspected or approved level: a prompt that asks
+#: for a result is not evidence that the result happened (method 11.3).
+METHOD_PASS_LEVELS = ("inspected", "approved")
+#: The verdicts a gate record may carry; anything else is UNAVAILABLE.
+METHOD_VERDICTS = ("PASS", "FAIL", "FLAG", "UNDETERMINED", "UNAVAILABLE")
+METHOD_UNAVAILABLE = "UNAVAILABLE"
+#: A waived approval reads this, verbatim (SPEC C6): checked, and never
+#: labelled "approved" (METHOD-INTEGRATION 5 -- "No, just make it").
+METHOD_WAIVED = "checked, client waived approval"
+#: The waiver answer the client gave at the card.
+METHOD_WAIVED_ANSWERS = ("waived", "waiver", "client waived approval",
+                         "no, just make it")
+#: One gate record per row: <run>/control/gates/<ROW>.json, written by the
+#: stage that checks the row. No record, no verdict -- fail closed.
+METHOD_GATES_DIR = "control/gates"
+#: (row, purposes): None = every method run, a tuple limits the row to the
+#: purposes that can produce it (SPEC C6 / B2).
+METHOD_ROWS = (
+    ("ERM_DROP", None),              # gate C
+    ("HERO_SHIFT", None),            # gate C
+    ("EARNED_HOOK", None),           # gate C
+    ("TRANSFORMATION_LOCK", None),   # gate D
+    ("TRAILER_PURPOSE", ("campaign",)),            # gate F
+    ("CLAIMS_PERMISSION", ("testimonial",)),       # gate F
+    ("LESSON_LINK", ("lesson",)),                  # gate F
+    ("PLATFORM_FIT", ("paid_ad", "short_post")),   # gate F
+)
+#: The one row whose record the card already writes today: the PERMISSION
+#: answer lives in control/method.json as testimonial_permission (SPEC B1).
+#: A stage-written gate record still wins when it exists.
+METHOD_METHOD_KEY = {"CLAIMS_PERMISSION": "testimonial_permission"}
+
+def _method_answer(rec):
+    """A recorded human (client or Trevor) answer, lowercased, or None."""
+    for key in ("approval_answer", "approval", "answer"):
+        v = rec.get(key)
+        if isinstance(v, dict):
+            v = v.get("answer")
+        if isinstance(v, str) and v.strip():
+            return v.strip().lower()
+    return None
+
+def _method_waived(rec, answer):
+    return rec.get("waived") is True or answer in METHOD_WAIVED_ANSWERS
+
+def _method_level(rec, answer, waived):
+    """The evidence level the record's own facts support (method 11.3)."""
+    if waived:
+        return "inspected"           # checked, never "approved"
+    if answer == "yes":
+        return "approved"            # SPEC C6: a recorded human answer
+    claimed = rec.get("evidence_level")
+    if claimed == "approved":
+        claimed = None               # approved needs that human answer
+    if claimed in METHOD_EVIDENCE_LEVELS:
+        return claimed
+    # no declared level: infer only from what the record actually carries
+    if rec.get("measurement") or rec.get("measured") is True:
+        return "inspected"
+    if rec.get("artifact") or rec.get("generated") is True:
+        return "generated"
+    return "planned"
+
+def _method_verdict(rec, level):
+    raw = rec.get("verdict")
+    if not isinstance(raw, str) or not raw.strip():
+        return METHOD_UNAVAILABLE
+    up = raw.strip().upper()
+    if up not in METHOD_VERDICTS:
+        return METHOD_UNAVAILABLE
+    if up == "PASS" and level not in METHOD_PASS_LEVELS:
+        # not verified: an uninspected claim never stands as a PASS
+        return METHOD_UNAVAILABLE
+    return up
+
+def _method_record(run_dir, row, method):
+    """(record or None, gate path string) for one method row."""
+    rel = "%s/%s.json" % (METHOD_GATES_DIR, row)
+    path = Path(run_dir) / METHOD_GATES_DIR / ("%s.json" % row)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            rec = json.load(fh)
+        return (rec if isinstance(rec, dict) else None), rel
+    except OSError:
+        pass
+    except ValueError:
+        return None, rel
+    key = METHOD_METHOD_KEY.get(row)
+    if key is not None and method.get(key) is not None:
+        answer = str(method.get(key)).strip()
+        return {"verdict": "PASS" if answer.lower() == "yes" else "FAIL",
+                "evidence": "control/method.json %s=%s" % (key, answer),
+                "approval_answer": answer}, rel
+    return None, rel
+
+def _method_row(run_dir, row, method):
+    """One {verdict, evidence_level, evidence} row for the receipt."""
+    rec, rel = _method_record(run_dir, row, method)
+    if rec is None:
+        return {"verdict": METHOD_UNAVAILABLE,   # never PASS (SPEC C6)
+                "evidence_level": "planned",     # never inspected
+                "evidence": "no method record: %s missing" % rel}
+    answer = _method_answer(rec)
+    waived = _method_waived(rec, answer)
+    level = _method_level(rec, answer, waived)
+    raw = rec.get("verdict")
+    is_fail = isinstance(raw, str) and raw.strip().upper() == "FAIL"
+    if waived and not is_fail:
+        verdict = METHOD_WAIVED
+    else:
+        verdict = _method_verdict(rec, level)
+    evidence = rec.get("evidence") or rec.get("measurement")
+    if not isinstance(evidence, str) or not evidence.strip():
+        evidence = "%s: %s (%s)" % (row, verdict, rel)
+    return {"verdict": verdict, "evidence_level": level,
+            "evidence": evidence.strip()}
+
+def measure_method(run_dir):
+    """Method rows with evidence levels (F14) for the run's purpose.
+
+    Returns {row: {"verdict", "evidence_level", "evidence"}} for the rows
+    that apply to control/method.json's purpose, or None when the run
+    carries no control/method.json -- inert until wired (BUILD-PLAN, every
+    W1 method unit). Rows read the gate records the other units write
+    (control/gates/<ROW>.json); a row whose record is missing is
+    UNAVAILABLE / planned, never PASS, and an approval is "approved" only
+    with a recorded human answer.
+    """
+    run = Path(run_dir)
+    try:
+        with open(run / "control" / "method.json", encoding="utf-8") as fh:
+            method = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(method, dict):
+        return None
+    purpose = method.get("purpose")
+    rows = {}
+    for row, purposes in METHOD_ROWS:
+        if purposes is not None and purpose not in purposes:
+            continue
+        rows[row] = _method_row(run, row, method)
+    return rows
 
 
 # --------------------------------------------------- FU-U14 SONG MP3 ITEM

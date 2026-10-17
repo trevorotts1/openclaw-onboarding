@@ -201,6 +201,12 @@ Per `SKILL.md` and the v14.3.0 change: the primary narrator is Fish Audio 2.1 Pr
 
 ---
 
+## Motion inserts from Skill 72 (this skill stays the parent)
+
+When a VSL this skill produces needs motion graphics, Skill 72 (`motion-video-plus`) makes the insert and this skill remains the parent: narration, music, captions, slot timing, and final assembly stay here, and the insert contributes no audio of its own. The working bridge is `scripts/vsl_handoff.py` (request, consume, assemble) under the contract in `72-motion-video-plus/references/vsl-desktop-handoff.md`; mobile inserts are recomposed for vertical by Skill 72, never cropped from the desktop insert. Status for a motion job rides this skill's board and attestation manifest through `scripts/motion_status.py` under `72-motion-video-plus/references/status-and-delivery.md`: the insert reports under the parent's task identity, attestations land under `phase_attestations`, and the board stage reaches done only when the motion job's delivery receipt is filed with nothing mandatory missing.
+
+---
+
 ## Handoff boundary vs Skill 27 (Video Editor)
 
 **This skill (Skill 47):** autonomously produces a finished video FROM a brief or pipeline manifest. It is an AI-driven render pipeline — it does not accept pre-existing footage for editorial cuts.

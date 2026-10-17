@@ -392,12 +392,20 @@ def run_validators(run_dir, stage, receipt):
             continue
         if isinstance(resolved, tuple) and resolved[0] == "__per_file__":
             _, cmd_tpl, files = resolved
+            cmd_tpl, profile_line = apply_launch_profile(cmd_tpl, run_dir)
+            if profile_line:
+                failures.append(profile_line)
+                continue
             for fpath in files:
                 cmd = cmd_tpl.replace("{file}", fpath)
                 line = run_one_validator(cmd, run_dir)
                 if line:
                     failures.append(line)
         else:
+            resolved, profile_line = apply_launch_profile(resolved, run_dir)
+            if profile_line:
+                failures.append(profile_line)
+                continue
             line = run_one_validator(resolved, run_dir)
             if line:
                 failures.append(line)
@@ -961,6 +969,50 @@ def _agnes_selected(run_dir):
     except (OSError, ValueError):
         return False
     return isinstance(intake, dict) and str(intake.get("image_engine", "")).strip().lower() == "agnes"
+
+
+# ---------------------------------------------------------------------------
+# Launch profile wiring (S71-02): under the signature_launch_landing
+# profile, the copy stage's public-copy validation runs with S71-03's
+# no-offer-pricing gate engaged (packet doc 07 section 3: no offer
+# pricing on a Signature Launch landing page). The gate itself is an
+# opt-in flag on validate_public_copy.py owned by S71-03; the profile is
+# what engages it. Until the gate lands in this tree, a profile run's
+# copy stage fails closed naming the missing gate rather than silently
+# validating without it. Non-profile runs are untouched.
+
+LAUNCH_PROFILE_NAME = "signature_launch_landing"
+NO_OFFER_PRICING_FLAG = "--no-offer-pricing"
+
+
+def launch_profile_active(run_dir):
+    return intake_data(run_dir).get("launch_profile") == LAUNCH_PROFILE_NAME
+
+
+def apply_launch_profile(cmd, run_dir):
+    """Engage the profile's no-offer-pricing gate on a validator command.
+
+    Returns (command, failure_line_or_None): the command with the flag
+    appended when the profile is active and the validator on disk
+    supports it; a named failure when the profile is active but the
+    on-disk validator has no such flag; the command unchanged otherwise.
+    """
+    if "validate_public_copy.py" not in cmd or not launch_profile_active(run_dir):
+        return cmd, None
+    if NO_OFFER_PRICING_FLAG in cmd:
+        return cmd, None
+    script = SKILL_ROOT / "scripts" / "validate_public_copy.py"
+    try:
+        supported = NO_OFFER_PRICING_FLAG in script.read_text(encoding="utf-8")
+    except OSError:
+        supported = False
+    if not supported:
+        return cmd, ("launch profile signature_launch_landing requires the "
+                     "no-offer-pricing gate (S71-03), but "
+                     "scripts/validate_public_copy.py on disk does not "
+                     "support --no-offer-pricing; the copy stage cannot "
+                     "close under the profile without the gate engaged")
+    return cmd + " " + NO_OFFER_PRICING_FLAG, None
 
 
 def _intake_runtime(run_dir):
@@ -1825,9 +1877,9 @@ def cmd_block_item(run_dir, stage, item_id, reason):
 # Browser teardown and hygiene gate (fix plan Item 33).
 #
 # A stage whose contract entry carries "uses_browser": true (today
-# ghl-install-test and publish-verify; automation-wiring gains the same
-# flag when its contract entry lands), and any stage the session
-# registry holds sessions for, may not close until the reaper pass has
+# ghl-install-test, publish-verify, and automation-wiring), and any
+# stage the session registry holds sessions for, may not close until
+# the reaper pass has
 # accounted for every browser session the run opened for it. The
 # registry, probe, reaper, and receipt writer live in
 # scripts/browser_sessions.py, loaded by path the way validators resolve
@@ -1851,6 +1903,49 @@ def _browser_sessions_module():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def _page_result_module():
+    path = SKILL_ROOT / "scripts" / "page_result.py"
+    if not path.exists():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "skill71_page_result", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _automation_handoff_module():
+    path = SKILL_ROOT / "scripts" / "automation_handoff.py"
+    if not path.exists():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "skill71_automation_handoff", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def emit_install_handoff(run_dir):
+    """R71H producer side (Item 31, S71-08 P1): at ghl-install-test
+    close, emit handoff/automation-handoff.json from the run's records
+    (funnel-completion form IDs are the sole form source) and hash-lock
+    it, then check_install_handoff verifies what was written. Returns
+    failure lines; an emitter refusal refuses the close."""
+    mod = _automation_handoff_module()
+    if mod is None:
+        if intake_data(run_dir).get("publish_target") == "ghl":
+            return ["stage ghl-install-test: the automation hand-off "
+                    "cannot be produced: scripts/automation_handoff.py "
+                    "is missing from the skill; a GHL install cannot "
+                    "close without its R71H emitter"]
+        return []
+    failures, _record = mod.emit_handoff(
+        run_dir, deploy_mode=mod.ONLY_DEPLOY_MODE, requesting_room="S71")
+    return failures
 
 
 def stage_uses_browser(run_dir, stage):
@@ -2107,6 +2202,9 @@ def check_publish_rules(run_dir, receipt):
                             f"a waiver prints in REPORT.md.")
     # Item 31: publish-verify carries the automation hand-off forward
     # unchanged; the hash recorded at ghl-install-test close must match.
+    # R71H seam P2 completes the gate: on a GHL run a missing locked
+    # hash refuses by name too (there is nothing to verify the carried
+    # file against), and a mismatch names both hashes.
     state, _ = load_state(run_dir)
     recorded = (state.get("stages", {}).get("ghl-install-test") or {}).get("handoff_sha256")
     if recorded:
@@ -2115,11 +2213,20 @@ def check_publish_rules(run_dir, receipt):
             failures.append("stage publish-verify: handoff/automation-handoff.json is "
                             "missing; publish-verify carries the install hand-off "
                             "forward unchanged (fix plan Item 31)")
-        elif sha256_file(hp) != recorded:
-            failures.append("stage publish-verify: handoff/automation-handoff.json "
-                            "changed after ghl-install-test close (SHA-256 mismatch "
-                            "with the recorded hand-off hash); the hand-off is "
-                            "carried forward unchanged (fix plan Item 31)")
+        else:
+            actual = sha256_file(hp)
+            if actual != recorded:
+                failures.append("stage publish-verify: handoff/automation-handoff.json "
+                                "changed after ghl-install-test close (SHA-256 mismatch: "
+                                f"the hash locked at ghl-install-test close is {recorded}, "
+                                f"the file on disk hashes to {actual}); the hand-off is "
+                                "carried forward unchanged (fix plan Item 31)")
+    elif intake.get("publish_target") == "ghl":
+        failures.append("stage publish-verify: no hand-off hash is locked in state "
+                        "(stages.ghl-install-test.handoff_sha256 is absent); a GHL "
+                        "run's publish close verifies handoff/automation-handoff.json "
+                        "against the hash locked at ghl-install-test close, and there "
+                        "is no locked hash to verify against (fix plan Item 31)")
     return failures
 
 
@@ -2346,6 +2453,18 @@ def cmd_close(run_dir, stage):
     receipt_status_val = receipt.get("status") if receipt else None
     if receipt_status_val == "fail":
         failures.append(f"stage {stage}: receipt status is 'fail'; close refused")
+    # R71H seam P2: a filed dispatch refusal is itself a close verdict
+    # for automation-wiring. The receipt records the receiver's refusal
+    # reason verbatim; the stage stays open and the close names the
+    # refusal, whatever else the close would find.
+    if stage == "automation-wiring" and receipt:
+        refusal = receipt.get("dispatch_refusal")
+        if isinstance(refusal, dict) and str(refusal.get("reason") or "").strip():
+            failures.append(f"stage automation-wiring: the automation dispatch was "
+                            f"refused: {refusal['reason']} (refusal filed in "
+                            f"private/receipts/automation-wiring.json; a refused "
+                            f"dispatch leaves the stage open, R71H seam packet "
+                            f"section 4)")
 
     # Artifacts on disk
     art_problems, counts = artifacts_for(run_dir, stage)
@@ -2384,6 +2503,7 @@ def cmd_close(run_dir, stage):
         failures.extend(check_transport(run_dir, stage, receipt))
         # S5 delivery rules (Items 6, 31)
         if stage == "ghl-install-test":
+            failures.extend(emit_install_handoff(run_dir))
             failures.extend(check_install_handoff(run_dir))
         elif stage == "publish-verify":
             failures.extend(check_publish_rules(run_dir, receipt))
@@ -2544,6 +2664,15 @@ def collect_warnings(run_dir, state):
             if _idata.get("layout_references_waived") is True:
                 warns.append("layout waiver recorded (layout-references, flat form): "
                              f"{_idata.get('layout_references_waiver_reason')}")
+            # S71-02: an imported launch profile is always visible in the
+            # report, with the launch it binds the run to.
+            _launch = _idata.get("launch")
+            if _idata.get("launch_profile"):
+                _lid = _launch.get("launch_id") if isinstance(_launch, dict) else None
+                _rev = _launch.get("revision") if isinstance(_launch, dict) else None
+                warns.append(f"launch profile active: {_idata['launch_profile']} "
+                             f"(launch {_lid}, revision {_rev}); the run's "
+                             f"launch context is recorded in intake.json")
     # Item 13 (Ruling 5): recorded reference substitutions and any
     # outstanding reference are always visible in the report, so a
     # report never implies the substituted set is the original set.
@@ -2591,6 +2720,16 @@ def collect_warnings(run_dir, state):
             warns.append(f"conversational coverage owner override: trigger "
                          f"{o.get('trigger')} on {o.get('source_id')}: {o.get('reason')} "
                          f"(approved by {o.get('approved_by')})")
+    # R71H seam P2: a filed dispatch refusal or failure is always
+    # visible in the report with its recorded reason, never silent.
+    _refusal = aw_receipt.get("dispatch_refusal")
+    if isinstance(_refusal, dict) and str(_refusal.get("reason") or "").strip():
+        warns.append(f"automation dispatch refused: {_refusal['reason']} "
+                     f"(automation-wiring stays open)")
+    _dfailure = aw_receipt.get("dispatch_failure")
+    if isinstance(_dfailure, dict) and str(_dfailure.get("reason") or "").strip():
+        warns.append(f"automation dispatch failed: {_dfailure['reason']} "
+                     f"(automation-wiring stays open)")
     return warns
 
 
@@ -2856,6 +2995,24 @@ def cmd_report(run_dir):
                          "review_mode": rm_data["mode"],
                          "report_json_path": str(report_json_path),
                          "report_md_path": str(report_path)})
+    # S71-05 (Signature Launch): a run that carries a page-request.json
+    # (doc 02 section 6) also emits its page-result.json and
+    # page-handoff.json in this same pass. Legacy runs without a
+    # page-request are untouched. A launch run whose result cannot be
+    # built validly fails the report: an invalid handoff must never
+    # ride a passing report.
+    if (run_dir / "page-request.json").exists():
+        pr_mod = _page_result_module()
+        if pr_mod is None:
+            print("FAIL: page-result emission (S71-05): "
+                  "scripts/page_result.py is missing from the skill; "
+                  "a launch run cannot report without it")
+            return 1
+        pr_ok, pr_lines = pr_mod.emit_for_report(run_dir)
+        for line in pr_lines:
+            print(line)
+        if not pr_ok:
+            return 1
     print(f"wrote {report_path}")
     print(f"OVERALL: {overall}")
     return 0 if required_closed else 1

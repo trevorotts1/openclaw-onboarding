@@ -1,0 +1,40 @@
+{
+  "schema_version": "2.0",
+  "job_id": "fixture-vsl-desktop",
+  "company_id": "fixture-company",
+  "execution_context": "fixture",
+  "parent": {
+    "job_id": "fixture-parent-vsl",
+    "task_id": "fixture-parent-task",
+    "handoff_path": "parent-handoff.json",
+    "slot": {"start_frame": 900, "end_frame_exclusive": 1080},
+    "narration_cue_id": "fixture-cue"
+  },
+  "mode": "vsl_desktop",
+  "content_scope": "insert",
+  "canvas": {"width": 1920, "height": 1080, "fps": 30},
+  "duration_frames": 180,
+  "authoring": {"selection": "inherit_config", "provider": null, "model": null, "harness": null},
+  "rendering": {"default_engine": "remotion", "allow_legacy_fallback": false, "runtime_lock": "runtime-lock.json"},
+  "storyboard": "storyboard.json",
+  "assets": "assets.json",
+  "design": "design.json",
+  "timeline": "timeline.json",
+  "audio": {
+    "mode": "inherited",
+    "parent_audio_ref": "fixture-parent-audio",
+    "create_voiceover": false,
+    "create_music": false,
+    "source_assets": []
+  },
+  "approval_policy": "fixture_only",
+  "variants": [],
+  "scenes": [{"id": "bar-01", "spec": "scenes/bar-01.json"}],
+  "delivery": {
+    "video_profile": "h264_opaque",
+    "poster_frame": 150,
+    "placement": "full_frame",
+    "playback": {"start": "automatic", "repeat": "once", "end": "hold_final"},
+    "required": ["mp4", "poster", "source_package", "placement_metadata"]
+  }
+}

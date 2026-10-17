@@ -1,0 +1,347 @@
+{
+  "$defs": {
+    "access_block": {
+      "additionalProperties": false,
+      "properties": {
+        "delivery_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entitlement_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "fulfillment_state": {
+          "const": "granted"
+        },
+        "next_action": {
+          "enum": [
+            "access",
+            "download",
+            "manage_purchase",
+            "support",
+            "schedule_included_service",
+            "noncommercial_next_step"
+          ]
+        },
+        "offer_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "slot": {
+          "enum": [
+            "main",
+            "bump",
+            "upsell_1",
+            "downsell_1",
+            "upsell_2"
+          ]
+        }
+      },
+      "required": [
+        "entitlement_id",
+        "offer_id",
+        "slot",
+        "next_action",
+        "delivery_url",
+        "fulfillment_state"
+      ],
+      "type": "object"
+    },
+    "cta": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "enum": [
+            "access",
+            "download",
+            "manage_purchase",
+            "support",
+            "schedule_included_service",
+            "noncommercial_next_step"
+          ]
+        },
+        "entitlement_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "initiates_new_charge": {
+          "const": false
+        },
+        "label": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "offer_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "classification",
+        "label",
+        "offer_id",
+        "entitlement_id",
+        "initiates_new_charge"
+      ],
+      "type": "object"
+    },
+    "view_item": {
+      "additionalProperties": false,
+      "properties": {
+        "amount_minor": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "billing": {
+          "type": "object"
+        },
+        "currency": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "display_status": {
+          "enum": [
+            "paid",
+            "pending",
+            "failed",
+            "requires_customer_action",
+            "refunded",
+            "partially_refunded",
+            "unknown"
+          ]
+        },
+        "entitlement_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "event_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "native_line_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "offer_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "slot": {
+          "enum": [
+            "main",
+            "bump",
+            "upsell_1",
+            "downsell_1",
+            "upsell_2"
+          ]
+        }
+      },
+      "required": [
+        "offer_id",
+        "slot",
+        "display_name",
+        "amount_minor",
+        "currency",
+        "display_status",
+        "entitlement_ids",
+        "native_line_ref",
+        "event_id",
+        "billing"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The resolved final thank-you view. Built ONLY from a verified normalized purchase snapshot plus the S44 entitlement map; never from URL/query claims, page-visit history, or email matching. Integer minor units only; no floating-point amounts and no payment credentials.",
+  "properties": {
+    "access_blocks": {
+      "items": {
+        "$ref": "#/$defs/access_block"
+      },
+      "type": "array"
+    },
+    "confirmation": {
+      "additionalProperties": false,
+      "properties": {
+        "all_set": {
+          "description": "True only when every displayed item is paid. A pending, failed or refunded item anywhere forces false \u2014 'You are all set' is forbidden for unconfirmed access.",
+          "type": "boolean"
+        },
+        "headline": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "partially_pending",
+            "pending",
+            "attention_required",
+            "refund_applied",
+            "partially_refunded"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "all_set",
+        "headline"
+      ],
+      "type": "object"
+    },
+    "ctas": {
+      "items": {
+        "$ref": "#/$defs/cta"
+      },
+      "type": "array"
+    },
+    "entitlement_version": {
+      "description": "S44's order-level entitlement version for the entitlement state shown, carried through by the resolver from the S44 fulfillment-map producer envelope (or the resolver's explicit version input) when S44 supplies one. Optional: absent when no version was supplied, in which case the confirmation dedupe key falls back to the deterministic derived fingerprint. When present it must be a well-formed ev1 value (CR-S82-002 item 5): the 'ev1:' prefix plus the lowercase sha256 hex of S44's canonical book-state string. Any other shape is mismatched or forged and fails validation.",
+      "pattern": "^ev1:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "failed_items": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/view_item"
+      },
+      "type": "array"
+    },
+    "journey_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "launch_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "location_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "order_number": {
+      "description": "Display form of the verified native order reference.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "order_ref": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "pending_items": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "built_from_verified_snapshot": {
+          "const": true
+        },
+        "event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "const": "verified_normalized_purchase_snapshot"
+        }
+      },
+      "required": [
+        "source",
+        "built_from_verified_snapshot",
+        "event_ids"
+      ],
+      "type": "object"
+    },
+    "recommendations": {
+      "description": "Must be empty on this page. Any entry is an unpurchased-offer pitch and fails validation.",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 0,
+      "type": "array"
+    },
+    "revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "tenant_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "test_only": {
+      "type": "boolean"
+    },
+    "totals": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "paid_total_minor": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pending_total_minor": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency",
+        "paid_total_minor",
+        "pending_total_minor"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "revision",
+    "order_ref",
+    "order_number",
+    "journey_id",
+    "confirmation",
+    "items",
+    "totals",
+    "access_blocks",
+    "ctas",
+    "pending_items",
+    "failed_items",
+    "recommendations",
+    "provenance",
+    "test_only"
+  ],
+  "title": "Thank-you order view",
+  "type": "object"
+}

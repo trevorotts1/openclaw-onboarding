@@ -1,0 +1,33 @@
+{
+  "id": "product-02",
+  "semantic_motion_assertions": [
+    {
+      "id": "detail-identity",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "product-detail"
+      ],
+      "frame": 90,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "device-identity-hold",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "product-device"
+      ],
+      "frame": 120,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "decoded_frame"
+      ]
+    }
+  ]
+}

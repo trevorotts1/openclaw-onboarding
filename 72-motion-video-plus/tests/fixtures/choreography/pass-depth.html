@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Genuine depth scene</title>
+<style>
+  html, body { margin: 0; background: #eaf4fb; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; color: #14213d; }
+  #space { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+           perspective: 900px; }
+  #parcel { position: absolute; left: 760px; top: 340px; width: 400px; height: 400px;
+             background: #e76f51; font-size: 52px; color: #ffffff;
+             text-align: center; line-height: 400px; }
+  .shelf { position: absolute; width: 1920px; height: 26px; background: #14213d; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="space">
+    <div class="shelf" style="top: 760px;"></div>
+    <div id="parcel">Your order</div>
+  </div>
+</div>
+<script>
+window.__sceneDuration = 6;
+window.__choreography = {"intent": "spatial_travel", "behaviors": ["depth", "eased"]};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function easeInOutCubic(p) { return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; }
+window.__setTime = function (t) {
+  var e = easeInOutCubic(clamp01((t - 0.5) / 4));
+  var angle = -24 + 48 * e;
+  var x = -420 + 840 * e;
+  document.getElementById("parcel").style.transform =
+    "rotateY(" + angle + "deg) translateX(" + x + "px)";
+};
+window.__setTime(0);
+</script>
+</body>
+</html>
