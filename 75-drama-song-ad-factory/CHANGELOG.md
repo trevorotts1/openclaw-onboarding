@@ -4,6 +4,31 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.63 - 2026-10-17 - song generation, word-timing provenance and timing-word shape repairs
+
+Four repairs on the song-choices and word-timing path. No quality-control gate,
+threshold or refusal was weakened.
+
+- `song_choices._real_generate` passed `generation=True` to `kie_dispatch.dispatch`,
+  which accepts no such argument. The call raised `TypeError` before the dispatcher
+  ran, so no real generation could happen. The stale argument is removed.
+- `_real_generate` now keeps the provider's generation `task_id` on every take it
+  returns, so `lyric_timing` no longer raises `SUNO_TRACK_MISSING` for those takes.
+  The per-track Suno `audio_id` is not surfaced by the dispatcher envelope, so it
+  stays absent. It is never filled with the task id, and a dispatcher-made `sync-`
+  id is never recorded.
+- `lyric_timing.fetch_suno_timestamped_lyrics` and `provide_word_timings` now pass the
+  run's recorded choice-card receipt (argument first, else `track["card_receipt"]`)
+  into the dispatch request, as `picture_gate.make_regenerate` already does. The
+  card gate in `kie_dispatch` is unchanged: with no valid receipt it still refuses
+  `CARD_UNANSWERED`. Nothing is invented.
+- `sung_hook.measure`, `hook_placement.returned_sections` and `song_contract`
+  (`_sung_hits`, `check_returned_song`) now read aligned words in both shapes:
+  canonical `{word,start,end}` from `normalize_aligned_words` and raw Suno
+  `{word,startS,endS}`, following `timing_guard`. Before, canonical words raised
+  `KeyError('startS')` and `judge_take` reported a `judge_exception` FAIL.
+  New check: `scripts/core/sung_hook/test_timing_word_shapes.py`.
+
 ## v2.9.62 - 2026-10-16 - BATCH-DSF-12: signature launch wave, skill-72 motion v2, skill-78 product selection, miniapp deletion
 
 Batch `BATCH-DSF-12` — four members merged together into ONE batch branch off
