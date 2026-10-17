@@ -1,8 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.13.0",
-  "description": "Deck intake v1.13.0 (Skill 50 email election, FIX-PLAN Item 33c): identical 23 merged turns, 20 required, 50 physical rows (two alias rows added: want_email_sequences at 20.03, email_sequences_declined_reason at 22.07). The email election rides the EXISTING turns (no new turn, per the 23-turn ceiling): growth_assets gains the want_email_sequences subfield (default no, boolish, same shape as its sales/VSL siblings) and its prompt names the option; decline_context gains the conditional email_sequences_declined_reason subfield and its prompt names the item. storeTarget and waiver_field_mapping gain the email_sequences pair; the waiver discipline is identical to the other elections (explicit no plus the client's verbatim reason, or --complete cannot pass). Otherwise identical prompts, enums, required flags, storeTarget and waiver contract as v1.12.0. Deck intake v1.12.0 (Flash route correction): identical 23 merged turns, 20 required, 48 physical rows, same prompts (order-9 workhorse example now deepseek-flash@deepseek-direct, legacy deepseek-v4-flash still accepted), enums, required flags, storeTarget and waiver contract as v1.11.0. New stage metadata groups stage-1 into five beats (purpose/audience, existing materials, desired outputs, deadline/CTA, provider/resource preference) with a review-and-edit summary, conditions later turns on selected deliverables plus missing stage inputs, reuses locked client preferences without re-interview, and sets UX targets (new-client valid brief at most 11 interactions, repeat-client at most 6, preference reuse 100%). 23 turns is the CEILING, never the norm.",
+  "version": "1.14.0",
+  "description": "Deck intake v1.14.0 (motion graphics election, FIX-PLAN Item 34): identical 23 merged turns, 20 required, 52 physical rows (two alias rows added: want_motion_graphics at 20.04, motion_graphics_declined_reason at 22.08). The motion election rides the EXISTING turns (no new turn, per the 23-turn ceiling): growth_assets gains the want_motion_graphics subfield (default no, boolish, same shape as its sales/VSL siblings) and its prompt names the option; decline_context gains the conditional motion_graphics_declined_reason subfield and its prompt names the item. storeTarget and waiver_field_mapping gain the motion_graphics pair; the waiver discipline is identical to the other elections (explicit no plus the client's verbatim reason, or --complete cannot pass). The election promises only that elected pieces are embedded in the deck file with the designed slide as their still; playback inside PowerPoint is UNVERIFIED and is never promised. Otherwise identical prompts, enums, required flags, storeTarget and waiver contract as v1.13.0. Deck intake v1.13.0 (Skill 50 email election, FIX-PLAN Item 33c): identical 23 merged turns, 20 required, 50 physical rows (two alias rows added: want_email_sequences at 20.03, email_sequences_declined_reason at 22.07). The email election rides the EXISTING turns (no new turn, per the 23-turn ceiling): growth_assets gains the want_email_sequences subfield (default no, boolish, same shape as its sales/VSL siblings) and its prompt names the option; decline_context gains the conditional email_sequences_declined_reason subfield and its prompt names the item. storeTarget and waiver_field_mapping gain the email_sequences pair; the waiver discipline is identical to the other elections (explicit no plus the client's verbatim reason, or --complete cannot pass). Otherwise identical prompts, enums, required flags, storeTarget and waiver contract as v1.12.0. Deck intake v1.12.0 (Flash route correction): identical 23 merged turns, 20 required, 48 physical rows, same prompts (order-9 workhorse example now deepseek-flash@deepseek-direct, legacy deepseek-v4-flash still accepted), enums, required flags, storeTarget and waiver contract as v1.11.0. New stage metadata groups stage-1 into five beats (purpose/audience, existing materials, desired outputs, deadline/CTA, provider/resource preference) with a review-and-edit summary, conditions later turns on selected deliverables plus missing stage inputs, reuses locked client preferences without re-interview, and sets UX targets (new-client valid brief at most 11 interactions, repeat-client at most 6, preference reuse 100%). 23 turns is the CEILING, never the norm.",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
     "from_scratch": {
@@ -97,6 +97,8 @@
     "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
     "WANT_EMAIL_SEQUENCES": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
     "EMAIL_SEQUENCES_DECLINED_REASON": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
+    "WANT_MOTION_GRAPHICS": "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+    "MOTION_GRAPHICS_DECLINED_REASON": "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
     "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE",
     "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN",
     "STYLE_PICK_AUTO": "pre_presentation_capture.STYLE_PICK_AUTO"
@@ -739,7 +741,7 @@
       "section": "deck-intake",
       "order": 20,
       "kind": "merged",
-      "prompt": "Do you want the sales/checkout page and a VSL page built alongside the deck, and email follow-up sequences (Skill 50) prepared as drafts for the launch?",
+      "prompt": "Do you want the sales/checkout page and a VSL page built alongside the deck, email follow-up sequences (Skill 50) prepared as drafts for the launch, and motion graphics (short video pieces embedded in the deck file for up to two slides)?",
       "required": true,
       "block_gate": true,
       "subfields": {
@@ -755,6 +757,11 @@
         },
         "want_email_sequences": {
           "storeOn": "WANT_EMAIL_SEQUENCES",
+          "boolish": true,
+          "default": "no"
+        },
+        "want_motion_graphics": {
+          "storeOn": "WANT_MOTION_GRAPHICS",
           "boolish": true,
           "default": "no"
         }
@@ -810,7 +817,7 @@
       "section": "deck-intake",
       "order": 22,
       "kind": "merged",
-      "prompt": "For anything you said no to above (teleprompter, speech script, GHL upload, audio deliverable, sales/checkout, VSL page, email sequences), give the reason in one sentence each, or say 'no note' per item.",
+      "prompt": "For anything you said no to above (teleprompter, speech script, GHL upload, audio deliverable, sales/checkout, VSL page, email sequences, motion graphics), give the reason in one sentence each, or say 'no note' per item.",
       "required": false,
       "block_gate": false,
       "subfields": {
@@ -866,6 +873,14 @@
           "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
           "conditional_on": {
             "id": "want_email_sequences",
+            "equals": "no"
+          },
+          "no_note": true
+        },
+        "motion_graphics_declined_reason": {
+          "storeOn": "MOTION_GRAPHICS_DECLINED_REASON",
+          "conditional_on": {
+            "id": "want_motion_graphics",
             "equals": "no"
           },
           "no_note": true
@@ -1190,6 +1205,28 @@
       "alias": true
     },
     {
+      "id": "want_motion_graphics",
+      "section": "deck-intake",
+      "order": 20.04,
+      "prompt": "Would you like motion graphics in this deck: short video pieces embedded in the deck file for up to two slides? (yes / no) A 'yes' elects the motion option: each piece is produced for a slide chosen for motion and embedded in the deck file itself, with the designed slide as that piece's still image. The webinar video uses the same pieces.",
+      "help": "Default NO -- motion graphics are an opt-in election, asked on every run, and only an explicit 'yes' elects them. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the motion branch entirely: the deck is built still-only. What a 'yes' promises is that the pieces are embedded in the deck file with the designed slide as their still; playback inside Microsoft PowerPoint is UNVERIFIED and is never promised. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, add motion graphics to the deck",
+        "no": "No thank you"
+      },
+      "default": "no",
+      "storeOn": "WANT_MOTION_GRAPHICS",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'no'. Only an explicit 'yes' elects motion; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' carries the election into the run: slides declare media.kind 'motion' with slot A or B (at most two pieces per deck), Skill 72 (V2 powerpoint_graphic) produces each package into working/motion/slide-NN/, assembly embeds the authenticated pieces, and P8.15-MOTION audits the record. Never promise the client the pieces play inside PowerPoint: playback there is UNVERIFIED; what is promised is that the pieces are embedded in the deck file with the designed slide as their still.",
+      "alias": true
+    },
+    {
       "id": "speech_speed_preference",
       "section": "deck-intake",
       "order": 21.01,
@@ -1329,6 +1366,23 @@
       },
       "resolverHint": "Auto-skipped whenever want_email_sequences is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
       "alias": true
+    },
+    {
+      "id": "motion_graphics_declined_reason",
+      "section": "deck-intake",
+      "order": 22.08,
+      "prompt": "Understood -- no motion graphics. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_motion_graphics is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "kind": "text",
+      "storeOn": "MOTION_GRAPHICS_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_motion_graphics",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_motion_graphics is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "alias": true
     }
   ],
   "waiver_field_mapping": {
@@ -1360,6 +1414,10 @@
     "email_sequences": {
       "toggle": "want_email_sequences",
       "reason": "email_sequences_declined_reason"
+    },
+    "motion_graphics": {
+      "toggle": "want_motion_graphics",
+      "reason": "motion_graphics_declined_reason"
     }
   },
   "intake_v2": {
@@ -1395,6 +1453,8 @@
       "vsl_page_declined_reason": "captured:turn 23 (vsl_page_declined_reason)",
       "want_email_sequences": "captured:turn 21 (want_email_sequences)",
       "email_sequences_declined_reason": "captured:turn 23 (email_sequences_declined_reason)",
+      "want_motion_graphics": "captured:turn 21 (want_motion_graphics)",
+      "motion_graphics_declined_reason": "captured:turn 23 (motion_graphics_declined_reason)",
       "want_audio_demo": "conditional:turn 22 (asked only when audio wanted)",
       "target_wpm": "derived:turn 22 (from speech_speed_preference)",
       "style_source": "captured:turn 16 (style_source)",

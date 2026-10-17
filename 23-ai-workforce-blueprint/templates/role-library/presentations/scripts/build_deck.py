@@ -3081,6 +3081,19 @@ def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                       f"nor a section divider (Slot B)")
     outcome["slot"] = slot
 
+    # -- slot exclusions (B14 Sections 3.2 and 3.3, Item 34 R3): a
+    #    nominal slot slide can still be doctrine-barred (a dedicated
+    #    hook slide, price-carrying copy, the offer/CTA arc, proof or
+    #    guarantee copy). Judged here, inside the ONE validator, from
+    #    the arc blob and the approved copy lines the planner already
+    #    threads in; the exclusion degrades with its own named code
+    #    and the entry keeps its slot letter, so the motion record
+    #    says which slot was barred and why.
+    exclusion = _motion.slot_exclusion(slide_ord, arc_tag_blob,
+                                       copy_lines)
+    if exclusion is not None:
+        return refuse(exclusion[0], exclusion[1])
+
     # -- placement (Section 14.2: normalized to the slide, positive,
     #    inside [0,1], preserves the component's 16:9)
     try:

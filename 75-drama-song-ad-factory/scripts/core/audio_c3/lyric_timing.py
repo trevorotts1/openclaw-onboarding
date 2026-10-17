@@ -265,7 +265,9 @@ def _suno_track_ids(track: Dict[str, Any]) -> Any:
 def fetch_suno_timestamped_lyrics(track: Dict[str, Any], *,
                                   dispatcher: Optional[Callable[..., Dict[str, Any]]] = None,
                                   ledger_db: str = "", run_id: str = "",
-                                  attempt_id: str = "") -> Dict[str, Any]:
+                                  attempt_id: str = "",
+                                  card_receipt: Optional[Dict[str, Any]] = None,
+                                  ) -> Dict[str, Any]:
     """KIE Get Timestamped Lyrics through kie_dispatch (mocked in tests).
 
     Returns ``{'source': 'suno-alignedWords', 'words': [{word, startS,
@@ -273,6 +275,11 @@ def fetch_suno_timestamped_lyrics(track: Dict[str, Any], *,
     rides the SAME dispatcher every other stage uses (ledger reserve,
     Skill 74 health/preflight/submit/wait/save), never a private KIE client.
     Raises LyricTimingError on any dispatch failure -- tier-2's trigger.
+
+    ``card_receipt``: the run's recorded F15 choice-card receipt (argument,
+    else ``track["card_receipt"]``), threaded into ``request["card_receipt"]``
+    exactly as picture_gate.make_regenerate does. kie_dispatch's card gate
+    validates it; with none, that gate still refuses CARD_UNANSWERED.
     """
     task_id, audio_id = _suno_track_ids(track)
     if dispatcher is None:
@@ -286,6 +293,10 @@ def fetch_suno_timestamped_lyrics(track: Dict[str, Any], *,
     request = {"model": KIE_MODEL_TIMESTAMPED_LYRICS,
                "input": {"task_id": task_id or "", "audio_id": audio_id or ""},
                "callBackUrl": (track or {}).get("callback_url", "")}
+    receipt = card_receipt if card_receipt is not None \
+        else (track or {}).get("card_receipt")
+    if receipt is not None:  # never fabricated: absent stays absent -> gate refuses
+        request["card_receipt"] = receipt
     env = dispatcher(
         model=request["model"], request=request,
         save_dir=(track or {}).get("save_dir", "word-timings"),
@@ -518,6 +529,7 @@ def provide_word_timings(track: Dict[str, Any], *,
                          whisper_session: Optional[WhisperSession] = None,
                          cloud: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
                          ledger_db: str = "", run_id: str = "",
+                         card_receipt: Optional[Dict[str, Any]] = None,
                          ) -> Dict[str, Any]:
     """ONE transcription step for lyric check / captions / lip-sync windows /
     talk-sing split. Tier 1 -> 2 -> 3, receipt records the source.
@@ -547,7 +559,8 @@ def provide_word_timings(track: Dict[str, Any], *,
     # ── tier 1 (dispatch path) ──
     try:
         got = fetch_suno_timestamped_lyrics(
-            track, dispatcher=dispatcher, ledger_db=ledger_db, run_id=run_id)
+            track, dispatcher=dispatcher, ledger_db=ledger_db, run_id=run_id,
+            card_receipt=card_receipt)
         try:
             words = normalize_aligned_words(got["words"])
         except LyricTimingError:
@@ -618,7 +631,10 @@ def _selftest():
         json.dump({"alignedWords": [{"word": "hello", "startS": 1.0,
                                      "endS": 1.4}]}, f)
 
+    sent = []
+
     def fake_dispatcher(**kw):
+        sent.append(kw["request"])
         return {"outcome": "ok", "reason_code": "KIE_DISPATCH_OK",
                 "evidence": {"saved_paths": [doc]}}
 
@@ -628,6 +644,20 @@ def _selftest():
     assert got["timings"]["local_model_loads"] == 0
     assert got["timings"]["words"][0]["word"] == "hello"
     print("ok lyric_timing selftest: tier 1 without local loads")
+
+    # Card receipt threads into the timing request; the real card gate
+    # passes it, and a receipt-less request still refuses CARD_UNANSWERED.
+    from kie_dispatch import kie_dispatch as KD
+    card = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
+                        "length": 60, "video_model": "MiniMax H3 768P"},
+            "who": "selftest", "at": "2026-10-08T09:00:00Z"}
+    provide_word_timings({"task_id": "t1", "audio_id": "a1"},
+                         dispatcher=fake_dispatcher, card_receipt=card)
+    assert sent[-1]["card_receipt"] is card
+    assert KD.card_gate_refusal(sent[-1]) is None
+    assert "card_receipt" not in sent[0]
+    assert KD.card_gate_refusal(sent[0])["reason_code"] == "CARD_UNANSWERED"
+    print("ok lyric_timing selftest: card receipt threaded; gate still refuses without one")
     return 0
 
 

@@ -14,7 +14,8 @@
     "pre_presentation_capture.PRESENTATION_TYPE",
     "pre_presentation_capture.WANT_SALES_CHECKOUT",
     "pre_presentation_capture.WANT_VSL_PAGE",
-    "pre_presentation_capture.WANT_EMAIL_SEQUENCES"
+    "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+    "pre_presentation_capture.WANT_MOTION_GRAPHICS"
   ],
   "migration": {
     "from_version": 1,
@@ -242,6 +243,35 @@
       "legacy_aliases": [
         "deck_brief.EMAIL_SEQUENCES_DECLINED_REASON",
         "EMAIL_SEQUENCES_DECLINED_REASON"
+      ]
+    },
+    {
+      "id": "want_motion_graphics",
+      "canonical_path": "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "legacy_aliases": [
+        "deck_brief.WANT_MOTION_GRAPHICS",
+        "WANT_MOTION_GRAPHICS"
+      ]
+    },
+    {
+      "id": "motion_graphics_declined_reason",
+      "canonical_path": "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": [
+        "deck_brief.MOTION_GRAPHICS_DECLINED_REASON",
+        "MOTION_GRAPHICS_DECLINED_REASON"
       ]
     },
     {

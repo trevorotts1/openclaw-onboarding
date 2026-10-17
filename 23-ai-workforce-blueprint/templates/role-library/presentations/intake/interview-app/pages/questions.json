@@ -5,7 +5,7 @@
   "question_set": "standard",
   "source": "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate. (deployed-r2/public/index.html is PRES-005-owned and server-driven — not regenerated.)",
   "contract_version": 2,
-  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 23.",
+  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 25.",
   "questions": [
     {
       "id": "presentation_type",
@@ -255,6 +255,39 @@
       "storeOn": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
       "conditional_on": {
         "id": "want_email_sequences",
+        "equals": "no"
+      }
+    },
+    {
+      "id": "want_motion_graphics",
+      "order": 11.4,
+      "kind": "enum",
+      "prompt": "Would you like <span class=\"emph\">motion graphics</span> in this deck: short video pieces embedded in the deck file for up to two slides?",
+      "help": "Default no. A yes elects motion: each piece is embedded in the deck file itself, with the designed slide as that piece's still image, and the webinar video uses the same pieces. Playback inside PowerPoint is not promised.",
+      "label": "Motion graphics",
+      "required": true,
+      "storeOn": "pre_presentation_capture.WANT_MOTION_GRAPHICS",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, add motion graphics to the deck",
+        "no": "No thank you"
+      }
+    },
+    {
+      "id": "motion_graphics_declined_reason",
+      "order": 11.45,
+      "kind": "text",
+      "prompt": "Understood, no motion graphics. In your own words, why not? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked only when you declined motion graphics. Stored word-for-word as your waiver, an empty answer cannot be accepted.",
+      "label": "Why no motion graphics",
+      "placeholder": "e.g. still slides are fine for this talk",
+      "required": true,
+      "storeOn": "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON",
+      "conditional_on": {
+        "id": "want_motion_graphics",
         "equals": "no"
       }
     },
