@@ -12,6 +12,16 @@ cannot mint the echo fields honestly. This translator holds both sides:
 it takes the S49 page-request it already owns plus S82's two guaranteed
 inputs and emits exactly one page-result 1.0 document.
 
+The page-request echo source dual-accepts schema 1.0 and 1.1 under the
+prompt-policy pair rule (adoption map section 1.6): a 1.1 request must
+carry a non-empty prompt_policy_id citation, a 1.0 request must not
+carry the field, and any other schema_version is refused by name. The
+citation is accepted as a citation only: it is never echoed into the
+emitted page-result (whose 1.0 field set is closed) and never read as
+selecting anything. For this role the policy linkage is proven at
+receipts acceptance (the Q11 prompt record the aggregator validates),
+not at request acceptance.
+
 FAIL-CLOSED discipline, in this order:
   1. All three inputs must parse and carry their contract's required
      structure. A missing block or field is refused BY NAME; nothing is
@@ -108,8 +118,32 @@ def _require_fields(doc: Any, fields: Any, what: str) -> Dict[str, Any]:
 
 def _check_request(req: Any) -> Dict[str, Any]:
     req = _require_fields(req, _REQUEST_FIELDS, "page-request")
-    if req["schema_version"] != "1.0":
-        raise TranslationError("page-request schema_version is not 1.0")
+    # Prompt-policy adoption (map section 1.6): the pair rule below is
+    # the one the landed dispatch switch enforces in
+    # dispatch_launch.validate_request, in the same words: a "1.1"
+    # request must carry a non-empty prompt_policy_id, and a "1.0"
+    # request must not carry the field at all (the Q12 encoding:
+    # absence is the only encoding of "no policy", never null). The
+    # citation is pair-checked here and nowhere else in this module;
+    # refusing an id no registry entry carries is a registry-layer act
+    # at dispatch and at the Q11 aggregator (map section 4), not an
+    # echo-source act, so no registry read happens here.
+    version = req["schema_version"]
+    if version not in ("1.0", "1.1"):
+        raise TranslationError(
+            f"page-request schema_version is {version!r}; this "
+            "translator dual-accepts 1.0 and 1.1 echo sources only")
+    if version == "1.1":
+        pid = req.get("prompt_policy_id")
+        if not isinstance(pid, str) or not pid.strip():
+            raise TranslationError(
+                "a 1.1 page-request must carry a non-empty "
+                "prompt_policy_id (the 1.1 label exists to carry the "
+                "field)")
+    elif "prompt_policy_id" in req:
+        raise TranslationError(
+            "prompt_policy_id requires page-request schema_version "
+            "1.1 (the 1.0 schema forbids the field)")
     if req["page_role"] != "thank_you":
         raise TranslationError(
             f"page-request page_role is {req['page_role']!r}; this "

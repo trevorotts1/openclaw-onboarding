@@ -42,18 +42,21 @@ After building a workflow, do NOT say "done." STEPS:
   1. Send the verbatim client announce: "I've built the workflow. Before I call it done,
      I'm running an independent QC agent to verify it against the checklist item-by-item.
      One moment." (via openclaw message send --channel telegram)
-  2. Spawn an independent MiniMax QC sub-agent (via sessions_send, verify model available
-     first — prefer minimax/minimax-m3 via OpenRouter or minimax-m3:cloud; fall back to
-     next independent high-reasoning model and record which was used).
+  2. Spawn an independent QC sub-agent on a DIFFERENT model than the build agent (via
+     sessions_send): use the client's selected QC model, or their configured default model
+     where it differs from the build model; verify the chosen model is configured +
+     reachable before spawning; if no independent model is available, ask the client —
+     never silently QC on the build model itself; record which model was used (see
+     INSTRUCTIONS.md Step 9.2).
   3. QC sub-agent runs caf workflows export <id> + qc-built-workflow.sh <id> item-by-item
-     (WF-1..WF-21). Returns explicit PASS/FAIL + observed vs expected value per item.
+     (WF-1..WF-22). Returns explicit PASS/FAIL + observed vs expected value per item.
   4. All-PASS → proceed to step 5. Any FAIL → fix + re-run QC.
      HALLUCINATION FAIL (agent claimed X but QC-observed NOT-X) → HARD STOP →
      mandatory redo on high-reasoning model thinking=HIGH → full re-QC → disclose to client →
      log to build-events ledger.
   5. ONLY AFTER ALL-PASS: tell client "QC passed" and hand the FILLED CHECKLIST (every WF
      item with its PASS + observed value) to the client for independent verification.
-NEVER declare a workflow done before independent MiniMax QC passes + filled checklist handed over.
+NEVER declare a workflow done before independent QC (different model than the build agent) passes + filled checklist handed over.
 
 Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP.
 

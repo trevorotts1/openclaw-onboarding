@@ -66,6 +66,13 @@ What is proven:
      independent-review cross-check (independent_review=true requires
      a named reviewer_session different from author_session) exactly
      as collect_launch_receipts.validate_result does.
+ 10. Dual-accept (PP-Y2 adoption map section 1.1): a 1.1 request
+     carrying its prompt_policy_id citation passes the bridge end to
+     end and the citation lands in the run's intake launch block;
+     a 1.1 request without the citation, a 1.0 request carrying it,
+     an unknown schema_version, and a launch record that disagrees
+     with the request on the citation each refuse by name at exit 2
+     before anything is staged.
 
 Run: python3 tests/test_landing_bridge.py [-v]
 """
@@ -401,6 +408,117 @@ class TestFailClosed(LandingBridgeCase):
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("route_graph_hash", proc.stdout)
         self.assertFalse(result_path.exists())
+
+
+class TestPromptPolicyDualAccept(LandingBridgeCase):
+    """PP-Y2 adoption map section 1.1: the bridge dual-accepts the 1.0
+    shape and the 1.1 citation shape under the pair rule, and refuses
+    every pair violation for its actual defect before staging. The
+    1.1 request below is the shape dispatch_launch.build_requests
+    emits once a role flips ready with a policy on the record: the
+    real builder runs on the citation-carrying fixture record and
+    the emitted landing request is then stamped exactly as that
+    builder stamps it (schema_version 1.1, the record's
+    prompt_policy_id verbatim). The registry of record is staged
+    beside the fake Skill 71 tree in the repo's own layout, because
+    the real launch_context verifies the citation against it."""
+
+    POLICY = "kie-rule-12-band"
+
+    def stage_registry_beside_fake(self):
+        dest = (self.td / "shared-utils" / "signature_launch"
+                / "domain")
+        dest.mkdir(parents=True)
+        shutil.copyfile(
+            REPO_ROOT / "shared-utils" / "signature_launch" / "domain"
+            / "prompt-policy-registry.json",
+            dest / "prompt-policy-registry.json")
+
+    def citation_record(self):
+        self.launch["schema_version"] = "1.1"
+        self.launch["prompt_policy_id"] = self.POLICY
+        self.launch_path.write_bytes(dump(self.launch))
+
+    def request_11(self) -> Path:
+        self.citation_record()
+        req_path = self.make_request()
+        doc = json.loads(req_path.read_text(encoding="utf-8"))
+        doc["schema_version"] = "1.1"
+        doc["prompt_policy_id"] = self.POLICY
+        req_path.write_bytes(dump(doc))
+        return req_path
+
+    def mutate_request(self, req_path: Path, **changes) -> Path:
+        doc = json.loads(req_path.read_text(encoding="utf-8"))
+        doc.update(changes)
+        req_path.write_bytes(dump(doc))
+        return req_path
+
+    def test_valid_11_request_passes_the_bridge(self):
+        self.write_bridge_config()
+        self.stage_registry_beside_fake()
+        req_path = self.request_11()
+        proc, result_path = self.run_bridge_directly(req_path,
+                                                     self.run_dir)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue(result_path.exists())
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        request = json.loads(req_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipts_mod.validate_result(result, request),
+                         [])
+        intake = json.loads((self.run_dir / "intake.json")
+                            .read_text(encoding="utf-8"))
+        block = intake["launch"]
+        self.assertEqual(block["schema_version"], "1.1")
+        self.assertEqual(block["prompt_policy_id"], self.POLICY)
+        staged = json.loads((self.run_dir / "page-request.json")
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(staged["schema_version"], "1.1")
+        self.assertEqual(staged["prompt_policy_id"], self.POLICY)
+
+    def assert_refused_before_staging(self, proc, result_path, needle):
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn(needle, proc.stdout)
+        self.assertFalse(result_path.exists())
+        self.assertFalse(self.run_dir.exists())
+
+    def test_11_without_citation_is_refused_by_name(self):
+        self.write_bridge_config()
+        req_path = self.mutate_request(self.make_request(),
+                                       schema_version="1.1")
+        proc, result_path = self.run_bridge_directly(req_path,
+                                                     self.run_dir)
+        self.assert_refused_before_staging(proc, result_path,
+                                           "prompt_policy_id")
+
+    def test_10_with_citation_is_refused_by_name(self):
+        self.write_bridge_config()
+        req_path = self.mutate_request(self.make_request(),
+                                       prompt_policy_id=self.POLICY)
+        proc, result_path = self.run_bridge_directly(req_path,
+                                                     self.run_dir)
+        self.assert_refused_before_staging(proc, result_path,
+                                           "prompt_policy_id")
+
+    def test_unknown_schema_version_is_refused_by_name(self):
+        self.write_bridge_config()
+        req_path = self.mutate_request(self.make_request(),
+                                       schema_version="2.0")
+        proc, result_path = self.run_bridge_directly(req_path,
+                                                     self.run_dir)
+        self.assert_refused_before_staging(proc, result_path,
+                                           "schema_version")
+
+    def test_record_citation_mismatch_is_refused_by_name(self):
+        self.write_bridge_config()
+        req_path = self.request_11()
+        record = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        record.pop("prompt_policy_id")
+        self.launch_path.write_bytes(dump(record))
+        proc, result_path = self.run_bridge_directly(req_path,
+                                                     self.run_dir)
+        self.assert_refused_before_staging(proc, result_path,
+                                           "prompt_policy_id")
 
 
 class TestSchemaFallback(LandingBridgeCase):

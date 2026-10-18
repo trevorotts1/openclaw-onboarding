@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Normalized purchase event - internal, not vendor payload",
+  "properties": {
+    "schema_version": {
+      "const": "1.2"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "location_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "enum": [
+        "purchase_observed",
+        "payment_updated",
+        "refund_observed",
+        "subscription_updated"
+      ]
+    },
+    "native_order_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "native_transaction_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contact_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "v1.1 (CR-S44-001, ruled by S49): OPTIONAL opaque native contact identifier — no email, no name, no PII. The auditable binding for the A21 suppression recheck and fulfillment initiation. Absent in v1.0 events; consumers must tolerate absence and fall back to the named native read-back join."
+    },
+    "parent_order_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "v1.2 (CR-S44-003, ruled by S49): OPTIONAL opaque provider order identity of the initial order — populated ONLY when the provider's native read-back on a later extra-purchase event actually carries it. Never synthesized, never derived, never required, and never load-bearing for dedupe, grants, or revocations. Absent in v1.0 and v1.1 events; consumers must tolerate absence."
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payment_status": {
+      "enum": [
+        "pending",
+        "succeeded",
+        "failed",
+        "requires_customer_action",
+        "refunded",
+        "partially_refunded",
+        "unknown"
+      ]
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Purchase line",
+        "properties": {
+          "native_line_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "offer_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slot": {
+            "enum": [
+              "main",
+              "bump",
+              "upsell_1",
+              "downsell_1",
+              "upsell_2"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 1
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "entitlement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "native_line_ref",
+          "offer_id",
+          "slot",
+          "currency",
+          "amount_minor",
+          "entitlement_ids"
+        ]
+      }
+    },
+    "evidence_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "test_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "provider",
+    "event_id",
+    "event_type",
+    "native_order_ref",
+    "native_transaction_ref",
+    "occurred_at",
+    "received_at",
+    "payment_status",
+    "line_items",
+    "evidence_ref",
+    "test_only"
+  ]
+}

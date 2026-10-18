@@ -273,3 +273,23 @@ below pass as placed.
 
 The events package (`shared-utils/signature_launch/events`, 44
 tests) is untouched by this successor.
+
+---
+
+## 2026-10-18 — CR-S82-003 fulfillment_map wiring placement (candidate s44/siglaunch-crs82003-v12)
+
+Staged by the S44 room under MAIN's closure sequence (2026-10-18).
+Source: `rooms/S44/work/fulfillment_map/`, copied byte-identical
+(hashes computed in-process at placement).
+
+| File | Change | SHA-256 (as placed) |
+|---|---|---|
+| `fulfillment_map/fulfillment_map.py` | CR-S82-003 wiring, CLOSED both sides 2026-10-17: the producer now consumes S49's landed top-level `delivery_bindings` (launch schema 1.2, landed via train #2235 / PR #2222) for GRANTED entitlements only. ev1 entitlement-version string untouched. This closes A13's delivery_url limitation. | `760382fe8147ad7546d3243c65a7d96b04de488159ee1d00dcf47c70ca54c79a` |
+| `fulfillment_map/test_fulfillment_map.py` | CR-S82-003 coverage (delivery_bindings consumption; granted-only). | `b7cf6b9be4b9deb8ccbf60213eb78a6888a641391ee72a1f7889e718ffc0f629` |
+
+### Test result (`python3 -m unittest discover`, this package)
+
+Packaged tree, run under BOTH TMPDIR conditions (room scratch TMPDIR
+and unset), identical results each way: **21/21 OK**. S82's acceptance
+consumption re-run against this wiring passed 41/41 at closure of the
+CR (2026-10-17, recorded in the room's CR-S82-003 evidence).

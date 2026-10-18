@@ -52,7 +52,7 @@ fi
 # Non-mechanical items (WF-1,2,8,9,10,11,13,14,16,17,19,20) require human/LLM review;
 # they are noted in the JSON output as "requires_human_review".
 #
-# Invoked by the MiniMax QC sub-agent during Step 9 of INSTRUCTIONS.md.
+# Invoked by the independent QC sub-agent (different model than the build agent — INSTRUCTIONS.md Step 9.2) during Step 9.
 set -euo pipefail
 
 # ── Arg parsing ───────────────────────────────────────────────────────────────
@@ -581,10 +581,10 @@ done
 # WF-19 is a MECHANICAL item on a --conversational build (trinity hard gate) and a
 # human-review item otherwise — place it in the right display bucket accordingly.
 if [ "$CONVERSATIONAL" -eq 1 ]; then
-  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-19" "WF-21")
+  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-19" "WF-21")
   HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-20")
 else
-  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-21")
+  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21")
   HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
 fi
 

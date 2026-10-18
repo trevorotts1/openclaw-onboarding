@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Fixture-level tests for the S49-08 Skill 78 echo-correcting wrapper.
+"""Fixture-level tests for the S49 product_selection dispatch seam.
 
 Cases:
-  A  End-to-end happy path through the wrapper CLI, exactly as dispatch
-     invokes an adapter: REAL Skill 78 plan builder + REAL emitter from
-     main (vendored under ../reference-s78), S78 golden-three-option
-     launch record, mappings fixture in the S79 delivered row shape.
-     The emitted page-result must pass collect_launch_receipts'
-     validate_result against the request (S49's own receipt path) and
-     the packet page-result 1.0 JSON schema.
-  A2 The same result accepted through dispatch_launch.executor_from_config,
-     the real dispatch adapter seam.
+  A  End-to-end happy path through the shipped config's product_selection
+     entry, exactly as dispatch invokes an adapter: since the config
+     retirement re-point the entry is Skill 78's native emitter chain
+     (REAL plan builder + REAL emitter from the Skill 78 tree on main),
+     driven with the S78 golden-three-option launch record. The emitted
+     page-result must pass collect_launch_receipts' validate_result
+     against the request (S49's own receipt path) and the packet
+     page-result 1.0 JSON schema.
+  A2 The same shipped entry accepted through
+     dispatch_launch.executor_from_config, the real dispatch adapter seam.
   B  checkout_targets enrichment from S79's DELIVERED rows verbatim
      (SBX-PREMIUM / SBX-ESSENTIAL native IDs of record), unit level.
   C  Fail-closed: a mappings input missing one offer names that offer
@@ -41,6 +42,8 @@ GOLDEN_REC = S78_DIR / "fixtures" / "golden-three-option" / "recommendation.json
 SBX_LAUNCH = HERE / "fixtures" / "finalized-launch-record-signature-launch-l4.json"
 SBX_MAPPINGS = HERE / "fixtures" / "mappings-sbx-verbatim.json"
 WRAPPER = STAGE / "selection_wrapper.py"
+CONFIG = HERE.parent / "launch-adapters.example.json"
+LAUNCH_SLOT = "<per-launch: approved launch record JSON>"
 
 sys.path.insert(0, str(S49_SCRIPTS))
 sys.path.insert(0, str(STAGE))
@@ -90,26 +93,49 @@ def run_cli(req_path, res_path, work_dir, launch, mappings, extra=()):
     return subprocess.run(argv, capture_output=True, text=True, timeout=600)
 
 
+def shipped_selection_entry(launch_path):
+    """The shipped config's product_selection entry, with the example
+    /path/to prefix and the per-launch launch-record slot substituted
+    for this tree (the same substitutions deployment makes)."""
+    config = json.loads(CONFIG.read_text())
+    spec = config["adapters"]["product_selection"]
+    root = str(HERE.parents[1])
+    command = [part.replace("/path/to", root).replace(LAUNCH_SLOT, str(launch_path))
+               for part in spec["command"]]
+    return {"command": command, "timeout_s": spec.get("timeout_s", 600)}
+
+
 def case_a(tmp):
+    # Config retirement re-point (S49 config retirement candidate):
+    # case A/A2 previously drove the S49 echo-correcting wrapper CLI.
+    # Skill 78's native emitter fix landed in PR #2232, the wrapper
+    # retired as the seam mechanism (S49 retirement record,
+    # 2026-10-17), and the shipped config's product_selection entry now
+    # names the native emitter chain, so case A/A2 drive that shipped
+    # entry exactly as dispatch does. Cases B, C and D are unchanged:
+    # the checkout_targets enrichment library and the wrapper CLI
+    # remain shipped, and C/D still exercise them.
     launch = json.loads(GOLDEN.read_text())
     mains = [o["offer_id"] for o in launch["offers"] if o["slot"] == "main"]
     req = make_request(launch, mains, "TEST-LAUNCH-S78-GOLDEN-SELECTION")
     work = tmp / "a"; work.mkdir()
     req_p, res_p = work / "request-product_selection.json", work / "result-product_selection.json"
     req_p.write_text(json.dumps(req, indent=2) + "\n")
-    proc = run_cli(req_p, res_p, work, GOLDEN, HERE / "fixtures" / "mappings-golden.json",
-                   extra=("--recommendation", str(GOLDEN_REC)))
-    say("A wrapper exits 0", proc.returncode == 0, proc.stderr.strip()[:300])
+    entry = shipped_selection_entry(GOLDEN)
+    argv = [part.replace("{request}", str(req_p)).replace("{result}", str(res_p))
+            .replace("{work_dir}", str(work)) for part in entry["command"]]
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+    say("A native adapter command exits 0", proc.returncode == 0, proc.stderr.strip()[:300])
     if proc.returncode != 0:
         return
     res = json.loads(res_p.read_text())
     say("A result has exactly the 17 page-result fields",
         sorted(res.keys()) == sorted(sw.PAGE_RESULT_FIELDS),
         f"{len(res)} fields")
-    say("A outcome field is projected away", "outcome" not in res)
-    say("A page_id corrected from the request", res["page_id"] == req["page_id"],
-        f"emitter hardcoded 'selection', result carries {res['page_id']!r}")
-    say("A input_hash corrected from the request", res["input_hash"] == req["input_hash"])
+    say("A outcome field is not emitted", "outcome" not in res)
+    say("A page_id echoed from the request", res["page_id"] == req["page_id"],
+        f"native emitter echoes the request, result carries {res['page_id']!r}")
+    say("A input_hash echoed from the request", res["input_hash"] == req["input_hash"])
     fails = rc.validate_result(res, req)
     say("A collect_launch_receipts.validate_result passes", fails == [], "; ".join(fails))
     try:
@@ -121,29 +147,22 @@ def case_a(tmp):
         say("A packet page-result 1.0 JSON schema passes", False, str(exc)[:200])
     plan = json.loads((work / "selection-plan.json").read_text())
     say("A real plan builder ran (plan outcome 'plan')", plan.get("outcome") == "plan")
-    sel = json.loads((work / "selection-request.enriched.json").read_text())
-    tg = {t["offer_id"]: t for t in sel["checkout_targets"]}
-    say("A enriched checkout_targets cover all 3 main offers",
-        sorted(tg) == ["MAIN-ELITE", "MAIN-ESS", "MAIN-PRO"],
-        f"MAIN-PRO -> {tg.get('MAIN-PRO', {}).get('native_product_id')}/{tg.get('MAIN-PRO', {}).get('native_price_id')}")
+    # The retired wrapper's enriched-selection-request artifact check
+    # is gone with the wrapper's seam role: the native chain produces
+    # no such artifact. checkout_targets enrichment correctness stays
+    # covered by cases B and C against the shipped enrichment library.
     say("A proof is honest L1, no independent review claimed",
         res["proof_class"] == "L1" and res["independent_review"] is False
         and res["reviewer_session"] is None and res["status"] == "locally_verified")
-    # Case A2: the real dispatch adapter seam accepts the wrapper.
-    cfg = {"adapters": {"product_selection": {"command": [
-        sys.executable, str(WRAPPER), "--request", "{request}", "--result", "{result}",
-        "--work-dir", "{work_dir}", "--launch", str(GOLDEN),
-        "--mappings", str(HERE / "fixtures" / "mappings-golden.json"),
-        "--s78-dir", str(S78_DIR),
-        "--author-session", "s49-08-test-author",
-        "--recommendation", str(GOLDEN_REC)], "timeout_s": 600}}}
+    # Case A2: the real dispatch adapter seam accepts the shipped entry.
+    cfg = {"adapters": {"product_selection": shipped_selection_entry(GOLDEN)}}
     executor = dl.executor_from_config(cfg, work)
     try:
         out = executor(req)
-        say("A2 dispatch executor_from_config accepts the wrapper result",
+        say("A2 dispatch executor_from_config accepts the shipped entry result",
             out["request_id"] == req["request_id"])
     except Exception as exc:
-        say("A2 dispatch executor_from_config accepts the wrapper result", False, str(exc)[:300])
+        say("A2 dispatch executor_from_config accepts the shipped entry result", False, str(exc)[:300])
 
 
 def case_b():

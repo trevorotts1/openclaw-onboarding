@@ -162,3 +162,33 @@ passes in the branch layout under both TMPDIR conditions.
 Post-merge layout harness (this package beside the real domain
 files from current main, byte-verified `311d0482…` / `c346bbb5…`),
 TMPDIR unset: **44/44 OK** (17 original + 27 dual).
+
+---
+
+## 2026-10-18 — schema v1.2 dual-acceptance placement (candidate s44/siglaunch-crs82003-v12)
+
+Staged by the S44 room under MAIN's closure sequence (2026-10-18).
+Source: `rooms/S44/work/events/`, copied byte-identical (hashes below
+computed in-process at placement).
+
+| File | Change | SHA-256 (as placed) |
+|---|---|---|
+| `events.py` | schema candidate list gains v1.2: the vendored `purchase-event.v1.2.schema.json` is registered by its own `schema_version` const ("1.2"), and validation dispatches across 1.0 / 1.1 / 1.2, fail-closed on any other version. `parent_order_ref` is acceptance-only at this layer: optional, version-scoped, never load-bearing, never stamped by the normalizer (producer stamping is the later CR-S44-003 step, gated on consumer acceptance). | `fdab91a07127298eb0e847704131cb357acab409e09a24730a63e57460fdbe7e` |
+| `purchase-event.v1.2.schema.json` | NEW: vendored schema 1.2 as landed via PR #2190 (S49's C9 note). | `4f9e8122b2767d098ab980be9f33e4503bb1f9e3cc4f4bda17a3990e325378c0` |
+| `test_events_dual.py` | dual/triple-version dispatch coverage updated for the 1.2 candidate. | `dd3dbfad0cc7c1194f85f7ab168a28c22300b62427794699b0249cca33ffc9b4` |
+| `test_events_v12.py` | NEW: v1.2 acceptance suite (version-scoped `parent_order_ref`; acceptance only, no stamping). | `8a8b736a8a368f64f2105f8034bd9fdc7a6fcdb4bf97c9564b832a7c7f2600c5` |
+| `purchase-event.schema.json`, `purchase-event.v1.1.schema.json`, `test_events.py` | unchanged | `c346bbb5…fd20`, `311d0482…806a`, `f388e6fe…f22` |
+
+### Test result (`python3 -m unittest discover`, this package)
+
+Run under BOTH TMPDIR conditions (room scratch TMPDIR and unset),
+identical results each way:
+
+- Work layout (`rooms/S44/work/events`): **63/63 OK**.
+- Branch layout as placed: **62/63**, the one error being the known,
+  previously disclosed `DomainSiblingLayoutTests` FileNotFoundError —
+  the test copies its fixture schemas from a `domain-src/` directory
+  that exists only in the room work layout (same environmental
+  artifact, same disclosure, as the landed v1.1 successor).
+- Post-merge layout harness (this package with `domain-src/` in
+  place): **63/63 OK** under both TMPDIR conditions.

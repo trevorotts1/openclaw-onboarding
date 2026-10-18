@@ -86,12 +86,13 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 ### I-2: Workflow Build Checklist Template (references/workflow-build-checklist-template.md)
 
 - [ ] File exists at references/workflow-build-checklist-template.md
-- [ ] All 21 WF items present (WF-1 through WF-21)
+- [ ] All 22 WF items present (WF-1 through WF-22; WF-22 appended 2026-09-03 send-integrity gate, no renumbering)
 - [ ] WF-4 trigger active flag (WF-ACTIVE GATE) present with explanation
 - [ ] WF-12 SMS From-number gate present
 - [ ] WF-20 hallucinated artifacts detector present
 - [ ] WF-21 snapshot gate present
 - [ ] Skill 41 cross-reference table present (superset mapping)
+- [ ] Signature Launch addendum present (S44-owned SL-1..SL-9 purchase-automation checks, after the cross-reference)
 - [ ] Dual-purpose noted (agent self-check + client hand-over)
 
 ### I-3: QC GATE (INSTRUCTIONS.md Step 9)
@@ -99,7 +100,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] Step 9 QC GATE present in INSTRUCTIONS.md after workflow build instructions
 - [ ] Verbatim client announce template present: "I've built the workflow. Before I call it
   done, I'm running an independent QC agent to verify it against the checklist item-by-item."
-- [ ] Independent MiniMax sub-agent dispatch documented (sessions_send, minimax/minimax-m3)
+- [ ] Independent QC sub-agent dispatch documented (sessions_send; reviewer model = client's selected QC model or configured default where it differs from the build model; availability verified before spawn; model used recorded — INSTRUCTIONS.md Step 9.2)
 - [ ] Model-availability verification before spawn documented
 - [ ] caf workflows export + qc-built-workflow.sh invocation documented
 - [ ] Per-item PASS/FAIL verdict requirement documented
@@ -122,6 +123,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] WF-12 SMS From-number non-empty asserted
 - [ ] WF-15 delivery chain linkage asserted
 - [ ] WF-18 + WF-21 snapshot existence asserted
+- [ ] WF-22 email body non-empty + ≥200 rendered chars asserted (SEND_INTEGRITY — blank-body gate)
 - [ ] Build-events ledger append present
 - [ ] Distinct from qc-convert-and-flow.sh (install-level QC)
 
@@ -142,8 +144,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 
 - [ ] PLAN-MODE-before-build rule present in AGENTS.md block (think→outline→checklist→
   recommendations→gating questions)
-- [ ] QC-GATE rule present in AGENTS.md block (independent MiniMax QC + checklist hand-over
-  before done)
+- [ ] QC-GATE rule present in AGENTS.md block (independent QC on a different model than the build agent + checklist hand-over before done; no hardcoded QC provider)
 - [ ] Hallucination → reasoning-model-thinking-HIGH requirement present in AGENTS.md block
 
 ---

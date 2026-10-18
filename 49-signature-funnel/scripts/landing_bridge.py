@@ -5,7 +5,8 @@
 Why this exists (rooms/S49/s49-08-entrypoint-audit.md, landing row):
 Skill 71's launch-context import (scripts/launch_context.py +
 scripts/write_intake.py on trevorotts1/openclaw-onboarding main)
-validates the exact S49 page-request 1.0 and cross-checks the launch
+validates the exact S49 page-request (1.0, or 1.1 carrying its
+prompt_policy_id citation) and cross-checks the launch
 record, the route-graph hash, and the brand hash. It is VERIFIED format
 consumption, but it is NOT a bare adapter-config entry:
 
@@ -288,12 +289,30 @@ def check_request(request_path: Path) -> (Dict[str, Any], bytes):
             f"page-request: assigned_skill is "
             f"{req.get('assigned_skill')!r}; this bridge serves Skill "
             f"71 only")
-    if req.get("schema_version") != "1.0":
+    # Dual-accept (adoption map section 1.1, the PP-Y2 cure): the
+    # bridge accepts the 1.0 shape and the 1.1 shape carrying its
+    # prompt_policy_id citation, under the same pair rule the landed
+    # PP-T2 switch enforces in dispatch_launch.validate_request. Any
+    # other shape is refused for its actual defect, never by name
+    # alone; the import re-validates the request in full downstream.
+    version = req.get("schema_version")
+    if version not in ("1.0", "1.1"):
         raise BridgeError(
-            f"page-request: schema_version is "
-            f"{req.get('schema_version')!r}; Skill 71's launch-context "
-            "import consumes the frozen page-request 1.0, so dispatch "
-            "must keep handing it 1.0-shaped requests")
+            f"page-request: schema_version is {version!r}; Skill "
+            "71's launch-context import consumes the dual-accept "
+            "page-request (1.0, or 1.1 carrying prompt_policy_id), "
+            "so dispatch must hand it a 1.0 or 1.1 request")
+    if version == "1.1":
+        pid = req.get("prompt_policy_id")
+        if not isinstance(pid, str) or not pid.strip():
+            raise BridgeError(
+                "page-request: a 1.1 request must carry a non-empty "
+                "prompt_policy_id (the 1.1 label exists to carry "
+                "the field)")
+    elif "prompt_policy_id" in req:
+        raise BridgeError(
+            "page-request: prompt_policy_id requires request "
+            "schema_version 1.1 (the 1.0 schema forbids the field)")
     ref = req.get("route_graph_ref")
     if not isinstance(ref, str) or not ref.strip():
         raise BridgeError("page-request: route_graph_ref is missing")
@@ -555,8 +574,8 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
         raise BridgeError("launch record: the document is not a "
                           "JSON object")
     for field in ("tenant_id", "location_id", "launch_id", "revision",
-                  "brand_ref", "brand_hash", "route_graph_ref",
-                  "route_graph_hash"):
+                  "brand_ref", "brand_hash", "prompt_policy_id",
+                  "route_graph_ref", "route_graph_hash"):
         if launch.get(field) != req.get(field):
             raise BridgeError(
                 f"launch record: {field} is {launch.get(field)!r} but "

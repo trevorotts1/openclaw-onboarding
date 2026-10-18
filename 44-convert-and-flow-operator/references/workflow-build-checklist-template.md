@@ -1,4 +1,7 @@
-# Skill 44 — Workflow Build Checklist Template (WF-1..WF-21)
+# Skill 44 — Workflow Build Checklist Template (WF-1..WF-22)
+
+WF-22 was appended on 2026-09-03 as a send-integrity gate (see its section below); items were
+NOT renumbered — WF numbers are cited by scripts, QC.md, and stage gates.
 
 ## Purpose
 
@@ -23,7 +26,7 @@ Copy this template for each new workflow build. Fill all `[...]` placeholders.
 | GHL Location ID | `[FILL: location id]` |
 | Build Date | `[FILL: YYYY-MM-DD]` |
 | Build Agent | `[FILL: agent name + model]` |
-| QC Agent | `[FILL: MiniMax model slug used for QC, e.g. minimax/minimax-m3]` |
+| QC Agent | `[FILL: model used for QC — must differ from Build Agent model above; record the resolved model identity]` |
 | Client PUBLISH decision | `[FILL: DRAFT / LIVE — from gating question 1 answer]` |
 | Client RE-ENTRY decision | `[FILL: ONCE / ALLOW-MULTIPLE — from gating question 2 answer]` |
 | Snapshot path | `[FILL: ~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<loc>/<wf-id>/<ts>.json]` |
@@ -248,6 +251,18 @@ For every artifact the build agent CLAIMED to have set, independently confirmed 
 - Build is reversible via `caf workflows restore <snapshot-path>`: `[ ] CONFIRMED`
 - Status: `[ ] PASS  [ ] FAIL`
 
+### WF-22 — Email Body Non-Empty (SEND INTEGRITY)
+
+Added 2026-09-03 (SEND_INTEGRITY_CODE_GATES_V1) after ~3,000 emails went out with empty
+bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
+
+- Expected: every email-type action node's body/html renders to non-empty text AND at least
+  200 rendered chars. No email nodes in the workflow → N/A.
+- Observed: `[FILL after QC: per-email-node rendered char counts, or N/A — no email nodes]`
+- Unparseable export → HUMAN REVIEW: the QC agent opens each email step and confirms the
+  body is present and is the intended copy. Never an assumed pass.
+- Status: `[ ] PASS  [ ] FAIL  [ ] N/A`
+
 ---
 
 ## Overall QC Result
@@ -275,6 +290,7 @@ For every artifact the build agent CLAIMED to have set, independently confirmed 
 | WF-19 TRINITY | `[ ] PASS  [ ] FAIL  [ ] N/A` |
 | WF-20 No Hallucinated Artifacts | `[ ] PASS  [ ] FAIL` |
 | WF-21 Snapshot | `[ ] PASS  [ ] FAIL` |
+| WF-22 Email Body Non-Empty | `[ ] PASS  [ ] FAIL  [ ] N/A` |
 
 **Final verdict:** `[ ] ALL-PASS — QC APPROVED  [ ] FAIL — see items above`
 
@@ -282,7 +298,7 @@ For every artifact the build agent CLAIMED to have set, independently confirmed 
 
 ## Cross-reference: Skill 41 12-Point Checklist
 
-This WF-1..WF-21 checklist is a SUPERSET of Skill 41's 12-point verification-checklist.md,
+This WF-1..WF-22 checklist is a SUPERSET of Skill 41's 12-point verification-checklist.md,
 extended for caf-built workflows with Skill 44-specific gates (trigger active state,
 re-entry/publish gating questions, SMS From-number, delivery-chain linkage, hallucination
 detection, and snapshot verification). The mapping is:
@@ -302,5 +318,25 @@ detection, and snapshot verification). The mapping is:
 | 11. Re-entry / stop-on-response / time windows | WF-6, WF-16 |
 | 12. Test with test contact | WF-20 (independent read via export) |
 
-For caf-built workflows, use THIS checklist (WF-1..WF-21) as the authoritative source.
+For caf-built workflows, use THIS checklist (WF-1..WF-22) as the authoritative source.
 Skill 41's 12-point checklist applies to Build-with-AI (manual browser) builds only.
+
+---
+
+## Signature Launch addendum (S44-owned checks — purchase automations)
+
+These checks are owned by the Signature Launch purchase-automation work (S44) and apply to
+purchase-handler, fulfillment, suppression, and enrollment workflows built for a launch.
+They sit alongside WF-1..WF-22 and do not change any WF item's meaning for other consumers.
+
+| # | Check | Expected | Observed | Status |
+|---|---|---|---|---|
+| SL-1 | Purchase-line completeness | Every line of the establishing order event (main + bump + later extras) has a corresponding grant path; no first-line-only shortcut | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-2 | Payment truth | Entry occurs only on verified native transaction status = succeeded; order submission alone never grants | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-3 | Re-entry | Saved allowMultiple matches the declared rule (purchase: distinct later transactions permitted; onboarding: per entitlement/journey; marketing: per campaign) — read from the export, not the plan | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-4 | No long waits in the purchase handler | The purchase handler contains no nurture-length waits; enrollment into long sequences is a separate downstream action | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-5 | Duplicate-event behavior | A repeated provider event produces no duplicate effects (inbox identity = tenant + provider + verified event id; never contact-only or order-only dedup) | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-6 | Buyer suppression | Buyer goal/completion tags (exact strings as provisioned) exit enrolled sequences, AND queued marketing sends recheck suppression at dispatch time | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-7 | Instant base fulfillment | Fulfillment initiation is created from the verified event itself and does not depend on a thank-you page visit | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-8 | Tenant identity | Workflow location, tags, and provisioning all belong to the request's tenant/location; no cross-tenant object is referenced | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
+| SL-9 | Variant/preview preservation | Approved subject-B / preview arrangements from the source plan are preserved (verified native split-test or approved draft-variant); nothing silently dropped | `[FILL after QC]` | `[ ] PASS  [ ] FAIL  [ ] N/A` |

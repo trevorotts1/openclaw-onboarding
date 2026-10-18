@@ -55,11 +55,16 @@ def v11_event(contact_ref="ghl-contact-abc123"):
 
 class SchemaInventoryTests(unittest.TestCase):
     def test_both_schemas_installed_and_sourced_from_lane_copies(self):
-        self.assertEqual(dual.SUPPORTED_SCHEMA_VERSIONS, ("1.0", "1.1"))
+        # extended at the v1.2 acceptance step (CR-S44-003): the
+        # vendored v1.2 copy registers beside the 1.0/1.1 copies
+        self.assertEqual(dual.SUPPORTED_SCHEMA_VERSIONS,
+                         ("1.0", "1.1", "1.2"))
         self.assertTrue(dual.SCHEMA_SOURCES["1.0"].endswith(
             "purchase-event.schema.json"))
         self.assertTrue(dual.SCHEMA_SOURCES["1.1"].endswith(
             "purchase-event.v1.1.schema.json"))
+        self.assertTrue(dual.SCHEMA_SOURCES["1.2"].endswith(
+            "purchase-event.v1.2.schema.json"))
 
 
 class V10UnchangedTests(unittest.TestCase):
@@ -128,7 +133,9 @@ class ContactRefTypeTests(unittest.TestCase):
 
 class FailClosedVersionTests(unittest.TestCase):
     def test_unknown_versions_fail_closed(self):
-        for bad in ("1.2", "2.0", "0.9", "", "v1.1", "1.10"):
+        # "1.2" left this list at the v1.2 acceptance step: it is an
+        # installed version now (test_events_v12.py pins its rules)
+        for bad in ("1.3", "2.0", "0.9", "", "v1.1", "1.10"):
             ev = v11_event()
             ev["schema_version"] = bad
             with self.assertRaises(Exception, msg=f"version={bad!r}"):
@@ -231,14 +238,15 @@ class DomainSiblingLayoutTests(unittest.TestCase):
     def test_module_loads_both_versions_from_domain_sibling(self):
         # Simulate the repo packaged layout: events/ beside domain/,
         # no vendored schema beside the module, no packet tree. The
-        # loader must take v1.1 from domain/purchase-event.schema.json
-        # and v1.0 from domain/purchase-event.v1.0.schema.json.
+        # loader must take the current version from the un-suffixed
+        # domain file and each preserved version from its versioned
+        # name. Extended at the v1.2 acceptance step: domain/ on main
+        # now carries v1.2 un-suffixed, v1.1 and v1.0 versioned.
         lane = Path(__file__).parent
-        # packaged layout (Lane B REPORT section 4B.4): the domain
-        # source is the real repo domain/ directory, this package's
-        # sibling in shared-utils/signature_launch/, holding the two
-        # domain files under their domain names
-        domain_src = Path(__file__).parent.parent / "domain"
+        # work-layout adaptation (Lane B REPORT section 4A.3): the
+        # domain source is the vendored domain-src/ copy beside this
+        # file, holding the domain files under their domain names
+        domain_src = lane / "domain-src"
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "events").mkdir()
@@ -246,15 +254,22 @@ class DomainSiblingLayoutTests(unittest.TestCase):
             shutil.copy(lane / "events.py", root / "events" / "events.py")
             shutil.copy(domain_src / "purchase-event.schema.json",
                         root / "domain" / "purchase-event.schema.json")
+            shutil.copy(domain_src / "purchase-event.v1.1.schema.json",
+                        root / "domain" / "purchase-event.v1.1.schema.json")
             shutil.copy(domain_src / "purchase-event.v1.0.schema.json",
                         root / "domain" / "purchase-event.v1.0.schema.json")
             spec = importlib.util.spec_from_file_location(
                 "events_domain_layout", root / "events" / "events.py")
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
-            self.assertEqual(mod.SUPPORTED_SCHEMA_VERSIONS, ("1.0", "1.1"))
-            self.assertIn("domain", mod.SCHEMA_SOURCES["1.1"])
-            self.assertIn("domain", mod.SCHEMA_SOURCES["1.0"])
+            self.assertEqual(mod.SUPPORTED_SCHEMA_VERSIONS,
+                             ("1.0", "1.1", "1.2"))
+            self.assertTrue(mod.SCHEMA_SOURCES["1.2"].endswith(
+                "domain/purchase-event.schema.json"))
+            self.assertTrue(mod.SCHEMA_SOURCES["1.1"].endswith(
+                "domain/purchase-event.v1.1.schema.json"))
+            self.assertTrue(mod.SCHEMA_SOURCES["1.0"].endswith(
+                "domain/purchase-event.v1.0.schema.json"))
             ev = {"schema_version": "1.1", "tenant_id": "T1",
                   "location_id": "L1", "launch_id": "LN1",
                   "provider": "ghl", "event_id": "e1",
@@ -271,6 +286,9 @@ class DomainSiblingLayoutTests(unittest.TestCase):
                                   "entitlement_ids": ["ent-main"]}],
                   "evidence_ref": "fixture/readback-1", "test_only": True}
             self.assertIs(mod.validate_event(ev), ev)
+            ev12 = dict(ev, schema_version="1.2", event_id="e2",
+                        parent_order_ref="ord-0")
+            self.assertIs(mod.validate_event(ev12), ev12)
 
 
 class ShallowPathImportTests(unittest.TestCase):

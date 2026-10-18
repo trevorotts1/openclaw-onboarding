@@ -214,5 +214,125 @@ class Upsell1NegativeTests(unittest.TestCase):
         self.assertEqual(bundle["result"]["status"], "blocked")
 
 
+_DROP = object()  # variant() sentinel: remove the key entirely
+
+U1_POLICY_FIXTURE = SKILL_DIR / "fixtures" / "request-upsell1-policy.testonly.json"
+
+
+@unittest.skipUnless(jsonschema, "jsonschema not available")
+class Upsell1PromptPolicySchemaTests(unittest.TestCase):
+    """Adoption map 1.4 pair cases at the schema layer, instance upsell_1."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.schema = load(SKILL_DIR / "schemas" / "upsell-request.schema.json")
+        cls.base_request = load(SKILL_DIR / "fixtures" / "request-upsell1.testonly.json")
+
+    def variant(self, **changes):
+        request = copy.deepcopy(self.base_request)
+        for key, value in changes.items():
+            if value is _DROP:
+                request.pop(key, None)
+            else:
+                request[key] = value
+        return request
+
+    def test_pair_10_without_field_valid(self):
+        jsonschema.validate(self.base_request, self.schema)
+
+    def test_pair_11_with_field_valid(self):
+        jsonschema.validate(load(U1_POLICY_FIXTURE), self.schema)
+
+    def test_pair_10_with_field_refused(self):
+        bad = self.variant(prompt_policy_id="kie-rule-12-band")
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(bad, self.schema)
+
+    def test_pair_11_without_field_refused(self):
+        bad = self.variant(schema_version="1.1")
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(bad, self.schema)
+
+    def test_11_empty_null_and_nonstring_ids_refused(self):
+        for bad_id in ("", None, 11, {"policy_id": "kie-rule-12-band"}):
+            bad = self.variant(schema_version="1.1", prompt_policy_id=bad_id)
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(bad, self.schema)
+
+    def test_unknown_versions_refused(self):
+        for version in ("1.2", "2.0"):
+            bad = self.variant(schema_version=version)
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(bad, self.schema)
+
+    def test_11_result_still_validates_against_result_schema(self):
+        result_schema = load(SKILL_DIR / "schemas" / "upsell-result.schema.json")
+        bundle = build_u1(request=load(U1_POLICY_FIXTURE))
+        jsonschema.validate(bundle["result"], result_schema)
+
+
+class Upsell1PromptPolicyAdapterTests(unittest.TestCase):
+    """Adoption map 1.4 item 2: the runtime mirror's explicit pair check
+    and the page-plan pass-through, instance upsell_1."""
+
+    def variant(self, **changes):
+        request = load(SKILL_DIR / "fixtures" / "request-upsell1.testonly.json")
+        for key, value in changes.items():
+            if value is _DROP:
+                request.pop(key, None)
+            else:
+                request[key] = value
+        return request
+
+    def test_11_request_builds_and_carries_the_id_in_the_page_plan(self):
+        bundle = build_u1(request=load(U1_POLICY_FIXTURE))
+        self.assertEqual(bundle["result"]["status"], "authored")
+        self.assertEqual(bundle["result"]["eligibility_check"]["verdict"], "eligible")
+        self.assertEqual(bundle["page_plan"]["prompt_policy_id"], "kie-rule-12-band")
+        # The result profile is unchanged: no policy field rides there.
+        self.assertNotIn("prompt_policy_id", bundle["result"])
+
+    def test_11_bundle_matches_10_bundle_apart_from_the_plan_citation(self):
+        bundle_10 = build_u1()
+        bundle_11 = build_u1(request=load(U1_POLICY_FIXTURE))
+        self.assertEqual(bundle_11["result"], bundle_10["result"])
+        self.assertEqual(bundle_11["native_binding"], bundle_10["native_binding"])
+        plan_11 = dict(bundle_11["page_plan"])
+        self.assertEqual(plan_11.pop("prompt_policy_id"), "kie-rule-12-band")
+        self.assertEqual(plan_11, bundle_10["page_plan"])
+        self.assertNotIn("prompt_policy_id", bundle_10["page_plan"])
+
+    def test_11_without_field_fails_closed(self):
+        with self.assertRaises(common.AdapterError):
+            build_u1(request=self.variant(schema_version="1.1"))
+
+    def test_10_with_field_fails_closed(self):
+        with self.assertRaises(common.AdapterError):
+            build_u1(request=self.variant(prompt_policy_id="kie-rule-12-band"))
+
+    def test_11_empty_null_and_nonstring_ids_fail_closed(self):
+        for bad_id in ("", None, 11, {"policy_id": "kie-rule-12-band"}):
+            with self.assertRaises(common.AdapterError):
+                build_u1(request=self.variant(
+                    schema_version="1.1", prompt_policy_id=bad_id))
+
+    def test_unknown_versions_fail_closed(self):
+        for version in ("1.2", "2.0"):
+            with self.assertRaises(common.AdapterError):
+                build_u1(request=self.variant(schema_version=version))
+
+    def test_unregistered_id_passes_the_adapter_pair_check(self):
+        # Pinned open-string behavior (as in adoption 1.2 D-4): the id is
+        # not an enum at this layer because the registry is the minting
+        # authority. Refusing an unknown id is a registry-layer act at
+        # dispatch and at the Q11 aggregator (map section 4 citation
+        # rule), not an adapter act; this mirror enforces the pair rule
+        # and the field's shape only.
+        bundle = build_u1(request=self.variant(
+            schema_version="1.1", prompt_policy_id="an-unregistered-policy"))
+        self.assertEqual(bundle["page_plan"]["prompt_policy_id"],
+                         "an-unregistered-policy")
+
+
 if __name__ == "__main__":
     unittest.main()
