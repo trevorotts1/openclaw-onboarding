@@ -1,0 +1,47 @@
+{
+  "schema_version": "wise-elders.session/v1",
+  "session_id": "sess-w11u002-round2",
+  "mode": "full",
+  "visibility": "company",
+  "brief_revision": 1,
+  "brief_sha256": "f29a6ac63aa6a334d50fb7a04889648b1e01998a38ca1b0fd290cc1855dcc9b1",
+  "options": [
+    {
+      "id": "A",
+      "label": "Keep the current offer",
+      "kind": "status_quo"
+    },
+    {
+      "id": "B",
+      "label": "Pilot the revised offer",
+      "kind": "bounded_test"
+    },
+    {
+      "id": "C",
+      "label": "Launch the revised offer broadly",
+      "kind": "change"
+    }
+  ],
+  "seat_ids": [
+    "simon-sinek",
+    "td-jakes",
+    "oprah-winfrey",
+    "tiffany-aliche",
+    "russell-brunson",
+    "michelle-obama",
+    "brene-brown",
+    "dennis-kimbro",
+    "les-brown"
+  ],
+  "model_policy": {
+    "selection": "explicit",
+    "route_id": "route-fixture-1",
+    "requested_model_id": "model-selected-by-client",
+    "reasoning_preference": null,
+    "fallback_policy": "none"
+  },
+  "source_pack_version": "pack-fixture-1.0.0",
+  "execution_policy": "advisory_only",
+  "created_at": "2026-10-14T02:00:00Z",
+  "display_timezone": "America/New_York"
+}

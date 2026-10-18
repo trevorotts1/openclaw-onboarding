@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "error": {
+    "code": "COUNCIL_STATE_CONFLICT",
+    "message": "Session sess-w11u002-round1 is ROUND_1, not DRAFT. Use resume for paused or blocked work.",
+    "retryable": false,
+    "action": "Review the reported problem and try again.",
+    "request_id": null
+  }
+}
+failed_c_later_start_exit=3

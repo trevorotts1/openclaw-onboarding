@@ -1,0 +1,15 @@
+MARK ps-council
+PS_COUNCIL_RC=1
+MARK ps-control-node
+  441 /Applications/Codex.app/Contents/Resources/cua_node/bin/node ./server.mjs
+  447 /Applications/Codex.app/Contents/Resources/cua_node/bin/node /Applications/Codex.app/Contents/Resources/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs
+  448 /Applications/Codex.app/Contents/Resources/cua_node/bin/node ./server.mjs
+ 1575 /opt/homebrew/bin/node <operator-home>/.npm-global/lib/node_modules/9router/cli.js -H 127.0.0.1 -p 20128 --no-browser --skip-update --log
+ 2168 /opt/homebrew/Cellar/node/26.8.1/bin/node <operator-home>/.npm-global/lib/node_modules/openclaw/dist/process/supervisor/service-child-relay.js
+PS_CONTROL_RC=0
+MARK launchctl-count
+     616
+MARK launchctl-council
+LAUNCHCTL_COUNCIL_RC=1
+MARK launchctl-control
+515

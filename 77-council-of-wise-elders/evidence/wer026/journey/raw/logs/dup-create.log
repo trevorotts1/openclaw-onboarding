@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "error": {
+    "code": "COUNCIL_STATE_CONFLICT",
+    "message": "Session sess-w11u002-round1 already exists.",
+    "retryable": false,
+    "action": "Review the reported problem and try again.",
+    "request_id": null
+  }
+}
+duplicate_create_exit=3

@@ -1,0 +1,82 @@
+{
+  "routes": [
+    "claude-nine-configured",
+    "claude-configured",
+    "deepseek-configured"
+  ],
+  "discovered": [
+    {
+      "route_id": "claude-nine-configured",
+      "provider_slug": "claude-nine",
+      "kind": "harness",
+      "identity_level": "configured",
+      "composed": true,
+      "not_composed_reason": null
+    },
+    {
+      "route_id": "claude-configured",
+      "provider_slug": "claude",
+      "kind": "harness",
+      "identity_level": "configured",
+      "composed": true,
+      "not_composed_reason": null
+    },
+    {
+      "route_id": "deepseek-configured",
+      "provider_slug": "deepseek",
+      "kind": "compatible",
+      "identity_level": "configured",
+      "composed": true,
+      "not_composed_reason": null
+    },
+    {
+      "route_id": "google-configured",
+      "provider_slug": "google",
+      "kind": "unsupported",
+      "identity_level": "configured",
+      "composed": false,
+      "not_composed_reason": "provider google declares API family \"google-generative-ai\" (other); this runtime composes only an OpenAI-compatible wire protocol here and will not reinterpret another API family as compatible"
+    },
+    {
+      "route_id": "ollama-configured",
+      "provider_slug": "ollama",
+      "kind": "unsupported",
+      "identity_level": "configured",
+      "composed": false,
+      "not_composed_reason": "provider ollama declares API family \"ollama\" (ollama_chat); this runtime composes only an OpenAI-compatible wire protocol here and will not reinterpret another API family as compatible; the configuration allows 7 models for provider ollama (nemotron-3-super:cloud, minimax-m3:cloud, nemotron-3-ultra:cloud, kimi-k3:cloud, glm-5.3-flash:cloud, glm-5.3:cloud, deepseek-v4.1-flash:1017-cloud) and names no single default primary for it; the council never picks one"
+    },
+    {
+      "route_id": "openrouter-configured",
+      "provider_slug": "openrouter",
+      "kind": "compatible",
+      "identity_level": "configured",
+      "composed": false,
+      "not_composed_reason": "the configuration allows 7 models for provider openrouter (xiaomi/mimo-v2.6-pro, moonshotai/kimi-k3, z-ai/glm-5.3, z-ai/glm-5.3-flash, deepseek/deepseek-v4.1-flash-1017, meta/muse-spark-1.3-contributor, xiaomi/mimo-v2.6-flash) and names no single default primary for it; the council never picks one"
+    },
+    {
+      "route_id": "agnes-configured",
+      "provider_slug": "agnes",
+      "kind": "compatible",
+      "identity_level": "configured",
+      "composed": false,
+      "not_composed_reason": "no credential is present for provider agnes (reference \"AGNES_API_KEY\"; stores checked: process.env:AGNES_API_KEY, openclaw.json:env.AGNES_API_KEY, <operator-home>/.openclaw/secrets/.env, <operator-home>/.openclaw/.env)"
+    },
+    {
+      "route_id": "9router-configured",
+      "provider_slug": "9router",
+      "kind": "compatible",
+      "identity_level": "configured",
+      "composed": false,
+      "not_composed_reason": "the configuration allows 5 models for provider 9router (ollama/minimax-m3, ollama/glm-5.3-flash:cloud(max), openrouter/z-ai/glm-5.3-flash(max), oc/muse-spark-1.3-contributor-free(xhigh), ollama/deepseek-v4.1-flash:1017) and names no single default primary for it; the council never picks one"
+    },
+    {
+      "route_id": "openai-configured",
+      "provider_slug": "openai",
+      "kind": "unsupported",
+      "identity_level": "configured",
+      "composed": false,
+      "not_composed_reason": "provider openai declares no baseUrl, so no endpoint can be composed; no default endpoint was substituted; provider openai declares API family null (other); this runtime composes only an OpenAI-compatible wire protocol here and will not reinterpret another API family as compatible; provider openai lists 3 models (gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna) and the configuration names no default primary for it; the council never picks one; no credential is present for provider openai (reference \"OPENAI_API_KEY\"; stores checked: openclaw.json:baseUrl)"
+    }
+  ],
+  "note": "The client selects the model, or the client configured default applies. This core never prescribes a specific named model and never falls back silently."
+}

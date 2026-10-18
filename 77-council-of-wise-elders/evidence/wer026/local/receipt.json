@@ -1,0 +1,117 @@
+{
+  "unit": "W11-U001",
+  "slice": "WER-026 acceptance A (local, no host service)",
+  "repo": "trevorotts1/openclaw-onboarding",
+  "base_commit": "53d772a996835c783927f900cb6a6880948e60a3",
+  "branch": "unit/W11-U001",
+  "worktree": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/repo",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "npm": "11.19.0"
+  },
+  "scope": {
+    "repository_source_modified": false,
+    "service_registered": false,
+    "launchd_loaded": false,
+    "daemon_left_running": false,
+    "command_center_database_touched": false,
+    "client_box_or_credential_accessed": false,
+    "scratch_cleaned": true
+  },
+  "stages": [
+    {
+      "stage": "install",
+      "command": "node repo/77-council-of-wise-elders/scripts/install-runtime.mjs --root repo/77-council-of-wise-elders --prefix prefix --data-dir prefix/data --json",
+      "cwd": "<lane>",
+      "exit_code": 0,
+      "result": "PASS",
+      "release_id": "rel-7bdc0b6e3565",
+      "source_manifest_digest": "7bdc0b6e356588056b0a36102f0743bc0d9ff88499f6d201235be07f3c45e9a7",
+      "source_file_count": 227,
+      "artifact_digest": "32ee825c36716c74e90ba51e3bd69e6d19f35de279323846e6e943a63601e0f4",
+      "artifact_file_count": 300,
+      "active_path": "<lane>/prefix/active.json",
+      "data_dir": "<lane>/prefix/data"
+    },
+    {
+      "stage": "verify_release",
+      "command": "node repo/77-council-of-wise-elders/scripts/install-runtime.mjs --prefix prefix --verify-release prefix/releases/rel-7bdc0b6e3565",
+      "exit_code": 0,
+      "result": "PASS"
+    },
+    {
+      "stage": "repeat_install_noop",
+      "command": "node repo/77-council-of-wise-elders/scripts/install-runtime.mjs --root repo/77-council-of-wise-elders --prefix prefix --data-dir prefix/data --json",
+      "exit_code": 0,
+      "result": "PASS",
+      "detail": "NOOP; sha256 manifest of all files under prefix identical before and after (diff 0 bytes, exit 0)"
+    },
+    {
+      "stage": "update_second_build",
+      "command": "node repo/77-council-of-wise-elders/scripts/install-runtime.mjs --runtime-dir <lane>/src-b/runtime --prefix prefix --data-dir prefix/data --json",
+      "exit_code": 0,
+      "result": "PASS",
+      "release_id": "rel-a1ab77dff250",
+      "previous_release_id": "rel-7bdc0b6e3565",
+      "source_manifest_digest": "a1ab77dff250d015f10270015127fe9f4e824dbb831d692aff2269a493350c11",
+      "artifact_digest": "0dcf02be9e1800204151ad8344d4f32cbd2c12c8c7f7fdf38c47c05bf8e4aabb",
+      "second_build_source": "<lane>/src-b/runtime (scratch copy; marker appended to src/index.ts)"
+    },
+    {
+      "stage": "previous_release_usable_after_update",
+      "commands": [
+        "node repo/77-council-of-wise-elders/scripts/install-runtime.mjs --prefix prefix --verify-release prefix/releases/rel-7bdc0b6e3565",
+        "node prefix/releases/rel-7bdc0b6e3565/dist/blackceo-council.mjs doctor --json --data-dir <lane>/doctor-old-data",
+        "node prefix/releases/rel-a1ab77dff250/dist/blackceo-council.mjs doctor --json --data-dir <lane>/doctor-new-data"
+      ],
+      "exit_codes": [0, 0, 0],
+      "result": "PASS",
+      "detail": "old binary sha256 unchanged; old release still verifies and runs"
+    },
+    {
+      "stage": "rollback",
+      "command": "node repo/77-council-of-wise-elders/scripts/install-runtime.mjs --prefix prefix --rollback",
+      "exit_code": 0,
+      "result": "PASS",
+      "active_release_after": "rel-7bdc0b6e3565",
+      "previous_release_preserved": "rel-a1ab77dff250",
+      "detail": "active.json re-pointed at the prior release; both release trees remain; rolled-back CLI doctor exit 0"
+    },
+    {
+      "stage": "unrelated_directory_invocation",
+      "cwd": "/tmp/operator-W11-U001-cwd",
+      "commands": [
+        "node <prefix>/releases/rel-7bdc0b6e3565/dist/blackceo-council.mjs models --json",
+        "node <prefix>/releases/rel-7bdc0b6e3565/dist/blackceo-council.mjs doctor --json --data-dir /tmp/operator-W11-U001-data"
+      ],
+      "exit_codes": [0, 0],
+      "result": "PASS",
+      "detail": "models output byte-identical to the same command run with cwd at the repository root (diff exit 0, empty); the installed bundle resolves its own installation, not the caller's cwd"
+    },
+    {
+      "stage": "real_bounded_model_probe",
+      "command": "node <prefix>/releases/rel-7bdc0b6e3565/dist/blackceo-council.mjs probe --json",
+      "cwd": "/tmp/operator-W11-U001-cwd",
+      "exit_code": 3,
+      "result": "BLOCKED_ENVIRONMENT",
+      "blocked_family": "operator-owned configured harness route family (claude-nine-configured / Claude Code-Claude-Nine harness)",
+      "error_code": "COUNCIL_FEATURE_NOT_READY",
+      "detail": "the shipped dispatcher refuses live route probing before any route, grant or transport is touched; runtime/src/cli/model-probe.ts is referenced only by its own test file and is not wired by any production composition; headless grant approval is refused. No probe call was made and no fixture or mock was substituted.",
+      "key_material_emitted": false
+    },
+    {
+      "stage": "no_service_no_daemon",
+      "result": "PASS",
+      "detail": "launchctl list: 616 entries, grep council|wise-elders rc 1 (none), control grep -c com.apple = 515; ps council|install-runtime|wise-elders rc 1 (none), control ps node shows pre-existing host processes"
+    }
+  ],
+  "deferred_not_claimed": [
+    "two scheduled sweeps",
+    "supervisor crash/restart recovery",
+    "browser session URL",
+    "production worker claiming a real council_run"
+  ],
+  "evidence_dir": "77-council-of-wise-elders/evidence/wer026/local/"
+}

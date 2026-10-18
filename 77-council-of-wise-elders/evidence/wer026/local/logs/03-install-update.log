@@ -1,0 +1,12 @@
+PASS preflight: v24.21.0 with in-memory SQLite read/write and persistent reopen (<operator-home>/.nvm/versions/node/v24.21.0/bin/node)
+INFO runtime package identity: @blackceo/wise-elders-core@0.1.0 (private=true, engines=^22.13.0 || >=24)
+INFO source manifest: 227 protected file(s), sha256 a1ab77dff250d015f10270015127fe9f4e824dbb831d692aff2269a493350c11 (node_modules/dist excluded)
+INFO staged source at <operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/staging/rel-a1ab77dff250-73962-cb235b44
+PASS dependency install (npm ci)
+PASS runtime build (npm run build)
+PASS artifact receipt: 300 generated file(s), sha256 0dcf02be9e1800204151ad8344d4f32cbd2c12c8c7f7fdf38c47c05bf8e4aabb
+PASS activation: active.json now points at rel-a1ab77dff250
+INFO previous release rel-7bdc0b6e3565 preserved with its receipt; see <operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/ROLLBACK.md
+INFO durable data directory: <operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/data (outside replaceable release trees)
+INSTALL-RUNTIME: PASS (staged immutable install, artifact receipt, atomic activation)
+{"status":"activated","releaseId":"rel-a1ab77dff250","sourceManifestDigest":"a1ab77dff250d015f10270015127fe9f4e824dbb831d692aff2269a493350c11","artifactDigest":"0dcf02be9e1800204151ad8344d4f32cbd2c12c8c7f7fdf38c47c05bf8e4aabb","activePath":"<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/active.json","dataDir":"<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/data"}

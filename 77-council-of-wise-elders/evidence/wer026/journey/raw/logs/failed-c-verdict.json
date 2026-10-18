@@ -1,0 +1,7 @@
+{
+  "captured_stdout": "",
+  "captured_stdout_bytes": 0,
+  "note": "This capture is intentionally empty: the invocation wrote no stdout. The real command output and exit code are recorded in the sibling file, which is the authoritative receipt for this step. Kept as a separate .json so the empty capture stays explicit rather than being deleted.",
+  "authoritative_output": "failed-c-later-verdict.log",
+  "exit_code": 3
+}

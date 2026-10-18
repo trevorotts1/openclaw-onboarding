@@ -1,0 +1,2 @@
+a85987869541f51398c3a05aabda4234986c13e00ddfa0f1a2f63ad5bf352172  <operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/releases/rel-7bdc0b6e3565/dist/blackceo-council.mjs
+9963f528929d24110dd94b3f84d5689dfb0dac8fac2468236bcbdfd0cbd71100  <operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/releases/rel-7bdc0b6e3565/dist/index.js

@@ -1,0 +1,103 @@
+{
+  "ok": true,
+  "sample": false,
+  "verdict": {
+    "schema_version": "wise-elders.verdict/v1",
+    "result_kind": "scored",
+    "session_id": "sess-w11u002-round3",
+    "verdict_revision": 1,
+    "recommended_option_id": "B",
+    "label": "WAIT",
+    "option_scores": [
+      {
+        "option_id": "A",
+        "score": 6,
+        "display_score": 6,
+        "weighted_sum": 132,
+        "denominator": 22,
+        "coverage": 1,
+        "spread": 3
+      },
+      {
+        "option_id": "B",
+        "score": 7.636363636363637,
+        "display_score": 7.6,
+        "weighted_sum": 168,
+        "denominator": 22,
+        "coverage": 1,
+        "spread": 3
+      },
+      {
+        "option_id": "C",
+        "score": 6.590909090909091,
+        "display_score": 6.6,
+        "weighted_sum": 145,
+        "denominator": 22,
+        "coverage": 1,
+        "spread": 6
+      }
+    ],
+    "active_weights": {
+      "simon-sinek": 2,
+      "td-jakes": 3,
+      "oprah-winfrey": 2,
+      "tiffany-aliche": 3,
+      "russell-brunson": 3,
+      "michelle-obama": 2,
+      "brene-brown": 3,
+      "dennis-kimbro": 2,
+      "les-brown": 2
+    },
+    "evidence_strength": "medium",
+    "hard_constraint_findings": [
+      {
+        "constraint_id": "con-1",
+        "option_id": "B",
+        "result": "unknown",
+        "checker": "deterministic_code",
+        "evidence_ids": []
+      },
+      {
+        "constraint_id": "con-1",
+        "option_id": "C",
+        "result": "unknown",
+        "checker": "deterministic_code",
+        "evidence_ids": []
+      }
+    ],
+    "main_reasons": [
+      "The bounded option produces evidence before the broad commitment is made (fixture seat brene-brown).",
+      "The bounded option produces evidence before the broad commitment is made (fixture seat dennis-kimbro).",
+      "The bounded option produces evidence before the broad commitment is made (fixture seat les-brown)."
+    ],
+    "strongest_dissent": "The fixture objection: retention evidence is not yet measured.",
+    "accepted_amendments": [],
+    "rejected_amendments": [],
+    "critical_unknowns": [
+      "Fixture unknown: measured retention for the pilot cohort."
+    ],
+    "prerequisites": [
+      "Is the pilot affordable at committed cash levels?",
+      "Hard constraint con-1 has not been checked for option B."
+    ],
+    "action_proposals": [],
+    "cheapest_informative_test": null,
+    "stop_criteria": [
+      "Stop if this hard constraint is violated: Pilot spend must stay within the approved budget."
+    ],
+    "review_criteria": [
+      "Resolve the recorded unknown: Pilot cohort retention is not yet measured."
+    ],
+    "resolution_support": {
+      "resolution_sha256": "496b5e0c77f9bafaffe032b24625e36590f776236f6d891a97a4ae8552b01993",
+      "support": 16,
+      "conditional_support": 6,
+      "opposition": 0,
+      "abstention": 0
+    },
+    "validation_status": "valid",
+    "ratification_status": "ratified",
+    "brief_sha256": "85f51c5d9e7ce4f0e925906df244afb62871bcd02cf1d3f890b2c7f932b2bd45",
+    "content_sha256": "5a798ecfb1db08de2ff820b3934de95dc6e5a7cb6572fe240ba0024ee9976da6"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "wise-elders.route-selection/v1",
+  "selectionSource": "explicit",
+  "routeId": "route-fixture-1",
+  "routeRevision": 1,
+  "routeKind": "fixed_model",
+  "providerSlug": "local-fixture",
+  "requestedRoute": "route-fixture-1",
+  "requestedModelOrAlias": "deterministic-fixture",
+  "combinationMembers": null,
+  "reasoning": {
+    "requested": null,
+    "applied": null,
+    "supported": null,
+    "limitation": null
+  },
+  "fallbackPolicy": "none",
+  "providerAccountRef": null,
+  "capabilitySnapshot": {
+    "contextWindowTokens": null,
+    "maxOutputTokens": null,
+    "capabilities": [
+      "text"
+    ],
+    "supportedReasoningLevels": null
+  },
+  "credential": {
+    "state": "not_required",
+    "envVar": null,
+    "source": null,
+    "checked": []
+  },
+  "identityLevel": "configured",
+  "scope": {
+    "tenantId": "local-tenant",
+    "companyId": "local-company",
+    "installationId": "45707dbc-2947-43fd-a0a8-affcfc67c664",
+    "ownerSubject": "local-owner"
+  },
+  "createdAt": "2026-10-18T00:00:00Z"
+}
