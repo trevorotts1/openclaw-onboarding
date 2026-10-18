@@ -30,11 +30,11 @@
       "flipped_at": "2026-10-18"
     },
     "downsell_1": {
-      "state": "blocked_no_consumer",
+      "state": "ready",
       "consumer_skill": 81,
-      "evidence_ref": "no 81-* directory on main",
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Skill 81 downsell contract landed (train #2268, main 4b870ad778109e09504d475ea5560b457788a914): 81-signature-downsell/schemas/downsell-request.schema.json dual-accept, pair rule in 81-signature-downsell/validators/validate_request.py, consumer 49-signature-funnel/scripts/downsell_wrapper.py (CR-S49-005); readiness note rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "upsell_2": {
       "state": "ready",
