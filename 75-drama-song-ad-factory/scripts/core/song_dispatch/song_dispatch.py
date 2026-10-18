@@ -232,6 +232,28 @@ def _w(t):
     return _SH.words(t)
 
 
+_SECTION_HEADER = re.compile(r"\[[^\]]*\]")
+
+
+def _script_lyric_words(script_text):
+    """The words of the client's script that are DELIVERED, never its
+    performance directions.
+
+    A bracket header names a section and how it is performed
+    ("[Outro (spoken): calm close voice, plain speech, no melody]"). Feeding
+    the whole text to the script_words gate required the SONG to sing "calm",
+    "close", "voice", "plain", "speech", "no", "melody" and "end", which no
+    take can satisfy -- those words are instructions to the performer, not
+    lyrics. Headers are dropped; section BODIES are kept, spoken ones
+    included, because the closing call to action is spoken there and is still
+    required."""
+    if script_text is None:
+        return set()
+    if not isinstance(script_text, str):
+        return set(_w(script_text))
+    return set(_w(_SECTION_HEADER.sub(" ", script_text)))
+
+
 def _planned_pct(plan, style_id, key):
     """Percent of delivered runtime the approved plan gives one delivery.
 
@@ -533,13 +555,14 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
                              envelope=take.get("pace_envelope"),
                              hop_s=take.get("pace_hop_s"),
                              bpm_before=take.get("bpm_before"),
-                             bpm_after=take.get("bpm_after"))
+                             bpm_after=take.get("bpm_after"),
+                             located_at_s=take.get("pace_located_at_s"))
     if pg.get("applicable") is False:
         put("pace_change", "UNMEASURED", _pace_turns_required_detail())
     else:
         put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
     have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
-    missing = sorted(set(_w(script_words)) - have)
+    missing = sorted(_script_lyric_words(script_words) - have)
     put("script_words", "FAIL" if missing else "PASS", ("missing %s" % missing[:8]) if missing else "")
     dur = take.get("duration_s")
     if not isinstance(dur, (int, float)):
