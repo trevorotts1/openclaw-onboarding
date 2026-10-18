@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.13: Windows platform observers (WER-027 engineering half)
+
+- Closes the deliberate Windows gap the platform adapter carried: `mounts.ts` previously returned `BLOCKED_PLATFORM` with "no mount table observer" on anything that is not Linux, and `identity.ts` marked Windows `unobservable`.
+- Adds `runtime/src/platform/windows.ts`: persistent-versus-ephemeral volume classification using observable `statfs` facts and the drive letter, so a data directory under the Windows Temp root is **refused with a concrete reason naming the path and the rule**; a path resolving *through* a junction is judged by its resolved target, so a temp junction onto a real drive is classified by its destination and a real path reaching temp via a junction is still refused; an uncharacterizable or UNC network volume returns `BLOCKED_PLATFORM` rather than a silent pass; paths containing spaces and non-ASCII characters are handled exactly, with case-insensitive segment boundaries that never prefix-match a sibling (`C:\\Data2` is not inside `C:\\Data`).
+- Service identity now records the observable `USERNAME` / `USERDOMAIN` / `COMPUTERNAME` values and keeps the honest `unobservable` marker when none resolve - a name is never invented. Unknown container state returns the explicit `BLOCKED_PLATFORM` path rather than assuming "not a container".
+- New suite 14/14; the pre-existing platform suite is unchanged at 16/16 and Linux/macOS behavior is byte-for-byte preserved.
+
+**Nothing here was executed on Windows.** No Windows host and no PowerShell exist on the authoring machine, so every behavior is proven by tests against injected facts, not by running on Windows. Real NTFS geometry, real fixed-versus-removable drive type (no native `GetDriveTypeW` without a shell or native addon), real junction/8.3 resolution, real Windows container detection and an end-to-end `win32` run remain **deferred to a real Windows host** and are not claimed.
+
 ## v1.0.12: WER-026 local acceptance receipts (install/update/rollback and 3-round journey)
 
 - Records real acceptance evidence under `evidence/wer026/local/`: the actual installer run into an isolated prefix with staged immutable releases, a repeat install proven byte-identical (prefix diff 0 bytes over 1559 lines), a second build moving the activation pointer while the previous release stayed usable, rollback restoring the prior release, harness invocation from an unrelated working directory returning byte-identical results, no service registered, no launchd loaded and no process left behind, and a model probe reported honestly as `BLOCKED_ENVIRONMENT` (`probe` exits 3 `COUNCIL_FEATURE_NOT_READY` — the dispatcher route is unimplemented and no production code imports `model-probe.ts`).

@@ -33,7 +33,8 @@ import {
 } from './types.js';
 import { resolveServiceIdentity, type ServiceIdentityOptions } from './identity.js';
 import { observeContainer, resolveLoopback } from './loopback.js';
-import { defaultMountTable, evaluateDataDir } from './mounts.js';
+import { defaultMountTable, evaluateDataDir, type DataDirVerdict } from './mounts.js';
+import { evaluateWindowsDataDir } from './windows.js';
 
 export interface PlatformOptions {
   /** Absolute durable data directory. Never inside a replaceable tree. */
@@ -81,20 +82,40 @@ export async function resolvePlatform(
     });
   }
 
-  const mounts = options.mounts ?? defaultMountTable(platform);
-  checked.push(...mounts.checked);
-
-  const verdict = evaluateDataDir({
-    dataDir: options.dataDir,
-    replaceableRoots: options.replaceableRoots,
-    mounts,
-    isWritable: options.isWritable,
-  });
+  let verdict: DataDirVerdict;
+  if (options.mounts) {
+    // An explicitly injected mount table is the caller's evidence.
+    checked.push(...options.mounts.checked);
+    verdict = evaluateDataDir({
+      dataDir: options.dataDir,
+      replaceableRoots: options.replaceableRoots,
+      mounts: options.mounts,
+      isWritable: options.isWritable,
+    });
+  } else if (platform === 'win32') {
+    // Windows has no mount table; observe the volume from real facts.
+    verdict = evaluateWindowsDataDir({
+      dataDir: options.dataDir,
+      replaceableRoots: options.replaceableRoots,
+      env: options.identity?.env,
+      isWritable: options.isWritable,
+    });
+  } else {
+    const mounts = defaultMountTable(platform);
+    checked.push(...mounts.checked);
+    verdict = evaluateDataDir({
+      dataDir: options.dataDir,
+      replaceableRoots: options.replaceableRoots,
+      mounts,
+      isWritable: options.isWritable,
+    });
+  }
   if (isPlatformRefusal(verdict)) return verdict;
   checked.push(...verdict.evidence);
 
   const identityResult = resolveServiceIdentity({
     ...options.identity,
+    platform: options.identity?.platform ?? platform,
     hostname: options.identity?.hostname,
   });
   if (isPlatformRefusal(identityResult)) return identityResult;
