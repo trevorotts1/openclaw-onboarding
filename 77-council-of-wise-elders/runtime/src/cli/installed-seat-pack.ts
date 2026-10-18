@@ -23,6 +23,7 @@ const REQUIRED_FILES = [
 const MAX_CONTEXT_CHARS = 20000;
 const MAX_EVIDENCE_PER_WORK = 4;
 const MAX_EVIDENCE_TOTAL = 20;
+const STRUCTURED_SECTION_CHARS = 2500;
 const approvedSeats = new Set<string>(SEAT_IDS);
 
 type JsonObject = Record<string, unknown>;
@@ -139,6 +140,23 @@ function sharedEvidenceLines(sources: JsonObject): string[] {
   return lines;
 }
 
+/** Bounded excerpts of existing shared material, with its original attribution. */
+function sharedStructuredContext(document: JsonObject): string {
+  const entries: JsonObject[] = [];
+  const fields = ['id', 'framework_id', 'name', 'summary', 'concept', 'application', 'description', 'rule', 'applies_when', 'attribution_kind', 'source_evidence_ids'];
+  const eligible = (Array.isArray(document.items) ? document.items : []).filter(
+    (item): item is JsonObject => isObject(item) &&
+      (!('scope' in item) || item.scope === 'shared_pack') &&
+      item.distribution_ready !== false && !('private_evidence_refs' in item),
+  );
+  for (const item of eligible) {
+    const excerpt = Object.fromEntries(fields.filter((key) => key in item).map((key) => [key, item[key]]));
+    if (JSON.stringify([...entries, excerpt]).length > STRUCTURED_SECTION_CHARS - 100) break;
+    entries.push(excerpt);
+  }
+  return JSON.stringify({ items: entries, omitted_for_context_budget: eligible.length - entries.length });
+}
+
 export function loadInstalledSeatPack(skillRoot: string, seatId: SeatId): InstalledSeatPack {
   if (!approvedSeats.has(seatId)) error(`Unsupported Council advisor seat: ${seatId}`);
   let skillReal: string;
@@ -203,11 +221,13 @@ export function loadInstalledSeatPack(skillRoot: string, seatId: SeatId): Instal
   let combined = '';
   for (const section of sections) {
     const candidate = combined ? combined + '\n\n' + section : section;
-    if (candidate.length > MAX_CONTEXT_CHARS) {
+    if (candidate.length > MAX_CONTEXT_CHARS - 2 * STRUCTURED_SECTION_CHARS - 100) {
       if (!combined) error(`Advisor briefing for ${seatId} exceeds the bounded context allowance`);
       break;
     }
     combined = candidate;
   }
+  combined += '\n\nSHARED FRAMEWORK EXCERPTS (existing pack; attribution unchanged):\n' + sharedStructuredContext(frameworks);
+  combined += '\n\nSHARED DECISION RULE EXCERPTS (existing pack; attribution unchanged):\n' + sharedStructuredContext(decisionRules);
   return { pack_version: version, briefing_text: combined };
 }
