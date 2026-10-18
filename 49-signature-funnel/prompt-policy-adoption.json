@@ -2,11 +2,11 @@
   "schema": "signature-launch-prompt-policy-adoption/v1",
   "roles": {
     "landing": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 71,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.1 (landing, Lane B B-343); consumer candidate 1.1 landed in train #2268, SWARM-verified blob-exact.",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "product_selection": {
       "state": "not_ready",
