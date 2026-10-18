@@ -1,0 +1,4 @@
+{"event":"admitted","instance_id":"runner-4213","pid":4213,"data_dir":"/tmp/w13-u001-lane-wer026/data-single","ledger_generation":1,"fencing_generation":2,"recovered_dead_owner":false,"native_adapter_binding":"UNKNOWN"}
+{"event":"reconciled_state","state":"HEALTHY","ledger_generation":1,"fencing_generation":2}
+{"event":"tick","tick_seq":1,"executed":true,"reason":"EXECUTED","decision_kind":"SCHEDULED","receipt_id":"RCPT-000001","completed_sweeps":1,"ledger_generation":1,"state":"HEALTHY"}
+{"event":"stopped","reason":"STOPPED","supervisor_state":"STOPPED","admission_state":"STOPPED","ledger_generation":1,"completed_sweeps":1,"interrupted_ticks":0,"pid":4213}

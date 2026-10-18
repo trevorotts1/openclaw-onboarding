@@ -1,0 +1,6 @@
+{"event":"restart_recorded","reason":"RESTART_RECORDED","ledger_generation":2}
+{"event":"admitted","instance_id":"runner-4179","pid":4179,"data_dir":"/tmp/w13-u001-lane-wer026/data-crash","ledger_generation":2,"fencing_generation":3,"recovered_dead_owner":true,"native_adapter_binding":"UNKNOWN"}
+{"event":"reconciled","pending_actions":["PEND-000003"],"resumed":["PEND-000003"],"ledger_generation":2,"fencing_generation":3}
+{"event":"reconciled_state","state":"HEALTHY","ledger_generation":2,"fencing_generation":3}
+{"event":"tick","tick_seq":4,"executed":true,"reason":"EXECUTED","decision_kind":"SCHEDULED","receipt_id":"RCPT-000004","completed_sweeps":3,"ledger_generation":2,"state":"HEALTHY"}
+{"event":"stopped","reason":"STOPPED","supervisor_state":"STOPPED","admission_state":"STOPPED","ledger_generation":2,"completed_sweeps":3,"interrupted_ticks":1,"pid":4179}
