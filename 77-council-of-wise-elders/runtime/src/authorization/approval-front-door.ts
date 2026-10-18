@@ -67,7 +67,6 @@
 
 import {
   canonicalHash,
-  canonicalStringify,
   validateRunPreview,
   type AuthorizationKind,
   type Clock,
@@ -1096,11 +1095,3 @@ function ceilingFingerprintBody(
   };
 }
 
-/**
- * Canonical serialization of a receipt, exposed for callers that must
- * compare a returned receipt with the original byte for byte without
- * re-deriving the receipt id.
- */
-export function serializeApprovalReceipt(receipt: ApprovalReceipt): string {
-  return canonicalStringify(receipt);
-}
