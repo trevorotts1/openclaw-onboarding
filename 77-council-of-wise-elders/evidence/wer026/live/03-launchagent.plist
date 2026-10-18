@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.blackceo.wise-elders.supervisor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/node@26/bin/node</string>
+    <string><operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders/scripts/supervisor/runner.mjs</string>
+    <string>--data-dir</string>
+    <string><operator-home>/Library/Application Support/wise-elders/supervisor</string>
+    <string>--once</string>
+    <string>--tick-work-ms</string>
+    <string>45000</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string><operator-home>/Library/Logs/wise-elders-supervisor.out.log</string>
+  <key>StandardErrorPath</key>
+  <string><operator-home>/Library/Logs/wise-elders-supervisor.err.log</string>
+  <key>WorkingDirectory</key>
+  <string><operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders</string>
+</dict>
+</plist>

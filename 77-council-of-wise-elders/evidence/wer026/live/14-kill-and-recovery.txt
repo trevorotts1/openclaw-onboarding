@@ -1,0 +1,48 @@
+Proof B — real `kill -9` and launchd-driven recovery
+====================================================
+No restart was requested by hand. After the kill, the ONLY thing that started
+the runner again was the LaunchAgent's StartInterval.
+
+Fire 3 (launchd-scheduled, no kickstart)
+  scheduled tick 3 started   2026-10-18T23:45:47.470Z  (pending at_ms 1792367147470)
+  runner pid                 66990
+  durable state at that instant (14b-pre-kill-state.raw.json):
+    ledger_generation 3, completed_sweeps 2, supervisor HEALTHY,
+    restart_ledger.pending_actions = [ PEND-000003 SCHEDULED_SWEEP_TICK tick_seq 3 ]
+
+Kill
+  command: kill -9 66990                                        exit code 0
+  killed at                   2026-10-18T23:45:50Z  (≈2.5 s into the 45 s tick window)
+  process check after kill    pids_after_kill=[]  → dead confirmed 23:45:51Z
+  raw output: 14a-kill-command-output.raw.txt
+
+Recovery (the NEXT launchd-scheduled fire, 600 s later)
+  launchd start → new pid, log line:
+    {"event":"admitted",...,"ledger_generation":4,"fencing_generation":5,
+     "recovered_dead_owner":true,...}
+    {"event":"reconciled","pending_actions":["PEND-000003"],
+     "resumed":["PEND-000003"],"ledger_generation":4,"fencing_generation":5}
+  recovery tick start         2026-10-18T23:55:50.568Z  (RECOVERY_SWEEP at_ms 1792367750568)
+  full launchd stdout: 06b-launchd-stdout-all.raw.log
+
+Durable proof the interrupted work reconciled EXACTLY ONCE
+  ledger_generation            3 → 4                       (ADVANCED)
+  interrupted_ticks            0 → 1
+  reconciled_actions           [ { id: PEND-000003, state: RECONCILED, tick_seq: 3 } ]
+                               — exactly one record
+  pending_actions after        0
+  journal action               RECOVERY_SWEEP target PEND-000003 (at 1792367750568)
+                               plus exactly one receipt for the new scheduled tick
+                               PEND-000004 (at 1792367750594)
+  incidents (new on recovery)  STALE_LEASE_RECOVERED
+                               ADMISSION_REOPENED
+                               INTERRUPTED_TICK_RECONCILED
+                                 { pending_id: PEND-000003,
+                                   pending_kind: SCHEDULED_SWEEP_TICK,
+                                   tick_seq: 3, recorded_at_ms: 1792367147470 }
+  planner counters             scheduled_sweeps 3, extra_sweeps 1
+                               (the recovery resume is an EXTRA sweep: it does
+                               not consume a scheduled slot)
+  completed_sweeps             2 → 3
+
+State files: 14b-pre-kill-state.raw.json, 15-recovery-state.raw.json
