@@ -104,6 +104,10 @@ import type {
   RouteCapabilitySnapshot,
   TrustedScope,
 } from '../providers/selection.js';
+import {
+  defaultRuntimePrefix,
+  resolveInstalledCli,
+} from '../bridges/installed-cli.js';
 
 // ---------------------------------------------------------------------------
 // Public shapes
@@ -221,6 +225,17 @@ export function routeDiscoveryInfo(route: DiscoveredRoute, composed: boolean): R
   };
 }
 
+/** The WER-005 receipt bridge's answer about the installed runtime. */
+export interface HostRuntimeReceipt {
+  installed: boolean;
+  prefix: string;
+  releaseId: string | null;
+  dataDir: string | null;
+  cliPath: string | null;
+  failureCode: string | null;
+  checked: string[];
+}
+
 /** The ACTUAL host layout discovery resolved, with its provenance. */
 export interface HostLayout {
   homeDir: string;
@@ -251,6 +266,8 @@ export interface HostLayout {
   secretsEnvFiles: string[];
   /** Every input consulted, by name/path (negative-result evidence). */
   sources: string[];
+  /** The WER-005 installed-runtime receipt answer, consumed not re-derived. */
+  runtime: HostRuntimeReceipt;
 }
 
 export interface HostLayoutOptions {
@@ -946,6 +963,32 @@ function resolveHostContext(options: HostLayoutOptions = {}): {
     .filter((p) => isFile(p));
   const uniqueSecretsEnvFiles = [...new Set(secretsEnvFiles)];
 
+  // -- installed runtime receipts (WER-005, consumed unchanged) ----------
+  const installed = resolveInstalledCli({ homeDir: home, env });
+  const runtime: HostRuntimeReceipt = installed.ok
+    ? {
+        installed: true,
+        prefix: installed.prefix,
+        releaseId: installed.releaseId,
+        dataDir: installed.dataDir,
+        cliPath: installed.cliPath,
+        failureCode: null,
+        checked: [
+          installed.activeReceiptPath,
+          installed.releaseReceiptPath,
+          installed.artifactReceiptPath,
+        ],
+      }
+    : {
+        installed: false,
+        prefix: defaultRuntimePrefix(env, home),
+        releaseId: null,
+        dataDir: null,
+        cliPath: null,
+        failureCode: installed.code,
+        checked: [...installed.checked],
+      };
+
   const layout: HostLayout = {
     homeDir: home,
     configRoot,
@@ -969,6 +1012,7 @@ function resolveHostContext(options: HostLayoutOptions = {}): {
     extraSkillDirs,
     secretsEnvFiles: uniqueSecretsEnvFiles,
     sources: [...new Set(sources)],
+    runtime,
   };
   return { layout, config };
 }
