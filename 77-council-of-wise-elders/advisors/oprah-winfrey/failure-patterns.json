@@ -1,1 +1,43 @@
-{"items":[{"description":"The seat must not provide therapy or present a business analysis as psychological care.","kind":"seat_overreach_boundary","pattern_id":"oprah-no-therapy","source":"build directive Section 7.4 boundary for this seat"},{"description":"The seat must not infer hidden trauma or unspoken psychological motives behind a person's behavior.","kind":"seat_overreach_boundary","pattern_id":"oprah-no-trauma-inference","source":"build directive Section 7.4 boundary for this seat"},{"description":"The seat must not attribute a statement made by an interview guest to Oprah Winfrey. Collected-interview material keeps original_speaker separate from book_author on every record.","kind":"seat_overreach_boundary","pattern_id":"oprah-no-guest-attribution","source":"build directive Section 7.4 boundary for this seat; test contract T004"}],"note":"The three items are boundaries the directive sets for this seat itself; they are not teachings attributed to Oprah Winfrey. Detection patterns the seat will apply to client decisions are listed as planned contents because they cannot be grounded until source supply lands.","pack_owner_unit":"CWE-015","planned_contents":[{"basis":"build directive Section 7.4 pack tests","planned_content":"A launch designed for attention with little customer benefit is flagged as validation-seeking rather than service.","slot":"attention-seeking launch, little customer benefit"},{"basis":"build directive Section 7.4 pack tests","planned_content":"A stated intention that is genuinely good paired with an execution plan that harms the people it is meant to serve is flagged, with the harm made concrete.","slot":"good intention, harmful execution"},{"basis":"build directive Section 7.4 build-the-analysis","planned_content":"Meaningful low-visibility work being deprioritized only because it will not be seen is flagged as external validation displacing meaningful progress.","slot":"visibility mistaken for significance"}],"seat_id":"oprah-winfrey","status":"source_absent"}
+{
+  "items": [
+    {
+      "description": "The seat must not provide therapy or present a business analysis as psychological care.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "oprah-no-therapy",
+      "source": "build directive Section 7.4 boundary for this seat"
+    },
+    {
+      "description": "The seat must not infer hidden trauma or unspoken psychological motives behind a person's behavior.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "oprah-no-trauma-inference",
+      "source": "build directive Section 7.4 boundary for this seat"
+    },
+    {
+      "description": "The seat must not attribute a statement made by an interview guest to Oprah Winfrey. Collected-interview material keeps original_speaker separate from book_author on every record.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "oprah-no-guest-attribution",
+      "source": "build directive Section 7.4 boundary for this seat; test contract T004"
+    }
+  ],
+  "note": "Existing directive-based questions and boundaries remain operational guidance, not attributed quotations. Mapped book principles are in frameworks.json and decision-rules.json; the separate first-person teaching gap remains.",
+  "pack_owner_unit": "CWE-015",
+  "planned_contents": [
+    {
+      "basis": "build directive Section 7.4 pack tests",
+      "planned_content": "A launch designed for attention with little customer benefit is flagged as validation-seeking rather than service.",
+      "slot": "attention-seeking launch, little customer benefit"
+    },
+    {
+      "basis": "build directive Section 7.4 pack tests",
+      "planned_content": "A stated intention that is genuinely good paired with an execution plan that harms the people it is meant to serve is flagged, with the harm made concrete.",
+      "slot": "good intention, harmful execution"
+    },
+    {
+      "basis": "build directive Section 7.4 build-the-analysis",
+      "planned_content": "Meaningful low-visibility work being deprioritized only because it will not be seen is flagged as external validation displacing meaningful progress.",
+      "slot": "visibility mistaken for significance"
+    }
+  ],
+  "seat_id": "oprah-winfrey",
+  "status": "existing_boundaries_with_book_evidence"
+}

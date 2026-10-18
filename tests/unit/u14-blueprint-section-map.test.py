@@ -4,7 +4,7 @@
 
 Proves the shipped crosswalk fixes the Section-4 load-contract hazard:
 
-  (a) `personas/_section-map.json` maps ALL 101 blueprints (100% coverage,
+  (a) `personas/_section-map.json` maps ALL 105 blueprints (100% coverage,
       including the 4 em-dash-heading off-template blueprints) to their
       template generation + governance-section number, and the committed
       file is byte-identical to what the generator produces right now (no
@@ -55,7 +55,7 @@ _spec.loader.exec_module(pfj)
 
 
 class SectionMapCoverage(unittest.TestCase):
-    """(a) 100% coverage of the 101 blueprints, including the 4 off-template
+    """(a) 100% coverage of the 105 blueprints, including the 4 off-template
     (em-dash) blueprints, and the map is not hand-edited drift."""
 
     @classmethod
@@ -76,17 +76,18 @@ class SectionMapCoverage(unittest.TestCase):
         stale = sorted(mapped - on_disk)
         self.assertEqual(stale, [], f"map entries with no on-disk blueprint: {stale}")
 
-    def test_total_is_101(self):
-        self.assertEqual(len(self.persona_dirs), 101)
-        self.assertEqual(self.section_map["_meta"]["total_personas"], 101)
+    def test_total_is_105(self):
+        self.assertEqual(len(self.persona_dirs), 105)
+        self.assertEqual(self.section_map["_meta"]["total_personas"], 105)
 
     def test_template_counts_match_spec_inventory(self):
         # master-spec v2 §A.1.3: 28 Template-A, 67 Template-B (hyphen) + 4
         # Template-B em-dash variant = 71 total under "B".
-        # Two newly registered Russell books add two Template-A entries.
+        # Two Russell and two Oprah books add four Template-A entries.
+        # Two Les books use Template-B governance in Section 4.
         counts = self.section_map["_meta"]["template_counts"]
-        self.assertEqual(counts.get("A"), 30)
-        self.assertEqual(counts.get("B"), 71)
+        self.assertEqual(counts.get("A"), 32)
+        self.assertEqual(counts.get("B"), 73)
         self.assertNotIn("off-template", counts,
                           "the 4 em-dash blueprints must resolve to template B "
                           "(structural match), not remain unclassified")
@@ -102,7 +103,7 @@ class SectionMapCoverage(unittest.TestCase):
             self.assertEqual(entry["template"], "B")
             self.assertEqual(entry["governance_section"], 4)
 
-    def test_governance_section_resolves_for_100_of_101(self):
+    def test_governance_section_resolves_for_104_of_105(self):
         # 1 documented edge case (butow-ultimate-guide-social-media-marketing,
         # a 7-section compact variant with no A-D governance subsections)
         # legitimately has no governance_section; every other persona must
@@ -124,7 +125,7 @@ class SectionMapCoverage(unittest.TestCase):
 class LoadContractHazardFixture(unittest.TestCase):
     """(b) a doer loading "Section 4" receives governance material under
     BOTH generations — one fixture case per generation, against real
-    committed blueprints (not synthetic fixtures — the real 101-blueprint
+    committed blueprints (not synthetic fixtures — the real 105-blueprint
     library IS the fixture set here)."""
 
     def test_template_a_section4_excerpt_resolves_to_governance_not_key_principles(self):
@@ -147,6 +148,18 @@ class LoadContractHazardFixture(unittest.TestCase):
             self.assertIn("8A", excerpt, slug)
             self.assertIn("8D", excerpt, slug)
             self.assertNotIn("## Section 4 - Key Principles", excerpt, slug)
+
+    def test_new_oprah_les_governance_sections_are_discoverable(self):
+        for slug, section in (
+            ("oprah-winfrey-the-path-made-clear", 8),
+            ("oprah-winfrey-what-i-know-for-sure", 8),
+            ("les-brown-live-your-dreams", 4),
+            ("les-brown-its-not-over-until-you-win", 4),
+        ):
+            excerpt = pfj.section4_excerpt(slug, max_chars=20000)
+            self.assertIn(f"Section {section}", excerpt, slug)
+            self.assertIn(f"{section}A", excerpt, slug)
+            self.assertIn(f"{section}D", excerpt, slug)
 
     def test_template_b_section4_excerpt_still_resolves_to_section_4(self):
         # hormozi-100m-offers: Template B, Section 4 IS the Agent Governance

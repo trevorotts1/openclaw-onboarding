@@ -1,1 +1,75 @@
-{"claimed_titles":["The Path Made Clear","Verified first-person interviews and reflections","What I Know For Sure"],"covered":{"application_cases":0,"concepts":0},"evidence_units":0,"note":"Zero coverage is the honest state for this seat. Both required works are absent; nothing has been ingested, and no count in this file exceeds the evidence present, which is none. A seat below its minimum abstains on source-grounded claims.","pack_owner_unit":"CWE-015","qualification":"bibliographic_only","qualification_basis":"Both required works are present only as bibliographic stubs that acknowledge them as not ingested, so the CWE-012 coverage classification calls each required work bibliographic_only and the pack bibliographic_only. In substance the seat is missing: zero evidence units, zero traceable concepts, zero application cases, and the Section 8.2 substantive gate is not met for any required work. No pack, UI copy, or report may present this seat as substantive or source-grounded.","required_minimum":"For each book anchor: at least three independently traceable concepts plus one application case, each linked to a verified source record. Seats grounded in interviews or documented teaching meet the equivalent bar per anchor named in sources.json.","seat_id":"oprah-winfrey","status":"source_absent","supply_need":"Lawfully accessed source material for this seat: The Path Made Clear (or the named alternate anchor What I Know For Sure) plus verified first-person interviews or reflections with original-speaker attribution, ingested with claim-level locators under Sections 7 and 8. Until that supply lands, this seat abstains on source-grounded claims.","works":[{"anchor_role":"anchor","application_cases":0,"concepts":0,"coverage_label":"missing","gate_met":false,"locators":{"page":0,"section":0,"timestamp":0},"quote_candidates":0,"quotes_verified":0,"status":"absent","work_title":"The Path Made Clear"},{"anchor_role":"anchor","application_cases":0,"concepts":0,"coverage_label":"missing","gate_met":false,"locators":{"page":0,"section":0,"timestamp":0},"quote_candidates":0,"quotes_verified":0,"status":"absent","work_title":"Verified first-person interviews and reflections"},{"anchor_role":"alternate_anchor","application_cases":0,"concepts":0,"coverage_label":"missing","gate_met":false,"locators":{"page":0,"section":0,"timestamp":0},"quote_candidates":0,"quotes_verified":0,"status":"absent","work_title":"What I Know For Sure"}]}
+{
+  "claimed_titles": [
+    "The Path Made Clear",
+    "Verified first-person interviews and reflections",
+    "What I Know For Sure"
+  ],
+  "covered": {
+    "concepts": 4,
+    "application_cases": 1
+  },
+  "evidence_units": 10,
+  "note": "Ten mapped book evidence units are present. The covered aggregate describes required foundations only: four concepts and one case. A further four concepts and one case belong to the alternate book; they do not substitute for the separate teaching requirement.",
+  "pack_owner_unit": "CWE-015",
+  "qualification": "partial",
+  "qualification_basis": "One required foundation meets primary_teaching; the separate first-person teaching foundation remains bibliographic_only. Overall qualification is partial, not complete-book or installed readiness.",
+  "required_minimum": "For each book anchor: at least three independently traceable concepts plus one application case, each linked to a verified source record. Seats grounded in interviews or documented teaching meet the equivalent bar per anchor named in sources.json.",
+  "seat_id": "oprah-winfrey",
+  "status": "book_evidence_integrated_teaching_gap",
+  "supply_need": "Verified first-person interviews and reflections remains unqualified. This does not block supplied-book registration, mapping or integration.",
+  "works": [
+    {
+      "anchor_role": "anchor",
+      "application_cases": 1,
+      "concepts": 4,
+      "coverage_label": "primary_teaching",
+      "gate_met": true,
+      "locators": {
+        "page": 5,
+        "section": 0,
+        "timestamp": 0
+      },
+      "quote_candidates": 0,
+      "quotes_verified": 0,
+      "status": "present_primary_teaching",
+      "work_title": "The Path Made Clear"
+    },
+    {
+      "anchor_role": "anchor",
+      "application_cases": 0,
+      "concepts": 0,
+      "coverage_label": "missing",
+      "gate_met": false,
+      "locators": {
+        "page": 0,
+        "section": 0,
+        "timestamp": 0
+      },
+      "quote_candidates": 0,
+      "quotes_verified": 0,
+      "status": "absent",
+      "work_title": "Verified first-person interviews and reflections"
+    },
+    {
+      "anchor_role": "alternate_anchor",
+      "application_cases": 1,
+      "concepts": 4,
+      "coverage_label": "primary_teaching",
+      "gate_met": true,
+      "locators": {
+        "page": 5,
+        "section": 0,
+        "timestamp": 0
+      },
+      "quote_candidates": 0,
+      "quotes_verified": 0,
+      "status": "present_primary_teaching",
+      "work_title": "What I Know For Sure"
+    }
+  ],
+  "supplemental_book_coverage": {
+    "concepts": 4,
+    "application_cases": 1,
+    "note": "Additional alternate-book evidence; excluded from the required-foundation coverage aggregate."
+  }
+}

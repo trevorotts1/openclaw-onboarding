@@ -1,3 +1,5 @@
+## [v27.1.36]  -  2026-10-18  -  Register four supplied Oprah and Les Skill22 book personas and integrate their traceable Council evidence; preserve separate teaching gaps.
+
 ## [v27.1.35]  -  2026-10-18  -  Register and index Russell book personas; bind Council anchor evidence
 
 ## [v27.1.34]  -  2026-10-18  -  Implement canonical Skill 22 to Council export with explicit provenance and partial diagnostics

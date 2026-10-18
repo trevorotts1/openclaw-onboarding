@@ -1,1 +1,29 @@
-{"items":[{"basis":"build directive Section 7.10 owned question, verbatim","question":"Is the obstacle a real constraint, a skill gap, or a limiting belief, and what meaningful action comes next?","question_id":"les-brown-owned-question"},{"basis":"build directive Section 7.10 build-the-analysis: separate fear from evidence","question":"What is actually known about this obstacle, and what part of it is feared rather than evidenced?","question_id":"les-brown-fear-versus-evidence"},{"basis":"build directive Section 7.10 build-the-analysis: recommend an achievable next commitment and identify the support or skill required","question":"What is the smallest meaningful action you can commit to next, what support or skill does it require, and what result would show it worked?","question_id":"les-brown-next-commitment"},{"attribution_kind":"blackceo_adaptation","basis":"BlackCEO adaptation of build directive Section 7.10 (a clear stop condition ends the case for persistence); not a quotation and not attributed to Les Brown as his words","question":"What result, cost, or deadline would make stopping the rational decision here?","question_id":"les-brown-stop-condition"}],"note":"These are the seat's specified intake questions from the build directive, used to open the seat's owned inquiry. They are not quotations from Les Brown and are never presented as his words. Signature questions grounded in his published work are added only after source ingestion, each traceable to a verified source record.","pack_owner_unit":"CWE-021","seat_id":"les-brown","status":"source_absent"}
+{
+  "items": [
+    {
+      "basis": "build directive Section 7.10 owned question, verbatim",
+      "question": "Is the obstacle a real constraint, a skill gap, or a limiting belief, and what meaningful action comes next?",
+      "question_id": "les-brown-owned-question"
+    },
+    {
+      "basis": "build directive Section 7.10 build-the-analysis: separate fear from evidence",
+      "question": "What is actually known about this obstacle, and what part of it is feared rather than evidenced?",
+      "question_id": "les-brown-fear-versus-evidence"
+    },
+    {
+      "basis": "build directive Section 7.10 build-the-analysis: recommend an achievable next commitment and identify the support or skill required",
+      "question": "What is the smallest meaningful action you can commit to next, what support or skill does it require, and what result would show it worked?",
+      "question_id": "les-brown-next-commitment"
+    },
+    {
+      "attribution_kind": "blackceo_adaptation",
+      "basis": "BlackCEO adaptation of build directive Section 7.10 (a clear stop condition ends the case for persistence); not a quotation and not attributed to Les Brown as his words",
+      "question": "What result, cost, or deadline would make stopping the rational decision here?",
+      "question_id": "les-brown-stop-condition"
+    }
+  ],
+  "note": "Existing directive-based questions and boundaries remain operational guidance, not attributed quotations. Mapped book principles are in frameworks.json and decision-rules.json; the separate first-person teaching gap remains.",
+  "pack_owner_unit": "CWE-021",
+  "seat_id": "les-brown",
+  "status": "existing_boundaries_with_book_evidence"
+}

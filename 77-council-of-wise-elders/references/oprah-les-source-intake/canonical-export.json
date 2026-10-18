@@ -1,0 +1,1088 @@
+{
+  "schema": "wise-elders.canonical-skill22-export/v1",
+  "scope": "shared_pack",
+  "packages": [
+    {
+      "seat_id": "simon-sinek",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "td-jakes",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "oprah-winfrey",
+      "pack_version": "1.0.1",
+      "sources": [
+        {
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "work_id": "work-the-path-made-clear",
+          "work_title": "The Path Made Clear",
+          "credited_authors": [
+            "Oprah Winfrey"
+          ],
+          "original_speaker": "Oprah Winfrey",
+          "source_type": "book",
+          "publisher_or_host": "Flatiron Books",
+          "edition_or_publication_date": "First Edition March 2019; supplied PDF also states first eBook January 2019",
+          "retrieved_at": "2026-10-18",
+          "canonical_url": null,
+          "private_asset_id": "retained-oprah-winfrey-the-path-made-clear-pdf",
+          "content_sha256": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "rights_status": "reference_only",
+          "allowed_scope": "shared_pack",
+          "locators": [
+            {
+              "kind": "page",
+              "value": "PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection."
+            },
+            {
+              "kind": "page",
+              "value": "PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection."
+            },
+            {
+              "kind": "page",
+              "value": "PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104."
+            },
+            {
+              "kind": "page",
+              "value": "PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection."
+            },
+            {
+              "kind": "page",
+              "value": "PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition."
+            }
+          ],
+          "quality": "primary_substantive"
+        },
+        {
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "work_id": "work-what-i-know-for-sure",
+          "work_title": "What I Know For Sure",
+          "credited_authors": [
+            "Oprah Winfrey"
+          ],
+          "original_speaker": "Oprah Winfrey",
+          "source_type": "book",
+          "publisher_or_host": "Flatiron Books",
+          "edition_or_publication_date": "First Edition September 2014",
+          "retrieved_at": "2026-10-18",
+          "canonical_url": null,
+          "private_asset_id": "retained-oprah-winfrey-what-i-know-for-sure-pdf",
+          "content_sha256": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "rights_status": "reference_only",
+          "allowed_scope": "shared_pack",
+          "locators": [
+            {
+              "kind": "page",
+              "value": "PDF page45, Gratitude"
+            },
+            {
+              "kind": "page",
+              "value": "PDF pages85-86, Clarity"
+            },
+            {
+              "kind": "page",
+              "value": "PDF page94, Clarity"
+            },
+            {
+              "kind": "page",
+              "value": "PDF page109, Power"
+            },
+            {
+              "kind": "page",
+              "value": "PDF page102, Power"
+            }
+          ],
+          "quality": "primary_substantive"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c1",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C1 - Purpose develops through attention to lived energy.** In her own chapter reflection, Oprah describes a life as changing rather than fixed and encourages attention to experiences that nourish energy. Her account treats decisions, setbacks, and achievements as opportunities to recognize what gives life meaning; the role expressing that meaning may change. This supports examining repeated experiences instead of assuming a prestigious job title settles one's purpose. It does not establish that every pleasurable activity is a calling or that purpose guarantees financial success. Locator: PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c2",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C2 - Attend to early signs while distinguishing what cannot be controlled.** Oprah opens her reflection with the Montecito mudslides as a devastating event beyond personal prevention, then contrasts that catastrophe with many personal difficulties that have earlier signs. She encourages noticing persistent discomfort, stalled growth, and energizing connection before a problem becomes harder to address. The distinction matters: her attention-to-signals teaching should not be used to claim that disaster or harm results from a person's failure to listen. Locator: PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c3",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C3 - Clarify intention before choosing execution.** Oprah argues that a person should articulate the vision and examine the actual reason for pursuing it before deciding how to act. Her reflection connects commitment to a purpose the person can stand behind, rather than merely to the appearance of success. A responsible application asks what the goal serves and what implementation requires; it does not claim that pure intention controls external outcomes. Locator: PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c4",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C4 - Practice legacy through present acts of service.** Oprah frames service as a sustained, compassionate approach to ordinary choices, extending beyond formal volunteering or donations. She asks readers to consider the character of their actions now and to organize decisions around how they hope to affect others. Her reflection credits Maya Angelou for important lessons about legacy; the present-action invitation described here is Oprah's authored application, not a claim that she originated Angelou's aphorisms. Locator: PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-case1",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition."
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-CASE1 - A role change revealed a better fit in Baltimore.** Oprah recounts moving from news reporting and anchoring, where she felt misplaced and depleted, to cohosting People Are Talking in 1978. The conversations on her first talk-show day left her energized and more at home in her work; she presents that contrast as recognition of a calling. This is her own source-reported experience, not an invented coaching illustration or an independently verified causal study. Its transferable lesson is to compare the lived fit of activities rather than equate a perceived demotion with a loss of worth. Locator: PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c1",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page45, Gratitude"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C1 - Attention through a concrete gratitude practice. Locator: PDF page45, Gratitude, local `0045.txt`.** Winfrey recounts maintaining a daily five-item gratitude journal, losing the routine as responsibilities grew, and noticing that greater wealth and activity had not brought greater delight. She resumes recording appreciated moments electronically. The substantive concept is a deliberate attention practice supported by her own reported comparison across time; it is not a claim that gratitude guarantees wealth, cures distress, or changes every external situation.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c2",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages85-86, Clarity"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C2 - Intention and the boundary behind an honest yes. Locator: PDF pages85-86, Clarity, local `0085.txt`-`0086.txt`.** Winfrey describes saying yes to preserve approval until she examined why she was agreeing. In her own charity-request example, she recognizes that avoiding a reputation for stinginess is the main motive and decides that is insufficient. Gary Zukav is explicitly credited for the underlying intention teaching; her application to habitual pleasing and chosen generosity is the authored reflection. The assistant adapts this as a motive-and-capacity check, not an excuse to ignore duties.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c3",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page94, Clarity"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C3 - Restoration belongs in the calendar. Locator: PDF page94, Clarity, local `0094.txt`.** Winfrey describes telling her assistant that a free ten-minute interval did not automatically need to be filled, then preserving small periods of quiet or simple activity. Her reported experience is that these breaks leave her more ready for subsequent work. This supports deliberate margin as a practical capacity choice; it does not establish a universal recovery dose or a medical rule from the exercise analogy that introduces the essay.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c4",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page109, Power"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C4 - Power as aligned contribution rather than rank. Locator: PDF page109, Power, local `0109.txt`.** Winfrey questions lists that equate power with fame, wealth, or a position that can disappear after a board decision. She instead describes authentic power through the alignment of purpose, personality, and service to a greater good. This is her articulated value framework, not a validated measure or a promise that an aligned person cannot fail.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-case1",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page102, Power"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-CASE1 - Author-reported production change after a guest's humiliation. Locator: PDF page102, Power, local `0102.txt`.** Winfrey recounts an early television episode in which a wife learned of her husband's infidelity on stage. Seeing the woman's distress, she reports deciding not to participate again in programming that demeans or diminishes a person. This is a genuine source autobiographical application of dignity as a production constraint, distinct from a guest interview lesson and from the original hypothetical workplace examples below. The incident is author-reported and not independently corroborated by this conversion.",
+          "excerpt": null
+        }
+      ],
+      "claimed_titles": [
+        "The Path Made Clear",
+        "What I Know For Sure"
+      ]
+    },
+    {
+      "seat_id": "tiffany-aliche",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "russell-brunson",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "michelle-obama",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "brene-brown",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "dennis-kimbro",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "les-brown",
+      "pack_version": "1.0.1",
+      "sources": [
+        {
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "work_id": "work-live-your-dreams",
+          "work_title": "Live Your Dreams",
+          "credited_authors": [
+            "Les Brown"
+          ],
+          "original_speaker": "Les Brown",
+          "source_type": "book",
+          "publisher_or_host": "HarperCollins / Quill",
+          "edition_or_publication_date": "Copyright 1992; first Avon edition 1994; reprinted in Quill 2001 (supplied copy)",
+          "retrieved_at": "2026-10-18",
+          "canonical_url": null,
+          "private_asset_id": "retained-les-brown-live-your-dreams-pdf",
+          "content_sha256": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "rights_status": "reference_only",
+          "allowed_scope": "shared_pack",
+          "locators": [
+            {
+              "kind": "page",
+              "value": "PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.”"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.”"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.”"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.”"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history."
+            }
+          ],
+          "quality": "primary_substantive"
+        },
+        {
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "work_id": "work-its-not-over-until-you-win",
+          "work_title": "It's Not Over Until You Win",
+          "credited_authors": [
+            "Les Brown"
+          ],
+          "original_speaker": "Les Brown",
+          "source_type": "book",
+          "publisher_or_host": "Fireside / Simon & Schuster",
+          "edition_or_publication_date": "First Fireside Edition 1998; supplied 260-page PDF",
+          "retrieved_at": "2026-10-18",
+          "canonical_url": null,
+          "private_asset_id": "retained-les-brown-its-not-over-until-you-win-pdf",
+          "content_sha256": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "rights_status": "reference_only",
+          "allowed_scope": "shared_pack",
+          "locators": [
+            {
+              "kind": "page",
+              "value": "PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 106-109, Chapter 4, Canceled, Making a Career Comeback"
+            },
+            {
+              "kind": "page",
+              "value": "PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire"
+            }
+          ],
+          "quality": "primary_substantive"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ev-les-brown-ld-c1",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C1 - Four Stages of Greatness.** The author presents development as a cycle: investigate personal influences and motives; accept worth while recognizing shortcomings; make specific commitments; experience fulfillment and inspect how the achievement changed you. Then renew the cycle rather than treating success as the end of growth. The practical test is whether self-understanding changes what a person does. This is the author’s presented methodology, not a claim of scientifically established causation or unique historical invention. Locator: PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.” Full tool: PLAYBOOK-APPENDIX.md, E1.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-c2",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C2 - Hunger connected to action.** The author distinguishes a passing wish from a personally compelling reason to act and teaches deliberate ways to strengthen that connection: small acts of responsibility, repeated goal review, immediate action, courageous practice, sustained effort, learning, reflection on contribution, mentors and communication. Hunger should produce preparation and useful activity, not manufactured desperation or unsafe sacrifice. A user can test it by connecting one chosen reason to one dated action. Locator: PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.” Full tool: PLAYBOOK-APPENDIX.md, E2.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-c3",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C3 - As If rehearsal for manageable fear.** The author describes a method he calls As If visualization: notice the feared outcome, imagine handling the situation, rehearse the desired conduct and take action. The function is to make an intimidating performance approachable; imagined applause is not evidence of competence or a completed result. The book separately recognizes legitimate physical danger, so the method must not erase warning signals or expert advice. Locator: PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.” Full tool: PLAYBOOK-APPENDIX.md, E7.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-c4",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C4 - OQP and a home-court advantage.** The author’s relationship guidance asks people to seek supporters who nourish development while retaining trusted critics who challenge weaknesses. A supportive network is therefore more than praise: it includes specific help, honest feedback and mutual growth. Review what each relationship does to conduct and capability; explore repair, boundaries or a new source of guidance when needed. Never classify disagreement alone as proof that someone is harmful. Locator: PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.” Full tool: PLAYBOOK-APPENDIX.md, E10.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-case1",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history."
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-CASE1 - The house that enthusiasm could not verify.** In a genuine author-reported personal case, the author describes saving a $12,000 down payment to buy a home for his mother, disregarding his lawyer’s advice to obtain a title search, then discovering $25,000 in liens and losing the house and deposit. His mother’s response also revealed that the stairs made the property a poor fit for her. He reports later buying a suitable, lien-free home. The case supports verified preparation, actual beneficiary needs, learning and recovery; it does not establish that every setback will lead to a better purchase. Locator: PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c1",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C1 - Evidence of prior capacity.** The source's victory bank and Spirit Book practices use remembered accomplishments and encouraging material to counter the tendency to treat a setback as proof of universal incapacity. The useful coaching move is to recall a specific event, identify the person's actual contribution, and connect that capacity to a small present action; this does not establish that the same outcome will recur. Ask: “When have you handled something comparably difficult, what did you do, and which part of that capacity is useful now?” This is a source-described practice expressed in original language, with a new worksheet and hypothetical example in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Section E1. Locator: PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c2",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C2 - Six-part value check.** The source's Value System Checkup examines facts and motives, ego, emotion, direction, reference points, and effects on valued parts of life. Its practical contribution is to slow down a tempting decision long enough to examine why it is attractive and whom it affects. Ask: “What facts support the choice, what recognition are you seeking, which emotion is strongest, where does the choice lead, whose relevant experience can inform you, and what could it cost the people or commitments you value?” These are paraphrased checks, not a reproduced questionnaire; the adapted template and hypothetical example are in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Section E2. Locator: PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c3",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C3 - Constructive response to criticism.** The source describes understanding the critic and the specific claim, finding an honestly shared point, and seeking a positive resolution while admitting a valid error. The distinction is between assessed agreement and reflexive submission: useful feedback can be accepted without accepting unsupported accusations. Ask: “What exactly happened, which part is accurate, and what change would address that part?” A threat or abusive encounter calls for safety and appropriate support, not an obligation to persuade the aggressor. The original practice script and hypothetical example appear in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Sections C and E3. Locator: PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c4",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 106-109, Chapter 4, Canceled, Making a Career Comeback"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C4 - Career comeback through daily action.** The source's seven comeback elements combine supportive company, encouraging input, learning from mistakes, release of the defeated venture, a daily plan, smaller task components, and more constructive self-talk. This makes recovery a pattern of conduct rather than a declaration of confidence. Ask: “Which part of the old effort should end, which useful capacity remains, who can help, and what meaningful task can you finish before the next review?” The deployment adaptation adds an observable completion condition and a review point without promising reemployment or commercial success. The complete paraphrased component list and original worked example are in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Section E4. Locator: PDF 106-109, Chapter 4, Canceled, Making a Career Comeback; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-case1",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-CASE1 - A leader accepts correction and repairs public harm.** In a genuine autobiographical report, the author describes reprimanding an employee publicly after discovering a lie. A senior colleague challenged the public handling of the incident; the author then apologized publicly the next day. The account demonstrates that accountability includes reviewing one's own conduct even when another person's error is real. The colleague's advice remains guest-attributed, and the episode is an author-reported case, not an independently verified study or an invented coaching vignette. Ask: “Was the correction needed, was the way it was delivered respectful, and what repair matches the audience that witnessed the harm?” Locator: PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        }
+      ],
+      "claimed_titles": [
+        "Live Your Dreams",
+        "It's Not Over Until You Win"
+      ]
+    }
+  ],
+  "seats": [
+    {
+      "seat_id": "simon-sinek",
+      "package_sha256": "b86311571cf803490ce43e1731cdfadcee290deee93cb92223513b5c8bcfbdee",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "start-with-why",
+          "title": "Start with Why",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "td-jakes",
+      "package_sha256": "796fee138633c2e72c9593d1adb49059e4efbb7d53460a52354fd02e75dd210c",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "instinct",
+          "title": "Instinct",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "disruptive-thinking",
+          "title": "Disruptive Thinking",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "dont-drop-the-mic",
+          "title": "Don't Drop the Mic",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "oprah-winfrey",
+      "package_sha256": "c4697e1d771ee03647fa89cb0f2ba6861abe5202a61c053f388106b13c33c3fd",
+      "evidence_units": 10,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "the-path-made-clear",
+          "title": "The Path Made Clear",
+          "work_class": "primary_teaching",
+          "matched_source_ids": [
+            "src-oprah-winfrey-the-path-made-clear-retained-pdf"
+          ],
+          "traceable_concepts": 4,
+          "application_cases": 1,
+          "gate_met": true
+        },
+        {
+          "work_key": "verified-first-person",
+          "title": "Verified first-person interviews and reflections",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "tiffany-aliche",
+      "package_sha256": "50bbb05e9f43ef4cf1f64d82b8d8574076432575af197351dba330fba5a6c2f7",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "get-good-with-money",
+          "title": "Get Good with Money",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "russell-brunson",
+      "package_sha256": "698c8b7cea7bf58a9b393acc6847f22cd355316776c4c9f3db30cd58305bb57d",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "dotcom-secrets",
+          "title": "DotCom Secrets",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "expert-secrets",
+          "title": "Expert Secrets",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "michelle-obama",
+      "package_sha256": "c81a34679bef0be56a969fd499cd6369a9b9645782641685bdb11240880b511e",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "becoming",
+          "title": "Becoming",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "the-light-we-carry",
+          "title": "The Light We Carry",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "brene-brown",
+      "package_sha256": "4987dd00ee9d5c5015061894c26209aff1e2d981745e5f2b9e76ebd5bf817f82",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "dare-to-lead",
+          "title": "Dare to Lead",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "braving",
+          "title": "BRAVING documented material",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "dennis-kimbro",
+      "package_sha256": "da8609fd29020ca52a86ffd911abbb909a732d77aa8809381c808f0556cf9a34",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "think-and-grow-rich-a-black-choice",
+          "title": "Think and Grow Rich: A Black Choice",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "the-wealth-choice",
+          "title": "The Wealth Choice",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "les-brown",
+      "package_sha256": "a7ab6f9ec83e7c839da87bc4a8626e6697d137e78c4e1f3d141420a0615e3857",
+      "evidence_units": 10,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "its-not-over-until-you-win",
+          "title": "It's Not Over Until You Win",
+          "work_class": "primary_teaching",
+          "matched_source_ids": [
+            "src-les-brown-its-not-over-until-you-win-retained-pdf"
+          ],
+          "traceable_concepts": 4,
+          "application_cases": 1,
+          "gate_met": true
+        },
+        {
+          "work_key": "verified-public-teaching",
+          "title": "Verified public teaching",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "evidence_id": "ev-oprah-winfrey-op-c1",
+      "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+      "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+      "start_line": 46,
+      "end_line": 46,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-op-c2",
+      "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+      "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+      "start_line": 48,
+      "end_line": 48,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-op-c3",
+      "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+      "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+      "start_line": 50,
+      "end_line": 50,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-op-c4",
+      "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+      "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+      "start_line": 52,
+      "end_line": 52,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-op-case1",
+      "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+      "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+      "start_line": 54,
+      "end_line": 54,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-ok-c1",
+      "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+      "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+      "start_line": 53,
+      "end_line": 53,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-ok-c2",
+      "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+      "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+      "start_line": 55,
+      "end_line": 55,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-ok-c3",
+      "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+      "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+      "start_line": 57,
+      "end_line": 57,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-ok-c4",
+      "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+      "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+      "start_line": 59,
+      "end_line": 59,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-oprah-winfrey-ok-case1",
+      "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+      "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+      "start_line": 61,
+      "end_line": 61,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-ld-c1",
+      "file": "les-brown-live-your-dreams/persona-blueprint.md",
+      "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+      "start_line": 51,
+      "end_line": 51,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-ld-c2",
+      "file": "les-brown-live-your-dreams/persona-blueprint.md",
+      "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+      "start_line": 53,
+      "end_line": 53,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-ld-c3",
+      "file": "les-brown-live-your-dreams/persona-blueprint.md",
+      "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+      "start_line": 55,
+      "end_line": 55,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-ld-c4",
+      "file": "les-brown-live-your-dreams/persona-blueprint.md",
+      "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+      "start_line": 57,
+      "end_line": 57,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-ld-case1",
+      "file": "les-brown-live-your-dreams/persona-blueprint.md",
+      "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+      "start_line": 59,
+      "end_line": 59,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-lw-c1",
+      "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+      "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+      "start_line": 48,
+      "end_line": 48,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-lw-c2",
+      "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+      "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+      "start_line": 50,
+      "end_line": 50,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-lw-c3",
+      "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+      "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+      "start_line": 52,
+      "end_line": 52,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-lw-c4",
+      "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+      "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+      "start_line": 54,
+      "end_line": 54,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-les-brown-lw-case1",
+      "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+      "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+      "start_line": 56,
+      "end_line": 56,
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "simon-sinek",
+      "persona_key": "sinek-find-your-why"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "simon-sinek",
+      "persona_key": "sinek-start-with-why"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "td-jakes",
+      "persona_key": "jakes-instinct"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "tiffany-aliche",
+      "persona_key": "aliche-get-good-with-money"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "brunson-marketing-secrets-blackbook"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "brunson-network-marketing-secrets"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-dotcom-secrets"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-expert-secrets"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-lead-funnels"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-the-funnel-hackers-cookbook"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-traffic-secrets"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "michelle-obama",
+      "persona_key": "obama-becoming"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "michelle-obama",
+      "persona_key": "obama-light-we-carry"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "brene-brown",
+      "persona_key": "brown-atlas-of-heart"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "dennis-kimbro",
+      "persona_key": "kimbro-the-wealth-choice"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "dennis-kimbro",
+      "persona_key": "kimbro-what-makes-great-great"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "simon-sinek"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "td-jakes"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "tiffany-aliche"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "russell-brunson"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "michelle-obama"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "brene-brown"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "dennis-kimbro"
+    }
+  ],
+  "mapping_sha256": "44e352ab09ffe5a31bc4f28b07181461650401de623a81072e4083ac4de9cdd7",
+  "source_verification": "Mapping assertions retained; original access, passage fidelity and permission are not independently certified by this exporter."
+}
