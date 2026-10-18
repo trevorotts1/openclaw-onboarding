@@ -1,3 +1,23 @@
+## [v27.1.32]  -  2026-10-18  -  Council reviewed repair cohort: runtime readiness, source qualification, and Skill 22 preservation
+
+### What Changed
+- Keep generated runtime files outside Council source integrity hashes and report structural readiness separately from live usability.
+- Verify extracted content only in explicitly selected distribution mode. Source doctor and verifier require the archive and its outer-manifest SHA-256; mutable manifest status cannot exempt a source release.
+- Require a supported Node runtime and working SQLite before installing the Council runtime.
+- Load the installed nine advisor packs with source identity and bounded private-source handling.
+- Require traceable primary teaching coverage without promoting partial evidence to complete-book coverage. Include the existing source contract suite in CI.
+- Inventory the existing fourteen Skill 22 personas without rewriting or promoting their derivative material. Accept Mac repository path aliases while retaining symlink rejection.
+
+### Migration Notes
+- This is partial repair integration. Live Council acceptance, verified primary-source ingestion, and frozen session pack selection remain unverified.
+- No advisor roster, Skill 22 asset, or Skill 76 Local Embedder change is included.
+- Risk level: LOW for these scoped runtime and validation repairs. Existing installed clients must follow the normal update process; this PR does not update a live installation.
+
+### Files Changed
+- Council runtime source, contract tests, Node preflight and Skill 22 audit scripts, and their five CI workflows.
+- Skill 77 version markers, source manifest and generated skill archive.
+- Repository release markers, library index and this changelog, updated by the standard release preparation scripts.
+
 ## [v27.1.29]  -  2026-10-16  -  Skill 23 interview links honor issuer expiry and preserve the first completion timestamp for 24-hour grace
 
 - Preserve the original completion timestamp on retries, without inventing timestamps for completed legacy records.

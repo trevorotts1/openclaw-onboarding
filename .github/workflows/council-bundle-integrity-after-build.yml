@@ -1,0 +1,55 @@
+name: Council bundle integrity after runtime build
+
+on:
+  pull_request:
+    paths:
+      - "77-council-of-wise-elders/**"
+      - ".github/workflows/council-bundle-integrity-after-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-versus-generated:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Regenerate deterministic package and verify clean source
+        working-directory: 77-council-of-wise-elders
+        run: |
+          node scripts/build-bundles.mjs
+          node scripts/doctor.mjs
+          node scripts/verify-bundles.mjs
+      - name: Verify extracted distribution and tamper rejection
+        working-directory: 77-council-of-wise-elders
+        run: node --test scripts/tests/bundle-extraction.test.mjs
+      - name: Build runtime in-place with dependencies
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          node --import tsx --test tests/cli.test.ts tests/cli-doctor-readiness.test.ts tests/cli-composition.test.ts tests/cli-route-composition.test.ts
+      - name: Built artifacts do not alter source manifest
+        working-directory: 77-council-of-wise-elders
+        run: |
+          node scripts/doctor.mjs
+          node scripts/verify-bundles.mjs
+      - name: Changing real source must fail verification
+        working-directory: 77-council-of-wise-elders
+        shell: bash
+        run: |
+          printf '\ninvalidating source change\n' >> runtime/README.md
+          if node scripts/verify-bundles.mjs; then
+            echo "ERROR: source modification was ignored by integrity verification"
+            exit 1
+          fi
+          git checkout -- runtime/README.md
+          node scripts/verify-bundles.mjs

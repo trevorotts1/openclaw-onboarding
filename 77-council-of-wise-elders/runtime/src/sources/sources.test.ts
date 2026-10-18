@@ -69,18 +69,18 @@ describe('T001: seat registry validation', () => {
 });
 
 describe('valid packs pass', () => {
-  test('valid minimal Sinek pack is substantive', () => {
+  test('valid minimal Sinek pack has primary teaching coverage', () => {
     const v = validateAdvisorPack(validSinekPack());
     assert.equal(v.valid, true, JSON.stringify(v.diagnostics, null, 2));
-    assert.equal(v.qualification, 'substantive');
-    assert.equal(v.works[0].work_class, 'complete_book');
+    assert.equal(v.qualification, 'primary_teaching_based');
+    assert.equal(v.works[0].work_class, 'primary_teaching');
     assert.equal(v.works[0].traceable_concepts, 3);
     assert.equal(v.works[0].application_cases, 1);
   });
   test('valid Jakes pack: three books, three lenses, one seat', () => {
     const v = validateAdvisorPack(validJakesPack());
     assert.equal(v.valid, true, JSON.stringify(v.diagnostics, null, 2));
-    assert.equal(v.qualification, 'substantive');
+    assert.equal(v.qualification, 'primary_teaching_based');
     assert.equal(v.works.length, 3);
     assert.ok(v.works.every((w) => w.gate_met));
   });
@@ -406,7 +406,7 @@ describe('Skill 22 export package validation', () => {
       claimed_titles: ['Start with Why'],
     });
     assert.equal(r.accepted, true, JSON.stringify(r.diagnostics, null, 2));
-    assert.equal(r.qualification, 'substantive');
+    assert.equal(r.qualification, 'primary_teaching_based');
   });
   test('evidence citing a source the package does not carry is rejected', () => {
     const pack = validSinekPack();

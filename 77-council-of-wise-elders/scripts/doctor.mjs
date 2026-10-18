@@ -4,16 +4,20 @@
 // frontmatter and version agreement, the nine-seat roster with exact
 // profile labels, JSON validity, manifest agreement, and the rule
 // that no council state lives inside the skill folder.
-// Usage: node doctor.mjs [--root <skill-folder>]
-// Exit 0 when every check passes, 1 otherwise. No network, no writes.
+// Usage: node doctor.mjs [--root <skill-folder>] [--distribution]
+// Default: source package including its archive. --distribution explicitly checks
+// an extracted package without certifying the original source archive.
+// Exit 0 when every check passes, 1 otherwise. No network, no writes.\n// Generated runtime/dist and runtime/node_modules are not part of source integrity.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkArchiveContract } from "./archive-contract.mjs";
 
 const args = process.argv.slice(2);
+const distribution = args.includes("--distribution");
 const rootIdx = args.indexOf("--root");
 const root = rootIdx >= 0
   ? resolve(args[rootIdx + 1])
@@ -44,10 +48,17 @@ const pass = (m) => console.log(`PASS ${m}`);
 const fail = (m) => { failures += 1; console.log(`FAIL ${m}`); };
 const info = (m) => console.log(`INFO ${m}`);
 
-function walk(dir, out = []) {
+function isGeneratedRuntimePath(rel) {
+  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
+    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/");
+}
+
+function walk(dir, out = [], base = dir) {
   for (const name of readdirSync(dir).sort()) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
+    const rel = relative(base, p).split("\\").join("/");
+    if (isGeneratedRuntimePath(rel)) continue;
+    if (statSync(p).isDirectory()) walk(p, out, base);
     else out.push(p);
   }
   return out;
@@ -165,6 +176,11 @@ else fail(`state files inside skill folder: ${stateHits.map((p) => relative(root
 const manifestPath = join(root, "manifest.json");
 if (existsSync(manifestPath)) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const archiveErrors = checkArchiveContract(root, manifest, distribution);
+  for (const error of archiveErrors) fail(error);
+  if (archiveErrors.length === 0) pass(distribution
+    ? "explicit extracted distribution has no self-nested archive"
+    : "source archive SHA-256 matches the source manifest");
   const pairs = [];
   for (const p of walk(root)) {
     const rel = relative(root, p).split("\\").join("/");

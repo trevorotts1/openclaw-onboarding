@@ -8,6 +8,10 @@
 set -u
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAIL=0
+if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--distribution" ]; }; then
+  echo "Usage: $0 [--distribution]" >&2
+  exit 2
+fi
 
 note_pass() { echo "PASS $1"; }
 note_fail() { echo "FAIL $1"; FAIL=1; }
@@ -24,13 +28,13 @@ fi
 
 # 2. Doctor: layout, versions, roster, labels, JSON, manifest, state.
 if command -v node >/dev/null 2>&1; then
-  if node "$SKILL_DIR/scripts/doctor.mjs" --root "$SKILL_DIR"; then
+  if node "$SKILL_DIR/scripts/doctor.mjs" --root "$SKILL_DIR" "$@"; then
     note_pass "doctor"
   else
     note_fail "doctor (see output above)"
   fi
   # 3. Bundle verification against manifest.json.
-  if node "$SKILL_DIR/scripts/verify-bundles.mjs" --root "$SKILL_DIR"; then
+  if node "$SKILL_DIR/scripts/verify-bundles.mjs" --root "$SKILL_DIR" "$@"; then
     note_pass "bundle verification"
   else
     note_fail "bundle verification (see output above)"
