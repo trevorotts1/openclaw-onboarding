@@ -1,0 +1,1 @@
+{"event":"admission_refused","schema":"wise-elders.hybrid-supervisor-singleton/v1","at_ms":1792360120150,"instance_id":"runner-79207","pid":79207,"reason":"LEASE_HELD","duplicate_start":true,"read_only":true,"ledger_generation":1}
