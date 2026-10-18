@@ -42,8 +42,8 @@ from agnes_gates import (  # noqa: E402
 
 ALL_ELEMENTS = {"subject", "environment", "style", "lighting",
                 "composition", "output"}
-KNOWN_ENTRY_HASH = ("b3584da0c21b197c900fc1f47f0e4dcf722c6d74"
-                    "cd4d6124418f8500a3c7285b")
+KNOWN_ENTRY_HASH = ("ace1998862604904b5e2e224c0f85c87daf1ea0"
+                    "7b74d2b60608589a4631e0532")
 
 
 def long_prompt(chars: int) -> str:
