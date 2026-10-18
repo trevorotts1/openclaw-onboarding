@@ -29,6 +29,11 @@ ROUTING LAW (doc 02 §5 — the owner's exact graph; no improvisation):
   it retains the current purchase state (see resolve_after).
   Checkout has NO decline edge: an abandoned initial checkout is not a route.
 
+  folded_levels (settled 2026-10-18): N >= 2 distinct main offers folded into
+  the signature page, straight to checkout, NO product_selection node. It is
+  never relabelled `single_simple` and it never gains a selection page.
+  single_simple, multiple_options and free_entry are unchanged.
+
 Deterministic, stdlib only, no network, no model. Exit 0 = ok, 2 = violation,
 3 = usage / fail-closed.
 """
@@ -100,10 +105,13 @@ def _extras(launch: Dict[str, Any]) -> Tuple[bool, bool, bool]:
 def expected_roles(launch: Dict[str, Any]) -> List[str]:
     """The node role list, in route order, for this launch's mode + extras."""
     mode = launch.get("journey_mode")
-    if mode not in ("single_simple", "multiple_options", "free_entry"):
+    if mode not in ("single_simple", "multiple_options", "free_entry",
+                    "folded_levels"):
         raise RouteError(f"journey_mode {mode!r} is not a launch mode")
     u1, d1, u2 = _extras(launch)
     roles = ["landing"]
+    # folded_levels deliberately does NOT insert a selection node: its distinct
+    # levels are already folded into the signature page.
     if mode == "multiple_options":
         roles.append("product_selection")
     roles.append("checkout")
@@ -617,6 +625,18 @@ def _self_test() -> int:
         "free_entry U1-only graph has no selection/D1/U2 nodes")
     say(validate_graph(gf, free) == [], "free_entry graph validates clean")
 
+    # folded_levels: N >= 2 distinct mains, NO selection node, straight to checkout.
+    folded = dict(base, journey_mode="folded_levels",
+                  extras={"upsell_1": True, "downsell_1": False,
+                          "upsell_2": False})
+    gfold = compile_route(folded)
+    say([n["role"] for n in gfold["nodes"]] ==
+        ["landing", "checkout", "upsell_1", "thank_you"],
+        "folded_levels compiles NO selection node and goes straight to checkout")
+    say(validate_graph(gfold, folded) == [], "folded_levels graph validates clean")
+    say(sorted(expected_roles(folded)) == sorted(n["role"] for n in gfold["nodes"]),
+        "folded_levels expected_roles agrees with the compiled graph")
+
     # U2 disabled: D1 paid goes straight to thank_you.
     nou2 = dict(base, extras={"upsell_1": True, "downsell_1": True, "upsell_2": False})
     gn = compile_route(nou2)
@@ -676,7 +696,7 @@ def _self_test() -> int:
 
     # Generated machine test cases all pass against the resolver, per profile.
     for label, launch in (("full", full), ("simple", simple), ("free", free),
-                          ("nou2", nou2)):
+                          ("folded", folded), ("nou2", nou2)):
         u1x, d1x, u2x = _extras(launch)
         cases = generate_test_cases(launch)
         fails = run_test_cases(cases, u1x, d1x, u2x)

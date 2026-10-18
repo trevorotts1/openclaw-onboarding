@@ -1,0 +1,123 @@
+{
+  "schema": "blackceo.launcher.dependencies/1",
+  "target": "999-setup",
+  "enabled_in_999": false,
+  "note": "The Launcher may not be enabled in 999 until every required entry below is present. This manifest is a package, not an install: it writes nothing outside this skill and claims no 999 state.",
+  "entries": [
+    {
+      "id": "tree-49-signature-funnel",
+      "kind": "skill_tree",
+      "ref": "49-signature-funnel",
+      "required": true,
+      "why": "intake validation, route compiler, dispatch, delegation receipt store"
+    },
+    {
+      "id": "tree-78-signature-product-selection",
+      "kind": "skill_tree",
+      "ref": "78-signature-product-selection",
+      "required": true,
+      "why": "product_selection page producer"
+    },
+    {
+      "id": "tree-79-signature-order-form",
+      "kind": "skill_tree",
+      "ref": "79-signature-order-form",
+      "required": true,
+      "why": "native checkout contract and cross-field validator"
+    },
+    {
+      "id": "tree-80-signature-upsell",
+      "kind": "skill_tree",
+      "ref": "80-signature-upsell",
+      "required": true,
+      "why": "upsell_1 and upsell_2 page producer"
+    },
+    {
+      "id": "tree-81-signature-downsell",
+      "kind": "skill_tree",
+      "ref": "81-signature-downsell",
+      "required": true,
+      "why": "downsell_1 validators consumed by the S49 downsell wrapper"
+    },
+    {
+      "id": "tree-82-signature-thank-you",
+      "kind": "skill_tree",
+      "ref": "82-signature-thank-you",
+      "required": true,
+      "why": "thank_you result and run manifest"
+    },
+    {
+      "id": "tree-71-blackceo-signature-page",
+      "kind": "skill_tree",
+      "ref": "71-blackceo-signature-page",
+      "required": true,
+      "why": "landing page producer reached through the S49 landing bridge"
+    },
+    {
+      "id": "tree-77-council-of-wise-elders",
+      "kind": "skill_tree",
+      "ref": "77-council-of-wise-elders",
+      "required": true,
+      "why": "Council planning-step invocation"
+    },
+    {
+      "id": "shared-utils-signature-launch",
+      "kind": "shared_utils",
+      "ref": "shared-utils/signature_launch",
+      "required": true,
+      "why": "shared signature-launch schemas and domain utilities"
+    },
+    {
+      "id": "registry-line-81",
+      "kind": "registry_line",
+      "ref": "23-ai-workforce-blueprint/skill-department-map.json",
+      "match": "signature-downsell",
+      "required": true,
+      "why": "Skill 81 must be discoverable by slug in the department registry"
+    },
+    {
+      "id": "registry-line-82",
+      "kind": "registry_line",
+      "ref": "23-ai-workforce-blueprint/skill-department-map.json",
+      "match": "signature-thank-you",
+      "required": true,
+      "why": "Skill 82 must be discoverable by slug in the department registry"
+    },
+    {
+      "id": "registry-line-launcher",
+      "kind": "registry_line",
+      "ref": "23-ai-workforce-blueprint/skill-department-map.json",
+      "match": "black-friday-launcher",
+      "required": true,
+      "why": "the Launcher itself must be discoverable by slug"
+    },
+    {
+      "id": "department-map-entry-launcher",
+      "kind": "department_map_entry",
+      "ref": "83-black-friday-launcher/repo-integration/skill-department-map-entry.json",
+      "required": true,
+      "why": "the launcher's own department-map entry file"
+    },
+    {
+      "id": "installer-registration-launcher",
+      "kind": "installer_registration",
+      "ref": "83-black-friday-launcher/SKILL.md",
+      "required": true,
+      "why": "install.sh and update-skills.sh discover skills as <number>-<name>/ with SKILL.md; a non-numeric or ARCHIVED directory is skipped"
+    },
+    {
+      "id": "skill-number-assigned",
+      "kind": "skill_number",
+      "ref": "launcher_core/constants.py:SKILL_NUMBER",
+      "required": true,
+      "why": "a final assigned number; the current 83 is a working parameter"
+    },
+    {
+      "id": "runtime-jsonschema",
+      "kind": "runtime_package",
+      "ref": "jsonschema",
+      "required": true,
+      "why": "Skill 79's cross-field checkout validator imports jsonschema"
+    }
+  ]
+}

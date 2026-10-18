@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-FIXTURE-ELEVATION",
+  "revision": 1,
+  "journey_mode": "multiple_options",
+  "brand": {
+    "ref": "TEST-ONLY-BRAND",
+    "hash": "5625f29ecb9aea44c8cdee178a1f538eb892b10958ebdd2552994937d8dfab60"
+  },
+  "copy_profile": "standard",
+  "approval": {
+    "ref": "TEST-ONLY-APPROVAL",
+    "hash": "c28ba6b9d0cc7c0962eeedf2cfaf2128fefd83251855a35d9d044fc3cfb14b2f"
+  },
+  "entitlement_attestation": {
+    "basis": "purchase",
+    "evidence_ref": "TEST-ONLY-EVIDENCE",
+    "attested_by": "TEST-ONLY-ATTESTER",
+    "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
+    "amount_minor": 49700,
+    "currency": "USD"
+  },
+  "offers": [
+    {
+      "offer_id": "MAIN-ESS",
+      "name": "TEST ONLY Essential",
+      "role": "main",
+      "price": {"amount_minor": 9700, "currency": "USD"}
+    },
+    {
+      "offer_id": "MAIN-PRO",
+      "name": "TEST ONLY Professional",
+      "role": "main",
+      "price": {"amount_minor": 19700, "currency": "USD"}
+    },
+    {
+      "offer_id": "MAIN-ELITE",
+      "name": "TEST ONLY Elite",
+      "role": "main",
+      "price": {"amount_minor": 49700, "currency": "USD"}
+    },
+    {
+      "offer_id": "BUMP",
+      "name": "TEST ONLY Bump",
+      "role": "bump",
+      "price": {"amount_minor": 2700, "currency": "USD"}
+    },
+    {
+      "offer_id": "U1",
+      "name": "TEST ONLY U1",
+      "role": "upsell_1",
+      "price": {"amount_minor": 6700, "currency": "USD"}
+    },
+    {
+      "offer_id": "D1",
+      "name": "TEST ONLY D1",
+      "role": "downsell_1",
+      "price": {"amount_minor": 3700, "currency": "USD"}
+    },
+    {
+      "offer_id": "U2",
+      "name": "TEST ONLY U2",
+      "role": "upsell_2",
+      "price": {"amount_minor": 4700, "currency": "USD"}
+    }
+  ]
+}

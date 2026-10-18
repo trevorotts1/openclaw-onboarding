@@ -1,0 +1,86 @@
+{
+  "schema": "blackceo.skill.registration/1",
+  "skill": {
+    "name": "black-friday-launcher",
+    "number": "83",
+    "number_final": false,
+    "number_status": "working parameter recorded 2026-10-18; the launcher's own number is unassigned in the owner records",
+    "number_source": "launcher_core/constants.py:SKILL_NUMBER",
+    "directory": "83-black-friday-launcher",
+    "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
+    "entry": "SKILL.md",
+    "version": "0.2.0",
+    "status": "core-only"
+  },
+  "registration": {
+    "scope": "repository-local registration record; no installer edit, no fleet rollout, no 999 write",
+    "registered_at": "2026-10-18",
+    "base_commit": "8a66264fbfdcf2b94040c78593100531deb80983",
+    "branch": "recovery/launcher-decided"
+  },
+  "depends_on": {
+    "49-signature-funnel": "intake validation, route substrate, delegation receipt collection",
+    "71-blackceo-signature-page": "landing page producer (separate skill, not edited here)",
+    "77-council-of-wise-elders": "Council planning-step invocation through the documented offline entry point",
+    "shared-utils/signature_launch": "schemas and domain utilities",
+    "78-signature-product-selection": "product_selection page producer",
+    "79-signature-order-form": "native checkout contract and cross-field validator",
+    "80-signature-upsell": "upsell_1 and upsell_2 page producer",
+    "81-signature-downsell": "downsell_1 validators",
+    "82-signature-thank-you": "thank_you result and run manifest"
+  },
+  "entitlements": {
+    "status": "decided",
+    "decision": "entitlement_declaration_and_attestation",
+    "declaration": "entitlement-declaration.json",
+    "gate": "launcher_core/entitlement.py:gate (fail-closed; unknown state never builds)",
+    "enforced_in_code": true,
+    "creates_entitlements": false,
+    "calls_billing_api": false,
+    "owner_stated_rules_source": "owner decision recorded in RECOVERY_2026-10-18 (LAUNCH-02b)"
+  },
+  "distribution": {
+    "status": "open_decision",
+    "seam": "distribution_run_target",
+    "chosen_target": null
+  },
+  "council": {
+    "status": "decided",
+    "decision": "council_included_in_launch_planning",
+    "step": "council_launch_planning",
+    "entry_point": "77-council-of-wise-elders/scripts/doctor.mjs",
+    "route_node_emitted": false,
+    "blocks_build": false,
+    "is_permission": false
+  },
+  "checkout": {
+    "status": "decided",
+    "decision": "native_converted_and_flow_checkout_mapping",
+    "surface": "native Convert and Flow order form installed by Skill 06",
+    "contract": "79-signature-order-form/references/checkout.schema.json",
+    "dispatch_adapter": false
+  },
+  "cross_sales": {
+    "status": "open_decision",
+    "seam": "cross_sales_teaching_source",
+    "inclusion": "decided: the relationship surface is present on the thank-you page",
+    "teaching_state": "pending",
+    "route_node_emitted": false
+  },
+  "offer_facts": {
+    "status": "decided",
+    "decision": "verified_offer_facts_only",
+    "rule": "a defaulted price, level or entitlement fails the build"
+  },
+  "journey_modes": {
+    "status": "decided",
+    "modes": ["single_simple", "multiple_options", "folded_levels"],
+    "folded_levels": "N >= 2 distinct main offers folded into the signature page, no product_selection node, never relabelled a single offer"
+  },
+  "open_decisions": [
+    "distribution_run_target",
+    "cross_sales_teaching_source"
+  ],
+  "live_effects": "none",
+  "offline_only": true
+}
