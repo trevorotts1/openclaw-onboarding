@@ -5,6 +5,427 @@
     {
       "policy_id": "kie-rule-12-band",
       "entry_status": "active",
+      "supersedes": "kie-rule-12-band",
+      "entry_hash": "ace1998862604904b5e2e224c0f85c87daf1ea07b74d2b60608589a4631e0532",
+      "provenance": {
+        "content_owners": [
+          "Skill 71",
+          "Skill 63",
+          "Skill 74"
+        ],
+        "approved_by_ref": "Supersession content: the Leg 2 naming act of 2026-10-18 (rooms/S71/A24-LEG2-KIE-RATIO-NAMING-ACT-2026-10-18.md), content owners S71 and Skill 74 under Term 2 of S71's Q8 position note (handoffs/S71-to-S63-Q8-position.md, 2026-10-16); executed under MAIN's hard order of 2026-10-18 (14:47 EDT) reassigning Leg 2 ownership to the S71 room on the retirement of INTEGRATION and S49. All other entry content is carried unchanged from the superseded entry (PP-T5 minting, 2026-10-17).",
+        "entered_by": "S71 room (Lane B row B-303), executing the single-writer supersession act of record for the retired S49 registry writer under MAIN's hard order of 2026-10-18. This supersession carries two contents: the Leg 2 naming (B-303) and the Leg 3 disposition (c) named exception (B-304, rooms/S71/review-scratch/A24-LEG3-EXECUTION-2026-10-18.md), the combination the readiness permits when both contents are ready together.",
+        "entered_at": "2026-10-18"
+      },
+      "doctrine": {
+        "statement": "The KIE rule 12 band (95 to 100 percent of the model's live field maximum, floor 80 percent, genuine specification only) is Skill 71's native authoring target, superseding Amendment 6 Part C where they conflict.",
+        "length_basis": "percentage_band",
+        "parameters": {
+          "floor_percent_of_max": null,
+          "target_percent_of_max": null,
+          "floor_chars": 5000,
+          "preferred_min_chars": null,
+          "preferred_max_chars": 19000,
+          "ceiling_rule": "A ceiling is enforced only when the cap status is published or owner_observed AND a numeric cap is present; under not_published no ceiling is enforced, nothing is truncated to fit an imagined limit, and length is recorded as telemetry only (S63 note item 1, from the launch_prompt_policy.py branch structure and prompt-policy.md sections 1 and 7). Settled operative band (MAIN settlement of U1, 2026-10-17): floor 5,000 characters, normal target about 9,000 characters, preferred maximum 19,000 characters, under the owner-stated hard ceiling of 32,000 characters for agnes-image-2.5-flash (owner-stated 2026-10-17) and the owner's working practice of about 19,000 characters. S63's merged code does not yet enforce the 32,000 figure; the code-side cap record still reads NOT_PUBLISHED with null caps, and recording it in the repo rides S63's future candidate version."
+        },
+        "padding_rule": "Expansion must add genuine visual control, not fluff or repetitive padding. The compiler REJECTS padding (repeated sentences, duplicated 8-word-gram ratio > 0.08) before spend (AF-PROMPT-PADDING). (Skill 63 references/prompt-policy.md section 5.) Padding detection hard-fails (Amendment 6 Part C-rule 4): repeated n-gram blocks, untraceable boilerplate, and element sections that do not reference the image's specific subject fail at close. Prompts are authored by genuine specification only; packet doc 07 section 6 prescribes the test 'incomplete long padding fails' and doc 15 section 6 forbids adding filler to satisfy a cosmetic count.",
+        "verbatim_fields_exempt": true
+      },
+      "applicability": {
+        "modes": [
+          "signature_launch",
+          "legacy"
+        ],
+        "skills": [
+          63,
+          71
+        ],
+        "providers": [
+          "KIE",
+          "Agnes"
+        ],
+        "scope_note": "This entry governs prompt length doctrine and its records for image-generation prompts in Skills 71 and 63, in all contexts (launch runs and house runs alike; one governing policy, no context split, no selector). It does not govern the social-planner scoped policy at shared-utils/social_prompt_policy.json (with shared-utils/social_prompt_compiler.py), a separate scoped policy under its own authority carrying its own hard band (9,000 to 19,000, fail-closed) for the social-planner paths only; where a run is a social-planner run, the scoped policy governs under its own authority. That is a scope boundary, not a collision. Provenance of retired names: in Skill 63 v2.1.6 the governing band itself is implemented under the name legacy_house_band, and signature_launch_completeness is the superseded launch doctrine implemented alongside it (today also the default prompt_policy_id carried on every Agnes receipt). Both names are recorded here as provenance inside this entry only: neither name is a governing entry, carries applicability of its own, or can be resolved by a new run, and records naming them are historical implementation references that resolve to this, the one governing band entry (joint statement: S63 note item 10; S71 note item 10 concurring in full)."
+      },
+      "model_maxima": [
+        {
+          "model_id": "gpt-image-2-5",
+          "provider": "KIE",
+          "maximum": {
+            "value": 20000,
+            "unit": "characters",
+            "counting_convention_id": "nfc-trimmed-unicode-code-points"
+          },
+          "cap_status": "NOT_PUBLISHED",
+          "cap_status_source_value": "NOT_PUBLISHED",
+          "source_citation": {
+            "source_ref": "Skill 71 prompt-budget-policy.json (band branch), models[0]: match 'gpt-image-2-5', max_chars 20000, unit chars, cap_status NOT_PUBLISHED; source text: 'GPT Image 2.5 cap 20,000 per KIE docs 2026-09-09 as recorded by Skill 66; NOT owner-confirmed (FIX-PLAN Part C-rule 5)'. The validator's default model id for this record is 'gpt-image-2-5-sunburst-text-to-image' (the Skill 66 registry id). Live-field cross-check: the model's live schema sets the field maximum at 20,000 characters (update plan Item 4 part (b)).",
+            "recorded_by": "Skill 66 (recorded in Skill 71's prompt-budget-policy.json)",
+            "recorded_at": "2026-09-09",
+            "authority": "vendor_published"
+          },
+          "refresh": {
+            "protocol_ref": null,
+            "drift_owner": "OPEN (Q14 remainder): no record names who detects drift when Skill 66's record changes or what refreshes a recorded maximum; the remainder is owned by S71 and Skill 66"
+          }
+        },
+        {
+          "model_id": "gpt-image-2",
+          "provider": "KIE",
+          "maximum": {
+            "value": 25000,
+            "unit": "characters",
+            "counting_convention_id": "nfc-trimmed-unicode-code-points"
+          },
+          "cap_status": "OWNER_CONFIRMED",
+          "cap_status_source_value": "OWNER_CONFIRMED",
+          "source_citation": {
+            "source_ref": "Skill 71 prompt-budget-policy.json, models[1]: match 'gpt-image-2', max_chars 25000, unit chars, cap_status OWNER_CONFIRMED; source text: 'Skill 66: GPT Image 2 authoritative cap is 25,000, OWNER_CONFIRMED 2026-08-27'. The differing 20,000 figure in the shared enforcer's embedded table is divergence record D-Q4 in this entry.",
+            "recorded_by": "Skill 66 (recorded in Skill 71's prompt-budget-policy.json)",
+            "recorded_at": "2026-08-27",
+            "authority": "owner_confirmed"
+          },
+          "refresh": {
+            "protocol_ref": null,
+            "drift_owner": "OPEN (Q14 remainder): no record names who detects drift when Skill 66's record changes or what refreshes a recorded maximum; the remainder is owned by S71 and Skill 66"
+          }
+        },
+        {
+          "model_id": "qwen",
+          "provider": "KIE",
+          "maximum": {
+            "value": 4500,
+            "unit": "tokens",
+            "counting_convention_id": "nfc-trimmed-unicode-code-points"
+          },
+          "cap_status": "UNKNOWN",
+          "cap_status_source_value": "UNKNOWN",
+          "source_citation": {
+            "source_ref": "Skill 71 prompt-budget-policy.json, models[2]: match 'qwen' (class match), max_tokens 4500, unit tokens, cap_status UNKNOWN; the record's source text carries Part C-rule 2: token-limited models are never converted to a fake character cap, the validator has no tokenizer and renders no token verdict, and character telemetry is still recorded. Maximum in characters: null (no conversion minted).",
+            "recorded_by": "Skill 71 (prompt-budget-policy.json)",
+            "recorded_at": null,
+            "authority": "room_record"
+          },
+          "refresh": {
+            "protocol_ref": null,
+            "drift_owner": "OPEN (Q14 remainder): no record names who detects drift when Skill 66's record changes or what refreshes a recorded maximum; the remainder is owned by S71 and Skill 66"
+          }
+        },
+        {
+          "model_id": "agnes-image-2.1-flash",
+          "provider": "agnes",
+          "maximum": {
+            "value": null,
+            "unit": "characters",
+            "counting_convention_id": "nfc-trimmed-unicode-code-points"
+          },
+          "cap_status": "NOT_PUBLISHED",
+          "cap_status_source_value": "NOT_PUBLISHED",
+          "source_citation": {
+            "source_ref": "Skill 63 models.json, entry agnes-image-2.1-flash (launch_role legacy): vendor_hard_cap_chars null, vendor_hard_cap_tokens null, cap_status 'NOT_PUBLISHED'; Skill 63 references/prompt-policy.md section 1 records the NOT_PUBLISHED state from the first-party 2.1 documentation. The CapInfo contract's lowercase form 'not_published' is the same value on the code surface (divergence record D-C1). Owner-stated ceiling: null; the owner's 32,000-character statement names agnes-image-2.5-flash only and is not carried across models.",
+            "recorded_by": "Skill 63",
+            "recorded_at": null,
+            "authority": "vendor_published"
+          },
+          "refresh": {
+            "protocol_ref": "Boundary-probe protocol: Skill 63 references/prompt-policy.md section 4 (explicit operator authorization, non-destructive probe, result recorded into models.json under owner_observed_cap_chars with cap_status OWNER_OBSERVED), never from a runtime guess; an owner statement is recorded by the same path (room record first, repo recording in a future candidate version through review)",
+            "drift_owner": "Skill 63"
+          }
+        },
+        {
+          "model_id": "agnes-image-2.5-flash",
+          "provider": "agnes",
+          "maximum": {
+            "value": null,
+            "unit": "characters",
+            "counting_convention_id": "nfc-trimmed-unicode-code-points"
+          },
+          "cap_status": "NOT_PUBLISHED",
+          "cap_status_source_value": "NOT_PUBLISHED",
+          "source_citation": {
+            "source_ref": "Skill 63 models.json, entry agnes-image-2.5-flash (launch_role default): vendor_hard_cap_chars null, cap_status 'NOT_PUBLISHED'. Owner-stated ceiling 32,000 characters recorded alongside the NOT_PUBLISHED published status (owner ruling 2026-10-17, via MAIN; ceiling synthesis, RECORD OF RECORD), with a working target of about 19,000 characters. The code-side owner_observed_cap_chars in models.json still reads null; recording the owner-stated figure in the repo rides S63's future candidate version. The owner-stated ceiling is carried in this entry's doctrine ceiling_rule; the model record's published maximum stays null, as both PP-T4 notes record it.",
+            "recorded_by": "Skill 63",
+            "recorded_at": null,
+            "authority": "vendor_published"
+          },
+          "refresh": {
+            "protocol_ref": "Boundary-probe protocol: Skill 63 references/prompt-policy.md section 4 (explicit operator authorization, non-destructive probe, result recorded into models.json under owner_observed_cap_chars with cap_status OWNER_OBSERVED), never from a runtime guess; an owner statement is recorded by the same path (room record first, repo recording in a future candidate version through review)",
+            "drift_owner": "Skill 63"
+          }
+        }
+      ],
+      "counting_convention": {
+        "convention_id": "nfc-trimmed-unicode-code-points",
+        "definition": "NFC-normalized, trimmed, Unicode code points: the count is len(unicodedata.normalize('NFC', text).strip()) in code points, as declared in Skill 71's prompt-budget-policy.json (counting_convention) and implemented in Skill 63's launch_prompt_policy.py (_count) and provider receipt code.",
+        "governs_layers": [
+          "validator",
+          "gate"
+        ],
+        "cross_check_rule": null
+      },
+      "ratio_enum_sources": [
+        {
+          "provider": "Agnes",
+          "enum_source_ref": "The per-model aspect_ratios field in Skill 63's models.json, read from the entry matching the run's canonical_model_id; the same entry's dimension_table keys serve as a cross-check only. Enum, identical on both model entries: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2, 21:9.",
+          "confirmation_point": "provider_adapter",
+          "authority_rule": "Each provider adapter is authoritative for its own ratio enum; an unsupported ratio fails closed by name at the adapter (validate_payload.py rejects any ratio outside the enum, failure by name, no remapping). There is no silent remapping at any layer."
+        },
+        {
+          "provider": "KIE",
+          "enum_source_ref": "The per-model input_fields.aspect_ratio.enum array in the KIE adapter's own model registry: 74-kie-live-adapter/references/kie-model-registry.json (Skill 74, trevorotts1/openclaw-onboarding), read from the models[] entry matching the run's selected model id. For the launch GPT Image 2.5 models (gpt-image-2-5-sunburst-text-to-image, gpt-image-2-5-flare-text-to-image, and the image-to-image variants) the enum is: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9, 27:16, 16:27, 9:8, 8:9. Named as the KIE ratio authority record by the Leg 2 naming act of 2026-10-18 (rooms/S71/A24-LEG2-KIE-RATIO-NAMING-ACT-2026-10-18.md).",
+          "confirmation_point": "provider_adapter",
+          "authority_rule": "Term 2 (S71 Q8 position note, 2026-10-16) governs: the ratio set for a KIE-selected launch run comes from the KIE adapter's own authority record named in enum_source_ref, and the adapter governs the actual call. The Skill 74 shared snapshot carried inside Skill 71 is a cache, not an authority; where cache and adapter record disagree, the adapter governs and the disagreement fails closed by name. The N43 routing and transport mappings are not the authority record. No layer substitutes a ratio silently (Term 3), except under the one named exception that follows. NAMED EXCEPTION TO TERM 3 (Leg 3 disposition (c), recorded 2026-10-18 in rooms/S71/review-scratch/A24-LEG3-EXECUTION-2026-10-18.md): the N43 operator-approved ratio substitutions on the KIE route (5:4 to 4:3, 4:5 to 3:4, 2:1 to 16:9, 1:2 to 9:16; operator ruling 2026-09-09) are kept as an explicit named exception to Term 3. The exception is not silent: each substitution is recorded at selection and on the run's receipt (requested_ratio and generated_ratio per task) and is verified at the Skill 71 stage gate on every task; the legacy-route ratios (3:1, 1:3, 9:21) are never substituted. Every other requested ratio outside the governing enum refuses by name."
+        }
+      ],
+      "reference_role_vocabulary": {
+        "adopted_terms": [
+          "style",
+          "logo",
+          "identity",
+          "composition",
+          "explicitly approved mixed",
+          "product"
+        ],
+        "mapping": [
+          {
+            "source_term": "style",
+            "source_system": "packet_doc15",
+            "adopted_term": "style",
+            "note": "Direct: the same term in both source systems."
+          },
+          {
+            "source_term": "logo",
+            "source_system": "packet_doc15",
+            "adopted_term": "logo",
+            "note": "Skill 63's identity role covers doc 15's logo and identity (reconciled matrix Q9)."
+          },
+          {
+            "source_term": "identity",
+            "source_system": "packet_doc15",
+            "adopted_term": "identity",
+            "note": "Direct."
+          },
+          {
+            "source_term": "composition",
+            "source_system": "packet_doc15",
+            "adopted_term": "composition",
+            "note": "Skill 63's layout role covers composition (S63's stated interpretation, matrix precision P2; recorded as S63's position, not a verified equivalence)."
+          },
+          {
+            "source_term": "explicitly approved mixed",
+            "source_system": "packet_doc15",
+            "adopted_term": "explicitly approved mixed",
+            "note": "Named gap: Skill 63's table has no mixed role today."
+          },
+          {
+            "source_term": "identity",
+            "source_system": "skill63",
+            "adopted_term": "identity",
+            "note": "Skill 63's identity covers doc 15's logo and identity."
+          },
+          {
+            "source_term": "product",
+            "source_system": "skill63",
+            "adopted_term": "product",
+            "note": "Skill 63 role with no doc 15 counterpart named in the records; recorded as unpaired in both notes and carried as an adopted registry term so the implemented role is not left unmapped."
+          },
+          {
+            "source_term": "layout",
+            "source_system": "skill63",
+            "adopted_term": "composition",
+            "note": "S63's stated interpretation: layout covers doc 15's composition (matrix precision P2)."
+          },
+          {
+            "source_term": "style",
+            "source_system": "skill63",
+            "adopted_term": "style",
+            "note": "Direct."
+          }
+        ],
+        "mixed_role_rule": "No mixed role exists in Skill 63's table today; a mixed-purpose reference is expressed as separate per-reference instructions with no single mixed classification. This entry adopts 'explicitly approved mixed' as a record-vocabulary term WITHOUT directive semantics (the docs-only branch of S63's DELTA Item A.2): the taxonomy carries the term and no validator change follows from this entry. If directive semantics for the mixed role are later defined, the enforced branch of DELTA Item A.2 applies and S63 adds the role and aligns its table's names in a future candidate version through independent review. The mixed role's machine token is not settled by any source (the DELTA placeholder 'approved_mixed' is not adopted by this entry).",
+        "enforcement_note": "Enforcement exists on the identity and style paths only. Skill 63's validate_prompt.py has exactly three reference flags (--logo, --style-ref, --identity-ref), and AF-PROMPT-CONFLICT exists on one path only: an identity/logo reference carrying a style directive. The product and layout roles exist in the prompt-policy.md section 6 taxonomy table only; no validator flag enforces them today (S63 correction note 2026-10-16, Correction 1)."
+      },
+      "cap_status_vocabulary": {
+        "adopted_values": [
+          {
+            "value": "NOT_PUBLISHED",
+            "meaning": "Provenance: the maximum is recorded from provider documentation and is not owner-confirmed.",
+            "ceiling_effect": "enforced",
+            "percent_reported": true
+          },
+          {
+            "value": "OWNER_CONFIRMED",
+            "meaning": "Provenance: the maximum is owner-confirmed.",
+            "ceiling_effect": "enforced",
+            "percent_reported": true
+          },
+          {
+            "value": "UNKNOWN",
+            "meaning": "No maximum is recorded for the model (record genuinely unexamined, or no policy entry matched). No band verdict is rendered and percent_of_max is null; the 2,000-character tripwire is the operative short-prompt flag.",
+            "ceiling_effect": "telemetry_only",
+            "percent_reported": false
+          },
+          {
+            "value": "VERIFIED",
+            "meaning": "Provenance: the maximum is verified; the band's ceiling is the maximum itself.",
+            "ceiling_effect": "enforced",
+            "percent_reported": true
+          }
+        ],
+        "mapping_table": [
+          {
+            "source_value": "not_published",
+            "source_system": "skill63",
+            "adopted_value": "NOT_PUBLISHED"
+          },
+          {
+            "source_value": "published",
+            "source_system": "skill63",
+            "adopted_value": "VERIFIED"
+          },
+          {
+            "source_value": "owner_observed",
+            "source_system": "skill63",
+            "adopted_value": "OWNER_CONFIRMED"
+          }
+        ],
+        "casing_rule": "Casing is normalized to the adopted uppercase spelling at the boundary, never assumed identical across sources. Source values differ by surface: Skill 63's models.json and prompt-policy.md section 4 use the uppercase spelling, while launch_prompt_policy.py's CapInfo contract is lowercase (not_published, published, owner_observed) and its evaluator branches on the lowercase values. This entry carries the adopted value with the differing source value recorded beside it (cap_status_source_value). S63 has no UNKNOWN state: for Agnes models the absence of a verified number is expressed as not_published, never as an unexamined unknown; S71's UNKNOWN is carried in the adopted set as UNKNOWN itself, with no S63 counterpart to map from."
+      },
+      "divergence_records": [
+        {
+          "divergence_id": "D-Q4",
+          "subject": "GPT Image 2 recorded maximum: 25,000 characters (Skill 66, owner-confirmed) versus 20,000 characters (the shared enforcer's embedded table, which Skill 66 calls stale). Band stakes: at 25,000, floor 20,000 and target 23,750; at 20,000, floor 16,000 and target 19,000.",
+          "values": [
+            {
+              "value": "25000",
+              "source_citation": {
+                "source_ref": "Skill 71 prompt-budget-policy.json, models[1] and its source text (Skill 66: authoritative cap 25,000, OWNER_CONFIRMED 2026-08-27)",
+                "recorded_by": "Skill 66",
+                "recorded_at": "2026-08-27",
+                "authority": "owner_confirmed"
+              }
+            },
+            {
+              "value": "20000",
+              "source_citation": {
+                "source_ref": "The shared enforcer's embedded table, as recorded in Skill 71 prompt-budget-policy.json, models[1].source",
+                "recorded_by": "Skill 74 (shared enforcer)",
+                "recorded_at": null,
+                "authority": "room_record"
+              }
+            }
+          ],
+          "governing_value": "25000",
+          "governing_scope": "Inside Skill 71: until the owning rooms correct the losing record, a launch run on the S71 side uses 25,000 as Skill 71's recorded governing value. Owners and route: Skill 66 and the shared enforcer's owner, Skill 74, through INTEGRATION. The Q1 ruling does not touch Q4.",
+          "pin_ref": "Skill 71 references/external-authorities.json (pin existence VERIFIED in the reconciliation pass; pin contents UNVERIFIED and not quoted by S71)",
+          "status": "open",
+          "settled_by": null,
+          "settlement_ref": null
+        },
+        {
+          "divergence_id": "D-Q7",
+          "subject": "Counting-convention divergence: the shared enforcer counts len(text.strip()) with no normalization stated; the validator and policy layer count NFC-normalized, trimmed code points. The policy record declares the two counts not interchangeable.",
+          "values": [
+            {
+              "value": "NFC-normalized, trimmed, Unicode code points",
+              "source_citation": {
+                "source_ref": "Skill 71 prompt-budget-policy.json, counting_convention; Skill 63 launch_prompt_policy.py _count counts the same way",
+                "recorded_by": "Skill 71 and Skill 63",
+                "recorded_at": null,
+                "authority": "room_record"
+              }
+            },
+            {
+              "value": "len(text.strip()) with no normalization stated",
+              "source_citation": {
+                "source_ref": "The shared enforcer's counting convention, as recorded in Skill 71 prompt-budget-policy.json, counting_convention, and the reconciled matrix Q7 entry",
+                "recorded_by": "Skill 74 (shared enforcer)",
+                "recorded_at": null,
+                "authority": "room_record"
+              }
+            }
+          ],
+          "governing_value": "NFC-normalized, trimmed, Unicode code points",
+          "governing_scope": "The count this entry's counting_convention adopts (the Skill 71 validator and policy layer, and the Agnes launch-policy and receipt layers). The Q7 remainder stays open: which count governs a verdict at each layer (validator, gate, transport) when a prompt sits near a floor or ceiling, and whether the enforcer cross-check record must match the validator's count; owners S71 and Skill 74.",
+          "pin_ref": null,
+          "status": "open",
+          "settled_by": null,
+          "settlement_ref": null
+        },
+        {
+          "divergence_id": "D-S63-A",
+          "subject": "A 20,000-character prompt cap was attributed to Agnes models in earlier versions of Skill 63. The figure is not Agnes's: the documentary synthesis traced the circulating 20,000-character figure to KIE's pages for OpenAI's GPT Image models; it appears on no page about any Agnes model, and no Agnes surface publishes or imposes a prompt ceiling.",
+          "values": [
+            {
+              "value": "20000 characters attributed to Agnes models",
+              "source_citation": {
+                "source_ref": "Earlier versions of Skill 63; traced by the ceiling synthesis (lane verdict W4) to KIE's pages for OpenAI's GPT Image models",
+                "recorded_by": "Skill 63 (earlier versions)",
+                "recorded_at": null,
+                "authority": "room_record"
+              }
+            },
+            {
+              "value": "No Agnes ceiling published (NOT_PUBLISHED); owner-stated operational ceiling 32,000 characters for agnes-image-2.5-flash",
+              "source_citation": {
+                "source_ref": "rooms/S63/work/ceiling-evidence/CEILING-SYNTHESIS.md, RECORD OF RECORD and OWNER RULING 2026-10-17; Skill 63 references/prompt-policy.md section 1",
+                "recorded_by": "Skill 63",
+                "recorded_at": "2026-10-17",
+                "authority": "owner_confirmed"
+              }
+            }
+          ],
+          "governing_value": "NOT_PUBLISHED: no vendor ceiling is published or imposed on any Agnes surface; owner-stated operational ceiling 32,000 characters for agnes-image-2.5-flash only",
+          "governing_scope": "Agnes models (Skill 63). Owner of the record: S63 (the misattribution was in Skill 63's own earlier versions; prompt-policy.md section 1 is its correction of record).",
+          "pin_ref": null,
+          "status": "settled",
+          "settled_by": "S63 documentary synthesis and the owner's ruling, both 2026-10-17",
+          "settlement_ref": "rooms/S63/work/ceiling-evidence/CEILING-SYNTHESIS.md"
+        },
+        {
+          "divergence_id": "D-C1",
+          "subject": "Cap-status casing divergence inside Skill 63: models.json records cap_status uppercase while launch_prompt_policy.py's CapInfo contract is lowercase and its evaluator branches on the lowercase values; a value passed verbatim from models.json would fall through both operative branches today. The divergence is latent: no code path currently passes models.json's cap_status into CapInfo, and operative behavior is unchanged.",
+          "values": [
+            {
+              "value": "NOT_PUBLISHED",
+              "source_citation": {
+                "source_ref": "Skill 63 models.json, both entries, cap_status (uppercase record spelling)",
+                "recorded_by": "Skill 63",
+                "recorded_at": null,
+                "authority": "room_record"
+              }
+            },
+            {
+              "value": "not_published",
+              "source_citation": {
+                "source_ref": "Skill 63 scripts/launch_prompt_policy.py, CapInfo contract (lowercase operative form)",
+                "recorded_by": "Skill 63",
+                "recorded_at": null,
+                "authority": "room_record"
+              }
+            }
+          ],
+          "governing_value": "NOT_PUBLISHED (the adopted registry spelling is uppercase; casing is normalized at the boundary, never assumed identical across sources)",
+          "governing_scope": "The Q13 registry and any future wiring between models.json values and a CapInfo-shaped contract. The divergence closes when S63's future candidate version lands the Item B alignment; owner S63.",
+          "pin_ref": null,
+          "status": "open",
+          "settled_by": null,
+          "settlement_ref": null
+        }
+      ],
+      "budget_decision": {
+        "decision_values": [
+          "OK",
+          "BELOW_TARGET",
+          "BELOW_FLOOR",
+          "ABOVE_MAX",
+          "UNKNOWN"
+        ],
+        "citation_rule": "Every budget decision in a Q11 prompt record cites this entry's policy_id AND its entry_hash; a decision missing either is not acceptable to S49's aggregator. A citation resolves to this exact entry, so receipts always reach the entry they cited. The citation names the one governing policy (the band); it records no selection, and no mechanism may treat it as selecting anything."
+      }
+    },
+    {
+      "policy_id": "kie-rule-12-band",
+      "entry_status": "superseded",
       "supersedes": null,
       "entry_hash": "b3584da0c21b197c900fc1f47f0e4dcf722c6d74cd4d6124418f8500a3c7285b",
       "provenance": {
