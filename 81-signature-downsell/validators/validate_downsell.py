@@ -725,7 +725,9 @@ def _entitlement_sets_match(a, b):
     synonym folding and token order are still normalised by
     _content_tokens, so "daybreak-fasttrack" and "fasttrack-daybreak"
     are the same id renamed, while a differing distinguishing token is a
-    different entitlement.
+    different entitlement. Scope: the synonym table only reconciles the
+    vocabulary it lists, so prefixed ids whose distinguishing word differs
+    outside it (acme-core-license versus acme-core-subscription) stay apart.
     """
     la = [str(x) for x in a] if isinstance(a, list) else []
     lb = [str(x) for x in b] if isinstance(b, list) else []
@@ -736,7 +738,8 @@ def _entitlement_sets_match(a, b):
         tokens = _content_tokens(eid)
         best = None
         for i, candidate in enumerate(pool):
-            if candidate is None:
+            # Empty token set (all filler) proves nothing: two empties would match.
+            if not tokens or not candidate:
                 continue
             left, right = _distinguishing_tokens(tokens, candidate)
             if not left and not right:

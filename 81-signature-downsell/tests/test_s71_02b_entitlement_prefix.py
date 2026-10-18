@@ -133,5 +133,25 @@ class GenuineRenameControlTests(unittest.TestCase):
             d1_offer(["golden-daybreak-u1"])))
 
 
+class AdvisoryRegressionTests(unittest.TestCase):
+    """Review advisories A and B on the residual-token cure."""
+
+    def test_all_filler_ids_are_not_one_set(self):
+        """Advisory A: two ids that reduce to no content tokens leave two
+        empty residuals, which must not match. An id carrying no promise
+        word proves nothing about a rename."""
+        self.assertEqual(vd._content_tokens("the-and"), set())
+        self.assertEqual(vd._content_tokens("of-the"), set())
+        self.assertFalse(vd._entitlement_sets_match(
+            ["the-and"], ["of-the"]))
+
+    def test_distinguishing_word_outside_synonym_table_keeps_ids_apart(self):
+        """Advisory B: the cure narrows rename detection to the synonym
+        table. Prefixed ids whose distinguishing word is outside that table
+        are different entitlements, not one id renamed."""
+        self.assertFalse(vd._entitlement_sets_match(
+            ["acme-core-license"], ["acme-core-subscription"]))
+
+
 if __name__ == "__main__":
     unittest.main()
