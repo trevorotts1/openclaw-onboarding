@@ -49,6 +49,20 @@ and a value are three different plan hashes). The field is OPTIONAL and
 stays out of REQUIRED_LAUNCH_FIELDS; plan_document_hash is unchanged and
 binds the field automatically, since it excludes only status and
 plan_approval_ref.
+
+DELIVERY-BINDING REVISION (launch schema 1.2, S49; S82-DEC-DELIVERYURL-01):
+validate_launch also accepts record schema_version "1.2". A 1.2 record may
+carry delivery_bindings, an OPTIONAL top-level object keyed by
+entitlement_id whose entries state delivery_kind (access / download /
+schedule_included_service) and delivery_url (an https destination or null),
+read by Skill 44's fulfillment-map producer (CR-S82-003) for granted
+entitlements. The schema layer enforces the entry shape, the kind enum, and
+the https pattern; this validator enforces what the schema cannot see: a
+whitespace-only URL is refused, an empty bindings object is refused
+(absence is the only encoding of "no bindings"), and a binding naming an
+entitlement no offer grants fails, naming the id (R-DB-1). The field stays
+out of REQUIRED_LAUNCH_FIELDS; plan_document_hash is unchanged and binds
+the field automatically.
 """
 
 from __future__ import annotations
@@ -109,9 +123,9 @@ def validate_launch(launch: Any) -> List[str]:
             fail(f"launch record is missing required field {f!r}")
     if fails:
         return fails
-    if launch["schema_version"] not in ("1.0", "1.1"):
+    if launch["schema_version"] not in ("1.0", "1.1", "1.2"):
         fail(f"schema_version is {launch['schema_version']!r}, expected "
-             "'1.0' or '1.1'")
+             "'1.0', '1.1' or '1.2'")
     if "prompt_policy_id" in launch:
         pid = launch["prompt_policy_id"]
         if not isinstance(pid, str) or not pid.strip():
@@ -119,6 +133,31 @@ def validate_launch(launch: Any) -> List[str]:
                  "string — null or blank is refused; omit the key entirely "
                  "when no policy governs (absence is the only encoding of "
                  "'no policy')")
+    if "delivery_bindings" in launch:
+        bindings = launch["delivery_bindings"]
+        if not isinstance(bindings, dict):
+            fail("delivery_bindings, when present, must be an object "
+                 "keyed by entitlement_id")
+        elif not bindings:
+            fail("delivery_bindings is an empty object — absence is the "
+                 "only encoding of 'no bindings'; omit the key entirely "
+                 "when no entitlement is bound")
+        else:
+            for eid, entry in bindings.items():
+                if not isinstance(eid, str) or not eid.strip():
+                    fail("delivery_bindings keys must be non-empty "
+                         "entitlement ids")
+                    continue
+                if not isinstance(entry, dict):
+                    fail(f"delivery binding for entitlement {eid!r} is "
+                         "not an object")
+                    continue
+                url = entry.get("delivery_url")
+                if isinstance(url, str) and not url.strip():
+                    fail(f"delivery binding for entitlement {eid!r}: "
+                         "delivery_url is blank — a whitespace-only URL "
+                         "is refused (minLength cannot see it); state the "
+                         "https destination or null")
     for f in ("tenant_id", "location_id", "launch_id", "brand_ref", "brand_hash",
               "route_graph_ref", "route_graph_hash"):
         if not isinstance(launch[f], str) or not launch[f].strip():
@@ -220,6 +259,22 @@ def validate_launch(launch: Any) -> List[str]:
                 if p.get("billing_type") not in BILLING_TYPES:
                     fail(f"offer {oid!r} price billing_type "
                          f"{p.get('billing_type')!r} is unknown")
+
+    # Delivery bindings: a binding may only name an entitlement some
+    # offer grants (R-DB-1). An orphan binding is a record error, most
+    # likely a mistyped id; it fails here, naming the id, rather than
+    # surfacing at fulfillment time as a missing buyer link.
+    if isinstance(launch.get("delivery_bindings"), dict):
+        granted_ids = set()
+        for o in by_id.values():
+            ents = o.get("entitlement_ids")
+            if isinstance(ents, list):
+                granted_ids.update(e for e in ents if isinstance(e, str))
+        for eid in launch["delivery_bindings"]:
+            if eid not in granted_ids:
+                fail(f"delivery_bindings names entitlement {eid!r}, "
+                     "which no offer grants — an orphan binding fails "
+                     "validation (R-DB-1)")
 
     # Slot/extras agreement.
     for slot, flag in (("upsell_1", extras["upsell_1"]),

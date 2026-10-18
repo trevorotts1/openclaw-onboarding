@@ -25,7 +25,7 @@ fail-closed (bad request, unknown action, storage failure).
 | `validate_binding` | selection, launch, expected_revision | `{"valid": true}` or a violation (A05 handoff revalidation) |
 | `reject_query_authority` | query | `{"accepted": true}` or `S78-QUERY-PRICE-AUTHORITY` |
 | `binding_plan` | launch, targets, route? | per-price-choice binding plan for S79 / S06 |
-| `page_result` | plan, author_session, request_id, test_only? | page result in the doc 02 shape |
+| `page_result` | plan, author_session, request_id, page_id, input_hash (or a nested `page_request` / `request` document carrying them), test_only? | packet page-result 1.0 document: `page_id` and `input_hash` echoed from the request, no `outcome` field; a call with no echo source fails closed |
 | `session_create` | selection, now | `{"session_ref": ...}` |
 | `session_resume` | session_ref, tenant_id, launch_id, launch, now | resumed / reconfirm_required / expired |
 | `session_confirm` | session_ref, tenant_id, launch_id, launch, now | confirmed (idempotent) / reconfirm_required / expired |

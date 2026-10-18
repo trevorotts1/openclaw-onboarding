@@ -1,0 +1,30 @@
+{
+  "label": "Copy of S79's delivered rows with the SBX-ESSENTIAL row removed; enrichment must fail closed naming SBX-ESSENTIAL.",
+  "launch_id": "signature-launch-l4",
+  "location_id": "XCgFTEA1oDvsPnTqqgoB",
+  "mappings": [
+    {
+      "amount_minor": 19700,
+      "currency": "USD",
+      "display_name": "ZHC S78 L3 Test - Premium",
+      "entitlement_ids": [
+        "ent-main"
+      ],
+      "evidence_ref": "rooms/S79/evidence/a04-a05-l3-catalog-2026-10-16.json (live catalog read-back 2026-10-16T14:55:59Z, sha256 feb556113a41290e91ccf0122411041c2c7aabfe23e496ca90b20cd6d732e3d9) and rooms/S79/evidence/a08-l4-runpack/a08-l4-catalog-snapshot-2026-10-16.json (second live read-back 2026-10-16T22:21:05Z, identical product/price/amount); slot+entitlement binding per handoffs/S44-to-S79-A09-provisioning-answer.md (S44 binding of record: product 6ad22f138fd7561e0dc3f999 -> slot main, entitlement ent-main)",
+      "installed": true,
+      "launch_id": "signature-launch-l4",
+      "location_id": "XCgFTEA1oDvsPnTqqgoB",
+      "native_price_id": "6ad22f13094896d5b89e9881",
+      "native_product_id": "6ad22f138fd7561e0dc3f999",
+      "offer_id": "SBX-PREMIUM",
+      "room": "S79",
+      "slot": "main",
+      "tenant_id": "bceo-client-sandbox",
+      "test_only": true,
+      "verified_native": true
+    }
+  ],
+  "room": "S79",
+  "tenant_id": "bceo-client-sandbox",
+  "test_only": true
+}

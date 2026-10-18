@@ -97,6 +97,7 @@ You never have to know these by name or type a command. Just say what you want i
 | "build a product selection page" · "compare my packages" · "a page to choose between my packages" · "pricing options page for my launch" | Builds the Signature Product Selection page for a launch with multiple meaningful packages |
 | "build my checkout page" · "build an order form" · "add an order bump" · "checkout for my launch" | Builds the Signature order form / checkout experience around native Convert & Flow transaction elements, in combined single-offer mode or post-selection mode, including the reusable optional order bump (default unchecked) that modifies the pending order |
 | "build my upsell pages" · "add an upsell to my launch" · "build the upsell flow for my launch" · "upsell page after checkout" | Builds both Signature upsell page instances of a Signature Launch |
+| "build my downsell page" · "add a downsell to my launch" · "build the downsell flow for my launch" · "downsell page after a declined upsell" | Builds the Signature Downsell page (Downsell 1) of a Signature Launch |
 | "build a thank you page" · "order confirmation page" · "page customers see after buying" | Builds the final Signature thank-you and fulfillment page |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.

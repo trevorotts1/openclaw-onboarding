@@ -1,0 +1,241 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH",
+  "revision": 1,
+  "journey_mode": "multiple_options",
+  "status": "awaiting_plan_approval",
+  "brand_ref": "TEST-ONLY-BRAND",
+  "brand_hash": "TEST-ONLY-NOT-A-REAL-ASSET-HASH",
+  "route_graph_ref": "reference/route-graph-example.json",
+  "route_graph_hash": "43017b1e5678d2904f1eccdd4d21f07093d51faaefa0922e0d76564e06cf2638",
+  "plan_approval_ref": null,
+  "offers": [
+    {
+      "offer_id": "MAIN-A",
+      "slot": "main",
+      "display_name": "TEST ONLY MAIN-A",
+      "deliverables": [
+        "TEST ONLY base-a"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "base-a"
+      ],
+      "requires": [],
+      "excludes": [],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "MAIN-A-USD",
+          "currency": "USD",
+          "amount_minor": 9700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    },
+    {
+      "offer_id": "MAIN-B",
+      "slot": "main",
+      "display_name": "TEST ONLY MAIN-B",
+      "deliverables": [
+        "TEST ONLY base-b"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "base-b"
+      ],
+      "requires": [],
+      "excludes": [],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "MAIN-B-USD",
+          "currency": "USD",
+          "amount_minor": 19700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    },
+    {
+      "offer_id": "MAIN-C",
+      "slot": "main",
+      "display_name": "TEST ONLY MAIN-C",
+      "deliverables": [
+        "TEST ONLY base-c"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "base-c"
+      ],
+      "requires": [],
+      "excludes": [],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "MAIN-C-USD",
+          "currency": "USD",
+          "amount_minor": 29700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    },
+    {
+      "offer_id": "BUMP",
+      "slot": "bump",
+      "display_name": "TEST ONLY BUMP",
+      "deliverables": [
+        "TEST ONLY workbook"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "workbook"
+      ],
+      "requires": [],
+      "excludes": [],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "BUMP-USD",
+          "currency": "USD",
+          "amount_minor": 2700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    },
+    {
+      "offer_id": "U1",
+      "slot": "upsell_1",
+      "display_name": "TEST ONLY U1",
+      "deliverables": [
+        "TEST ONLY extra-full"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "extra-full"
+      ],
+      "requires": [],
+      "excludes": [
+        "D1"
+      ],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "U1-USD",
+          "currency": "USD",
+          "amount_minor": 6700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    },
+    {
+      "offer_id": "D1",
+      "slot": "downsell_1",
+      "display_name": "TEST ONLY D1",
+      "deliverables": [
+        "TEST ONLY extra-lite"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "extra-lite"
+      ],
+      "requires": [],
+      "excludes": [
+        "U1"
+      ],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "D1-USD",
+          "currency": "USD",
+          "amount_minor": 3700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    },
+    {
+      "offer_id": "U2",
+      "slot": "upsell_2",
+      "display_name": "TEST ONLY U2",
+      "deliverables": [
+        "TEST ONLY implementation"
+      ],
+      "exclusions": [],
+      "entitlement_ids": [
+        "implementation"
+      ],
+      "requires": [],
+      "excludes": [],
+      "native_product_id": null,
+      "prices": [
+        {
+          "price_choice_id": "U2-USD",
+          "currency": "USD",
+          "amount_minor": 4700,
+          "billing_type": "one_time",
+          "native_price_id": null,
+          "schedule": [],
+          "terms_source": null,
+          "approval_status": "recommended_unapproved"
+        }
+      ],
+      "source_kind": "test_fixture",
+      "source_ref": "reference/launch-example.json",
+      "test_only": true
+    }
+  ],
+  "extras": {
+    "upsell_1": true,
+    "downsell_1": true,
+    "upsell_2": true
+  },
+  "bump_enabled": true,
+  "image_provider": "agnes",
+  "source_refs": [
+    "20_OWNER_SOURCE_MATERIAL.md"
+  ],
+  "test_only": true
+}

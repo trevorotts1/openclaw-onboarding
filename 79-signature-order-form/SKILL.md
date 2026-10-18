@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
 description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. DRAFT: assembled in the S79 room checkpoint, not yet installed or merged."
-version: 0.1.0
+version: 0.1.2
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale (DRAFT)

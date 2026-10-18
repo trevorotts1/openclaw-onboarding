@@ -1,0 +1,50 @@
+{
+  "artifacts": [
+    {
+      "path": "thank-you-render.html",
+      "sha256": "2747aa1246a997074c899dfa53596b14d3526868ec7265870639acf7c3044bb4"
+    }
+  ],
+  "author_session": "s82-resolver-fixture-session",
+  "blockers": [],
+  "errors": [],
+  "input_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "launch_id": "signature-launch-l4",
+  "location_id": "XCgFTEA1oDvsPnTqqgoB",
+  "order_view": {
+    "buyer_display": "Fixture Buyer",
+    "fixture": true,
+    "fulfillment": {
+      "ent-downsell-1": {
+        "state": "granted"
+      }
+    },
+    "lines": [
+      {
+        "amount_minor": 6700,
+        "currency": "USD",
+        "display_name": "TEST S80 Upsell 1",
+        "offer_id": "TEST-ONLY-U1"
+      },
+      {
+        "amount_minor": 3700,
+        "currency": "USD",
+        "display_name": "TEST S81 Downsell 1",
+        "offer_id": "D1"
+      }
+    ],
+    "note": "Synthetic order view standing in for schemas/order-view.schema.json output; the merged thank-you-result schema types order_view as object|null."
+  },
+  "proof_class": "L2",
+  "request_id": "s82-internal-run-0001",
+  "reviewer_session": null,
+  "revision": 1,
+  "schema_version": "1.0",
+  "status": "locally_verified",
+  "tenant_id": "bceo-client-sandbox",
+  "test_only": true,
+  "validation": {
+    "entitlements_match": true,
+    "no_pitch_pass": true
+  }
+}

@@ -223,8 +223,8 @@
         "funnel-qa-conversion-verification-specialist",
         "ghl-funnel-build-specialist"
       ],
-      "content_sha": "sha256:fe147268e453fe5643525ce57865000588d685bc5f2ecb092d655dd51a3ba4af",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:ab76f575f69312d2ff14cbe4a15e64c2e3c3e6b0f64619e6433f7f4ef3521257",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     "general-task": {
       "count": 9,
@@ -385,8 +385,8 @@
         "sop-writer",
         "webinar-event-marketing-specialist"
       ],
-      "content_sha": "sha256:bb87b185273524866c89f474f1738d2b3dfe3fa18dc208c898437eacce685f92",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:e6fbe955040c55e391b8f0ffa6f491645d8eb61c1c4b16f29ce50befa575265d",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     "master-orchestrator": {
       "count": 3,
@@ -746,8 +746,8 @@
         "web-security-specialist",
         "wordpress-specialist"
       ],
-      "content_sha": "sha256:54b01ad63d18ce51d4030b5199b4d7dba301afe1bb65ad070e0aaa0b5f4e4f04",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:e6425d959877feba247f8eaec503c179cfd7e511daae80ca490690b11bd4c67b",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     "rescue-rangers": {
       "count": 5,
@@ -7383,10 +7383,10 @@
       "path": "templates/role-library/web-development/funnel-builder-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:9b1301ee4b39f38d17d57095ee2c7fb4ae2899a894d435f798389fbcf64f5de5",
-      "render_sha": "sha256:53699bd380c466c8c42652f985c83aa78db009789a5b3500b6702f31d98f502a",
-      "content_version": "1.0.20",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:2d09a630e19d9bcba089700fd919dd851df566711ccf1d0d258ea514e00fce7d",
+      "render_sha": "sha256:939fb1e862b211fbf232301e61615499f6368c4579772adbf2f34c7c1d69c5d8",
+      "content_version": "1.0.21",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     {
       "slug": "head-of-web-development",
@@ -7671,10 +7671,10 @@
       "path": "templates/role-library/marketing/conversion-copywriter.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:1423a15fcd3fcd9f8e3e4763482db43cd28649149686ba3215814efd7478edb6",
-      "render_sha": "sha256:6574a251b79f8fdca83f1dea3092327d9143264388fe09a0403353a6e97795f8",
-      "content_version": "1.0.16",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:97d5ee8e9ccbb435ba3df6e5130cdae1ae0ae182494e6534dd242b49d0343498",
+      "render_sha": "sha256:696b391b647df7d93ff3d2ac8e7c865a012b4c457ea03f9fc278ffb9f995be43",
+      "content_version": "1.0.17",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     {
       "slug": "automated-video-production-specialist-openmontage",
@@ -7975,10 +7975,10 @@
       "path": "templates/role-library/funnels/funnel-qa-conversion-verification-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:529d64bd976d58e18b08b08fd117cadfa8491cb7af479ae40b77cfb640bcb5f4",
-      "render_sha": "sha256:1f4928137305729b6823eecaff325ad065d4d17480c98c7a8f5723bceb34e8f7",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:e6672e2712aeb0a7042750896701d68c59305e067100bff40d7d22041c2010a9",
+      "render_sha": "sha256:0e6e91c041fd95a8d0e107b4ff02a9d2a034af1b99c3b544ab45656074894b37",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     {
       "slug": "ghl-funnel-build-specialist",
@@ -7991,10 +7991,10 @@
       "path": "templates/role-library/funnels/ghl-funnel-build-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:8f0a54da85463616ef7c3c9a9613567c5885e6c95821d4a299d7a9a9818efffe",
-      "render_sha": "sha256:f615e0c5fc410da4db684f926921658127c623379cf6e123d04cd26afaa6f07a",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-16T10:02:00.207405+00:00"
+      "content_sha": "sha256:b6256c783a9d163258d453edaf5e236de15f03f588dbb11dfc566da614be758d",
+      "render_sha": "sha256:c5bedc2160d10889fc8ea971d621da75d66230bd67a79bac191ea36398717230",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-10-17T20:15:16.128197+00:00"
     },
     {
       "slug": "image-grounding-steward",
