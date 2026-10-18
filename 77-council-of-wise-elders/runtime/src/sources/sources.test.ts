@@ -6,8 +6,8 @@
  * T004 original-speaker rule it shares with CWE-015, the CWE-012 prose
  * block's named negative fixtures (missing locator, wrong speaker,
  * unlisted title claim, missing attribution label), and a disk audit of
- * the nine real scaffold packs, which must validate structurally while
- * reporting their honest not-yet-substantive qualification.
+ * the nine real packs, which must validate structurally while reporting
+ * only the source qualification supported by their current records.
  *
  * All pack fixtures are synthetic and labeled as fixture data; no test
  * string is a real quotation or source excerpt.
@@ -434,7 +434,7 @@ describe('Skill 22 export package validation', () => {
   });
 });
 
-describe('disk audit: the nine scaffold packs', () => {
+describe('disk audit: the nine source packs', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const advisorsDir = join(here, '..', '..', '..', 'advisors');
   const folders = readdirSync(advisorsDir, { withFileTypes: true })
@@ -448,7 +448,7 @@ describe('disk audit: the nine scaffold packs', () => {
   });
 
   for (const seat of SEAT_IDS) {
-    test(`${seat} scaffold pack is structurally valid and honestly unqualified`, () => {
+    test(`${seat} pack is structurally valid with honest source qualification`, () => {
       const dir = join(advisorsDir, seat);
       const read = (name: string) =>
         JSON.parse(readFileSync(join(dir, name), 'utf8')) as Record<string, unknown>;
@@ -469,10 +469,19 @@ describe('disk audit: the nine scaffold packs', () => {
       };
       const v = validateAdvisorPack(pack);
       assert.equal(v.valid, true, JSON.stringify(v.diagnostics, null, 2));
-      assert.ok(
-        v.qualification === 'bibliographic_only' || v.qualification === 'incomplete',
-        `expected an honest unqualified state, got ${v.qualification}`,
-      );
+      if (seat === 'russell-brunson') {
+        assert.equal(v.qualification, 'primary_teaching_based');
+        assert.equal(v.works.length, 2);
+        assert.ok(v.works.every((work) => work.work_class === 'primary_teaching'
+          && work.traceable_concepts === 4 && work.application_cases === 1 && work.gate_met));
+        const downgraded = clonePack(pack);
+        for (const record of downgraded.sources.records as Array<Record<string, unknown>>) {
+          if (record.quality === 'primary_substantive') record.quality = 'unverified';
+        }
+        assert.notEqual(validateAdvisorPack(downgraded).qualification, 'primary_teaching_based');
+      } else {
+        assert.ok(v.qualification === 'bibliographic_only' || v.qualification === 'incomplete');
+      }
     });
   }
 });

@@ -9528,7 +9528,129 @@
       "emotional_register": "warm-encouragement",
       "audience_resonance": "equipped-and-capable",
       "conversion_style": "invitation-close"
+    },
+    "russell-brunson-dotcom-secrets": {
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "russell-brunson",
+        "dotcom-secrets"
+      ],
+      "audiences": [],
+      "topics": [
+        "sales-funnels",
+        "value-ladder",
+        "email-sequences",
+        "funnel-hacking",
+        "webinar-funnels",
+        "offer-stacking",
+        "conversion-copywriting",
+        "customer-acquisition"
+      ],
+      "voice_style": {
+        "summary": "Practical, enthusiastic teaching that connects a concrete story to a clear model and a testable next step, without author impersonation.",
+        "tone": [
+          "conversational",
+          "energetic",
+          "diagnostic"
+        ],
+        "devices": [
+          "concrete examples",
+          "simple analogies",
+          "stepwise explanation"
+        ],
+        "cadence": "Short explanations alternate with substantive walkthroughs and direct questions.",
+        "signature_moves": [
+          "maps the whole journey",
+          "links each offer to useful value",
+          "separates evidence from assumptions"
+        ],
+        "avoid": [
+          "invented proof",
+          "fake urgency",
+          "borrowed biography",
+          "guaranteed business outcomes"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
+    },
+    "russell-brunson-expert-secrets": {
+      "author": "Russell Brunson",
+      "book": "Expert Secrets",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting",
+        "communication",
+        "coaching"
+      ],
+      "perspective": [],
+      "custom": [
+        "russell-brunson",
+        "expert-secrets"
+      ],
+      "audiences": [],
+      "topics": [
+        "audience-building",
+        "category-creation",
+        "direct-response-marketing",
+        "epiphany-bridge-storytelling",
+        "offer-creation",
+        "offer-stacking",
+        "storytelling",
+        "webinar-funnels",
+        "webinar-stack-and-close",
+        "sales-funnels"
+      ],
+      "voice_style": {
+        "summary": "An energetic, plainspoken teaching voice that connects a concrete desired result to a named method, a truthful turning point, and an achievable next step.",
+        "tone": [
+          "conversational",
+          "encouraging",
+          "practical"
+        ],
+        "devices": [
+          "simple analogy",
+          "before-and-after explanation",
+          "concern-specific story",
+          "cumulative recap"
+        ],
+        "cadence": "Short conceptual statements followed by concrete examples and a practical question.",
+        "signature_moves": [
+          "asks for the customer's desired result",
+          "names the route and its steps",
+          "maps three concern types",
+          "gives each offer component a job"
+        ],
+        "avoid": [
+          "author impersonation",
+          "invented autobiography",
+          "guaranteed income",
+          "fabricated scarcity",
+          "shaming refusal"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ],
+      "emotional_register": "visionary-inspiration",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
     }
   },
-  "lastUpdated": "2026-07-14"
+  "lastUpdated": "2026-10-18"
 }

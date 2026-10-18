@@ -1,7 +1,7 @@
 {
   "schema": "wise-elders.pack-evaluation-records/v1",
   "unit": "CWE-042",
-  "note": "Per-pack, per-case evaluation records. Content review verdicts: every pack is content-verified at bibliographic_only against its recorded export basis; no seat, quote, or qualification is upgraded by this review. Case verdicts distinguish deterministically executed checks from defined cases that did not run, with the reason recorded for each.",
+  "note": "Per-pack, per-case evaluation records. Original content reviews used the recorded derivative basis. Russell now has a separate retained-original intake and primary-teaching gate; this does not upgrade any semantic deliberation or routing evaluation. Case verdicts distinguish deterministically executed checks from defined cases that did not run.",
   "packs": [
     {
       "seat_id": "simon-sinek",
@@ -273,9 +273,9 @@
     {
       "seat_id": "russell-brunson",
       "pack_unit": "CWE-017",
-      "qualification_after_review": "bibliographic_only",
-      "source_records": 4,
-      "evidence_units": 58,
+      "qualification_after_review": "primary_teaching_based",
+      "source_records": 6,
+      "evidence_units": 68,
       "cases": [
         {
           "case_id": "case-strong-fit",
@@ -325,8 +325,16 @@
           "verdict": "defined_not_run",
           "evidence": null,
           "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-anchor-framework-contrast",
+          "case_type": "targeted",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "New source-grounded contrast case defined locally. No live model evaluation was run; source fidelity review and deterministic provenance gates are not semantic execution."
         }
-      ]
+      ],
+      "review_basis": "2026-10-18 retained-source intake: two anchor records, eight concept paraphrases and two author-reported cases; supplementary records unchanged. Semantic evaluation NOT_RUN."
     },
     {
       "seat_id": "michelle-obama",

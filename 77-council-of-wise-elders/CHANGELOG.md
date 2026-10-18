@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.4: Russell retained-source intake, and the wave-1 repair cohort
+
+- Adds the engineering supervisor bootstrap (`scripts/supervisor/`): a deterministic ~60s health observer, a 600s full-sweep planner written as a pure function over injected time, durable leader/fencing-generation state, and the STARTING/HEALTHY/DEGRADED/PAUSED/STOPPING/STOPPED machine with the explicit-stop fence. Policy ships as `wise-elders.hybrid-supervisor-policy/v2` with `binding_status: TEMPLATE_NOT_BOUND`. Native-adapter binding is deliberately left `UNKNOWN` rather than invented.
+- Rewrites `scripts/install-runtime.mjs` so the exact-executable Node prerequisite probe (`node:sqlite` in-memory write/read/close plus an isolated persistent reopen) runs before any file is written, installs into a staged immutable external prefix, hashes protected SOURCE only — never `node_modules` or `dist` — and activates atomically while preserving the previous receipt.
+- Adds the canonical durable operation producer (`runtime/src/queue/`): admission commits transition, job and event/outbox in one owning-store transaction, a QUEUED row without its job is rejected, `attemptOrdinal` survives restart and `leaseGeneration` is rechecked on every mutable commit. No second scheduler was introduced.
+
+- Registers DotCom Secrets and Expert Secrets via Skill22 and binds ten original paraphrases to retained-source hashes and edition-specific locators.
+- Records primary-teaching coverage for both Russell anchors without upgrading other seats, semantic evaluation, full-book certification or installed readiness.
+- Preserves private-source exclusions and publishes the approved two-persona incremental index as prebuilt-index-v2.4.3 (101 personas / 1,441 rows), with every prior row unchanged.
+
 ## Unreleased: final packaging (CWE-039)
 
 No version change: versions are taken at merge time only. This entry

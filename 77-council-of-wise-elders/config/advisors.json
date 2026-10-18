@@ -1,5 +1,5 @@
 {
-  "notes": "The fixed nine-seat roster. Every seat is an AI perspective, labeled exactly with its profile_label. source_basis records the required anchor works each advisor pack is grounded in. All nine packs are built and were independently content-reviewed at CWE-042; every pack's qualification is bibliographic_only (no seat qualifies above it, per CWE-012 acceptance condition 1), and per-seat coverage detail lives in each pack's coverage.json. Source supply gaps are recorded honestly in the packs: the Oprah Winfrey and Les Brown packs are source_absent, and the named missing anchor works stay missing until supplied.",
+  "notes": "The fixed nine-seat roster. Each seat is an AI perspective with the exact profile_label. Current source qualification lives in each pack coverage.json: Russell has retained-source primary teaching for both anchors; the other eight seats retain their prior bibliographic qualification and honest gaps. This registry does not certify installed readiness or live semantic evaluations.",
   "schema_version": "1.0.0",
   "seats": [
     {
@@ -105,7 +105,7 @@
       "order": 5,
       "owned_question": "Who wants this, how will they find it, and what credible path turns interest into a purchase?",
       "pack_owner_unit": "CWE-017",
-      "pack_status": "built_bibliographic_only",
+      "pack_status": "built_primary_teaching_based",
       "profile_label": "AI perspective inspired by the published work of Russell Brunson. Not the individual and not an endorsement.",
       "role": "offers, acquisition, and conversion",
       "seat_id": "russell-brunson",

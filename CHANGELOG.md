@@ -1,3 +1,5 @@
+## [v27.1.35]  -  2026-10-18  -  Register and index Russell book personas; bind Council anchor evidence
+
 ## [v27.1.34]  -  2026-10-18  -  Implement canonical Skill 22 to Council export with explicit provenance and partial diagnostics
 
 ## [v27.1.33]  -  2026-10-18  -  Include existing shared Council frameworks and decision rules in advisor context

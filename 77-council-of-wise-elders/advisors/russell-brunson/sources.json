@@ -2,23 +2,253 @@
   "seat_id": "russell-brunson",
   "pack_owner_unit": "CWE-017",
   "status": "authored",
-  "note": "Source ledger for the Russell Brunson pack, built from the CWE-011 Skill 22 export package (wise-elders.skill22-export/v1, exported 2026-10-14). content_sha256 on each full record is the SHA-256 of the Skill 22 derivative artifact the export hashed (extraction-notes.md, or persona-blueprint.md for Traffic Secrets); originals were never hashed into or copied into the export or this pack. retrieved_at carries the Skill 22 set's own retrieval date where the set records one; where it records none, retrieved_at is 2026-10-14, the date this pack retrieved the derivative set through the CWE-011 export. Quality is unverified for every present record and rights are reference_only (paraphrase only) throughout, per the CWE-012 acceptance conditions: no seat qualifies above bibliographic_only. The export carries 94 quotation candidates for this seat; 0 are verified against retained text, so this pack embeds no quotation evidence and quotes Russell Brunson nowhere. One typographic normalization is applied to copied source data: em dash and en dash characters in titles, locators, and paraphrase text are folded to hyphens, the same folding the CWE-012 validator documents for text comparison, and the package house rule bars em dash characters in package files. No words are changed.",
+  "note": "The two required anchors now carry retained-original EPUB SHA-256 records and ten hash-bound, original paraphrase evidence units from the locally completed Skill22 conversions. Each anchor has four independently located concepts and one genuine source-reported application case. Retrieved-at is the local access/processing date, not the unknown original acquisition date. Rights are reference_only; no original book text or verified quotation is distributed. Source cases are author reports, not independently verified results. Supplemental derivative records retain their prior unverified quality and private-scope exclusions. See references/russell-source-intake/README.md for edition, coverage, mapping and indexing limits.",
   "records": [
     {
-      "title": "DotCom Secrets",
-      "basis": "foundational book (required anchor, Section 7.6)",
-      "record_status": "bibliographic_only",
-      "verification_status": "not_ingested",
-      "status": "absent",
-      "note": "Required anchor named in Section 7.6. No Skill 22 persona package exists for this work (supply gap, confirmed by the CWE-011 export). No content from this work has been ingested, and no quotation, concept, or locator is claimed from it anywhere in this pack."
+      "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+      "work_id": "work-dotcom-secrets",
+      "work_title": "DotCom Secrets",
+      "credited_authors": [
+        "Russell Brunson"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": "Morgan James Publishing",
+      "edition_or_publication_date": "2015",
+      "retrieved_at": "2026-10-18",
+      "canonical_url": null,
+      "private_asset_id": "retained-russell-dotcom-secrets-epub",
+      "content_sha256": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "Secret #1, “The Secret Formula,” EPUB text/part0010.html, local spine 014.txt, subsections Question #1 through Question #4."
+        },
+        {
+          "kind": "section",
+          "value": "Secret #2, “The Value Ladder,” EPUB text/part0011.html, spine 015.txt; and Secret #3, “From a Ladder to a Funnel,” EPUB text/part0012.html, spine 016.txt, introductory explanation and Figure 3.2 prose."
+        },
+        {
+          "kind": "section",
+          "value": "Secret #10, “Seven Phases of a Funnel,” EPUB text/part0021.html, spine 025.txt, “It’s All About the Pre-Frame” and phases #1-#7."
+        },
+        {
+          "kind": "section",
+          "value": "Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB text/part0026_split_001.html, spine 032.txt, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3."
+        },
+        {
+          "kind": "section",
+          "value": "Secret #13, “The Best Bait,” EPUB text/part0024.html, spine 028.txt, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB text/part0026_split_001.html, spine 032.txt, “Sample Structure #1: The Next Thing.”"
+        }
+      ],
+      "quality": "primary_substantive",
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-dc-c1",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #1, “The Secret Formula,” EPUB text/part0010.html, local spine 014.txt, subsections Question #1 through Question #4."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C1 - Secret Formula.** The book makes four questions the starting design constraint: choose the customer, find existing places that customer gathers, design an attractive entry offer, and identify the ultimate result the business can provide. This changes the task from selling an arbitrary product to designing a path for a specific customer. Locator: Secret #1, “The Secret Formula,” EPUB `text/part0010.html`, local spine `014.txt`, subsections Question #1 through Question #4.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-c2",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #2, “The Value Ladder,” EPUB text/part0011.html, spine 015.txt; and Secret #3, “From a Ladder to a Funnel,” EPUB text/part0012.html, spine 016.txt, introductory explanation and Figure 3.2 prose."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C2 - Value Ladder versus funnel.** The ladder describes a portfolio of increasing value and price; the funnel is the actual sequence that offers those levels to customers. The source allows different customers to receive different affordable levels and acknowledges that only some will reach the highest-service offer. Locator: Secret #2, “The Value Ladder,” EPUB `text/part0011.html`, spine `015.txt`; and Secret #3, “From a Ladder to a Funnel,” EPUB `text/part0012.html`, spine `016.txt`, introductory explanation and Figure 3.2 prose.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-c3",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #10, “Seven Phases of a Funnel,” EPUB text/part0021.html, spine 025.txt, “It’s All About the Pre-Frame” and phases #1-#7."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C3 - Seven phases and pre-frame.** The customer journey begins before the landing page: traffic temperature and pre-frame shape understanding, then subscription, purchase and further buying reveal readiness; longer-term value delivery and a changed selling environment support later offers. The source warns that excessive short-term selling can damage the longer relationship. Locator: Secret #10, “Seven Phases of a Funnel,” EPUB `text/part0021.html`, spine `025.txt`, “It’s All About the Pre-Frame” and phases #1-#7.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-c4",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB text/part0026_split_001.html, spine 032.txt, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C4 - Relevant OTO design.** The source rejects simply repeating the first product or offering an unrelated item. It proposes a next complementary need, faster implementation or personal help, and explicitly warns against implying that the first purchase will not work without the upgrade. Locator: Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB `text/part0026_split_001.html`, spine `032.txt`, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-case1",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #13, “The Best Bait,” EPUB text/part0024.html, spine 028.txt, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB text/part0026_split_001.html, spine 032.txt, “Sample Structure #1: The Next Thing.”"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-CASE1 - DotComSecrets Labs, a genuine source-reported application.** In the book's own business example, a physical split-testing book becomes a free-plus-shipping entry offer. The order form adds the Conversion Krusher template as an optional paid bump; subsequent offers address traffic, webinar selling and high-ticket selling. This illustrates an entry item plus adjacent implementation needs, with further relationship-based offers after acquisition. The author reports favorable immediate revenue from that sequence, but the report does not supply independent verification, complete costs or a guarantee of transfer to another business. Locator: Secret #13, “The Best Bait,” EPUB `text/part0024.html`, spine `028.txt`, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB `text/part0026_split_001.html`, spine `032.txt`, “Sample Structure #1: The Next Thing.”",
+          "excerpt": null
+        }
+      ]
     },
     {
-      "title": "Expert Secrets",
-      "basis": "foundational book (required anchor, Section 7.6)",
-      "record_status": "bibliographic_only",
-      "verification_status": "not_ingested",
-      "status": "absent",
-      "note": "Required anchor named in Section 7.6. No Skill 22 persona package exists for this work (supply gap, confirmed by the CWE-011 export). No content from this work has been ingested, and no quotation, concept, or locator is claimed from it anywhere in this pack."
+      "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+      "work_id": "work-expert-secrets",
+      "work_title": "Expert Secrets",
+      "credited_authors": [
+        "Russell Brunson"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": "Hay House, Inc.",
+      "edition_or_publication_date": "First Hay House edition, May 2020",
+      "retrieved_at": "2026-10-18",
+      "canonical_url": null,
+      "private_asset_id": "retained-russell-expert-secrets-epub",
+      "content_sha256": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "Secret 1, EPUB document chapter01.xhtml (local extracted file 013.txt)"
+        },
+        {
+          "kind": "section",
+          "value": "Secret 4, EPUB document chapter04.xhtml (local extracted file 017.txt)"
+        },
+        {
+          "kind": "section",
+          "value": "Secret 10, EPUB document chapter10.xhtml (local extracted file 025.txt)"
+        },
+        {
+          "kind": "section",
+          "value": "Secret 14, EPUB document chapter14.xhtml (local extracted file 030.txt)"
+        },
+        {
+          "kind": "section",
+          "value": "Secret 9, EPUB document chapter09.xhtml (local extracted file 024.txt)"
+        }
+      ],
+      "quality": "primary_substantive",
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-es-c1",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 1, EPUB document chapter01.xhtml (local extracted file 013.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C1 - Earned framework. Locator: Secret 1, EPUB document `chapter01.xhtml` (local extracted file `013.txt`),** the five phases from dreamer through reporter/framework creator/servant/expert, connects learning with service before larger authority claims. This supports the pilot-first gate above.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c2",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 4, EPUB document chapter04.xhtml (local extracted file 017.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C2 - Switch versus stack. Locator: Secret 4, EPUB document `chapter04.xhtml` (local extracted file `017.txt`),** headings “The Opportunity Switch” and “The Opportunity Stack,” distinguishes introducing a new route from subsequent offers that support the route. This supports coherent value-ladder design.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c3",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 10, EPUB document chapter10.xhtml (local extracted file 025.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C3 - Four story roles. Locator: Secret 10, EPUB document `chapter10.xhtml` (local extracted file `025.txt`),** the four core stories and false-belief inventory, separates origin from vehicle, internal, and external concerns. This supports diagnosing the objection before choosing an anecdote.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c4",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 14, EPUB document chapter14.xhtml (local extracted file 030.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C4 - Cumulative offer. Locator: Secret 14, EPUB document `chapter14.xhtml` (local extracted file `030.txt`),** Stack slides and slides16-43, repeatedly returns to the whole bundle after explaining a component. This supports cumulative recap rather than isolated bonus descriptions.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-case1",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 9, EPUB document chapter09.xhtml (local extracted file 024.txt)"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-CASE1 - Genuine source application case, paraphrased. Locator: Secret 9, EPUB document `chapter09.xhtml` (local extracted file `024.txt`),** the potato-gun DVD Epiphany Bridge example, recounts worsening advertising economics and guidance from Mike Filsaime leading to an added kit/upsell opportunity. Brunson links the change to both a commercial outcome and family aspirations. This is a reported autobiographical case illustrating the bridge structure, not independently verified business evidence or a forecast for the reader. It differs from the fictional workshop-planning examples used below.",
+          "excerpt": null
+        }
+      ]
     },
     {
       "title": "Network Marketing Secrets - The Hidden Funnel Strategy",
