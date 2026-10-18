@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from .constants import COUNCIL_ENTRY_POINT, COUNCIL_SKILL_DIR
+from .constants import COUNCIL_ENTRY_POINT, COUNCIL_SKILL_SLUG, skill_path
 
 STEP = "council_launch_planning"
 ADVICE_PENDING = "pending_live_session"
@@ -33,8 +33,8 @@ Runner = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
 def skill_root() -> Path:
-    """The Skill 77 tree, resolved from the repository that contains this skill."""
-    return Path(__file__).resolve().parent.parent.parent / COUNCIL_SKILL_DIR
+    """The Council tree, resolved by slug under either naming convention."""
+    return skill_path(COUNCIL_SKILL_SLUG)
 
 
 def entry_point() -> Path:
@@ -52,7 +52,7 @@ def run_skill77(launch: Dict[str, Any], timeout_s: int = 120) -> Dict[str, Any]:
     entry = entry_point()
     if not entry.is_file():
         return {"status": "not_ready", "ready": False,
-                "detail": f"{COUNCIL_SKILL_DIR}/{COUNCIL_ENTRY_POINT} is not installed",
+                "detail": f"{COUNCIL_SKILL_SLUG}/{COUNCIL_ENTRY_POINT} is not installed",
                 "advice": None, "advice_state": ADVICE_PENDING}
     node = shutil.which("node")
     if not node:
@@ -106,7 +106,7 @@ def planning_step(launch: Dict[str, Any],
         advice_state = ADVICE_RETURNED if result.get("advice") else ADVICE_PENDING
     return {
         "step": STEP,
-        "skill": COUNCIL_SKILL_DIR,
+        "skill": COUNCIL_SKILL_SLUG,
         "entry_point": COUNCIL_ENTRY_POINT,
         "status": status,
         "ready": bool(result.get("ready")),

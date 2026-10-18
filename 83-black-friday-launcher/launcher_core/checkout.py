@@ -25,7 +25,13 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .constants import CHECKOUT_CONTRACT, CHECKOUT_VALIDATOR
+from .constants import (
+    CHECKOUT_CONTRACT_REF,
+    CHECKOUT_SKILL_SLUG,
+    CHECKOUT_VALIDATOR_REF,
+    REPO_ROOT,
+    skill_path,
+)
 
 MODE_BY_JOURNEY = {
     "single_simple": "combined_single_offer",
@@ -63,22 +69,34 @@ class CheckoutMappingError(Exception):
     """The Skill 79 contract cannot be read or bound."""
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent.parent
+def _repo_ref(path: Path) -> str:
+    """A path's repository-relative spelling, whichever convention resolved it."""
+    try:
+        return str(Path(path).relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 def contract_path() -> Path:
-    return _repo_root() / CHECKOUT_CONTRACT
+    return skill_path(CHECKOUT_SKILL_SLUG, CHECKOUT_CONTRACT_REF)
 
 
 def validator_path() -> Path:
-    return _repo_root() / CHECKOUT_VALIDATOR
+    return skill_path(CHECKOUT_SKILL_SLUG, CHECKOUT_VALIDATOR_REF)
+
+
+def contract_ref() -> str:
+    return _repo_ref(contract_path())
+
+
+def validator_ref() -> str:
+    return _repo_ref(validator_path())
 
 
 def load_contract() -> Dict[str, Any]:
     path = contract_path()
     if not path.is_file():
-        raise CheckoutMappingError(f"Skill 79 contract not found at {CHECKOUT_CONTRACT}")
+        raise CheckoutMappingError(f"Skill 79 contract not found at {path}")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -195,7 +213,7 @@ def order_form_mapping(intake: Dict[str, Any], graph: Dict[str, Any]) -> Dict[st
 
     mapping = {
         "surface": "native Convert and Flow order form installed by Skill 06",
-        "contract": CHECKOUT_CONTRACT,
+        "contract": contract_ref(),
         "contract_title": contract.get("title"),
         "contract_schema_version": ((contract.get("properties") or {})
                                     .get("schema_version") or {}).get("const"),
@@ -228,16 +246,16 @@ def _probe_validator(mapping: Dict[str, Any],
     try:
         module = _load_validator()
     except Exception as exc:  # import failure is a recorded fact
-        return {"module": CHECKOUT_VALIDATOR, "state": "unavailable",
+        return {"module": validator_ref(), "state": "unavailable",
                 "error": str(exc)}
     if module is None or not callable(getattr(module, "validate_request", None)):
-        return {"module": CHECKOUT_VALIDATOR, "state": "unavailable",
+        return {"module": validator_ref(), "state": "unavailable",
                 "error": "validate_request is absent"}
     request = {"schema_version": mapping.get("contract_schema_version")}
     request.update(supplied)
     for name, (value, _reason) in OPERATIONAL_DEFAULTS.items():
         request[name] = value
-    probe: Dict[str, Any] = {"module": CHECKOUT_VALIDATOR, "state": "bound"}
+    probe: Dict[str, Any] = {"module": validator_ref(), "state": "bound"}
     try:
         module.validate_request(request)
         probe["probe"] = {"result": "accepted"}

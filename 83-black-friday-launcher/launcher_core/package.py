@@ -17,17 +17,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .constants import (
-    CHECKOUT_CONTRACT,
     COUNCIL_ENTRY_POINT,
-    COUNCIL_SKILL_DIR,
+    COUNCIL_SKILL_SLUG,
     DECIDED,
+    FUNNEL_SKILL_SLUG,
     PAGE_STATUSES,
     PROOF_CLASSES,
+    RECEIPT_MODULE_REF,
+    REPO_ROOT,
     SCHEMA_VERSION,
     SEAMS,
     SKILL_NAME,
     SKILL_NUMBER,
     SKILL_VERSION,
+    skill_path,
 )
 from . import checkout as checkout_module
 from . import council as council_module
@@ -63,18 +66,17 @@ def _sha256_path(path: Path) -> Optional[str]:
     return _sha256_file(path) if path.is_file() else None
 
 
-def _launcher_root() -> Path:
-    """The skill directory itself (parent of launcher_core)."""
-    return Path(__file__).resolve().parent.parent
-
-
-def _repo_root() -> Path:
-    return _launcher_root().parent
+def _repo_ref(path: Path) -> str:
+    """A path's repository-relative spelling, whichever convention resolved it."""
+    try:
+        return str(Path(path).relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 def _load_receipt_module():
-    """Import Skill 49's receipt collector. Returns None when it is not present."""
-    path = _repo_root() / "49-signature-funnel" / "scripts" / "delegation_receipt.py"
+    """Import the funnel skill's receipt collector. None when it is not present."""
+    path = skill_path(FUNNEL_SKILL_SLUG, RECEIPT_MODULE_REF)
     if not path.is_file():
         return None
     spec = importlib.util.spec_from_file_location("s49_delegation_receipt", path)
@@ -90,7 +92,7 @@ def receipt_evidence(run_dir: Path) -> Dict[str, Any]:
     module = _load_receipt_module()
     if module is None:
         return {"store": str(_RECEIPTS_REL), "state": "unavailable", "entries": 0,
-                "detail": "49-signature-funnel/scripts/delegation_receipt.py not found"}
+                "detail": f"{FUNNEL_SKILL_SLUG}/{RECEIPT_MODULE_REF} not found"}
     try:
         entries = module.load(Path(run_dir))
         raw_state = module.store_state(Path(run_dir))
@@ -258,9 +260,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "entitlement_declaration": "entitlement-declaration.json",
         },
         "dependencies": {
-            "checkout_contract": {"path": CHECKOUT_CONTRACT,
+            "checkout_contract": {"path": checkout_module.contract_ref(),
                                   "sha256": checkout.get("contract_sha256")},
-            "council_entry": {"path": COUNCIL_SKILL_DIR + "/" + COUNCIL_ENTRY_POINT,
+            "council_entry": {"path": _repo_ref(council_module.entry_point()),
                               "sha256": _sha256_path(council_module.entry_point())},
         },
         "seams": [s["id"] for s in SEAMS],
