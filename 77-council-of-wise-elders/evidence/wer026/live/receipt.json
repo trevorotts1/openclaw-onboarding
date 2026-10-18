@@ -1,0 +1,153 @@
+{
+  "unit": "W15-U001",
+  "schema": "wer026.live-host-acceptance/v1",
+  "captured_at": "2026-10-18T23:57:23.880Z",
+  "host": {
+    "platform": "darwin",
+    "scope": "gui/501",
+    "kind": "operator Mac (this box)"
+  },
+  "source": {
+    "repo": "trevorotts1/openclaw-onboarding",
+    "pr": 2280,
+    "merge_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+    "origin_main_at_verification": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+    "ancestor_of_origin_main": true,
+    "install_checkout": "<operator-home>/.claude/state/council-elders/install/skill",
+    "install_checkout_head": "39e74434810d9c110f2c6ac506386c832f7b6fb5"
+  },
+  "node": {
+    "path": "/opt/homebrew/opt/node@26/bin/node",
+    "version": "v26.8.1",
+    "matrix_ok": true
+  },
+  "tests": {
+    "command": "node --test tests/*.test.mjs runner.test.mjs",
+    "total": 113,
+    "pass": 113,
+    "fail": 0
+  },
+  "plist": {
+    "label": "ai.blackceo.wise-elders.supervisor",
+    "generated_by": "77-council-of-wise-elders/scripts/supervisor/launchd.mjs buildLaunchAgentPlist",
+    "hand_written": false,
+    "path": "<operator-home>/Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist",
+    "interval_seconds": 600,
+    "run_at_load": true,
+    "program_arguments": [
+      "/opt/homebrew/opt/node@26/bin/node",
+      "<operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders/scripts/supervisor/runner.mjs",
+      "--data-dir",
+      "<operator-home>/Library/Application Support/wise-elders/supervisor",
+      "--once",
+      "--tick-work-ms",
+      "45000"
+    ],
+    "data_dir": "<operator-home>/Library/Application Support/wise-elders/supervisor",
+    "working_directory": "<operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders",
+    "deviations": [
+      "--once: one launchd fire == one scheduled tick (otherwise the first process holds the singleton lease for its whole life)",
+      "--tick-work-ms 45000: opens a real 45s window in which a kill -9 lands between the durable pending-action commit and its consumption"
+    ]
+  },
+  "launchctl": {
+    "bootstrap_exit_code": 0,
+    "print_exit_code": 0,
+    "plutil_lint": "OK",
+    "final_state": "loaded"
+  },
+  "fires": [
+    {
+      "seq": 1,
+      "scheduled_by": "launchd StartInterval 600 / RunAtLoad",
+      "pre_commit_at_ms": 1792365857122,
+      "receipt_id": "RCPT-000001",
+      "pid": 89299,
+      "ledger_generation": 1,
+      "completed_sweeps": 1
+    },
+    {
+      "seq": 2,
+      "scheduled_by": "launchd StartInterval 600",
+      "pre_commit_at_ms": 1792366502274,
+      "receipt_id": "RCPT-000002",
+      "pid": 17322,
+      "ledger_generation": 2,
+      "completed_sweeps": 2
+    }
+  ],
+  "fire_separation_seconds": 645,
+  "manual_kickstart_used": false,
+  "kill": {
+    "method": "kill -9 <launchd-spawned runner pid>",
+    "pid": 66990,
+    "tick_seq_at_kill": 3,
+    "pending_action_at_kill": [
+      {
+        "id": "PEND-000003",
+        "at_ms": 1792367147470,
+        "kind": "SCHEDULED_SWEEP_TICK",
+        "payload": {
+          "tick_seq": 3,
+          "cadence_ms": 600000
+        },
+        "state": "PENDING"
+      }
+    ],
+    "verified_dead": true
+  },
+  "recovery": {
+    "triggered_by": "the NEXT launchd-scheduled fire",
+    "ledger_generation_before": 3,
+    "ledger_generation_after": 4,
+    "interrupted_ticks": 1,
+    "reconciled_count": 1,
+    "reconciled_ids": [
+      "PEND-000003"
+    ],
+    "interrupted_tick_incidents": [
+      {
+        "kind": "INTERRUPTED_TICK_RECONCILED",
+        "at_ms": 1792367750568,
+        "pending_id": "PEND-000003"
+      }
+    ],
+    "pending_actions_after": [],
+    "completed_sweeps_after": 3
+  },
+  "session_url": {
+    "origin": "http://127.0.0.1:8787",
+    "url": "http://127.0.0.1:8787/council/sess-w15u001-live",
+    "session_endpoint_http_status": 200,
+    "url_curl_http_status": 200,
+    "healthz_http_status": 200,
+    "stopped_cleanly": true,
+    "listener_left_open": false
+  },
+  "closeout_fence": {
+    "fence_reason": "EXPLICIT_STOP_FENCE",
+    "auto_restart_allowed_while_fenced": false,
+    "auto_restart_refused": true,
+    "clear_without_operator_refused": true,
+    "cleared_by_operator": true,
+    "auto_restart_allowed_after_clear": true,
+    "ordinary_operation": {
+      "command": "blackceo-council status sess-w11u002-round1 --data-dir <copied journey raw>",
+      "data_dir_source": "evidence/wer026/journey/raw (copied; no live Command Center DB)",
+      "ok": true,
+      "state": "DRAFT"
+    }
+  },
+  "final_state": {
+    "launch_agent_loaded": true,
+    "launch_agent_healthy": true,
+    "reboot_performed": false,
+    "reboot_persistence_note": "not claimed: structural property of a registered LaunchAgent in ~/Library/LaunchAgents; no reboot was performed"
+  },
+  "not_tested": [
+    "Windows",
+    "a VPS host",
+    "a phone-through-Cloudflare-Access path",
+    "a reboot"
+  ]
+}
