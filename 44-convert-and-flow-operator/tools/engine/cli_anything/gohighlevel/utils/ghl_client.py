@@ -1,8 +1,14 @@
-"""GoHighLevel REST API client with bearer token authentication."""
+"""GoHighLevel REST API client with bearer token authentication.
+
+Version selection is per operation, not per path family. The prefix map below is
+legacy; ``_OPERATION_VERSION_OVERRIDES`` is consulted first and is **the only
+place a per-operation version may be declared**.
+"""
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from typing import Any
 from urllib.parse import urlencode
@@ -32,6 +38,42 @@ VERSION_MAP = {
 }
 DEFAULT_VERSION = "2021-07-28"
 
+# Per-operation Version overrides: (METHOD, compiled path regex) -> exact literal.
+#
+# THE ONLY PLACE A PER-OPERATION VERSION MAY BE DECLARED. An entry here wins over
+# the legacy prefix map because a GHL version is a property of an operation, not
+# of a path family. Add a row only when the operation page can be cited (doc URL
+# + fetch date); every other operation keeps exactly the header it had.
+#
+# Family: opportunities + pipelines, all documented ``v3`` at
+# https://marketplace.gohighlevel.com/docs/ghl/opportunities/* (fetched
+# 2026-10-18; evidence/W01/GU-003-opportunities.md). The prefix map sent these
+# 2021-07-28. ``GET /opportunities/search`` is deliberately absent: its query
+# casing is version-coupled and unverified, so it keeps 2021-07-28 until a live
+# probe settles it. ``GET /opportunities`` (bare list) is undocumented — no row.
+_OPERATION_VERSION_OVERRIDES: tuple[tuple[str, "re.Pattern[str]", str], ...] = tuple(
+    (method, re.compile(pattern), "v3")
+    for method, pattern in (
+        # get-pipelines / create-pipeline
+        ("GET", r"^/opportunities/pipelines$"),
+        ("POST", r"^/opportunities/pipelines$"),
+        # get-pipeline / update-pipeline / delete-pipeline
+        ("GET", r"^/opportunities/pipelines/[^/]+$"),
+        ("PUT", r"^/opportunities/pipelines/[^/]+$"),
+        ("DELETE", r"^/opportunities/pipelines/[^/]+$"),
+        # upsert-opportunity
+        ("POST", r"^/opportunities/upsert$"),
+        # create-opportunity
+        ("POST", r"^/opportunities/?$"),
+        # update-opportunity-status
+        ("PUT", r"^/opportunities/[^/]+/status$"),
+        # get / update / delete opportunity by id — never a reserved sub-path
+        ("GET", r"^/opportunities/(?!search$|pipelines$|upsert$)[^/]+$"),
+        ("PUT", r"^/opportunities/(?!search$|pipelines$|upsert$)[^/]+$"),
+        ("DELETE", r"^/opportunities/(?!search$|pipelines$|upsert$)[^/]+$"),
+    )
+)
+
 
 def _version_for_path(path: str) -> str:
     """Resolve API version based on request path prefix."""
@@ -39,6 +81,20 @@ def _version_for_path(path: str) -> str:
         if path.startswith(prefix):
             return version
     return DEFAULT_VERSION
+
+
+def _resolve_version(method: str, path: str) -> str:
+    """Resolve the ``Version`` header for one request.
+
+    The per-operation override table is consulted before the legacy prefix map.
+    An operation absent from the table keeps the header it had — there is no
+    global default and no sweep.
+    """
+    verb = (method or "").upper()
+    for op_method, pattern, version in _OPERATION_VERSION_OVERRIDES:
+        if op_method == verb and pattern.match(path):
+            return version
+    return _version_for_path(path)
 
 
 # Canonical LOCATION-PIT alias set — all mean the same credential (prefix pit-).
@@ -139,20 +195,24 @@ def _get_location_id() -> str:
     return loc
 
 
-def _headers(version: str | None = None, path: str = "") -> dict[str, str]:
-    """Build request headers with auth and auto-resolved version."""
+def _headers(version: str | None = None, path: str = "", method: str = "") -> dict[str, str]:
+    """Build request headers.
+
+    An explicit ``version`` always wins (caller override). Otherwise the header is
+    resolved per operation: override table first, then the legacy prefix map.
+    """
     return {
         "Authorization": f"Bearer {_get_token()}",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Version": version or _version_for_path(path),
+        "Version": version or _resolve_version(method, path),
     }
 
 
 def get(path: str, params: dict[str, Any] | None = None, version: str | None = None) -> dict:
     """Make a GET request to the GHL API."""
     url = f"{BASE_URL}{path}"
-    resp = requests.get(url, headers=_headers(version, path), params=params, timeout=30)
+    resp = requests.get(url, headers=_headers(version, path, "GET"), params=params, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -166,7 +226,7 @@ def post(path: str, data: dict[str, Any] | None = None, version: str | None = No
     except SafetyRefused as exc:
         print(f"SAFETY GATE: {exc}", file=sys.stderr)
         sys.exit(1)
-    resp = requests.post(url, headers=_headers(version, path), json=data or {}, timeout=30)
+    resp = requests.post(url, headers=_headers(version, path, "POST"), json=data or {}, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -180,7 +240,7 @@ def put(path: str, data: dict[str, Any] | None = None, version: str | None = Non
     except SafetyRefused as exc:
         print(f"SAFETY GATE: {exc}", file=sys.stderr)
         sys.exit(1)
-    resp = requests.put(url, headers=_headers(version, path), json=data or {}, timeout=30)
+    resp = requests.put(url, headers=_headers(version, path, "PUT"), json=data or {}, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -200,7 +260,7 @@ def delete(path: str, version: str | None = None, body: dict[str, Any] | None = 
     except SafetyRefused as exc:
         print(f"SAFETY GATE: {exc}", file=sys.stderr)
         sys.exit(1)
-    resp = requests.delete(url, headers=_headers(version, path), json=body, timeout=30)
+    resp = requests.delete(url, headers=_headers(version, path, "DELETE"), json=body, timeout=30)
     resp.raise_for_status()
     try:
         return resp.json()
