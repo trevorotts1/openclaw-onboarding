@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Signature Launch launch-context import for Skill 71 (S71-02).
 
-Validates a Signature Launch page-request 1.0 document (and, when supplied,
-the launch record, the route graph, and the popup consent statements)
-against the frozen 1.0 schemas vendored in references/ from S49's
-candidate PR #2137 at commit a2bd2c5a (schema source of record), maps the
+Validates a Signature Launch page-request document (1.0, or 1.1
+carrying its prompt_policy_id citation) (and, when supplied, the launch
+record, the route graph, and the popup consent statements) against the
+schemas vendored in references/: the frozen 1.0 shapes from S49's
+candidate PR #2137 at commit a2bd2c5a (schema source of record),
+extended to dual-accept form by the PP-Y2 adoption build (adoption map
+section 1.1) with the Q12 prompt-policy citation field and the pair
+rule the landed PP-T2 switch enforces (a 1.1 request must carry a
+non-empty prompt_policy_id, a 1.0 request must not carry the field).
+The import maps the
 approved launch context into the run's intake, and prepares the run
 artifacts the profile emits at intake:
 
@@ -45,6 +51,13 @@ SCHEMA_FILES = {
     "route-graph": "route-graph.schema.json",
 }
 
+# The prompt-policy registry of record (Q13): the citation vocabulary
+# for a 1.1 request's prompt_policy_id. It lives in the shared domain
+# folder beside this skill's tree, the same cross-tree reach
+# emit_design_tokens makes for the design tokens component.
+PROMPT_POLICY_REGISTRY_REF = (
+    "shared-utils/signature_launch/domain/prompt-policy-registry.json")
+
 # The interest popup component's contract (shared component interest-popup
 # 1.0.0, owner S71, built by S71-07): the fixed field set, its native
 # field map (the identity map: the native form uses exactly these field
@@ -77,7 +90,7 @@ class LaunchContextError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Minimal JSON Schema interpreter for the subset the frozen 1.0 schemas use
+# Minimal JSON Schema interpreter for the subset the vendored schemas use
 # (type incl. type lists, const, enum, required, properties,
 # additionalProperties: false, items, minItems, minLength, minimum,
 # pattern, allOf with if/then). Returns a list of named violations.
@@ -200,6 +213,28 @@ def _load_schema(skill_root, kind):
             f"frozen {kind} schema unreadable at {path}: {exc}; the import "
             f"validates against the vendored schema and cannot proceed "
             f"without it")
+
+
+def _registry_policy_ids(skill_root):
+    """The active policy ids minted by the prompt-policy registry of
+    record (Q13). Fail-closed, with the same discipline as
+    _load_schema: a 1.1 citation can only be checked against a
+    registry that can be read, so an unreadable or malformed registry
+    refuses the import rather than letting the citation pass
+    unverified."""
+    path = Path(skill_root).parent / PROMPT_POLICY_REGISTRY_REF
+    try:
+        registry = json.loads(path.read_text(encoding="utf-8"))
+        return {entry["policy_id"] for entry in registry["entries"]
+                if isinstance(entry, dict)
+                and entry.get("entry_status") == "active"
+                and isinstance(entry.get("policy_id"), str)}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise LaunchContextError(
+            f"prompt-policy registry of record unreadable at {path}: "
+            f"{exc}; a 1.1 request's prompt_policy_id is a citation "
+            f"minted by that registry only, and the import cannot "
+            f"verify the citation without it")
 
 
 def _load_document(path, label):
@@ -415,6 +450,28 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
         raise LaunchContextError(
             f"page-request: assigned_skill is {request['assigned_skill']!r}; "
             f"this import serves Skill {SKILL_NUMBER} only")
+    # The prompt-policy pair rule (adoption map section 1.1; the same
+    # rule the landed PP-T2 switch enforces in
+    # dispatch_launch.validate_request): the 1.1 label exists to carry
+    # the citation field. The vendored schema's allOf already refuses
+    # a 1.1 request without the field; the schema subset cannot
+    # express the 1.0 side, so it is checked here, beside the role and
+    # skill checks. A carried citation must name a policy the registry
+    # of record minted (Q12: the name is minted by the common registry
+    # only; the citation names the governing policy and records no
+    # selection).
+    if request["schema_version"] == "1.0" and "prompt_policy_id" in request:
+        raise LaunchContextError(
+            "page-request: prompt_policy_id requires request "
+            "schema_version 1.1 (the 1.0 schema forbids the field)")
+    if "prompt_policy_id" in request:
+        policy_id = request["prompt_policy_id"]
+        if policy_id not in _registry_policy_ids(skill_root):
+            raise LaunchContextError(
+                f"page-request: prompt_policy_id {policy_id!r} is not "
+                f"an active policy id in the prompt-policy registry "
+                f"of record ({PROMPT_POLICY_REGISTRY_REF}); the "
+                f"citation must name a policy the registry minted")
     ref = request["route_graph_ref"]
     if Path(ref).is_absolute() or ".." in Path(ref).parts:
         raise LaunchContextError(
@@ -436,6 +493,13 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
                     f"launch record: {field} is {launch[field]!r} but the "
                     f"page-request carries {request[field]!r}; the launch "
                     f"context must agree with the request it approves")
+        if launch.get("prompt_policy_id") != request.get("prompt_policy_id"):
+            raise LaunchContextError(
+                f"launch record: prompt_policy_id is "
+                f"{launch.get('prompt_policy_id')!r} but the "
+                f"page-request carries "
+                f"{request.get('prompt_policy_id')!r}; the launch "
+                f"context must agree with the request it approves")
         if launch["status"] not in ("approved", "building"):
             raise LaunchContextError(
                 f"launch record: status is {launch['status']!r}; a page "
@@ -526,6 +590,7 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
 
     launch_block = {
         "schema_version": request["schema_version"],
+        "prompt_policy_id": request.get("prompt_policy_id"),
         "request_id": request["request_id"],
         "input_hash": request["input_hash"],
         "tenant_id": request["tenant_id"],

@@ -3,6 +3,8 @@
 write_intake.py launch-context import.
 
 Covers: a valid page-request 1.0 importing and mapping field by field;
+the PP-Y2 dual-accept pair rule (a 1.1 citation request imports and
+carries its prompt_policy_id; each pair violation refuses by name);
 every schema-violation class refusing by name with nothing written; the
 profile-on versus profile-off deltas (popup config emission, design
 assets record, the stage gate's no-offer-pricing engagement); consent
@@ -357,7 +359,7 @@ class TestRefusals(LaunchImportCase):
     def test_wrong_schema_version(self):
         rp = self.request_variant("r4.json", schema_version="2.0")
         self.assert_refused(self.run_intake("--launch-context", str(rp)),
-                            "schema_version", "must be '1.0'")
+                            "schema_version", "not one of")
 
     def test_revision_wrong_type_and_too_small(self):
         rp = self.request_variant("r5.json", revision="3")
@@ -465,6 +467,128 @@ class TestRefusals(LaunchImportCase):
     def test_orphan_import_input(self):
         proc = self.run_intake("--route-graph", str(self.graph_path))
         self.assert_refused(proc, "--launch-context")
+
+
+class TestPromptPolicyDualAccept(LaunchImportCase):
+    """PP-Y2 adoption (adoption map section 1.1): the vendored schemas
+    dual-accept 1.0 and 1.1, the pair rule binds the prompt_policy_id
+    citation to the 1.1 label, the citation must name a policy the
+    registry of record minted, and a supplied launch record must agree
+    with the request on the field. The 1.0 side is the standing
+    fixture pair the rest of this suite runs on, unchanged."""
+
+    POLICY = "kie-rule-12-band"
+
+    def assert_refused(self, proc, *needles):
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        for needle in needles:
+            self.assertIn(needle, proc.stdout)
+        self.assertEqual(self.run_files(), [])
+
+    def request_11(self, name="request-11.json", **overrides):
+        doc = request_doc(self.ghash, schema_version="1.1",
+                          prompt_policy_id=self.POLICY)
+        doc.update(overrides)
+        return self.write(name, dump(doc))
+
+    def launch_11(self, name="launch-11.json", **overrides):
+        doc = launch_doc(self.ghash, schema_version="1.1",
+                         prompt_policy_id=self.POLICY)
+        doc.update(overrides)
+        return self.write(name, dump(doc))
+
+    def test_11_full_import_carries_the_citation(self):
+        rp = self.request_11()
+        lp = self.launch_11()
+        proc = self.run_intake("--launch-context", str(rp),
+                               "--launch-record", str(lp),
+                               "--route-graph", str(self.graph_path),
+                               "--consent-statements", str(self.consent_path))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        block = self.read_intake()["launch"]
+        self.assertEqual(block["schema_version"], "1.1")
+        self.assertEqual(block["prompt_policy_id"], self.POLICY)
+        self.assertEqual(block["next_role"], "product_selection")
+        self.assertEqual((self.run_dir / "page-request.json").read_bytes(),
+                         rp.read_bytes())
+        self.assertEqual((self.run_dir / "launch.json").read_bytes(),
+                         lp.read_bytes())
+
+    def test_11_request_only_import(self):
+        proc = self.run_intake("--launch-context", str(self.request_11()))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        block = self.read_intake()["launch"]
+        self.assertEqual(block["schema_version"], "1.1")
+        self.assertEqual(block["prompt_policy_id"], self.POLICY)
+        self.assertIsNone(block["launch_record_ref"])
+
+    def test_10_import_records_no_citation(self):
+        proc = self.full_import()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        block = self.read_intake()["launch"]
+        self.assertEqual(block["schema_version"], "1.0")
+        self.assertIsNone(block["prompt_policy_id"])
+
+    def test_10_with_the_field_is_refused(self):
+        rp = self.write("request-10-field.json", dump(request_doc(
+            self.ghash, prompt_policy_id=self.POLICY)))
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "prompt_policy_id", "schema_version 1.1")
+
+    def test_11_without_the_field_is_refused(self):
+        rp = self.write("request-11-nofield.json", dump(request_doc(
+            self.ghash, schema_version="1.1")))
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "missing required field 'prompt_policy_id'")
+
+    def test_request_record_citation_mismatch_is_refused(self):
+        lp = self.launch_11("launch-other.json",
+                             prompt_policy_id="another-policy")
+        self.assert_refused(
+            self.run_intake("--launch-context", str(self.request_11()),
+                            "--launch-record", str(lp)),
+            "prompt_policy_id")
+        self.assert_refused(
+            self.run_intake("--launch-context", str(self.request_11()),
+                            "--launch-record", str(self.launch_path)),
+            "prompt_policy_id")
+
+    def test_11_record_without_the_field_agrees_with_10_request(self):
+        lp = self.write("launch-11-nofield.json", dump(launch_doc(
+            self.ghash, schema_version="1.1")))
+        proc = self.run_intake("--launch-context", str(self.request_path),
+                               "--launch-record", str(lp))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIsNone(self.read_intake()["launch"]["prompt_policy_id"])
+
+    def test_unknown_policy_id_is_refused(self):
+        rp = self.request_11("request-unknown.json",
+                              prompt_policy_id="no-such-policy")
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "no-such-policy", "registry")
+
+    def test_policy_id_wrong_types_are_refused(self):
+        rp = self.request_11("request-intid.json", prompt_policy_id=71)
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "prompt_policy_id", "expected type string")
+        rp = self.request_11("request-emptyid.json", prompt_policy_id="")
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "prompt_policy_id", "minLength")
+        rp = self.request_11("request-nullid.json", prompt_policy_id=None)
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "prompt_policy_id", "expected type string")
+
+    def test_policy_selector_shapes_are_refused(self):
+        rp = self.request_11("request-selector.json",
+                              prompt_policy_selection=self.POLICY)
+        self.assert_refused(
+            self.run_intake("--launch-context", str(rp)),
+            "additional property 'prompt_policy_selection'")
+        rp = self.request_11(
+            "request-idobject.json",
+            prompt_policy_id={"policy_id": self.POLICY, "mode": "select"})
+        self.assert_refused(self.run_intake("--launch-context", str(rp)),
+                            "prompt_policy_id", "expected type string")
 
 
 class TestDesignTokens(unittest.TestCase):
