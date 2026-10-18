@@ -1,1 +1,94 @@
-{"items":[],"note":"No framework is named or attributed to Les Brown in this pack, because none has been verified against his published work. Section 7.1 forbids inventing a named framework to meet a quantity target. When source supply lands, each framework is extracted from verified source records with preconditions, how to apply, limits, questions to ask, counterexamples, and evidence needed, or is explicitly labeled a BlackCEO adaptation.","pack_owner_unit":"CWE-021","planned_contents":[{"basis":"build directive Section 7.10 seat specification","planned_content":"Separate fear from evidence: state what is actually known about the obstacle before treating it as a limiting belief.","slot":"fear versus evidence"},{"basis":"build directive Section 7.10 seat specification","planned_content":"Distinguish persistence from repeated ineffective behavior: when the same approach has failed, the grounded move is a changed strategy, not repetition.","slot":"persistence versus repeated ineffective behavior"},{"basis":"build directive Section 7.10 seat specification","planned_content":"Separate a setback from a permanent identity: one failed attempt is evidence about an approach, not a verdict on the person.","slot":"setback versus permanent identity"},{"basis":"build directive Section 7.10 seat specification","planned_content":"Distinguish meaningful action from empty encouragement: end with one achievable next commitment, the support or skill it requires, and a success signal.","slot":"meaningful action versus empty encouragement"}],"seat_id":"les-brown","status":"source_absent"}
+{
+  "items": [
+    {
+      "id": "fw-les-brown-evidence-values-recovery",
+      "name": "Evidence, values and a recovery plan",
+      "summary": "Separate a setback from a total judgment of capacity, examine motives and consequences, and choose a concrete recovery action.",
+      "how_to_apply": [
+        "Recall specific prior actions and their actual contribution.",
+        "Check facts, motives, direction and effects on valued commitments.",
+        "Choose a daily task with a review point and identify what should stop."
+      ],
+      "source_evidence_ids": [
+        "ev-les-brown-lw-c1",
+        "ev-les-brown-lw-c2",
+        "ev-les-brown-lw-c4"
+      ],
+      "preconditions": [
+        "Relevant user context and a decision within this seat's role."
+      ],
+      "questions_to_ask": [
+        "What evidence contradicts the universal failure claim?",
+        "Which useful capacity remains and what is the next bounded task?"
+      ],
+      "counterexamples": [
+        "Treating an anecdote or imagined result as verified evidence."
+      ],
+      "evidence_needed": [
+        "Actual constraints, relevant behavior and affected people's stated needs."
+      ],
+      "limits": "Past achievement does not guarantee a new result; a rational stopping decision remains valid.",
+      "scope": "shared_pack",
+      "attribution_kind": "source_principle"
+    },
+    {
+      "id": "fw-les-brown-prepared-action-feedback",
+      "name": "Prepared action with support and correction",
+      "summary": "Combine deliberate preparation, useful support and assessed feedback; enthusiasm does not replace verification.",
+      "how_to_apply": [
+        "Identify real constraints and missing checks.",
+        "Rehearse a manageable action and obtain relevant advice.",
+        "Accept a valid correction and make repair visible to those affected."
+      ],
+      "source_evidence_ids": [
+        "ev-les-brown-ld-c1",
+        "ev-les-brown-ld-c3",
+        "ev-les-brown-ld-c4",
+        "ev-les-brown-ld-case1",
+        "ev-les-brown-lw-case1"
+      ],
+      "preconditions": [
+        "Relevant user context and a decision within this seat's role."
+      ],
+      "questions_to_ask": [
+        "Which fact still needs verification?",
+        "Is this feedback accurate, and what repair matches the harm?"
+      ],
+      "counterexamples": [
+        "Treating an anecdote or imagined result as verified evidence."
+      ],
+      "evidence_needed": [
+        "Actual constraints, relevant behavior and affected people's stated needs."
+      ],
+      "limits": "Visualization is preparation, not evidence of success. The house and workplace stories remain author-reported examples.",
+      "scope": "shared_pack",
+      "attribution_kind": "source_principle"
+    }
+  ],
+  "note": "Framework labels and operational steps are original paraphrase syntheses of the cited book evidence, not quotations or claims that the author named these combined frameworks. Existing planned contents remain specifications, not completed evidence.",
+  "pack_owner_unit": "CWE-021",
+  "planned_contents": [
+    {
+      "basis": "build directive Section 7.10 seat specification",
+      "planned_content": "Separate fear from evidence: state what is actually known about the obstacle before treating it as a limiting belief.",
+      "slot": "fear versus evidence"
+    },
+    {
+      "basis": "build directive Section 7.10 seat specification",
+      "planned_content": "Distinguish persistence from repeated ineffective behavior: when the same approach has failed, the grounded move is a changed strategy, not repetition.",
+      "slot": "persistence versus repeated ineffective behavior"
+    },
+    {
+      "basis": "build directive Section 7.10 seat specification",
+      "planned_content": "Separate a setback from a permanent identity: one failed attempt is evidence about an approach, not a verdict on the person.",
+      "slot": "setback versus permanent identity"
+    },
+    {
+      "basis": "build directive Section 7.10 seat specification",
+      "planned_content": "Distinguish meaningful action from empty encouragement: end with one achievable next commitment, the support or skill it requires, and a success signal.",
+      "slot": "meaningful action versus empty encouragement"
+    }
+  ],
+  "seat_id": "les-brown",
+  "status": "mapped_book_frameworks"
+}

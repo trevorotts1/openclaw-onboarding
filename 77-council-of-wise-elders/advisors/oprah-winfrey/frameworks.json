@@ -1,1 +1,93 @@
-{"items":[],"note":"No framework is named or attributed to Oprah Winfrey in this pack, because none has been verified against her published work. Section 7.1 forbids inventing a named framework to meet a quantity target. When source supply lands, each framework is extracted from verified source records with preconditions, how to apply, limits, questions to ask, counterexamples, and evidence needed, or is explicitly labeled a BlackCEO adaptation.","pack_owner_unit":"CWE-015","planned_contents":[{"basis":"build directive Section 7.4 seat specification","planned_content":"Compare the client's stated intention with the likely impact of the choice.","slot":"stated intention versus likely impact"},{"basis":"build directive Section 7.4 seat specification","planned_content":"Identify the human story inside the decision and what the people it serves need in order to feel understood.","slot":"human story and stakeholder need"},{"basis":"build directive Section 7.4 seat specification","planned_content":"Distinguish external validation from meaningful progress.","slot":"validation versus meaningful progress"},{"basis":"build directive Section 7.4 seat specification","planned_content":"Trace relational and reputational consequences concretely: whose trust, what promise, and what behavior.","slot":"relational and reputational consequence tracing"}],"seat_id":"oprah-winfrey","status":"source_absent"}
+{
+  "items": [
+    {
+      "id": "fw-oprah-winfrey-intention-capacity-impact",
+      "name": "Intention, capacity and impact",
+      "summary": "Clarify the purpose of a commitment, distinguish approval seeking from chosen service, and account for the capacity needed to carry it out.",
+      "how_to_apply": [
+        "Name the intended benefit and actual motive.",
+        "Check capacity, commitments and the likely impact on people.",
+        "Choose a bounded next action and review what happened."
+      ],
+      "source_evidence_ids": [
+        "ev-oprah-winfrey-op-c2",
+        "ev-oprah-winfrey-op-c3",
+        "ev-oprah-winfrey-ok-c2",
+        "ev-oprah-winfrey-ok-c3"
+      ],
+      "preconditions": [
+        "Relevant user context and a decision within this seat's role."
+      ],
+      "questions_to_ask": [
+        "Whom does this serve?",
+        "What would change if recognition were removed?"
+      ],
+      "counterexamples": [
+        "Treating an anecdote or imagined result as verified evidence."
+      ],
+      "evidence_needed": [
+        "Actual constraints, relevant behavior and affected people's stated needs."
+      ],
+      "limits": "A useful intention does not control external events or excuse neglected duties.",
+      "scope": "shared_pack",
+      "attribution_kind": "source_principle"
+    },
+    {
+      "id": "fw-oprah-winfrey-service-dignity",
+      "name": "Service with a dignity constraint",
+      "summary": "Evaluate contribution through present conduct and the treatment of affected people rather than rank or visibility.",
+      "how_to_apply": [
+        "Identify who bears the cost of the proposed action.",
+        "Set a concrete dignity constraint before choosing the format.",
+        "Review whether the action serves the stated purpose."
+      ],
+      "source_evidence_ids": [
+        "ev-oprah-winfrey-op-c4",
+        "ev-oprah-winfrey-ok-c4",
+        "ev-oprah-winfrey-ok-case1"
+      ],
+      "preconditions": [
+        "Relevant user context and a decision within this seat's role."
+      ],
+      "questions_to_ask": [
+        "Who could be diminished by this format?",
+        "What conduct would express the intended contribution?"
+      ],
+      "counterexamples": [
+        "Treating an anecdote or imagined result as verified evidence."
+      ],
+      "evidence_needed": [
+        "Actual constraints, relevant behavior and affected people's stated needs."
+      ],
+      "limits": "The television incident is an author-reported case, not independently corroborated evidence of outcomes.",
+      "scope": "shared_pack",
+      "attribution_kind": "source_principle"
+    }
+  ],
+  "note": "Framework labels and operational steps are original paraphrase syntheses of the cited book evidence, not quotations or claims that the author named these combined frameworks. Existing planned contents remain specifications, not completed evidence.",
+  "pack_owner_unit": "CWE-015",
+  "planned_contents": [
+    {
+      "basis": "build directive Section 7.4 seat specification",
+      "planned_content": "Compare the client's stated intention with the likely impact of the choice.",
+      "slot": "stated intention versus likely impact"
+    },
+    {
+      "basis": "build directive Section 7.4 seat specification",
+      "planned_content": "Identify the human story inside the decision and what the people it serves need in order to feel understood.",
+      "slot": "human story and stakeholder need"
+    },
+    {
+      "basis": "build directive Section 7.4 seat specification",
+      "planned_content": "Distinguish external validation from meaningful progress.",
+      "slot": "validation versus meaningful progress"
+    },
+    {
+      "basis": "build directive Section 7.4 seat specification",
+      "planned_content": "Trace relational and reputational consequences concretely: whose trust, what promise, and what behavior.",
+      "slot": "relational and reputational consequence tracing"
+    }
+  ],
+  "seat_id": "oprah-winfrey",
+  "status": "mapped_book_frameworks"
+}

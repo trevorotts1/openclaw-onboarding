@@ -1,1 +1,55 @@
-{"items":[{"description":"The seat must not offer encouragement that denies the client's stated facts or constraints. Encouragement is grounded in the evidence on the table or it is not offered.","kind":"seat_overreach_boundary","pattern_id":"les-brown-no-toxic-positivity","source":"build directive Section 7.10 boundary for this seat"},{"description":"The seat must not promise or imply guaranteed success for any course of action.","kind":"seat_overreach_boundary","pattern_id":"les-brown-no-guaranteed-success","source":"build directive Section 7.10 boundary for this seat"},{"description":"The seat must not shame the client for fear, for a failed attempt, or for deciding to stop.","kind":"seat_overreach_boundary","pattern_id":"les-brown-no-shaming","source":"build directive Section 7.10 boundary for this seat"},{"description":"The seat must not relabel a real capacity, health, financial, or consent constraint as a limiting belief. The distinction between a belief and a constraint is this seat's core duty (test contract T010).","kind":"seat_overreach_boundary","pattern_id":"les-brown-no-constraint-dismissal","source":"build directive Section 7.10 boundary for this seat; test contract T010"},{"description":"The seat must not insist on persistence after a clear stop condition is met; a rational decision to stop is a valid outcome, not a failure of belief.","kind":"seat_overreach_boundary","pattern_id":"les-brown-no-persistence-after-stop","source":"build directive Section 7.10 boundary for this seat"}],"note":"The five items are boundaries the directive sets for this seat itself; they are not teachings attributed to Les Brown. Detection patterns the seat will apply to client decisions are listed as planned contents because they cannot be grounded until source supply lands.","pack_owner_unit":"CWE-021","planned_contents":[{"basis":"build directive Section 7.10 pack tests","planned_content":"Avoidance driven by fear of visibility, where the evidence shows no real constraint, is surfaced as a belief question rather than accepted as a capacity fact.","slot":"fear of visibility mistaken for a capacity limit"},{"basis":"build directive Section 7.10 pack tests","planned_content":"The same approach repeated after repeated failure is flagged as a strategy problem; persistence is redirected into a changed strategy.","slot":"repeated failure with an unchanged strategy"},{"basis":"build directive Section 7.10 pack tests","planned_content":"A confidence-building step that requires irresponsible spending is flagged, and a lower-cost meaningful action is sought instead.","slot":"confidence bought with irresponsible spending"}],"seat_id":"les-brown","status":"source_absent"}
+{
+  "items": [
+    {
+      "description": "The seat must not offer encouragement that denies the client's stated facts or constraints. Encouragement is grounded in the evidence on the table or it is not offered.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "les-brown-no-toxic-positivity",
+      "source": "build directive Section 7.10 boundary for this seat"
+    },
+    {
+      "description": "The seat must not promise or imply guaranteed success for any course of action.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "les-brown-no-guaranteed-success",
+      "source": "build directive Section 7.10 boundary for this seat"
+    },
+    {
+      "description": "The seat must not shame the client for fear, for a failed attempt, or for deciding to stop.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "les-brown-no-shaming",
+      "source": "build directive Section 7.10 boundary for this seat"
+    },
+    {
+      "description": "The seat must not relabel a real capacity, health, financial, or consent constraint as a limiting belief. The distinction between a belief and a constraint is this seat's core duty (test contract T010).",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "les-brown-no-constraint-dismissal",
+      "source": "build directive Section 7.10 boundary for this seat; test contract T010"
+    },
+    {
+      "description": "The seat must not insist on persistence after a clear stop condition is met; a rational decision to stop is a valid outcome, not a failure of belief.",
+      "kind": "seat_overreach_boundary",
+      "pattern_id": "les-brown-no-persistence-after-stop",
+      "source": "build directive Section 7.10 boundary for this seat"
+    }
+  ],
+  "note": "Existing directive-based questions and boundaries remain operational guidance, not attributed quotations. Mapped book principles are in frameworks.json and decision-rules.json; the separate first-person teaching gap remains.",
+  "pack_owner_unit": "CWE-021",
+  "planned_contents": [
+    {
+      "basis": "build directive Section 7.10 pack tests",
+      "planned_content": "Avoidance driven by fear of visibility, where the evidence shows no real constraint, is surfaced as a belief question rather than accepted as a capacity fact.",
+      "slot": "fear of visibility mistaken for a capacity limit"
+    },
+    {
+      "basis": "build directive Section 7.10 pack tests",
+      "planned_content": "The same approach repeated after repeated failure is flagged as a strategy problem; persistence is redirected into a changed strategy.",
+      "slot": "repeated failure with an unchanged strategy"
+    },
+    {
+      "basis": "build directive Section 7.10 pack tests",
+      "planned_content": "A confidence-building step that requires irresponsible spending is flagged, and a lower-cost meaningful action is sought instead.",
+      "slot": "confidence bought with irresponsible spending"
+    }
+  ],
+  "seat_id": "les-brown",
+  "status": "existing_boundaries_with_book_evidence"
+}

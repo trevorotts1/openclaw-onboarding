@@ -1,5 +1,9 @@
 # Council of Wise Elders (77): Changelog
 
+## 1.0.7 - 2026-10-18
+
+Integrate four supplied Oprah and Les book mappings, partial source qualification and governance discovery. Publish the verified 105-persona index. Preserve the landed 1.0.5 queue/supervisor and 1.0.6 route-snapshot/installed-CLI implementations; regenerate the combined distributable.
+
 ## v1.0.6: wave-2 cohort (frozen route snapshot, installed-CLI bridge)
 
 - Freezes the normalized route snapshot contract (`runtime/src/providers/`, schema `wise-elders.route-snapshot/v1`): session owner, route and account reference, host/config selection, API family, requested model or combination alias, permitted members and fallbacks, requested / supported / applied reasoning kept distinct, capability version, policy hash and rate/concurrency limits. Configured identity and transport-reported identity are separate fields, and an unreported provider member stays explicitly `UNKNOWN` rather than being assumed. The snapshot carries a stable hash that WER-007, WER-008 and WER-009 consume instead of inventing their own route shapes.

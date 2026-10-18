@@ -479,6 +479,17 @@ describe('disk audit: the nine source packs', () => {
           if (record.quality === 'primary_substantive') record.quality = 'unverified';
         }
         assert.notEqual(validateAdvisorPack(downgraded).qualification, 'primary_teaching_based');
+      } else if (seat === 'oprah-winfrey' || seat === 'les-brown') {
+        assert.equal(v.qualification, 'partial');
+        assert.equal(v.works.length, 2);
+        assert.equal(v.works[0].work_class, 'primary_teaching');
+        assert.equal(v.works[0].traceable_concepts, 4);
+        assert.equal(v.works[0].application_cases, 1);
+        assert.equal(v.works[0].gate_met, true);
+        assert.equal(v.works[1].gate_met, false);
+        assert.equal(v.works[1].traceable_concepts, 0);
+        const records = pack.sources.records as Array<Record<string, unknown>>;
+        assert.equal(records.filter((r) => r.source_type === 'book').length, 2);
       } else {
         assert.ok(v.qualification === 'bibliographic_only' || v.qualification === 'incomplete');
       }

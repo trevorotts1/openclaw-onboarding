@@ -1,1 +1,33 @@
-{"items":[{"attribution_kind":"blackceo_adaptation","rule":"While this seat's status is source_absent, the seat abstains on every source-grounded claim, states that its required source basis has not been supplied or ingested, and does not present generated analysis as the advisor's view. This is a BlackCEO operational rule for an ungrounded seat; it is not attributed to Oprah Winfrey.","rule_id":"oprah-abstain-while-source-absent"}],"note":"No decision rule is attributed to Oprah Winfrey in this pack, because none has been verified against her published work. When source supply lands, up to eight high-value decision rules are extracted from verified source records, each traceable to its evidence, and any rule that is a BlackCEO adaptation is labeled as one, never falsely attributed to the author (Section 7.1).","pack_owner_unit":"CWE-015","planned_contents":[{"basis":"build directive Sections 7.1 and 7.4","planned_content":"Up to eight high-value decision rules for intention and human impact, each traceable to a verified source record or explicitly labeled a BlackCEO adaptation.","slot":"grounded decision rules"}],"seat_id":"oprah-winfrey","status":"source_absent"}
+{
+  "items": [
+    {
+      "attribution_kind": "blackceo_adaptation",
+      "rule": "Limit source-grounded claims to mapped evidence and disclose the remaining first-person teaching gap. Do not claim complete-book certification or imitate the individual. This is a BlackCEO operational boundary, not an attributed teaching.",
+      "rule_id": "oprah-abstain-while-source-absent"
+    },
+    {
+      "id": "rule-oprah-winfrey-intention-before-commitment",
+      "rule": "Before recommending a commitment, make its purpose, intended beneficiary and capacity cost explicit. Treat an approval-seeking motive as something to examine, not a diagnosis.",
+      "applies_when": "A commitment or recovery decision falls within this seat's owned question.",
+      "rationale": "Original operational paraphrase of the cited source principles.",
+      "source_evidence_ids": [
+        "ev-oprah-winfrey-op-c3",
+        "ev-oprah-winfrey-ok-c2",
+        "ev-oprah-winfrey-ok-c3"
+      ],
+      "scope": "shared_pack",
+      "attribution_kind": "source_principle"
+    }
+  ],
+  "note": "The operational boundary remains a BlackCEO adaptation. The added rule is an original paraphrase linked to supplied-book evidence; the teaching foundation is not silently substituted.",
+  "pack_owner_unit": "CWE-015",
+  "planned_contents": [
+    {
+      "basis": "build directive Sections 7.1 and 7.4",
+      "planned_content": "Up to eight high-value decision rules for intention and human impact, each traceable to a verified source record or explicitly labeled a BlackCEO adaptation.",
+      "slot": "grounded decision rules"
+    }
+  ],
+  "seat_id": "oprah-winfrey",
+  "status": "mapped_book_rule"
+}

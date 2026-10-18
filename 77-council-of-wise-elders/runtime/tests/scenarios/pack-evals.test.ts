@@ -529,7 +529,8 @@ test('all nine committed packs audit valid with only supported source qualificat
     });
     assert.equal(validation.valid, true, folder);
     assert.equal(audit.qualification, folder === 'russell-brunson'
-      ? 'primary_teaching_based' : 'bibliographic_only', folder);
+      ? 'primary_teaching_based' : ['oprah-winfrey', 'les-brown'].includes(folder)
+        ? 'partial' : 'bibliographic_only', folder);
     assert.equal(verifyAuditIntegrity(audit), true, folder);
   }
 });
@@ -545,13 +546,13 @@ test('audit determinism: hashes are a pure function of content plus audited_at',
   assert.notEqual(omitted.audit.audit_sha256, a.audit.audit_sha256);
 });
 
-test('absent packs record every eval case as defined_not_run_source_absent', () => {
+test('partial book packs record every semantic eval case as defined_not_run', () => {
   for (const folder of ['oprah-winfrey', 'les-brown']) {
     const pack = loadPack(folder);
     const cases = (pack.evals as any).cases as any[];
     assert.ok(cases.length >= 5, folder);
     assert.ok(
-      cases.every((c) => c.status === 'defined_not_run_source_absent'),
+      cases.every((c) => c.status === 'defined_not_run'),
       `${folder} carries a case that claims to have run`,
     );
   }

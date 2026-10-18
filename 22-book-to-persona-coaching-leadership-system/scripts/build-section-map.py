@@ -175,13 +175,13 @@ def build_map() -> dict:
                 "SECTION 8, NOT Section 4. Section 4 under Template A is 'Key "
                 "Principles' — plain numbered prose, no A-D structure.",
 
-                "Template B (71 personas = 67 hyphen-heading + 4 em-dash-"
-                "heading): Section 1 = 'Author Intelligence'. The Agent "
+                f"Template B ({template_counts.get('B', 0)} personas): "
+                "Section 1 = 'Author Intelligence'. The Agent "
                 "Governance Framework lives at SECTION 4 — this generation "
                 "matches the dispatch load contract's literal 'Section 4 "
                 "(A-D)' reference at face value.",
 
-                "4 of the 71 Template-B personas (brunson-marketing-secrets-"
+                "Four historical Template-B personas (brunson-marketing-secrets-"
                 "blackbook, opara-color-works, rohde-the-sketchnote-workbook, "
                 "russell-brunson-the-funnel-hackers-cookbook) use an em-dash "
                 "('—') instead of a hyphen ('-') after the section number in "

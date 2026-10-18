@@ -1,1 +1,271 @@
-{"evidence":[],"note":"Every record in this file is a bibliographic stub: a required work acknowledged as absent and not ingested. A stub is not a Section 8.3 source record and grounds no claim. Full source records are added only after lawful access and ingestion, each with a content hash, locators, rights status, and original-speaker attribution.","pack_owner_unit":"CWE-021","records":[{"anchor_role":"anchor","basis":"foundational book","credited_authors":["Les Brown"],"gaps":["no Skill 22 persona package exists for this seat (supply gap, confirmed by the CWE-011 export)","no lawfully accessed copy has been ingested; no content, locator, or quotation is claimed"],"record_status":"bibliographic_only","seed":{"canonical_url":"https://www.simonandschuster.com/books/Its-Not-Over-Until-You-Win/Les-Brown/9780684835280","isbn":"9780684835280","note":"Bibliographic seed exactly as supplied by the build directive, Section 39.5 seed A11; the ISBN is the one carried in that seed URL. The directive supplies no publication date for this work, and none is asserted here.","registry_id":"A11"},"status":"absent","title":"It's Not Over Until You Win","verification_status":"not_ingested","work_title":"It's Not Over Until You Win"},{"anchor_role":"anchor","basis":"verified public teaching material, located per source record","credited_authors":["Les Brown"],"gaps":["no Skill 22 persona package exists for this seat (supply gap, confirmed by the CWE-011 export)","no verified public teaching has been ingested; when material lands, each item is recorded with its own locator and original_speaker so only Les Brown's own teaching grounds this seat"],"record_status":"bibliographic_only","status":"absent","title":"Verified public teaching","verification_status":"not_ingested","work_title":"Verified public teaching"},{"anchor_role":"alternate_anchor","basis":"named alternate anchor","credited_authors":["Les Brown"],"gaps":["no Skill 22 persona package exists for this seat (supply gap)","no lawfully accessed copy has been ingested; no content, locator, or quotation is claimed"],"record_status":"bibliographic_only","seed":{"note":"Named on the owner's supply list as an acceptable alternate anchor for this seat (Live Your Dreams alongside It's Not Over Until You Win). The build directive supplies no seed URL, publisher, or publication date for this work, and none is asserted here."},"status":"absent","title":"Live Your Dreams","verification_status":"not_ingested","work_title":"Live Your Dreams"}],"seat_id":"les-brown","status":"source_absent"}
+{
+  "evidence": [],
+  "note": "Two supplied books now have retained-original PDF hashes, edition-specific page locators and ten original-paraphrase evidence units. Each contributes four concepts and one author-reported application case. Both remain source_type book; the named alternate does not replace the separate required first-person teaching anchor. Rights are reference_only; originals, notes, appendices and quotations remain private. See references/oprah-les-source-intake/README.md.",
+  "pack_owner_unit": "CWE-021",
+  "records": [
+    {
+      "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+      "work_id": "work-its-not-over-until-you-win",
+      "work_title": "It's Not Over Until You Win",
+      "credited_authors": [
+        "Les Brown"
+      ],
+      "original_speaker": "Les Brown",
+      "source_type": "book",
+      "publisher_or_host": "Fireside / Simon & Schuster",
+      "edition_or_publication_date": "First Fireside Edition 1998; supplied 260-page PDF",
+      "retrieved_at": "2026-10-18",
+      "canonical_url": null,
+      "private_asset_id": "retained-les-brown-its-not-over-until-you-win-pdf",
+      "content_sha256": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "page",
+          "value": "PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 106-109, Chapter 4, Canceled, Making a Career Comeback"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire"
+        }
+      ],
+      "quality": "primary_substantive",
+      "evidence": [
+        {
+          "evidence_id": "ev-les-brown-lw-c1",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C1 - Evidence of prior capacity.** The source's victory bank and Spirit Book practices use remembered accomplishments and encouraging material to counter the tendency to treat a setback as proof of universal incapacity. The useful coaching move is to recall a specific event, identify the person's actual contribution, and connect that capacity to a small present action; this does not establish that the same outcome will recur. Ask: “When have you handled something comparably difficult, what did you do, and which part of that capacity is useful now?” This is a source-described practice expressed in original language, with a new worksheet and hypothetical example in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Section E1. Locator: PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c2",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C2 - Six-part value check.** The source's Value System Checkup examines facts and motives, ego, emotion, direction, reference points, and effects on valued parts of life. Its practical contribution is to slow down a tempting decision long enough to examine why it is attractive and whom it affects. Ask: “What facts support the choice, what recognition are you seeking, which emotion is strongest, where does the choice lead, whose relevant experience can inform you, and what could it cost the people or commitments you value?” These are paraphrased checks, not a reproduced questionnaire; the adapted template and hypothetical example are in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Section E2. Locator: PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c3",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C3 - Constructive response to criticism.** The source describes understanding the critic and the specific claim, finding an honestly shared point, and seeking a positive resolution while admitting a valid error. The distinction is between assessed agreement and reflexive submission: useful feedback can be accepted without accepting unsupported accusations. Ask: “What exactly happened, which part is accurate, and what change would address that part?” A threat or abusive encounter calls for safety and appropriate support, not an obligation to persuade the aggressor. The original practice script and hypothetical example appear in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Sections C and E3. Locator: PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-c4",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 106-109, Chapter 4, Canceled, Making a Career Comeback"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-C4 - Career comeback through daily action.** The source's seven comeback elements combine supportive company, encouraging input, learning from mistakes, release of the defeated venture, a daily plan, smaller task components, and more constructive self-talk. This makes recovery a pattern of conduct rather than a declaration of confidence. Ask: “Which part of the old effort should end, which useful capacity remains, who can help, and what meaningful task can you finish before the next review?” The deployment adaptation adds an observable completion condition and a review point without promising reemployment or commercial success. The complete paraphrased component list and original worked example are in [PLAYBOOK-APPENDIX.md](PLAYBOOK-APPENDIX.md), Section E4. Locator: PDF 106-109, Chapter 4, Canceled, Making a Career Comeback; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-lw-case1",
+          "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+          "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LW-CASE1 - A leader accepts correction and repairs public harm.** In a genuine autobiographical report, the author describes reprimanding an employee publicly after discovering a lie. A senior colleague challenged the public handling of the incident; the author then apologized publicly the next day. The account demonstrates that accountability includes reviewing one's own conduct even when another person's error is real. The colleague's advice remains guest-attributed, and the episode is an author-reported case, not an independently verified study or an invented coaching vignette. Ask: “Was the correction needed, was the way it was delivered respectful, and what repair matches the audience that witnessed the harm?” Locator: PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire; selected original SHA256 `1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535`.",
+          "excerpt": null
+        }
+      ]
+    },
+    {
+      "anchor_role": "anchor",
+      "basis": "verified public teaching material, located per source record",
+      "credited_authors": [
+        "Les Brown"
+      ],
+      "gaps": [
+        "No qualified separate teaching source is mapped for this foundation; the registered book personas do not substitute for it.",
+        "no verified public teaching has been ingested; when material lands, each item is recorded with its own locator and original_speaker so only Les Brown's own teaching grounds this seat"
+      ],
+      "record_status": "bibliographic_only",
+      "status": "absent",
+      "title": "Verified public teaching",
+      "verification_status": "not_ingested",
+      "work_title": "Verified public teaching"
+    },
+    {
+      "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+      "work_id": "work-live-your-dreams",
+      "work_title": "Live Your Dreams",
+      "credited_authors": [
+        "Les Brown"
+      ],
+      "original_speaker": "Les Brown",
+      "source_type": "book",
+      "publisher_or_host": "HarperCollins / Quill",
+      "edition_or_publication_date": "Copyright 1992; first Avon edition 1994; reprinted in Quill 2001 (supplied copy)",
+      "retrieved_at": "2026-10-18",
+      "canonical_url": null,
+      "private_asset_id": "retained-les-brown-live-your-dreams-pdf",
+      "content_sha256": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "page",
+          "value": "PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.”"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.”"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.”"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.”"
+        },
+        {
+          "kind": "page",
+          "value": "PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history."
+        }
+      ],
+      "quality": "primary_substantive",
+      "evidence": [
+        {
+          "evidence_id": "ev-les-brown-ld-c1",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C1 - Four Stages of Greatness.** The author presents development as a cycle: investigate personal influences and motives; accept worth while recognizing shortcomings; make specific commitments; experience fulfillment and inspect how the achievement changed you. Then renew the cycle rather than treating success as the end of growth. The practical test is whether self-understanding changes what a person does. This is the author’s presented methodology, not a claim of scientifically established causation or unique historical invention. Locator: PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.” Full tool: PLAYBOOK-APPENDIX.md, E1.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-c2",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C2 - Hunger connected to action.** The author distinguishes a passing wish from a personally compelling reason to act and teaches deliberate ways to strengthen that connection: small acts of responsibility, repeated goal review, immediate action, courageous practice, sustained effort, learning, reflection on contribution, mentors and communication. Hunger should produce preparation and useful activity, not manufactured desperation or unsafe sacrifice. A user can test it by connecting one chosen reason to one dated action. Locator: PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.” Full tool: PLAYBOOK-APPENDIX.md, E2.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-c3",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C3 - As If rehearsal for manageable fear.** The author describes a method he calls As If visualization: notice the feared outcome, imagine handling the situation, rehearse the desired conduct and take action. The function is to make an intimidating performance approachable; imagined applause is not evidence of competence or a completed result. The book separately recognizes legitimate physical danger, so the method must not erase warning signals or expert advice. Locator: PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.” Full tool: PLAYBOOK-APPENDIX.md, E7.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-c4",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.”"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-C4 - OQP and a home-court advantage.** The author’s relationship guidance asks people to seek supporters who nourish development while retaining trusted critics who challenge weaknesses. A supportive network is therefore more than praise: it includes specific help, honest feedback and mutual growth. Review what each relationship does to conduct and capability; explore repair, boundaries or a new source of guidance when needed. Never classify disagreement alone as proof that someone is harmful. Locator: PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.” Full tool: PLAYBOOK-APPENDIX.md, E10.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-les-brown-ld-case1",
+          "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+          "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+          "locator": {
+            "kind": "page",
+            "value": "PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history."
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Les Brown",
+          "claim_ids": [],
+          "seat_id": "les-brown",
+          "paraphrase": "**LD-CASE1 - The house that enthusiasm could not verify.** In a genuine author-reported personal case, the author describes saving a $12,000 down payment to buy a home for his mother, disregarding his lawyer’s advice to obtain a title search, then discovering $25,000 in liens and losing the house and deposit. His mother’s response also revealed that the stairs made the property a poor fit for her. He reports later buying a suitable, lien-free home. The case supports verified preparation, actual beneficiary needs, learning and recovery; it does not establish that every setback will lead to a better purchase. Locator: PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history.",
+          "excerpt": null
+        }
+      ]
+    }
+  ],
+  "seat_id": "les-brown",
+  "status": "book_evidence_integrated_teaching_gap"
+}
