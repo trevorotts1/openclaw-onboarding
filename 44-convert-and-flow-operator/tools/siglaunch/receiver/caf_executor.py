@@ -191,15 +191,60 @@ def _normalize_export(obj: dict, workflow_id: str) -> dict:
         raw_type = _step_trigger_type(step)
         if raw_type and _is_trigger_step(raw_type):
             triggers.append(_canonical_trigger(step, raw_type))
+    # ── layer-9 observation basis (MAIN ruling, 2026-10-18, option (a)) ──
+    # The native internal-API workflow object carries NO status field
+    # and NO trigger contents: triggers live in a separate trigger-
+    # bucket file the object points at (triggersFilePath +
+    # isTriggerBucketMigrated), and draft state is a property of the
+    # object's draft-only construction (the builder has no publish
+    # operation). Verified firsthand against every internal surface
+    # (export object, Tier-0 list/get, the internal listing) in A16
+    # runs 7-8. The normalization therefore RECORDS the native
+    # evidence verbatim and observes from it, so the receipt shows
+    # exactly what its checks rest on:
+    # - trigger_evidence: the bucket pointer fields, verbatim. The
+    #   bucket file exists only because the builder created and
+    #   linked a trigger for this workflow at build time.
+    # - status "draft": when the object carries no explicit status,
+    #   is not deleted, and stands as a builder-created object, its
+    #   state is observed as draft, with status_evidence recording
+    #   the native fields verbatim. A deleted object NEVER derives
+    #   draft; an explicit native status always governs.
+    trigger_evidence = {}
+    if isinstance(obj.get("triggersFilePath"), str) \
+            and obj.get("triggersFilePath"):
+        trigger_evidence["triggers_file_path"] = obj["triggersFilePath"]
+    if isinstance(obj.get("isTriggerBucketMigrated"), bool):
+        trigger_evidence["bucket_migrated"] = \
+            obj["isTriggerBucketMigrated"]
     status = obj.get("status")
-    return {
+    status_evidence = None
+    if not isinstance(status, str):
+        status = None
+        if obj.get("deleted") is False and (obj.get("id")
+                                            or obj.get("_id")):
+            status = "draft"
+            status_evidence = {}
+            for native_key, out_key in (
+                    ("deleted", "deleted"),
+                    ("creationSource", "creation_source"),
+                    ("version", "version"),
+                    ("dataVersion", "data_version")):
+                if native_key in obj:
+                    status_evidence[out_key] = obj[native_key]
+    normalized = {
         "id": (obj.get("id") or obj.get("workflowId")
                or workflow_data.get("id") or workflow_id),
-        "status": status if isinstance(status, str) else None,
+        "status": status,
         "triggers": triggers,
         "steps": steps,
         "allowMultiple": _export_allow_multiple(obj, workflow_data),
     }
+    if trigger_evidence:
+        normalized["trigger_evidence"] = trigger_evidence
+    if status_evidence is not None:
+        normalized["status_evidence"] = status_evidence
+    return normalized
 
 
 class CafExecutor:
@@ -319,7 +364,7 @@ class CafExecutor:
     def build(self, builder_plan: dict) -> dict:
         result = {"exit_code": 1, "workflow_id": None, "errors": [],
                   "notes": [], "export": None, "export_raw": None,
-                  "qc_exit_code": None, "rubric": None}
+                  "qc_exit_code": None, "rubric": None, "stats": None}
         with tempfile.NamedTemporaryFile(
                 "w", suffix=".json", delete=False) as fh:
             json.dump(builder_plan, fh)
@@ -329,6 +374,12 @@ class CafExecutor:
              "build", "--from-plan", plan_path], self.timeout)
         stats = _extract_json(out) or _extract_json(err)
         result["exit_code"] = code
+        # Record the FULL build stats on every run (MAIN layer-9
+        # ruling): run 8's stats were discarded by the pre-fix
+        # executor, leaving its triggers_created count unpreserved —
+        # an evidence gap that stays named on that receipt. No future
+        # run loses them.
+        result["stats"] = stats
         if stats is None:
             result["errors"].append(
                 "build output unparseable; raw tail: "

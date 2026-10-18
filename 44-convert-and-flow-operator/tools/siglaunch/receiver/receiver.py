@@ -399,6 +399,24 @@ class Receiver:
         requests keep the declared `trigger` type check."""
         triggers = export.get("triggers", [])
         observed_types = [t.get("type") for t in triggers]
+        if not triggers:
+            # Layer-9 observation basis (MAIN ruling, 2026-10-18,
+            # option (a)): the native object carries no trigger
+            # contents — triggers live in a separate trigger-bucket
+            # file. When the export records that bucket evidence
+            # verbatim (bucket_migrated true + the workflow's own
+            # triggers_file_path), the binding is observed from it:
+            # the bucket exists only because the builder created and
+            # linked this workflow's trigger at build time. An
+            # explicit triggers list, when present, always governs
+            # instead — a drifted explicit list is a defect the
+            # bucket must never paper over.
+            evidence = export.get("trigger_evidence") or {}
+            if evidence.get("bucket_migrated") is True \
+                    and isinstance(evidence.get("triggers_file_path"),
+                                   str) \
+                    and evidence.get("triggers_file_path"):
+                return True
         mechanism = declared.get("mechanism")
         if mechanism:
             mtype = mechanism.get("type")
@@ -450,6 +468,10 @@ class Receiver:
             return op
         result = self.executor.build(builder_plan)
         op["errors"] = list(result.get("errors", []))
+        # Full build stats recorded on the receipt (MAIN layer-9
+        # ruling; None only when the build emitted no parseable
+        # stats, which the errors above already report).
+        op["build_stats"] = result.get("stats")
         export = result.get("export") or {}
         op["workflow_id"] = result.get("workflow_id")
         op["readback"] = export if export else None
