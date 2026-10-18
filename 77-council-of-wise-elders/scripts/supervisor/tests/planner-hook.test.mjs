@@ -61,14 +61,16 @@ test("nextFullSweepDueAt is anchor-derived, not finish-derived", () => {
   assert.equal(nextFullSweepDueAt(hook, ANCHOR + 1_900_000), ANCHOR + 2_400_000);
 });
 
-test("the planner hook module stays pure: no clocks and no timers", () => {
-  const source = readFileSync(join(here, "..", "planner-hook.mjs"), "utf8");
-  // Strip comments so the purity CONTRACT text does not count as a clock call.
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
-  for (const forbidden of ["Date.now", "performance.now", "setTimeout", "setInterval", "new Date"]) {
-    assert.equal(code.includes(forbidden), false, `planner-hook.mjs must not use ${forbidden}`);
+test("the planner stays pure: no clocks and no timers in either planner module", () => {
+  for (const file of ["planner-hook.mjs", "sweep-planner.mjs"]) {
+    const source = readFileSync(join(here, "..", file), "utf8");
+    // Strip comments so the purity CONTRACT text does not count as a clock call.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const forbidden of ["Date.now", "performance.now", "setTimeout", "setInterval", "new Date"]) {
+      assert.equal(code.includes(forbidden), false, `${file} must not use ${forbidden}`);
+    }
+    assert.equal(code.includes("node:fs"), false, `${file} must not touch the filesystem`);
   }
-  assert.equal(code.includes("node:fs"), false, "planner hook must not touch the filesystem");
 });
