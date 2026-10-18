@@ -1,10 +1,37 @@
-# Extra-offer action/disclosure interface (S79/S06 shared) - DRAFT
+# Extra-offer action/disclosure interface (S79/S06 shared): CONFIRMED
 
-Status: fixture-level interface preparation for S79-06. Nothing here is
-installed or confirmed with S06. Statements drawn from the packet are cited
-by document and section; every statement that still needs S06 (or S44/S49)
-confirmation is listed as an open interface question in section 7 and must
-not be treated as settled.
+Status: CONFIRMED. This document is the confirmed contract of record for
+the S79/S06 shared extra-offer action/disclosure component.
+
+- Confirmed by: S49 (Signature Launch Coordinator), contract owner for
+  the launch domain contracts, under MAIN's assignment of 2026-10-17.
+  The S79 room closed at 100/100 with this revision outstanding; MAIN
+  assigned S49 to finalize it from the existing draft, working from the
+  filed record.
+- Date of confirmation: 2026-10-17.
+- Supersedes: the DRAFT of this interface (MD5
+  5858ceb23e0dc341a9cf7a7d9b9d3415, 8,492 bytes), which shipped in
+  Skill 79's candidate (PR #2151, merged 2026-10-16) and sits on main
+  at `79-signature-order-form/references/extra_offer_interface.md` in
+  DRAFT form. Identical draft copies of record:
+  `rooms/S79/work/binding/extra_offer_interface.md` and
+  `rooms/S79/candidate/79-signature-order-form/references/extra_offer_interface.md`.
+- What confirmation carries: sections 1 to 6 are the confirmed contract
+  substance, carried verbatim from the draft; every statement there is
+  cited to the packet by document and section. Section 7 dispositions
+  the draft's nine open interface questions from the filed record, one
+  disposition each. Section 8 expressly dispositions CR-S81-001..009.
+  Section 9 lists the open gaps that remain, each with its owner.
+  Section 10 retains the draft's proof boundary.
+- S06 concurrence state, stated plainly: S06 concurred on the interface
+  positions on 2026-10-16
+  (`rooms/S79/handoffs/concurrence/from-s06-interface-concurrence.md`),
+  and the S06 answers in section 7 rest on that concurrence. S06 has
+  NOT recorded concurrence on this revised contract text itself; that
+  remains an open item (section 9, G-5). This confirmation does not
+  claim it.
+- Dependent consumer: S81 (Skill 81, Signature Downsell) reconciles
+  S81-05 against this revision.
 
 ## 1. What this interface is
 
@@ -116,43 +143,410 @@ path must never render as an initial-purchase failure; and retry of an
 extra offer reconciles against native records first, under the same
 unknown-outcome discipline as the initial purchase (doc 09 section 8).
 
-## 7. Open interface questions (require confirmation, not invention)
+## 7. Dispositions of the draft's open interface questions
 
-For S06:
-1. What are the exact native element and event names for the one-click
-   extra-offer action in the current Skill 06 builder, and how is a
-   verified native success for an extra purchase surfaced to the caller
-   (synchronous result, native read-back, or both)?
-2. How is capability evidence represented per payment method and billing
-   type (the doc 05 section 3 `environment-capabilities.json` shape, a
-   per-form record, or another artifact), and who signs it?
-3. What exactly may the wrapper style or configure for extra-offer native
-   elements, per the doc 16 section 6 native-element styling map, and
-   which properties are native-theme-only?
-4. How are decline, error and pending destinations for an extra offer
-   configured in the native funnel, and can they be set per offer or only
-   per funnel step?
-5. When one-click is unsupported for the buyer's payment method, what is
-   the approved standard-checkout fallback flow S06 installs, and where
-   is the required disclosure shown?
-6. Does the native session context impose an expiry on extra-offer
-   eligibility after the initial purchase, and how is expiry surfaced?
+The draft's section 7 listed nine questions as requiring confirmation,
+not invention. Each question below carries exactly one disposition:
+ANSWERED FROM THE FILED RECORD, ANSWERED BY S49 RULING OR RECORD, or
+OPEN GAP (in whole or in a named part). Where an answered question has a
+residual evidence item outstanding, the residue is carried in section 9
+and named here. No answer below is invented: each cites the filed record
+it rests on.
 
-For S44:
-7. What field links an extra-purchase event to its parent initial order,
-   and does S44 want extra events on the same normalized purchase-event
-   schema as the initial event or a sibling schema?
-8. Which extra-offer outcomes must S44 record for refund/chargeback
-   handling, and in what shape?
+### Q1 (S06): native element and event names; how verified success is surfaced
 
-For S49:
-9. Are decline-then-downsell chains (S80 decline routing to S81) approved
-   per launch in the route plan, and where is that approval recorded so
-   this interface can check it instead of assuming it?
+Disposition: ANSWERED FROM THE FILED RECORD in its surfacing rule;
+OPEN GAP in its names (G-1).
 
-## 8. Proof boundary
+- Surfacing rule (answered): paid counts only after a native read-back
+  confirms success. S06 concurs with the stricter read-back requirement
+  as its own built discipline: S06 exposes no synchronous success result
+  that it treats as proof for anything, and every verification surface
+  it built is read-back shaped. A verified native success result or a
+  native read-back is the evidence route, and the read-back is the
+  carrier the caller gates on.
+- Exact native element and event names for the one-click extra-offer
+  action: not present in any filed record. S06 states they are captured
+  at the first live extra-offer install and filed as a supplement to
+  its concurrence; S06 will not guess them, and neither does this
+  contract. Carried as G-1.
+- Source: S06 concurrence on S79's interface positions, Q1 (2026-10-16).
+
+### Q2 (S06): capability evidence representation and signer
+
+Disposition: ANSWERED FROM THE FILED RECORD.
+
+- Base record: the doc 05 section 3 `environment-capabilities.json`
+  (schema `skill6-environment-capabilities/1`, with evidence timestamps
+  and verified location), produced and owned by S06 (S06-02). The
+  checkout request references capability evidence through
+  `native_capability_evidence_ref` rather than embedding a copy.
+- Matrix placement (S06's counter, recorded as the position of
+  record): the per-payment-method and per-billing-type matrix (doc 09
+  section 7) is scoped to the selected native form, gateway, and funnel
+  configuration, and lives in a companion per-form capability record.
+  The base capabilities record carries a pointer to the companion
+  (path plus hash). `native_capability_evidence_ref` references the
+  companion per-form record, which itself references the base record,
+  so a consumer resolves the full chain from one reference.
+- Cardinality: one base capabilities record per probe run, per runtime
+  and location. These records are evidence snapshots (append-only per
+  run, each carrying its own timestamps), never a singleton silently
+  overwritten.
+- Signer: producer attestation. S06 signs as producer. The attestation
+  is the record's own contents (producing tool and schema version named
+  in the record), its internal evidence timestamps, and its SHA-256
+  carried by the run record that references it. There is no PKI or
+  cryptographic signature anywhere in the packet or the tree, and this
+  interface invents none.
+- Source: S06 concurrence, Q2 (2026-10-16).
+
+### Q3 (S06): what the wrapper may style or configure; native-theme-only properties
+
+Disposition: ANSWERED FROM THE FILED RECORD in its boundary;
+OPEN GAP in its per-element map (G-2).
+
+- Boundary (answered): the wrapper sets namespaced classes, token
+  variables, layout, and spacing around the native element and nothing
+  inside it; internal appearance changes go only through supported
+  native properties inside the native form builder; parent CSS is
+  never assumed to reach cross-origin internals; styling never touches
+  payment authorization or token handling; form names, labels, error
+  messages, and focus order are preserved (doc 16 section 6; doc 05
+  section 8). This is Skill 6's standing doctrine and built practice.
+- Interim binding rule (answered): until the live capture says
+  otherwise, every internal property of an extra-offer native element
+  is treated as native-theme-only or cannot-be-changed-safely, and no
+  extra-offer element property is claimed as changeable beyond the four
+  doctrine classes above.
+- Per-element styling map for the extra-offer elements, property by
+  property: installed-builder evidence of the same kind as Q1's names,
+  filed by S06 with that capture. Carried as G-2.
+- Source: S06 concurrence, Q3 (2026-10-16).
+
+### Q4 (S06): decline, error and pending destinations; per offer or per funnel step
+
+Disposition: ANSWERED FROM THE FILED RECORD.
+
+- In S06's install pattern, one funnel step hosts exactly one extra
+  offer: S06 builds each upsell and downsell as its own funnel step,
+  and its step-type classification treats upsell and downsell steps as
+  purchase steps, one offer per step. The per-offer equivalence is an
+  install-pattern commitment, not an assumption.
+- Native destination binding is per funnel step. Under the
+  one-offer-per-step pattern, per-step binding is per-offer in effect,
+  and two offers' destinations cannot merge. Destinations are declared
+  in the approved route graph per offer slot (doc 02 section 4) and
+  recorded per installation.
+- Live confirmation of the binding on installed extra-offer steps rides
+  the first live extra-offer install, with the Q1 capture; the contract
+  answer does not wait on it.
+- Source: S06 concurrence, Q4 (2026-10-16).
+
+### Q5 (S06): standard-checkout fallback when one-click is unsupported; disclosure placement
+
+Disposition: ANSWERED FROM THE FILED RECORD.
+
+- When the capability matrix shows one-click unsupported for the
+  buyer's payment method, the one-click route for that method is
+  disabled, and the extra offer's step offers a standard native
+  checkout for that same offer, built from the same native order
+  elements as the primary checkout (a native order form step for the
+  extra offer), reached by the visitor's explicit choice.
+- Disclosure placement: at the point the fallback is offered, on the
+  extra-offer presentation, rather than only on the fallback checkout
+  surface. The extra-offer step is an S06-built page, so offer-point
+  disclosure is renderable natively, and S06 commits to that placement.
+- The fallback produces the same purchase states and the same
+  normalized event for S44 as a one-click purchase; no successful
+  result is ever faked; the base purchase is never affected.
+- Sources: S06 concurrence, Q5 (2026-10-16); doc 09 section 7.
+
+### Q6 (S06): native session expiry on extra-offer eligibility; how expiry is surfaced
+
+Disposition: ANSWERED FROM THE FILED RECORD in behavior and mapping;
+OPEN GAP in the platform fact (G-3), expressly gated as below.
+
+- Behavior (answered): on expiry the extra offer is neither silently
+  dropped nor converted into a charge; the visitor is offered the
+  standard-checkout fallback (Q5) with disclosure and choice; expiry is
+  never a decline (the decline edge requires the visitor's explicit
+  decline action) and never a failure of the base purchase.
+- Mapping (answered): expiry stays inside doc 09 section 8's fixed
+  vocabulary and is carried as `requires_customer_action` with an
+  auxiliary expiry reason field: one state vocabulary, one
+  machine-readable surface for the reason. (S79's reply to CR-S81-006
+  proposed adding a named `expired_or_unsupported_context` state once
+  S06 states the fact. Under the concurred mapping no new state name
+  is added to the interface vocabulary; a consumer's page-layer render
+  naming is its own surface, not the interface vocabulary.)
+- Platform fact (gap): whether the native session context imposes an
+  expiry, its duration, and how the native surface signals it are
+  native platform facts not held as captured evidence anywhere in the
+  filed record. They are UNVERIFIED (LIVE_PROOF_PENDING class),
+  capturable only at the first live one-click extra-offer run; S06
+  files the captured fact as a supplement when that run's evidence
+  exists. Carried as G-3.
+- Sources: S06 concurrence, Q6 (2026-10-16); S06 addendum to S81, item
+  2 (2026-10-17); S79 reply to CR-S81-001..009, CR-S81-006 (2026-10-17).
+
+### Q7 (S44): field linking an extra-purchase event to its parent initial order; same schema or sibling
+
+Disposition: ANSWERED BY S49 RULING.
+
+- Same schema: extra-purchase events ride the same normalized
+  purchase-event envelope as the initial event, never a sibling
+  schema. Slots distinguish the lines; dedupe and action keys are
+  built on verified provider event identity and line identity.
+- The link field is `parent_order_ref`: OPTIONAL, nullable, type
+  ["string", "null"], minLength 1 when present and non-null. Semantics:
+  the opaque provider order identity of the initial order, populated
+  ONLY when the provider's native read-back on the extra event
+  actually carries it. Never synthesized, never derived, never
+  required, and never load-bearing for dedupe, grants, or revocations:
+  in the native platform a later extra purchase is generally its own
+  order record with its own transaction, so S44's durable linkage is
+  and remains the buyer's book (tenant_id, launch_id, contact_ref)
+  plus verified transaction and line identity.
+- Version and status, stated honestly: `parent_order_ref` is added in
+  purchase-event schema v1.2, with v1.1 and v1.0 preserved
+  byte-untouched. The v1.2 candidate (PR #2190) was presented for the
+  owner's approval on 2026-10-17 and awaits that approval; it is not
+  yet landed. On landing, S44 builds dual-acceptance for v1.2 (registry
+  dispatch on the stamped version, fail closed on unknown versions)
+  per its filed commitment, and producers emit the field only from
+  real provider read-backs after that.
+- This disposition closes the open clause carried in section 4 above
+  ("the parent-link field shape for extra events is an open question
+  for S44, section 7").
+- Sources: CR-S44-003 (S44, 2026-10-16); S49 ruling on CR-S44-003
+  (2026-10-17); S44 response to the S79 concurrence round, Q7
+  (2026-10-16).
+
+### Q8 (S44): extra-offer outcomes S44 records for refund/chargeback handling, and in what shape
+
+Disposition: ANSWERED FROM THE FILED RECORD.
+
+- Shape: append-only entries on the same purchase-event envelope; the
+  original paid record is never deleted or rewritten; effects scope to
+  the affected line only.
+- Recorded vocabulary (S44's normalizer/processor, as implemented):
+  `event_type` values are `purchase_observed`, `refund_observed`,
+  `payment_updated`, `subscription_updated` (subscription
+  cancellations and renewals enter as `subscription_updated`; renewals
+  that bill are also purchase events for the new cycle). Money-effect
+  rule: an event with `event_type` `refund_observed`, or
+  `payment_status` `refunded` / `partially_refunded`, applies the
+  revocation for its lines only. `payment_status` is taken only from
+  verified native transaction state; a bare submission is `unknown`
+  and grants nothing.
+- Chargebacks are reconciliation-driven: S44 has no distinct
+  chargeback event type and has never observed a native chargeback
+  event; chargebacks surface through read-back reconciliation of
+  transaction state and are applied through the refund-class path for
+  the affected line. If a distinct native chargeback event kind is
+  ever evidenced, a distinct `chargeback_observed` type is named
+  through the S49 CR route rather than silently folded in. This
+  interface therefore records chargeback handling as
+  reconciliation-driven, as S44 directed.
+- Recorded partial (S44's own statement): cancellation-shaped native
+  kinds are currently quarantined by S44's normalizer pending its
+  adapter addendum (recorded, not dropped; their entitlement effect
+  follows the approved policy once the addendum lands). Carried as
+  G-6.
+- Source: S44 response to the S79 concurrence round, Q8 (2026-10-16).
+
+### Q9 (S49): decline-then-downsell chain approval per launch; where the approval is recorded
+
+Disposition: ANSWERED BY S49 RECORD.
+
+- Yes: decline-then-downsell chains are approved per launch, and the
+  single approval record for the chain is the route graph as bound
+  into the approved launch record. There is no separate cross-sell
+  approval in offer relationship metadata, and this interface must not
+  look for one. Offer relationship metadata (the record's `excludes` /
+  compatibility declarations) governs which offers may coexist (for
+  example, U1 and D1 mutual exclusion must be declared there); it does
+  not approve or create the chain.
+- The authoritative enabled-slot state is the launch record's `extras`
+  booleans (`upsell_1`, `downsell_1`, `upsell_2`). The route graph is
+  DERIVED from the record by the deterministic compiler; the graph's
+  node set is the materialization of those booleans, not an
+  independent source. The check this interface performs is three-way
+  agreement: (a) the graph's SHA-256 equals the record's
+  `route_graph_hash`; (b) the graph's roles equal the roles the record
+  compiles to (validate_graph enforces this and fails closed on any
+  divergence); (c) the plan approval covers the record content.
+- The approval tie: the record's `plan_approval_ref` points to an
+  approval record of approval type `launch_plan_build` binding
+  `plan_document_hash`, computed over the record content including the
+  route group (graph ref, graph hash, extras) and the offer set;
+  lifecycle fields (`status`, `plan_approval_ref`) are excluded from
+  that hash by design. Only a `launch_plan_build` approval approves
+  the chain; no other approval type (budget, test location, merge,
+  publication, or any other) substitutes for it. If the record content
+  changes after approval, the hash changes and the existing approval
+  no longer binds; re-approval is the path.
+- Guard law, confirmed as implemented: upsell_1 disabled requires
+  downsell_1 and upsell_2 disabled; upsell_2 is reachable only after an
+  accepted upsell_1 or downsell_1, never after both are declined; a
+  pending or failed payment traverses no paid edge and is never a
+  decline.
+- Source: S49 concurrence on S79's interface positions, Q9
+  (2026-10-16), `handoffs/S49-concurrence-s79-q9-int03.md`.
+
+## 8. Disposition of CR-S81-001..009 against this revision
+
+S81 filed nine change requests against the draft on 2026-10-16
+(CR-S81-001..009). S79 answered all nine on 2026-10-17
+(`handoffs/change-requests/S79-REPLY-CR-S81-001-009.md`), accepting
+interface-text changes into this revision. The S79 room then closed
+without writing the revision. The dispositions below record, per
+request, what the confirmed contract position is on the filed record,
+and what remains unwritten. Unwritten accepted text is carried in
+section 9 (G-7), never silently assumed.
+
+- CR-S81-001 (pending lockout and idempotency carrier): lockout
+  behavior position is on the record. While an attempt's outcome is
+  pending (submitting or `pending_confirmation`), a repeat submission
+  is rejected: one attempt has exactly one submission path, so one
+  pending attempt can produce at most one charge. Carrier of record:
+  the shipped purchase-attempt state machine (S79's
+  `purchase_state.py`), per S79's reply. The native side has NO
+  lockout or deduplication of record: S06's filed position is "no
+  native attempt lockout or dedup is known; do not rely on one"
+  (S06 addendum to S81, item 3, 2026-10-17; the deduplication that
+  exists of record is pipeline-level in S44's event store and
+  adapter-level in Skill 82, and the platform records exactly one
+  transaction per recorded payment on an invoice). The
+  deduplication/idempotency KEY is named in no filed record: G-4. The
+  express interface-text carry of the lockout was among S79's accepted
+  changes and was never written: G-7.
+- CR-S81-002 (unknown outcome and reconciliation): the naming position
+  is settled on the record. No separate `unknown_outcome` state name
+  exists, and none is invented: doc 09 section 8's vocabulary is fixed
+  at eight states. The unknown outcome's named carrier is
+  `pending_confirmation` with `reconcile_required` set. A retry is
+  refused until the caller records reconciliation; reconciliation
+  resolves to paid on a verified native success or to failed when not
+  paid; paid routing is held while reconciliation is outstanding.
+  Carrier of record for the operation's shape: S79's shipped
+  `attempt_recovery.py`, per S79's reply; the discipline itself is
+  section 6 law above. The express carry of the state representation
+  and the reconciliation operation (inputs, outputs,
+  no-retry-until-resolved rule) into the interface text for extra
+  offers was accepted by S79 and never written: G-7.
+- CR-S81-003 (entry-guard eligibility): the underlying approval
+  question is Q9, answered above. The eligibility OPERATION definition
+  (an allow/refuse result over: verified parent purchase; explicit U1
+  decline, with failed/pending expressly not satisfying it; D1 enabled
+  in the approved launch record; U1 not accepted) was accepted by S79
+  and never written: G-7.
+- CR-S81-004 (decline operation and no-charge guarantee): carried in
+  part by sections 5 and 6 (decline is a normal routed outcome, not an
+  error; a decline never rolls back the base purchase; base
+  entitlements remain valid if a later extra is declined). The decline
+  OPERATION, its result record (kept permanently distinct from
+  `failed`), and the express statement that invoking decline performs
+  no charge action and removes no access were accepted by S79 and
+  never written: G-7.
+- CR-S81-005 (abandonment semantics): the governing principle is on
+  the record: a decline exists only on the visitor's explicit decline
+  action (Q6 disposition; section 6), so abandonment, including
+  closing the page, is never a decline, and no decline event may be
+  fabricated from it. The express abandonment/decline/cancelled
+  distinction text was accepted by S79 and never written: G-7.
+- CR-S81-006 (expired or unsupported context): disposed as Q6 above.
+  Behavior and mapping are confirmed; the platform fact is G-3,
+  expressly gated on S06's live capture at the first live one-click
+  extra-offer run.
+- CR-S81-007 (route-result output): not carried in the confirmed text.
+  The route-result output (the target identity actually routed to; for
+  D1 paid, the canonical U2 identity from S49's route graph; and the
+  entry context, `from_downsell_1`) was accepted by S79 and never
+  written: G-7.
+- CR-S81-008 (billing display audit criteria): carried in part by
+  sections 3 and 4 (the disclosure data set is an interface input; a
+  billing display audit result is an interface output, under the
+  initial checkout's audit discipline, doc 09 section 9). The
+  enumerated audit criteria and the express placement ruling were
+  accepted by S79 and never written: G-7. S79's recorded
+  recommendation, stated as a recommendation and not a ruling: values
+  are audit-checked against the binding; placement is a page-layer
+  responsibility; the interface should say exactly that.
+- CR-S81-009 (tenant/location binding read-back): carried for the
+  initial checkout in shipped code (S79's `selection_flow` validates a
+  selection's tenant and location against the live catalog read-back
+  and refuses cross-tenant use). For extra offers, the binding
+  read-back output and its mismatch failure signal (read-back from the
+  installed configuration, never echoed from the request; a mismatch
+  is a reported failure with no charge path proceeding) were accepted
+  by S79 and never written: G-7.
+
+## 9. Open gaps
+
+Each gap below is named, owned, and carried on this contract's face.
+Nothing in this section authorizes any room to assume the missing item.
+
+- G-1 (from Q1): the exact native element and event names for the
+  one-click extra-offer action in the current Skill 06 builder.
+  Owner: S06. Gate: the first live extra-offer install; S06 files the
+  names as a supplement to its 2026-10-16 concurrence when captured.
+- G-2 (from Q3): the per-element styling map for extra-offer native
+  elements, property by property, including which properties are
+  native-theme-only. Owner: S06. Gate: the same live capture as G-1.
+  Until then the interim rule in the Q3 disposition binds.
+- G-3 (from Q6 / CR-S81-006): the native session-expiry platform fact:
+  whether an expiry exists, its duration, and how the native surface
+  signals it. Owner: S06. Class: LIVE_PROOF_PENDING; capturable only
+  at the first live one-click extra-offer run; S06's supplement is
+  owed the cycle that run's evidence exists.
+- G-4 (from CR-S81-001): naming of the deduplication/idempotency KEY
+  for extra-offer purchase attempts. Owners of record: S79 (key
+  definition, per its accepted change in CR-S81-001) and S06
+  (native-side deduplication confirmation). No filed record names a
+  key, and S06's filed position is that no native deduplication exists
+  to key on. INTERIM CONTRACT POSITION, binding until a key is named:
+  the adapter discipline recorded in S81's reply to CR-S49-005, item 7
+  (pending lockout; unknown-outcome reconciliation before any retry;
+  decline never charges) is this interface's required behavior. S49,
+  as contract owner, records the key in this contract when the owning
+  parties supply it. CR-S81-001's acceptance evidence (a fixture or
+  test result from the owning side showing two submissions during one
+  pending attempt producing exactly one charge attempt) also remains
+  outstanding with the same owners.
+- G-5: S06 concurrence on this confirmed revision text. S06's
+  concurrence of record (2026-10-16) covers the interface positions
+  and is the source of the Q1 to Q6 answers in section 7; S06 has not
+  recorded concurrence on this revised text itself. Owner: S06. This
+  confirmation by S49 does not substitute for that concurrence and
+  does not claim it.
+- G-6 (from Q8): cancellation-shaped native kinds are quarantined by
+  S44's normalizer pending S44's adapter addendum (recorded, not
+  dropped; entitlement effect follows the approved policy once the
+  addendum lands). Owner: S44.
+- G-7 (from CR-S81-002/003/004/005/007/008/009 and the text half of
+  CR-S81-001): the interface-text completions S79 accepted for this
+  revision on 2026-10-17 but never wrote, the S79 room having closed:
+  the lockout text carry and the reconciliation operation text for
+  extra offers; the entry-guard eligibility operation definition; the
+  decline operation and its result record with the express no-charge,
+  no-access-removal statement; the abandonment/decline/cancelled
+  distinction text; the route-result output definition; the enumerated
+  billing-display audit criteria with the express placement ruling;
+  and the extra-offer tenant/location binding read-back output with
+  its mismatch failure signal. Owner: S49, as contract owner under
+  MAIN's 2026-10-17 assignment (successor to S79 for this contract's
+  text), to be written as a numbered revision of this contract through
+  the batch process. Until written, sections 7 and 8 of this contract
+  are the record of what is settled and what is not.
+
+## 10. Proof boundary
 
 This document plus the capability matrix fixture are L1 preparation.
 Native binding (S79-06) still requires S06's installed native form in an
 authorized test location, and transaction proof remains L3/L4 work. No
 statement here claims a real location supports one-click extras.
+
+Confirmation of this contract is a status act on the contract text. It
+changes no proof level, installs nothing, and claims no live capability.
