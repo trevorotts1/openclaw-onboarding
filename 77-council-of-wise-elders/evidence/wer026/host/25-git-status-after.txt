@@ -1,0 +1,4 @@
+?? 77-council-of-wise-elders/evidence/wer026/host/
+?? 77-council-of-wise-elders/scripts/supervisor/runner.mjs
+?? 77-council-of-wise-elders/scripts/supervisor/runner.test.mjs
+git_status_after_lines=3

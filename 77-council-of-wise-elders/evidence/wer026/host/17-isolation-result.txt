@@ -1,0 +1,2 @@
+temp_root_diff_exit_code=0
+outside_data_changed_lines=0
