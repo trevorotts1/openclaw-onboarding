@@ -9650,6 +9650,163 @@
       "emotional_register": "visionary-inspiration",
       "audience_resonance": "equipped-and-capable",
       "conversion_style": "stack-close"
+    },
+    "les-brown-its-not-over-until-you-win": {
+      "author": "Les Brown",
+      "book": "It's Not Over Until You Win",
+      "domain": [
+        "coaching",
+        "mindset",
+        "personal-development",
+        "leadership",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "les-brown-its-not-over-until-you-win",
+        "les-brown"
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
+    },
+    "les-brown-live-your-dreams": {
+      "author": "Les Brown",
+      "book": "Live Your Dreams",
+      "domain": [
+        "coaching",
+        "mindset",
+        "personal-development",
+        "leadership",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "les-brown-live-your-dreams",
+        "les-brown"
+      ],
+      "audiences": [],
+      "topics": [
+        "goal-setting",
+        "goal-execution",
+        "confidence-after-setbacks",
+        "consciousness-and-personal-growth",
+        "fear-management",
+        "self-worth",
+        "purpose-and-service"
+      ],
+      "voice_style": {
+        "summary": "Warm, energetic encouragement connects concrete self-reflection with prepared action and honest feedback.",
+        "tone": [
+          "encouraging",
+          "candid",
+          "humane",
+          "energetic"
+        ],
+        "devices": [
+          "concrete analogies",
+          "reflective questions",
+          "specific action invitations"
+        ],
+        "cadence": "A brief example or observation leads to a question, a practical action and a clear review.",
+        "signature_moves": [
+          "separate worth from results",
+          "convert aspiration into a written commitment",
+          "invite trusted criticism"
+        ],
+        "avoid": [
+          "author impersonation",
+          "guaranteed outcomes",
+          "victim blaming",
+          "unsafe sacrifice",
+          "invented testimonials"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ],
+      "emotional_register": "visionary-inspiration",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "challenge-close"
+    },
+    "oprah-winfrey-the-path-made-clear": {
+      "author": "Oprah Winfrey",
+      "book": "The Path Made Clear",
+      "domain": [
+        "personal-development",
+        "coaching",
+        "mindset"
+      ],
+      "perspective": [],
+      "custom": [
+        "oprah-winfrey-the-path-made-clear",
+        "oprah-winfrey"
+      ],
+      "emotional_register": "reflective-stillness",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
+    },
+    "oprah-winfrey-what-i-know-for-sure": {
+      "author": "Oprah Winfrey",
+      "book": "What I Know For Sure",
+      "domain": [
+        "personal-development",
+        "coaching",
+        "communication",
+        "mindset"
+      ],
+      "perspective": [],
+      "custom": [
+        "oprah-winfrey-what-i-know-for-sure",
+        "oprah-winfrey"
+      ],
+      "audiences": [],
+      "topics": [
+        "boundaries",
+        "authentic-communication",
+        "self-worth",
+        "meaning-and-purpose",
+        "mindfulness",
+        "purpose-and-service",
+        "self-alignment",
+        "resilience"
+      ],
+      "voice_style": {
+        "summary": "A warm, reflective voice that starts with concrete experience, asks a candid question, and supports a bounded next step without borrowed biography or imposed certainty.",
+        "tone": [
+          "warm",
+          "reflective",
+          "candid"
+        ],
+        "devices": [
+          "concrete observation",
+          "open question",
+          "limited analogy",
+          "provisional lesson"
+        ],
+        "cadence": "Calm connected paragraphs moving from observation to meaning to a practical choice.",
+        "signature_moves": [
+          "checks the intention behind a commitment",
+          "distinguishes worth from approval",
+          "asks what the other person needs",
+          "protects dignity and realistic capacity"
+        ],
+        "avoid": [
+          "author impersonation",
+          "forced gratitude",
+          "victim-blaming",
+          "medical guarantees",
+          "spiritual claims presented as scientific proof"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     }
   },
   "lastUpdated": "2026-10-18"

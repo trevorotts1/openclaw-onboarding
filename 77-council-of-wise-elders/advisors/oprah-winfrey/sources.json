@@ -1,1 +1,271 @@
-{"evidence":[],"note":"Every record in this file is a bibliographic stub: a required work acknowledged as absent and not ingested. A stub is not a Section 8.3 source record and grounds no claim. Full source records are added only after lawful access and ingestion, each with a content hash, locators, rights status, and original-speaker attribution.","pack_owner_unit":"CWE-015","records":[{"anchor_role":"anchor","basis":"foundational book","credited_authors":["Oprah Winfrey"],"gaps":["no Skill 22 persona package exists for this seat (supply gap, confirmed by the CWE-011 export)","no lawfully accessed copy has been ingested; no content, locator, or quotation is claimed"],"record_status":"bibliographic_only","seed":{"canonical_url":"https://us.macmillan.com/books/9781250307514/thepathmadeclear/","isbn":"9781250307514","note":"Bibliographic seed exactly as supplied by the build directive, Section 39.5 seed A05; the ISBN is the one carried in that seed URL. The directive supplies no publisher or publication date for this work, and none is asserted here.","registry_id":"A05"},"status":"absent","title":"The Path Made Clear","verification_status":"not_ingested","work_title":"The Path Made Clear"},{"anchor_role":"anchor","basis":"verified first-person material, located per source record","credited_authors":["Oprah Winfrey"],"gaps":["no Skill 22 persona package exists for this seat (supply gap, confirmed by the CWE-011 export)","no verified first-person interview or reflection has been ingested; when material lands, original_speaker is recorded per item so a guest's words are never attributed to the host"],"record_status":"bibliographic_only","status":"absent","title":"Verified first-person interviews and reflections","verification_status":"not_ingested","work_title":"Verified first-person interviews and reflections"},{"anchor_role":"alternate_anchor","basis":"named alternate anchor","credited_authors":["Oprah Winfrey"],"gaps":["no Skill 22 persona package exists for this seat (supply gap)","no lawfully accessed copy has been ingested; no content, locator, or quotation is claimed"],"record_status":"bibliographic_only","seed":{"note":"Named on the owner's supply list as an acceptable alternate anchor for this seat (What I Know For Sure or The Path Made Clear). The build directive supplies no seed URL, publisher, or publication date for this work, and none is asserted here."},"status":"absent","title":"What I Know For Sure","verification_status":"not_ingested","work_title":"What I Know For Sure"}],"seat_id":"oprah-winfrey","status":"source_absent"}
+{
+  "evidence": [],
+  "note": "Two supplied books now have retained-original PDF hashes, edition-specific page locators and ten original-paraphrase evidence units. Each contributes four concepts and one author-reported application case. Both remain source_type book; the named alternate does not replace the separate required first-person teaching anchor. Rights are reference_only; originals, notes, appendices and quotations remain private. See references/oprah-les-source-intake/README.md.",
+  "pack_owner_unit": "CWE-015",
+  "records": [
+    {
+      "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+      "work_id": "work-the-path-made-clear",
+      "work_title": "The Path Made Clear",
+      "credited_authors": [
+        "Oprah Winfrey"
+      ],
+      "original_speaker": "Oprah Winfrey",
+      "source_type": "book",
+      "publisher_or_host": "Flatiron Books",
+      "edition_or_publication_date": "First Edition March 2019; supplied PDF also states first eBook January 2019",
+      "retrieved_at": "2026-10-18",
+      "canonical_url": null,
+      "private_asset_id": "retained-oprah-winfrey-the-path-made-clear-pdf",
+      "content_sha256": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "page",
+          "value": "PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection."
+        },
+        {
+          "kind": "page",
+          "value": "PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection."
+        },
+        {
+          "kind": "page",
+          "value": "PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104."
+        },
+        {
+          "kind": "page",
+          "value": "PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection."
+        },
+        {
+          "kind": "page",
+          "value": "PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition."
+        }
+      ],
+      "quality": "primary_substantive",
+      "evidence": [
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c1",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C1 - Purpose develops through attention to lived energy.** In her own chapter reflection, Oprah describes a life as changing rather than fixed and encourages attention to experiences that nourish energy. Her account treats decisions, setbacks, and achievements as opportunities to recognize what gives life meaning; the role expressing that meaning may change. This supports examining repeated experiences instead of assuming a prestigious job title settles one's purpose. It does not establish that every pleasurable activity is a calling or that purpose guarantees financial success. Locator: PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c2",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C2 - Attend to early signs while distinguishing what cannot be controlled.** Oprah opens her reflection with the Montecito mudslides as a devastating event beyond personal prevention, then contrasts that catastrophe with many personal difficulties that have earlier signs. She encourages noticing persistent discomfort, stalled growth, and energizing connection before a problem becomes harder to address. The distinction matters: her attention-to-signals teaching should not be used to claim that disaster or harm results from a person's failure to listen. Locator: PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c3",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C3 - Clarify intention before choosing execution.** Oprah argues that a person should articulate the vision and examine the actual reason for pursuing it before deciding how to act. Her reflection connects commitment to a purpose the person can stand behind, rather than merely to the appearance of success. A responsible application asks what the goal serves and what implementation requires; it does not claim that pure intention controls external outcomes. Locator: PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-c4",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-C4 - Practice legacy through present acts of service.** Oprah frames service as a sustained, compassionate approach to ordinary choices, extending beyond formal volunteering or donations. She asks readers to consider the character of their actions now and to organize decisions around how they hope to affect others. Her reflection credits Maya Angelou for important lessons about legacy; the present-action invitation described here is Oprah's authored application, not a claim that she originated Angelou's aphorisms. Locator: PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-op-case1",
+          "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+          "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition."
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OP-CASE1 - A role change revealed a better fit in Baltimore.** Oprah recounts moving from news reporting and anchoring, where she felt misplaced and depleted, to cohosting People Are Talking in 1978. The conversations on her first talk-show day left her energized and more at home in her work; she presents that contrast as recognition of a calling. This is her own source-reported experience, not an invented coaching illustration or an independently verified causal study. Its transferable lesson is to compare the lived fit of activities rather than equate a perceived demotion with a loss of worth. Locator: PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition.",
+          "excerpt": null
+        }
+      ]
+    },
+    {
+      "anchor_role": "anchor",
+      "basis": "verified first-person material, located per source record",
+      "credited_authors": [
+        "Oprah Winfrey"
+      ],
+      "gaps": [
+        "No qualified separate teaching source is mapped for this foundation; the registered book personas do not substitute for it.",
+        "the separate interview/reflection foundation remains unqualified; the two mapped books do not substitute for this anchor. When separate material lands, original_speaker is recorded per item so a guest's words are never attributed to the host"
+      ],
+      "record_status": "bibliographic_only",
+      "status": "absent",
+      "title": "Verified first-person interviews and reflections",
+      "verification_status": "not_ingested",
+      "work_title": "Verified first-person interviews and reflections"
+    },
+    {
+      "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+      "work_id": "work-what-i-know-for-sure",
+      "work_title": "What I Know For Sure",
+      "credited_authors": [
+        "Oprah Winfrey"
+      ],
+      "original_speaker": "Oprah Winfrey",
+      "source_type": "book",
+      "publisher_or_host": "Flatiron Books",
+      "edition_or_publication_date": "First Edition September 2014",
+      "retrieved_at": "2026-10-18",
+      "canonical_url": null,
+      "private_asset_id": "retained-oprah-winfrey-what-i-know-for-sure-pdf",
+      "content_sha256": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "page",
+          "value": "PDF page45, Gratitude"
+        },
+        {
+          "kind": "page",
+          "value": "PDF pages85-86, Clarity"
+        },
+        {
+          "kind": "page",
+          "value": "PDF page94, Clarity"
+        },
+        {
+          "kind": "page",
+          "value": "PDF page109, Power"
+        },
+        {
+          "kind": "page",
+          "value": "PDF page102, Power"
+        }
+      ],
+      "quality": "primary_substantive",
+      "evidence": [
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c1",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page45, Gratitude"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C1 - Attention through a concrete gratitude practice. Locator: PDF page45, Gratitude, local `0045.txt`.** Winfrey recounts maintaining a daily five-item gratitude journal, losing the routine as responsibilities grew, and noticing that greater wealth and activity had not brought greater delight. She resumes recording appreciated moments electronically. The substantive concept is a deliberate attention practice supported by her own reported comparison across time; it is not a claim that gratitude guarantees wealth, cures distress, or changes every external situation.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c2",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF pages85-86, Clarity"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C2 - Intention and the boundary behind an honest yes. Locator: PDF pages85-86, Clarity, local `0085.txt`-`0086.txt`.** Winfrey describes saying yes to preserve approval until she examined why she was agreeing. In her own charity-request example, she recognizes that avoiding a reputation for stinginess is the main motive and decides that is insufficient. Gary Zukav is explicitly credited for the underlying intention teaching; her application to habitual pleasing and chosen generosity is the authored reflection. The assistant adapts this as a motive-and-capacity check, not an excuse to ignore duties.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c3",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page94, Clarity"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C3 - Restoration belongs in the calendar. Locator: PDF page94, Clarity, local `0094.txt`.** Winfrey describes telling her assistant that a free ten-minute interval did not automatically need to be filled, then preserving small periods of quiet or simple activity. Her reported experience is that these breaks leave her more ready for subsequent work. This supports deliberate margin as a practical capacity choice; it does not establish a universal recovery dose or a medical rule from the exercise analogy that introduces the essay.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-c4",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page109, Power"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-C4 - Power as aligned contribution rather than rank. Locator: PDF page109, Power, local `0109.txt`.** Winfrey questions lists that equate power with fame, wealth, or a position that can disappear after a board decision. She instead describes authentic power through the alignment of purpose, personality, and service to a greater good. This is her articulated value framework, not a validated measure or a promise that an aligned person cannot fail.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-oprah-winfrey-ok-case1",
+          "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+          "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+          "locator": {
+            "kind": "page",
+            "value": "PDF page102, Power"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": "Oprah Winfrey",
+          "claim_ids": [],
+          "seat_id": "oprah-winfrey",
+          "paraphrase": "**OK-CASE1 - Author-reported production change after a guest's humiliation. Locator: PDF page102, Power, local `0102.txt`.** Winfrey recounts an early television episode in which a wife learned of her husband's infidelity on stage. Seeing the woman's distress, she reports deciding not to participate again in programming that demeans or diminishes a person. This is a genuine source autobiographical application of dignity as a production constraint, distinct from a guest interview lesson and from the original hypothetical workplace examples below. The incident is author-reported and not independently corroborated by this conversion.",
+          "excerpt": null
+        }
+      ]
+    }
+  ],
+  "seat_id": "oprah-winfrey",
+  "status": "book_evidence_integrated_teaching_gap"
+}

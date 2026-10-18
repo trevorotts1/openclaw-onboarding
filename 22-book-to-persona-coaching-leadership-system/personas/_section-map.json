@@ -3,21 +3,21 @@
     "unit": "U14 / A-U14 — Blueprint-generation reconciliation",
     "decision": "D-A4 Option A (additive section-map crosswalk, ratified)",
     "generator": "22-book-to-persona-coaching-leadership-system/scripts/build-section-map.py",
-    "total_personas": 101,
+    "total_personas": 105,
     "template_counts": {
-      "B": 71,
-      "A": 30
+      "B": 73,
+      "A": 32
     },
     "heading_style_counts": {
-      "hyphen": 97,
+      "hyphen": 101,
       "em-dash": 4
     },
-    "governance_section_resolved_count": 100,
+    "governance_section_resolved_count": 104,
     "notes": [
-      "Template A (30 personas): Section 1 = 'Identity & Voice'. The Agent Governance Framework (lettered A-D subsections: Execution Standard / Quality Control Protocol / Failure Pattern Recognition / Task Mode Activation Language) lives at SECTION 8, NOT Section 4. Section 4 under Template A is 'Key Principles' — plain numbered prose, no A-D structure.",
-      "Template B (71 personas = 67 hyphen-heading + 4 em-dash-heading): Section 1 = 'Author Intelligence'. The Agent Governance Framework lives at SECTION 4 — this generation matches the dispatch load contract's literal 'Section 4 (A-D)' reference at face value.",
-      "4 of the 71 Template-B personas (brunson-marketing-secrets-blackbook, opara-color-works, rohde-the-sketchnote-workbook, russell-brunson-the-funnel-hackers-cookbook) use an em-dash ('—') instead of a hyphen ('-') after the section number in every heading. Structurally identical to Template B (Section 4 = Agent Governance Framework, 4A-4D present) — a cosmetic punctuation variant only, not a fourth structural generation. This IS the 'third minor variant' / '4 blueprints match neither Section-1 heading' finding in master-spec v2 §A.1.3 (the literal-string Section-1-heading match used there does not tolerate the em-dash).",
-      "1 persona (butow-ultimate-guide-social-media-marketing) opens with the Template-A 'Identity & Voice' heading text but uses a condensed 7-section structure with NO lettered A-D governance subsections anywhere (closest analog: Section 5 'Task Mode', which is plain narrative). governance_section is null for this ONE persona (100/101 resolve). Consumers MUST treat null as 'no structured governance excerpt on this blueprint' and degrade honestly (fall back to whatever literal Section 4 contains, never fabricate governance content that is not in the file). This is a NEW finding beyond the spec's 4-blueprint em-dash inventory, surfaced by this unit's structural (not title-text) scan.",
+      "Template A (32 personas): Section 1 = 'Identity & Voice'. The Agent Governance Framework (lettered A-D subsections: Execution Standard / Quality Control Protocol / Failure Pattern Recognition / Task Mode Activation Language) lives at SECTION 8, NOT Section 4. Section 4 under Template A is 'Key Principles' — plain numbered prose, no A-D structure.",
+      "Template B (73 personas): Section 1 = 'Author Intelligence'. The Agent Governance Framework lives at SECTION 4 — this generation matches the dispatch load contract's literal 'Section 4 (A-D)' reference at face value.",
+      "Four historical Template-B personas (brunson-marketing-secrets-blackbook, opara-color-works, rohde-the-sketchnote-workbook, russell-brunson-the-funnel-hackers-cookbook) use an em-dash ('—') instead of a hyphen ('-') after the section number in every heading. Structurally identical to Template B (Section 4 = Agent Governance Framework, 4A-4D present) — a cosmetic punctuation variant only, not a fourth structural generation. This IS the 'third minor variant' / '4 blueprints match neither Section-1 heading' finding in master-spec v2 §A.1.3 (the literal-string Section-1-heading match used there does not tolerate the em-dash).",
+      "1 persona (butow-ultimate-guide-social-media-marketing) opens with the Template-A 'Identity & Voice' heading text but uses a condensed 7-section structure with NO lettered A-D governance subsections anywhere (closest analog: Section 5 'Task Mode', which is plain narrative). governance_section is null for this ONE persona (104/105 resolve). Consumers MUST treat null as 'no structured governance excerpt on this blueprint' and degrade honestly (fall back to whatever literal Section 4 contains, never fabricate governance content that is not in the file). This is a NEW finding beyond the spec's 4-blueprint em-dash inventory, surfaced by this unit's structural (not title-text) scan.",
       "THE FIX: shared-utils/persona_for_job.py's section4_excerpt(persona_id) reads THIS map's governance_section for the persona and extracts THAT section instead of a hardcoded literal 'Section 4' — so a doer that loads 'Section 4' via the shared entry point receives the real Agent Governance Framework content under BOTH generations. A persona absent from the map, or the map file itself absent (older/back-compat checkout), degrades to the pre-U14 literal-Section-4 behavior — byte-identical, additive only."
     ]
   },
@@ -1454,6 +1454,54 @@
       "principles_section": 5,
       "structure_variant": null
     },
+    "les-brown-its-not-over-until-you-win": {
+      "template": "B",
+      "heading_style": "hyphen",
+      "total_sections": 14,
+      "section_titles": {
+        "1": "Author Intelligence",
+        "2": "Core Philosophy and Key Principles",
+        "3": "Coaching Framework and Source Evidence",
+        "4": "Agent Governance Framework",
+        "5": "Coaching Mode: When to Invoke",
+        "6": "Coaching Mode: How to Respond",
+        "7": "Triggers: Coaching and Task Modes",
+        "8": "Task Mode: How to Execute",
+        "9": "Quotations, Attribution, and Evidence Limits",
+        "10": "Department and Role Routing",
+        "11": "Tools and Practice Library",
+        "12": "Boundaries and Integration with Other Expertise",
+        "13": "Sample Responses",
+        "14": "Quick Reference, Routing Limits, and Red Flags"
+      },
+      "governance_section": 4,
+      "principles_section": 2,
+      "structure_variant": null
+    },
+    "les-brown-live-your-dreams": {
+      "template": "B",
+      "heading_style": "hyphen",
+      "total_sections": 14,
+      "section_titles": {
+        "1": "Author Intelligence",
+        "2": "Core Philosophy and Methodology",
+        "3": "Signature Framework and Coaching Framework",
+        "4": "Agent Governance Framework",
+        "5": "Foundational Principles and Coaching Activation",
+        "6": "Coaching Response and Problem-Solution Map",
+        "7": "Trigger Detection System",
+        "8": "Voice, Language and Execution Style",
+        "9": "Quote Library and Department Routing",
+        "10": "Question Library",
+        "11": "Tools, Exercises and Sample Responses",
+        "12": "Objections, Failure Modes and Boundaries",
+        "13": "Session Structure and Integration",
+        "14": "Routing Rules, Scope Limits and Quick Reference"
+      },
+      "governance_section": 4,
+      "principles_section": 5,
+      "structure_variant": null
+    },
     "michalowicz-clockwork": {
       "template": "A",
       "heading_style": "hyphen",
@@ -1668,6 +1716,54 @@
       },
       "governance_section": 4,
       "principles_section": 5,
+      "structure_variant": null
+    },
+    "oprah-winfrey-the-path-made-clear": {
+      "template": "A",
+      "heading_style": "hyphen",
+      "total_sections": 14,
+      "section_titles": {
+        "1": "Identity & Voice",
+        "2": "Core Philosophy",
+        "3": "Signature Framework",
+        "4": "Key Principles",
+        "5": "Coaching When",
+        "6": "Coaching How",
+        "7": "Task When",
+        "8": "Agent Governance Framework",
+        "9": "Department Routing",
+        "10": "Trigger Phrases",
+        "11": "Samples",
+        "12": "Boundaries",
+        "13": "Integration With Other Personas",
+        "14": "Quick Reference"
+      },
+      "governance_section": 8,
+      "principles_section": 4,
+      "structure_variant": null
+    },
+    "oprah-winfrey-what-i-know-for-sure": {
+      "template": "A",
+      "heading_style": "hyphen",
+      "total_sections": 14,
+      "section_titles": {
+        "1": "Identity & Voice",
+        "2": "Core Philosophy",
+        "3": "Signature Framework",
+        "4": "Key Principles",
+        "5": "Coaching Mode: When to Invoke",
+        "6": "Coaching Mode: How to Respond",
+        "7": "Task Mode: When to Invoke",
+        "8": "Task Mode: How to Execute",
+        "9": "Department Routing",
+        "10": "Trigger Phrases & Keywords",
+        "11": "Sample Responses",
+        "12": "Boundaries & Limitations",
+        "13": "Integration with Other Personas",
+        "14": "Quick Reference Card"
+      },
+      "governance_section": 8,
+      "principles_section": 4,
       "structure_variant": null
     },
     "pedro-adao-challenge-secrets-masterclass": {

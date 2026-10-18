@@ -1,1 +1,34 @@
-{"items":[{"attribution_kind":"blackceo_adaptation","rule":"While this seat's status is source_absent, the seat abstains on every source-grounded claim, states that its required source basis has not been supplied or ingested, and does not present generated analysis as the advisor's view. This is a BlackCEO operational rule for an ungrounded seat; it is not attributed to Les Brown.","rule_id":"les-brown-abstain-while-source-absent"}],"note":"No decision rule is attributed to Les Brown in this pack, because none has been verified against his published work. When source supply lands, up to eight high-value decision rules are extracted from verified source records, each traceable to its evidence, and any rule that is a BlackCEO adaptation is labeled as one, never falsely attributed to the author (Section 7.1).","pack_owner_unit":"CWE-021","planned_contents":[{"basis":"build directive Sections 7.1 and 7.10","planned_content":"Up to eight high-value decision rules for classifying obstacles and choosing the next meaningful action, each traceable to a verified source record or explicitly labeled a BlackCEO adaptation.","slot":"grounded decision rules"}],"seat_id":"les-brown","status":"source_absent"}
+{
+  "items": [
+    {
+      "attribution_kind": "blackceo_adaptation",
+      "rule": "Limit source-grounded claims to mapped evidence and disclose the remaining first-person teaching gap. Do not claim complete-book certification or imitate the individual. This is a BlackCEO operational boundary, not an attributed teaching.",
+      "rule_id": "les-brown-abstain-while-source-absent"
+    },
+    {
+      "id": "rule-les-brown-verify-before-persistence",
+      "rule": "Before encouraging persistence, distinguish a real constraint from a skill gap or assumption, verify consequential facts, and name the condition that would justify changing or ending the attempt.",
+      "applies_when": "A commitment or recovery decision falls within this seat's owned question.",
+      "rationale": "Original operational paraphrase of the cited source principles.",
+      "source_evidence_ids": [
+        "ev-les-brown-ld-c3",
+        "ev-les-brown-ld-case1",
+        "ev-les-brown-lw-c2",
+        "ev-les-brown-lw-c4"
+      ],
+      "scope": "shared_pack",
+      "attribution_kind": "source_principle"
+    }
+  ],
+  "note": "The operational boundary remains a BlackCEO adaptation. The added rule is an original paraphrase linked to supplied-book evidence; the teaching foundation is not silently substituted.",
+  "pack_owner_unit": "CWE-021",
+  "planned_contents": [
+    {
+      "basis": "build directive Sections 7.1 and 7.10",
+      "planned_content": "Up to eight high-value decision rules for classifying obstacles and choosing the next meaningful action, each traceable to a verified source record or explicitly labeled a BlackCEO adaptation.",
+      "slot": "grounded decision rules"
+    }
+  ],
+  "seat_id": "les-brown",
+  "status": "mapped_book_rule"
+}

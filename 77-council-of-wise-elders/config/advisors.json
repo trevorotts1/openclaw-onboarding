@@ -1,5 +1,5 @@
 {
-  "notes": "The fixed nine-seat roster. Each seat is an AI perspective with the exact profile_label. Current source qualification lives in each pack coverage.json: Russell has retained-source primary teaching for both anchors; the other eight seats retain their prior bibliographic qualification and honest gaps. This registry does not certify installed readiness or live semantic evaluations.",
+  "notes": "The fixed nine-seat roster and profile labels are unchanged. Russell has retained-source primary teaching for both anchors; Oprah and Les have mapped book evidence with partial qualification and separate first-person teaching gaps. Other seats retain their existing qualification. This registry does not certify installed readiness or live semantic evaluation.",
   "schema_version": "1.0.0",
   "seats": [
     {
@@ -65,7 +65,7 @@
       "order": 3,
       "owned_question": "What is the real intention behind this choice, and how does it affect the people it is supposed to serve?",
       "pack_owner_unit": "CWE-015",
-      "pack_status": "built_bibliographic_only",
+      "pack_status": "built_partial",
       "profile_label": "AI perspective inspired by the published work of Oprah Winfrey. Not the individual and not an endorsement.",
       "role": "intention, significance, and human connection",
       "seat_id": "oprah-winfrey",
@@ -185,7 +185,7 @@
       "order": 9,
       "owned_question": "Is the obstacle a real constraint, a skill gap, or a limiting belief, and what meaningful action comes next?",
       "pack_owner_unit": "CWE-021",
-      "pack_status": "built_bibliographic_only",
+      "pack_status": "built_partial",
       "profile_label": "AI perspective inspired by the published work of Les Brown. Not the individual and not an endorsement.",
       "role": "self-belief, resilience, and committed action",
       "seat_id": "les-brown",

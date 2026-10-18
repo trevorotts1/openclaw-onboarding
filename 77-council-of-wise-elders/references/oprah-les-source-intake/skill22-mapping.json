@@ -1,0 +1,623 @@
+{
+  "schema": "wise-elders.skill22-mapping/v1",
+  "pack_version": "1.0.1",
+  "revoked_source_ids": [],
+  "entries": [
+    {
+      "persona_key": "oprah-winfrey-the-path-made-clear",
+      "source": {
+        "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+        "work_id": "work-the-path-made-clear",
+        "work_title": "The Path Made Clear",
+        "credited_authors": [
+          "Oprah Winfrey"
+        ],
+        "original_speaker": "Oprah Winfrey",
+        "source_type": "book",
+        "publisher_or_host": "Flatiron Books",
+        "edition_or_publication_date": "First Edition March 2019; supplied PDF also states first eBook January 2019",
+        "retrieved_at": "2026-10-18",
+        "canonical_url": null,
+        "private_asset_id": "retained-oprah-winfrey-the-path-made-clear-pdf",
+        "content_sha256": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+        "rights_status": "reference_only",
+        "allowed_scope": "shared_pack",
+        "locators": [
+          {
+            "kind": "page",
+            "value": "PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection."
+          },
+          {
+            "kind": "page",
+            "value": "PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection."
+          },
+          {
+            "kind": "page",
+            "value": "PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104."
+          },
+          {
+            "kind": "page",
+            "value": "PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection."
+          },
+          {
+            "kind": "page",
+            "value": "PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition."
+          }
+        ],
+        "quality": "primary_substantive"
+      },
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018",
+      "shared_export_approved": true,
+      "passages": [
+        {
+          "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+          "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+          "start_line": 46,
+          "end_line": 46,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-op-c1",
+            "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+            "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+            "locator": {
+              "kind": "page",
+              "value": "PDF pages12-14, Chapter One, The Seeds, Oprah-authored opening reflection."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+          "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+          "start_line": 48,
+          "end_line": 48,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-op-c2",
+            "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+            "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+            "locator": {
+              "kind": "page",
+              "value": "PDF pages51-52, Chapter Three, The Whispers, Oprah-authored opening reflection."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+          "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+          "start_line": 50,
+          "end_line": 50,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-op-c3",
+            "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+            "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+            "locator": {
+              "kind": "page",
+              "value": "PDF pages103-105, Chapter Five, The Map, Oprah-authored opening reflection, especially the why-and-how questions on PDF 104."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+          "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+          "start_line": 52,
+          "end_line": 52,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-op-c4",
+            "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+            "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+            "locator": {
+              "kind": "page",
+              "value": "PDF pages172-173, Chapter Eight, The Give, Oprah-authored opening reflection."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-the-path-made-clear/persona-blueprint.md",
+          "sha256": "82ed8539862bf7ab392159f9a88c7b8a27ec12c69818e633e0f21c8be965094b",
+          "start_line": 54,
+          "end_line": 54,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-op-case1",
+            "source_id": "src-oprah-winfrey-the-path-made-clear-retained-pdf",
+            "source_version": "bb7b56d13b028c9b5d5a910bf3234ea87fd86b1dbcd4d4d0ddc408790f4623d6",
+            "locator": {
+              "kind": "page",
+              "value": "PDF pages12-13, Chapter One, The Seeds, Oprah's first-person account of the Baltimore transition."
+            },
+            "kind": "application_case",
+            "mark": "reported_example",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        }
+      ]
+    },
+    {
+      "persona_key": "oprah-winfrey-what-i-know-for-sure",
+      "source": {
+        "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+        "work_id": "work-what-i-know-for-sure",
+        "work_title": "What I Know For Sure",
+        "credited_authors": [
+          "Oprah Winfrey"
+        ],
+        "original_speaker": "Oprah Winfrey",
+        "source_type": "book",
+        "publisher_or_host": "Flatiron Books",
+        "edition_or_publication_date": "First Edition September 2014",
+        "retrieved_at": "2026-10-18",
+        "canonical_url": null,
+        "private_asset_id": "retained-oprah-winfrey-what-i-know-for-sure-pdf",
+        "content_sha256": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+        "rights_status": "reference_only",
+        "allowed_scope": "shared_pack",
+        "locators": [
+          {
+            "kind": "page",
+            "value": "PDF page45, Gratitude"
+          },
+          {
+            "kind": "page",
+            "value": "PDF pages85-86, Clarity"
+          },
+          {
+            "kind": "page",
+            "value": "PDF page94, Clarity"
+          },
+          {
+            "kind": "page",
+            "value": "PDF page109, Power"
+          },
+          {
+            "kind": "page",
+            "value": "PDF page102, Power"
+          }
+        ],
+        "quality": "primary_substantive"
+      },
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018",
+      "shared_export_approved": true,
+      "passages": [
+        {
+          "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+          "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+          "start_line": 53,
+          "end_line": 53,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-ok-c1",
+            "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+            "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+            "locator": {
+              "kind": "page",
+              "value": "PDF page45, Gratitude"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+          "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+          "start_line": 55,
+          "end_line": 55,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-ok-c2",
+            "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+            "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+            "locator": {
+              "kind": "page",
+              "value": "PDF pages85-86, Clarity"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+          "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+          "start_line": 57,
+          "end_line": 57,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-ok-c3",
+            "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+            "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+            "locator": {
+              "kind": "page",
+              "value": "PDF page94, Clarity"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+          "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+          "start_line": 59,
+          "end_line": 59,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-ok-c4",
+            "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+            "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+            "locator": {
+              "kind": "page",
+              "value": "PDF page109, Power"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        },
+        {
+          "file": "oprah-winfrey-what-i-know-for-sure/persona-blueprint.md",
+          "sha256": "f9c79485140cd41830826c63492b8dace35e398e7217460bdf76ff9e0ff6d824",
+          "start_line": 61,
+          "end_line": 61,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-oprah-winfrey-ok-case1",
+            "source_id": "src-oprah-winfrey-what-i-know-for-sure-retained-pdf",
+            "source_version": "e9ebb66ff8c5dc4e69843cb2b660b4a4fddec569e01e70453cae434f8c217e3e",
+            "locator": {
+              "kind": "page",
+              "value": "PDF page102, Power"
+            },
+            "kind": "application_case",
+            "mark": "reported_example",
+            "original_speaker": "Oprah Winfrey",
+            "claim_ids": [],
+            "seat_id": "oprah-winfrey"
+          }
+        }
+      ]
+    },
+    {
+      "persona_key": "les-brown-live-your-dreams",
+      "source": {
+        "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+        "work_id": "work-live-your-dreams",
+        "work_title": "Live Your Dreams",
+        "credited_authors": [
+          "Les Brown"
+        ],
+        "original_speaker": "Les Brown",
+        "source_type": "book",
+        "publisher_or_host": "HarperCollins / Quill",
+        "edition_or_publication_date": "Copyright 1992; first Avon edition 1994; reprinted in Quill 2001 (supplied copy)",
+        "retrieved_at": "2026-10-18",
+        "canonical_url": null,
+        "private_asset_id": "retained-les-brown-live-your-dreams-pdf",
+        "content_sha256": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+        "rights_status": "reference_only",
+        "allowed_scope": "shared_pack",
+        "locators": [
+          {
+            "kind": "page",
+            "value": "PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.”"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.”"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.”"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.”"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history."
+          }
+        ],
+        "quality": "primary_substantive"
+      },
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018",
+      "shared_export_approved": true,
+      "passages": [
+        {
+          "file": "les-brown-live-your-dreams/persona-blueprint.md",
+          "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+          "start_line": 51,
+          "end_line": 51,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-ld-c1",
+            "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+            "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 82, “Four Stages of Greatness”; PDF 86-93, “Self-approval,” “Self-commitment,” and “Commitment Leads to Self-fulfillment.”"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-live-your-dreams/persona-blueprint.md",
+          "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+          "start_line": 53,
+          "end_line": 53,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-ld-c2",
+            "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+            "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 47-49, “Cooking Up Hunger”; PDF 50-51, “Demons of Distraction.”"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-live-your-dreams/persona-blueprint.md",
+          "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+          "start_line": 55,
+          "end_line": 55,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-ld-c3",
+            "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+            "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 140-144, “Fears with Teeth,” “Visualize Victory,” and “Making Difficult Decisions”; PDF 136-137, “Better Fears Than Tears.”"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-live-your-dreams/persona-blueprint.md",
+          "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+          "start_line": 57,
+          "end_line": 57,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-ld-c4",
+            "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+            "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 201-203, “Establish a Home-Court Advantage” and “Seek Out Quality People.”"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-live-your-dreams/persona-blueprint.md",
+          "sha256": "83b2f0d332666b66cb599a3ef7492cb2bc79d541c69d77d176fd053e4f3dff0b",
+          "start_line": 59,
+          "end_line": 59,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-ld-case1",
+            "source_id": "src-les-brown-live-your-dreams-retained-pdf",
+            "source_version": "3f33be6dff6ccaf0142ec91c1f0b5b24a5c90948676f426421b9d235b208f197",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 208-212, chapter 10 “It’s Possible!” and “A Hard Knock at the Door”; the ignored legal warning is specifically PDF 209. This is source testimony, not independently verified transaction history."
+            },
+            "kind": "application_case",
+            "mark": "reported_example",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        }
+      ]
+    },
+    {
+      "persona_key": "les-brown-its-not-over-until-you-win",
+      "source": {
+        "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+        "work_id": "work-its-not-over-until-you-win",
+        "work_title": "It's Not Over Until You Win",
+        "credited_authors": [
+          "Les Brown"
+        ],
+        "original_speaker": "Les Brown",
+        "source_type": "book",
+        "publisher_or_host": "Fireside / Simon & Schuster",
+        "edition_or_publication_date": "First Fireside Edition 1998; supplied 260-page PDF",
+        "retrieved_at": "2026-10-18",
+        "canonical_url": null,
+        "private_asset_id": "retained-les-brown-its-not-over-until-you-win-pdf",
+        "content_sha256": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+        "rights_status": "reference_only",
+        "allowed_scope": "shared_pack",
+        "locators": [
+          {
+            "kind": "page",
+            "value": "PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 106-109, Chapter 4, Canceled, Making a Career Comeback"
+          },
+          {
+            "kind": "page",
+            "value": "PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire"
+          }
+        ],
+        "quality": "primary_substantive"
+      },
+      "hash_basis": "retained_original",
+      "provenance_reference": "oprah-les-retained-source-intake-20261018",
+      "shared_export_approved": true,
+      "passages": [
+        {
+          "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+          "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+          "start_line": 48,
+          "end_line": 48,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-lw-c1",
+            "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+            "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 29-33, Chapter 1, Taking Life On, self-belief suggestions"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+          "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+          "start_line": 50,
+          "end_line": 50,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-lw-c2",
+            "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+            "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 66-68, Chapter 3, Rantings and Ratings, Value System Checkup"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+          "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+          "start_line": 52,
+          "end_line": 52,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-lw-c3",
+            "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+            "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 83-86, Chapter 3, Rantings and Ratings, Taking the Heat Without Getting Burned"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+          "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+          "start_line": 54,
+          "end_line": 54,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-lw-c4",
+            "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+            "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 106-109, Chapter 4, Canceled, Making a Career Comeback"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        },
+        {
+          "file": "les-brown-its-not-over-until-you-win/persona-blueprint.md",
+          "sha256": "6029335f5d7a207327e528f0e95e8af8d6b433f22bc7d97759047f03dd58d20c",
+          "start_line": 56,
+          "end_line": 56,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-les-brown-lw-case1",
+            "source_id": "src-les-brown-its-not-over-until-you-win-retained-pdf",
+            "source_version": "1a38001d2c1ae06c668398a385731c0410393f6b3b5943b5305b967e96a86535",
+            "locator": {
+              "kind": "page",
+              "value": "PDF 78-79, Chapter 3, Rantings and Ratings, Seeking Criticism and Functioning Under Fire"
+            },
+            "kind": "application_case",
+            "mark": "reported_example",
+            "original_speaker": "Les Brown",
+            "claim_ids": [],
+            "seat_id": "les-brown"
+          }
+        }
+      ]
+    }
+  ]
+}
