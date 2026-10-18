@@ -1,0 +1,167 @@
+{
+ "schema_version": "wise-elders.card/v1",
+ "session_id": "sess-canary-demo-2",
+ "brief_revision": 1,
+ "seat_id": "michelle-obama",
+ "input_manifest_sha256": "9bef722eeddf9eacfccc21efdb456f102921bf845fda266776281ec337c7ed8f",
+ "pack_version": "v1.0.0",
+ "card_kind": "advisor",
+ "round": 1,
+ "stance": "conditional",
+ "preferred_option_id": "B",
+ "option_scores": [
+  {
+   "option_id": "A",
+   "score": 5,
+   "rationale": "Preserves the proven 12-seat workshop and spends nothing, so no participant is exposed to an untested promise. But it leaves unk-1 permanently unmeasured, teaches nothing, and answers the question with avoidance rather than with care for people who may already be asking for a group format.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "B",
+   "score": 8,
+   "rationale": "Only option that can satisfy hard constraint con-1 while still testing the one thing that matters: whether people actually want this (unk-1). Bounded scope means failure is contained and participants see the real offering rather than a promise. Conditional because it charges money for something unproven, which obligates reciprocal protection for the people paying.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "C",
+   "score": 3,
+   "rationale": "Broad launch sells an offering to many people before unk-1 is measured and before asm-1 is shown to hold. It cannot be held inside con-1's cap, and if the format disappoints, the people least able to absorb the disappointment are the ones who paid first. Scale before evidence moves risk onto participants.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  }
+ ],
+ "framework_applications": [
+  {
+   "framework_id": "seat-focus-people-affected",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "Applying this seat's responsibility to the supplied case: identify who is affected by each option and whether burden lands on them or on the practice. A places burden on no one and answers no one; B places small, disclosed, bounded burden on a consenting few; C places unbounded burden on many who never agreed to be part of a test.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "integrity-of-promise",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "fact-1 establishes only one six-week workshop as the delivered product. Offering a group program broadly claims a delivery capability that no supplied evidence shows exists, which is a gap between what is promised and what can be honored. A pilot keeps the promise the size of the proof.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "bounded-exposure-and-reversibility",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1",
+    "asm-1"
+   ],
+   "application": "asm-1 assumes founder-only staffing for a bounded run but supply no confirmation. Sizing the pilot to a range the founder alone can actually deliver, with a defined stop point, keeps the exposure of participants and of the existing workshop both reversible.",
+   "attribution_kind": "blackceo_adaptation"
+  }
+ ],
+ "decisive_arguments": [
+  "fact-1 supplies a workshop baseline of 12 seats and nothing about demand for a group program; unk-1 is open, so C asks people to buy an untested format while B asks only a few to test it.",
+  "con-1 is hard for both B and C; B can be built inside a small cap and without displacing the workshop, while C has no natural boundary and therefore cannot be shown to meet it.",
+  "asm-1 is an assumption, not a fact; a pilot built on unverified founder-only capacity must include a defined stop point so that if the assumption fails, participants are not left mid-program.",
+  "Charging for a pilot is legitimate only if it is paired with disclosure and a real exit; without those, participant money funds the practice's learning and the downside sits with the people who paid."
+ ],
+ "strongest_objection": "Even a bounded pilot takes money from people in exchange for an offering the practice has not yet proven it can deliver. If the format disappoints or the founder's capacity assumption (asm-1) fails, the harm lands on paying participants while the practice keeps the learning. A refund and exit guarantee reduces this but does not fully remove it, because time and trust spent cannot be refunded.",
+ "conditions": [
+  {
+   "id": "cond-1",
+   "description": "Before any seat is sold, document concrete expressed interest in a group format from prior workshop participants and set enrollment only against that documented demand.",
+   "kind": "evidence_required",
+   "blocking": true,
+   "verification_method": "Review the written interest record and confirm enrollment count does not exceed documented expressions of interest.",
+   "required_evidence": [
+    "Written record of expressed interest from identifiable prior participants"
+   ],
+   "responsible_role": "engagement owner",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": []
+  },
+  {
+   "id": "cond-2",
+   "description": "Publish participant-facing terms covering what the pilot is, that it is a first run, the refund terms, and an unconditional exit at any point.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "Read the published terms and confirm both refund and exit language are present and unconditional before enrollment opens.",
+   "required_evidence": [
+    "Copy of participant-facing pilot terms showing refund and exit terms"
+   ],
+   "responsible_role": "engagement owner",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": [
+    "cond-1"
+   ]
+  },
+  {
+   "id": "cond-3",
+   "description": "Size the pilot to a range the founder can deliver alone and confirm it does not displace or reduce the existing six-week workshop.",
+   "kind": "prerequisite",
+   "blocking": true,
+   "verification_method": "Compare pilot schedule and hours against the existing workshop calendar and cap the pilot seat count to the founder-only capacity shown.",
+   "required_evidence": [
+    "Pilot capacity calculation",
+    "Workshop calendar showing no displacement"
+   ],
+   "responsible_role": "operations owner",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": [
+    "cond-2"
+   ]
+  },
+  {
+   "id": "cond-4",
+   "description": "Resolve the open financial feasibility question tied to con-1 before enrollment: confirm pilot spend fits the cap and does not draw on funds committed to the existing workshop.",
+   "kind": "external_action",
+   "blocking": true,
+   "verification_method": "Independent review of the pilot spend plan against the cap and against committed cash, recorded as resolved or unresolved with reasons.",
+   "required_evidence": [
+    "Pilot spend plan against the stated cap",
+    "Confirmation that workshop funds are untouched"
+   ],
+   "responsible_role": "financial feasibility checker",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": []
+  }
+ ],
+ "critical_unknowns": [
+  "unk-1 remains open: whether prior workshop graduates want a group program at all is unmeasured in this case.",
+  "asm-1 is unconfirmed: founder-only staffing for a bounded run is assumed, not evidenced.",
+  "No evidence measures whether participants would pay for a pilot of this format.",
+  "The financial feasibility question attached to con-1 is unresolved and is not this seat's domain to settle."
+ ],
+ "change_my_mind": "I would move to oppose B, or to support A, if documented interest from prior participants does not materialize, if the pilot cannot be sized inside the founder's real capacity, or if participant terms cannot include a genuine refund and exit. I would move toward C only if measured demand from a completed pilot, plus demonstrated delivery capacity, made broad launch the smaller risk to the people affected.",
+ "challenges_answered": [
+  "asm-1",
+  "con-1",
+  "unk-1"
+ ],
+ "quotes": [],
+ "evidence_strength": "low",
+ "minority_position": "A defensible minority reading is that A is the honest answer: with no measured demand and no confirmed capacity, even one paid cohort asks participants to fund the practice's own learning, and declining to sell what is unproven is itself a form of care for the people affected.",
+ "host": {
+  "scope": {
+   "tenant_id": "local-tenant",
+   "company_id": "local-company",
+   "installation_id": "e24c1559-5303-4370-82da-577856a32955",
+   "owner_subject": "local-owner"
+  },
+  "operation_id": "op:e24c1559-5303-4370-82da-577856a32955:local-tenant:sess-canary-demo-2:a1:round-1:michelle-obama:9bef722eeddf9eac",
+  "route_id": "claude-nine-configured",
+  "session_id": "sess-canary-demo-2",
+  "stamped_at": "2026-10-16T13:25:04.356Z",
+  "source_status": "not_applicable"
+ }
+}
