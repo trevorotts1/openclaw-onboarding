@@ -25,6 +25,9 @@ SCHEMA = json.loads(
 VALID = json.loads(
     (ROOT / "fixtures" / "valid-downsell-request.json").read_text()
 )
+VALID_POLICY = json.loads(
+    (ROOT / "fixtures" / "valid-downsell-request-policy.json").read_text()
+)
 REQUIRED = SCHEMA["required"]
 
 
@@ -37,14 +40,15 @@ class TestValidRequest(unittest.TestCase):
         self.assertEqual(validate_request(fresh()), [])
 
     def test_schema_counts_match_the_recorded_contract(self):
-        # 27 properties, 26 required; scarcity_evidence_ref is the
-        # only optional field. If the schema changes, this test says
+        # 28 properties, 26 required; scarcity_evidence_ref and
+        # prompt_policy_id (the adoption map 1.5 addition) are the
+        # only optional fields. If the schema changes, this test says
         # so out loud instead of the coverage silently drifting.
-        self.assertEqual(len(SCHEMA["properties"]), 27)
+        self.assertEqual(len(SCHEMA["properties"]), 28)
         self.assertEqual(len(REQUIRED), 26)
         self.assertEqual(
             set(SCHEMA["properties"]) - set(REQUIRED),
-            {"scarcity_evidence_ref"},
+            {"scarcity_evidence_ref", "prompt_policy_id"},
         )
 
     def test_optional_field_may_be_omitted(self):
@@ -130,11 +134,14 @@ class TestConstAndEnum(unittest.TestCase):
         )
 
     def test_wrong_schema_version_fails(self):
+        # schema_version is an enum (1.0/1.1) since the adoption map
+        # 1.5 dual-accept revision; before it, this case pinned the
+        # const form D1-REQUEST-SCHEMA_VERSION-CONST-MISMATCH.
         request = fresh()
         request["schema_version"] = "2.0"
         self.assertEqual(
             validate_request(request),
-            ["D1-REQUEST-SCHEMA_VERSION-CONST-MISMATCH"],
+            ["D1-REQUEST-SCHEMA_VERSION-NOT-IN-ENUM"],
         )
 
     def test_difference_kind_outside_enum_fails(self):
@@ -160,6 +167,95 @@ class TestConstAndEnum(unittest.TestCase):
             validate_request(request),
             ["D1-REQUEST-ALLOWED_WRITE_TARGET-NOT-IN-ENUM"],
         )
+
+
+class TestPromptPolicyPairRule(unittest.TestCase):
+    """Adoption map 1.5 dual-accept: schema_version "1.1" is valid
+    only together with prompt_policy_id, and prompt_policy_id is
+    valid only on a "1.1" request. The schema carries the field
+    (Q12 shape: a non-empty string, open value); the pair rule that
+    binds field and version stands in the validator, because the
+    packaged schema's evaluator fails closed on the conditional
+    keywords an in-schema pair rule would need."""
+
+    def test_policy_fixture_is_the_1_0_fixture_plus_the_pair(self):
+        self.assertEqual(VALID_POLICY["schema_version"], "1.1")
+        self.assertEqual(VALID_POLICY["prompt_policy_id"],
+                         "kie-rule-12-band")
+        rest = {k: v for k, v in VALID_POLICY.items()
+                if k not in ("schema_version", "prompt_policy_id")}
+        base = dict(VALID)
+        del base["schema_version"]
+        self.assertEqual(rest, base)
+
+    def test_1_1_request_with_citation_passes_clean(self):
+        self.assertEqual(validate_request(copy.deepcopy(VALID_POLICY)),
+                         [])
+
+    def test_1_1_request_missing_the_field_fails_by_name(self):
+        request = fresh()
+        request["schema_version"] = "1.1"
+        self.assertEqual(
+            validate_request(request),
+            ["D1-REQUEST-MISSING-PROMPT_POLICY_ID"],
+        )
+
+    def test_1_0_request_carrying_the_field_fails_by_name(self):
+        request = fresh()
+        request["prompt_policy_id"] = "kie-rule-12-band"
+        self.assertEqual(
+            validate_request(request),
+            ["D1-REQUEST-UNEXPECTED-PROPERTY-PROMPT_POLICY_ID"],
+        )
+
+    def test_1_1_empty_id_fails_too_short(self):
+        request = copy.deepcopy(VALID_POLICY)
+        request["prompt_policy_id"] = ""
+        self.assertEqual(
+            validate_request(request),
+            ["D1-REQUEST-PROMPT_POLICY_ID-TOO-SHORT"],
+        )
+
+    def test_1_1_null_id_fails_wrong_type(self):
+        request = copy.deepcopy(VALID_POLICY)
+        request["prompt_policy_id"] = None
+        self.assertEqual(
+            validate_request(request),
+            ["D1-REQUEST-PROMPT_POLICY_ID-WRONG-TYPE"],
+        )
+
+    def test_1_1_non_string_ids_fail_wrong_type(self):
+        for bad in (42, True, ["kie-rule-12-band"],
+                    {"policy_id": "kie-rule-12-band"}):
+            with self.subTest(bad=bad):
+                request = copy.deepcopy(VALID_POLICY)
+                request["prompt_policy_id"] = bad
+                self.assertEqual(
+                    validate_request(request),
+                    ["D1-REQUEST-PROMPT_POLICY_ID-WRONG-TYPE"],
+                )
+
+    def test_unregistered_id_passes_this_layer_by_design(self):
+        # The schema declares the id as an open string (the Q12
+        # shape): the registry is the minting authority, and
+        # refusal of an unregistered id is a registry-layer act at
+        # dispatch and at the Q11 aggregator (adoption map section
+        # 4). Skill 81's validator runs no registry read, so an
+        # unregistered non-empty id passes HERE; this test pins
+        # that allocation so it cannot drift silently.
+        request = copy.deepcopy(VALID_POLICY)
+        request["prompt_policy_id"] = "no-such-policy-registered"
+        self.assertEqual(validate_request(request), [])
+
+    def test_unknown_versions_fail_not_in_enum(self):
+        for bad in ("1.2", "0.9", "11"):
+            with self.subTest(bad=bad):
+                request = copy.deepcopy(VALID_POLICY)
+                request["schema_version"] = bad
+                self.assertEqual(
+                    validate_request(request),
+                    ["D1-REQUEST-SCHEMA_VERSION-NOT-IN-ENUM"],
+                )
 
 
 class TestWrongTypes(unittest.TestCase):
