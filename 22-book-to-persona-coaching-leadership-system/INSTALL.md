@@ -206,7 +206,7 @@ GOOGLE_API_KEY=your_key_here
 
 **Graceful degradation if GOOGLE_API_KEY is missing or expired:**
 - The Gemini indexer will not run (embedding search unavailable)
-- The system falls back to `PERSONA-ROUTER.md` keyword matching (still works for all 99 personas)
+- The system falls back to `PERSONA-ROUTER.md` keyword matching (still works for all registered personas)
 - Do NOT use `sys.exit(1)` in scripts when the key is missing -- log a warning and continue with keyword routing
 
 ### Step 2e - Dependency Check Complete Gate
@@ -387,7 +387,7 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 ## Step 5 - Install Gemini Vector Index (coaching-personas) — DOWNLOAD PREBUILT (DEFAULT)
 
-> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding the full section-tagged index (~1,411 section rows across 99 personas — see `shared-utils/prebuilt-index/INDEX-MANIFEST.json` for exact current counts) and saves your Gemini API credits.
+> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding the full section-tagged index (~1,411 section rows across the published persona set — see `shared-utils/prebuilt-index/INDEX-MANIFEST.json` for exact current counts) and saves your Gemini API credits.
 > Only fall back to local embedding (Step 5-FALLBACK) if the download fails or you are adding new books that are not in the prebuilt set.
 
 ### Step 5-A: Detect install path (Mac vs VPS)
@@ -426,7 +426,7 @@ echo "Index asset:     $ASSET_URL"
 echo "Expected sha256: $EXPECTED_SHA256"
 GZ_PATH="/tmp/gemini-index.sqlite.gz"
 
-echo "Downloading prebuilt persona index (~90 MB, 99 personas)..."
+echo "Downloading prebuilt persona index (~90 MB; count from INDEX-MANIFEST.json)..."
 curl -L --retry 3 --retry-delay 5 --fail \
   -H "Accept: application/octet-stream" \
   "$ASSET_URL" -o "$GZ_PATH"
@@ -489,7 +489,7 @@ try:
     chunk_count = row[0]
     print(f"Index verified: {chunk_count} rows in embeddings table")
     # The current asset is SECTION-TAGGED (one row per '## Section N', ~14 rows
-    # per persona → ~1,411 rows for 99 personas), NOT the old per-paragraph index
+    # per persona → ~1,411 rows for the published persona set), NOT the old per-paragraph index
     # (~7,615 rows). Prefer the manifest's exact chunk_count (exported by Step 5-B);
     # fall back to a conservative floor that still catches an empty/truncated DB.
     # The SHA256 hard gate in Step 5-C already guarantees the bytes match the
@@ -518,7 +518,7 @@ finally:
 EOF
 ```
 
-**Expected output:** `PASS: prebuilt persona index ready for use` with ~1,411 section rows (99 personas; see INDEX-MANIFEST.json for the exact current count).
+**Expected output:** `PASS: prebuilt persona index ready for use` with ~1,411 section rows (see INDEX-MANIFEST.json for the exact current count).
 
 ---
 
@@ -938,7 +938,7 @@ echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
 ```bash
 python3 ~/.openclaw/scripts/gemini-indexer.py --status
 ```
-Expected: Shows "coaching-personas" collection with 99 personas (~1,411 section rows; see INDEX-MANIFEST.json for exact current counts).
+Expected: Shows "coaching-personas" collection with the published persona set (~1,411 section rows; see INDEX-MANIFEST.json for exact current counts).
 
 #### Step 5: APPLY CORE_UPDATES.md
 Add entries from CORE_UPDATES.md to:
