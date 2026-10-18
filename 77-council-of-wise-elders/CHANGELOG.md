@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.8: wave-3 cohort (subprocess transport, approval front door)
+
+- Adds the platform-safe bounded subprocess transport (`runtime/src/cli/`): a structured executable resolver handling native binaries, Windows `.cmd` shims and supported PowerShell invocation without assuming WSL, bash shebangs or symlinks; per-request model/effort and profile config pinned rather than read from a mutable global; prompt content delivered **only** on stdin and never interpolated into a shell string; bounded output, enforced deadlines, abort propagation and whole child-process-tree cleanup on cancellation. A Windows path containing spaces and non-ASCII characters resolves byte-intact in the simulated-resolver tests.
+- Records `operationId` and `attemptId` **before** launching, so a timeout is recorded as potentially-dispatched rather than safe-to-retry. A route snapshot failing `verifyRouteSnapshotHash` is refused before any spawn.
+- Adds the approval front door (`runtime/src/authorization/`): fingerprinting over the entire normalised approval command — ceilings, expiry, parent/renewal linkage and route options — so an exact retry returns the original committed receipt while a changed option under the same idempotency key conflicts **before** any write. Preview-to-session association is validated, so submitting one session's preview to another's approval URL performs zero grant, state or event writes even under the same owner. Revoked and expired authority both refuse without mutating. Reuses the existing grant service; Council spending authority stays distinct from development merge permission and from action-plan execution authority.
+
 ## 1.0.7 - 2026-10-18
 
 Integrate four supplied Oprah and Les book mappings, partial source qualification and governance discovery. Publish the verified 105-persona index. Preserve the landed 1.0.5 queue/supervisor and 1.0.6 route-snapshot/installed-CLI implementations; regenerate the combined distributable.
