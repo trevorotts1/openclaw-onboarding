@@ -37,11 +37,11 @@
       "flipped_at": null
     },
     "upsell_2": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 80,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.3 (upsell_2, Lane B B-343); consumer candidate 1.4 landed in train #2268, SWARM-verified blob-exact; wrapper allowlist landed with the upsell_1 flip and re-verified at this flip.",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "thank_you": {
       "state": "not_ready",
