@@ -18,7 +18,14 @@
  * - The snapshot hash covers the PIN (configured contract state) only.
  *   Transport-reported identity is excluded on purpose: recording evidence
  *   later must not change the pin, and changing the pin must not be
- *   disguised as a new observation.
+ *   disguised as a new observation. "Transport-reported identity" means
+ *   BOTH evidence fields: `identity.transportReported` and the per-member
+ *   `combinationMembers[].reported`. The PIN carries the permitted member
+ *   SET (`selection.combinationMembers` plus each
+ *   `combinationMembers[].memberModelId`) — which is configured state —
+ *   but not the evidence recorded about those members. `pinBody()`
+ *   normalizes every member to `{ memberModelId }`, so evidence attached
+ *   later recomputes to the identical hash on ANY route kind.
  * - An unsupported reasoning level or a member outside the approved
  *   combination raises a concrete TransportError. Nothing is downgraded,
  *   renamed, or silently substituted.
@@ -162,8 +169,19 @@ export interface CouncilRouteSnapshot {
 
 /**
  * The pin body: everything except the hash itself and transport evidence.
- * Transport-reported identity is excluded by design, so evidence learned
- * later cannot move the pin and a pin change cannot hide behind evidence.
+ *
+ * Transport-reported identity is excluded by design — BOTH the top-level
+ * `transportReported` field and each member's `reported` evidence — so
+ * evidence learned later cannot move the pin and a pin change cannot hide
+ * behind evidence. The member SET is pinned: each entry is normalized to
+ * `{ memberModelId }`, keeping the permitted membership (which is
+ * configured contract state, already duplicated in
+ * `selection.combinationMembers`) and dropping only the evidence.
+ *
+ * This normalization is what makes the law hold for combination routes:
+ * without it a reported member's evidence entered the hash, so
+ * `withTransportReportedIdentity()` returned a snapshot that failed its
+ * own published hash while its equality check passed on the stale field.
  */
 function pinBody(
   snapshot: Omit<CouncilRouteSnapshot, 'snapshotSha256'> & {
@@ -175,7 +193,12 @@ function pinBody(
     ...rest,
     identity: {
       configured: identity.configured,
-      combinationMembers: identity.combinationMembers,
+      combinationMembers:
+        identity.combinationMembers === null
+          ? null
+          : identity.combinationMembers.map((member) => ({
+              memberModelId: member.memberModelId,
+            })),
     },
   };
 }
@@ -411,11 +434,21 @@ export function withTransportReportedIdentity(
     ...snapshot,
     identity: { ...snapshot.identity, transportReported: reported, combinationMembers },
   });
-  // Pin body is unaffected; assert it rather than trust it.
+  // The stamp is deliberately carried over, not recomputed: evidence never
+  // republishes a pin. Assert the stamp against BOTH the previous pin and a
+  // fresh recomputation. Comparing the two stamps alone would pass on the
+  // stale published field while the returned snapshot failed its own hash —
+  // that was the defect this recompute closes.
   if (next.snapshotSha256 !== snapshot.snapshotSha256) {
     throw new TransportError(
       'TRANSPORT_ROUTE_MISMATCH',
       'Attaching transport evidence changed the route pin hash; the pin body and evidence fields are not separated.',
+    );
+  }
+  if (computeRouteSnapshotSha256(next) !== next.snapshotSha256) {
+    throw new TransportError(
+      'TRANSPORT_ROUTE_MISMATCH',
+      'Route snapshot does not satisfy its own published hash after transport evidence was attached; the pin body still covers an evidence field.',
     );
   }
   return next;
