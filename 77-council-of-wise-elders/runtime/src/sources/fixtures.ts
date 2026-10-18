@@ -217,7 +217,7 @@ export function validJakesPack(): PackInput {
         content_sha256: sha256Hex(
           new TextEncoder().encode(`FIXTURE source text for ${book.title}`),
         ),
-        locators: [{ kind: 'page', value: '11' }],
+        locators: ['11', '22', '33', '44'].map((value) => ({ kind: 'page', value })),
       }),
       evidence,
     };
