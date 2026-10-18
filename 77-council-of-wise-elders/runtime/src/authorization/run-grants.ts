@@ -55,6 +55,15 @@
  *   the first resolve or admission that observes a lapsed active grant
  *   flips it to 'expired' and journals the transition; a worker restart
  *   or browser refresh never extends an expiry.
+ * - Preview-to-session binding and revoked authority: approveRun
+ *   enforces `expected_session_id` when the caller names the approval
+ *   session (a preview from session B can never approve session A,
+ *   even under one owner), and refuses a preview whose revocation
+ *   epoch was overtaken by the session's revocation generation. Both
+ *   checks run before the single approval transaction, so a refusal
+ *   writes nothing. `resolveRunGrant(..., { mutate_on_expiry: false })`
+ *   lets a read-only caller (the WER-009 Start gate) refuse an expired
+ *   grant without the lazy expiry transition.
  * - Renewal never resets accounting: reservations and consumption are
  *   session-scoped in CWE-028's ledger, so a renewal grant for the same
  *   session inherits the session's consumed and reserved totals (and a
@@ -128,7 +137,16 @@ export type RunAuthorizationErrorCode =
   | 'RUN_GRANT_KIND_NOT_ALLOWED'
   | 'RUN_GRANT_PARENT_INVALID'
   | 'RUN_GRANT_WOULD_BROADEN'
-  | 'RUN_OPERATION_GRANT_MISMATCH';
+  | 'RUN_OPERATION_GRANT_MISMATCH'
+  | 'RUN_PREVIEW_SESSION_MISMATCH'
+  | 'RUN_AUTHORITY_REVOKED'
+  | 'RUN_APPROVAL_IDEMPOTENCY_CONFLICT'
+  | 'RUN_APPROVAL_RECEIPT_UNAVAILABLE'
+  | 'RUN_START_APPROVAL_NOT_FOUND'
+  | 'RUN_START_GRANT_REVOKED'
+  | 'RUN_START_GRANT_EXPIRED'
+  | 'RUN_START_GRANT_INACTIVE'
+  | 'RUN_START_SCOPE_MISMATCH';
 
 /**
  * Stable typed refusal for run authorization. Callers branch on `code`,
@@ -271,6 +289,14 @@ export interface ApproveRunDecision {
    * preview is stale (a route change is a material change).
    */
   current_route_snapshot?: PinnedRouteSnapshot | null;
+  /**
+   * The session whose approval URL / approval command was used. When
+   * present, the stored preview must belong to exactly this session.
+   * Submitting session B's preview through session A's approval URL is
+   * refused BEFORE any grant, state, event, or outbox write, even when
+   * both sessions share the same owner.
+   */
+  expected_session_id?: string | null;
 }
 
 export interface StandingAuthorizationInput {
@@ -596,6 +622,31 @@ export class RunAuthorizationService {
         { detail: { preview_id: previewId } },
       );
     }
+    // Preview-to-session association. The preview id alone is NOT
+    // authority: an approval URL/caller names the session it is
+    // approving, and a preview minted for any other session is refused
+    // here, before any read-derived decision can write. This check
+    // happens before verifyPreviewRow, the size checks, and the single
+    // approval transaction below, so a cross-session submission leaves
+    // the grant, session state, journal, and outbox untouched even
+    // when the same owner owns both sessions.
+    if (
+      decision.expected_session_id !== undefined &&
+      decision.expected_session_id !== null &&
+      previewRow.session_id !== decision.expected_session_id
+    ) {
+      throw new RunAuthorizationError(
+        'RUN_PREVIEW_SESSION_MISMATCH',
+        `Preview ${previewId} belongs to session ${previewRow.session_id}, not to the approval session ${decision.expected_session_id}. Nothing was approved or written.`,
+        {
+          detail: {
+            preview_id: previewId,
+            preview_session_id: previewRow.session_id,
+            expected_session_id: decision.expected_session_id,
+          },
+        },
+      );
+    }
     const preview = this.verifyPreviewRow(previewRow);
     const session = this.sessionFor(envelope, previewRow.session_id);
     this.assertPreviewFresh(envelope, preview, previewRow, session, decision);
@@ -623,6 +674,36 @@ export class RunAuthorizationService {
         'RUN_PREVIEW_TAMPERED',
         `Preview ${previewId} was already consumed or its anchor does not match the preview hash. Approval is refused.`,
         { detail: { preview_id: previewId } },
+      );
+    }
+    // Revoked or expired authority refuses BEFORE any write. The
+    // preview anchor recorded the session's revocation generation when
+    // it was frozen; if the session has been revoked since then, the
+    // preview (and any approval of it) is dead. The anchor's own durable
+    // status is checked too: a record already revoked is never
+    // re-approved. Expiry of the preview, of a chosen limit, and of the
+    // standing parent is checked before the approval transaction as
+    // well (assertPreviewFresh and the effective-expiry checks below);
+    // this branch adds the revocation generation fence that a preview
+    // could otherwise outlive.
+    if (anchor.status === 'revoked') {
+      throw new RunAuthorizationError(
+        'RUN_AUTHORITY_REVOKED',
+        `Approval authority for preview ${previewId} was revoked. Nothing was approved or written; a new preview is required.`,
+        { detail: { preview_id: previewId, grant_id: anchor.id } },
+      );
+    }
+    if (session.state.revocation_generation > anchorProof.revocation_epoch) {
+      throw new RunAuthorizationError(
+        'RUN_AUTHORITY_REVOKED',
+        `Session ${session.spec.session_id} advanced its revocation generation to ${session.state.revocation_generation}, past preview ${previewId}'s epoch ${anchorProof.revocation_epoch}. Approval authority is revoked; nothing was approved or written.`,
+        {
+          detail: {
+            preview_id: previewId,
+            grant_revocation_epoch: anchorProof.revocation_epoch,
+            session_revocation_generation: session.state.revocation_generation,
+          },
+        },
       );
     }
 
@@ -815,6 +896,7 @@ export class RunAuthorizationService {
     envelope: AuthorizationEnvelope,
     grantRef: string,
     sessionId?: string,
+    options: { mutate_on_expiry?: boolean } = {},
   ): RunGrant | null {
     const record = this.loadGrantRecord(envelope, grantRef);
     if (!record) return null;
@@ -828,7 +910,13 @@ export class RunAuthorizationService {
     const now = this.clock.nowUtc();
     if (record.status === 'expired') return null;
     if (Date.parse(record.expires_at) <= Date.parse(now)) {
-      this.expireGrantIfLapsed(envelope, record);
+      // Read-only refusals (the WER-009 Start gate) pass
+      // mutate_on_expiry: false so an expired authority refuses with
+      // zero writes; the default keeps the lazy, journaled expiry
+      // transition for resolve/admission callers.
+      if (options.mutate_on_expiry !== false) {
+        this.expireGrantIfLapsed(envelope, record);
+      }
       return null;
     }
     if (record.session_id !== null) {

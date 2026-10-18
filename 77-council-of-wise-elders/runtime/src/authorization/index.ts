@@ -22,3 +22,9 @@ export * from './permissions.js';
 // decision function is changed by them.
 export * from './run-grants.js';
 export * from './admission.js';
+// WER-009 front door: one structured approval command with an
+// idempotency fingerprint over the ENTIRE command, a committed receipt,
+// preview-to-session association, and an idempotent read-only Start
+// that resolves the committed grant (no fabricated grant id). It
+// composes the service above; it is not a second authority store.
+export * from './approval-front-door.js';
