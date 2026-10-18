@@ -229,7 +229,7 @@ All text captures had the operator home prefix replaced with `<operator-home>`; 
 |---|---|---|
 | `raw/protection-openclaw-onboarding.json` | protection object, `required_status_checks` absent | 2026-10-18T23:31:35Z |
 | `raw/protection-blackceo-command-center.json` | protection object, `required_status_checks` absent | 2026-10-18T23:31:35Z |
-| `raw/protection-999-setup.json` | HTTP 404 `Branch not protected` with stderr | 2026-10-18T23:31:36Z |
+| `raw/protection-999-setup.json` | HTTP 404 `Branch not protected` with stderr | 2026-10-18T23:31:35Z |
 | `raw/protection-captures.txt` | per-repo exit code, bytes, capture time | 2026-10-18T23:31:35Z |
 | `raw/check-runs-openclaw-onboarding.json` | 42 runs, all `success`/`completed`, head `39e7443` | 2026-10-18T23:31:45Z |
 | `raw/check-runs-blackceo-command-center.json` | 34 runs, all `success`/`completed`, head `800b0769` | 2026-10-18T23:31:46Z |
