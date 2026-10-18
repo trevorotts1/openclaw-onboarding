@@ -44,11 +44,11 @@
       "flipped_at": "2026-10-18"
     },
     "thank_you": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 82,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.5 (thank_you, Lane B B-343); consumer candidate 1.6 (S49 translator dual-accept) landed in train #2268, SWARM-verified blob-exact.",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     }
   }
 }
