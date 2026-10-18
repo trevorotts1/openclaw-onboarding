@@ -1,11 +1,11 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "v1.0.0",
+  "skill_version": "v1.0.1",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "966c7d16a744b8ace408c817adf74f7ef53887ae",
-  "file_count": 309,
-  "aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
-  "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
+  "source_commit": "aa6d33a0a29e367db1d6877019ff5c6c6fdb10b0",
+  "file_count": 323,
+  "aggregate_sha256": "3266e5de57dd7b774aa8037c3ee07b7818770b208c8a78ca1e41185a69e303d8",
+  "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
     "status": "generated",
@@ -39,8 +39,8 @@
     },
     {
       "path": "PREREQS.json",
-      "sha256": "109f69aaf58b4930c9947e6e5920d287cc4d221038bc39200ee850f46acb3519",
-      "bytes": 1796
+      "sha256": "0428f98ddb766dd912ad6ddb43f226820a0c17d193e423dd1fb9e279b0f4ced0",
+      "bytes": 2270
     },
     {
       "path": "QC.md",
@@ -49,7 +49,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "b8a47dd527f84aa34633452612c1135ac66f90510e58b207f942b568da29a2c4",
+      "sha256": "10e98dc7277de0ea31686063046a765c19c5750c355046c3e6cdbede4e3dd610",
       "bytes": 6907
     },
     {
@@ -296,6 +296,11 @@
       "path": "advisors/oprah-winfrey/questions.json",
       "sha256": "08467efb3d12a7a0bf25f122c6978d110550fdedee2d997d0eca0a7ed7fed35f",
       "bytes": 1434
+    },
+    {
+      "path": "advisors/oprah-winfrey/research/harvard-2013-first-person-candidate.md",
+      "sha256": "d7caef417e3377ee76e4997c3e02fdf49f285489f8805d37c3ce351638da060f",
+      "bytes": 5052
     },
     {
       "path": "advisors/oprah-winfrey/sources.json",
@@ -563,6 +568,11 @@
       "bytes": 1944
     },
     {
+      "path": "references/skill22-persona-preservation-map.md",
+      "sha256": "08efa5330a6c9f1444f770958f84431b9421c1879db3d99dc16dfb4de69e8af4",
+      "bytes": 6483
+    },
+    {
       "path": "references/skill22-persona-registry-procedure.md",
       "sha256": "828a1c647e6042804dd9e44a12c5e1df1b96681419a903988b83e608737e4bc3",
       "bytes": 4532
@@ -584,18 +594,28 @@
     },
     {
       "path": "runtime/README.md",
-      "sha256": "3e5985bdce94e424d0cb7c0098a7c660e56932928afd58e2dda2c1824fdafee7",
-      "bytes": 1710
+      "sha256": "fb3ac7de6d04ad6456efb5706a2d856766eb6ce28a9a6257823d2494e1d2bd87",
+      "bytes": 3336
     },
     {
       "path": "runtime/package-lock.json",
-      "sha256": "08a7f02f44354fd11d6f453b2214744953765a4b5a1c15998c79f405fe46238d",
-      "bytes": 17334
+      "sha256": "ad5639d14763f2b7b09a3465b6a83c3562d8efb9d258de12d978cbf733f5640a",
+      "bytes": 17322
     },
     {
       "path": "runtime/package.json",
-      "sha256": "007b231e9a41d1c9e50117386323c963a0cba9358464863dc062c4eb75b0d41e",
-      "bytes": 3079
+      "sha256": "b54fa77221c1b996e9b0010e3e2a575ddd36e1553248b6a5abfbe006b0fd4ada",
+      "bytes": 3067
+    },
+    {
+      "path": "runtime/scripts/audit-advisor-sources.ts",
+      "sha256": "5094eb0f6783a19c2f06e09fb5bfcc57d700f193da381459a88c44cdffabd08e",
+      "bytes": 5546
+    },
+    {
+      "path": "runtime/scripts/audit-skill22-preservation.ts",
+      "sha256": "a5a313a4d865ecd0f4ad7f961d287bedad94d7088b0b196a5cd3df448e58204d",
+      "bytes": 1654
     },
     {
       "path": "runtime/scripts/copy-runtime-assets.mjs",
@@ -689,8 +709,8 @@
     },
     {
       "path": "runtime/src/cli/dispatcher.ts",
-      "sha256": "7df3c1dcac9da6ef14e8c93736f4a403a2c602ee83659aef5a9cddea18fe78f8",
-      "bytes": 28715
+      "sha256": "365c049a304fa244d550f55369bd972482df34305e8aefcd08edb63a5c013c56",
+      "bytes": 30383
     },
     {
       "path": "runtime/src/cli/engine.ts",
@@ -718,14 +738,19 @@
       "bytes": 8998
     },
     {
+      "path": "runtime/src/cli/installed-seat-pack.ts",
+      "sha256": "a6478fec5330ceb90690b2d08cf881b30c23cd7ae1a9c26e1fde8457c455c7e6",
+      "bytes": 8878
+    },
+    {
       "path": "runtime/src/cli/leases.ts",
       "sha256": "efa71191624e48c8854d1d5254fa5f9a905d39786513348fce5dfb89444660a0",
       "bytes": 3283
     },
     {
       "path": "runtime/src/cli/local-host.ts",
-      "sha256": "df41125427f1ede72b154e94070bb88ca3e908d392f050c6ca0e72cf4ee0f64e",
-      "bytes": 14465
+      "sha256": "e1a9b1fbd552340e29766ed5936ed248f7f13d7b5e87f9103440ca33d9e1f997",
+      "bytes": 14652
     },
     {
       "path": "runtime/src/cli/local-store.ts",
@@ -1194,8 +1219,8 @@
     },
     {
       "path": "runtime/src/sources/coverage.ts",
-      "sha256": "8744726550932d4fdfb6133f3a58c2207a7093b94e6fdb5316339ae7c47970dc",
-      "bytes": 8262
+      "sha256": "0044244a3a527844d33ca5279619799eee3f969dc2b93d7c6443f94ff98e180c",
+      "bytes": 9377
     },
     {
       "path": "runtime/src/sources/export-package.ts",
@@ -1209,8 +1234,8 @@
     },
     {
       "path": "runtime/src/sources/fixtures.ts",
-      "sha256": "a7d73391bdfda93e4f8dbe46f20851c45cb27a9ff601af21dd9e62c4890399fa",
-      "bytes": 8466
+      "sha256": "4dd0849520338f32fd7cf3155c162c439ea5dbf9e3641dd17a82b272d9cbb440",
+      "bytes": 8501
     },
     {
       "path": "runtime/src/sources/index.ts",
@@ -1233,9 +1258,14 @@
       "bytes": 5856
     },
     {
+      "path": "runtime/src/sources/skill22-inventory.ts",
+      "sha256": "c2699a5c61cfc2de9ca8ca1a2d35804e2bcf684e39cc83a8ff8874e3d5c568f2",
+      "bytes": 6577
+    },
+    {
       "path": "runtime/src/sources/sources.test.ts",
-      "sha256": "f8c3391e202402cd2dbb045bc395abbe5a045c03c916f2a51bdcbc008e0f82fb",
-      "bytes": 19149
+      "sha256": "08398e95a5e976c225bb959fd8c138d9a97dc2865fbc3aa85125d69f04c2a348",
+      "bytes": 19200
     },
     {
       "path": "runtime/src/sources/text.ts",
@@ -1271,6 +1301,11 @@
       "path": "runtime/tests/cli-composition.test.ts",
       "sha256": "ac95db9d74cc6bc2fc357f581d35b91111ca4820196966b1b5226ddb85a2b50b",
       "bytes": 6120
+    },
+    {
+      "path": "runtime/tests/cli-doctor-readiness.test.ts",
+      "sha256": "5bc24decb9bdcdc807de818f3caa9e07897273c0db598c34c8b675c8d0e0c6c8",
+      "bytes": 2422
     },
     {
       "path": "runtime/tests/cli-route-composition.test.ts",
@@ -1331,6 +1366,11 @@
       "path": "runtime/tests/helpers.ts",
       "sha256": "c868a369bb4fbac47021c9bf25f4ba823e94fe958ba5dfb1361478ad0de605c3",
       "bytes": 2831
+    },
+    {
+      "path": "runtime/tests/installed-seat-pack.test.ts",
+      "sha256": "0a1638d8052c2cabe952c2889138fbeb0b2606b1fcda68a48ef917793270b76e",
+      "bytes": 3271
     },
     {
       "path": "runtime/tests/intake.test.ts",
@@ -1458,6 +1498,16 @@
       "bytes": 19406
     },
     {
+      "path": "runtime/tests/wer013-primary-coverage.test.ts",
+      "sha256": "a910d3f01666e0c84a658b2c680a0a5f16eab0db28685df9040bf1f1fd401493",
+      "bytes": 4415
+    },
+    {
+      "path": "runtime/tests/wer013-skill22-preservation.test.ts",
+      "sha256": "170428373a1302dc0b83771d98a37b8dd567f9c9a4912c61dbe245d800716eef",
+      "bytes": 3433
+    },
+    {
       "path": "runtime/tsconfig.json",
       "sha256": "1917cac0638da2acd5deb92a075d12b60978b916eccb6f2afdd0122ebf7b3406",
       "bytes": 324
@@ -1473,14 +1523,19 @@
       "bytes": 74503
     },
     {
+      "path": "scripts/audit-skill22-personas.mjs",
+      "sha256": "297513d7d284e2550ca6e0f1ffc86208b185a97d5df15353b742ca10ebf60885",
+      "bytes": 10024
+    },
+    {
       "path": "scripts/build-bundles.mjs",
-      "sha256": "b656fccbf1c23c46e1f1c3124ebee3fda0721b868163fe9c6e8dea2767acd2c4",
-      "bytes": 14137
+      "sha256": "5497d7a667cef5a2a31d8a20862d32dc4a56f4e14ac2843633d9d35460bf08a1",
+      "bytes": 14575
     },
     {
       "path": "scripts/doctor.mjs",
-      "sha256": "d792c4e38afd24f97e9ec4ac93b3fd6203d8dc542a288712d284c29df4bbfb09",
-      "bytes": 8759
+      "sha256": "ec8f680f4c7a3cc6cd0c65b5e38ae49a10cfb2eafa0141150c4c95524c619bff",
+      "bytes": 9158
     },
     {
       "path": "scripts/export-skill22.mjs",
@@ -1509,8 +1564,13 @@
     },
     {
       "path": "scripts/install-runtime.mjs",
-      "sha256": "3cddc9ff5ea4ef96f1b661e88ac5e6fa288c31fe51a36087f9801896b148c26b",
-      "bytes": 4179
+      "sha256": "20d1e1e50528add76481c062b3804ac042ef5a686c4b7788c7fffa8a2dd7e154",
+      "bytes": 4638
+    },
+    {
+      "path": "scripts/node-runtime-preflight.mjs",
+      "sha256": "3b7e6169eb39b53f5caa004c1157540391f4dc5f34444d117601d3a4287e7b1f",
+      "bytes": 1146
     },
     {
       "path": "scripts/qc-council-of-wise-elders.ps1",
@@ -1533,13 +1593,23 @@
       "bytes": 4054
     },
     {
+      "path": "scripts/tests/audit-skill22-personas.test.mjs",
+      "sha256": "26ed4fbf7eb857e2a403aa6e837cf906063c394ddaedc1c643653a2b07dc82e6",
+      "bytes": 7574
+    },
+    {
+      "path": "scripts/tests/node-runtime-preflight.test.mjs",
+      "sha256": "ada1d7acd7f6300e1d3c7d607bc47b6d21799b79679058a52cfbdd0fc892029b",
+      "bytes": 2291
+    },
+    {
       "path": "scripts/verify-bundles.mjs",
-      "sha256": "ede6d2870be2242a38320ea44de8481e5ce70fe23df02e6db8f428933886cba0",
-      "bytes": 3611
+      "sha256": "7809610a5f3b7110cdbda7ec636e8732e2d3a3f8524b5c6408c1c87d5e8f4b0c",
+      "bytes": 4012
     },
     {
       "path": "skill-version.txt",
-      "sha256": "86f0555bccd069ac54e4c54a19a0f1aed9d328e13aa34aa090f3f3d43aaad441",
+      "sha256": "145aabe1106cd123b7123194b94bcf8bff4442caf1c5336c3e2c9c671f4895ca",
       "bytes": 7
     },
     {
@@ -1554,7 +1624,7 @@
     },
     {
       "path": "version",
-      "sha256": "86f0555bccd069ac54e4c54a19a0f1aed9d328e13aa34aa090f3f3d43aaad441",
+      "sha256": "145aabe1106cd123b7123194b94bcf8bff4442caf1c5336c3e2c9c671f4895ca",
       "bytes": 7
     }
   ]
