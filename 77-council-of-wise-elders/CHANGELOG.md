@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.14: runnable supervisor driver and live crash/restart acceptance (WER-026)
+## v1.0.15: runnable supervisor driver and live crash/restart acceptance (WER-026)
 
 - Adds `scripts/supervisor/runner.mjs`, the missing entry point. The merged supervisor was a pure reducer with no main: `supervisor.mjs` declared `NATIVE_ADAPTER_BINDING = {status: UNKNOWN, bound: false}` and `sweep-executor.mjs` took injected functions, so nothing could actually run - which is exactly why the scheduled-sweep and crash/restart receipts had never existed. The driver wires the existing modules with a durable data directory, an interval loop driving `executePlannedSweep` through an injected execute that only records receipts, a durable restart ledger, singleton/lease refusal for a second instance, atomic graceful drain on SIGTERM, and `--once` for deterministic tests. It imports no `child_process`, no network module and no credential, and reads no `process.env`.
 - Fixes a **real defect found by independent QC**: the entry-point guard compared `import.meta.url` to `pathToFileURL(process.argv[1]).href`, which is false whenever the script is reached through a symlink - the process then exited 0 having done nothing, with no tick, no data dir and no output. Because macOS makes `/tmp` a symlink to `/private/tmp`, that was not a rare path. Both sides are now resolved with `realpathSync` (falling back to the lexical path when resolution fails), and a regression test invokes the runner through a symlink and asserts a real sweep happens.
@@ -9,6 +9,14 @@
 Supervisor suite **113/113** with the pre-existing **99/99** preserved.
 
 **Nothing here claims LaunchAgent registration, launchd firing or reboot persistence** - the launchd step is performed separately by the operator and is not proven by this entry.
+
+## v1.0.14: RP-046-4 card-contract conveyance repair (DEFECT-046-C)
+
+- Closes the D-021 canary Round 1 block where five of nine seats returned parseable JSON whose content still failed the card schema after the one permitted repair. The cause was conveyance, not validation: two format rules (`challenges_answered` entries must be opaque IDs; `conditions[].due_at` must be a UTC ISO 8601 timestamp or null) existed only as zod refinement messages, and the JSON Schema generated from the same definitions **drops refinements**, so in the schema the model actually receives those fields are plain strings — the rules reached the model nowhere. The complete required-field list existed only as the schema's `required` array buried in the input payload, and Round 1 issues no challenge IDs at all, so the model had to guess what `challenges_answered` should hold.
+- Adds `runtime/src/cli/card-contract.ts`: the exact contract for *this* call, stated in prose, composed into the request and restated in full in the repair instruction. Required field names are read from the same generated JSON Schema the validator enforces, so the prose list can never drift from the enforced contract. Per-call challenge issuance is stated explicitly, and an advisor call with no issued challenges must return `challenges_answered: []` rather than guess.
+- Repair instructions now carry **both** the verbatim validator errors and the original constraints, as Section 15.5 requires; previously only the error strings were forwarded, so every failed seat failed again in the same shape.
+- Adds `runtime/tests/rp0464-card-conformance.test.ts` and the accepted-card fixtures under `runtime/tests/fixtures/rp0464/` (`accepted-brene-brown.json`, `accepted-dennis-kimbro.json`, `accepted-michelle-obama.json`, `accepted-russell-brunson.json`).
+- Only what the model is *told* changed. The validator, the schemas, the single permitted repair, the ledger and the lease behavior are all unchanged: a non-conforming card still fails validation in exactly the same words as before. `runtime/src/cli/engine.ts` is modified only to compose the contract into the request and the repair.
 
 ## v1.0.13: Windows platform observers (WER-027 engineering half)
 
