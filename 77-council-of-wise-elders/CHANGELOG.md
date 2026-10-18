@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.14: runnable supervisor driver and live crash/restart acceptance (WER-026)
+
+- Adds `scripts/supervisor/runner.mjs`, the missing entry point. The merged supervisor was a pure reducer with no main: `supervisor.mjs` declared `NATIVE_ADAPTER_BINDING = {status: UNKNOWN, bound: false}` and `sweep-executor.mjs` took injected functions, so nothing could actually run - which is exactly why the scheduled-sweep and crash/restart receipts had never existed. The driver wires the existing modules with a durable data directory, an interval loop driving `executePlannedSweep` through an injected execute that only records receipts, a durable restart ledger, singleton/lease refusal for a second instance, atomic graceful drain on SIGTERM, and `--once` for deterministic tests. It imports no `child_process`, no network module and no credential, and reads no `process.env`.
+- Fixes a **real defect found by independent QC**: the entry-point guard compared `import.meta.url` to `pathToFileURL(process.argv[1]).href`, which is false whenever the script is reached through a symlink - the process then exited 0 having done nothing, with no tick, no data dir and no output. Because macOS makes `/tmp` a symlink to `/private/tmp`, that was not a rare path. Both sides are now resolved with `realpathSync` (falling back to the lexical path when resolution fails), and a regression test invokes the runner through a symlink and asserts a real sweep happens.
+- Records the live host acceptance under `evidence/wer026/host/`, independently reproduced by the reviewer from a fresh clone rather than accepted from the builder's artifacts: two completed sweep ticks; `kill -9` mid-tick (exit 137) followed by a restart that reconciled the pending action **exactly once** with `ledger_generation` 1 to 2 and `fencing_generation` 2 to 3; a second concurrent instance refused with `LEASE_HELD` at exit 3; SIGTERM draining to a valid `STOPPED` state file at exit 0; a temp-root snapshot proving zero writes outside the data directory; and `ps` proving no process left running.
+
+Supervisor suite **113/113** with the pre-existing **99/99** preserved.
+
+**Nothing here claims LaunchAgent registration, launchd firing or reboot persistence** - the launchd step is performed separately by the operator and is not proven by this entry.
+
 ## v1.0.13: Windows platform observers (WER-027 engineering half)
 
 - Closes the deliberate Windows gap the platform adapter carried: `mounts.ts` previously returned `BLOCKED_PLATFORM` with "no mount table observer" on anything that is not Linux, and `identity.ts` marked Windows `unobservable`.

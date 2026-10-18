@@ -6,11 +6,14 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   EXIT,
@@ -484,4 +487,38 @@ test("the CLI exit codes are stable and documented", () => {
     { ...EXIT },
     { OK: 0, FAILED: 1, USAGE: 2, REFUSED: 3, STALE_LEDGER: 4 },
   );
+});
+
+// Regression for a real defect found by independent QC: the entry-point guard
+// compared `import.meta.url` to `pathToFileURL(process.argv[1]).href`, which is
+// FALSE whenever the script is reached through a symlink. The process then
+// exited 0 having done nothing at all — no tick, no data dir, no output. On
+// macOS /tmp is a symlink to /private/tmp, so this was not a rare path.
+test("invoking the runner through a symlink still executes a real sweep", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const runner = join(here, "runner.mjs");
+  const scratch = mkdtempSync(join(tmpdir(), "runner-symlink-"));
+  try {
+    const link = join(scratch, "runner-via-symlink.mjs");
+    symlinkSync(runner, link);
+    const dataDir = join(scratch, "data");
+
+    const viaLink = spawnSync(process.execPath, [link, "--data-dir", dataDir, "--once"], {
+      encoding: "utf8",
+    });
+    assert.equal(viaLink.status, EXIT.OK, viaLink.stderr);
+    assert.match(viaLink.stdout, /"event":"tick"/, "a symlinked invocation must actually sweep");
+    assert.match(viaLink.stdout, /"executed":true/);
+    assert.match(viaLink.stdout, /"completed_sweeps":1/);
+    assert.equal(existsSync(dataDir), true, "the data dir must be created when run via a symlink");
+
+    // And the real path must behave identically.
+    const viaReal = spawnSync(process.execPath, [runner, "--data-dir", join(scratch, "data2"), "--once"], {
+      encoding: "utf8",
+    });
+    assert.equal(viaReal.status, EXIT.OK, viaReal.stderr);
+    assert.match(viaReal.stdout, /"completed_sweeps":1/);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });

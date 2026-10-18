@@ -24,13 +24,14 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import {
   NATIVE_ADAPTER_BINDING,
@@ -1224,9 +1225,30 @@ export async function main(argv = process.argv.slice(2)) {
   return EXIT.OK;
 }
 
+// Compare real paths on BOTH sides. A plain `pathToFileURL(process.argv[1])`
+// comparison silently no-ops when the script is reached through a symlink: the
+// launcher path differs from this module's real URL, so `isEntryPoint` is false,
+// the process exits 0 and does nothing at all. macOS makes this the common case
+// because /tmp is a symlink to /private/tmp. realpathSync falls back to the
+// lexical path when resolution fails, so a genuinely missing argv[1] still just
+// fails the comparison rather than throwing.
+function realPathOrSame(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
 const isEntryPoint =
   process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+  (() => {
+    try {
+      return realPathOrSame(fileURLToPath(import.meta.url)) === realPathOrSame(process.argv[1]);
+    } catch {
+      return false;
+    }
+  })();
 
 if (isEntryPoint) {
   main()
