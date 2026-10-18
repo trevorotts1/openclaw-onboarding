@@ -8,9 +8,11 @@
  * container.
  *
  * Observation is injected so this stays deterministic and testable. The
- * default observer reads Linux `/proc/self/mountinfo`; on a platform without
- * that file (macOS, Windows) the answer is an explicit BLOCKED_PLATFORM —
- * never an assumption that some other filesystem is durable.
+ * default observer reads Linux `/proc/self/mountinfo`. Windows is observed
+ * separately in `./windows.ts` from real volume facts (`statfsSync`, volume
+ * root, `SystemDrive`) instead of a mount table; macOS keeps the explicit
+ * BLOCKED_PLATFORM — never an assumption that some other filesystem is
+ * durable.
  */
 
 import { accessSync, constants, readFileSync, realpathSync } from 'node:fs';
@@ -152,9 +154,11 @@ export function readLinuxMountTable(path = '/proc/self/mountinfo'): MountTable {
 }
 
 /**
- * Default observer. Only Linux exposes a mount table this adapter can read.
- * Every other platform is an explicit BLOCKED_PLATFORM with the reason named:
- * the macOS/Windows durable-mount observers are deferred to a real host unit.
+ * Default observer for mount-table platforms. Only Linux exposes a mount
+ * table this adapter can read. Windows uses the volume observer in
+ * `./windows.ts` (no mount table exists there), and any platform without an
+ * observer is an explicit BLOCKED_PLATFORM with the reason named: the macOS
+ * durable-mount observer is deferred to a real host unit.
  */
 export function defaultMountTable(platform: NodeJS.Platform = process.platform): MountTable {
   if (platform !== 'linux') {
@@ -248,7 +252,8 @@ export interface DataDirOptions {
   isWritable?: (path: string) => boolean;
 }
 
-function defaultWritable(path: string): boolean {
+/** Shared writability probe: the path or its nearest existing ancestor. */
+export function defaultWritable(path: string): boolean {
   let current = resolve(path);
   for (;;) {
     try {
