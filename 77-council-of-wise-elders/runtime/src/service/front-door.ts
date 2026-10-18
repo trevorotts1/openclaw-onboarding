@@ -1,0 +1,682 @@
+/**
+ * Standalone Council front door (WER-021 dependency-ready slice).
+ *
+ * One same-origin loopback service exposes the health, identity, session
+ * URL and admission contract AROUND the canonical durable owner. It is
+ * deliberately not an engine: admissions are forwarded to an injected
+ * sink, and the event stream adapter is reported as unbound rather than
+ * fabricated.
+ *
+ * Behaviour proven by the colocated tests:
+ * - duplicate start resolves and reuses ONLY a verified matching service;
+ *   an unrelated listener is refused and left running;
+ * - the emitted session URL is derived from the actual bound origin;
+ * - a managed session returns its owning external URL and is never
+ *   started locally;
+ * - drain fences new admissions while existing sessions stay reachable;
+ * - browser-open failure preserves the usable URL (WER-005 pattern).
+ *
+ * Deferred, never claimed: a registered system service, launchd/systemd
+ * units, a bundled shared UI, a live event stream, a real browser launch
+ * in tests, and any host mutation.
+ */
+
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+
+import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
+import {
+  classifyListener,
+  normalizeOrigin,
+  SERVICE_IDENTITY_PATH,
+} from './identity.js';
+import {
+  evaluateServiceReadiness,
+  type ReadinessOptions,
+  type ServiceReadinessDeps,
+} from './readiness.js';
+import { eventsPath, resolveSessionTarget, sessionUrl } from './sessions.js';
+import {
+  DEFAULT_SERVICE_HOST,
+  DEFAULT_SERVICE_PORTS,
+  SERVICE_API_VERSION,
+  type AdmissionDecision,
+  type AdmissionRequest,
+  type AdmissionSink,
+  type DrainOutcome,
+  type ServiceIdentity,
+  type ServiceReadiness,
+  type ServiceStartBlocker,
+  type ServiceState,
+  type SessionAuthorityRecord,
+  type SessionTarget,
+  type StartOutcome,
+  type StopOutcome,
+} from './types.js';
+
+export interface OpenSessionResult {
+  target: SessionTarget;
+  /** Null when the caller asked not to open, or the target is blocked. */
+  browser: BrowserOpenResult | null;
+}
+
+export type FrontDoorReadinessDeps = Omit<ServiceReadinessDeps, 'origin'>;
+
+export interface FrontDoorOptions {
+  /** Owner identity served at the identity endpoint (started_at excluded from matching). */
+  identity: ServiceIdentity;
+  /** Bind host. Loopback only in this slice; remote exposure belongs to WER-023. */
+  host?: string;
+  /** Candidate ports, tried in order. Default DEFAULT_SERVICE_PORTS. */
+  ports?: readonly number[];
+  fetchImpl?: typeof fetch;
+  /** Injected browser opener; defaults to the WER-005 helper. */
+  openUrl?: (url: string) => BrowserOpenResult;
+  /** The owning authority's admission surface (composition root supplies it). */
+  admissionSink?: AdmissionSink;
+  readiness?: FrontDoorReadinessDeps;
+}
+
+const MAX_BODY_BYTES = 1_048_576;
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(text),
+    'cache-control': 'no-store',
+  });
+  res.end(text);
+}
+
+/** Exact loopback set plus the 127/8 block; nothing else is a local front door. */
+export function isLoopbackHost(host: string): boolean {
+  const value = host.trim().toLowerCase();
+  if (value === 'localhost' || value === '::1') return true;
+  return /^127(?:\.\d{1,3}){3}$/.test(value);
+}
+
+export function originFor(host: string, port: number): string {
+  const bracketed = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  return `http://${bracketed}:${port}`;
+}
+
+interface ListenSuccess {
+  ok: true;
+  server: Server;
+  origin: string;
+  port: number;
+}
+
+interface ListenFailure {
+  ok: false;
+  code: string;
+  error: Error;
+}
+
+export class CouncilFrontDoor {
+  private readonly options: FrontDoorOptions;
+  private server: Server | null = null;
+  private state: ServiceState = 'idle';
+  private origin: string | null = null;
+  private boundPort: number | null = null;
+  private startResult: StartOutcome | null = null;
+  private startPromise: Promise<StartOutcome> | null = null;
+  private draining = false;
+  private lastServerError: string | null = null;
+
+  constructor(options: FrontDoorOptions) {
+    this.options = options;
+  }
+
+  getState(): ServiceState {
+    return this.state;
+  }
+
+  getOrigin(): string | null {
+    return this.origin;
+  }
+
+  getPort(): number | null {
+    return this.boundPort;
+  }
+
+  getIdentity(): ServiceIdentity {
+    return this.options.identity;
+  }
+
+  getLastServerError(): string | null {
+    return this.lastServerError;
+  }
+
+  /**
+   * Start or resolve the local service.
+   *
+   * Per candidate port: bind; on EADDRINUSE probe the listener's identity.
+   * A verified matching service is reused (no second listener, and this
+   * handle never drains or stops it). An unrelated listener is recorded
+   * as a blocker and the next candidate is tried; it is never killed.
+   */
+  async start(): Promise<StartOutcome> {
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = this.doStart();
+    try {
+      return await this.startPromise;
+    } finally {
+      this.startPromise = null;
+    }
+  }
+
+  private refuse(blockers: ServiceStartBlocker[]): StartOutcome {
+    this.state = 'refused';
+    const result: StartOutcome = {
+      outcome: 'refused',
+      origin: null,
+      port: null,
+      identity: null,
+      blockers,
+    };
+    this.startResult = result;
+    return result;
+  }
+
+  private async doStart(): Promise<StartOutcome> {
+    if (this.startResult && this.startResult.outcome !== 'refused') {
+      // A reused handle has no local listener to lose; a started handle
+      // whose listener was stopped must start again rather than report a
+      // stale origin.
+      if (this.startResult.outcome === 'reused' || this.server) {
+        return this.startResult;
+      }
+      this.startResult = null;
+    }
+
+    const host = this.options.host ?? DEFAULT_SERVICE_HOST;
+    if (!isLoopbackHost(host)) {
+      return this.refuse([
+        {
+          code: 'SERVICE_HOST_NOT_LOOPBACK',
+          detail: `Refusing to bind ${host}: this slice exposes a loopback-only local service.`,
+          recovery:
+            'Use a loopback host; authenticated remote exposure belongs to the Cloudflare Tunnel/Access adapter (WER-023).',
+        },
+      ]);
+    }
+
+    const ports = this.options.ports ?? DEFAULT_SERVICE_PORTS;
+    if (ports.length === 0) {
+      return this.refuse([
+        {
+          code: 'SERVICE_PORT_CANDIDATES_EMPTY',
+          detail: 'No candidate port was supplied for the local service.',
+          recovery: 'Supply at least one loopback port candidate.',
+        },
+      ]);
+    }
+
+    const blockers: ServiceStartBlocker[] = [];
+    for (const port of ports) {
+      if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+        blockers.push({
+          code: 'SERVICE_PORT_INVALID',
+          detail: `Candidate port ${String(port)} is not an integer in 0..65535.`,
+          recovery: 'Supply a valid loopback port candidate.',
+        });
+        continue;
+      }
+
+      const attempt = await this.listen(host, port);
+      if (attempt.ok) {
+        this.server = attempt.server;
+        this.origin = attempt.origin;
+        this.boundPort = attempt.port;
+        this.state = 'running';
+        this.draining = false;
+        const result: StartOutcome = {
+          outcome: 'started',
+          origin: attempt.origin,
+          port: attempt.port,
+          identity: this.options.identity,
+          blockers: [],
+        };
+        this.startResult = result;
+        return result;
+      }
+
+      if (attempt.code === 'EADDRINUSE') {
+        const existingOrigin = originFor(host, port);
+        const { classification, probe } = await classifyListener(
+          existingOrigin,
+          this.options.identity,
+          this.options.fetchImpl,
+        );
+        if (classification === 'matching_service' && probe.identity) {
+          this.server = null;
+          this.origin = normalizeOrigin(existingOrigin);
+          this.boundPort = port;
+          this.state = 'reused';
+          this.draining = false;
+          const result: StartOutcome = {
+            outcome: 'reused',
+            origin: this.origin,
+            port,
+            identity: probe.identity,
+            blockers: [],
+          };
+          this.startResult = result;
+          return result;
+        }
+        const observed =
+          classification === 'unrelated_listener'
+            ? 'a listener that is not this Council service'
+            : 'a listener that did not answer the identity check';
+        blockers.push({
+          code: 'PORT_IN_USE_UNRELATED',
+          detail: `${existingOrigin} is held by ${observed}${probe.error ? ` (${probe.error})` : ''}. It was left running.`,
+          recovery:
+            'Choose another loopback port or stop the unrelated listener yourself; this service never kills an unrelated process.',
+        });
+        continue;
+      }
+
+      blockers.push({
+        code: 'SERVICE_LISTEN_FAILED',
+        detail: `${originFor(host, port)} could not be bound: ${attempt.error.message}`,
+        recovery: 'Fix the host or permission error and retry the service start.',
+      });
+    }
+
+    return this.refuse(blockers);
+  }
+
+  private listen(host: string, port: number): Promise<ListenSuccess | ListenFailure> {
+    const server = createServer((req, res) => this.handleRequest(req, res));
+    return new Promise((resolve) => {
+      const onError = (error: NodeJS.ErrnoException): void => {
+        server.removeListener('listening', onListening);
+        // A failed listener owns nothing; close is a no-op cleanup.
+        server.close(() => undefined);
+        resolve({
+          ok: false,
+          code: error.code ?? 'SERVICE_LISTEN_FAILED',
+          error,
+        });
+      };
+      const onListening = (): void => {
+        server.removeListener('error', onError);
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          server.close(() => undefined);
+          resolve({
+            ok: false,
+            code: 'SERVICE_ADDRESS_UNKNOWN',
+            error: new Error('The listener did not report a TCP address.'),
+          });
+          return;
+        }
+        // Post-bind errors are observed, never allowed to crash the host.
+        server.on('error', (error) => {
+          this.lastServerError = error instanceof Error ? error.message : String(error);
+        });
+        resolve({
+          ok: true,
+          server,
+          origin: originFor(host, address.port),
+          port: address.port,
+        });
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(port, host);
+    });
+  }
+
+  private handleRequest(req: IncomingMessage, res: ServerResponse): void {
+    void this.route(req, res).catch((error: unknown) => {
+      this.lastServerError = error instanceof Error ? error.message : String(error);
+      if (!res.headersSent) {
+        sendJson(res, 500, {
+          code: 'SERVICE_REQUEST_FAILED',
+          detail: this.lastServerError,
+        });
+      } else {
+        res.end();
+      }
+    });
+  }
+
+  private async route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const origin = this.origin ?? 'http://127.0.0.1';
+    let path: string;
+    try {
+      path = new URL(req.url ?? '/', origin).pathname;
+    } catch {
+      sendJson(res, 400, { code: 'SERVICE_BAD_REQUEST', detail: 'Unparseable request URL.' });
+      return;
+    }
+    const method = req.method ?? 'GET';
+
+    if (method === 'GET' && (path === '/healthz' || path === '/api/council/health')) {
+      sendJson(res, 200, {
+        ok: this.state === 'running' || this.state === 'draining' || this.state === 'reused',
+        state: this.state,
+        draining: this.draining,
+        api_version: SERVICE_API_VERSION,
+        origin: this.origin,
+      });
+      return;
+    }
+
+    if (method === 'GET' && path === SERVICE_IDENTITY_PATH) {
+      sendJson(res, 200, this.options.identity);
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/council/admissions') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendJson(res, body.status, {
+          code: body.code,
+          detail: body.detail,
+          recovery: body.recovery,
+        });
+        return;
+      }
+      const decision = await this.admit(body.value as AdmissionRequest);
+      sendJson(res, decision.accepted ? 202 : 503, decision);
+      return;
+    }
+
+    const sessionMatch = /^\/council\/([^/]+)$/.exec(path);
+    if (method === 'GET' && sessionMatch) {
+      let sessionId: string;
+      try {
+        sessionId = decodeURIComponent(sessionMatch[1]);
+      } catch {
+        sendJson(res, 400, { code: 'SERVICE_BAD_SESSION_ID', detail: 'Malformed session id.' });
+        return;
+      }
+      const target = resolveSessionTarget(
+        { session_id: sessionId, authority: 'standalone' },
+        { origin: this.origin },
+      );
+      if (target.kind === 'blocked') {
+        sendJson(res, 503, target);
+        return;
+      }
+      sendJson(res, 200, {
+        session_id: sessionId,
+        authority: 'standalone',
+        url: target.url,
+        // Honest: this slice does not package a UI build or a live stream.
+        ui: 'not_bundled',
+        blocker: {
+          code: 'UI_NOT_BUNDLED',
+          detail: 'The shared Council UI build is not packaged by this service slice.',
+          recovery:
+            'Package the accepted shared Council UI build (WER-021 full packaging), then re-run service-readiness.',
+        },
+        api: {
+          session: target.url,
+          events: eventsPath(sessionId),
+        },
+      });
+      return;
+    }
+
+    const eventsMatch = /^\/api\/council\/sessions\/([^/]+)\/events$/.exec(path);
+    if (method === 'GET' && eventsMatch) {
+      let sessionId = '';
+      try {
+        sessionId = decodeURIComponent(eventsMatch[1]);
+      } catch {
+        sessionId = '';
+      }
+      sendJson(res, 501, {
+        code: 'EVENT_STREAM_ADAPTER_NOT_BOUND',
+        session_id: sessionId,
+        detail:
+          'The durable event stream adapter is bound by the integration root over the canonical journal/outbox; this slice does not fabricate a live stream.',
+        recovery:
+          'Bind the durable event stream adapter and re-run service-readiness before advertising events.',
+      });
+      return;
+    }
+
+    sendJson(res, 404, {
+      code: 'SERVICE_ROUTE_NOT_FOUND',
+      detail: `No service route for ${method} ${path}.`,
+    });
+  }
+
+  /**
+   * Admit one operation through the owning authority. Drain fences NEW
+   * admissions; already-admitted durable work continues at the owner.
+   */
+  async admit(request: AdmissionRequest): Promise<AdmissionDecision> {
+    if (
+      !request ||
+      typeof request.session_id !== 'string' ||
+      request.session_id.trim().length === 0 ||
+      typeof request.operation_id !== 'string' ||
+      request.operation_id.trim().length === 0
+    ) {
+      return {
+        accepted: false,
+        fenced: false,
+        code: 'ADMISSION_INVALID',
+        detail: 'An admission requires a non-empty session_id and operation_id.',
+        recovery: 'Supply the durable session id and the caller operation identity.',
+      };
+    }
+
+    if (this.draining || this.state === 'draining') {
+      return {
+        accepted: false,
+        fenced: true,
+        code: 'SERVICE_DRAINING',
+        detail: 'The service is draining and fences new admissions.',
+        recovery:
+          'Wait for the restart to complete, then retry the admission against the owning authority.',
+      };
+    }
+
+    if (this.state === 'reused') {
+      return {
+        accepted: false,
+        fenced: false,
+        code: 'SERVICE_NOT_ACTIVE',
+        detail:
+          'This handle reused an existing service; admissions belong to the owning process, not to the reusing launcher.',
+        recovery: 'Send the admission through the verified origin that owns the service.',
+      };
+    }
+
+    if (this.state !== 'running' || !this.server) {
+      return {
+        accepted: false,
+        fenced: false,
+        code: 'SERVICE_NOT_ACTIVE',
+        detail: 'The front-door service is not running.',
+        recovery: 'Start the local service, then retry the admission.',
+      };
+    }
+
+    if (!this.options.admissionSink) {
+      return {
+        accepted: false,
+        fenced: false,
+        code: 'ADMISSION_SINK_UNBOUND',
+        detail:
+          'No owning admission authority is bound; the service never claims a queue admission as durable work.',
+        recovery:
+          'Bind the canonical admission port (approval front door + durable producer) in the composition root.',
+      };
+    }
+
+    try {
+      const receipt = await this.options.admissionSink(request);
+      return { accepted: true, fenced: false, receipt };
+    } catch (error) {
+      return {
+        accepted: false,
+        fenced: false,
+        code: 'ADMISSION_SINK_FAILED',
+        detail: error instanceof Error ? error.message : String(error),
+        recovery:
+          'The owning authority refused or failed the admission; read its receipt and retry idempotently.',
+      };
+    }
+  }
+
+  /** Graceful drain: stop admitting, keep serving existing sessions. */
+  drain(): DrainOutcome {
+    if (this.state === 'reused') {
+      return {
+        drained: false,
+        fenced: false,
+        origin: this.origin,
+        reason: 'REUSED_SERVICE_NOT_OWNED',
+      };
+    }
+    if (this.state !== 'running' && this.state !== 'draining') {
+      return {
+        drained: false,
+        fenced: false,
+        origin: this.origin,
+        reason: 'SERVICE_NOT_ACTIVE',
+      };
+    }
+    this.state = 'draining';
+    this.draining = true;
+    return { drained: true, fenced: true, origin: this.origin, reason: null };
+  }
+
+  /**
+   * Stop the listener this handle owns. A reused handle never closes the
+   * owning service (launcher exit must not stop admitted work).
+   */
+  async stop(): Promise<StopOutcome> {
+    if (this.state === 'reused') {
+      return { stopped: false, reason: 'REUSED_SERVICE_NOT_OWNED' };
+    }
+    if (!this.server) {
+      this.state = this.state === 'idle' ? 'stopped' : this.state;
+      return { stopped: false, reason: 'ALREADY_STOPPED' };
+    }
+    this.state = 'draining';
+    this.draining = true;
+    const server = this.server;
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
+    this.server = null;
+    this.state = 'stopped';
+    return { stopped: true, reason: null };
+  }
+
+  /** Layered readiness against this handle's verified origin. */
+  readiness(options: ReadinessOptions = {}): Promise<ServiceReadiness> {
+    return evaluateServiceReadiness(
+      { ...this.options.readiness, origin: this.origin },
+      options,
+    );
+  }
+
+  /**
+   * Resolve and optionally open a session URL. A browser-open failure
+   * preserves the verified URL; a blocked target opens nothing.
+   */
+  openSession(
+    record: SessionAuthorityRecord,
+    options: { open?: boolean } = {},
+  ): OpenSessionResult {
+    const target = resolveSessionTarget(record, { origin: this.origin });
+    if (target.kind === 'blocked') {
+      return { target, browser: null };
+    }
+    if (options.open === false) {
+      return { target, browser: null };
+    }
+    const opener =
+      this.options.openUrl ??
+      ((url: string): BrowserOpenResult => openCouncilUrl(url));
+    return { target, browser: opener(target.url) };
+  }
+}
+
+type BodyResult =
+  | { ok: true; value: unknown }
+  | {
+      ok: false;
+      status: number;
+      code: string;
+      detail: string;
+      recovery: string;
+    };
+
+function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+    const finish = (result: BodyResult): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        finish({
+          ok: false,
+          status: 413,
+          code: 'ADMISSION_BODY_TOO_LARGE',
+          detail: `An admission body must be at most ${MAX_BODY_BYTES} bytes.`,
+          recovery: 'Send a bounded admission payload.',
+        });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('error', (error) => {
+      finish({
+        ok: false,
+        status: 400,
+        code: 'ADMISSION_BODY_UNREADABLE',
+        detail: error.message,
+        recovery: 'Retry the admission with a readable JSON body.',
+      });
+    });
+    req.on('end', () => {
+      if (settled) return;
+      const text = Buffer.concat(chunks).toString('utf8');
+      if (text.trim().length === 0) {
+        finish({
+          ok: false,
+          status: 400,
+          code: 'ADMISSION_BODY_EMPTY',
+          detail: 'An admission requires a JSON body.',
+          recovery: 'Send a JSON admission with session_id and operation_id.',
+        });
+        return;
+      }
+      try {
+        finish({ ok: true, value: JSON.parse(text) as unknown });
+      } catch {
+        finish({
+          ok: false,
+          status: 400,
+          code: 'ADMISSION_BODY_INVALID_JSON',
+          detail: 'The admission body is not valid JSON.',
+          recovery: 'Send a JSON admission with session_id and operation_id.',
+        });
+      }
+    });
+  });
+}
+
+/** Convenience export for the composition root's local session URL. */
+export function localSessionUrl(origin: string, sessionId: string): string {
+  return sessionUrl(origin, sessionId);
+}
