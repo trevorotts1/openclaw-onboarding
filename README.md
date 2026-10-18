@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v27.1.36 - Supplied Oprah and Les book personas.** Register four Skill22 book personas and integrate twenty traceable concept/case paraphrases into the existing Council packs. Separate teaching-source gaps remain explicit. The published index contains105personas and1499rows; existing vectors are preserved. Existing compatibility pin: **v7.6.112**.
+> **v27.1.36 - Supplied Oprah and Les book personas.** Register four Skill22 book personas and integrate twenty traceable concept/case paraphrases into the existing Council packs. Separate teaching-source gaps remain explicit. The published index contains 105 personas and 1,499 rows; existing vectors are preserved. Existing compatibility pin: **v7.6.112**.
 >
 > **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
 >
