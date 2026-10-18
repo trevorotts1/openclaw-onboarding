@@ -34,6 +34,7 @@ This craft cluster (`universal-sops/funnel-craft/`) is the execution playbook fo
 | **80** signature-upsell | "build my upsell pages" · "add an upsell to my launch" · "build the upsell flow for my launch" · "upsell page after checkout" |
 | **81** signature-downsell | "build my downsell page" · "add a downsell to my launch" · "build the downsell flow for my launch" · "downsell page after a declined upsell" |
 | **82** signature-thank-you | "build a thank you page" · "order confirmation page" · "page customers see after buying" |
+| **83** black-friday-launcher | "build my black friday launch" · "run the launcher for my launch" · "compose my upsell and downsell pages" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
 <!-- END CRAFT_INTENT_TRIGGERS_V1 -->
