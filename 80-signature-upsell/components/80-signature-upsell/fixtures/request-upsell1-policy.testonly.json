@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.1",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH",
+  "revision": 1,
+  "approval_ref": "TEST-ONLY-plan-approval",
+  "approval_hash": "TEST-ONLY-APPROVAL-HASH",
+  "input_hash": "TEST-ONLY-INPUT-HASH",
+  "brand_ref": "TEST-ONLY-BRAND",
+  "brand_hash": "TEST-ONLY-BRAND-HASH",
+  "route_graph_ref": "reference/route-graph-example.json",
+  "route_graph_hash": "43017b1e5678d2904f1eccdd4d21f07093d51faaefa0922e0d76564e06cf2638",
+  "offer_refs": [
+    "TEST-ONLY-OFFER"
+  ],
+  "copy_profile": "signature-upsell-eight-section",
+  "assigned_skill": 80,
+  "allowed_write_target": "local_only",
+  "test_only": true,
+  "source_landing_copy_ref": "TEST-ONLY-landing-copy-ref",
+  "factual_scarcity_evidence": [],
+  "payment_capability": {
+    "one_click_native_action_verified": false,
+    "evidence_ref": null,
+    "fallback_when_one_click_unavailable": "block_paid_action_safe_continuation"
+  },
+  "request_id": "TEST-REQ-U1",
+  "page_id": "TEST-UPSELL_1",
+  "page_role": "upsell_1",
+  "instance": "upsell_1",
+  "entry_context": null,
+  "offer": {
+    "offer_id": "TEST-ONLY-U1",
+    "slot": "upsell_1",
+    "display_name": "TEST ONLY Deep Work Library",
+    "deliverables": [
+      "TEST ONLY recorded lesson archive",
+      "TEST ONLY printable workbooks",
+      "TEST ONLY bonus session recordings"
+    ],
+    "exclusions": [
+      "Live coaching is not included"
+    ],
+    "entitlement_ids": [
+      "TEST-ONLY-library"
+    ],
+    "native_product_id": null
+  },
+  "disclosure": {
+    "amount_minor": 6700,
+    "currency": "USD",
+    "billing_type": "one_time",
+    "recurring_terms": null,
+    "disclosure_text": "TEST ONLY: one-time charge of $67.00 charged to your original payment method when you accept.",
+    "adjacent_to_cta": true,
+    "native_price_id": null
+  },
+  "eligibility": {
+    "original_purchase": {
+      "status": "verified_succeeded",
+      "verification_source": "native_purchase_ledger",
+      "evidence_ref": "TEST-ONLY-ledger-entry",
+      "provider_event_ref": "TEST-ONLY-event"
+    },
+    "qualifying_purchase": null,
+    "bump_only_qualifies": false,
+    "client_side_claims_accepted_as_proof": false,
+    "already_owned_instance": false,
+    "already_owned_action": "suppress_offer"
+  },
+  "routes": {
+    "on_payment_succeeded": {
+      "target_role": "upsell_2",
+      "target_page_id": "TEST-UPSELL_2"
+    },
+    "on_explicit_decline": {
+      "target_role": "downsell_1",
+      "target_page_id": "TEST-DOWNSELL_1"
+    },
+    "on_payment_pending_or_failed": "remain_on_page_recoverable"
+  },
+  "action_binding": {
+    "expected_action_ref": "native-one-click:TEST-ONLY-U1",
+    "binding_kind": "native_one_click_guarded",
+    "source_ref": "fixtures/copy-upsell1-public.valid.json#action_binding"
+  },
+  "prompt_policy_id": "kie-rule-12-band"
+}

@@ -208,6 +208,34 @@ def render_disclosure(disclosure: Mapping) -> str:
 def validate_request(request: Mapping, instance: str) -> None:
     if not isinstance(request, Mapping):
         raise AdapterError("Request must be a JSON object.")
+    # Prompt-policy pair rule (adoption map 1.4 item 2): the runtime
+    # mirror enforces the same pair rule as the request schema, so a
+    # mislabeled request cannot pass silently. schema_version must be
+    # "1.0" or "1.1"; a 1.1 request must carry a non-empty string
+    # prompt_policy_id; a 1.0 request must not carry the field at all.
+    # The id is a citation, never a selection: this mirror checks the
+    # pair rule and the field's shape only. Resolving the id against
+    # the registry of record happens where the citation is stamped
+    # (dispatch) and where budget decisions are accepted (the Q11
+    # aggregator), per the map's section 4 citation rule.
+    version = request.get("schema_version")
+    if version not in ("1.0", "1.1"):
+        raise AdapterError(
+            "Request schema_version %r is not a shape this consumer "
+            "accepts; expected \"1.0\" or \"1.1\"." % (version,)
+        )
+    if version == "1.1":
+        policy_id = request.get("prompt_policy_id")
+        if not isinstance(policy_id, str) or not policy_id:
+            raise AdapterError(
+                "a 1.1 request must carry a non-empty prompt_policy_id "
+                "(the 1.1 label exists to carry the field)"
+            )
+    elif "prompt_policy_id" in request:
+        raise AdapterError(
+            "prompt_policy_id requires request schema_version 1.1 "
+            "(the 1.0 schema forbids the field)"
+        )
     if request.get("assigned_skill") != 80:
         raise AdapterError("Request is not assigned to Skill 80.")
     if request.get("instance") != instance or request.get("page_role") != instance:
@@ -581,7 +609,7 @@ def build_page_plan(
     offer = request["offer"]
     capability = request.get("payment_capability") or {}
     routes = request["routes"]
-    return {
+    plan = {
         "test_only": bool(request.get("test_only", False)),
         "instance": request["instance"],
         "page_id": request["page_id"],
@@ -661,3 +689,14 @@ def build_page_plan(
         "disposition": dict(disposition),
         "acknowledgement_blocks": [dict(b) for b in acknowledgement_blocks],
     }
+    # Prompt-policy pass-through (adoption map 1.4 item 2): the page
+    # plan is the bundle provenance record S80 designates for the
+    # governing prompt policy id. The id rides here, present only on a
+    # 1.1 request (absent entirely at 1.0, never null - the Q12
+    # encoding), so a prompt receipt or the flip-time wrapper seam can
+    # read the governing id from the produced bundle. No result-profile
+    # change: the Q11 prompt receipt can carry the id without one.
+    policy_id = request.get("prompt_policy_id")
+    if policy_id:
+        plan["prompt_policy_id"] = policy_id
+    return plan

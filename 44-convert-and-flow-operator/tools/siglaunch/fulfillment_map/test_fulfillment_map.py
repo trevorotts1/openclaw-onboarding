@@ -285,5 +285,139 @@ class FulfillmentMapTests(unittest.TestCase):
                             self._map()["entitlement_version"])
 
 
+class DeliveryBindingTests(unittest.TestCase):
+    """CR-S82-003: the launch record's delivery_bindings (launch
+    schema 1.2, keyed by entitlement_id) supply a GRANTED
+    entitlement's delivery kind and URL. Every other output is
+    byte-identical to the pre-binding producer."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "s44.db")
+        self.store = Store(self.db)
+        self.proc = DurableProcessor(self.store)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _buy(self, rb=None):
+        status, payload = ingest(self.store, rb or readback(), CTX)
+        self.assertEqual(status, "accepted")
+        return self.proc.process(
+            payload["event"],
+            contact_ref=payload["contact_ref_context"])
+
+    def _fulfill_line(self, line_ref):
+        key = ("T1", "txn-1", line_ref, "initiate_fulfillment", "v1")
+        return self.proc.fulfill(key, lambda payload: None)
+
+    def _granted_map(self, record=None):
+        self._buy()
+        self._fulfill_line("li-m")
+        self._fulfill_line("li-b")
+        return self._map(record)
+
+    def _map(self, record=None):
+        # read-only: safe to call repeatedly on one built state
+        return build_fulfillment_map(self.store, "T1", "LN1",
+                                     "contact-1", launch_record=record)
+
+    def _record(self, bindings):
+        return {"schema_version": "1.2", "tenant_id": "T1",
+                "launch_id": "LN1", "delivery_bindings": bindings}
+
+    def test_bound_granted_emits_bound_kind_and_url(self):
+        record = self._record({
+            "ent-main": {"delivery_kind": "download",
+                         "delivery_url": "https://example.test/main"},
+            # an orphan binding (no such entitlement in the map) is
+            # never consulted producer-side; R-DB-1 is the launch
+            # validator's layer
+            "ent-orphan": {"delivery_kind": "download",
+                           "delivery_url": "https://example.test/x"},
+        })
+        m = self._granted_map(record)
+        self.assertEqual(m["entitlements"]["ent-main"], {
+            "state": "granted",
+            "delivery_url": "https://example.test/main",
+            "next_action": "download"})
+        # ent-bump is unbound in the same map: pre-binding behavior
+        self.assertEqual(m["entitlements"]["ent-bump"], {
+            "state": "granted", "delivery_url": None,
+            "next_action": "access"})
+        self.assertNotIn("ent-orphan", m["entitlements"])
+        # ev1 is not a binding input: the version is the store's own
+        self.assertEqual(
+            m["entitlement_version"],
+            self.store.entitlement_version("T1", "LN1", "contact-1"))
+
+    def test_unbound_granted_byte_identical(self):
+        plain = self._granted_map()
+        no_key = self._map({"schema_version": "1.2", "tenant_id": "T1",
+                            "launch_id": "LN1"})
+        empty = self._map(self._record({}))
+        self.assertEqual(plain, no_key)
+        self.assertEqual(plain, empty)
+
+    def test_bound_kind_with_null_url(self):
+        record = self._record({
+            "ent-main": {"delivery_kind": "schedule_included_service",
+                         "delivery_url": None}})
+        m = self._granted_map(record)
+        self.assertEqual(m["entitlements"]["ent-main"], {
+            "state": "granted", "delivery_url": None,
+            "next_action": "schedule_included_service"})
+
+    def test_bound_but_not_granted_keeps_url_null(self):
+        record = self._record({
+            "ent-bump": {"delivery_kind": "download",
+                         "delivery_url": "https://example.test/bump"}})
+        # pending: the bump's fulfillment has not executed
+        self._buy()
+        self._fulfill_line("li-m")
+        m = build_fulfillment_map(self.store, "T1", "LN1",
+                                  "contact-1", launch_record=record)
+        self.assertEqual(m["entitlements"]["ent-bump"], {
+            "state": "pending", "delivery_url": None,
+            "next_action": "noncommercial_next_step"})
+        # revoked: fulfill, then refund the bump line only
+        self._fulfill_line("li-b")
+        refund = readback(provider_event_id="evt-3",
+                          native_event_kind="refund",
+                          payment_status="partially_refunded",
+                          line_items=[readback()["line_items"][1]])
+        _, payload = ingest(self.store, refund, CTX)
+        self.proc.process(payload["event"], contact_ref="contact-1")
+        m = build_fulfillment_map(self.store, "T1", "LN1",
+                                  "contact-1", launch_record=record)
+        self.assertEqual(m["entitlements"]["ent-bump"], {
+            "state": "revoked", "delivery_url": None,
+            "next_action": "manage_purchase"})
+
+    def test_malformed_binding_fails_closed(self):
+        bad_bindings = [
+            {"delivery_kind": "buy_now",  # outside the six entirely
+             "delivery_url": "https://example.test/x"},
+            {"delivery_kind": "support",  # in the six, not a kind
+             "delivery_url": "https://example.test/x"},
+            {"delivery_kind": "download",  # non-https URL
+             "delivery_url": "http://example.test/x"},
+            {"delivery_kind": "download",  # non-string URL
+             "delivery_url": 42},
+            {"delivery_kind": "download"},  # missing delivery_url
+            {"delivery_kind": "download",  # unknown extra key
+             "delivery_url": "https://example.test/x", "extra": 1},
+            "download",  # binding is not an object
+        ]
+        self._buy()
+        self._fulfill_line("li-m")
+        self._fulfill_line("li-b")
+        for bad in bad_bindings:
+            with self.subTest(bad=bad):
+                record = self._record({"ent-main": bad})
+                with self.assertRaises(VocabularyError):
+                    self._map(record)
+
+
 if __name__ == "__main__":
     unittest.main()

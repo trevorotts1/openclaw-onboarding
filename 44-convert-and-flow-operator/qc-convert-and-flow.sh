@@ -318,8 +318,10 @@ assert "INSTRUCTIONS.md contains 'Step 9 — QC GATE' section" \
   "grep -q 'Step 9.*QC GATE\|QC GATE.*before declaring done' \"$SKILL44_DIR/INSTRUCTIONS.md\""
 assert "INSTRUCTIONS.md QC GATE contains verbatim client announce template" \
   "grep -q \"I've built the workflow\" \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'independent QC agent' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'checklist item-by-item' \"$SKILL44_DIR/INSTRUCTIONS.md\""
-assert "INSTRUCTIONS.md QC GATE documents MiniMax sub-agent dispatch (sessions_send)" \
-  "grep -qi 'sessions_send\|MiniMax\|minimax' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md QC GATE documents independent QC dispatch on a different model than the build agent (sessions_send, client-selected/default, availability verified, model recorded)" \
+  "grep -q 'sessions_send' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -qi 'DIFFERENT model than the build' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -qi 'configured default model' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -qi 'RECORD which model' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md names no hardcoded QC provider model" \
+  "! grep -qi 'minimax' \"$SKILL44_DIR/INSTRUCTIONS.md\""
 assert "INSTRUCTIONS.md QC GATE requires caf workflows export + qc-built-workflow.sh" \
   "grep -q 'qc-built-workflow.sh' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'caf workflows export' \"$SKILL44_DIR/INSTRUCTIONS.md\""
 assert "INSTRUCTIONS.md QC GATE 'done only after all-PASS + checklist handed over' rule present" \
@@ -334,8 +336,10 @@ assert "INSTRUCTIONS.md bidirectional link Step 0 <-> Step 9 present" \
   "grep -qi 'BIDIRECTIONAL\|Step 0.*recommendation.*flipped\|flipped.*Step 0' \"$SKILL44_DIR/INSTRUCTIONS.md\""
 assert "references/workflow-build-checklist-template.md exists" \
   "[ -f \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" ]"
-assert "checklist template contains WF-1 through WF-21 (21 items)" \
-  "for i in \$(seq 1 21); do grep -q \"WF-\$i\" \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" || exit 1; done"
+assert "checklist template contains WF-1 through WF-22 (22 items)" \
+  "for i in \$(seq 1 22); do grep -q \"WF-\$i\" \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" || exit 1; done"
+assert "checklist template WF-22 email-body gate present" \
+  "grep -q 'WF-22' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" && grep -qi 'email body' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" && grep -q '200' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
 assert "checklist template WF-4 trigger-active WF-ACTIVE gate present" \
   "grep -qi 'WF-4\|WF-ACTIVE GATE\|TRIGGER-ACTIVE-GATE\|trigger.*active.*publish\|active.*flag' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
 assert "checklist template WF-12 SMS From-number gate present" \
@@ -364,8 +368,10 @@ assert "qc-built-workflow.sh appends to build-events ledger" \
   "grep -q 'build-events.jsonl\|BUILD_EVENTS_LEDGER' \"$SKILL44_DIR/qc-built-workflow.sh\""
 assert "CORE_UPDATES.md AGENTS.md block has PLAN-MODE-before-build rule" \
   "grep -qi 'PLAN MODE\|PLAN_MODE\|plan.*mode.*before.*build\|rushing.*violation' \"$SKILL44_DIR/CORE_UPDATES.md\""
-assert "CORE_UPDATES.md AGENTS.md block has QC-GATE rule (independent MiniMax + checklist handover)" \
-  "grep -qi 'QC GATE\|independent.*MiniMax\|MiniMax.*QC\|checklist.*handover\|checklist.*handed' \"$SKILL44_DIR/CORE_UPDATES.md\""
+assert "CORE_UPDATES.md AGENTS.md block has QC-GATE rule (independent QC on a different model than the build agent + checklist handover)" \
+  "grep -qi 'QC GATE' \"$SKILL44_DIR/CORE_UPDATES.md\" && grep -qi 'DIFFERENT model than the build agent' \"$SKILL44_DIR/CORE_UPDATES.md\" && grep -qi 'checklist handed over' \"$SKILL44_DIR/CORE_UPDATES.md\""
+assert "CORE_UPDATES.md names no hardcoded QC provider model" \
+  "! grep -qi 'minimax' \"$SKILL44_DIR/CORE_UPDATES.md\""
 assert "CORE_UPDATES.md AGENTS.md block has hallucination→reasoning-HIGH requirement" \
   "grep -qi 'HALLUCINATION\|hallucination' \"$SKILL44_DIR/CORE_UPDATES.md\" && grep -qi 'thinking.*HIGH\|HIGH.*thinking\|reasoning.*model' \"$SKILL44_DIR/CORE_UPDATES.md\""
 
