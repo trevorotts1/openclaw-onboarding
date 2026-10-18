@@ -11,15 +11,14 @@ products were reported as one entitlement renamed -- so
 validate_offer_difference emitted D1-OFFER-IDENTICAL-PROMISE from the
 same_entitlements conjunct.
 
-The cure discounts the tokens both ids share (the record/launch
-prefix) before comparing, so only distinguishing tokens can carry a
-match. A genuine rename still matches when the distinguishing token
-sets agree after stemming, synonym folding and token-order
-normalisation.
+S71-02e replaced the token comparison entirely: identity is now the
+DECLARED identifier set (exact set equality, casefolded, with an optional
+record-declared alias map). The token-derived rename expectations below
+are therefore rewritten to the contract semantics; the recorded defect
+pins are unchanged and still hold.
 
-Both directions are pinned below, and the second direction is the
-class control: it proves the cure discriminates rather than merely
-lowering every score.
+Both directions are pinned, and the second direction is the class
+control: a declared rename still matches, an undeclared one does not.
 """
 import copy
 import sys
@@ -98,28 +97,35 @@ class SharedPrefixRegressionTests(unittest.TestCase):
         self.assertFalse(vd._deliverables_feature_paraphrase_match(
             dd, ud, de, ue, td, tu))
 
-    def test_shared_prefix_still_matches_on_the_other_side(self):
-        """Mirror of the defect pair: prefix plus a shared distinguishing
-        token set is still one id renamed."""
-        self.assertTrue(vd._entitlement_sets_match(
+    def test_reordered_token_spelling_is_not_identity(self):
+        """S71-02e: reordering is a different declared string, and order
+        replacement alone proves nothing without a record-declared alias."""
+        self.assertFalse(vd._entitlement_sets_match(
             ["golden-daybreak-core"], ["daybreak-golden-core"]))
 
 
 class GenuineRenameControlTests(unittest.TestCase):
-    """(b) Class control: D-13 detection must still work."""
+    """(b) Class control: a DECLARED rename is still detected."""
 
-    def test_renamed_ids_without_record_prefix_match(self):
+    def test_declared_alias_matches(self):
         self.assertTrue(vd._entitlement_sets_match(
-            ["daybreak-fasttrack"], ["fasttrack-daybreak"]))
+            ["training-sessions"], ["live-coaching"],
+            {"live-coaching": "training-sessions"}))
 
-    def test_renamed_ids_still_emit_identical_promise(self):
+    def test_declared_alias_still_emits_identical_promise(self):
         self.assertIn(IDENT, vd.validate_offer_difference(
+            u1_offer(["training-sessions"]),
+            d1_offer(["live-coaching"]),
+            entitlement_aliases={"live-coaching": "training-sessions"}))
+
+    def test_undeclared_rename_does_not_match(self):
+        self.assertFalse(vd._entitlement_sets_match(
+            ["daybreak-fasttrack"], ["fasttrack-daybreak"]))
+        self.assertFalse(vd._entitlement_sets_match(
+            ["training-sessions"], ["session-training"]))
+        self.assertNotIn(IDENT, vd.validate_offer_difference(
             u1_offer(["daybreak-fasttrack"]),
             d1_offer(["fasttrack-daybreak"])))
-
-    def test_stem_and_synonym_folding_still_match(self):
-        self.assertTrue(vd._entitlement_sets_match(
-            ["training-sessions"], ["session-training"]))
 
     def test_distinguishing_token_keeps_ids_apart(self):
         self.assertFalse(vd._entitlement_sets_match(
@@ -137,18 +143,13 @@ class AdvisoryRegressionTests(unittest.TestCase):
     """Review advisories A and B on the residual-token cure."""
 
     def test_all_filler_ids_are_not_one_set(self):
-        """Advisory A: two ids that reduce to no content tokens leave two
-        empty residuals, which must not match. An id carrying no promise
-        word proves nothing about a rename."""
-        self.assertEqual(vd._content_tokens("the-and"), set())
-        self.assertEqual(vd._content_tokens("of-the"), set())
+        """Advisory A: ids that carry no promise word still compare as
+        their declared strings; two different ids are not one set."""
         self.assertFalse(vd._entitlement_sets_match(
             ["the-and"], ["of-the"]))
 
     def test_distinguishing_word_outside_synonym_table_keeps_ids_apart(self):
-        """Advisory B: the cure narrows rename detection to the synonym
-        table. Prefixed ids whose distinguishing word is outside that table
-        are different entitlements, not one id renamed."""
+        """Advisory B: no synonym table exists in the comparison any more."""
         self.assertFalse(vd._entitlement_sets_match(
             ["acme-core-license"], ["acme-core-subscription"]))
 
