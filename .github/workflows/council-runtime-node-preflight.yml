@@ -1,0 +1,39 @@
+name: Council Node and SQLite preflight
+
+on:
+  pull_request:
+    paths:
+      - "77-council-of-wise-elders/**"
+      - ".github/workflows/council-runtime-node-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-preflight:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Validate standalone runtime version and SQLite preflight
+        working-directory: 77-council-of-wise-elders
+        run: node --test scripts/tests/node-runtime-preflight.test.mjs
+      - name: Assert isolated preflight behavior and no accidental installation
+        working-directory: 77-council-of-wise-elders
+        shell: bash
+        run: |
+          if [[ "${{ matrix.node }}" == "20" ]]; then
+            if node scripts/install-runtime.mjs --check-prereqs; then
+              echo "Node 20 must not pass Council runtime preflight"
+              exit 1
+            fi
+          else
+            node scripts/install-runtime.mjs --check-prereqs
+          fi
