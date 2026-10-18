@@ -363,7 +363,7 @@ This appendix is appended history; nothing above was rewritten.
 
 - **Bundle shape**: every bundle is now `{result, page_plan, native_binding}`.
   `native_binding` is exactly the contract record: kind `extra_offer_binding`,
-  interface_ref `S79 extra_offer_interface.md DRAFT (fixture level)`,
+  interface_ref `S79 extra_offer_interface.md CONFIRMED revision 2 (fixture level)`,
   binding_status `interface_conformant_pending_s06`, native_action_id null,
   capability_evidence_ref, open_questions
   [S06-Q1..S06-Q6, S44-Q7, S44-Q8, S49-Q9]. It lives at bundle top level
