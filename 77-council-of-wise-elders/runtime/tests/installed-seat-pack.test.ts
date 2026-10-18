@@ -19,6 +19,16 @@ test('all nine real installed advisor packs load distinct, bounded briefing cont
     assert.ok(pack.pack_version.includes('+sha256.'), seatId);
     assert.ok(pack.briefing_text.includes(`seat_id=${seatId}`), seatId);
     assert.ok(pack.briefing_text.includes('ADVISOR BRIEFING'), seatId);
+    assert.ok(pack.briefing_text.includes('SHARED FRAMEWORK EXCERPTS'), seatId);
+    assert.ok(pack.briefing_text.includes('SHARED DECISION RULE EXCERPTS'), seatId);
+    const sourceFrameworks = JSON.parse(readFileSync(join(skillRoot, 'advisors', seatId, 'frameworks.json'), 'utf8')).items;
+    const extracted = JSON.parse(pack.briefing_text.split('SHARED FRAMEWORK EXCERPTS (existing pack; attribution unchanged):\n')[1].split('\n\n')[0]).items;
+    if (sourceFrameworks.length) {
+      assert.ok(extracted.length, `${seatId}: existing framework content must reach the prompt`);
+      const field = ['summary', 'concept', 'application', 'description'].find((key) => sourceFrameworks[0][key]);
+      assert.ok(field, `${seatId}: substantive source field exists`);
+      assert.deepEqual(extracted[0][field], sourceFrameworks[0][field]);
+    }
     assert.ok(pack.briefing_text.length > 500, seatId);
     assert.ok(pack.briefing_text.length <= 20000, seatId);
     assert.equal(seen.has(pack.pack_version), false, `${seatId} should have its own frozen hash`);
@@ -43,6 +53,24 @@ test('packs cannot leak user-private source material into a shared prompt', () =
   const pack = loadInstalledSeatPack(skillRoot, 'russell-brunson');
   assert.doesNotMatch(pack.briefing_text, /user_private/);
   assert.doesNotMatch(pack.briefing_text, /private_scope/);
+  const frameworks = JSON.parse(readFileSync(join(skillRoot, 'advisors/russell-brunson/frameworks.json'), 'utf8'));
+  for (const item of frameworks.items.filter((item: { scope?: string }) => item.scope === 'private_scope')) {
+    assert.equal(pack.briefing_text.includes(item.id), false);
+  }
+  assert.match(pack.briefing_text, /rule-demand-before-diagram/);
+  assert.match(pack.briefing_text, /blackceo_adaptation/);
+});
+
+test('existing structured frameworks and rules reach the prompt without claiming new source approval', () => {
+  const pack = loadInstalledSeatPack(skillRoot, 'simon-sinek');
+  const frameworks = JSON.parse(readFileSync(join(skillRoot, 'advisors/simon-sinek/frameworks.json'), 'utf8'));
+  const rules = JSON.parse(readFileSync(join(skillRoot, 'advisors/simon-sinek/decision-rules.json'), 'utf8'));
+  const serializedFrameworks = pack.briefing_text.split('SHARED FRAMEWORK EXCERPTS (existing pack; attribution unchanged):\n')[1].split('\n\n')[0];
+  const serializedRules = pack.briefing_text.split('SHARED DECISION RULE EXCERPTS (existing pack; attribution unchanged):\n')[1];
+  assert.ok(frameworks.items[0].concept.length > 0);
+  assert.equal(JSON.parse(serializedFrameworks).items[0].concept, frameworks.items[0].concept);
+  assert.equal(JSON.parse(serializedRules).items[0].rule, rules.items[0].rule);
+  assert.match(pack.briefing_text, /bibliographic_only/);
 });
 
 test('missing, modified or wrong-seat installed pack fails before any request', () => {
