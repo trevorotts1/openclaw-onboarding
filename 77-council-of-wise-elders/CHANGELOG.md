@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.12: WER-026 local acceptance receipts (install/update/rollback and 3-round journey)
+
+- Records real acceptance evidence under `evidence/wer026/local/`: the actual installer run into an isolated prefix with staged immutable releases, a repeat install proven byte-identical (prefix diff 0 bytes over 1559 lines), a second build moving the activation pointer while the previous release stayed usable, rollback restoring the prior release, harness invocation from an unrelated working directory returning byte-identical results, no service registered, no launchd loaded and no process left behind, and a model probe reported honestly as `BLOCKED_ENVIRONMENT` (`probe` exits 3 `COUNCIL_FEATURE_NOT_READY` — the dispatcher route is unimplemented and no production code imports `model-probe.ts`).
+- Records the create-to-verdict journey under `evidence/wer026/journey/`: three rounds completed with real session ids (`sess-w11u002-round1/2/3`), nine seats x three rounds x nine pack versions in real SQLite state, replay and export delta-0 across all 19 authorization tables, duplicate create refused with `COUNCIL_STATE_CONFLICT`, process restart preserving session ids, cross-round isolation (`COUNCIL_SESSION_NOT_FOUND` across data dirs) and byte-identical round-1 exports across repeats.
+- Each receipt was independently re-run by the reviewer in its own scratch prefix rather than accepted from the builder's narrative.
+
 ## v1.0.11: platform adapter, remote Access identity, cohort-parity detector
 
 - Adds the OpenClaw VPS/container platform adapter (`runtime/src/platform/`): persistent versus ephemeral mount detection that **refuses** a data directory on a replaceable tree with a concrete reason and an explicit unobserved/`virtiofs` state surfacing as `BLOCKED_PLATFORM` rather than a guess, container-vs-host loopback disambiguation that refuses to treat the current container's `127.0.0.1` as the host, UID/service-identity resolution instead of assuming `localhost`, free-port selection that reuses the WER-021 front door and **never kills** an unrelated listener, and a durable handoff (`wise-elders.platform-handoff/v1`) that restores sessions and reservations across a recreate with zero duplicates. Suite 16/16; the 7 pre-existing runtime failures are unchanged against a detached control worktree at base.
