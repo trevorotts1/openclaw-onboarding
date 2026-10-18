@@ -1,0 +1,10 @@
+{
+  "ok": false,
+  "error": {
+    "code": "COUNCIL_FEATURE_NOT_READY",
+    "message": "Live route probing is not available in this build yet. It is owned by CWE-009, CWE-010, and CWE-049, and this foundation does not simulate it.",
+    "retryable": false,
+    "action": "Wait for CWE-009, CWE-010, and CWE-049 to land, or use the surfaces that are ready.",
+    "request_id": null
+  }
+}

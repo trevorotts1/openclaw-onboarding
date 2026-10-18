@@ -1,0 +1,14 @@
+== worktree ==
+53d772a996835c783927f900cb6a6880948e60a3
+?? 77-council-of-wise-elders/evidence/
+status_exit=0
+== runtime ==
+v24.21.0
+11.19.0
+== build ==
+npm run build (tssc + esbuild) exit 0; dist/blackceo-council.mjs sha256:
+a85987869541f51398c3a05aabda4234986c13e00ddfa0f1a2f63ad5bf352172  <operator-home>/.claude/state/council-elders/lanes/W11-U002-lane/repo/77-council-of-wise-elders/runtime/dist/blackceo-council.mjs
+== isolated HOME ==
+       0
+== processes matching lane ==
+       0

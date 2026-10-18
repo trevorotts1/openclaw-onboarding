@@ -1,0 +1,116 @@
+# W11-U002 exact commands and exit codes
+# cwd prefixes abbreviated: L=<lane>, R=<lane>/repo/77-council-of-wise-elders, CLI=node <R>/runtime/dist/blackceo-council.mjs
+# All CLI calls ran with HOME=<lane>/home (empty directory).
+
+## Setup
+git -C L/repo worktree add --detach L/repo 53d772a996835c783927f900cb6a6880948e60a3   rc=0
+git -C L/repo rev-parse HEAD                                   -> 53d772a996835c783927f900cb6a6880948e60a3
+cd R/runtime && npm run build                                  rc=0
+sha256 R/runtime/dist/blackceo-council.mjs                     -> a85987869541f51398c3a05aabda4234986c13e00ddfa0f1a2f63ad5bf352172
+L/repo/.../node_modules/.bin/tsx L/bin/make-fixtures.mts       rc=0
+
+## Round 1 — create
+HOME=L/home CLI create --spec L/fixtures/session-round1.json --brief L/fixtures/brief-round1.json --data-dir L/data/round1 --json
+  rc=0  session_id=sess-w11u002-round1 state=DRAFT sample=false
+
+## Duplicate create (same input)
+HOME=L/home CLI create --spec L/fixtures/session-round1.json --brief L/fixtures/brief-round1.json --data-dir L/data/round1 --json
+  rc=3  COUNCIL_STATE_CONFLICT "Session sess-w11u002-round1 already exists."
+  sessions table count = 1
+
+## Round 1 — authorization preview (real CLI)
+HOME=L/home CLI authorization preview sess-w11u002-round1 --route-snapshot L/fixtures/route-snapshot-round1.json --data-dir L/data/round1 --json
+  rc=0  preview_id=b52da920-cc8a-4b99-9079-8b8df81344aa  seats=9
+
+## Round 1 — headless approve (real CLI, deliberately attempted)
+HOME=L/home CLI authorization approve --preview b52da920-cc8a-4b99-9079-8b8df81344aa --data-dir L/data/round1 --json
+  rc=3  RUN_AUTHORIZATION_REQUIRED "Headless approval is refused: no controlling-terminal confirmation is available and no standing grant was presented."
+
+## Round 1 — start (dispatcher runCli with injected fixture host)
+HOME=L/home L/repo/.../node_modules/.bin/tsx L/bin/start-driver.mts --data-dir L/data/round1 --session sess-w11u002-round1 --grant-ref grant-w11u002-round1 --spec L/fixtures/session-round1.json --brief L/fixtures/brief-round1.json
+  rc=0  state=COMPLETED state_version=10
+
+## Round 1 — status / verdict / replay
+HOME=L/home CLI status  sess-w11u002-round1 --data-dir L/data/round1 --json   rc=0  state=COMPLETED v10
+HOME=L/home CLI verdict sess-w11u002-round1 --data-dir L/data/round1 --json > logs/round1-verdict.json
+  rc=0  content_sha256=ed32838faacca18372b899890cc026758da16085a1fe5b0a464718924e125924
+HOME=L/home CLI replay  sess-w11u002-round1 --data-dir L/data/round1 --json   rc=0  68 events at that point
+
+## Round 1 — controlled replay/export delta
+node L/bin/db-counts.mjs L/data/round1/council.db   -> sessions=1 cards=27 verdicts=1 checkpoints=27 events=72
+HOME=L/home CLI replay sess-w11u002-round1 --data-dir L/data/round1 --json   rc=0
+node L/bin/db-counts.mjs L/data/round1/council.db   -> identical (delta 0 on every table)
+HOME=L/home CLI export sess-w11u002-round1 --format json --out L/export/round1-fourth.json --data-dir L/data/round1 --json
+  rc=0  sha256=e8f2bc79d473a8f4ba84918bae85f17984ff96809b71d23bbb332203e5b34a68
+node L/bin/db-counts.mjs L/data/round1/council.db   -> sessions=1 cards=27 verdicts=1 checkpoints=27 events=73 (only the export journal event)
+
+## Round 1 — authorization DB delta across export
+node L/bin/db-counts.mjs L/data/round1/council-authorization.db   -> 19 tables recorded
+HOME=L/home CLI export sess-w11u002-round1 --format md --out L/export/round1-fifth.md --data-dir L/data/round1 --json   rc=0
+node L/bin/db-counts.mjs L/data/round1/council-authorization.db   -> every council_* delta = 0
+  (council_sessions=1, council_jobs=0, council_task_links=0, council_run_previews=1 before and after)
+
+## Round 2 — create, isolation, preview, start, status, verdict, replay, exports
+HOME=L/home CLI create --spec L/fixtures/session-round2.json --brief L/fixtures/brief-round2.json --data-dir L/data/round2 --json
+  rc=0  session_id=sess-w11u002-round2 state=DRAFT
+HOME=L/home CLI status sess-w11u002-round1 --data-dir L/data/round2 --json
+  rc=3  COUNCIL_SESSION_NOT_FOUND
+HOME=L/home CLI pause  sess-w11u002-round1 --data-dir L/data/round2 --json
+  rc=3  COUNCIL_SESSION_NOT_FOUND
+HOME=L/home CLI authorization preview sess-w11u002-round2 --route-snapshot L/fixtures/route-snapshot-round2.json --data-dir L/data/round2 --json
+  rc=0  preview_id=87ddb164-ca4d-44b5-b6a1-b06c8a93ee4b seats=9
+HOME=L/home tsx L/bin/start-driver.mts ... --session sess-w11u002-round2 ...   rc=0  COMPLETED v10
+HOME=L/home CLI status|verdict|replay sess-w11u002-round2 --data-dir L/data/round2 --json   rc=0 each
+HOME=L/home CLI export sess-w11u002-round2 --format md   --out L/export/round2.md          --data-dir L/data/round2 --json  rc=0
+HOME=L/home CLI export sess-w11u002-round2 --format json --out L/export/round2.json        --data-dir L/data/round2 --json  rc=0
+HOME=L/home CLI export sess-w11u002-round2 --format json --out L/export/round2-second.json --data-dir L/data/round2 --json  rc=0
+  export delta: sessions 1->1, cards 27->27, verdicts 1->1, events 68->71
+  cmp round2.json round2-second.json -> identical
+
+## Round 3 — create, preview, start, status, verdict, replay, exports
+HOME=L/home CLI create --spec L/fixtures/session-round3.json --brief L/fixtures/brief-round3.json --data-dir L/data/round3 --json
+  rc=0  session_id=sess-w11u002-round3 state=DRAFT
+HOME=L/home CLI authorization preview sess-w11u002-round3 --route-snapshot L/fixtures/route-snapshot-round3.json --data-dir L/data/round3 --json
+  rc=0  preview_id=480aaae0-a365-420c-97f8-f5ed9ae0e925
+HOME=L/home tsx L/bin/start-driver.mts ... --session sess-w11u002-round3 ...   rc=0  COMPLETED v10
+HOME=L/home CLI status|verdict|replay sess-w11u002-round3 --data-dir L/data/round3 --json   rc=0 each
+HOME=L/home CLI export sess-w11u002-round3 --format md|json|json --data-dir L/data/round3 --json   rc=0 each
+  export delta: sessions 1->1, cards 27->27, verdicts 1->1, events 68->71
+
+## Cross-round / restart
+HOME=L/home CLI status sess-w11u002-round1 --data-dir L/data/round3 --json   rc=3 COUNCIL_SESSION_NOT_FOUND
+for n in 1 2 3; do for i in 1 2 3; do CLI status sess-w11u002-round$n --data-dir L/data/round$n --json; done; done
+  rc=0 each; identical session_id/state/state_version across three separate processes per round
+sha256 round1 exports after round3:
+  md   f25aef15c85899cbb86a144e827d36104b28b5683aabc92a4f2d5ba916886f65  (same as before round3)
+  json e8f2bc79d473a8f4ba84918bae85f17984ff96809b71d23bbb332203e5b34a68  (same as before round3)
+
+## Failed / interrupted rounds
+# invalid spec/brief binding
+HOME=L/home CLI create --spec L/fixtures/session-invalid.json --brief L/fixtures/brief-invalid.json --data-dir L/data/failed-a2 --json
+  rc=2  COUNCIL_INVALID_INPUT "spec.brief_sha256 does not match the canonical hash of the supplied brief."
+  sessions=0 cards=0 verdicts=0
+# create then refused start (unaccepted grant ref)
+HOME=L/home CLI create --spec L/fixtures/session-round1.json --brief L/fixtures/brief-round1.json --data-dir L/data/failed-b --json  rc=0
+HOME=L/home tsx L/bin/start-driver.mts --data-dir L/data/failed-b --session sess-w11u002-round1 --grant-ref grant-wrong --accepted-ref grant-w11u002-round1 ...
+  rc=3  RUN_AUTHORIZATION_REQUIRED
+HOME=L/home CLI status sess-w11u002-round1 --data-dir L/data/failed-b --json   rc=0  state=DRAFT v0
+HOME=L/home CLI verdict sess-w11u002-round1 --data-dir L/data/failed-b --json  rc=3  COUNCIL_VERDICT_NOT_READY
+HOME=L/home CLI create (same input, same dir) --json                           rc=3  COUNCIL_STATE_CONFLICT
+  failed-b counts: sessions=1 cards=0 verdicts=0 checkpoints=0 events=1
+# SIGKILL 2s into a delayed start (1200 ms per model call)
+node --import tsx L/bin/start-driver.mts ... --data-dir L/data/failed-c ... --delay-ms 1200 &
+kill -9 <pid>  -> process exit 137
+  failed-c after kill: state=ROUND_1 v4, sessions=1 cards=1 checkpoints=2 verdicts=0 events=7
+HOME=L/home tsx L/bin/start-driver.mts ... --data-dir L/data/failed-c ...      rc=3  COUNCIL_STATE_CONFLICT (not DRAFT)
+HOME=L/home CLI resume sess-w11u002-round1 --grant-ref grant-fc --data-dir L/data/failed-c --json
+  rc=3  COUNCIL_STATE_CONFLICT (only PAUSED/BLOCKED resume)
+HOME=L/home CLI verdict sess-w11u002-round1 --data-dir L/data/failed-c --json  rc=3  COUNCIL_VERDICT_NOT_READY
+ps -Ao pid,command | grep -F W11-U002-lane | grep -v grep | wc -l   -> 0
+
+## Evidence self-check
+cd 77-council-of-wise-elders/evidence/wer026/journey && node verify-journey.mjs   rc=0 (23 PASS lines)
+
+## Final repository state
+git -C L/repo status --porcelain   -> "?? 77-council-of-wise-elders/evidence/" only
+git -C L/repo rev-parse HEAD       -> 53d772a996835c783927f900cb6a6880948e60a3

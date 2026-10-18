@@ -1,0 +1,22 @@
+{
+  "schema": "wise-elders.council-runtime-release/v1",
+  "releaseId": "rel-a1ab77dff250",
+  "sourceManifestDigest": "a1ab77dff250d015f10270015127fe9f4e824dbb831d692aff2269a493350c11",
+  "artifactDigest": "0dcf02be9e1800204151ad8344d4f32cbd2c12c8c7f7fdf38c47c05bf8e4aabb",
+  "dataDir": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/data",
+  "active": {
+    "schema": "wise-elders.council-runtime-active/v1",
+    "releaseId": "rel-a1ab77dff250",
+    "releasePath": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/releases/rel-a1ab77dff250",
+    "receiptPath": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/receipts/rel-a1ab77dff250.release.json",
+    "sourceManifestDigest": "a1ab77dff250d015f10270015127fe9f4e824dbb831d692aff2269a493350c11",
+    "artifactDigest": "0dcf02be9e1800204151ad8344d4f32cbd2c12c8c7f7fdf38c47c05bf8e4aabb",
+    "nodeExecutable": "<operator-home>/.nvm/versions/node/v24.21.0/bin/node",
+    "nodeVersion": "v24.21.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "dataDir": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/data",
+    "activatedAt": "2026-10-18T20:07:02.722Z",
+    "previousReleaseId": "rel-7bdc0b6e3565"
+  }
+}

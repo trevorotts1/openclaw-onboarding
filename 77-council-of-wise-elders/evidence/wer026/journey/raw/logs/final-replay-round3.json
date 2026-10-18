@@ -1,0 +1,1204 @@
+{
+  "ok": true,
+  "sample": false,
+  "events": [
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "448e3ba0-31af-46ed-89c7-839f6c7b29a8",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_created",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "owner",
+      "payload": {
+        "mode": "full",
+        "sample": false
+      },
+      "created_at": "2026-10-18T20:09:47.599Z",
+      "sequence": 1
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "00fd71fa-fad7-4ee4-b229-c4db7111dce6",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "owner",
+      "payload": {
+        "from": "DRAFT",
+        "to": "READY"
+      },
+      "created_at": "2026-10-18T20:09:50.653Z",
+      "sequence": 2
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "9aa9ab7b-3f5c-48bc-9e1a-7d701fc5f4f5",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "READY",
+        "to": "QUEUED"
+      },
+      "created_at": "2026-10-18T20:09:50.654Z",
+      "sequence": 3
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "a0f4d660-3d77-44b0-9942-0127f3c8da88",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "QUEUED",
+        "to": "PREPARING"
+      },
+      "created_at": "2026-10-18T20:09:50.654Z",
+      "sequence": 4
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "9a66b428-edb2-4f2f-91db-22a8398784b1",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "PREPARING",
+        "to": "ROUND_1"
+      },
+      "created_at": "2026-10-18T20:09:50.654Z",
+      "sequence": 5
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "b26a8666-5e24-4b9a-8d26-61651b5a72e4",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "simon-sinek",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:simon-sinek:d8b38495a54863a4"
+      },
+      "created_at": "2026-10-18T20:09:50.662Z",
+      "sequence": 6
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "fd6378b0-8d0e-4ea8-adba-a82dce989902",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:simon-sinek:d8b38495a54863a4",
+        "provider_request_id": "fixture-req-1"
+      },
+      "created_at": "2026-10-18T20:09:50.662Z",
+      "sequence": 7
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "1176167b-4434-47e7-b15f-a958bcf9b490",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "td-jakes",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:td-jakes:96b1484d8f2ab18a"
+      },
+      "created_at": "2026-10-18T20:09:50.665Z",
+      "sequence": 8
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "618730e4-c65f-40d1-b30e-1e9122cd338b",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:td-jakes:96b1484d8f2ab18a",
+        "provider_request_id": "fixture-req-2"
+      },
+      "created_at": "2026-10-18T20:09:50.665Z",
+      "sequence": 9
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "fe9da542-e742-494e-89eb-1e44b6591e2c",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "oprah-winfrey",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:oprah-winfrey:14d9c08d5c67f3d8"
+      },
+      "created_at": "2026-10-18T20:09:50.667Z",
+      "sequence": 10
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "72a50360-b3f8-410d-966e-4c5f716edca2",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:oprah-winfrey:14d9c08d5c67f3d8",
+        "provider_request_id": "fixture-req-3"
+      },
+      "created_at": "2026-10-18T20:09:50.668Z",
+      "sequence": 11
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "415c4194-669e-48d4-a057-7e07fe4ce602",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "tiffany-aliche",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:tiffany-aliche:3ca11c95e71229e7"
+      },
+      "created_at": "2026-10-18T20:09:50.669Z",
+      "sequence": 12
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "391f3670-3eea-4ccc-b2a2-ab1599700ea8",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:tiffany-aliche:3ca11c95e71229e7",
+        "provider_request_id": "fixture-req-4"
+      },
+      "created_at": "2026-10-18T20:09:50.670Z",
+      "sequence": 13
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "479e8fba-34dd-4db6-91f6-1e099263fc03",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "russell-brunson",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:russell-brunson:e30739d6240fbc9c"
+      },
+      "created_at": "2026-10-18T20:09:50.673Z",
+      "sequence": 14
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "da9e63bf-b03e-4b09-a891-763107ac7fb2",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:russell-brunson:e30739d6240fbc9c",
+        "provider_request_id": "fixture-req-5"
+      },
+      "created_at": "2026-10-18T20:09:50.673Z",
+      "sequence": 15
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "5f24a0b7-1f70-47a2-a1ef-14b2ffc442cf",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "michelle-obama",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:michelle-obama:7f896ad40b8007c2"
+      },
+      "created_at": "2026-10-18T20:09:50.676Z",
+      "sequence": 16
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "1f713ea7-8192-4299-8bf5-1ea487610423",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:michelle-obama:7f896ad40b8007c2",
+        "provider_request_id": "fixture-req-6"
+      },
+      "created_at": "2026-10-18T20:09:50.676Z",
+      "sequence": 17
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "79efb89c-2cf6-49a1-97b6-f300476f7c1e",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "brene-brown",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:brene-brown:88fc3dcedbd19d14"
+      },
+      "created_at": "2026-10-18T20:09:50.678Z",
+      "sequence": 18
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "d3a47526-37fe-4ed9-a4bd-e4566a9bcdc8",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:brene-brown:88fc3dcedbd19d14",
+        "provider_request_id": "fixture-req-7"
+      },
+      "created_at": "2026-10-18T20:09:50.678Z",
+      "sequence": 19
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "486847df-8235-486a-9804-1cf63c050381",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "dennis-kimbro",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:dennis-kimbro:acc0c9f0ef7b4029"
+      },
+      "created_at": "2026-10-18T20:09:50.679Z",
+      "sequence": 20
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "d2d722e5-fc27-4d8e-a2bc-1a84a945ea71",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:dennis-kimbro:acc0c9f0ef7b4029",
+        "provider_request_id": "fixture-req-8"
+      },
+      "created_at": "2026-10-18T20:09:50.679Z",
+      "sequence": 21
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "dae015f7-ba80-4071-96cc-98993d03572f",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "les-brown",
+        "round": 1,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:les-brown:aa99621da379c0a6"
+      },
+      "created_at": "2026-10-18T20:09:50.681Z",
+      "sequence": 22
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "3746dc29-9d22-4ef8-80b6-ab3e740baf72",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-1:les-brown:aa99621da379c0a6",
+        "provider_request_id": "fixture-req-9"
+      },
+      "created_at": "2026-10-18T20:09:50.681Z",
+      "sequence": 23
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "a9400297-00a5-41c7-8cd9-740d988e0e8d",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "chair",
+      "payload": {
+        "from": "ROUND_1",
+        "to": "CRUX_REVIEW"
+      },
+      "created_at": "2026-10-18T20:09:50.681Z",
+      "sequence": 24
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "d2c8f77e-7269-4610-989e-3d61694a0a0e",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "crux_identified",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "chair",
+      "payload": {
+        "crux_id": "crux-1",
+        "type": "numbers",
+        "option_id": "C",
+        "competing_claims": [
+          "tiffany-aliche scores option C at 3",
+          "td-jakes scores option C at 9"
+        ],
+        "responsible_seats": [
+          "tiffany-aliche",
+          "td-jakes"
+        ],
+        "needed_evidence": "Evidence that resolves the 6-point spread on option C.",
+        "resolution_test": "Re-score option C after examining the spread's decisive facts."
+      },
+      "created_at": "2026-10-18T20:09:50.682Z",
+      "sequence": 25
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "72973df4-d46e-4595-a3ec-8c1b2f6b4085",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "CRUX_REVIEW",
+        "to": "ROUND_2"
+      },
+      "created_at": "2026-10-18T20:09:50.682Z",
+      "sequence": 26
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "4a63df1f-3637-443d-a574-29bec280758d",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "simon-sinek",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:simon-sinek:afcd8fac8fbdffa4"
+      },
+      "created_at": "2026-10-18T20:09:50.684Z",
+      "sequence": 27
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "64b915a2-b5e3-48b2-ac69-d19aed351b6d",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:simon-sinek:afcd8fac8fbdffa4",
+        "provider_request_id": "fixture-req-10"
+      },
+      "created_at": "2026-10-18T20:09:50.684Z",
+      "sequence": 28
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "72b34639-3ebc-4e9c-a477-b96c3fe2a7c4",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "td-jakes",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:td-jakes:47ac3beaebcdb680"
+      },
+      "created_at": "2026-10-18T20:09:50.686Z",
+      "sequence": 29
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "0b1f4aee-215f-4ceb-887b-a0a1b8253c9d",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:td-jakes:47ac3beaebcdb680",
+        "provider_request_id": "fixture-req-11"
+      },
+      "created_at": "2026-10-18T20:09:50.686Z",
+      "sequence": 30
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "fca009bc-b844-46b6-9c16-cfc0a443136d",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "oprah-winfrey",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:oprah-winfrey:59114a26c590cb8d"
+      },
+      "created_at": "2026-10-18T20:09:50.687Z",
+      "sequence": 31
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "459e5cdd-b65c-4dcf-9042-06c561a670c4",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:oprah-winfrey:59114a26c590cb8d",
+        "provider_request_id": "fixture-req-12"
+      },
+      "created_at": "2026-10-18T20:09:50.688Z",
+      "sequence": 32
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "009e9a35-9242-4d1b-842a-daf6c5e0de8c",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "tiffany-aliche",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:tiffany-aliche:f91b9637ad4b826d"
+      },
+      "created_at": "2026-10-18T20:09:50.689Z",
+      "sequence": 33
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "ec41774c-ffa5-4255-9c52-6b4fd15885ce",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:tiffany-aliche:f91b9637ad4b826d",
+        "provider_request_id": "fixture-req-13"
+      },
+      "created_at": "2026-10-18T20:09:50.689Z",
+      "sequence": 34
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "84aaab16-42b2-4306-ae30-d27f10112dd0",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "russell-brunson",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:russell-brunson:a2b957772dddabe3"
+      },
+      "created_at": "2026-10-18T20:09:50.691Z",
+      "sequence": 35
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "07ef217e-27c1-4dee-83d5-29a98cd5770c",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:russell-brunson:a2b957772dddabe3",
+        "provider_request_id": "fixture-req-14"
+      },
+      "created_at": "2026-10-18T20:09:50.691Z",
+      "sequence": 36
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "effda6a5-c410-46d0-b03b-e21d8a866131",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "michelle-obama",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:michelle-obama:d58d908995712871"
+      },
+      "created_at": "2026-10-18T20:09:50.693Z",
+      "sequence": 37
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "aa4e9875-87f2-481f-857f-00ec716f8192",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:michelle-obama:d58d908995712871",
+        "provider_request_id": "fixture-req-15"
+      },
+      "created_at": "2026-10-18T20:09:50.693Z",
+      "sequence": 38
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "388659bd-6804-4692-8810-2cf31c53f747",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "brene-brown",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:brene-brown:4fa803452e3ddb62"
+      },
+      "created_at": "2026-10-18T20:09:50.695Z",
+      "sequence": 39
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "9e38c992-3b29-47b1-b219-1ea7a6b390e5",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:brene-brown:4fa803452e3ddb62",
+        "provider_request_id": "fixture-req-16"
+      },
+      "created_at": "2026-10-18T20:09:50.695Z",
+      "sequence": 40
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "5fc48402-58fe-4714-a74c-4a9e5accad2b",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "dennis-kimbro",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:dennis-kimbro:9e6331a08f2a0206"
+      },
+      "created_at": "2026-10-18T20:09:50.697Z",
+      "sequence": 41
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "706cd3bf-b9ac-4c63-b105-0b38d4e20fdf",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:dennis-kimbro:9e6331a08f2a0206",
+        "provider_request_id": "fixture-req-17"
+      },
+      "created_at": "2026-10-18T20:09:50.697Z",
+      "sequence": 42
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "b8fda40d-30c0-4453-aa11-ebe64a041c46",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "les-brown",
+        "round": 2,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:les-brown:2f8d6ee0953b325a"
+      },
+      "created_at": "2026-10-18T20:09:50.700Z",
+      "sequence": 43
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "21b63d30-4907-4f1f-a5c7-d2664901d4b5",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-2:les-brown:2f8d6ee0953b325a",
+        "provider_request_id": "fixture-req-18"
+      },
+      "created_at": "2026-10-18T20:09:50.700Z",
+      "sequence": 44
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "09e5cb43-4662-432b-900b-bd792998a4c8",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "chair",
+      "payload": {
+        "from": "ROUND_2",
+        "to": "DRAFT_RESOLUTION"
+      },
+      "created_at": "2026-10-18T20:09:50.700Z",
+      "sequence": 45
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "13d7a5a4-5d20-42f7-9e37-e8940f109e11",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "resolution_drafted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "chair",
+      "payload": {
+        "recommended_option_id": "B",
+        "semantic_sha256": "496b5e0c77f9bafaffe032b24625e36590f776236f6d891a97a4ae8552b01993"
+      },
+      "created_at": "2026-10-18T20:09:50.701Z",
+      "sequence": 46
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "64ff9759-ef25-4fa8-bcf7-c38736987a32",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "DRAFT_RESOLUTION",
+        "to": "ROUND_3"
+      },
+      "created_at": "2026-10-18T20:09:50.701Z",
+      "sequence": 47
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "a7b2b832-233f-469a-90ef-b2dfe5fac4a5",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "simon-sinek",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:simon-sinek:c29f6887b222ace8"
+      },
+      "created_at": "2026-10-18T20:09:50.703Z",
+      "sequence": 48
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "348ae790-6046-4cf1-b4b8-9af23d8d799b",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:simon-sinek:c29f6887b222ace8",
+        "provider_request_id": "fixture-req-19"
+      },
+      "created_at": "2026-10-18T20:09:50.703Z",
+      "sequence": 49
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "eb98278d-e4fa-4356-8551-faa782a70dfd",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "td-jakes",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:td-jakes:93d87d1381e66975"
+      },
+      "created_at": "2026-10-18T20:09:50.705Z",
+      "sequence": 50
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "90ad6474-18f3-4def-b320-2126a700b014",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:td-jakes:93d87d1381e66975",
+        "provider_request_id": "fixture-req-20"
+      },
+      "created_at": "2026-10-18T20:09:50.705Z",
+      "sequence": 51
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "c8d421d8-8a3b-4ec7-b3e8-66e0db541b5e",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "oprah-winfrey",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:oprah-winfrey:f84a3d0e7c99060a"
+      },
+      "created_at": "2026-10-18T20:09:50.707Z",
+      "sequence": 52
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "8e21285c-4edf-4db1-8c96-31f72873687a",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:oprah-winfrey:f84a3d0e7c99060a",
+        "provider_request_id": "fixture-req-21"
+      },
+      "created_at": "2026-10-18T20:09:50.707Z",
+      "sequence": 53
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "5aadd594-3bb8-422c-a2c2-e8d3fcf12102",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "tiffany-aliche",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:tiffany-aliche:74387bdf6ed853c7"
+      },
+      "created_at": "2026-10-18T20:09:50.709Z",
+      "sequence": 54
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "e924bca6-7c3d-47cf-aab2-6836dafc213a",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:tiffany-aliche:74387bdf6ed853c7",
+        "provider_request_id": "fixture-req-22"
+      },
+      "created_at": "2026-10-18T20:09:50.709Z",
+      "sequence": 55
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "003e3c2e-2818-4f66-b158-52fefb4eaff3",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "russell-brunson",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:russell-brunson:f325de008cf291ab"
+      },
+      "created_at": "2026-10-18T20:09:50.711Z",
+      "sequence": 56
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "f3be0533-c355-4934-82c4-69f2723c6343",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:russell-brunson:f325de008cf291ab",
+        "provider_request_id": "fixture-req-23"
+      },
+      "created_at": "2026-10-18T20:09:50.711Z",
+      "sequence": 57
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "933aafc1-88c4-4eda-a4a6-71fa4fb5f464",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "michelle-obama",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:michelle-obama:64de68c1fae513cf"
+      },
+      "created_at": "2026-10-18T20:09:50.713Z",
+      "sequence": 58
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "3c37a710-475b-4b8b-ab0e-b60424f92009",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:michelle-obama:64de68c1fae513cf",
+        "provider_request_id": "fixture-req-24"
+      },
+      "created_at": "2026-10-18T20:09:50.713Z",
+      "sequence": 59
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "f13abb50-dbe6-465b-a357-71bacdcf46b8",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "brene-brown",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:brene-brown:80a7714ca5848b94"
+      },
+      "created_at": "2026-10-18T20:09:50.715Z",
+      "sequence": 60
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "b8ad2b88-b4ec-444e-9ceb-e89911016b6e",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:brene-brown:80a7714ca5848b94",
+        "provider_request_id": "fixture-req-25"
+      },
+      "created_at": "2026-10-18T20:09:50.715Z",
+      "sequence": 61
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "0f4f4652-48a6-4455-a99a-13d7714fd415",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "dennis-kimbro",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:dennis-kimbro:a4f626965d95be98"
+      },
+      "created_at": "2026-10-18T20:09:50.716Z",
+      "sequence": 62
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "237b6a97-64a7-487e-bc6c-2085a0f8c761",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:dennis-kimbro:a4f626965d95be98",
+        "provider_request_id": "fixture-req-26"
+      },
+      "created_at": "2026-10-18T20:09:50.717Z",
+      "sequence": 63
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "4821546b-b183-43b5-8d5c-f477bf9a3080",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "card_accepted",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "seat_id": "les-brown",
+        "round": 3,
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:les-brown:9b3f57366a1d97d2"
+      },
+      "created_at": "2026-10-18T20:09:50.718Z",
+      "sequence": 64
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "c4e37f2c-f020-444c-86e0-22272a4414ed",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "worker",
+      "payload": {
+        "operation_id": "op:1f0ce2b3-dc04-4576-a8c5-d33bd6a5ae4f:local-tenant:sess-w11u002-round3:a1:round-3:les-brown:9b3f57366a1d97d2",
+        "provider_request_id": "fixture-req-27"
+      },
+      "created_at": "2026-10-18T20:09:50.718Z",
+      "sequence": 65
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "0aecf830-4b7a-4a75-9ddd-a8ca86c509ad",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "ROUND_3",
+        "to": "VERIFYING"
+      },
+      "created_at": "2026-10-18T20:09:50.718Z",
+      "sequence": 66
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "9d76234c-3815-4853-a788-06a6874a1544",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "verdict_validated",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "verdict_revision": 1,
+        "result_kind": "scored"
+      },
+      "created_at": "2026-10-18T20:09:50.720Z",
+      "sequence": 67
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "081781e6-69c6-47e1-8e87-590dea2586ae",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "session_state_changed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": "local-owner",
+      "actor": "system",
+      "payload": {
+        "from": "VERIFYING",
+        "to": "COMPLETED"
+      },
+      "created_at": "2026-10-18T20:09:50.720Z",
+      "sequence": 68
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "export-1f8a2fed-26ce-40c3-9641-bbe7aae1e07a-markdown",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": null,
+      "actor": "worker",
+      "payload": {
+        "kind": "report_export",
+        "request_id": "1f8a2fed-26ce-40c3-9641-bbe7aae1e07a",
+        "format": "markdown",
+        "verdict_revision": 1,
+        "verdict_content_sha256": "5a798ecfb1db08de2ff820b3934de95dc6e5a7cb6572fe240ba0024ee9976da6",
+        "artifact_sha256": "a246f2bc5cad1e3222d4286c54422756bb5215889da9cffed97b8fa1ed950d1f",
+        "exporter_subject": "local-owner",
+        "via": "company",
+        "redacted": false,
+        "redaction_profile_id": null
+      },
+      "created_at": "2026-10-18T20:09:57.042Z",
+      "sequence": 69
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "export-b840073f-397e-4852-bb0b-f42c530c6b49-record_json",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": null,
+      "actor": "worker",
+      "payload": {
+        "kind": "report_export",
+        "request_id": "b840073f-397e-4852-bb0b-f42c530c6b49",
+        "format": "record_json",
+        "verdict_revision": 1,
+        "verdict_content_sha256": "5a798ecfb1db08de2ff820b3934de95dc6e5a7cb6572fe240ba0024ee9976da6",
+        "artifact_sha256": "b1898d836d6c8e896cf6dfff272c9238c77a2a241131c5e91d8bc3cbbad7a2a8",
+        "exporter_subject": "local-owner",
+        "via": "company",
+        "redacted": false,
+        "redaction_profile_id": null
+      },
+      "created_at": "2026-10-18T20:09:57.106Z",
+      "sequence": 70
+    },
+    {
+      "schema_version": "wise-elders.event/v1",
+      "event_id": "export-257a1ccf-b578-45df-94ba-7be5a09e3895-record_json",
+      "session_id": "sess-w11u002-round3",
+      "event_type": "operation_completed",
+      "tenant_id": "local-tenant",
+      "company_id": "local-company",
+      "owner_subject": null,
+      "actor": "worker",
+      "payload": {
+        "kind": "report_export",
+        "request_id": "257a1ccf-b578-45df-94ba-7be5a09e3895",
+        "format": "record_json",
+        "verdict_revision": 1,
+        "verdict_content_sha256": "5a798ecfb1db08de2ff820b3934de95dc6e5a7cb6572fe240ba0024ee9976da6",
+        "artifact_sha256": "b1898d836d6c8e896cf6dfff272c9238c77a2a241131c5e91d8bc3cbbad7a2a8",
+        "exporter_subject": "local-owner",
+        "via": "company",
+        "redacted": false,
+        "redaction_profile_id": null
+      },
+      "created_at": "2026-10-18T20:09:57.168Z",
+      "sequence": 71
+    }
+  ]
+}

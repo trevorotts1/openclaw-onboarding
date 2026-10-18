@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "usable": false,
+  "readiness": {
+    "compiled_cli": "missing",
+    "live_route": "composed_not_probed",
+    "advisor_sources": "unverified",
+    "durable_worker": "unverified",
+    "browser_ui": "unverified",
+    "completed_live_council": "unverified"
+  },
+  "readiness_blockers": [
+    "compiled Council CLI is missing; install and build the runtime",
+    "installed advisor-source qualification has not been verified",
+    "a supervised durable Council worker has not been verified",
+    "the authenticated Council browser UI has not been verified",
+    "a full paid Council session has not been independently verified"
+  ],
+  "contracts": "wise-elders.core/1.0.0",
+  "data_dir": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/doctor-new-data",
+  "settings": {
+    "max_session_provider_requests": 50,
+    "operation_lease_ttl_seconds": 60,
+    "operation_lease_heartbeat_seconds": 15
+  },
+  "checks": [
+    {
+      "name": "node_sqlite",
+      "ok": true,
+      "detail": "node:sqlite module availability for the standalone store"
+    },
+    {
+      "name": "data_dir_outside_skill_tree",
+      "ok": true,
+      "detail": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/doctor-new-data"
+    },
+    {
+      "name": "local_store",
+      "ok": true,
+      "detail": "SQLite store opened in the data directory"
+    },
+    {
+      "name": "live_routes_composed",
+      "ok": true,
+      "detail": "routes: claude-nine-configured, claude-configured, deepseek-configured"
+    },
+    {
+      "name": "run_authorization_service",
+      "ok": true,
+      "detail": "grant service composed (CWE-049, composed by CWE-050): authorization preview/approve/status/revoke are live and session starts resolve grants through the authorization store"
+    }
+  ]
+}

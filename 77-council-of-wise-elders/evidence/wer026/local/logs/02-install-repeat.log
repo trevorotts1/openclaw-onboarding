@@ -1,0 +1,4 @@
+PASS preflight: v24.21.0 with in-memory SQLite read/write and persistent reopen (<operator-home>/.nvm/versions/node/v24.21.0/bin/node)
+INFO runtime package identity: @blackceo/wise-elders-core@0.1.0 (private=true, engines=^22.13.0 || >=24)
+INFO source manifest: 227 protected file(s), sha256 7bdc0b6e356588056b0a36102f0743bc0d9ff88499f6d201235be07f3c45e9a7 (node_modules/dist excluded)
+NOOP: release rel-7bdc0b6e3565 already matches 7bdc0b6e356588056b0a36102f0743bc0d9ff88499f6d201235be07f3c45e9a7 and verifies; nothing changed
