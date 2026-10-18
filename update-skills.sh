@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.32"
+ONBOARDING_VERSION="v27.1.34"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2051,7 +2051,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.32 - safe_json_edit
+# v27.1.34 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4533,6 +4533,48 @@ main() {
                     "$SKILLS_DIR/shared-utils/oct4_frontdoor.py"; do
       if [ -f "$_fd_cand" ]; then _FRONTDOOR_STAGE_PY="$_fd_cand"; break; fi
     done
+    # agent-pull-fix: R2 — a MISSING or OLD shared stage is REFRESHED from main,
+    # never an immediate fatal exit: the library health gate must never block the
+    # very download that fixes it. "Old" = the pair carries no fetch stamp for
+    # this updater's ONBOARDING_VERSION, or no longer exposes the API called
+    # below (an older copy predates it).
+    _FD_STAMP=""
+    for _fd_cand in "$SKILLS_DIR/shared-utils/.frontdoor-fetched-version" \
+                    "$_SCRIPT_DIR/shared-utils/.frontdoor-fetched-version"; do
+      if [ -f "$_fd_cand" ]; then _FD_STAMP="$_fd_cand"; break; fi
+    done
+    _fd_need_fetch=0
+    { [ -n "$_FRONTDOOR_LIB" ] && [ -n "$_FRONTDOOR_STAGE_PY" ]; } || _fd_need_fetch=1
+    [ "$(cat "${_FD_STAMP:-/nonexistent}" 2>/dev/null || true)" = "$ONBOARDING_VERSION" ] || _fd_need_fetch=1
+    { [ -n "$_FRONTDOOR_LIB" ] && grep -q 'frontdoor_run_stage' "$_FRONTDOOR_LIB" 2>/dev/null; } || _fd_need_fetch=1
+    { [ -n "$_FRONTDOOR_STAGE_PY" ] && grep -q 'run_full_stage' "$_FRONTDOOR_STAGE_PY" 2>/dev/null; } || _fd_need_fetch=1
+    if [ "$_fd_need_fetch" = "1" ]; then
+      _fd_dest="$SKILLS_DIR/shared-utils"
+      if ! { mkdir -p "$_fd_dest" 2>/dev/null && [ -w "$_fd_dest" ]; }; then
+        _fd_dest="$_SCRIPT_DIR/shared-utils"
+        mkdir -p "$_fd_dest" 2>/dev/null || true
+      fi
+      echo "  ℹ [FRONT DOOR] shared stage missing or stale — fetching lib-frontdoor.sh + oct4_frontdoor.py from main..."
+      _fd_fetch_ok=1
+      for _fd_name in lib-frontdoor.sh oct4_frontdoor.py; do
+        _fd_tmp="$_fd_dest/.${_fd_name}.tmp.$$"
+        if curl -fsSL --max-time 30 \
+             "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/${_fd_name}" \
+             -o "$_fd_tmp" 2>/dev/null && [ -s "$_fd_tmp" ]; then
+          mv -f "$_fd_tmp" "$_fd_dest/$_fd_name" 2>/dev/null || _fd_fetch_ok=0
+        else
+          rm -f "$_fd_tmp" 2>/dev/null || true
+          _fd_fetch_ok=0
+        fi
+      done
+      if [ "$_fd_fetch_ok" = "1" ]; then
+        printf '%s\n' "$ONBOARDING_VERSION" > "$_fd_dest/.frontdoor-fetched-version" 2>/dev/null || true
+        [ -f "$_fd_dest/lib-frontdoor.sh" ] && _FRONTDOOR_LIB="$_fd_dest/lib-frontdoor.sh"
+        [ -f "$_fd_dest/oct4_frontdoor.py" ] && _FRONTDOOR_STAGE_PY="$_fd_dest/oct4_frontdoor.py"
+      else
+        echo "  ⚠ [FRONT DOOR] could not fetch the shared stage from main (offline or rate-limited)." >&2
+      fi
+    fi
     if [ -z "$_FRONTDOOR_LIB" ] || [ -z "$_FRONTDOOR_STAGE_PY" ]; then
       echo "FATAL: the one-front-door shared stage is missing from this checkout" >&2
       echo "       (looked for shared-utils/lib-frontdoor.sh + shared-utils/oct4_frontdoor.py" >&2
@@ -4716,15 +4758,23 @@ main() {
     # TTY GUARD (v17.0.18): only prompt when stdin is an interactive terminal.
     # Non-interactive (cron / curl|bash / SSH pipe): auto-decline so the updater
     # can never hang on stdin during a re-roll. Interactive behaviour is unchanged.
+    _PENDING_NONINTERACTIVE=0
     if [ -t 0 ]; then
       read -p "Continue with update? (y/N) " -n 1 -r
       echo
     else
       echo "  (non-interactive: no TTY — auto-declining the pending-flag prompt)"
       REPLY="N"
+      _PENDING_NONINTERACTIVE=1
     fi
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
       echo "  Update cancelled."
+      # agent-pull-fix: R3 — a non-interactive cancel exits with a DISTINCT code
+      # (5) so cron/watchers can tell "declined for lack of a terminal" apart
+      # from a successful no-op roll. An interactive "N" still exits 0.
+      if [ "$_PENDING_NONINTERACTIVE" = "1" ]; then
+        exit 5
+      fi
       exit 0
     fi
   fi
@@ -5285,11 +5335,14 @@ u009_presentations_sync_check() {
     # by main() before this function can be reached.
     _marker="${SKILLS_DIR}/.command-center-state"
 
+    # agent-pull-fix: R4 — also recognize the Command Center deployed under the
+    # OpenClaw root (<root>/command-center).
     for _p in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
               "$HOME/projects/command-center" "/data/projects/command-center" \
               "$HOME/projects/blackceo-command-center" \
               "/data/projects/blackceo-command-center" \
               "$HOME/projects/mission-control" "$HOME/blackceo-command-center" \
+              "${OC_ROOT:-$HOME/.openclaw}/command-center" \
               "/opt/mission-control" "/app"; do
       [ -n "$_p" ] || continue
       if [ -d "$_p/.git" ]; then _d="$_p"; break; fi
@@ -11201,6 +11254,8 @@ PY
       printf '%s\n' "$CC_APP_DIR"
       return 0
     fi
+    # R4 (same fix as _cc_currency_probe): also recognize the Command Center
+    # deployed under the OpenClaw root (<root>/command-center).
     for _ccr_cand in \
       "$_CC_DIR_CANONICAL" \
       "/data/projects/command-center" \
@@ -11208,6 +11263,7 @@ PY
       "/data/projects/blackceo-command-center" \
       "$HOME/projects/mission-control" \
       "$HOME/blackceo-command-center" \
+      "${OC_ROOT:-$HOME/.openclaw}/command-center" \
       "/opt/mission-control" \
       "/app"
     do
@@ -11670,10 +11726,28 @@ except Exception:
   if [ -n "$_OC_CONFIG_HASH_BEFORE" ] && [ -n "$_OC_CONFIG_HASH_AFTER" ]       && [ "$_OC_CONFIG_HASH_BEFORE" != "$_OC_CONFIG_HASH_AFTER" ]; then
     echo ""
     echo "  openclaw.json changed — restarting gateway to activate routing config..."
-    if command -v openclaw >/dev/null 2>&1; then
+    # agent-pull-fix: R1 — inside a container the gateway is supervised by the
+    # HOST, and OPENCLAW_NO_GATEWAY_RESTART=1 means the operator forbade a
+    # restart. Both defer: write a `needs_host_restart` marker that the
+    # host-side script consumes. `docker restart openclaw` named a container
+    # that does not exist on these boxes, so it is gone.
+    _GW_MARKER="${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/needs_host_restart"
+    _gw_defer_restart() {
+      mkdir -p "${_GW_MARKER%/*}" 2>/dev/null || true
+      if printf 'reason=%s\nstamped=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_GW_MARKER" 2>/dev/null; then
+        echo "  ⏳ Gateway restart deferred to the host ($1) — marker: $_GW_MARKER"
+      else
+        echo "  ⚠ Cannot write the host-restart marker ($_GW_MARKER) — restart on the host: openclaw gateway restart"
+      fi
+    }
+    if [ -f /.dockerenv ] || [ -d /data/.openclaw ]; then
+      _gw_defer_restart "running inside a container — host supervises the gateway"
+    elif [ "${OPENCLAW_NO_GATEWAY_RESTART:-0}" = "1" ]; then
+      _gw_defer_restart "OPENCLAW_NO_GATEWAY_RESTART=1"
+    elif command -v openclaw >/dev/null 2>&1; then
       openclaw gateway restart >/dev/null 2>&1         && echo "  ✓ Gateway restarted (routing config now live)"         || echo "  ⚠ Gateway restart failed — restart manually: openclaw gateway restart"
     elif [ "$OC_PLATFORM" = "vps" ]; then
-      docker restart openclaw >/dev/null 2>&1         && echo "  ✓ Gateway restarted via docker (routing config now live)"         || echo "  ⚠ docker restart failed — restart manually: openclaw gateway restart"
+      _gw_defer_restart "openclaw CLI not on PATH — host supervises the gateway"
     else
       # v16.2.13: `awk '...exit'` closes the pipe on the first match → `launchctl
       # list` (hundreds of lines) dies with SIGPIPE (rc 141) → `pipefail` promotes

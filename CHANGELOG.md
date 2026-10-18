@@ -1,3 +1,7 @@
+## [v27.1.34]  -  2026-10-18  -  Implement canonical Skill 22 to Council export with explicit provenance and partial diagnostics
+
+## [v27.1.33]  -  2026-10-18  -  Include existing shared Council frameworks and decision rules in advisor context
+
 ## [v27.1.32]  -  2026-10-18  -  Council reviewed repair cohort: runtime readiness, source qualification, and Skill 22 preservation
 
 ### What Changed
