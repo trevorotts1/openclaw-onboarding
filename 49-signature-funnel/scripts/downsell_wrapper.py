@@ -9,9 +9,13 @@ Per CR-S49-005 item 1 (CONFIRMED by S81), the runtime composition is
 the validator library plus this S49 wrapper. The wrapper is the
 invocable command dispatch runs for the downsell_1 role:
 
-  1. ENRICH  builds the Skill 81 downsell-request (27 properties, 26
+  1. ENRICH  builds the Skill 81 downsell-request (28 properties, 26
      required, additionalProperties: false) from the S49 page-request
-     1.0: 18 fields carried verbatim, offer_refs dropped (schema-illegal
+     (1.0, or 1.1 under the adoption map 1.5 dual-accept revision of
+     Skill 81's request contract): 18 fields carried verbatim at 1.0
+     (19 at 1.1: the prompt_policy_id citation rides through into
+     the enriched request, the contract document that carries it),
+     offer_refs dropped (schema-illegal
      there), copy_profile overwritten to the const
      "signature-downsell-v1", and the 8 fields page-request 1.0 does
      not carry sourced from named inputs only - the launch record
@@ -99,15 +103,24 @@ DECLINE_ROUTE = "thank_you"
 # --skill81-root and refuses any byte that diverges from the pin.
 PIN_VALIDATE_DOWNSELL = \
     "2a0d1d9fc8858080f58bcb9f08d84e76a0443332d387a3713e8402618476dd6d"
+# PIN_REQUEST_SCHEMA was advanced by the adoption map 1.5 candidate
+# (2026-10-18) to the dual-accept revision of Skill 81's request
+# contract (schema_version enum 1.0/1.1 plus the Q12
+# prompt_policy_id property); the other two pins stand because
+# those bytes are unchanged.
 PIN_REQUEST_SCHEMA = \
-    "f3eedb92469793d8521aab72a886885baf6c176456e191ccff494161d0d9c61c"
+    "39e056705cae7fac81025e41feebdef5a1ed1ea87409423a4d60268c8c0d9e2b"
 PIN_EXTENSION_SCHEMA = \
     "8108de3c81fe0d93843e8511d94b82ffe2bb0da6d723e3e0438b5268aa39e80e"
 
 # The 19 page-request 1.0 fields (the packet schema's exact property
-# set). This wrapper consumes 1.0-shaped requests ONLY: any other key
-# fails closed by name instead of being forwarded (the upsell
-# wrapper's DEFECT 1 cure rule).
+# set). A 1.1 request additionally carries exactly one key,
+# prompt_policy_id (the prompt-policy citation, Q12 shape); it is
+# admitted only on a request stamped "1.1", under the pair rule
+# enforced in enrich (adoption map 1.5). Any other key fails closed
+# by name instead of being forwarded (the upsell wrapper's DEFECT 1
+# cure rule).
+POLICY_FIELD = "prompt_policy_id"
 REQUEST_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                   "revision", "request_id", "page_id", "page_role",
                   "assigned_skill", "approval_ref", "input_hash", "brand_ref",
@@ -446,13 +459,18 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     naming every field that has no honest source."""
     problems: List[str] = []
 
-    # Input shape: exactly page-request 1.0. Any other key (for
-    # example the schema 1.1 prompt_policy_id) fails closed by name.
-    for key in sorted(set(request) - set(REQUEST_FIELDS)):
+    # Input shape (adoption map 1.5 dual-accept): page-request 1.0,
+    # or page-request 1.1 carrying the prompt-policy citation. The
+    # pair rule binds version and field: a 1.1 request must carry a
+    # non-empty prompt_policy_id; a 1.0 request must not carry the
+    # field at all. Any other key fails closed by name.
+    for key in sorted(set(request) - set(REQUEST_FIELDS)
+                      - {POLICY_FIELD}):
         problems.append(
-            f"request: field {key!r} is not part of page-request 1.0; "
-            "this wrapper consumes 1.0-shaped requests only (refused, "
-            "never forwarded)")
+            f"request: field {key!r} is not part of page-request 1.0 "
+            "or 1.1; this wrapper consumes 1.0-shaped requests and "
+            "1.1 requests carrying the prompt-policy citation only "
+            "(refused, never forwarded)")
     if request.get("page_role") != ROLE:
         problems.append(f"page_role: request page_role "
                         f"{request.get('page_role')!r} does not match "
@@ -460,9 +478,30 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     if request.get("assigned_skill") != SKILL:
         problems.append(f"assigned_skill: request assigns skill "
                         f"{request.get('assigned_skill')!r}, not 81")
-    if request.get("schema_version") != "1.0":
+    version = request.get("schema_version")
+    if version == "1.1":
+        if POLICY_FIELD not in request:
+            problems.append(
+                "prompt_policy_id: a 1.1 request must carry "
+                "prompt_policy_id (the 1.1 label exists to carry "
+                "the field); the request carries none (refused)")
+        elif not (isinstance(request[POLICY_FIELD], str)
+                  and request[POLICY_FIELD].strip()):
+            problems.append(
+                f"prompt_policy_id: value "
+                f"{request[POLICY_FIELD]!r} is not a non-empty "
+                "string; the citation is the minted policy id as a "
+                "plain string (refused)")
+    elif version == "1.0":
+        if POLICY_FIELD in request:
+            problems.append(
+                "prompt_policy_id: prompt_policy_id requires "
+                "request schema_version 1.1 (the 1.0 schema "
+                "forbids the field); the request is stamped 1.0 "
+                "(refused)")
+    else:
         problems.append(f"schema_version: request schema_version "
-                        f"{request.get('schema_version')!r} is not 1.0")
+                        f"{version!r} is not 1.0 or 1.1")
 
     # The launch record must be the record this request approves.
     if isinstance(launch, dict):
@@ -615,6 +654,12 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     if problems:
         raise WrapperError(problems)
 
+    # Every request field rides through verbatim except offer_refs;
+    # on a 1.1 request that carries schema_version "1.1" and the
+    # prompt_policy_id citation into the enriched request, which is
+    # the Skill 81 contract document the citation lives on (the
+    # base page-result 1.0 carries no policy field; the citation is
+    # read at the receipt and registry layer, map section 4).
     enriched = {k: v for k, v in request.items() if k != "offer_refs"}
     enriched["copy_profile"] = D1_COPY_PROFILE
     enriched["declined_u1_offer_ref"] = u1["offer_id"]

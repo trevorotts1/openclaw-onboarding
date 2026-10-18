@@ -24,6 +24,21 @@ keywords read and ignored, by design.
 
 Nothing here calls GHL, charges anything, or proves anything about a
 live launch; it checks the request object only.
+
+Adoption map 1.5 dual-accept (2026-10-18): the schema accepts
+schema_version "1.0" or "1.1" (an enum, a supported keyword) and
+declares the optional prompt_policy_id property in the Q12 shape.
+The pair rule that binds them (a 1.1 request must carry
+prompt_policy_id; a 1.0 request must not carry the field) cannot be
+expressed in the packaged schema: the conditional constructs it
+needs sit outside the supported keyword set above, and an allOf in
+the schema would fail closed as unsupported by design. The pair rule
+therefore stands as one explicit check in validate_request
+(_pair_rule_violations), emitting this module's code vocabulary.
+Skill 81 runs no registry read here: the id is an open string at
+this layer, and refusal of an unregistered id is a registry-layer
+act at dispatch and at the Q11 aggregator (adoption map section 4),
+the allocation the 1.2 and 1.4 candidates recorded.
 """
 import json
 from pathlib import Path
@@ -222,11 +237,31 @@ def _packaged_schema():
     return _SCHEMA_CACHE
 
 
+def _pair_rule_violations(request):
+    """The adoption map 1.5 pair rule, in this module's code
+    vocabulary: a 1.1 request must carry prompt_policy_id (its
+    presence is what the 1.1 label means), and a 1.0 request must
+    not carry it (the 1.0 contract has no such field). The field's
+    own shape (a non-empty string, per the Q12 property the schema
+    declares) is the schema's business, enforced by _check; this
+    check binds only the version and the field's presence. A
+    version outside the enum is the schema's NOT-IN-ENUM refusal
+    and earns no pair code of its own."""
+    version = request.get("schema_version")
+    carries = "prompt_policy_id" in request
+    if version == "1.1" and not carries:
+        return ["D1-REQUEST-MISSING-PROMPT_POLICY_ID"]
+    if version == "1.0" and carries:
+        return ["D1-REQUEST-UNEXPECTED-PROPERTY-PROMPT_POLICY_ID"]
+    return []
+
+
 def validate_request(request, schema=None):
     """Request: a parsed downsell page-request object. Schema: an
     optional parsed schema; defaults to the packaged
     schemas/downsell-request.schema.json. Returns a list of violation
-    codes; empty list means the request satisfies the schema."""
+    codes; empty list means the request satisfies the schema and the
+    adoption map 1.5 pair rule."""
     if not isinstance(request, dict):
         return ["D1-REQUEST-MALFORMED-INPUT"]
     if schema is None:
@@ -239,6 +274,7 @@ def validate_request(request, schema=None):
     violations = []
     unsupported = set()
     _check(request, schema, [], violations, unsupported)
+    violations.extend(_pair_rule_violations(request))
     for keyword in sorted(unsupported):
         violations.append(
             f"D1-REQUEST-UNSUPPORTED-SCHEMA-CONSTRAINT-{_sanitize(keyword)}")
