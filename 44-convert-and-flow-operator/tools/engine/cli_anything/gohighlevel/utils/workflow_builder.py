@@ -200,6 +200,64 @@ def ai_step(name: str, prompt: str, model: str = "gpt-4o", **kw: Any) -> dict:
     }
 
 
+# ── Action ID normalization (A16 layer-7 ruled fix, 2026-10-18) ─────────────
+#
+# The internal backend's step-save validation requires every action ("template")
+# id to be a UUID ("Action validation failed: ... ID: Invalid uuid", observed
+# live 2026-10-18 on a plan whose actions carried human-readable slug ids).
+# Plan-supplied templates may therefore carry non-UUID author ids.  At build
+# time the builder mints a deterministic UUID for each non-UUID action id:
+# UUIDv5 over a FIXED namespace with the name "<location_id>:<original id>".
+# Determinism is the idempotency contract: every re-run of the same plan at the
+# same location derives the identical UUID set, so read-backs and re-builds
+# agree byte-for-byte.  The namespace constant below is part of that contract —
+# NEVER change it, or every previously derived id changes with it.
+_ACTION_ID_NAMESPACE = uuid.UUID("e55e7d58-e496-48c8-afab-ba8f408598b0")
+
+
+def _is_uuid(value: Any) -> bool:
+    """True iff value is a string that parses as a UUID."""
+    if not isinstance(value, str):
+        return False
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def normalize_action_ids(templates: list[dict], location_id: str) -> list[dict]:
+    """Return templates with non-UUID action ids replaced by deterministic
+    UUIDv5 mints (see the section note above).
+
+    Every exact string occurrence of a replaced id anywhere in the template
+    structures (the "id" field itself plus link references such as "next" and
+    "parentKey", and any nested reference) is remapped to the same minted UUID,
+    so the linked chain stays consistent.  Templates whose ids are already
+    valid UUIDs pass through untouched.
+    """
+    mapping: dict[str, str] = {}
+    for step in templates:
+        original = step.get("id") if isinstance(step, dict) else None
+        if isinstance(original, str) and original and not _is_uuid(original):
+            mapping[original] = str(
+                uuid.uuid5(_ACTION_ID_NAMESPACE, f"{location_id}:{original}")
+            )
+    if not mapping:
+        return templates
+
+    def _remap(node: Any) -> Any:
+        if isinstance(node, str):
+            return mapping.get(node, node)
+        if isinstance(node, list):
+            return [_remap(item) for item in node]
+        if isinstance(node, dict):
+            return {key: _remap(val) for key, val in node.items()}
+        return node
+
+    return [_remap(step) for step in templates]
+
+
 # ── Step Linker ───────────────────────────────────────────────────────────
 
 def link_steps(steps: list[dict]) -> list[dict]:
@@ -530,6 +588,14 @@ class CampaignBuilder:
             # run it inside the builder so all installed boxes get the fix
             # without re-authoring plan JSON.
             templates = link_steps(wf_def.get("templates", []))
+
+            # A16 layer-7: the step-save backend validates action ids as
+            # UUIDs; plan-supplied slug ids are rejected ("Invalid uuid").
+            # Mint deterministic UUIDv5 ids for non-UUID action ids BEFORE
+            # any consumer reads them (the trigger link below uses
+            # templates[0]["id"] as its targetActionId), remapping link
+            # references (next/parentKey) to the same mints.
+            templates = normalize_action_ids(templates, self.loc)
 
             # Step 1: Create workflow
             result = self.client.request(
