@@ -1,10 +1,10 @@
 forbidden_api_grep_exit_code=1 (1 means no matches)
 temp_root_contents:
 total 0
-drwxr-xr-x     4 blackceomacmini  wheel     128 Oct 18 17:48 .
-drwxrwxrwt  5295 root             wheel  169440 Oct 18 17:48 ..
-drwxr-xr-x     3 blackceomacmini  wheel      96 Oct 18 17:48 data-crash
-drwxr-xr-x     4 blackceomacmini  wheel     128 Oct 18 17:48 data-single
+drwxr-xr-x     4 blackceomacmini  wheel     128 Oct 18 17:50 .
+drwxrwxrwt  5297 root             wheel  169504 Oct 18 17:50 ..
+drwxr-xr-x     3 blackceomacmini  wheel      96 Oct 18 17:50 data-crash
+drwxr-xr-x     4 blackceomacmini  wheel     128 Oct 18 17:50 data-single
 runner_import_lines:
 19:import {
 31:import { tmpdir } from "node:os";

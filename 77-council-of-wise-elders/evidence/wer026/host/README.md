@@ -59,6 +59,7 @@ uses a fresh temporary data directory under `/tmp/w13-u001-lane-wer026/`.
 | No process-spawning or network capability | `18-forbidden-api-grep.txt`, `19-forbidden-api-result.txt` | grep exit `1` (no matches) |
 | No process left running | `20-ps-started-pids.txt`, `21-ps-runner-leftovers.txt`, `22-ps-result.txt` | `started_pids_still_alive=0`, leftovers grep exit `1` |
 | Full supervisor test suite | `23-tests.log`, `24-tests-result.txt` | exit `0`, `112/112` pass (existing `99/99` preserved) |
+| Existing supervisor tests only | `26-existing-tests-only.txt` | exit `0`, `99/99` pass |
 | Working tree scope | `00-git-status-before.txt`, `25-git-status-after.txt` | only the three owned new paths |
 
 ## What the driver does
