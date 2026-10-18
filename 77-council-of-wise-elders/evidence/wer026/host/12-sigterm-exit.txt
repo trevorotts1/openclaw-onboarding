@@ -1,0 +1,1 @@
+run_c_primary_sigterm_exit_code=0

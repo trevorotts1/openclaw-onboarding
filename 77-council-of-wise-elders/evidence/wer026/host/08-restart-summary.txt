@@ -1,0 +1,8 @@
+pre_pending_id=PEND-000003
+pre_ledger_generation=1 pre_fencing_generation=2 pre_completed_sweeps=2 pre_scheduled_sweeps=2
+post_ledger_generation=2 post_fencing_generation=3 post_completed_sweeps=3 post_scheduled_sweeps=3 post_extra_sweeps=1
+post_interrupted_ticks=1 post_pending_actions=[]
+reconciled_records_for_pre_pending=1 reconciled_state=RECONCILED
+journal_actions_targeting_pre_pending=1 reconciliation_incidents=1
+recovery_decision_kind=EXTRA recovery_consumes_scheduled_slot=false
+json_valid=YES

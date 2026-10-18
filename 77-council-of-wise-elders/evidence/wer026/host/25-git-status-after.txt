@@ -1,0 +1,17 @@
+ M 77-council-of-wise-elders/evidence/wer026/host/00-base.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/00-git-status-before.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/02-run-a-loop.log
+ M 77-council-of-wise-elders/evidence/wer026/host/03-pre-kill-state.json
+ M 77-council-of-wise-elders/evidence/wer026/host/05-run-b-restart.log
+ M 77-council-of-wise-elders/evidence/wer026/host/07-post-restart-state.json
+ M 77-council-of-wise-elders/evidence/wer026/host/09-run-c-primary.log
+ M 77-council-of-wise-elders/evidence/wer026/host/10-run-c-second-instance.log
+ M 77-council-of-wise-elders/evidence/wer026/host/13-post-sigterm-state.json
+ M 77-council-of-wise-elders/evidence/wer026/host/14-singleton-and-stop-summary.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/19-forbidden-api-result.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/23-tests.log
+ M 77-council-of-wise-elders/evidence/wer026/host/24-tests-result.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/25-git-status-after.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/run-acceptance.sh
+?? 77-council-of-wise-elders/evidence/wer026/host/26-existing-tests-only.txt
+git_status_after_lines=16
