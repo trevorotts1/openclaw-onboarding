@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
-  existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync,
+  existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync,
   rmSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -102,3 +102,59 @@ test("path traversal and unapproved person folders do not enter the fixed mappin
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test("ordinary files under an aliased repository root remain readable", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "council-skill22-alias-"));
+  try {
+    const root = join(scratch, "actual");
+    const folder = join(root, "22-book-to-persona-coaching-leadership-system/personas/sinek-start-with-why");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "persona-blueprint.md"), "Synthetic ordinary blueprint.");
+    assert.equal(inspectPersonaDirectory(root, "sinek-start-with-why").has_persona_blueprint, true);
+    const alias = join(scratch, "alias");
+    symlinkSync(root, alias, "dir");
+    assert.equal(inspectPersonaDirectory(alias, "sinek-start-with-why").has_persona_blueprint, true);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+for (const useAlias of [false, true]) {
+  test(`an ${useAlias ? "aliased" : "ordinary"} root still rejects linked artifacts and persona folders`, () => {
+    const scratch = mkdtempSync(join(tmpdir(), "council-skill22-link-guard-"));
+    try {
+      const root = join(scratch, "actual");
+      const base = join(root, "22-book-to-persona-coaching-leadership-system/personas");
+      const folder = join(base, "sinek-start-with-why");
+      mkdirSync(folder, { recursive: true });
+      const alias = join(scratch, "alias");
+      symlinkSync(root, alias, "dir");
+      const auditRoot = useAlias ? alias : root;
+      for (const target of [join(base, "inside.md"), join(scratch, "outside.md")]) {
+        const content = "Linked content must remain untouched.";
+        writeFileSync(target, content);
+        const blueprint = join(folder, "persona-blueprint.md");
+        symlinkSync(target, blueprint);
+        assert.throws(() => inspectPersonaDirectory(auditRoot, "sinek-start-with-why"), /not an ordinary file/);
+        assert.equal(lstatSync(blueprint).isSymbolicLink(), true);
+        assert.equal(readlinkSync(blueprint), target);
+        assert.equal(readFileSync(target, "utf8"), content);
+        rmSync(blueprint);
+      }
+      rmSync(folder, { recursive: true });
+      for (const target of [join(base, "other-persona"), join(scratch, "outside-persona")]) {
+        mkdirSync(target);
+        writeFileSync(join(target, "persona-blueprint.md"), "Untouched persona.");
+        symlinkSync(target, folder, "dir");
+        assert.throws(() => inspectPersonaDirectory(auditRoot, "sinek-start-with-why"), /not an ordinary directory/);
+        assert.equal(lstatSync(folder).isSymbolicLink(), true);
+        assert.equal(readlinkSync(folder), target);
+        assert.equal(readFileSync(join(target, "persona-blueprint.md"), "utf8"), "Untouched persona.");
+        rmSync(folder);
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+}

@@ -54,7 +54,8 @@ function safelyRead(path, allowedRoot) {
   const target = resolve(path);
   const realRoot = realpathSync(allowedRoot);
   const rootPrefix = realRoot + sep;
-  if (!(target === realRoot || target.startsWith(rootPrefix))) {
+  const lexicalRoot = resolve(allowedRoot);
+  if (!(target === lexicalRoot || target.startsWith(lexicalRoot + sep))) {
     throw new Error("Skill 22 asset path escaped its approved root");
   }
   const info = lstatSync(target);
