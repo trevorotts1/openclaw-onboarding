@@ -147,12 +147,19 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+/**
+ * A deep-frozen deep copy of any JSON-shaped value. Later mutation of the
+ * caller's object cannot move the pin. Shared with route-snapshot.ts.
+ */
+export function freezeCopy<T>(value: T): T {
+  return deepFreeze(JSON.parse(JSON.stringify(value)) as T);
+}
+
 /** A deep-frozen deep copy: later mutation of the caller's object cannot move the pin. */
 export function freezeSelection(
   selection: CouncilRouteSelection,
 ): CouncilRouteSelection {
-  const copy = JSON.parse(JSON.stringify(selection)) as CouncilRouteSelection;
-  return deepFreeze(copy);
+  return freezeCopy(selection);
 }
 
 // ---------------------------------------------------------------------------
