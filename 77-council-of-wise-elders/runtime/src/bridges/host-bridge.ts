@@ -51,6 +51,7 @@ import type {
   TransportResponse,
 } from '../cli/host-ports.js';
 import { createLocalHost, localScope } from '../cli/local-host.js';
+import type { RouteDiscoveryInfo } from '../cli/route-discovery.js';
 
 export type BridgeHarness = 'openclaw' | 'claude-nine';
 
@@ -1088,6 +1089,12 @@ export interface BridgeHostOptions {
   bindings?: BridgeRouteBinding[];
   /** Trusted scope for selections. Defaults to the standalone local scope. */
   scope?: ScopeFields;
+  /** Home directory route discovery reads under. Default: the OS home. */
+  homeDir?: string;
+  /** Environment route discovery and credential presence read. Default: process.env. */
+  env?: NodeJS.ProcessEnv;
+  /** Compose real transports for discovered routes. Default true. */
+  discoverRoutes?: boolean;
 }
 
 export interface BridgeInstance {
@@ -1096,6 +1103,12 @@ export interface BridgeInstance {
   dataDir: string;
   store: CouncilStore;
   catalog: RouteCatalogEntry[];
+  /**
+   * Secret-free route-discovery diagnostics from the SAME local host the
+   * bridge composes (RP-046-1). Carried through so a wrapper that hands
+   * the bridge to the CLI never swallows `models`/`doctor` diagnostics.
+   */
+  routeDiscovery: RouteDiscoveryInfo[];
   selections: ReadonlyMap<string, CouncilRouteSelection>;
   journal: RouteResolutionJournal;
   authorityMode: typeof STANDALONE_AUTHORITY_MODE;
@@ -1106,9 +1119,12 @@ export function composeBridgeHost(
   options: BridgeHostOptions = {},
 ): BridgeInstance {
   assertStandaloneAuthorityMode(options.authorityMode);
-  const { host, dataDir, store } = createLocalHost({
+  const { host, dataDir, store, routeDiscovery } = createLocalHost({
     dataDir: options.dataDir,
     skillRoot: options.skillRoot,
+    homeDir: options.homeDir,
+    env: options.env,
+    discoverRoutes: options.discoverRoutes,
   });
   const catalog = buildRouteCatalog(
     options.routes ?? [],
@@ -1157,6 +1173,7 @@ export function composeBridgeHost(
     dataDir,
     store,
     catalog,
+    routeDiscovery: routeDiscovery ?? [],
     selections,
     journal,
     authorityMode: STANDALONE_AUTHORITY_MODE,
