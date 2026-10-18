@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -14,7 +15,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const UID = process.getuid();
-const PLIST = "/Users/blackceomacmini/Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist";
+const PLIST = join(
+  homedir(),
+  "Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist",
+);
 
 test("launchctl resolves to the real executable on THIS host", () => {
   assert.equal(HOST_COMMAND_PATHS.launchctl, "/bin/launchctl");
