@@ -1,0 +1,4 @@
+ M 77-council-of-wise-elders/evidence/wer026/host/00-base.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/00-git-status-before.txt
+ M 77-council-of-wise-elders/evidence/wer026/host/run-acceptance.sh
+?? 77-council-of-wise-elders/evidence/wer026/host/26-existing-tests-only.txt

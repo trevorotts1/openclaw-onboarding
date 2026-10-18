@@ -1,0 +1,46 @@
+{
+  "schema": "blackceo.launcher.entitlement-declaration/1",
+  "declared_at": "2026-10-18",
+  "source": "owner decision recorded in RECOVERY_2026-10-18 (LAUNCH-02b)",
+  "enforcement": "declaration_plus_fail_closed_attestation_gate",
+  "no_billing": true,
+  "creates_entitlements": false,
+  "calls_billing_api": false,
+  "purchase_price": {
+    "amount_minor": 49700,
+    "currency": "USD",
+    "source": "owner stated: others buy at $497"
+  },
+  "rules": [
+    {
+      "basis": "brand_management_membership",
+      "qualifies": true,
+      "requires_purchase": false,
+      "note": "a Brand Management membership qualifies without a new $497 purchase; a membership is not a purchase event"
+    },
+    {
+      "basis": "purchase",
+      "qualifies": true,
+      "requires_purchase": true,
+      "note": "everyone else buys at the owner-stated price"
+    },
+    {
+      "basis": "school_of_ai_membership",
+      "qualifies": false,
+      "requires_purchase": false,
+      "note": "School of AI membership alone does not qualify"
+    },
+    {
+      "basis": "zhc",
+      "qualifies": false,
+      "requires_purchase": false,
+      "note": "ZHC alone does not qualify"
+    },
+    {
+      "basis": "zhc_with_brand_management",
+      "qualifies": true,
+      "requires_purchase": false,
+      "note": "ZHC qualifies only together with Brand Management"
+    }
+  ]
+}

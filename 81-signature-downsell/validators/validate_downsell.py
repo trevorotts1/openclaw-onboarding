@@ -698,27 +698,42 @@ def _deliverables_feature_paraphrase_match(d1_items, u1_items, d1_ent,
     return True
 
 
-def _entitlement_sets_match(a, b):
-    """True when two entitlement id lists are the same set under renamed
-    ids (lane 5 D-13): equal size and every id token-matches a distinct
-    id on the other side. Genuinely different ids (extra-lite versus
-    extra-full) share too few tokens to match."""
-    la = [str(x) for x in a] if isinstance(a, list) else []
-    lb = [str(x) for x in b] if isinstance(b, list) else []
-    if not la or len(la) != len(lb):
+def _entitlement_sets_match(a, b, aliases=None):
+    """True only when both offers declare the same entitlement identifier set.
+
+    S71-02e. An entitlement id is an opaque product identifier, not personal
+    data (s82-contract-copy.md:111-112), and the launch schema declares the
+    field as non-empty strings with no naming, order or case rule and no
+    alias field (launch.v1.1.schema.json:109-115). Identity is therefore the
+    declared identifier set: exact set equality, after a record-declared
+    alias map is applied to both sides first (the contract's only vehicle
+    for saying two ids name one product --
+    02_SHARED_CONTRACTS_AND_ARCHITECTURE.md:39). With no alias map declared
+    the comparison is exact set equality, and case carries no declared
+    meaning so ids are casefolded; nothing else is normalised. No spelling
+    similarity is used: no tokenizing, Jaccard, stemming, synonyms, stopword
+    removal or prefix stripping. A rename is observable only through the
+    record-declared alias mapping, never through how the ids are spelled.
+
+    Empty or malformed lists are unprovable, never evidence of identity.
+    """
+    if not isinstance(a, list) or not isinstance(b, list):
         return False
-    pool = [_content_tokens(x) for x in lb]
-    for eid in la:
-        tokens = _content_tokens(eid)
-        best = None
-        for i, candidate in enumerate(pool):
-            if candidate is not None and _jaccard(tokens, candidate) >= 0.5:
-                best = i
-                break
-        if best is None:
-            return False
-        pool[best] = None
-    return True
+    alias_map = aliases if isinstance(aliases, dict) else {}
+
+    def canon(ids):
+        out = set()
+        for eid in ids:
+            if not isinstance(eid, str) or not eid.strip():
+                return None
+            declared = alias_map.get(eid, eid)
+            if not isinstance(declared, str) or not declared.strip():
+                return None
+            out.add(declared.casefold())
+        return out
+
+    ca, cb = canon(a), canon(b)
+    return bool(ca) and ca == cb
 
 
 NUMBER_WORDS = {
@@ -933,10 +948,13 @@ def validate_copy(page):
     return v
 
 
-def validate_offer_difference(u1, d1, base=None):
+def validate_offer_difference(u1, d1, base=None, entitlement_aliases=None):
     """u1/d1: offer dicts per packet offer schema. d1 additionally carries
     difference_kind, rationale, and optionally entitlements_removed_vs_u1.
-    base: the already-purchased main offer, when known."""
+    base: the already-purchased main offer, when known.
+    entitlement_aliases: the record-declared entitlement alias map, when the
+    record supplies one. The shipped schema declares none, so callers omit
+    it and entitlement identity is exact set equality (S71-02e)."""
     v = []
     u1 = _as_dict(u1)
     d1 = _as_dict(d1)
@@ -964,8 +982,12 @@ def validate_offer_difference(u1, d1, base=None):
         or _deliverables_paraphrase_match(d1_deliverables, u1_deliverables))
     d1_entitlements = d1.get("entitlement_ids") if isinstance(d1.get("entitlement_ids"), list) else []
     u1_entitlements = u1.get("entitlement_ids") if isinstance(u1.get("entitlement_ids"), list) else []
-    same_entitlements = bool(set(d1_entitlements) & set(u1_entitlements)) or \
-        _entitlement_sets_match(d1_entitlements, u1_entitlements)
+    # S71-02e: set IDENTITY, not intersection. One id shared between a U1
+    # set and a smaller D1 set is a genuinely reduced scope, not the same
+    # promise: a single common member says nothing about the members that
+    # differ, and the sets are only the same promise when both sides match.
+    same_entitlements = _entitlement_sets_match(
+        d1_entitlements, u1_entitlements, entitlement_aliases)
     # Totals are the FULL obligation across every price entry (lane 5 D-1);
     # computed here because the identical-promise shape tier also needs
     # them, and reused by the kind checks below.
