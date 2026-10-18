@@ -9665,7 +9665,10 @@
       "custom": [
         "les-brown-its-not-over-until-you-win",
         "les-brown"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "les-brown-live-your-dreams": {
       "author": "Les Brown",
@@ -9739,7 +9742,10 @@
       "custom": [
         "oprah-winfrey-the-path-made-clear",
         "oprah-winfrey"
-      ]
+      ],
+      "emotional_register": "reflective-stillness",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
     },
     "oprah-winfrey-what-i-know-for-sure": {
       "author": "Oprah Winfrey",
