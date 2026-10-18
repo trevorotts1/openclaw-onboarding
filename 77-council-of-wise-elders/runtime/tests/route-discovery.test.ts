@@ -120,6 +120,11 @@ test('discovers routes under a NON-default config root and state root without to
     layout.secretsEnvFiles.every((p) => p.startsWith(root)),
     'secret stores are resolved under the discovered root, not ~/.openclaw',
   );
+  // The WER-005 receipt bridge answers the installed-runtime question; it
+  // is consumed, not re-implemented, and its absence is explicit.
+  assert.equal(layout.runtime.installed, false);
+  assert.equal(layout.runtime.failureCode, 'RUNTIME_NOT_INSTALLED');
+  assert.ok(layout.runtime.checked.some((p) => p.endsWith('active.json')));
 
   const ids = routes.map((r) => r.routeId);
   assert.deepEqual(ids, ['acme-configured']);
