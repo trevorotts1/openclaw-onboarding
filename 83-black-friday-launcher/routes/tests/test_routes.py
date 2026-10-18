@@ -24,7 +24,7 @@ import route_law  # noqa: E402
 import substrate  # noqa: E402
 
 
-def launch(**overrides):
+def make_launch_record(**overrides):
     record = {
         "tenant_id": "tenant-test",
         "location_id": "location-test",
@@ -40,17 +40,17 @@ def launch(**overrides):
 
 class GraphInvariantTests(unittest.TestCase):
     def test_canonical_graph_holds(self):
-        record = launch()
+        record = make_launch_record()
         graph = route_law.compile_route(record)["graph"]
         self.assertEqual(route_law.graph_violations(record, graph), [])
 
     def test_multiple_options_graph_holds(self):
-        record = launch(journey_mode="multiple_options")
+        record = make_launch_record(journey_mode="multiple_options")
         graph = route_law.compile_route(record)["graph"]
         self.assertEqual(route_law.graph_violations(record, graph), [])
 
     def test_checkout_decline_edge_is_refused(self):
-        record = launch()
+        record = make_launch_record()
         graph = copy.deepcopy(route_law.compile_route(record)["graph"])
         graph["edges"].append({
             "from": "L-test-CHECKOUT", "event": "explicit_decline",
@@ -60,7 +60,7 @@ class GraphInvariantTests(unittest.TestCase):
                             for v in violations), violations)
 
     def test_u1_must_follow_original_purchase(self):
-        record = launch()
+        record = make_launch_record()
         graph = copy.deepcopy(route_law.compile_route(record)["graph"])
         for edge in graph["edges"]:
             if edge["from"] == "L-test-CHECKOUT" and \
@@ -71,7 +71,7 @@ class GraphInvariantTests(unittest.TestCase):
                             for v in violations), violations)
 
     def test_d1_only_from_explicit_u1_decline(self):
-        record = launch()
+        record = make_launch_record()
         graph = copy.deepcopy(route_law.compile_route(record)["graph"])
         for edge in graph["edges"]:
             if edge["to"] == "L-test-DOWNSELL_1":
@@ -83,7 +83,7 @@ class GraphInvariantTests(unittest.TestCase):
                             for v in violations), violations)
 
     def test_u2_duplicate_entry_is_refused(self):
-        record = launch()
+        record = make_launch_record()
         graph = copy.deepcopy(route_law.compile_route(record)["graph"])
         for edge in graph["edges"]:
             if edge["from"] == "L-test-DOWNSELL_1" and \
@@ -94,7 +94,7 @@ class GraphInvariantTests(unittest.TestCase):
                             for v in violations), violations)
 
     def test_paid_edge_guard_must_verify_payment(self):
-        record = launch()
+        record = make_launch_record()
         graph = copy.deepcopy(route_law.compile_route(record)["graph"])
         for edge in graph["edges"]:
             if edge["from"] == "L-test-CHECKOUT" and \
@@ -105,14 +105,14 @@ class GraphInvariantTests(unittest.TestCase):
                             for v in violations), violations)
 
     def test_bump_cannot_be_a_route_node(self):
-        record = launch()
+        record = make_launch_record()
         graph = copy.deepcopy(route_law.compile_route(record)["graph"])
         graph["nodes"].append({"page_id": "L-test-BUMP", "role": "bump"})
         violations = route_law.graph_violations(record, graph)
         self.assertTrue(any("bump" in v for v in violations), violations)
 
     def test_declared_hash_must_match_compiled_graph(self):
-        record = launch(route_graph_hash="0" * 64)
+        record = make_launch_record(route_graph_hash="0" * 64)
         violations = route_law.graph_violations(record)
         self.assertTrue(any("declared route_graph_hash" in v
                             for v in violations), violations)
@@ -120,7 +120,7 @@ class GraphInvariantTests(unittest.TestCase):
 
 class BuyerRouteTests(unittest.TestCase):
     def setUp(self):
-        self.record = launch()
+        self.record = make_launch_record()
         self.graph = route_law.compile_route(self.record)["graph"]
 
     def nav(self, stage, event, purchased, **kwargs):
@@ -245,9 +245,9 @@ class BuyerRouteTests(unittest.TestCase):
     def test_u1_disabled_forces_d1_and_u2_off(self):
         with self.assertRaises(Exception):
             route_law.compile_route(
-                launch(extras={"upsell_1": False, "downsell_1": True,
+                make_launch_record(extras={"upsell_1": False, "downsell_1": True,
                                "upsell_2": True}))
-        record = launch(extras={"upsell_1": False, "downsell_1": False,
+        record = make_launch_record(extras={"upsell_1": False, "downsell_1": False,
                                 "upsell_2": False})
         graph = route_law.compile_route(record)["graph"]
         roles = [node["role"] for node in graph["nodes"]]
@@ -261,7 +261,7 @@ class BuyerRouteTests(unittest.TestCase):
             self.nav("landing", "payment_succeeded", set())
 
     def test_multiple_options_has_selection_page(self):
-        record = launch(journey_mode="multiple_options")
+        record = make_launch_record(journey_mode="multiple_options")
         graph = route_law.compile_route(record)["graph"]
         first = route_law.navigate(graph, "landing", "interest_submitted", set())
         self.assertEqual(first["to_stage"], "product_selection")
@@ -276,7 +276,7 @@ class BuildTimeTests(unittest.TestCase):
         self.assertEqual(params, ["launch"])
 
     def test_every_enabled_page_is_built(self):
-        record = launch(journey_mode="multiple_options")
+        record = make_launch_record(journey_mode="multiple_options")
         plan = build_time.plan(record)
         expected = substrate.compiler().expected_roles(record)
         self.assertEqual([page["role"] for page in plan["pages"]], expected)
@@ -285,11 +285,11 @@ class BuildTimeTests(unittest.TestCase):
         self.assertNotIn("purchased", json.dumps(plan).lower())
 
     def test_build_plan_is_independent_of_customer_actions(self):
-        record = launch()
+        record = make_launch_record()
         self.assertEqual(build_time.plan(record), build_time.plan(record))
 
     def test_checkout_build_entry_is_native_not_dispatch(self):
-        plan = build_time.plan(launch())
+        plan = build_time.plan(make_launch_record())
         checkout = next(page for page in plan["pages"]
                         if page["role"] == "checkout")
         self.assertFalse(checkout["build_entry"]["dispatch_adapter"])
@@ -300,7 +300,7 @@ class AdapterWiringTests(unittest.TestCase):
         work = tmp / "work"
         work.mkdir()
         launch_path = tmp / "launch.json"
-        launch_path.write_text(json.dumps(launch()), encoding="utf-8")
+        launch_path.write_text(json.dumps(make_launch_record()), encoding="utf-8")
         bridge = tmp / "landing-bridge-config.json"
         bridge.write_text("{}", encoding="utf-8")
         copy = {}
@@ -401,7 +401,7 @@ class AdapterWiringTests(unittest.TestCase):
 
 class DecidedBehaviorTests(unittest.TestCase):
     def test_folded_levels_compiles_with_no_selection_node(self):
-        record = launch(journey_mode="folded_levels")
+        record = make_launch_record(journey_mode="folded_levels")
         graph = route_law.compile_route(record)["graph"]
         roles = [node["role"] for node in graph["nodes"]]
         self.assertEqual(roles, ["landing", "checkout", "upsell_1",
@@ -417,7 +417,7 @@ class DecidedBehaviorTests(unittest.TestCase):
                 ("multiple_options", ["landing", "product_selection", "checkout",
                                       "upsell_1", "downsell_1", "upsell_2",
                                       "thank_you"])):
-            record = launch(journey_mode=mode)
+            record = make_launch_record(journey_mode=mode)
             graph = route_law.compile_route(record)["graph"]
             self.assertEqual([n["role"] for n in graph["nodes"]], expected)
             self.assertEqual(route_law.graph_violations(record, graph), [])
@@ -446,7 +446,7 @@ class DecidedBehaviorTests(unittest.TestCase):
             self.assertTrue(callable(module.validate_request))
 
     def test_council_is_a_planning_record_never_a_route_node(self):
-        record = launch(council={"step": "council_launch_planning",
+        record = make_launch_record(council={"step": "council_launch_planning",
                                  "blocks_build": False, "is_permission": False})
         graph = route_law.compile_route(record)["graph"]
         roles = [node["role"] for node in graph["nodes"]]
@@ -455,7 +455,7 @@ class DecidedBehaviorTests(unittest.TestCase):
         self.assertEqual(plan["council"], record["council"])
 
     def test_cross_sales_are_a_relationship_never_a_route_node(self):
-        record = launch(cross_sales={
+        record = make_launch_record(cross_sales={
             "relationships": [{"offer_id": "BUMP", "included_in": ["MAIN"]}],
             "teaching": {"state": "pending"}, "route_node": False,
             "surface": "thank_you"})
