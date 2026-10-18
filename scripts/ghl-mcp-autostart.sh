@@ -234,6 +234,820 @@ LOG_DIR="$GHL_MCP_RESOLVED_LOG_DIR"
 GHL_MCP_PM2_HOME="$GHL_MCP_RESOLVED_PM2_HOME"
 OC_JSON="$OC_ROOT/openclaw.json"
 SECRETS_ENV="$OC_ROOT/secrets/.env"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RETIREMENT MODE — GU-019/020/021. OPERATOR DECISION: the community MCP is
+# RETIRED. This script is now a RETIREMENT tool, not a starter.
+#
+# Stages implemented here: 1 INVENTORY, 3 ARCHIVE (secret-free), 4 DISABLE
+# RESURRECTION, 5 STOP ONLY THE MATCHED SERVICE, 6 VERIFY OFF, 7 RECEIPT.
+# Stage 2 (replacement surfaces) is enforced by update-skills.sh BEFORE it
+# calls --retire: a caller that still needs Tier 2 must never be stopped.
+#
+#   --retire [--dry-run]   run the ordered transaction / print the plan
+#   --status               retirement-aware assertion; changes nothing
+#   --help
+#
+# Exit: 0 = VERIFIED_OFF (or a dry run / status); 1 = MIGRATION_FAILED.
+# Retirement is the ONE mode that may exit non-zero — the legacy wiring path
+# below still exits 0 by its own contract.
+#
+# IDENTIFICATION IS EXACT. Every probe and every stop matches the plist label,
+# the pm2 app name, the systemd unit name or the full supervise-script path.
+# There is no pkill/pgrep on a broad pattern ("ghl", "node", the port) and the
+# container/box is never touched.
+# ═══════════════════════════════════════════════════════════════════════════
+GHL_MCP_MODE="start"
+GHL_MCP_DRY_RUN=0
+for _ghl_arg in "$@"; do
+  case "$_ghl_arg" in
+    --retire|retire)             GHL_MCP_MODE="retire" ;;
+    --status|--inventory|status) GHL_MCP_MODE="status" ;;
+    --dry-run|-n)                GHL_MCP_DRY_RUN=1 ;;
+    --start|start)               GHL_MCP_MODE="start" ;;
+    --help|-h)
+      printf 'ghl-mcp-autostart.sh — the community GHL MCP is RETIRED.\n\n'
+      printf '  --retire [--dry-run]  inventory, archive, disable resurrection, stop, verify, receipt\n'
+      printf '  --status              report VERIFIED_OFF or the live surfaces (no changes)\n'
+      printf '  (no arguments)        refuses to start: this script never starts the service again\n'
+      exit 0 ;;
+    *) log "ignoring unknown argument: $_ghl_arg" ;;
+  esac
+done
+unset _ghl_arg
+
+RETIRE_LABEL="com.clawd.ghl-mcp"
+RETIRE_PROBE_LABEL="com.clawd.ghl-mcp-probe"
+RETIRE_PLIST="$HOME/Library/LaunchAgents/${RETIRE_LABEL}.plist"
+RETIRE_PROBE_PLIST="$HOME/Library/LaunchAgents/${RETIRE_PROBE_LABEL}.plist"
+RETIRE_PM2_APP="ghl-community-mcp"
+RETIRE_SYSTEMD_UNIT="ghl-mcp"
+RETIRE_SYSTEMD_PATH="/etc/systemd/system/ghl-mcp.service"
+RETIRE_SUPERVISE="$MCP_DIR/.ghl-mcp-supervise.sh"
+RETIRE_DIR="$OC_ROOT/.retired"
+RETIRE_STATE_FILE="$RETIRE_DIR/ghl-mcp-retirement.json"
+RETIRE_FAIL_FILE="$RETIRE_DIR/ghl-mcp-migration-failed.json"
+# A retired box no longer needs the pin. Read it (read-only) only to learn the
+# configured port; absence is NOT an error in retirement mode.
+RETIRE_PIN=""
+for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
+          "$OC_ROOT/config/ghl-mcp-pin.env" \
+          "$HOME/.openclaw/config/ghl-mcp-pin.env" \
+          "/data/.openclaw/config/ghl-mcp-pin.env"; do
+  [ -f "$_c" ] && { RETIRE_PIN="$(ghl_mcp_canon_dir "$(dirname "$_c")")/$(basename "$_c")"; break; }
+done
+unset _c
+RETIRE_PORT="${GHL_MCP_PORT:-}"
+if [ -z "$RETIRE_PORT" ] && [ -n "$RETIRE_PIN" ]; then
+  RETIRE_PORT="$( . "$RETIRE_PIN" >/dev/null 2>&1; printf '%s' "${GHL_MCP_PORT:-}" )"
+fi
+RETIRE_PORT="${RETIRE_PORT:-8765}"
+
+# ── small helpers ───────────────────────────────────────────────────────────
+_ghl_sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" 2>/dev/null | cut -d' ' -f1
+  else return 1; fi
+}
+
+_ghl_json_str() { printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\r' '  '; }
+
+_ghl_json_array() {  # newline-separated items -> ["a","b"]
+  local out="" first=1 item
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    [ "$first" = "1" ] || out="$out,"
+    out="$out\"$(_ghl_json_str "$item")\""
+    first=0
+  done <<EOF
+${1:-}
+EOF
+  printf '[%s]' "$out"
+}
+
+_ghl_launchd_loaded() {
+  command -v launchctl >/dev/null 2>&1 || return 1
+  launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1
+}
+
+# prints: disabled | enabled | absent | unknown
+_ghl_launchd_override() {
+  command -v launchctl >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  local o
+  o="$(launchctl print-disabled "gui/$(id -u)" 2>/dev/null || true)"
+  [ -n "$o" ] || { printf 'unknown'; return 0; }
+  case "$o" in
+    *"\"$1\" => disabled"*) printf 'disabled' ;;
+    *"\"$1\" => enabled"*)  printf 'enabled' ;;
+    *)                      printf 'absent' ;;
+  esac
+}
+
+# rc: 0 tag present, 1 absent, 2 cannot read (no crontab on this box)
+_ghl_cron_has() {
+  command -v crontab >/dev/null 2>&1 || return 2
+  local l; l="$(crontab -l 2>/dev/null || true)"
+  case "$l" in *"$1"*) return 0 ;; esac
+  return 1
+}
+
+# rc: 0 probe job present, 1 absent, 2 cannot read
+_ghl_oc_cron_has() {
+  command -v openclaw >/dev/null 2>&1 || return 2
+  local o
+  o="$(openclaw cron list 2>/dev/null)" || return 2
+  case "$o" in *ghl-mcp-probe*) return 0 ;; esac
+  return 1
+}
+
+# rc: 0 registered, 1 absent, 2 cannot read
+_ghl_mcp_registered() {
+  [ -f "$OC_JSON" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 2
+  python3 - "$OC_JSON" <<'PYEOF'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(2)
+servers = (d.get("mcp") or {}).get("servers") or {}
+sys.exit(0 if "ghl-community-mcp" in servers else 1)
+PYEOF
+}
+
+# The pm2 home (an EXISTING one) in which the app is registered. Empty when pm2
+# is absent or the app is not registered anywhere. Never points PM2_HOME at a
+# directory that does not exist — that would spawn a daemon on a read.
+_ghl_pm2_home_with_app() {
+  command -v pm2 >/dev/null 2>&1 || return 0
+  local h
+  for h in "$GHL_MCP_PM2_HOME" "$OC_ROOT/.pm2" "$HOME/.pm2" "/data/.pm2" "/root/.pm2"; do
+    [ -n "$h" ] && [ -d "$h" ] || continue
+    if PM2_HOME="$h" pm2 jlist 2>/dev/null | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RETIRE_PM2_APP\""; then
+      printf '%s' "$h"; return 0
+    fi
+  done
+  for h in $(ps -eo args 2>/dev/null | sed -n 's/.*God Daemon (\(.*\))$/\1/p'); do
+    [ -r "$h/pm2.pid" ] || continue
+    if PM2_HOME="$h" pm2 jlist 2>/dev/null | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RETIRE_PM2_APP\""; then
+      printf '%s' "$h"; return 0
+    fi
+  done
+  return 0
+}
+
+# PIDs whose COMMAND LINE carries one of THIS INSTALL's exact paths. Never a
+# broad name: "ghl", "node" and the port are deliberately absent.
+_ghl_matched_pids() {
+  command -v pgrep >/dev/null 2>&1 || return 0
+  local pat p cmd out=""
+  for pat in "$MCP_DIR/dist/main.js" "$MCP_DIR/.ghl-mcp-launch.sh" "$RETIRE_SUPERVISE"; do
+    [ -n "$pat" ] || continue
+    for p in $(pgrep -f -- "$pat" 2>/dev/null || true); do
+      case " $out " in *" $p "*) continue ;; esac
+      cmd="$(ps -o command= -p "$p" 2>/dev/null || true)"
+      case "$cmd" in *"$pat"*) out="$out $p" ;; esac
+    done
+  done
+  printf '%s' "$out"
+}
+
+# prints: listening | none | unknown
+_ghl_listener_state() {
+  local o
+  if command -v lsof >/dev/null 2>&1; then
+    o="$(lsof -nP -iTCP:"$RETIRE_PORT" -sTCP:LISTEN 2>/dev/null | tail -n +2)"
+    if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
+    return 0
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    o="$(ss -ltn 2>/dev/null | awk -v p=":${RETIRE_PORT}" 'NR>1 && index($4,p) {print; exit}')"
+    if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
+    return 0
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    o="$(netstat -an 2>/dev/null | awk -v p=".${RETIRE_PORT} " '/LISTEN/ && index($0,p) {print; exit}')"
+    if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
+    return 0
+  fi
+  printf 'unknown'
+}
+
+_ghl_gw_up() {
+  command -v curl >/dev/null 2>&1 || return 1
+  local port code
+  port="18789"
+  if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    port="$(python3 - "$OC_JSON" <<'PYEOF' 2>/dev/null || printf '18789'
+import json, sys
+try:
+    print(int((json.load(open(sys.argv[1])).get("gateway") or {}).get("port") or 18789))
+except Exception:
+    print(18789)
+PYEOF
+)"
+  fi
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${port:-18789}/healthz" 2>/dev/null || true)"
+  [ "$code" = "200" ]
+}
+
+# ── Stage 1: INVENTORY ──────────────────────────────────────────────────────
+# Every surface is reported. A surface that cannot be read is `undetermined`,
+# and an undetermined surface BLOCKS a VERIFIED_OFF claim (a false negative is
+# exactly what this stage exists to prevent).
+RET_INV_KINDS=""
+RET_INV_UNDET=""
+_ret_inv_add()   { RET_INV_KINDS="${RET_INV_KINDS}$1
+"; }
+_ret_inv_undet() { RET_INV_UNDET="${RET_INV_UNDET}$1
+"; }
+
+_ghl_ret_inventory() {
+  RET_INV_KINDS=""; RET_INV_UNDET=""; RET_INV_INSTALL=0
+  [ -d "$MCP_DIR" ] && RET_INV_INSTALL=1
+
+  if [ "$PLATFORM" = "mac" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+      _ghl_launchd_loaded "$RETIRE_LABEL" && _ret_inv_add "launchd-service:$RETIRE_LABEL"
+      [ -f "$RETIRE_PLIST" ] && _ret_inv_add "launchd-plist:$RETIRE_PLIST"
+      _ghl_launchd_loaded "$RETIRE_PROBE_LABEL" && _ret_inv_add "launchd-probe:$RETIRE_PROBE_LABEL"
+      [ -f "$RETIRE_PROBE_PLIST" ] && _ret_inv_add "launchd-probe-plist:$RETIRE_PROBE_PLIST"
+    elif [ -f "$RETIRE_PLIST" ]; then
+      _ret_inv_add "launchd-plist:$RETIRE_PLIST"
+      _ret_inv_undet "launchd-service(no-launchctl)"
+    fi
+  fi
+
+  if command -v pm2 >/dev/null 2>&1; then
+    _ph="$(_ghl_pm2_home_with_app)"
+    [ -n "$_ph" ] && _ret_inv_add "pm2-app:$RETIRE_PM2_APP@$_ph"
+    unset _ph
+  fi
+
+  if [ -f "$RETIRE_SYSTEMD_PATH" ]; then
+    _ret_inv_add "systemd-unit-file:$RETIRE_SYSTEMD_PATH"
+  elif command -v systemctl >/dev/null 2>&1; then
+    case "$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+      enabled|enabled-runtime) _ret_inv_add "systemd-unit:$RETIRE_SYSTEMD_UNIT" ;;
+    esac
+  fi
+
+  if command -v pgrep >/dev/null 2>&1; then
+    _pids="$(_ghl_matched_pids)"
+    [ -n "$_pids" ] && _ret_inv_add "process:$MCP_DIR"
+    unset _pids
+  else
+    _ret_inv_undet "process(no-pgrep)"
+  fi
+
+  _ghl_cron_has "# managed:ghl-mcp-probe"
+  case $? in 0) _ret_inv_add "cron-probe:managed:ghl-mcp-probe" ;; 2) _ret_inv_undet "cron(no-crontab)" ;; esac
+  _ghl_cron_has "# managed:ghl-mcp-pm2-resurrect"
+  case $? in 0) _ret_inv_add "cron-resurrect:managed:ghl-mcp-pm2-resurrect" ;; esac
+
+  _ghl_oc_cron_has
+  case $? in
+    0) _ret_inv_add "openclaw-cron:ghl-mcp-probe" ;;
+    2) _ret_inv_undet "openclaw-cron(unreadable)" ;;
+  esac
+
+  _ghl_mcp_registered
+  case $? in
+    0) _ret_inv_add "mcp-servers:ghl-community-mcp" ;;
+    2) _ret_inv_undet "mcp-servers(unreadable)" ;;
+  esac
+}
+
+# ── Stage 6: VERIFY OFF (read-only, evidence not inference) ─────────────────
+RET_V_OK=""; RET_V_LIVE=""; RET_V_UNKNOWN=""
+_ret_v_ok()   { RET_V_OK="${RET_V_OK} $1"; }
+_ret_v_live() { RET_V_LIVE="${RET_V_LIVE} $1"; }
+_ret_v_unk()  { RET_V_UNKNOWN="${RET_V_UNKNOWN} $1"; }
+
+_ghl_ret_verify() {
+  RET_V_OK=""; RET_V_LIVE=""; RET_V_UNKNOWN=""
+
+  if [ "$PLATFORM" = "mac" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+      if _ghl_launchd_loaded "$RETIRE_LABEL"; then
+        _ret_v_live "launchd:$RETIRE_LABEL"
+      elif [ -f "$RETIRE_PLIST" ]; then
+        _ret_v_live "launchd-plist:$RETIRE_PLIST"
+      else
+        case "$(_ghl_launchd_override "$RETIRE_LABEL")" in
+          disabled|absent) _ret_v_ok "launchd:$RETIRE_LABEL" ;;
+          enabled)         _ret_v_live "launchd-override:$RETIRE_LABEL" ;;
+          *)               _ret_v_unk "launchd:$RETIRE_LABEL" ;;
+        esac
+      fi
+      if _ghl_launchd_loaded "$RETIRE_PROBE_LABEL"; then
+        _ret_v_live "launchd-probe:$RETIRE_PROBE_LABEL"
+      elif [ -f "$RETIRE_PROBE_PLIST" ]; then
+        _ret_v_live "launchd-probe-plist:$RETIRE_PROBE_PLIST"
+      else
+        case "$(_ghl_launchd_override "$RETIRE_PROBE_LABEL")" in
+          disabled|absent) _ret_v_ok "launchd-probe:$RETIRE_PROBE_LABEL" ;;
+          enabled)         _ret_v_live "launchd-probe-override:$RETIRE_PROBE_LABEL" ;;
+          *)               _ret_v_unk "launchd-probe:$RETIRE_PROBE_LABEL" ;;
+        esac
+      fi
+    else
+      _ret_v_unk "launchd(no-launchctl)"
+    fi
+  fi
+
+  if command -v pm2 >/dev/null 2>&1; then
+    if [ -n "$(_ghl_pm2_home_with_app)" ]; then _ret_v_live "pm2:$RETIRE_PM2_APP"; else _ret_v_ok "pm2:$RETIRE_PM2_APP"; fi
+  else
+    _ret_v_ok "pm2:not-installed"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    _en="$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)"
+    _ac="$(systemctl is-active "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)"
+    case "$_en" in enabled|enabled-runtime) _ret_v_live "systemd-enabled:$_en" ;; esac
+    case "$_ac" in active|activating) _ret_v_live "systemd-active:$_ac" ;; esac
+    if [ -z "$_en$_ac" ]; then _ret_v_unk "systemd"; else _ret_v_ok "systemd:${_en:-none}/${_ac:-none}"; fi
+    unset _en _ac
+  elif [ -f "$RETIRE_SYSTEMD_PATH" ]; then
+    _ret_v_live "systemd-unit-file:$RETIRE_SYSTEMD_PATH"
+  else
+    _ret_v_ok "systemd:not-installed"
+  fi
+
+  if command -v pgrep >/dev/null 2>&1; then
+    if [ -n "$(_ghl_matched_pids)" ]; then _ret_v_live "process:$MCP_DIR"; else _ret_v_ok "process:none"; fi
+  else
+    _ret_v_unk "process(no-pgrep)"
+  fi
+
+  _ghl_cron_has "# managed:ghl-mcp-probe"
+  case $? in 0) _ret_v_live "cron-probe" ;; 1) _ret_v_ok "cron-probe" ;; 2) _ret_v_unk "cron(no-crontab)" ;; esac
+  _ghl_cron_has "# managed:ghl-mcp-pm2-resurrect"
+  case $? in 0) _ret_v_live "cron-resurrect" ;; 1) _ret_v_ok "cron-resurrect" ;; esac
+
+  _ghl_oc_cron_has
+  case $? in 0) _ret_v_live "openclaw-cron:ghl-mcp-probe" ;; 1) _ret_v_ok "openclaw-cron" ;; 2) _ret_v_unk "openclaw-cron" ;; esac
+
+  _ghl_mcp_registered
+  case $? in 0) _ret_v_live "mcp-servers:ghl-community-mcp" ;; 1) _ret_v_ok "mcp-servers" ;; 2) _ret_v_unk "mcp-servers" ;; esac
+
+  case "$(_ghl_listener_state)" in
+    none)      _ret_v_ok "port:$RETIRE_PORT" ;;
+    listening) _ret_v_live "port:$RETIRE_PORT" ;;
+    *)         _ret_v_unk "port:$RETIRE_PORT" ;;
+  esac
+}
+
+_ghl_ret_is_off() {
+  [ -z "${RET_V_LIVE// /}" ] && [ -z "${RET_V_UNKNOWN// /}" ]
+}
+# ── Stage 3: ARCHIVE (secret-free, inert, never auto-restored) ──────────────
+RET_ARCHIVE_DIR=""
+RET_MANIFEST_HASH=""
+
+# The actual secret VALUES this box holds — used to prove the archive does not
+# contain them. Never printed, never written to the manifest.
+_ghl_ret_secret_values() {
+  local v val
+  for v in GOHIGHLEVEL_API_KEY GHL_API_KEY; do
+    val="$(printenv "$v" 2>/dev/null || true)"
+    [ -n "$val" ] && printf '%s\n' "$val"
+    if [ -f "$SECRETS_ENV" ]; then
+      val="$(grep -E "^${v}=" "$SECRETS_ENV" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+      [ -n "$val" ] && printf '%s\n' "$val"
+    fi
+  done
+  for v in "$MCP_DIR/.env" "$MCP_DIR/.ghl-mcp.env"; do
+    [ -f "$v" ] || continue
+    grep -hE '^(GHL_API_KEY|GOHIGHLEVEL_API_KEY)=' "$v" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'"
+  done
+  if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    python3 - "$OC_JSON" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for k in ("GHL_API_KEY", "GOHIGHLEVEL_API_KEY", "GOHIGHLEVEL_LOCATION_ID"):
+    v = ((d.get("env") or {}).get("vars") or {}).get(k)
+    if v:
+        print(v)
+PYEOF
+  fi
+}
+
+_ghl_ret_archive_secret_scan() {
+  local d="$1" val rc=0
+  # 1. No credential-shaped FILE may survive the excludes.
+  if find "$d" -type f \( -name '.env' -o -name '.ghl-mcp.env' -o -name '*.pem' \
+       -o -name '*.key' -o -name 'credentials.json' -o -name 'cookies*' -o -name 'token*' \) \
+       2>/dev/null | grep -q .; then
+    return 1
+  fi
+  # 2. No live secret VALUE may appear anywhere in the archived bytes.
+  while IFS= read -r val; do
+    [ -n "$val" ] || continue
+    if grep -rIlF -- "$val" "$d" 2>/dev/null | grep -q .; then
+      rc=1
+      break
+    fi
+  done <<EOF
+$(_ghl_ret_secret_values)
+EOF
+  [ "$rc" = "0" ] || return 1
+  # 3. No private-key block.
+  if grep -rIlE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$d" 2>/dev/null | grep -q .; then
+    return 1
+  fi
+  return 0
+}
+
+_ghl_ret_archive() {
+  local src="$MCP_DIR" dest payload f
+  dest="$RETIRE_DIR/archive-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$dest/tree" "$dest/supervisor" 2>/dev/null || return 1
+
+  if [ -d "$src" ]; then
+    command -v tar >/dev/null 2>&1 || return 1
+    payload="$dest/community-mcp.tar"
+    ( cd "$src" && tar -cf "$payload" \
+        --exclude 'node_modules' --exclude '*/node_modules' --exclude './node_modules' \
+        --exclude '.env' --exclude './.env' --exclude '.ghl-mcp.env' --exclude './.ghl-mcp.env' \
+        --exclude '.git' --exclude './.git' \
+        --exclude '*.log' --exclude 'logs' --exclude './logs' \
+        --exclude '*.db' --exclude '*.sqlite' --exclude '*.sqlite3' \
+        . 2>/dev/null ) || return 1
+    tar -xf "$payload" -C "$dest/tree" 2>/dev/null || return 1
+    rm -f "$payload"
+  fi
+
+  for f in "$RETIRE_PLIST" "$RETIRE_PROBE_PLIST" "$RETIRE_SYSTEMD_PATH" "$RETIRE_PIN"; do
+    [ -n "$f" ] && [ -f "$f" ] && cp -p "$f" "$dest/supervisor/" 2>/dev/null
+  done
+  for f in "$HOME/Library/LaunchAgents/${RETIRE_LABEL}.plist".* \
+           "$HOME/Library/LaunchAgents/${RETIRE_PROBE_LABEL}.plist".* \
+           "$MCP_DIR/ecosystem.config.js" "$MCP_DIR/.ghl-mcp-supervise.sh" \
+           "$MCP_DIR/.ghl-mcp-launch.sh" "$MCP_DIR/.ghl-mcp-build.json"; do
+    [ -f "$f" ] && cp -p "$f" "$dest/supervisor/" 2>/dev/null
+  done
+  if command -v crontab >/dev/null 2>&1; then
+    crontab -l 2>/dev/null | grep -E 'managed:ghl-mcp-(probe|pm2-resurrect)' \
+      > "$dest/supervisor/crontab-managed.txt" 2>/dev/null || true
+  fi
+
+  # Manifest: sha256 of EVERY archived file, then the digest of the manifest.
+  ( cd "$dest" && find . -type f ! -name 'manifest.sha256' -print | LC_ALL=C sort | \
+    while IFS= read -r f; do
+      h="$(_ghl_sha256_file "$f" 2>/dev/null || true)"
+      [ -n "$h" ] && printf '%s  %s\n' "$h" "${f#./}"
+    done ) > "$dest/manifest.sha256" 2>/dev/null || return 1
+  [ -s "$dest/manifest.sha256" ] || return 1
+  RET_MANIFEST_HASH="$(_ghl_sha256_file "$dest/manifest.sha256" 2>/dev/null || true)"
+  [ -n "$RET_MANIFEST_HASH" ] || return 1
+
+  RET_ARCHIVE_DIR="$dest"
+  _ghl_ret_archive_secret_scan "$dest" || return 2
+  return 0
+}
+
+# ── Stage 4 + 5: DISABLE RESURRECTION, STOP ONLY THE MATCHED SERVICE ────────
+RET_DISABLED=""
+RET_STOP_NOTES=""
+_ret_dis()  { RET_DISABLED="${RET_DISABLED}$1
+"; }
+_ret_stop() { RET_STOP_NOTES="${RET_STOP_NOTES}$1
+"; }
+
+_ghl_systemctl() {
+  if [ "$(id -u 2>/dev/null || echo 0)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
+}
+_ghl_rm_root() {
+  if [ "$(id -u 2>/dev/null || echo 0)" = "0" ]; then rm -f "$1"; else sudo -n rm -f "$1"; fi
+}
+
+_ghl_ret_remove_cron_tag() {  # <tag>
+  local tag="$1" cur new
+  command -v crontab >/dev/null 2>&1 || return 1
+  cur="$(crontab -l 2>/dev/null || true)"
+  case "$cur" in *"$tag"*) ;; *) return 0 ;; esac
+  new="$(printf '%s\n' "$cur" | grep -vF "$tag" 2>/dev/null || true)"
+  printf '%s\n' "$new" | grep -v '^$' | crontab - >/dev/null 2>&1 || return 1
+  case "$(crontab -l 2>/dev/null || true)" in *"$tag"*) return 1 ;; esac
+  return 0
+}
+
+# Move a plist (and its historical .bak copies) into the inert archive.
+_ghl_ret_archive_plist() {  # <plist>
+  local p="$1" b
+  [ -f "$p" ] || return 0
+  mkdir -p "$RET_ARCHIVE_DIR/supervisor" 2>/dev/null || return 1
+  mv "$p" "$RET_ARCHIVE_DIR/supervisor/$(basename "$p")" 2>/dev/null || return 1
+  for b in "$p".*; do
+    [ -f "$b" ] || continue
+    mv "$b" "$RET_ARCHIVE_DIR/supervisor/$(basename "$b")" 2>/dev/null || true
+  done
+  return 0
+}
+
+_ghl_ret_disable_stop() {
+  RET_DISABLED=""; RET_STOP_NOTES=""
+
+  # 4.1 / 4.2 — probe schedules go FIRST. A probe that heals can restart the
+  # service after we stop it; the schedule must be gone before the stop.
+  if _ghl_cron_has "# managed:ghl-mcp-probe"; then
+    if _ghl_ret_remove_cron_tag "# managed:ghl-mcp-probe"; then
+      _ret_dis "cron:# managed:ghl-mcp-probe"
+    else
+      _ret_dis "cron-removal-FAILED:# managed:ghl-mcp-probe"
+    fi
+  fi
+  if _ghl_oc_cron_has; then
+    if command -v openclaw >/dev/null 2>&1 && _ghl_gw_up; then
+      openclaw cron delete --name "ghl-mcp-probe" >/dev/null 2>&1 || true
+    fi
+    if _ghl_oc_cron_has; then
+      _ret_dis "openclaw-cron-removal-FAILED:ghl-mcp-probe"
+    else
+      _ret_dis "openclaw-cron:ghl-mcp-probe"
+    fi
+  fi
+
+  # 4.2b — launchd probe job: bootout + disable + quarantine the plist.
+  if [ "$PLATFORM" = "mac" ] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$RETIRE_PROBE_LABEL" >/dev/null 2>&1 || true
+    if [ -f "$RETIRE_PROBE_PLIST" ]; then launchctl bootout "gui/$(id -u)" "$RETIRE_PROBE_PLIST" >/dev/null 2>&1 || true; fi
+    launchctl disable "gui/$(id -u)/$RETIRE_PROBE_LABEL" >/dev/null 2>&1 || true
+    _ghl_ret_archive_plist "$RETIRE_PROBE_PLIST" || true
+    if _ghl_launchd_loaded "$RETIRE_PROBE_LABEL"; then
+      _ret_dis "launchd-probe-bootout-FAILED:$RETIRE_PROBE_LABEL"
+    else
+      _ret_dis "launchd-probe:$RETIRE_PROBE_LABEL"
+    fi
+  fi
+
+  # 5.0 — the detached setsid RELAUNCH LOOP is a restart authority. Stop it by
+  # the exact PID whose cmdline carries the supervise script path; never by a
+  # broad pattern. Only after that can the launchd/pm2 job stay stopped.
+  if command -v pgrep >/dev/null 2>&1; then
+    local p cmd i
+    for p in $(_ghl_matched_pids); do
+      cmd="$(ps -o command= -p "$p" 2>/dev/null || true)"
+      case "$cmd" in
+        *"$RETIRE_SUPERVISE"*)
+          kill -TERM "$p" 2>/dev/null || true
+          i=0
+          while kill -0 "$p" 2>/dev/null && [ "$i" -lt 10 ]; do sleep 1; i=$((i+1)); done
+          if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null || true; sleep 1; fi
+          if kill -0 "$p" 2>/dev/null; then
+            _ret_stop "setsid-supervise-STILL-RUNNING:pid=$p"
+          else
+            _ret_dis "setsid-supervise:$p"
+          fi
+          ;;
+      esac
+    done
+    unset p cmd i
+  fi
+
+  # 4.1 / 5.1 — launchd service: bootout (stop) + disable (the resurrection
+  # bit; bootout alone leaves the job enabled) + quarantine the plist.
+  if [ "$PLATFORM" = "mac" ] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$RETIRE_LABEL" >/dev/null 2>&1 || true
+    if [ -f "$RETIRE_PLIST" ]; then launchctl bootout "gui/$(id -u)" "$RETIRE_PLIST" >/dev/null 2>&1 || true; fi
+    launchctl disable "gui/$(id -u)/$RETIRE_LABEL" >/dev/null 2>&1 || true
+    _ghl_ret_archive_plist "$RETIRE_PLIST" || true
+    _ret_dis "launchd:$RETIRE_LABEL"
+    # RE-READ. A bootout that exited 0 (or was swallowed by || true) is not
+    # proof the job stopped; launchd can refuse while the job stays loaded.
+    if _ghl_launchd_loaded "$RETIRE_LABEL"; then
+      _ret_stop "launchd-bootout-FAILED:$RETIRE_LABEL"
+    else
+      _ret_stop "launchd-bootout:$RETIRE_LABEL"
+    fi
+  fi
+
+  # 4.3 / 5.2 — pm2: delete ONLY this app under the home that registers it,
+  # then SAVE. Delete without save leaves the resurrect dump holding the app.
+  local ph
+  ph="$(_ghl_pm2_home_with_app)"
+  if [ -n "$ph" ]; then
+    PM2_HOME="$ph" pm2 delete "$RETIRE_PM2_APP" >/dev/null 2>&1 || true
+    # RE-READ: an exit 0 is not proof the app left the list.
+    if PM2_HOME="$ph" pm2 jlist 2>/dev/null | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RETIRE_PM2_APP\""; then
+      _ret_stop "pm2-delete-FAILED:$RETIRE_PM2_APP@$ph"
+    else
+      _ret_stop "pm2-delete:$RETIRE_PM2_APP@$ph"
+    fi
+    if PM2_HOME="$ph" pm2 save >/dev/null 2>&1; then
+      _ret_dis "pm2-save:$ph"
+    else
+      _ret_dis "pm2-save-FAILED:$ph"
+    fi
+    # 4.4 — the @reboot resurrect line. Remove it ONLY when this app was the
+    # only thing in the dump; otherwise it serves Command Center and is
+    # preserved (save already dropped the retired app, so it cannot come back).
+    local remaining=""
+    remaining="$(PM2_HOME="$ph" pm2 jlist 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | wc -l | tr -d ' ')"
+    if [ "${remaining:-0}" = "0" ]; then
+      if _ghl_ret_remove_cron_tag "# managed:ghl-mcp-pm2-resurrect"; then
+        _ret_dis "cron:# managed:ghl-mcp-pm2-resurrect"
+      fi
+    else
+      _ret_dis "cron-resurrect-RETAINED:serves $remaining other pm2 app(s)"
+    fi
+    unset remaining
+  fi
+  unset ph
+
+  # 4.5 / 5.3 — systemd: disable --now, remove the unit, daemon-reload.
+  if command -v systemctl >/dev/null 2>&1; then
+    case "$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+      enabled|enabled-runtime)
+        _ghl_systemctl disable --now "$RETIRE_SYSTEMD_UNIT" >/dev/null 2>&1 || true
+        # RE-READ both halves; a quiet systemctl is not a receipt.
+        case "$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+          enabled|enabled-runtime) _ret_dis "systemd-disable-FAILED:$RETIRE_SYSTEMD_UNIT" ;;
+          *)                       _ret_dis "systemd-disable:$RETIRE_SYSTEMD_UNIT" ;;
+        esac
+        case "$(systemctl is-active "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+          active|activating) _ret_stop "systemd-stop-FAILED:$RETIRE_SYSTEMD_UNIT" ;;
+          *)                 _ret_stop "systemd-stop:$RETIRE_SYSTEMD_UNIT" ;;
+        esac
+        ;;
+    esac
+  fi
+  if [ -f "$RETIRE_SYSTEMD_PATH" ]; then
+    _ghl_rm_root "$RETIRE_SYSTEMD_PATH" >/dev/null 2>&1 || true
+    [ -f "$RETIRE_SYSTEMD_PATH" ] && _ret_dis "systemd-unit-removal-FAILED:$RETIRE_SYSTEMD_PATH"
+    [ -f "$RETIRE_SYSTEMD_PATH" ] || _ret_dis "systemd-unit-removed:$RETIRE_SYSTEMD_PATH"
+    if command -v systemctl >/dev/null 2>&1; then _ghl_systemctl daemon-reload >/dev/null 2>&1 || true; fi
+  fi
+
+  # 4.8 — the mcp.servers registration is a persistence surface even without a
+  # process. Remove it through the CLI (never hand-edit openclaw.json: the
+  # gateway rewrites it from memory) and RE-READ.
+  if _ghl_mcp_registered; then
+    if command -v openclaw >/dev/null 2>&1 && _ghl_gw_up; then
+      openclaw mcp unset "$RETIRE_PM2_APP" >/dev/null 2>&1 || \
+        openclaw mcp remove "$RETIRE_PM2_APP" >/dev/null 2>&1 || true
+      if _ghl_mcp_registered; then
+        _ret_dis "mcp-servers-removal-FAILED:ghl-community-mcp"
+      else
+        _ret_dis "mcp-servers:ghl-community-mcp"
+      fi
+    else
+      _ret_dis "mcp-servers-removal-FAILED:gateway-not-up"
+    fi
+  fi
+
+  # The delivered pin is what a start path needs; on a retired box it is a
+  # re-installation surface. Remove ONLY the delivered copy, never a repo
+  # checkout's own config/ghl-mcp-pin.env.
+  if [ -n "$RETIRE_PIN" ] && [ -f "$RETIRE_PIN" ]; then
+    case "$RETIRE_PIN" in
+      "$OC_ROOT"/config/*|"$HOME"/.openclaw/config/*|/data/.openclaw/config/*)
+        rm -f "$RETIRE_PIN" 2>/dev/null || true
+        [ -f "$RETIRE_PIN" ] && _ret_dis "pin-removal-FAILED:$RETIRE_PIN"
+        [ -f "$RETIRE_PIN" ] || _ret_dis "pin-removed:$RETIRE_PIN"
+        ;;
+    esac
+  fi
+}
+
+# ── Stage 7: RECEIPT ────────────────────────────────────────────────────────
+_ghl_ret_receipt() {  # <final_state> <stage> <reason>
+  local state="$1" stage="$2" reason="$3" path ts kind_list commit
+  if [ "$state" = "VERIFIED_OFF" ]; then path="$RETIRE_STATE_FILE"; else path="$RETIRE_FAIL_FILE"; fi
+  mkdir -p "$RETIRE_DIR" 2>/dev/null || return 1
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  kind_list="$(printf '%s' "$RET_INV_KINDS" | tr '\n' ',' | sed 's/,$//')"
+  commit="${GHL_MCP_VETTED_COMMIT:-}"
+  if [ -z "$commit" ] && [ -d "$MCP_DIR/.git" ]; then
+    commit="$(git -C "$MCP_DIR" rev-parse HEAD 2>/dev/null || true)"
+  fi
+  {
+    printf '{\n'
+    printf '  "schema": "ghl-mcp-retirement-receipt/v1",\n'
+    printf '  "final_state": "%s",\n' "$(_ghl_json_str "$state")"
+    printf '  "stage": "%s",\n' "$(_ghl_json_str "$stage")"
+    printf '  "reason": "%s",\n' "$(_ghl_json_str "$reason")"
+    printf '  "timestamp_utc": "%s",\n' "$ts"
+    printf '  "box": {"hostname": "%s", "user": "%s", "platform": "%s", "cohort": "%s"},\n' \
+      "$(_ghl_json_str "$(hostname 2>/dev/null || printf unknown)")" \
+      "$(_ghl_json_str "$(id -un 2>/dev/null || printf unknown)")" \
+      "$(_ghl_json_str "$PLATFORM")" "$(_ghl_json_str "$PLATFORM")"
+    printf '  "release": {"from": "%s", "to": "%s", "commit": "%s"},\n' \
+      "$(_ghl_json_str "${GHL_MCP_RECEIPT_FROM_RELEASE:-unknown}")" \
+      "$(_ghl_json_str "${GHL_MCP_RECEIPT_TO_RELEASE:-unknown}")" \
+      "$(_ghl_json_str "$commit")"
+    printf '  "old_service": {"kind": "%s", "identity": "%s", "install_dir": "%s", "pin": "%s"},\n' \
+      "$(_ghl_json_str "$kind_list")" \
+      "$(_ghl_json_str "${RETIRE_LABEL}|${RETIRE_PM2_APP}|${RETIRE_SYSTEMD_UNIT}")" \
+      "$(_ghl_json_str "$MCP_DIR")" "$(_ghl_json_str "${RETIRE_PIN:-none}")"
+    printf '  "archive": {"path": "%s", "manifest_sha256": "%s"},\n' \
+      "$(_ghl_json_str "${RET_ARCHIVE_DIR:-none}")" "$(_ghl_json_str "${RET_MANIFEST_HASH:-none}")"
+    printf '  "migrated_callers": %s,\n' "$(_ghl_json_array "${GHL_MCP_RECEIPT_CALLERS:-}")"
+    printf '  "disabled_hooks": %s,\n' "$(_ghl_json_array "$RET_DISABLED")"
+    printf '  "stop_result": %s,\n' "$(_ghl_json_array "$RET_STOP_NOTES")"
+    printf '  "verification": {"ok": %s, "live": %s, "unknown": %s},\n' \
+      "$(_ghl_json_array "$RET_V_OK")" "$(_ghl_json_array "$RET_V_LIVE")" "$(_ghl_json_array "$RET_V_UNKNOWN")"
+    printf '  "remediation": "%s"\n' "$(_ghl_json_str "${GHL_MCP_RECEIPT_REMEDIATION:-}")"
+    printf '}\n'
+  } > "$path" 2>/dev/null || return 1
+  [ -s "$path" ] || return 1
+  if [ -n "$RET_ARCHIVE_DIR" ] && [ -d "$RET_ARCHIVE_DIR" ]; then
+    cp -p "$path" "$RET_ARCHIVE_DIR/receipt.json" 2>/dev/null || true
+  fi
+  return 0
+}
+
+_ghl_ret_fail() {  # <stage> <reason>
+  GHL_MCP_RECEIPT_REMEDIATION="${GHL_MCP_RECEIPT_REMEDIATION:-Resolve the residual surface named above, then re-run: bash $0 --retire}"
+  _ghl_ret_receipt "MIGRATION_FAILED" "$1" "$2" || true
+  report "MIGRATION_FAILED" "(stage=$1 residual=[live:${RET_V_LIVE:-none} unknown:${RET_V_UNKNOWN:-none}] $(printf '%s' "$2") — success marker NOT written; see $RETIRE_FAIL_FILE)"
+  log "MIGRATION_FAILED at stage $1: $2"
+  log "residual live:${RET_V_LIVE:-none} unknown:${RET_V_UNKNOWN:-none}"
+  exit 1
+}
+
+# ── retirement entry point (retire / status only; start falls through) ───────
+_ghl_ret_main() {
+  _ghl_ret_inventory
+  _ghl_ret_verify
+
+  if [ "$GHL_MCP_MODE" = "status" ]; then
+    if _ghl_ret_is_off; then
+      report "RETIRED_VERIFIED_OFF" "(no community MCP surface is live and none is undetermined — checked launchd, pm2, systemd, the supervise loop, both cron schedules, mcp.servers, the process and :$RETIRE_PORT)"
+    else
+      report "SERVICE_PRESENT" "(surfaces=[$(printf '%s' "$RET_INV_KINDS" | tr '\n' ' ')] undetermined=[$(printf '%s' "$RET_INV_UNDET" | tr '\n' ' ')] verify_live=[${RET_V_LIVE}] verify_unknown=[${RET_V_UNKNOWN}] — the community MCP is NOT retired on this box)"
+    fi
+    exit 0
+  fi
+
+  if _ghl_ret_is_off; then
+    if [ -f "$RETIRE_STATE_FILE" ]; then
+      report "RETIRED_VERIFIED_OFF" "(already retired; receipt $RETIRE_STATE_FILE — nothing changed)"
+    else
+      report "RETIRED_VERIFIED_OFF" "(no community MCP surface exists on this box — nothing to retire, nothing changed)"
+    fi
+    exit 0
+  fi
+
+  if [ "$GHL_MCP_DRY_RUN" = "1" ]; then
+    log "DRY RUN — plan (nothing below is executed):"
+    log "  1 INVENTORY  install_dir=$MCP_DIR pin=${RETIRE_PIN:-none} port=$RETIRE_PORT"
+    printf '%s' "$RET_INV_KINDS" | while IFS= read -r l; do [ -n "$l" ] && log "     surface: $l"; done
+    printf '%s' "$RET_INV_UNDET" | while IFS= read -r l; do [ -n "$l" ] && log "     UNDETERMINED (blocks a verified-off claim): $l"; done
+    log "  2 STAGE      enforced by the caller (update-skills.sh) BEFORE --retire"
+    log "  3 ARCHIVE    -> $RETIRE_DIR/archive-<utc>/ (tree + supervisor artifacts + sha256 manifest; no .env/tokens/logs)"
+    log "  4 DISABLE    launchd bootout+disable+quarantine plists; pm2 delete+save+resurrect-cron decision; systemd disable+unit removal; cron probe+resurrect tags; openclaw cron probe; mcp.servers entry"
+    log "  5 STOP       only the matched identity (label / pm2 app / unit / exact supervise path)"
+    log "  6 VERIFY     no process, no listener on :$RETIRE_PORT, supervisor absent-or-disabled, no mcp.servers entry"
+    log "  7 RECEIPT    $RETIRE_STATE_FILE (VERIFIED_OFF) or $RETIRE_FAIL_FILE (MIGRATION_FAILED)"
+    report "RETIRE_DRY_RUN" "(plan printed; nothing was touched. live=[${RET_V_LIVE}] unknown=[${RET_V_UNKNOWN}])"
+    exit 0
+  fi
+
+  # 3 ARCHIVE (fail closed BEFORE anything is stopped)
+  _ghl_ret_archive
+  local _arc_rc=$?
+  if [ "$_arc_rc" = "2" ]; then
+    _ghl_ret_verify
+    _ghl_ret_fail "archive-secret-risk" "the secret scan found credential-shaped bytes or a live secret value under ${RET_ARCHIVE_DIR:-<archive>}; NOTHING was disabled and the source tree was NOT deleted. Inspect and remove the named bytes, then re-run."
+  fi
+  if [ "$_arc_rc" != "0" ]; then
+    _ghl_ret_fail "archive" "could not build a verified secret-free archive under $RETIRE_DIR (tar/find/sha256 unavailable, or the archive dir is not writable). NOTHING was disabled and the source tree was NOT deleted."
+  fi
+
+  # 4 + 5 DISABLE RESURRECTION / STOP ONLY THE MATCHED SERVICE
+  _ghl_ret_disable_stop
+  case "$RET_DISABLED" in
+    *FAILED*) _ghl_ret_verify; _ghl_ret_fail "disable-resurrection" "one or more resurrection paths could not be proven disabled: $(printf '%s' "$RET_DISABLED" | tr '\n' ' ')" ;;
+  esac
+  case "$RET_STOP_NOTES" in
+    *FAILED*|*STILL-RUNNING*) _ghl_ret_verify; _ghl_ret_fail "stop" "the matched service could not be proven stopped: $(printf '%s' "$RET_STOP_NOTES" | tr '\n' ' ')" ;;
+  esac
+
+  # 6 VERIFY OFF
+  _ghl_ret_verify
+  if ! _ghl_ret_is_off; then
+    _ghl_ret_fail "verify-off" "the retired surfaces are still observable"
+  fi
+
+  # 7 RECEIPT — written only after every surface passed.
+  GHL_MCP_RECEIPT_REMEDIATION="none"
+  if ! _ghl_ret_receipt "VERIFIED_OFF" "complete" "community MCP retired and verified off"; then
+    report "MIGRATION_FAILED" "(stage=receipt — every surface verified OFF but the receipt could not be written to $RETIRE_STATE_FILE. The box IS off; fix the directory and re-run --retire.)"
+    exit 1
+  fi
+  report "RETIRED_VERIFIED_OFF" "(community MCP retired: archive=$RET_ARCHIVE_DIR manifest_sha256=${RET_MANIFEST_HASH}; verified no process, no listener on :$RETIRE_PORT, supervisors absent/disabled, no mcp.servers entry; receipt=$RETIRE_STATE_FILE)"
+  exit 0
+}
+
+case "$GHL_MCP_MODE" in
+  retire|status) _ghl_ret_main ;;
+esac
 log "platform=$PLATFORM root=$OC_ROOT install=$MCP_DIR logs=$LOG_DIR (paths lib: $_GHL_PATHS_LIB)"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
@@ -1880,6 +2694,13 @@ except Exception:
 # <<< OC-MCP-UNSET-VERB-END
 
 # ── Main flow ────────────────────────────────────────────────────────────────
+
+# GU-019: START IS RETIRED. This point is reached only when the legacy pin gate
+# passed (a box with no pin already refused above with PIN_UNVERIFIED). Either
+# way NOTHING is built, cloned or started — the community MCP is retired and the
+# only supported action is the retirement transaction.
+report "START_REFUSED_RETIRED" "(the community GHL MCP is RETIRED: this script no longer starts, builds, clones or supervises it, and it will not restart itself. Nothing was started. To finish retiring an existing install run: bash $0 --retire ; to inspect: bash $0 --status)"
+exit 0
 
 # Fast idempotent no-op: healthy AND answering JSON-RPC AND already built from
 # the pinned commit. "A dist exists" is NOT a no-op condition (that is exactly
