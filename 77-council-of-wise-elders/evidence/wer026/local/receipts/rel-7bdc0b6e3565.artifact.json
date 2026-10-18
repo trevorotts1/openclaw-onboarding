@@ -8,7 +8,7 @@
   },
   "builtAt": "2026-10-18T20:06:44.645Z",
   "node": {
-    "executable": "/Users/blackceomacmini/.nvm/versions/node/v24.21.0/bin/node",
+    "executable": "<operator-home>/.nvm/versions/node/v24.21.0/bin/node",
     "version": "v24.21.0"
   },
   "platform": "darwin",

@@ -2,7 +2,7 @@
   "schema": "wise-elders.council-runtime-source/v1",
   "releaseId": "rel-a1ab77dff250",
   "createdAt": "2026-10-18T20:07:02.705Z",
-  "sourceDir": "/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/src-b/runtime",
+  "sourceDir": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/src-b/runtime",
   "exclusions": [
     ".DS_Store",
     ".cache",

@@ -4,7 +4,7 @@ Unit: W11-U001
 Source: trevorotts1/openclaw-onboarding
 Base: main @ 53d772a996835c783927f900cb6a6880948e60a3 (post-#2269)
 Branch: unit/W11-U001
-Worktree: /Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/repo
+Worktree: <operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/repo
 Host: operator Mac Mini, darwin arm64, Node v24.21.0, npm 11.19.0
 
 No repository source file was changed. The only additions are files under

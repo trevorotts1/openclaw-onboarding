@@ -17,7 +17,7 @@
     "a full paid Council session has not been independently verified"
   ],
   "contracts": "wise-elders.core/1.0.0",
-  "data_dir": "/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/doctor-new-data",
+  "data_dir": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/doctor-new-data",
   "settings": {
     "max_session_provider_requests": 50,
     "operation_lease_ttl_seconds": 60,
@@ -32,7 +32,7 @@
     {
       "name": "data_dir_outside_skill_tree",
       "ok": true,
-      "detail": "/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/doctor-new-data"
+      "detail": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/doctor-new-data"
     },
     {
       "name": "local_store",

@@ -59,7 +59,7 @@
       "kind": "compatible",
       "identity_level": "configured",
       "composed": false,
-      "not_composed_reason": "no credential is present for provider agnes (reference \"AGNES_API_KEY\"; stores checked: process.env:AGNES_API_KEY, openclaw.json:env.AGNES_API_KEY, /Users/blackceomacmini/.openclaw/secrets/.env, /Users/blackceomacmini/.openclaw/.env)"
+      "not_composed_reason": "no credential is present for provider agnes (reference \"AGNES_API_KEY\"; stores checked: process.env:AGNES_API_KEY, openclaw.json:env.AGNES_API_KEY, <operator-home>/.openclaw/secrets/.env, <operator-home>/.openclaw/.env)"
     },
     {
       "route_id": "9router-configured",

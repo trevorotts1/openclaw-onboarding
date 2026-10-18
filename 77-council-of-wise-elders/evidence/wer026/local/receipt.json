@@ -4,7 +4,7 @@
   "repo": "trevorotts1/openclaw-onboarding",
   "base_commit": "53d772a996835c783927f900cb6a6880948e60a3",
   "branch": "unit/W11-U001",
-  "worktree": "/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/repo",
+  "worktree": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/repo",
   "host": {
     "platform": "darwin",
     "arch": "arm64",

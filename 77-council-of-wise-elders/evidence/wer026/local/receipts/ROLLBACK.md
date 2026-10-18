@@ -2,12 +2,12 @@
 
 Active release: `rel-7bdc0b6e3565`
 Previous release: `rel-a1ab77dff250`
-Prefix: `/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/prefix`
+Prefix: `<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix`
 
 ## Automated rollback
 
 ```bash
-node "/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/repo/77-council-of-wise-elders/scripts/install-runtime.mjs" --prefix "/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/prefix" --rollback
+node "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/repo/77-council-of-wise-elders/scripts/install-runtime.mjs" --prefix "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix" --rollback
 ```
 
 This atomically re-points `active.json` at the previous verified release and
@@ -16,7 +16,7 @@ never touched.
 
 ## Manual rollback
 
-Restore `/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/prefix/previous-active.json` over `/Users/blackceomacmini/.claude/state/council-elders/lanes/W11-U001-lane/prefix/active.json`.
+Restore `<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/previous-active.json` over `<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/active.json`.
 Both files are written atomically by this installer; a manual copy is the
 last resort if the installer is unavailable.
 
