@@ -30,6 +30,7 @@
 - Required path params: None
 - Required query params: locationId, limit, offset
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/agent-studio/agent
@@ -55,6 +56,7 @@ curl --request GET 'https://services.leadconnectorhq.com/agent-studio/agent' \
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/agent-studio/agent
@@ -80,6 +82,7 @@ curl --request POST 'https://services.leadconnectorhq.com/agent-studio/agent' \
 - Required path params: versionId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/agent-studio/agent/versions/{versionId}
@@ -105,6 +108,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/agent-studio/agent/ve
 - Required path params: versionId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/agent-studio/agent/versions/{versionId}/publish
@@ -130,6 +134,7 @@ curl --request POST 'https://services.leadconnectorhq.com/agent-studio/agent/ver
 - Required path params: agentId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/agent-studio/agent/{agentId}
@@ -155,6 +160,7 @@ curl --request GET 'https://services.leadconnectorhq.com/agent-studio/agent/{age
 - Required path params: agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/agent-studio/agent/{agentId}
@@ -180,6 +186,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/agent-studio/agent/{a
 - Required path params: agentId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/agent-studio/agent/{agentId}
@@ -205,6 +212,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/agent-studio/agent/{
 - Required path params: agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/agent-studio/agent/{agentId}/execute
@@ -230,6 +238,7 @@ curl --request POST 'https://services.leadconnectorhq.com/agent-studio/agent/{ag
 - Required path params: None
 - Required query params: locationId, limit, offset
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/agent-studio/public-api/agents
@@ -255,6 +264,7 @@ curl --request GET 'https://services.leadconnectorhq.com/agent-studio/public-api
 - Required path params: agentId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/agent-studio/public-api/agents/{agentId}
@@ -280,6 +290,7 @@ curl --request GET 'https://services.leadconnectorhq.com/agent-studio/public-api
 - Required path params: agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/agent-studio/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/agent-studio/public-api/agents/{agentId}/execute

@@ -30,6 +30,7 @@
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/knowledge-bases/
@@ -55,6 +56,7 @@ curl --request GET 'https://services.leadconnectorhq.com/knowledge-bases/' \
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/knowledge-bases/
@@ -80,6 +82,7 @@ curl --request POST 'https://services.leadconnectorhq.com/knowledge-bases/' \
 - Required path params: None
 - Required query params: knowledgeBaseId, locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/knowledge-bases/crawler
@@ -105,6 +108,7 @@ curl --request GET 'https://services.leadconnectorhq.com/knowledge-bases/crawler
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/knowledge-bases/crawler
@@ -130,6 +134,7 @@ curl --request POST 'https://services.leadconnectorhq.com/knowledge-bases/crawle
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/knowledge-bases/crawler
@@ -155,6 +160,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/knowledge-bases/craw
 - Required path params: None
 - Required query params: locationId, operationId, knowledgeBaseId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/knowledge-bases/crawler/status
@@ -180,6 +186,7 @@ curl --request GET 'https://services.leadconnectorhq.com/knowledge-bases/crawler
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/knowledge-bases/crawler/train
@@ -205,6 +212,7 @@ curl --request POST 'https://services.leadconnectorhq.com/knowledge-bases/crawle
 - Required path params: None
 - Required query params: knowledgeBaseId, locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/knowledge-bases/faqs
@@ -230,6 +238,7 @@ curl --request GET 'https://services.leadconnectorhq.com/knowledge-bases/faqs' \
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/knowledge-bases/faqs
@@ -255,6 +264,7 @@ curl --request POST 'https://services.leadconnectorhq.com/knowledge-bases/faqs' 
 - Required path params: id
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/knowledge-bases/faqs/{id}
@@ -280,6 +290,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/knowledge-bases/faqs/{i
 - Required path params: id
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/knowledge-bases/faqs/{id}
@@ -305,6 +316,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/knowledge-bases/faqs
 - Required path params: id
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/knowledge-bases/{id}
@@ -330,6 +342,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/knowledge-bases/{id}' \
 - Required path params: knowledgeBaseId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/knowledge-bases/{knowledgeBaseId}
@@ -355,6 +368,7 @@ curl --request GET 'https://services.leadconnectorhq.com/knowledge-bases/{knowle
 - Required path params: knowledgeBaseId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/knowledge-bases/{knowledgeBaseId}

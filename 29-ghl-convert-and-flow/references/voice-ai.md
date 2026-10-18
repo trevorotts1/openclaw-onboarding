@@ -30,6 +30,7 @@
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/voice-ai/actions
@@ -55,6 +56,7 @@ curl --request POST 'https://services.leadconnectorhq.com/voice-ai/actions' \
 - Required path params: actionId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/voice-ai/actions/{actionId}
@@ -80,6 +82,7 @@ curl --request GET 'https://services.leadconnectorhq.com/voice-ai/actions/{actio
 - Required path params: actionId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/voice-ai/actions/{actionId}
@@ -105,6 +108,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/voice-ai/actions/{actio
 - Required path params: actionId
 - Required query params: locationId, agentId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/voice-ai/actions/{actionId}
@@ -130,6 +134,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/voice-ai/actions/{ac
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/voice-ai/agents
@@ -155,6 +160,7 @@ curl --request GET 'https://services.leadconnectorhq.com/voice-ai/agents' \
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/voice-ai/agents
@@ -180,6 +186,7 @@ curl --request POST 'https://services.leadconnectorhq.com/voice-ai/agents' \
 - Required path params: agentId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/voice-ai/agents/{agentId}
@@ -205,6 +212,7 @@ curl --request GET 'https://services.leadconnectorhq.com/voice-ai/agents/{agentI
 - Required path params: agentId
 - Required query params: locationId
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/voice-ai/agents/{agentId}
@@ -230,6 +238,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/voice-ai/agents/{agen
 - Required path params: agentId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/voice-ai/agents/{agentId}
@@ -255,6 +264,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/voice-ai/agents/{age
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/voice-ai/dashboard/call-logs
@@ -280,6 +290,7 @@ curl --request GET 'https://services.leadconnectorhq.com/voice-ai/dashboard/call
 - Required path params: callId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/voice-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/voice-ai/dashboard/call-logs/{callId}

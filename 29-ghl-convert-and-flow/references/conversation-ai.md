@@ -30,6 +30,7 @@
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents
@@ -55,6 +56,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversation-ai/agents
 - Required path params: None
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/search
@@ -80,6 +82,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversation-ai/agents/
 - Required path params: agentId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}
@@ -105,6 +108,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversation-ai/agents/
 - Required path params: agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}
@@ -130,6 +134,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/conversation-ai/agents/
 - Required path params: agentId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}
@@ -155,6 +160,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/conversation-ai/agen
 - Required path params: agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}/actions
@@ -180,6 +186,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversation-ai/agents
 - Required path params: agentId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}/actions/list
@@ -205,6 +212,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversation-ai/agents/
 - Required path params: actionId, agentId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}/actions/{actionId}
@@ -230,6 +238,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversation-ai/agents/
 - Required path params: actionId, agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}/actions/{actionId}
@@ -255,6 +264,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/conversation-ai/agents/
 - Required path params: actionId, agentId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}/actions/{actionId}
@@ -280,6 +290,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/conversation-ai/agen
 - Required path params: agentId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/conversation-ai/agents/{agentId}/followup-settings
@@ -305,6 +316,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/conversation-ai/agent
 - Required path params: None
 - Required query params: messageId, source
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversation-ai/generations

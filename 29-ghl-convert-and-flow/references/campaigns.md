@@ -29,6 +29,7 @@
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/campaigns/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/campaigns/
@@ -59,12 +60,12 @@ curl --request GET 'https://services.leadconnectorhq.com/campaigns/' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/workflows/
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/workflows/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

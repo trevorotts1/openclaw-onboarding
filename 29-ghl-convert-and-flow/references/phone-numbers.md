@@ -34,6 +34,7 @@
 - Required path params: None
 - Required query params: None
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/phone-system/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/phone-system/number-pools
@@ -59,6 +60,7 @@ curl --request GET 'https://services.leadconnectorhq.com/phone-system/number-poo
 - Required path params: locationId
 - Required query params: None
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/phone-system/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/phone-system/numbers/location/{locationId}
