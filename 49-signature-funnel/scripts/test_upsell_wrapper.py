@@ -19,7 +19,12 @@ dispatch_launch.build_requests). Proves:
   * enrichment fails closed with a NAMED block whenever a block has no
     honest source (missing offer, unknown price, unsourced recurring
     terms, unsourced landing-copy ref, unqualified U2 journey,
-    unverified route graph).
+    unverified route graph);
+  * the flip-time seam (adoption map 1.4 item 4): a 1.1 request's
+    prompt_policy_id passes into the enriched request unchanged and
+    the projected result is unchanged, while the pair rule's other
+    halves (the field on a 1.0 request, a 1.1 request without a
+    non-empty id, unknown keys on either version) fail closed by name.
 
 Run: python3 -m unittest discover -s tests -v   (from upsell-wrapper/)
 No network, no live calls: produce.py reads local JSON only.
@@ -385,6 +390,178 @@ class FailClosedTests(unittest.TestCase):
         with self.assertRaises(wrapper.EnrichmentError) as ctx:
             wrapper.project_result(bundle, request)
         self.assertIn("input_hash", str(ctx.exception))
+
+
+@unittest.skipUnless(jsonschema, "jsonschema not available")
+class FlipTimeSeamTests(unittest.TestCase):
+    """Adoption map 1.4 item 4, executed under map 2.3 step 3(a): the
+    wrapper's fail-closed allowlist admits prompt_policy_id on a
+    request stamped "1.1" and passes it into the enriched request
+    unchanged; the pair rule's other halves fail closed by name, in
+    enrich(), before produce.py is reached."""
+
+    POLICY_ID = "kie-rule-12-band"
+
+    @staticmethod
+    def restamp_1_1(wd, slot, policy_id=POLICY_ID, with_field=True):
+        request_path = wd / f"request-{slot}.json"
+        request = load(request_path)
+        request["schema_version"] = "1.1"
+        if with_field:
+            request["prompt_policy_id"] = policy_id
+        request_path.write_text(json.dumps(request, indent=2) + "\n",
+                                encoding="utf-8")
+        return request
+
+    def assert_refused_by_name(self, proc, wd, slot, *names):
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        for name in names:
+            self.assertIn(name, proc.stderr)
+        self.assertFalse((wd / f"result-{slot}.json").exists(),
+                         "no result may be written for a refused request")
+        self.assertFalse((wd / f"upsell-request-{slot}.json").exists(),
+                         "refusal must happen in enrich(), before the "
+                         "enriched request (and produce.py) is reached")
+
+    def assert_pass_through(self, wd, slot, copy_path, journey_path,
+                            enrichment, policy_id=POLICY_ID, **run_kwargs):
+        base = run_wrapper(wd, slot, copy_path=copy_path,
+                           journey_path=journey_path,
+                           enrichment=enrichment, **run_kwargs)
+        self.assertEqual(base.returncode, 0, base.stderr)
+        base_result = load(wd / f"result-{slot}.json")
+        base_enriched = load(wd / f"upsell-request-{slot}.json")
+        base_bundle = load(wd / f"bundle-{slot}.json")
+        request = self.restamp_1_1(wd, slot, policy_id=policy_id)
+        proc = run_wrapper(wd, slot, copy_path=copy_path,
+                           journey_path=journey_path,
+                           enrichment=enrichment, **run_kwargs)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = assert_receipt_valid(self, wd, slot, request)
+        self.assertEqual(result, base_result,
+                         "the 1.1 run's projected result must equal the "
+                         "1.0 run's, field for field")
+        enriched = load(wd / f"upsell-request-{slot}.json")
+        self.assertEqual(enriched["prompt_policy_id"], policy_id,
+                         "the admitted id passes through unchanged")
+        self.assertEqual(enriched["schema_version"], "1.1")
+        delta = {k for k in set(enriched) | set(base_enriched)
+                 if enriched.get(k) != base_enriched.get(k)}
+        self.assertEqual(delta, {"schema_version", "prompt_policy_id"},
+                         "the enriched 1.1 request differs from the 1.0 "
+                         "one only in the version stamp and the citation")
+        jsonschema.validate(
+            enriched, load(SKILL80 / "components/80-signature-upsell"
+                           / "schemas" / "upsell-request.schema.json"))
+        bundle = load(wd / f"bundle-{slot}.json")
+        self.assertEqual(bundle["result"], base_bundle["result"],
+                         "the 1.1 bundle result equals the 1.0 one")
+        self.assertEqual(bundle["page_plan"]["prompt_policy_id"],
+                         policy_id,
+                         "the consumer carries the id into its page plan")
+        plan_delta = {k for k in set(bundle["page_plan"])
+                      | set(base_bundle["page_plan"])
+                      if bundle["page_plan"].get(k)
+                      != base_bundle["page_plan"].get(k)}
+        self.assertEqual(plan_delta, {"prompt_policy_id"},
+                         "the page plans differ only in the citation")
+        return enriched
+
+    def test_upsell_1_1_1_passes_the_id_through_unchanged(self):
+        wd, record, graph, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        self.assert_pass_through(
+            wd, "upsell_1",
+            copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+            journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_1.json",
+            artifact_path="80-signature-upsell/fixtures/"
+                          "copy-upsell1-public.valid.json")
+
+    def test_upsell_2_1_1_passes_the_id_through_unchanged(self):
+        wd, record, graph, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        enriched = self.assert_pass_through(
+            wd, "upsell_2",
+            copy_path=S80_FIX / "copy-upsell2-public.valid.json",
+            journey_path=ADAPT_FIX
+            / "journey-upsell2-from-upsell1.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_2-onetime.json")
+        self.assertEqual(enriched["entry_context"], "from_upsell_1")
+
+    def test_1_1_with_unregistered_id_passes_the_seam_by_design(self):
+        # Pinned deliberately, mirroring the consumer's allocation
+        # (candidate 1.4, D-5): the id is an open string at this seam.
+        # The wrapper checks the pair rule and the field's shape only;
+        # refusing an unknown id is a registry-layer act, at dispatch
+        # (which stamps only record-named ids) and at the Q11
+        # aggregator (adoption map section 4, citation rule).
+        wd, record, graph, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        self.assert_pass_through(
+            wd, "upsell_1",
+            copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+            journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_1.json",
+            policy_id="unregistered-house-band")
+
+    def test_1_0_request_carrying_the_field_is_refused(self):
+        wd, *_ = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        request_path = wd / "request-upsell_1.json"
+        request = load(request_path)
+        request["prompt_policy_id"] = self.POLICY_ID  # version stays 1.0
+        request_path.write_text(json.dumps(request, indent=2) + "\n",
+                                encoding="utf-8")
+        proc = run_wrapper(
+            wd, "upsell_1",
+            copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+            journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused_by_name(proc, wd, "upsell_1",
+                                    "prompt_policy_id",
+                                    "requires request schema_version 1.1")
+
+    def test_1_1_request_without_the_field_is_refused(self):
+        wd, *_ = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        self.restamp_1_1(wd, "upsell_1", with_field=False)
+        proc = run_wrapper(
+            wd, "upsell_1",
+            copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+            journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused_by_name(proc, wd, "upsell_1",
+                                    "prompt_policy_id",
+                                    "must carry a non-empty")
+
+    def test_1_1_request_with_empty_id_is_refused(self):
+        wd, *_ = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        self.restamp_1_1(wd, "upsell_1", policy_id="")
+        proc = run_wrapper(
+            wd, "upsell_1",
+            copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+            journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused_by_name(proc, wd, "upsell_1",
+                                    "prompt_policy_id",
+                                    "must carry a non-empty")
+
+    def test_unknown_key_still_refused_on_a_1_1_request(self):
+        wd, *_ = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        request = self.restamp_1_1(wd, "upsell_1")
+        request["totally_unknown_field"] = "bogus"
+        (wd / "request-upsell_1.json").write_text(
+            json.dumps(request, indent=2) + "\n", encoding="utf-8")
+        proc = run_wrapper(
+            wd, "upsell_1",
+            copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+            journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+            enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused_by_name(proc, wd, "upsell_1",
+                                    "totally_unknown_field")
 
 
 class ConfigFragmentTests(unittest.TestCase):

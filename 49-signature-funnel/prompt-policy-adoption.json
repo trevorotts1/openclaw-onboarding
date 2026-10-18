@@ -23,11 +23,11 @@
       "flipped_at": null
     },
     "upsell_1": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 80,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.2 (upsell_1, Lane B B-343); consumer candidate 1.4 landed in train #2268, SWARM-verified blob-exact; seam carried in this commit: rooms/S71/review-scratch/FLIPTIME-UPSELL-SEAM-CANDIDATE-2026-10-18.md (B-345, review B-370 PASS).",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "downsell_1": {
       "state": "blocked_no_consumer",
