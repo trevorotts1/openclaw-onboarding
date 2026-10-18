@@ -23,6 +23,18 @@ import test from "node:test";
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const verifier = join(source, "scripts", "verify-cohort-parity.mjs");
 
+// Derived from the live tree rather than hardcoded: this suite failed the
+// moment the cohort actually bumped its own version, which is exactly when it
+// must keep working.
+const currentVersion = readFileSync(join(source, "skill-version.txt"), "utf8").trim().replace(/^v/, "");
+const esc = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const bump = (version) => {
+  const parts = version.split(".");
+  parts[parts.length - 1] = String(Number(parts[parts.length - 1]) + 1);
+  return parts.join(".");
+};
+const nextVersion = bump(currentVersion);
+
 function run(root, extra = []) {
   const result = spawnSync(process.execPath, [verifier, "--root", root, ...extra], {
     encoding: "utf8",
@@ -70,10 +82,9 @@ test("the real tree is coherent, and the verifier is idempotent and writes nothi
   assert.equal(second.status, 0, second.stdout + second.stderr);
   assert.equal(first.stdout, second.stdout);
   assert.deepEqual(after, before);
-  assert.match(first.stdout, /PASS version markers agree: 1\.0\.10/);
+  assert.match(first.stdout, new RegExp(`PASS version markers agree: ${esc(currentVersion)}`));
   assert.match(first.stdout, /PASS manifest tree hash matches \(\d+ files\)/);
-  assert.match(first.stdout, /WARN CHANGELOG\.md top entry = "1\.0\.9"/);
-  assert.match(first.stdout, /WARN detector files not yet recorded in manifest\.json/);
+  assert.match(first.stdout, new RegExp(`PASS CHANGELOG\\.md top entry matches: ${esc(currentVersion)}`));
   assert.match(first.stdout, /COHORT PARITY: PASS/);
 });
 
@@ -102,12 +113,12 @@ test("a pristine fixture passes through --root", () => {
 test("three-split version drift is detected and names the sibling version file", () => {
   const { scratch, root } = fixture();
   try {
-    writeFileSync(join(root, "version"), "1.0.9\n");
+    writeFileSync(join(root, "version"), `${nextVersion}\n`);
     const result = run(root);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout, /FAIL version marker drift/);
-    assert.match(result.stdout, /version="1\.0\.9"/);
-    assert.match(result.stdout, /expected "1\.0\.10"/);
+    assert.match(result.stdout, new RegExp(`version="${esc(nextVersion)}"`));
+    assert.match(result.stdout, new RegExp(`expected "${esc(currentVersion)}"`));
     assert.match(result.stdout, /COHORT PARITY: FAIL/);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -117,16 +128,16 @@ test("three-split version drift is detected and names the sibling version file",
 test("a stale manifest aggregate after a version bump is detected", () => {
   const { scratch, root } = fixture();
   try {
-    writeFileSync(join(root, "skill-version.txt"), "v1.0.11\n");
-    writeFileSync(join(root, "version"), "1.0.11\n");
+    writeFileSync(join(root, "skill-version.txt"), `v${nextVersion}\n`);
+    writeFileSync(join(root, "version"), `${nextVersion}\n`);
     const skillMdPath = join(root, "SKILL.md");
     writeFileSync(skillMdPath, readFileSync(skillMdPath, "utf8")
-      .replace(/^version: 1\.0\.10$/m, "version: 1.0.11"));
+      .replace(new RegExp(`^version: ${esc(currentVersion)}$`, "m"), `version: ${nextVersion}`));
     append(join(root, "references", "protocol.md"), "\nSynthetic cohort change.\n");
 
     const result = run(root);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(result.stdout, /FAIL manifest\.json skill_version = "1\.0\.10", expected "1\.0\.11"/);
+    assert.match(result.stdout, new RegExp(`FAIL manifest\\.json skill_version = "${esc(currentVersion)}", expected "${esc(nextVersion)}"`));
     assert.match(result.stdout, /FAIL manifest drift: computed aggregate [0-9a-f]{64}/);
     assert.match(result.stdout, /references\/protocol\.md/);
     assert.match(result.stdout, /Rebuild with scripts\/build-bundles\.mjs/);
@@ -143,7 +154,7 @@ test("skill content changed without moving skill-version.txt is detected as G3",
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout, /FAIL skill content changed without moving skill-version\.txt/);
     assert.match(result.stdout, /references\/protocol\.md/);
-    assert.match(result.stdout, /skill-version\.txt is still "1\.0\.10"/);
+    assert.match(result.stdout, new RegExp(`skill-version\\.txt is still "${esc(currentVersion)}"`));
     assert.match(result.stdout, /computed aggregate [0-9a-f]{64} over \d+ files/);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -166,11 +177,30 @@ test("an arbitrary added file is detected, so the detector exemption stays exact
 test("--strict-changelog makes the pending changelog entry fatal", () => {
   const { scratch, root } = fixture();
   try {
+    // A pending changelog cannot be produced by simply editing the fixture:
+    // aging the top entry also changes the tree, which would trip manifest
+    // drift first and mask the thing under test. So age the changelog, then
+    // rebuild the manifest exactly as the real workflow does. The fixture has
+    // no .git, which build-bundles.mjs tolerates (source commit stays null).
+    const changelogPath = join(root, "CHANGELOG.md");
+    const aged = readFileSync(changelogPath, "utf8")
+      .replace(/^## v[\d.]+/m, "## v0.0.0-stale");
+    assert.notEqual(aged, readFileSync(changelogPath, "utf8"));
+    writeFileSync(changelogPath, aged);
+    const rebuild = spawnSync(process.execPath, [join(root, "scripts", "build-bundles.mjs")], {
+      cwd: root, encoding: "utf8",
+    });
+    assert.ifError(rebuild.error);
+    assert.equal(rebuild.status, 0, rebuild.stdout + rebuild.stderr);
+
     const lenient = run(root);
     assert.equal(lenient.status, 0, lenient.stdout + lenient.stderr);
+    assert.match(lenient.stdout, /WARN CHANGELOG\.md top entry = "0\.0\.0"/);
+    assert.match(lenient.stdout, /COHORT PARITY: PASS/);
+
     const strict = run(root, ["--strict-changelog"]);
     assert.equal(strict.status, 1, strict.stdout + strict.stderr);
-    assert.match(strict.stdout, /FAIL CHANGELOG\.md top entry = "1\.0\.9", expected "1\.0\.10"/);
+    assert.match(strict.stdout, new RegExp(`FAIL CHANGELOG\\.md top entry = "0\\.0\\.0", expected "${esc(currentVersion)}"`));
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
