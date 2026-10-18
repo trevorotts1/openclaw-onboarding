@@ -721,14 +721,36 @@ test('bridges: harness isolation, neither bridge import graph reaches the other 
     assert.ok(!spec.includes('openclaw'), `host-bridge imports ${spec}`);
     assert.ok(!spec.includes('claude-nine'), `host-bridge imports ${spec}`);
   }
-  // Every file in the bridges directory is one of the four known modules.
-  const bridgeFiles = readdirSync(join(srcRoot, 'bridges')).sort();
-  assert.deepEqual(bridgeFiles, [
+  // Exactly the known files live in the bridges directory: no module goes
+  // missing and no unowned file lands beside them. The set is one named
+  // constant, so a deliberately added module is a one-line addition here
+  // while an unexpected file and a missing module each fail on their own.
+  const KNOWN_BRIDGE_DIR_FILES = [
+    'browser-open.ts',
     'claude-nine.ts',
     'host-bridge.ts',
+    'installed-cli.test.ts',
+    'installed-cli.ts',
     'openclaw.ts',
     'parity.ts',
-  ]);
+  ];
+  const bridgeFiles = readdirSync(join(srcRoot, 'bridges')).sort();
+  const missingBridgeFiles = KNOWN_BRIDGE_DIR_FILES.filter(
+    (name) => !bridgeFiles.includes(name),
+  );
+  assert.deepEqual(
+    missingBridgeFiles,
+    [],
+    `bridges/ is missing expected module(s): ${missingBridgeFiles.join(', ')}`,
+  );
+  const unownedBridgeFiles = bridgeFiles.filter(
+    (name) => !KNOWN_BRIDGE_DIR_FILES.includes(name),
+  );
+  assert.deepEqual(
+    unownedBridgeFiles,
+    [],
+    `bridges/ holds an unexpected file(s): ${unownedBridgeFiles.join(', ')}`,
+  );
 });
 
 // ---------------------------------------------------------------------------
