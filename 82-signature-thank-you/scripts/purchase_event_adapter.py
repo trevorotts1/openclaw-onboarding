@@ -52,18 +52,26 @@ Contract (references/native-order-summary-integration.md):
   require_live_evidence=True (production mode), test_only events,
   test-marked providers, and evidence-less events are refused
   outright, so test evidence can never be promoted into production.
-- Accepted event versions: "1.0" (as before) and "1.2" (CR-S44-003,
-  S49 ruling; shared-utils/signature_launch/domain/purchase-event.schema.json
-  v1.2). ACCEPTANCE ONLY: this adapter never stamps "1.2" — a producer
-  stamping the event is a separate, later CR-S44-003 step - and the
-  snapshot it exports stays schema_version "1.0". "1.2" adds OPTIONAL
+- Accepted event versions: "1.0", "1.1" (CR-S44-001) and "1.2"
+  (CR-S44-003, S49 ruling;
+  shared-utils/signature_launch/domain/purchase-event.schema.json v1.2).
+  ACCEPTANCE ONLY: this adapter never stamps "1.1" or "1.2" — a
+  producer stamping the event is a separate, later step - and the
+  snapshot it exports stays schema_version "1.0". "1.1" is accepted
+  because older producers still emit it (44 normalizer stamps "1.1" at
+  tools/siglaunch/normalizer/normalizer.py:180 whenever a contact_ref
+  is present), so refusing it would drop valid traffic today. "1.1"
+  adds OPTIONAL contact_ref
+  (purchase-event.v1.1.schema.json:48). "1.2" adds OPTIONAL
   parent_order_ref (opaque provider order id of the initial order, or
-  null). The field is NOT an identity, NOT a grouping or grant key and
-  NOT an exported snapshot property: grouping stays native_order_ref,
-  dedupe stays event_id, and the snapshot never carries it. The field
-  is version-scoped exactly as the schemas are: it is defined only by a
-  "1.2" stamp and is refused on "1.0". Any other version fails closed.
-  "1.1" remains unaccepted here, as at the reviewed baseline.
+  null; purchase-event.schema.json:56). That field is NOT an identity,
+  NOT a grouping or grant key and NOT an exported snapshot property:
+  grouping stays native_order_ref, dedupe stays event_id, and the
+  snapshot never carries it. The field is version-scoped exactly as the
+  schemas are: it is defined only by a "1.2" stamp and is refused on
+  both "1.0" and "1.1" (neither schema declares it, and both set
+  additionalProperties false at line 4). Any other version fails
+  closed.
 
 Stdlib only. Deterministic: no clock, no randomness, no network.
 """
@@ -100,8 +108,10 @@ PAYMENT_STATUSES = {
 IDENTITY_KEYS = ("tenant_id", "location_id", "launch_id")
 
 # Accepted purchase-event schema versions. "1.0" is the reviewed
-# baseline; "1.2" is CR-S44-003 acceptance (see module docstring).
-ACCEPTED_SCHEMA_VERSIONS = ("1.0", "1.2")
+# baseline; "1.1" is CR-S44-001 (still stamped by the 44 normalizer,
+# normalizer.py:180); "1.2" is CR-S44-003 acceptance (see module
+# docstring). Acceptance only: nothing here stamps a newer version.
+ACCEPTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2")
 
 # The only version that defines parent_order_ref.
 PARENT_ORDER_REF_VERSION = "1.2"
@@ -170,8 +180,13 @@ def _validate_parent_order_ref(event, where):
 
     Allowed: absent, null, or a non-empty opaque string (schema type
     ["string", "null"], minLength 1). The value is opaque here — it is
-    not resolved, not compared, not exported. A "1.0" event carrying it
-    is refused because the v1.0 schema does not define the field.
+    not resolved, not compared, not exported. The field is defined by
+    the v1.2 schema ONLY (purchase-event.schema.json:56); neither
+    purchase-event.v1.0.schema.json nor purchase-event.v1.1.schema.json
+    declares it and both set additionalProperties false (line 4). So a
+    "1.0" event carrying it is refused, and a "1.1" event carrying it
+    is refused by exactly the same rule — 1.1 is not a 1.2 field
+    carrier.
     """
     if "parent_order_ref" not in event:
         return

@@ -2,7 +2,7 @@
   "fixture_version": "1.0",
   "test_only": true,
   "source": "S82-01 pair matrix. Identity, offers and amounts are the packet reference corpus (reference/launch-example.json: TEST-TENANT, TEST-LOCATION, TEST-LAUNCH, MAIN-A 9700, BUMP 2700, U1 6700, entitlements base-a / workbook / extra-full). Event/order refs are the S82 synthetic corpus shape (TEST-ORDER-0001, TEST-TXN-0001). Opaque values only; no PII.",
-  "note": "Every event is a complete normalized purchase event. Streams differ ONLY in the schema_version stamp and, where a case names it, the parent_order_ref form under test.",
+  "note": "Every event is a complete normalized purchase event. Streams differ ONLY in the schema_version stamp and, where a case names it, the parent_order_ref form under test. A stream listed under derived_streams is the same events as its base with `set` applied (and `drop` keys removed) to every event — it is materialized by the test, never branched on. 1.1 streams are stamped 1.1 because older producers still emit 1.1 (44 normalizer normalizer.py:180); they carry no parent_order_ref, which only the 1.2 schema defines.",
   "journeys": {
     "TEST-ORDER-0001": "TEST-JOURNEY-0001",
     "TEST-ORDER-0002": "TEST-JOURNEY-0002"
@@ -886,7 +886,44 @@
         "evidence_ref": "TEST-ONLY pair matrix evidence X5",
         "test_only": true
       }
+    ],
+    "contact_11": [
+      {
+        "schema_version": "1.1",
+        "tenant_id": "TEST-TENANT",
+        "location_id": "TEST-LOCATION",
+        "launch_id": "TEST-LAUNCH",
+        "provider": "TEST-ONLY",
+        "event_id": "TEST-EVT-D1",
+        "event_type": "purchase_observed",
+        "native_order_ref": "TEST-ORDER-0001",
+        "native_transaction_ref": "TEST-TXN-0001",
+        "contact_ref": "TEST-CONTACT-0001",
+        "occurred_at": "2026-10-15T12:00:00Z",
+        "received_at": "2026-10-15T12:00:01Z",
+        "payment_status": "succeeded",
+        "line_items": [
+          {
+            "native_line_ref": "TEST-LINE-MAIN-A",
+            "offer_id": "MAIN-A",
+            "slot": "main",
+            "currency": "USD",
+            "amount_minor": 9700,
+            "entitlement_ids": ["base-a"]
+          }
+        ],
+        "evidence_ref": "TEST-ONLY pair matrix evidence D1",
+        "test_only": true
+      }
     ]
+  },
+  "derived_streams": {
+    "main_bump_11": {"derive_from": "main_bump_10", "set": {"schema_version": "1.1"}},
+    "main_bump_u1_same_order_11": {"derive_from": "main_bump_u1_same_order_10", "set": {"schema_version": "1.1"}},
+    "refund_11": {"derive_from": "refund_10", "set": {"schema_version": "1.1"}},
+    "duplicate_11": {"derive_from": "duplicate_12", "set": {"schema_version": "1.1"}, "drop": ["parent_order_ref"]},
+    "conflict_11": {"derive_from": "conflict_12", "set": {"schema_version": "1.1"}, "drop": ["parent_order_ref"]},
+    "parent_on_11": {"derive_from": "parent_on_10", "set": {"schema_version": "1.1"}}
   },
   "cases": [
     {
@@ -1007,6 +1044,61 @@
       "case_id": "error-parent-non-string",
       "kind": "error",
       "stream": "parent_int_12",
+      "error_contains": "invalid_parent_order_ref"
+    },
+    {
+      "case_id": "eq-1.0-vs-1.1-vs-1.2-main-bump-triple",
+      "kind": "equivalence",
+      "left": "main_bump_10",
+      "middle": "main_bump_11",
+      "right": "main_bump_12",
+      "why": "All three accepted stamps on the same order content build one identical snapshot; schema_version is a stamp, not content."
+    },
+    {
+      "case_id": "eq-1.0-vs-1.1-same-order-followup-extras",
+      "kind": "equivalence",
+      "left": "main_bump_u1_same_order_10",
+      "right": "main_bump_u1_same_order_11",
+      "why": "A genuine 1.1 stream appending extras under one native order builds the same snapshot as its 1.0 counterpart."
+    },
+    {
+      "case_id": "eq-1.0-vs-1.1-refund",
+      "kind": "equivalence",
+      "left": "refund_10",
+      "right": "refund_11",
+      "why": "Refund folding is unchanged between 1.0 and 1.1."
+    },
+    {
+      "case_id": "snapshot-1.1-contact-ref-accepted",
+      "kind": "snapshot",
+      "stream": "contact_11",
+      "orders": ["TEST-ORDER-0001"],
+      "expect": {
+        "line_count": {"TEST-ORDER-0001": 1},
+        "line_payment_status": {"TEST-ORDER-0001": ["succeeded"]},
+        "line_amount_minor": {"TEST-ORDER-0001": [9700]}
+      }
+    },
+    {
+      "case_id": "snapshot-duplicate-1.1-deduped",
+      "kind": "snapshot",
+      "stream": "duplicate_11",
+      "orders": ["TEST-ORDER-0001"],
+      "expect": {
+        "line_count": {"TEST-ORDER-0001": 1},
+        "line_event_id": {"TEST-ORDER-0001": ["TEST-EVT-A1::TEST-LINE-MAIN-A"]}
+      }
+    },
+    {
+      "case_id": "error-1.1-conflicting-redelivery",
+      "kind": "error",
+      "stream": "conflict_11",
+      "error_contains": "conflicting_event_redelivery"
+    },
+    {
+      "case_id": "error-parent-on-1.1-stamp",
+      "kind": "error",
+      "stream": "parent_on_11",
       "error_contains": "invalid_parent_order_ref"
     }
   ]
