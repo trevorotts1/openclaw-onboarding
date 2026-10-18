@@ -138,9 +138,11 @@ test('configured identity and transport-reported identity are separate; unreport
 
   assert.equal(observed.identity.transportReported.state, 'reported');
   assert.equal(observed.identity.configured.modelId, 'gpt-5.1');
-  // The pin is untouched by evidence: same schema, same hash.
+  // The pin is untouched by evidence: same schema, same hash, and the
+  // OBSERVED snapshot still satisfies that hash when recomputed.
   assert.equal(observed.snapshotSha256, snap.snapshotSha256);
   assert.equal(verifyRouteSnapshotHash(observed), true);
+  assert.equal(computeRouteSnapshotSha256(observed), snap.snapshotSha256);
   // The original snapshot was not mutated.
   assert.equal(snap.identity.transportReported.state, 'unknown');
 });
@@ -304,6 +306,115 @@ test('combination members are pinned, all UNKNOWN until reported, and non-member
     observed.identity.combinationMembers?.find((m) => m.memberModelId === 'model-b')?.reported
       .state,
     'reported',
+  );
+  // Recompute the pin from the OBSERVED snapshot. Asserting only
+  // observed.snapshotSha256 === snap.snapshotSha256 reasserts the stale
+  // published field and never proves the observed snapshot satisfies it.
+  assert.equal(verifyRouteSnapshotHash(observed), true);
+  assert.equal(computeRouteSnapshotSha256(observed), observed.snapshotSha256);
+});
+
+test('combination evidence does not move the pin: observed snapshot still satisfies its own hash', () => {
+  const snap = freezeRouteSnapshot(
+    draft({
+      selection: selection({
+        routeKind: 'combination',
+        requestedModelOrAlias: 'elders-trio',
+        combinationMembers: ['model-a', 'model-b', 'model-c'],
+      } as Partial<CouncilRouteSelection>),
+    }),
+  );
+  assert.equal(verifyRouteSnapshotHash(snap), true);
+  const frozenHash = snap.snapshotSha256;
+
+  // Two members report, plus the route-level report: the whole evidence
+  // surface a combination route can carry.
+  const observed = withTransportReportedIdentity(
+    withTransportReportedIdentity(snap, {
+      state: 'reported',
+      modelId: 'model-b',
+      providerRequestId: 'req_b',
+    }),
+    {
+      state: 'reported',
+      modelId: 'model-a',
+      providerRequestId: 'req_a',
+    },
+  );
+
+  // The evidence really landed — otherwise a vacuous pin would pass.
+  assert.equal(
+    observed.identity.combinationMembers?.filter((m) => m.reported.state === 'reported').length,
+    2,
+  );
+  assert.equal(observed.identity.transportReported.state, 'reported');
+  if (observed.identity.transportReported.state !== 'reported') {
+    throw new Error('expected a reported route-level transport identity');
+  }
+  assert.equal(observed.identity.transportReported.modelId, 'model-a');
+
+  // Evidence never changes the pin, and the observed snapshot verifies.
+  assert.equal(observed.snapshotSha256, frozenHash);
+  assert.equal(verifyRouteSnapshotHash(observed), true);
+  assert.equal(computeRouteSnapshotSha256(observed), frozenHash);
+  assert.equal(snap.identity.combinationMembers?.every((m) => m.reported.state === 'unknown'), true);
+});
+
+test('a genuinely mutated pin is refused — recompute, not the stale stamp', () => {
+  const snap = freezeRouteSnapshot(
+    draft({
+      selection: selection({
+        routeKind: 'combination',
+        requestedModelOrAlias: 'elders-trio',
+        combinationMembers: ['model-a', 'model-b', 'model-c'],
+      } as Partial<CouncilRouteSelection>),
+    }),
+  );
+  assert.equal(verifyRouteSnapshotHash(snap), true);
+
+  // 1) Tampering with configured contract state: the published stamp is
+  //    left untouched, so only a recomputation can catch it.
+  const tampered = {
+    ...snap,
+    policySha256: 'b'.repeat(64),
+  } as typeof snap;
+  assert.notEqual(tampered.snapshotSha256, computeRouteSnapshotSha256(tampered));
+  assert.equal(verifyRouteSnapshotHash(tampered), false);
+
+  // 2) Tampering with the PINNED member set: same stale stamp, refused.
+  const memberTampered = {
+    ...snap,
+    identity: {
+      ...snap.identity,
+      combinationMembers: [
+        { memberModelId: 'model-z', reported: snap.identity.combinationMembers![0].reported },
+        ...snap.identity.combinationMembers!.slice(1),
+      ],
+    },
+  } as typeof snap;
+  assert.equal(memberTampered.snapshotSha256, snap.snapshotSha256);
+  assert.equal(verifyRouteSnapshotHash(memberTampered), false);
+
+  // 3) A mutated pin must never have evidence attached to it.
+  assert.throws(
+    () =>
+      withTransportReportedIdentity(tampered, {
+        state: 'reported',
+        modelId: 'model-b',
+        providerRequestId: 'req_b',
+      }),
+    (error: unknown) =>
+      error instanceof TransportError && error.code === 'TRANSPORT_ROUTE_MISMATCH',
+  );
+  assert.throws(
+    () =>
+      withTransportReportedIdentity(memberTampered, {
+        state: 'reported',
+        modelId: 'model-b',
+        providerRequestId: 'req_b',
+      }),
+    (error: unknown) =>
+      error instanceof TransportError && error.code === 'TRANSPORT_ROUTE_MISMATCH',
   );
 });
 
