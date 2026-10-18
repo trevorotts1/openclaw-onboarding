@@ -25,37 +25,51 @@ shared component through named binding points, and it never guesses a
 call the contract does not carry.
 
 Binding-point discipline, as recorded in the confirmed binding map
-(5 MAPPED, 0 PARTIAL, 1 UNMAPPED):
+(6 MAPPED, 0 PARTIAL, 0 UNMAPPED):
 
 - MAPPED points pass through to the component: entry-guard
   eligibility confirmation (row 1, revision 2 section 8A.1),
+  submission with its pending lockout (row 2, section 8A.5),
   reconciliation (row 3, section 8A.4), decline operation / decline
   result record (row 4, section 8A.2), price disclosure (row 5,
   section 8A.7), verified result read with the route-result output
   (row 6, sections 8A.6 and 8A.8).
-- The one UNMAPPED point still fails closed with a named error:
-  pending lockout (row 2). Its state is staged, not silent: MAIN
+- Row 2 (pending lockout) is the submission operation itself
+  (section 8A.5): this wrapper's single submission path passes
+  through that point to the component's submit hook, exactly once
+  per attempt, and a repeat offered while the standing attempt is
+  submitting or pending_confirmation is rejected before the point
+  is invoked, so it never reaches the native side and creates no
+  second charge attempt; the standing attempt is unaffected. MAIN
   accepted S49's G-4 ruling as a substituted disposition under
-  S81-DEC-G4-SUBDISP-01 (2026-10-17), so revision 2 section 8A.5's
+  S81-DEC-G4-SUBDISP-01 (2026-10-17), so section 8A.5's
   attempt-integrity carrier (pending lockout, reconcile-before-retry,
   decline never charges) IS the contract's attempt-key position of
-  record. The wrapper-side edits for CR-S81-001 (pass-through,
-  binding row 2, retirement of the gap label below) execute only when
-  the follow-on candidate carrying revision 2 has landed; revision
-  2's independent review has already passed at the cured hash above.
-  Until that landing, the lockout is enforced locally by this wrapper
-  exactly as before, mirroring the shipped purchase_state.py states,
-  because D1's processing state ("repeat purchase attempts disabled
-  while a result is pending; double-click cannot double-charge")
-  cannot wait. No idempotency or deduplication KEY is named anywhere
-  under the contract, and none is coined here: the ruling states on
-  its face that S06's filed position is that no native deduplication
-  exists to key on, so a coined key name would misdescribe the native
-  side. CR-S81-001's acceptance-evidence fixture remains outstanding
-  as a residual evidence item, owned as the contract states.
+  record. The wrapper-side edits for CR-S81-001 (this pass-through,
+  binding row 2 MAPPED, retirement of the staged gap label) were
+  staged on that ruling and executed in the follow-on cycle once
+  the candidate carrying revision 2 landed (PR #2228, merged in
+  train #2235 on main 9ccd6536, 2026-10-17; revision 2's independent
+  review had already passed at the cured hash above). No
+  idempotency or deduplication KEY is named anywhere under the
+  contract, and none is coined here: the ruling states on its face
+  that S06's filed position is that no native deduplication exists
+  to key on, so a coined key name would misdescribe the native
+  side. CR-S81-001's acceptance-evidence fixture remains
+  outstanding as a residual evidence item, owned as the contract
+  states (section 8A.5, residual evidence paragraph).
 
 Confirmed-contract positions this wrapper follows:
 
+- CR-S81-001 (CONFIRMED, section 8A.5): the submission operation
+  carries the pending lockout: one attempt has exactly one
+  submission path, a repeat while the outcome is pending is
+  rejected before it can reach the native side, and a submission
+  for an attempt that already reached verified success is refused.
+  The attempt-integrity carrier (this lockout, the section 8A.4
+  reconciliation discipline, and the section 8A.2 decline rule) is
+  the contract's attempt-key position under S81-DEC-G4-SUBDISP-01;
+  no idempotency key is named or coined.
 - CR-S81-002 (CONFIRMED, section 8A.4): an unknown outcome is carried
   as pending_confirmation with reconcile_required set; there is NO
   separate unknown_outcome state name, and none is invented here
@@ -159,17 +173,20 @@ class AdapterBindingError(Exception):
 # The six interface points of the confirmed binding map, by row.
 # status: MAPPED passes through; a point that is not MAPPED fails
 # closed with the named error in "error" and the component is never
-# invoked. Row 2 stays UNMAPPED this cycle by staging, not by absence
-# of contract text: see the module docstring (CR-S81-001,
-# S81-DEC-G4-SUBDISP-01).
+# invoked. All six rows stand MAPPED: row 2 moved on CR-S81-001's
+# follow-on execution (see the module docstring,
+# S81-DEC-G4-SUBDISP-01). Row 2's hook is the submission operation
+# itself (revision 2 section 8A.5): the pending lockout is behavior
+# of that operation, and submit_purchase below is the wrapper's
+# single path through it.
 BINDING_POINTS = {
     "entry_guard": {
         "row": 1, "status": "MAPPED", "hook": "confirm_entry_eligibility",
         "error": None,
     },
     "pending_lockout": {
-        "row": 2, "status": "UNMAPPED", "hook": None,
-        "error": "D1-ADAPTER-PENDING-LOCKOUT-UNMAPPED",
+        "row": 2, "status": "MAPPED", "hook": "submit_purchase",
+        "error": None,
     },
     "reconciliation": {
         "row": 3, "status": "MAPPED", "hook": "reconcile",
@@ -207,28 +224,31 @@ _STATE_TRANSLATION = {
     "requires_customer_action": "requires_customer_action",
 }
 
-# Shipped component states in which a repeat purchase submission is
-# locked out locally, mirroring purchase_state.py per S79's reply to
-# CR-S81-001 (PARTIAL). An attempt carrying reconcile_required has its
-# own stronger block (CR-S81-002) and is checked before this set.
+# The two pending states revision 2 section 8A.5 names (CR-S81-001):
+# while the standing attempt's component state is submitting or
+# pending_confirmation, a repeat submission is rejected before the
+# row 2 submission point is invoked, mirroring the shipped
+# purchase_state.py states that carry the operation. An attempt
+# carrying reconcile_required has its own stronger block
+# (CR-S81-002) and is checked before this set.
 _LOCK_COMPONENT_STATES = {"submitting", "pending_confirmation"}
 
-# Named fail-closed gap label (CR-S81-001). No idempotency or
-# deduplication key is named anywhere under the confirmed contract,
-# by ruling: revision 2 section 8A.5 names the attempt-integrity
-# carrier as the contract's attempt-key position, and MAIN accepted
-# that ruling as a substituted disposition under
-# S81-DEC-G4-SUBDISP-01. This label is NOT retired this cycle: the
-# CR-S81-001 wrapper edits are staged until the follow-on candidate
-# carrying revision 2 lands, and the label retires in that follow-on
-# cycle. This wrapper invents no key.
-IDEMPOTENCY_KEY_GAP = "D1-ADAPTER-IDEMPOTENCY-KEY-UNDEFINED"
+# CR-S81-001 gap label, RETIRED in the follow-on cycle on the
+# landing of the candidate carrying revision 2 (PR #2228, train
+# #2235, main 9ccd6536): the staged fail-closed label that named
+# the then-undefined attempt key (named in the binding map's row 2
+# record) no longer exists anywhere in this wrapper. No idempotency
+# or deduplication key is named anywhere under the confirmed
+# contract, by ruling: revision 2 section 8A.5 names the
+# attempt-integrity carrier as the contract's attempt-key position,
+# and MAIN accepted that ruling as a substituted disposition under
+# S81-DEC-G4-SUBDISP-01. This wrapper invents no key.
 
 # Per-CR status under the confirmed contract (revision 1 as completed
 # by revision 2 section 8A), 2026-10-17. Provenance for the discipline
 # in this file; the confirmed binding map carries the full record.
 CONTRACT_STATUS = {
-    "CR-S81-001": "DISPOSITION_ACCEPTED_EDITS_STAGED_S81-DEC-G4-SUBDISP-01",
+    "CR-S81-001": "CONFIRMED_R2_8A.5",
     "CR-S81-002": "CONFIRMED_R2_8A.4",
     "CR-S81-003": "CONFIRMED_R2_8A.1",
     "CR-S81-004": "CONFIRMED_R2_8A.2",
@@ -273,9 +293,8 @@ class DownsellActionAdapter:
                 spec["error"],
                 f"binding point {point!r} is {spec['status']} in the "
                 f"confirmed binding map (row {spec['row']}); no call "
-                "is made until the staged reconciliation for this "
-                "point executes (CR-S81-001, "
-                "S81-DEC-G4-SUBDISP-01)")
+                "is made while the point stands unmapped in the "
+                "confirmed map")
         hook = getattr(self._component, spec["hook"], None)
         if not callable(hook):
             raise AdapterBindingError(
@@ -388,13 +407,15 @@ class DownsellActionAdapter:
 
         Local discipline, in order: an attempt with reconcile_required
         outstanding blocks any retry (CR-S81-002); an attempt in a
-        shipped lock state (submitting or pending_confirmation) locks
-        out repeats (CR-S81-001); a completed purchase cannot be
+        pending state (submitting or pending_confirmation) has its
+        repeats rejected under the confirmed lockout (CR-S81-001,
+        revision 2 section 8A.5); a completed purchase cannot be
         submitted twice; the D1-side entry guard (check_entry_guard)
         refuses ineligible presentations without calling the
-        component. Only then is the component's submit hook invoked,
-        and its result is admitted under the same verified-evidence
-        discipline as read_status.
+        component. Only then does the submission pass through the
+        row 2 binding point to the component's submit hook, exactly
+        once for this attempt, and its result is admitted under the
+        same verified-evidence discipline as read_status.
         """
         if self._attempt and self._attempt.get("reconcile_required"):
             raise AdapterBindingError(
@@ -408,15 +429,15 @@ class DownsellActionAdapter:
             raise AdapterBindingError(
                 "D1-ADAPTER-REPEAT-ATTEMPT-LOCKED-OUT",
                 "the previous attempt is submitting or "
-                "pending_confirmation; repeat attempts are locked out "
-                "locally, mirroring the shipped purchase_state.py "
-                "behavior per CR-S81-001 (confirmed map row 2: the "
-                "attempt-integrity carrier of revision 2 section "
-                "8A.5 is the contract's attempt-key position under "
-                "S81-DEC-G4-SUBDISP-01, no idempotency key name is "
-                "coined anywhere under the contract, and the "
-                "wrapper's pass-through edits for this point are "
-                "staged: D1-ADAPTER-IDEMPOTENCY-KEY-UNDEFINED)")
+                "pending_confirmation; the repeat submission is "
+                "rejected before the row 2 submission point is "
+                "invoked, so it does not reach the native side and "
+                "creates no second charge attempt (revision 2 "
+                "section 8A.5 lockout, confirmed map row 2 MAPPED; "
+                "the attempt-integrity carrier is the contract's "
+                "attempt-key position under S81-DEC-G4-SUBDISP-01 "
+                "and no idempotency key name is coined anywhere "
+                "under the contract)")
         if self._succeeded:
             raise AdapterBindingError(
                 "D1-ADAPTER-ALREADY-SUCCEEDED",
@@ -430,17 +451,21 @@ class DownsellActionAdapter:
         if not callable(hook):
             raise AdapterBindingError(
                 "D1-ADAPTER-POINT-NOT-PROVIDED",
-                "component provides no callable 'submit_purchase'; "
-                "the purchase action fails closed rather than guessing "
-                "another call")
+                "component provides no callable 'submit_purchase' "
+                "for the row 2 submission point (revision 2 section "
+                "8A.5); the purchase action fails closed rather than "
+                "guessing another call")
         context = context if isinstance(context, dict) else {}
         self._attempt_counter += 1
         ref = context.get("attempt_ref") or f"d1-attempt-{self._attempt_counter}"
         self._attempt = {"attempt_ref": ref, "state": "processing",
                          "component_state": "submitting",
                          "reconcile_required": False}
+        # The submission itself passes through the row 2 binding
+        # point (the section 8A.5 submission operation, MAPPED on
+        # CR-S81-001): exactly one invocation for this attempt.
         try:
-            raw = hook(context)
+            raw = self.call_point("pending_lockout", context)
         except TimeoutError:
             self._attempt = {"attempt_ref": ref, "state": "pending",
                              "component_state": "pending_confirmation",

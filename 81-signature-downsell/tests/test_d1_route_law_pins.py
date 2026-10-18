@@ -10,10 +10,16 @@ carriers live in the confirmed extra-offer interface contract (S49):
 G12's carrier is carried by revision 2 section 8A.4 (SHA-256
 07f6b75794a3a8e98aad02a94fb82bcdec78d1264b0a56fa3bda066484b3022f), so
 the CR-S81-002 pin below is a real pin exercising the confirmed
-operation through the package's adapter. G11's CR-S81-001 pin remains
-a labeled skip this cycle: its disposition was accepted under
-S81-DEC-G4-SUBDISP-01, but the wrapper edits execute only when the
-follow-on candidate carrying revision 2 lands.
+operation through the package's adapter. G11's carrier is revision 2
+section 8A.5 (the submission lockout operation and the
+attempt-integrity carrier ruling at the same SHA-256), so the
+CR-S81-001 pin below is likewise a real pin, un-skipped in the
+follow-on cycle on the landing of the candidate carrying revision 2
+(PR #2228, merged in train #2235 on main 9ccd6536): its disposition
+was accepted under S81-DEC-G4-SUBDISP-01, and the pin exercises the
+confirmed carrier (pending lockout, reconcile-before-retry, decline
+never charges) through the package's adapter, not only the
+reference's rejection of the event names.
 Run with the rest of the suite: python3 -m unittest discover -s tests -v
 """
 import sys
@@ -244,11 +250,163 @@ class G11G12UnmodeledEventRejectionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 resolve_after("downsell_1", event, BASE, f)
 
-    @unittest.skip("CR-S81-001: no pending lockout or idempotency carrier exists "
-                   "in the shared interface yet, so a second purchase attempt "
-                   "during processing cannot be pinned at L1")
     def test_g11_CR_S81_001_processing_lockout(self):
-        self.fail("unreachable while CR-S81-001 is open")
+        # CR-S81-001, confirmed by revision 2 section 8A.5 of the
+        # extra-offer interface contract (S49; SHA-256
+        # 07f6b75794a3a8e98aad02a94fb82bcdec78d1264b0a56fa3bda066484b3022f;
+        # G-4 closed by the attempt-integrity carrier ruling recorded
+        # in that section, accepted under S81-DEC-G4-SUBDISP-01; the
+        # candidate carrying revision 2 landed as PR #2228 in train
+        # #2235). The carrier is a named discipline of three legs,
+        # and this pin exercises all three through the package's
+        # adapter, whose row 2 submission point is MAPPED to the
+        # section 8A.5 operation: (1) the pending lockout: one
+        # attempt has exactly one submission path, and a repeat
+        # submission while the attempt's outcome is pending
+        # (submitting or pending_confirmation) is rejected before it
+        # reaches the component, so one pending attempt can produce
+        # at most one charge attempt and the standing attempt is
+        # unaffected; (2) reconcile-before-retry: an unknown outcome
+        # is carried as pending_confirmation with reconcile_required
+        # set, no retry is accepted until reconciliation is
+        # recorded, and a fresh submission is admitted only from a
+        # recorded resolution; (3) decline never charges: invoking
+        # decline performs no charge action in any attempt state.
+        # No idempotency or deduplication key is named or coined
+        # anywhere in this exercise: the carrier is the discipline,
+        # per the section 8A.5 ruling. The acceptance-evidence
+        # fixture named in section 8A.5 (two submissions during one
+        # pending attempt producing exactly one charge attempt, from
+        # the owning side) remains an outstanding evidence item
+        # owned as the record states; this pin asserts the carrier
+        # discipline at the adapter layer only and is not that
+        # fixture.
+        entry = {
+            "main_purchased_verified": True,
+            "u1_event": "explicit_decline",
+            "u1_enabled": True,
+            "d1_enabled": True,
+            "u2_enabled": True,
+            "u1_accepted": False,
+        }
+        ctx = {"downsell_offer_ref": "TEST-D1-OFFER"}
+
+        class LockoutComponent:
+            """Scripted shared-component double for the section 8A.5
+            exercise: each submission returns the next scripted
+            result (or raises it), reconcile returns its scripted
+            result, and every submission context is recorded so the
+            pin can prove what a repeat did and did not reach."""
+
+            ALL_SUBMITTED = []
+
+            def __init__(self, submit_results, reconcile_result=None):
+                self.submit_calls = []
+                self.reconcile_calls = []
+                self._submit_results = list(submit_results)
+                self.reconcile_result = reconcile_result
+
+            def submit_purchase(self, context):
+                self.submit_calls.append(context)
+                LockoutComponent.ALL_SUBMITTED.append(context)
+                result = self._submit_results.pop(0)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+            def reconcile(self, attempt_ref):
+                self.reconcile_calls.append(attempt_ref)
+                return self.reconcile_result
+
+        # Row 2 stands MAPPED to the confirmed operation.
+        probe = DownsellActionAdapter(LockoutComponent([]))
+        self.assertEqual(probe.binding_point_status("pending_lockout"),
+                         "MAPPED")
+
+        # Leg (1), pending_confirmation form: the repeat is rejected
+        # by name, never reaches the component, and the standing
+        # attempt is unaffected (a further repeat meets the same
+        # rejection, and the one submission stands).
+        comp = LockoutComponent([{"state": "pending_confirmation"}])
+        adapter = DownsellActionAdapter(comp)
+        out = adapter.submit_purchase(dict(ctx), dict(entry))
+        self.assertEqual(out["state"], "pending")
+        self.assertEqual(out["component_state"],
+                         "pending_confirmation")
+        for _ in range(2):
+            with self.assertRaises(AdapterBindingError) as cm:
+                adapter.submit_purchase(dict(ctx), dict(entry))
+            self.assertEqual(cm.exception.code,
+                             "D1-ADAPTER-REPEAT-ATTEMPT-LOCKED-OUT")
+        self.assertEqual(len(comp.submit_calls), 1)
+
+        # Leg (1), submitting form: the same rejection while the
+        # attempt is still submitting (native state processing).
+        comp = LockoutComponent([{"state": "submitting"}])
+        adapter = DownsellActionAdapter(comp)
+        out = adapter.submit_purchase(dict(ctx), dict(entry))
+        self.assertEqual(out["state"], "processing")
+        with self.assertRaises(AdapterBindingError) as cm:
+            adapter.submit_purchase(dict(ctx), dict(entry))
+        self.assertEqual(cm.exception.code,
+                         "D1-ADAPTER-REPEAT-ATTEMPT-LOCKED-OUT")
+        self.assertEqual(len(comp.submit_calls), 1)
+
+        # Leg (2): an unknown outcome blocks every retry until
+        # reconciliation is recorded; the recorded resolution to
+        # failed admits a fresh submission, which is a new attempt,
+        # not a retry of the unknown one.
+        comp = LockoutComponent(
+            [TimeoutError("submission result unknown"),
+             {"state": "failed"}],
+            reconcile_result={"state": "failed"})
+        adapter = DownsellActionAdapter(comp)
+        out = adapter.submit_purchase(dict(ctx), dict(entry))
+        self.assertEqual(out["state"], "pending")
+        self.assertTrue(out["reconcile_required"])
+        with self.assertRaises(AdapterBindingError) as cm:
+            adapter.submit_purchase(dict(ctx), dict(entry))
+        self.assertEqual(cm.exception.code,
+                         "D1-ADAPTER-RETRY-BLOCKED-RECONCILE-REQUIRED")
+        self.assertEqual(len(comp.submit_calls), 1)
+        resolved = adapter.reconcile()
+        self.assertEqual(resolved["state"], "failed")
+        self.assertTrue(resolved["reconciled"])
+        fresh = adapter.submit_purchase(dict(ctx), dict(entry))
+        self.assertEqual(fresh["state"], "failed")
+        self.assertEqual(len(comp.submit_calls), 2)
+
+        # Leg (3): decline never charges, in each attempt state.
+        # No attempt in flight: decline reaches no purchase path.
+        comp = LockoutComponent([{"state": "pending_confirmation"}])
+        adapter = DownsellActionAdapter(comp)
+        out = adapter.decline(dict(ctx))
+        self.assertFalse(out["charge_attempted"])
+        self.assertFalse(out["component_called"])
+        self.assertEqual(comp.submit_calls, [])
+        # Attempt pending: decline charges nothing and the standing
+        # attempt's one submission remains the only one.
+        adapter.submit_purchase(dict(ctx), dict(entry))
+        out = adapter.decline(dict(ctx))
+        self.assertFalse(out["charge_attempted"])
+        self.assertTrue(out["base_order_preserved"])
+        self.assertEqual(len(comp.submit_calls), 1)
+        # Outcome unknown, reconciliation outstanding: decline still
+        # charges nothing, and the reconciliation is still owed.
+        comp = LockoutComponent(
+            [TimeoutError("submission result unknown")])
+        adapter = DownsellActionAdapter(comp)
+        adapter.submit_purchase(dict(ctx), dict(entry))
+        out = adapter.decline(dict(ctx))
+        self.assertFalse(out["charge_attempted"])
+        self.assertTrue(out["reconcile_still_required"])
+        self.assertEqual(len(comp.submit_calls), 1)
+
+        # No leg of the carrier names or coins a key: no submission
+        # context in any exercise above carries one.
+        self.assertTrue(LockoutComponent.ALL_SUBMITTED)
+        for submitted in LockoutComponent.ALL_SUBMITTED:
+            self.assertNotIn("idempotency_key", submitted)
 
     def test_g12_CR_S81_002_unknown_outcome_reconciliation(self):
         # CR-S81-002, confirmed by revision 2 section 8A.4 of the
