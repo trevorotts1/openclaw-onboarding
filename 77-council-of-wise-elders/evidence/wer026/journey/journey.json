@@ -1,0 +1,382 @@
+{
+  "schema": "wer026.journey-evidence/v1",
+  "unit": "W11-U002",
+  "source": {
+    "repo": "trevorotts1/openclaw-onboarding",
+    "base_commit": "53d772a996835c783927f900cb6a6880948e60a3",
+    "worktree": "lanes/W11-U002-lane/repo (detached HEAD at base commit)",
+    "entry_point_used": "node <worktree>/77-council-of-wise-elders/runtime/dist/blackceo-council.mjs (runtime CLI built from the pinned commit via `npm run build`)",
+    "start_entry_point": "runtime dispatcher runCli() invoked by lanes/W11-U002-lane/bin/start-driver.mts with an injected LocalHost (DeterministicFixtureTransport + one scoped grant); production CLI has no fixture transport and headless authorization approve refuses"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "data_dir": "data/round1",
+      "session_id": "sess-w11u002-round1",
+      "preview_id": "b52da920-cc8a-4b99-9079-8b8df81344aa",
+      "state": "COMPLETED",
+      "verdict_content_sha256": "ed32838faacca18372b899890cc026758da16085a1fe5b0a464718924e125924",
+      "verdict_label": "WAIT",
+      "recommended_option_id": "B",
+      "validation_status": "valid",
+      "ratification_status": "ratified",
+      "replay_events": 74,
+      "db_counts": {
+        "sessions": 1,
+        "state_records": 1,
+        "cards": 27,
+        "events": 74,
+        "verdicts": 1,
+        "checkpoints": 27
+      },
+      "card_rounds": [
+        {
+          "round": 1,
+          "c": 9,
+          "seats": 9
+        },
+        {
+          "round": 2,
+          "c": 9,
+          "seats": 9
+        },
+        {
+          "round": 3,
+          "c": 9,
+          "seats": 9
+        }
+      ],
+      "seat_ids": [
+        "brene-brown",
+        "dennis-kimbro",
+        "les-brown",
+        "michelle-obama",
+        "oprah-winfrey",
+        "russell-brunson",
+        "simon-sinek",
+        "td-jakes",
+        "tiffany-aliche"
+      ],
+      "seat_count": 9,
+      "export_report": {
+        "session_id": "sess-w11u002-round1",
+        "seat_count": 9,
+        "source_pack_versions": [
+          "1.0.0+sha256.01c9d53c272ec0bb",
+          "1.0.0+sha256.29b5ddfa9d0453d2",
+          "1.0.0+sha256.78e64a2a243bd515",
+          "1.0.0+sha256.a744b2e5177aa5f1",
+          "1.0.0+sha256.b583d78a482252da",
+          "1.0.0+sha256.f8891875fdc6d0f0",
+          "1.0.1+sha256.05444bebfec63d6b",
+          "1.0.1+sha256.978760c96bc4221a",
+          "1.0.1+sha256.ad9589f83e358880"
+        ],
+        "distinct_pack_versions": 9
+      },
+      "export_hashes": {
+        "md": "f25aef15c85899cbb86a144e827d36104b28b5683aabc92a4f2d5ba916886f65",
+        "json": "e8f2bc79d473a8f4ba84918bae85f17984ff96809b71d23bbb332203e5b34a68",
+        "json_repeat": "e8f2bc79d473a8f4ba84918bae85f17984ff96809b71d23bbb332203e5b34a68"
+      }
+    },
+    {
+      "round": 2,
+      "data_dir": "data/round2",
+      "session_id": "sess-w11u002-round2",
+      "preview_id": "87ddb164-ca4d-44b5-b6a1-b06c8a93ee4b",
+      "state": "COMPLETED",
+      "verdict_content_sha256": "e566837a34b40e778011ec66551bff0cb9b5cc5332473f0e3e68604b6c747d5f",
+      "verdict_label": "WAIT",
+      "recommended_option_id": "B",
+      "validation_status": "valid",
+      "ratification_status": "ratified",
+      "replay_events": 71,
+      "db_counts": {
+        "sessions": 1,
+        "state_records": 1,
+        "cards": 27,
+        "events": 71,
+        "verdicts": 1,
+        "checkpoints": 27
+      },
+      "card_rounds": [
+        {
+          "round": 1,
+          "c": 9,
+          "seats": 9
+        },
+        {
+          "round": 2,
+          "c": 9,
+          "seats": 9
+        },
+        {
+          "round": 3,
+          "c": 9,
+          "seats": 9
+        }
+      ],
+      "seat_ids": [
+        "brene-brown",
+        "dennis-kimbro",
+        "les-brown",
+        "michelle-obama",
+        "oprah-winfrey",
+        "russell-brunson",
+        "simon-sinek",
+        "td-jakes",
+        "tiffany-aliche"
+      ],
+      "seat_count": 9,
+      "export_report": {
+        "session_id": "sess-w11u002-round2",
+        "seat_count": 9,
+        "source_pack_versions": [
+          "1.0.0+sha256.01c9d53c272ec0bb",
+          "1.0.0+sha256.29b5ddfa9d0453d2",
+          "1.0.0+sha256.78e64a2a243bd515",
+          "1.0.0+sha256.a744b2e5177aa5f1",
+          "1.0.0+sha256.b583d78a482252da",
+          "1.0.0+sha256.f8891875fdc6d0f0",
+          "1.0.1+sha256.05444bebfec63d6b",
+          "1.0.1+sha256.978760c96bc4221a",
+          "1.0.1+sha256.ad9589f83e358880"
+        ],
+        "distinct_pack_versions": 9
+      },
+      "export_hashes": {
+        "md": "3a72077c3036b6a9bc761c97be0a8a164b6b27a0db8a5460fbcb2bf447b386e8",
+        "json": "637e99f979f1ccb0002ce2af27f5b7aa97e0d19591c30217bcdc33609348d123",
+        "json_repeat": "637e99f979f1ccb0002ce2af27f5b7aa97e0d19591c30217bcdc33609348d123"
+      }
+    },
+    {
+      "round": 3,
+      "data_dir": "data/round3",
+      "session_id": "sess-w11u002-round3",
+      "preview_id": "480aaae0-a365-420c-97f8-f5ed9ae0e925",
+      "state": "COMPLETED",
+      "verdict_content_sha256": "5a798ecfb1db08de2ff820b3934de95dc6e5a7cb6572fe240ba0024ee9976da6",
+      "verdict_label": "WAIT",
+      "recommended_option_id": "B",
+      "validation_status": "valid",
+      "ratification_status": "ratified",
+      "replay_events": 71,
+      "db_counts": {
+        "sessions": 1,
+        "state_records": 1,
+        "cards": 27,
+        "events": 71,
+        "verdicts": 1,
+        "checkpoints": 27
+      },
+      "card_rounds": [
+        {
+          "round": 1,
+          "c": 9,
+          "seats": 9
+        },
+        {
+          "round": 2,
+          "c": 9,
+          "seats": 9
+        },
+        {
+          "round": 3,
+          "c": 9,
+          "seats": 9
+        }
+      ],
+      "seat_ids": [
+        "brene-brown",
+        "dennis-kimbro",
+        "les-brown",
+        "michelle-obama",
+        "oprah-winfrey",
+        "russell-brunson",
+        "simon-sinek",
+        "td-jakes",
+        "tiffany-aliche"
+      ],
+      "seat_count": 9,
+      "export_report": {
+        "session_id": "sess-w11u002-round3",
+        "seat_count": 9,
+        "source_pack_versions": [
+          "1.0.0+sha256.01c9d53c272ec0bb",
+          "1.0.0+sha256.29b5ddfa9d0453d2",
+          "1.0.0+sha256.78e64a2a243bd515",
+          "1.0.0+sha256.a744b2e5177aa5f1",
+          "1.0.0+sha256.b583d78a482252da",
+          "1.0.0+sha256.f8891875fdc6d0f0",
+          "1.0.1+sha256.05444bebfec63d6b",
+          "1.0.1+sha256.978760c96bc4221a",
+          "1.0.1+sha256.ad9589f83e358880"
+        ],
+        "distinct_pack_versions": 9
+      },
+      "export_hashes": {
+        "md": "a246f2bc5cad1e3222d4286c54422756bb5215889da9cffed97b8fa1ed950d1f",
+        "json": "b1898d836d6c8e896cf6dfff272c9238c77a2a241131c5e91d8bc3cbbad7a2a8",
+        "json_repeat": "b1898d836d6c8e896cf6dfff272c9238c77a2a241131c5e91d8bc3cbbad7a2a8"
+      }
+    }
+  ],
+  "rounds_completed": 3,
+  "seats_per_round": [
+    9,
+    9,
+    9
+  ],
+  "distinct_seats": [
+    "brene-brown",
+    "dennis-kimbro",
+    "les-brown",
+    "michelle-obama",
+    "oprah-winfrey",
+    "russell-brunson",
+    "simon-sinek",
+    "td-jakes",
+    "tiffany-aliche"
+  ],
+  "exports_total": 12,
+  "export_invocations": 12,
+  "delta_replay": {
+    "before": {
+      "cards": 27,
+      "checkpoints": 27,
+      "events": 72,
+      "meta": 1,
+      "sessions": 1,
+      "state_records": 1,
+      "verdicts": 1
+    },
+    "after": {
+      "cards": 27,
+      "checkpoints": 27,
+      "events": 72,
+      "meta": 1,
+      "sessions": 1,
+      "state_records": 1,
+      "verdicts": 1
+    },
+    "assertion": "session/card/verdict/checkpoint deltas are zero"
+  },
+  "delta_export": {
+    "before_replay": {
+      "cards": 27,
+      "checkpoints": 27,
+      "events": 72,
+      "meta": 1,
+      "sessions": 1,
+      "state_records": 1,
+      "verdicts": 1
+    },
+    "after": {
+      "cards": 27,
+      "checkpoints": 27,
+      "events": 73,
+      "meta": 1,
+      "sessions": 1,
+      "state_records": 1,
+      "verdicts": 1
+    },
+    "assertion": "sessions, cards, verdicts, checkpoints delta 0; events +1 is the export journal record (operation_completed kind report_export), not a task/session"
+  },
+  "authorization_db_export_delta": {
+    "council_action_proposals": 0,
+    "council_approvals": 0,
+    "council_brief_revisions": 0,
+    "council_budget_reservations": 0,
+    "council_cards": 0,
+    "council_challenges": 0,
+    "council_diagnostic_capture": 0,
+    "council_events": 0,
+    "council_evidence": 0,
+    "council_jobs": 0,
+    "council_kanban_links": 0,
+    "council_outcome_reviews": 0,
+    "council_projection_outbox": 0,
+    "council_provider_attempts": 0,
+    "council_request_keys": 0,
+    "council_run_previews": 0,
+    "council_sessions": 0,
+    "council_task_links": 0,
+    "council_verdicts": 0
+  },
+  "duplicate_create": {
+    "first_exit": 0,
+    "duplicate_exit": 3,
+    "duplicate_error": "COUNCIL_STATE_CONFLICT",
+    "sessions_after": 1
+  },
+  "restart": {
+    "method": "three separate CLI processes read each session; ids/state/version identical",
+    "rounds": [
+      {
+        "round": 1,
+        "outputs_identical": true,
+        "session_id": "sess-w11u002-round1",
+        "state": "COMPLETED"
+      },
+      {
+        "round": 2,
+        "outputs_identical": true,
+        "session_id": "sess-w11u002-round2",
+        "state": "COMPLETED"
+      },
+      {
+        "round": 3,
+        "outputs_identical": true,
+        "session_id": "sess-w11u002-round3",
+        "state": "COMPLETED"
+      }
+    ]
+  },
+  "failed_rounds": {
+    "invalid_create": {
+      "exit": 2,
+      "error": "COUNCIL_INVALID_INPUT",
+      "sessions": 0
+    },
+    "refused_start_bad_grant": {
+      "exit": 3,
+      "error": "RUN_AUTHORIZATION_REQUIRED",
+      "session_state": "DRAFT",
+      "cards": 0,
+      "verdicts": 0,
+      "later_verdict_exit": 3,
+      "later_verdict_error": "COUNCIL_VERDICT_NOT_READY",
+      "duplicate_create_exit": 3,
+      "duplicate_create_error": "COUNCIL_STATE_CONFLICT"
+    },
+    "killed_mid_start": {
+      "killed_exit": 137,
+      "session_state": "ROUND_1",
+      "state_version": 4,
+      "cards": 1,
+      "verdicts": 0,
+      "later_start_exit": 3,
+      "later_start_error": "COUNCIL_STATE_CONFLICT",
+      "later_resume_exit": 3,
+      "later_resume_error": "COUNCIL_STATE_CONFLICT",
+      "verdict_exit": 3,
+      "verdict_error": "COUNCIL_VERDICT_NOT_READY"
+    }
+  },
+  "isolation": {
+    "round2_sees_round1_status_exit": 3,
+    "round2_sees_round1_pause_exit": 3,
+    "error": "COUNCIL_SESSION_NOT_FOUND",
+    "round3_sees_round1_status_exit": 3,
+    "round1_export_before_round3": {
+      "md": "f25aef15c85899cbb86a144e827d36104b28b5683aabc92a4f2d5ba916886f65",
+      "json": "e8f2bc79d473a8f4ba84918bae85f17984ff96809b71d23bbb332203e5b34a68"
+    },
+    "round1_export_after_round3": {
+      "md": "f25aef15c85899cbb86a144e827d36104b28b5683aabc92a4f2d5ba916886f65",
+      "json": "e8f2bc79d473a8f4ba84918bae85f17984ff96809b71d23bbb332203e5b34a68"
+    }
+  }
+}
