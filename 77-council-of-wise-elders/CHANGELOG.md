@@ -4,7 +4,7 @@
 
 - Registers DotCom Secrets and Expert Secrets via Skill22 and binds ten original paraphrases to retained-source hashes and edition-specific locators.
 - Records primary-teaching coverage for both Russell anchors without upgrading other seats, semantic evaluation, full-book certification or installed readiness.
-- Preserves private-source exclusions and marks the two-persona external index rebuild as pending; protected integration requires the real published asset.
+- Preserves private-source exclusions and publishes the approved two-persona incremental index as prebuilt-index-v2.4.3 (101 personas / 1,441 rows), with every prior row unchanged.
 
 ## Unreleased: final packaging (CWE-039)
 
