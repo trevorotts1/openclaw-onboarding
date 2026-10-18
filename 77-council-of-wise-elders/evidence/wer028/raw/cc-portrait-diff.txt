@@ -1,0 +1,86 @@
+captured_at=2026-10-18T23:33:49Z
+cc_head=800b076907122bd080e774024e6da7b66fb67a73
+
+## git diff --name-status ef703e08..HEAD over portrait-owned paths
+A	docs/council/portrait-photo-release.md
+A	docs/council/portrait-photo-sources.json
+A	public/council/portraits/brene-brown-detail.webp
+A	public/council/portraits/brene-brown-room.webp
+A	public/council/portraits/brene-brown-thumb.webp
+A	public/council/portraits/credits.html
+A	public/council/portraits/dennis-kimbro-detail.webp
+A	public/council/portraits/dennis-kimbro-room.webp
+A	public/council/portraits/dennis-kimbro-thumb.webp
+A	public/council/portraits/les-brown-detail.webp
+A	public/council/portraits/les-brown-room.webp
+A	public/council/portraits/les-brown-thumb.webp
+A	public/council/portraits/manifest.json
+A	public/council/portraits/michelle-obama-detail.webp
+A	public/council/portraits/michelle-obama-room.webp
+A	public/council/portraits/michelle-obama-thumb.webp
+A	public/council/portraits/oprah-winfrey-detail.webp
+A	public/council/portraits/oprah-winfrey-room.webp
+A	public/council/portraits/oprah-winfrey-thumb.webp
+A	public/council/portraits/russell-brunson-detail.webp
+A	public/council/portraits/russell-brunson-room.webp
+A	public/council/portraits/russell-brunson-thumb.webp
+A	public/council/portraits/simon-sinek-detail.webp
+A	public/council/portraits/simon-sinek-room.webp
+A	public/council/portraits/simon-sinek-thumb.webp
+A	public/council/portraits/td-jakes-detail.webp
+A	public/council/portraits/td-jakes-room.webp
+A	public/council/portraits/td-jakes-thumb.webp
+A	public/council/portraits/tiffany-aliche-detail.webp
+A	public/council/portraits/tiffany-aliche-room.webp
+A	public/council/portraits/tiffany-aliche-thumb.webp
+A	public/portraits/brene-brown-sm.svg
+A	public/portraits/brene-brown.svg
+A	public/portraits/dennis-kimbro-sm.svg
+A	public/portraits/dennis-kimbro.svg
+A	public/portraits/les-brown-sm.svg
+A	public/portraits/les-brown.svg
+A	public/portraits/michelle-obama-sm.svg
+A	public/portraits/michelle-obama.svg
+A	public/portraits/oprah-winfrey-sm.svg
+A	public/portraits/oprah-winfrey.svg
+A	public/portraits/russell-brunson-sm.svg
+A	public/portraits/russell-brunson.svg
+A	public/portraits/simon-sinek-sm.svg
+A	public/portraits/simon-sinek.svg
+A	public/portraits/td-jakes-sm.svg
+A	public/portraits/td-jakes.svg
+A	public/portraits/tiffany-aliche-sm.svg
+A	public/portraits/tiffany-aliche.svg
+A	scripts/council/PORTRAIT_REVIEW.md
+A	scripts/council/build_portrait_assets.py
+A	src/components/council/council-portrait-manifest.ts
+A	src/components/council/portraits/brene-brown-sm.svg
+A	src/components/council/portraits/brene-brown.svg
+A	src/components/council/portraits/dennis-kimbro-sm.svg
+A	src/components/council/portraits/dennis-kimbro.svg
+A	src/components/council/portraits/les-brown-sm.svg
+A	src/components/council/portraits/les-brown.svg
+A	src/components/council/portraits/michelle-obama-sm.svg
+A	src/components/council/portraits/michelle-obama.svg
+A	src/components/council/portraits/oprah-winfrey-sm.svg
+A	src/components/council/portraits/oprah-winfrey.svg
+A	src/components/council/portraits/russell-brunson-sm.svg
+A	src/components/council/portraits/russell-brunson.svg
+A	src/components/council/portraits/simon-sinek-sm.svg
+A	src/components/council/portraits/simon-sinek.svg
+A	src/components/council/portraits/td-jakes-sm.svg
+A	src/components/council/portraits/td-jakes.svg
+A	src/components/council/portraits/tiffany-aliche-sm.svg
+A	src/components/council/portraits/tiffany-aliche.svg
+A	src/components/council/useCouncilPortraitRelease.ts
+A	tests/browser/council-portrait-geometry.mjs
+A	tests/council-assets/test_build_portrait_assets.py
+A	tests/unit/council-approved-portrait-manifest.test.ts
+A	tests/unit/council-portrait-seat-render.test.tsx
+exit=0
+
+## counts
+A=75 
+
+## post-portrait diff 44cfac57f..HEAD (empty = untouched after #563)
+exit=0 (empty = untouched after #563)

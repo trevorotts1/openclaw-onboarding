@@ -1,0 +1,9 @@
+# command: node scripts/verify-cohort-parity.mjs
+# cwd: git-archive extraction of 39e74434810d9c110f2c6ac506386c832f7b6fb5:77-council-of-wise-elders
+# captured_at=2026-10-18T23:34:20Z
+# exit code: 1
+Cohort parity: root = <operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders
+PASS version markers agree: 1.0.15
+PASS CHANGELOG.md top entry matches: 1.0.15
+FAIL skill content changed without moving skill-version.txt: evidence/wer028/raw/cc-portrait-diff.txt, evidence/wer028/raw/check-runs-999-setup.json, evidence/wer028/raw/check-runs-blackceo-command-center.json, evidence/wer028/raw/check-runs-openclaw-onboarding.json, evidence/wer028/raw/cohort-presence.txt, evidence/wer028/raw/doctor.log, evidence/wer028/raw/launcher-tests-scope.txt, evidence/wer028/raw/malcom-baseline-diff.txt, evidence/wer028/raw/manifest-parity.txt, evidence/wer028/raw/negative-checks.txt, evidence/wer028/raw/parity.log, evidence/wer028/raw/queried-at.txt, evidence/wer028/raw/seams.txt, evidence/wer028/raw/setup-pr240-paths.txt, evidence/wer028/raw/supervisor-listing-main.txt, evidence/wer028/raw/version-markers.txt; skill-version.txt is still "1.0.15", expected a version bump (skill-version.txt, SKILL.md frontmatter and version) plus a rebuilt manifest.json (computed aggregate 06d8b2107cd1cfcd5eaee23d278be46b1beb363fa0cc1ec7091bdcd8a278bbf0 over 569 files, manifest.json records e19d41a24881da28d9b317a8fc6bf6f9ad62f49c28a9911b561ad9a0b7ede61f over 585).
+COHORT PARITY: FAIL (1 failing check(s))

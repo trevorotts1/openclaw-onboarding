@@ -1,0 +1,27 @@
+captured_at=2026-10-18T23:33:11Z
+base=b16266d9d head=39e74434810d9c110f2c6ac506386c832f7b6fb5
+$ git diff --name-status b16266d9d..39e7443 -- 22-book-to-persona-coaching-leadership-system/
+M	22-book-to-persona-coaching-leadership-system/INSTALL.md
+M	22-book-to-persona-coaching-leadership-system/persona-categories.json
+M	22-book-to-persona-coaching-leadership-system/personas/_section-map.json
+A	22-book-to-persona-coaching-leadership-system/personas/les-brown-its-not-over-until-you-win/persona-blueprint.md
+A	22-book-to-persona-coaching-leadership-system/personas/les-brown-live-your-dreams/persona-blueprint.md
+A	22-book-to-persona-coaching-leadership-system/personas/oprah-winfrey-the-path-made-clear/persona-blueprint.md
+A	22-book-to-persona-coaching-leadership-system/personas/oprah-winfrey-what-i-know-for-sure/persona-blueprint.md
+A	22-book-to-persona-coaching-leadership-system/personas/russell-brunson-dotcom-secrets/persona-blueprint.md
+A	22-book-to-persona-coaching-leadership-system/personas/russell-brunson-expert-secrets/persona-blueprint.md
+M	22-book-to-persona-coaching-leadership-system/scripts/build-section-map.py
+M	22-book-to-persona-coaching-leadership-system/skill-version.txt
+rc=0
+$ git diff --numstat b16266d9d..39e7443 -- 22-book-to-persona-coaching-leadership-system/persona-categories.json
+280	1	22-book-to-persona-coaching-leadership-system/persona-categories.json
+rc=0
+$ git diff --name-status aa4e83a1b..39e7443 -- 22-book-to-persona-coaching-leadership-system/ 77-council-of-wise-elders/advisors/ 77-council-of-wise-elders/scripts/register-skill22-personas.mjs
+rc=0
+$ git merge-base --is-ancestor aa4e83a1b 39e7443
+rc=0
+$ git diff --stat b16266d9d..39e7443 -- 76-local-embedder
+rc=0
+$ git rev-parse 76-local-embedder on baseline and main
+b16266d9d:76-local-embedder=35e3b3d2cf2a8bb05a82177f60bc270353b68e17 rc=0
+39e7443:76-local-embedder=35e3b3d2cf2a8bb05a82177f60bc270353b68e17 rc=0
