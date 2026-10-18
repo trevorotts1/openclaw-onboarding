@@ -4,8 +4,8 @@
 requests (spec 06 S49-07; contracts doc 02 §7, schemas page-request 1.0).
 
 Q12 REVISION (schema 1.1, S49): when the launch record names a
-prompt_policy_id (top-level field, plan-approved content bound by the
-plan document hash), build_requests stamps it into every emitted request
+prompt_policy_id (brand-group field, plan-approved content bound by the
+plan document hash), build_requests stamps it into emitted requests
 and marks those requests schema_version "1.1" (page-request.v1.1 schema,
 1.0 preserved). When the record names none, the emitted requests are
 byte-identical 1.0 requests. No policy values are minted here: the id is
@@ -14,6 +14,29 @@ supplied by a CLI flag, a run-dir config key, or a function parameter
 (copy_profile's parameter path is the anti-pattern: it is not plan-bound).
 validate_request applies the same rule in reverse: a "1.1" request must
 carry the field, and a "1.0" request must not.
+
+PP-T2 REVISION (per-role adoption switch, S49; adoption map section 2.1):
+the Q12 stamp above is no longer global. build_requests emits the 1.1
+shape for a role ONLY when the record names a prompt_policy_id AND that
+role's state in the adoption file (49-signature-funnel/
+prompt-policy-adoption.json, repo state owned by S49) is "ready"; every
+other role receives exactly the 1.0 request, with no prompt_policy_id
+key. A role missing from the file, a state outside the vocabulary, or an
+unreadable adoption file all mean NOT ready (fail toward 1.0, never
+toward 1.1). The adoption file controls emission SHAPE only: it never
+supplies, alters, or defaults the policy id, which still comes only
+from the approved launch record exactly as the Q12 revision built it,
+and readiness is never taken from a CLI flag, a run-dir config key, or
+a function parameter; it changes only by editing the adoption file in
+the repo, through the flip procedure. After the Question 1 ruling the
+id is a citation of the one governing policy (the KIE rule-12 band),
+not a selector; the switch exists as consumer-contract protection,
+because a 1.1-shaped request breaks consumer schemas that are still
+closed (additionalProperties: false), and for no other reason. The
+dispatch manifest records a prompt_policy_adoption block (per role: the
+state read, the emitted schema_version, the evidence_ref behind
+"ready") so receipts prove after the fact which roles ran 1.1 and on
+what evidence. validate_request is unchanged: it already dual-accepts.
 
 FAIL-CLOSED, in this order:
   1. The launch record must validate (validate_launch_plan) and its status
@@ -55,7 +78,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compile_launch_route as clr  # noqa: E402
@@ -73,9 +96,57 @@ ROLE_OFFERS = {"landing": ("main",), "product_selection": ("main",),
                "thank_you": ("main", "bump", "upsell_1", "downsell_1", "upsell_2")}
 WRITE_TARGETS = ("local_only", "approved_test_location", "approved_live_publication")
 
+ADOPTION_SCHEMA = "signature-launch-prompt-policy-adoption/v1"
+ADOPTION_STATES = ("not_ready", "ready", "never_by_design",
+                   "blocked_no_consumer")
+# The adoption file lives at the skill root, one level above this scripts
+# directory (49-signature-funnel/prompt-policy-adoption.json). It is repo
+# state, changed only by the flip procedure's commit (adoption map
+# section 2.3); dispatch never takes readiness from a CLI flag, a run-dir
+# config key, or a function parameter, and the file can never supply the
+# policy id. Tests rebind ADOPTION_FILE to a fixture copy.
+ADOPTION_FILE = (Path(__file__).resolve().parent.parent
+                 / "prompt-policy-adoption.json")
+_NOT_READY = {"state": "not_ready", "evidence_ref": None}
+
 
 class DispatchError(ValueError):
     pass
+
+
+def _read_adoption() -> Tuple[Dict[str, Dict[str, Any]], str]:
+    """Read the per-role adoption file (adoption map section 2.1 rule 1).
+
+    Returns (decisions, file_status): decisions maps every dispatch role
+    to {"state", "evidence_ref"} holding the EFFECTIVE state for this
+    run, and file_status is "loaded" or "unreadable". Fail toward 1.0 at
+    every layer: a missing, unparseable, or wrongly shaped file makes
+    every role not ready; a role missing from the file, an entry that is
+    not an object, or a state value outside the vocabulary makes that
+    role not ready. Nothing here raises, because 1.0 is always
+    emittable and an adoption-file failure must never widen emission."""
+    try:
+        doc = json.loads(ADOPTION_FILE.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict) \
+                or doc.get("schema") != ADOPTION_SCHEMA \
+                or not isinstance(doc.get("roles"), dict):
+            raise ValueError("adoption file does not have the v1 shape")
+        entries = doc["roles"]
+    except (OSError, ValueError):
+        return ({role: dict(_NOT_READY) for role in ROLE_SKILL},
+                "unreadable")
+    decisions: Dict[str, Dict[str, Any]] = {}
+    for role in ROLE_SKILL:
+        entry = entries.get(role)
+        if isinstance(entry, dict) \
+                and entry.get("state") in ADOPTION_STATES:
+            ref = entry.get("evidence_ref")
+            decisions[role] = {
+                "state": entry["state"],
+                "evidence_ref": ref if isinstance(ref, str) else None}
+        else:
+            decisions[role] = dict(_NOT_READY)
+    return decisions, "loaded"
 
 
 def _canonical(obj: Any) -> bytes:
@@ -112,6 +183,7 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
                 "value are three different plan hashes)")
     else:
         policy_id = None
+    decisions, _adoption_status = _read_adoption()
     offer_ids = {}
     for o in launch["offers"]:
         offer_ids.setdefault(o["slot"], []).append(o["offer_id"])
@@ -122,8 +194,14 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
         refs: List[str] = []
         for slot in ROLE_OFFERS[role]:
             refs.extend(offer_ids.get(slot, []))
+        # PP-T2 emission rule (adoption map section 2.1 rule 2): the 1.1
+        # shape is emitted for this role only when the record names a
+        # policy id AND the role's adoption state is "ready". The switch
+        # gates shape only; the id stamped is the record's, verbatim.
+        decision = decisions.get(role) or _NOT_READY
+        stamp = bool(policy_id) and decision["state"] == "ready"
         requests.append({
-            "schema_version": "1.1" if policy_id else "1.0",
+            "schema_version": "1.1" if stamp else "1.0",
             "tenant_id": launch["tenant_id"],
             "location_id": launch["location_id"],
             "launch_id": launch["launch_id"],
@@ -140,7 +218,7 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
             "route_graph_hash": launch["route_graph_hash"],
             "offer_refs": refs,
             "copy_profile": copy_profile,
-            **({"prompt_policy_id": policy_id} if policy_id else {}),
+            **({"prompt_policy_id": policy_id} if stamp else {}),
             "allowed_write_target": allowed_write_target,
             "test_only": bool(launch["test_only"]),
         })
@@ -256,12 +334,26 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         if rf:
             raise DispatchError("built request failed schema discipline: " +
                                 "; ".join(rf))
+    # PP-T2 manifest block (adoption map section 2.1 rule 5): per role,
+    # the state read, the schema_version actually emitted (taken from the
+    # request itself, never inferred from the decision), and the
+    # evidence_ref behind the state.
+    adoption, adoption_status = _read_adoption()
+    adoption_block: Dict[str, Any] = {"file_status": adoption_status,
+                                      "roles": {}}
+    for r in requests:
+        d = adoption[r["page_role"]]
+        adoption_block["roles"][r["page_role"]] = {
+            "state": d["state"],
+            "emitted_schema_version": r["schema_version"],
+            "evidence_ref": d["evidence_ref"]}
     manifest: Dict[str, Any] = {
         "schema": "signature-launch-dispatch/v1",
         "launch_id": launch["launch_id"], "revision": launch["revision"],
         "plan_document_hash": vlp.plan_document_hash(launch),
         "route_graph_hash": launch["route_graph_hash"],
         "allowed_write_target": allowed_write_target,
+        "prompt_policy_adoption": adoption_block,
         "execution": "executed" if executor else "emitted_not_executed",
         "requests": [{"request_id": r["request_id"], "page_id": r["page_id"],
                       "page_role": r["page_role"],
