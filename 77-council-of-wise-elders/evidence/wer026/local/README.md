@@ -173,5 +173,7 @@ These need host authority and are not part of this slice.
 - `logs/06-*` — unrelated-directory invocation and cwd-independence diff
 - `logs/07-probe.log` — BLOCKED_ENVIRONMENT evidence (exit 3)
 - `logs/08-process-service-checks.txt` — ps and launchctl proofs with controls
+- `logs/09-post-cleanup-checks.txt` — post-cleanup proof (no /tmp lane paths, no
+  council processes, launchctl rc 1, only the worktree remains in the lane)
 - `active/` and `receipts/` — active.json snapshots, release receipts, ROLLBACK.md
 - `receipt.json` — machine-readable summary

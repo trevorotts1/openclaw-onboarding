@@ -1,0 +1,14 @@
+MARK tmp-lane-paths
+(eval):1: no matches found: /tmp/operator-W11-U001-*
+TMP_RC=1
+MARK ps-after-cleanup
+PS_RC=1
+MARK ps-control
+      83
+MARK lane-after-cleanup
+total 0
+drwxr-xr-x    3 blackceomacmini  staff    96 Oct 18 16:08 .
+drwxr-xr-x   27 blackceomacmini  staff   864 Oct 18 16:05 ..
+drwxr-xr-x  160 blackceomacmini  staff  5120 Oct 18 16:05 repo
+MARK launchctl-council
+LAUNCHCTL_RC=1
