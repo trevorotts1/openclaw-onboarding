@@ -1,18 +1,18 @@
 {
   "schema": "wise-elders.hybrid-supervisor-runner-state/v1",
   "ledger_generation": 1,
-  "instance_id": "runner-78850",
-  "pid": 78850,
-  "created_at_ms": 1792360116311,
-  "updated_at_ms": 1792360119381,
+  "instance_id": "runner-3975",
+  "pid": 3975,
+  "created_at_ms": 1792360223747,
+  "updated_at_ms": 1792360226818,
   "tick_seq": 3,
   "completed_sweeps": 2,
   "interrupted_ticks": 0,
   "supervisor": {
     "schema": "wise-elders.hybrid-supervisor/v1",
     "state": "HEALTHY",
-    "since_ms": 1792360116323,
-    "leader_id": "runner-78850",
+    "since_ms": 1792360223759,
+    "leader_id": "runner-3975",
     "policy": {
       "schema": "wise-elders.hybrid-supervisor-policy/v2",
       "document_version": "2.4",
@@ -38,44 +38,44 @@
     "last_reconciliation": {
       "status": "SUCCEEDED",
       "successful": true,
-      "at_ms": 1792360116323,
-      "leader_id": "runner-78850"
+      "at_ms": 1792360223759,
+      "leader_id": "runner-3975"
     },
     "transitions": [
       {
         "type": "BEGIN_RECONCILE",
         "from": "STARTING",
         "to": "RECONCILING",
-        "at_ms": 1792360116323,
+        "at_ms": 1792360223759,
         "by": null
       },
       {
         "type": "RECONCILE_SUCCEEDED",
         "from": "RECONCILING",
         "to": "HEALTHY",
-        "at_ms": 1792360116323,
+        "at_ms": 1792360223759,
         "by": null
       }
     ]
   },
   "planner": {
     "schema": "wise-elders.hybrid-supervisor-sweep-planner/v1",
-    "anchor_ms": 1792360116311,
+    "anchor_ms": 1792360223747,
     "cadence_ms": 1000,
-    "next_due_at_ms": 1792360118311,
+    "next_due_at_ms": 1792360225747,
     "scheduled_sweeps": 2,
     "extra_sweeps": 0,
     "skipped_slots": 0,
-    "last_claim_at_ms": 1792360117859,
-    "last_completion_at_ms": 1792360117859,
+    "last_claim_at_ms": 1792360225294,
+    "last_completion_at_ms": 1792360225294,
     "last_completion_kind": "SCHEDULED"
   },
   "leader": {
     "schema": "wise-elders.hybrid-supervisor-leader/v1",
-    "leader_id": "runner-78850",
+    "leader_id": "runner-3975",
     "fencing_generation": 2,
     "lease_ms": 30000,
-    "lease_expires_at_ms": 1792360149381,
+    "lease_expires_at_ms": 1792360256818,
     "revision": 4,
     "commits": []
   },
@@ -86,7 +86,7 @@
     "incidents": [
       {
         "id": "INC-000001",
-        "at_ms": 1792360116323,
+        "at_ms": 1792360223759,
         "kind": "SUPERVISOR_RECONCILED",
         "severity": "NOTICE",
         "detail": {
@@ -98,58 +98,58 @@
     "actions": [
       {
         "id": "ACT-000001",
-        "at_ms": 1792360116333,
+        "at_ms": 1792360223767,
         "kind": "SWEEP_RECEIPT",
         "target": "PEND-000001",
         "payload": {
           "receipt_id": "RCPT-000001",
           "tick_seq": 1,
           "kind": "SCHEDULED",
-          "due_at_ms": 1792360116311,
-          "lateness_ms": 22,
-          "recorded_at_ms": 1792360116333
+          "due_at_ms": 1792360223747,
+          "lateness_ms": 20,
+          "recorded_at_ms": 1792360223767
         },
         "outcome": "SUCCEEDED",
         "attempts": [
           {
-            "at_ms": 1792360116333,
+            "at_ms": 1792360223767,
             "outcome": "SUCCEEDED",
             "detail": {
               "receipt_id": "RCPT-000001",
               "tick_seq": 1,
               "kind": "SCHEDULED",
-              "due_at_ms": 1792360116311,
-              "lateness_ms": 22,
-              "recorded_at_ms": 1792360116333
+              "due_at_ms": 1792360223747,
+              "lateness_ms": 20,
+              "recorded_at_ms": 1792360223767
             }
           }
         ]
       },
       {
         "id": "ACT-000002",
-        "at_ms": 1792360117859,
+        "at_ms": 1792360225294,
         "kind": "SWEEP_RECEIPT",
         "target": "PEND-000002",
         "payload": {
           "receipt_id": "RCPT-000002",
           "tick_seq": 2,
           "kind": "SCHEDULED",
-          "due_at_ms": 1792360117311,
-          "lateness_ms": 548,
-          "recorded_at_ms": 1792360117859
+          "due_at_ms": 1792360224747,
+          "lateness_ms": 547,
+          "recorded_at_ms": 1792360225294
         },
         "outcome": "SUCCEEDED",
         "attempts": [
           {
-            "at_ms": 1792360117859,
+            "at_ms": 1792360225294,
             "outcome": "SUCCEEDED",
             "detail": {
               "receipt_id": "RCPT-000002",
               "tick_seq": 2,
               "kind": "SCHEDULED",
-              "due_at_ms": 1792360117311,
-              "lateness_ms": 548,
-              "recorded_at_ms": 1792360117859
+              "due_at_ms": 1792360224747,
+              "lateness_ms": 547,
+              "recorded_at_ms": 1792360225294
             }
           }
         ]
@@ -167,7 +167,7 @@
   "admission": {
     "schema": "wise-elders.hybrid-supervisor-admission/v1",
     "state": "OPEN",
-    "since_ms": 1792360116311,
+    "since_ms": 1792360223747,
     "drain": null,
     "admitted": 0,
     "refused": 0
@@ -178,7 +178,7 @@
     "pending_actions": [
       {
         "id": "PEND-000003",
-        "at_ms": 1792360119381,
+        "at_ms": 1792360226818,
         "kind": "SCHEDULED_SWEEP_TICK",
         "payload": {
           "tick_seq": 3,
@@ -197,7 +197,7 @@
   "reconciled_actions": [],
   "last_health": {
     "schema": "wise-elders.hybrid-supervisor-health-collection/v1",
-    "observed_at_ms": 1792360117859,
+    "observed_at_ms": 1792360225294,
     "verdict": "SUSPECT",
     "subjects": [
       {
@@ -225,22 +225,22 @@
     "changes": [
       {
         "kind": "DUE_RESCHEDULED",
-        "from": 1792360117311,
-        "to": 1792360118311
+        "from": 1792360224747,
+        "to": 1792360225747
       }
     ],
     "significant_change": true,
     "signals": {
       "subject_count": 3,
-      "next_due_at_ms": 1792360118311,
-      "overdue_by_ms": -452,
+      "next_due_at_ms": 1792360225747,
+      "overdue_by_ms": -453,
       "unhealthy_gate_ms": 30000
     },
     "llm_calls": 0
   },
   "last_observation": {
     "schema": "wise-elders.hybrid-supervisor-health/v1",
-    "observed_at_ms": 1792360117859,
+    "observed_at_ms": 1792360225294,
     "verdict": "HEALTHY",
     "reasons": [
       "ALL_SIGNALS_WITHIN_POLICY"
@@ -258,10 +258,10 @@
   },
   "last_overdue": {
     "schema": "wise-elders.hybrid-supervisor-overdue/v1",
-    "observed_at_ms": 1792360117859,
-    "due_at_ms": 1792360118311,
+    "observed_at_ms": 1792360225294,
+    "due_at_ms": 1792360225747,
     "grace_ms": 30000,
-    "overdue_at_ms": 1792360148311,
+    "overdue_at_ms": 1792360255747,
     "overdue": false,
     "pid_alive": true,
     "independent_of_pid": true,

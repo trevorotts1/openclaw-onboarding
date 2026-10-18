@@ -6,4 +6,7 @@ tests_exit_code=0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 293.400875
+ℹ duration_ms 267.534417
+ℹ tests 99
+ℹ pass 99
+ℹ fail 0

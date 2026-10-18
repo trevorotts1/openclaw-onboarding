@@ -188,10 +188,14 @@ cat "$LOG/21-ps-runner-leftovers.txt"
 
 echo
 echo "== tests =="
+(cd "$SUP" && node --test tests/*.test.mjs) > "$LOG/26-existing-tests-only.txt" 2>&1
+RC_TESTS_EXISTING=$?
+echo "existing_tests_exit_code=$RC_TESTS_EXISTING" >> "$LOG/26-existing-tests-only.txt"
 (cd "$SUP" && node --test tests/*.test.mjs runner.test.mjs) > "$LOG/23-tests.log" 2>&1
 RC_TESTS=$?
 echo "tests_exit_code=$RC_TESTS" | tee "$LOG/24-tests-result.txt"
 tail -8 "$LOG/23-tests.log" | tee -a "$LOG/24-tests-result.txt"
+grep -E '^ℹ (tests|pass|fail)' "$LOG/26-existing-tests-only.txt" | tee -a "$LOG/24-tests-result.txt"
 
 git -C "$REPO" status --porcelain > "$LOG/25-git-status-after.txt"
 echo "git_status_after_lines=$(wc -l < "$LOG/25-git-status-after.txt" | tr -d ' ')" | tee -a "$LOG/25-git-status-after.txt"
