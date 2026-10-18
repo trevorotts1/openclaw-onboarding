@@ -1,0 +1,189 @@
+{
+ "schema_version": "wise-elders.card/v1",
+ "session_id": "sess-canary-demo-2",
+ "brief_revision": 1,
+ "seat_id": "brene-brown",
+ "input_manifest_sha256": "b13eb86089efd37b197864dc304d989712e87df14afbf90a9c91ac2dfad9f413",
+ "pack_version": "v1.0.0",
+ "card_kind": "advisor",
+ "round": 1,
+ "stance": "conditional",
+ "preferred_option_id": "B",
+ "option_scores": [
+  {
+   "option_id": "A",
+   "score": 4,
+   "rationale": "Status quo avoids exposure and preserves the proven workshop, but status quo keeps the unmeasured question unmeasured: nothing in the supplied facts shows whether graduates want a group program, so choosing A converts an unknown into a permanent assumption rather than resolving it. Low cost, low learning.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "B",
+   "score": 8,
+   "rationale": "A bounded paid pilot is the only listed option that tests the unmeasured demand at the smallest size, and paid enrollment is the honest signal: money is a behavior, not an opinion. Option B also matches the assumption that one cohort can be staffed by the founder alone and the constraint that pilot spend stay small and not displace the workshop.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "C",
+   "score": 1,
+   "rationale": "Broad launch now asks participants to carry risk created by a decision made without evidence. Option C spends against an unverified assumption of demand, strains the stated hard budget constraint, and requires the practice owner to promise a program the practice has never delivered.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  }
+ ],
+ "framework_applications": [
+  {
+   "framework_id": "difficult-conversation-inventory",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "The supplied facts contain no statement of what participants were ever asked about wanting more. The avoided conversation is not with the market; the avoided conversation is with the existing cohort. Before any option is chosen, name plainly what this practice does not yet know and say that gap out loud to the people the decision would affect, rather than filling the gap with a hope.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "trust-through-bounded-honesty",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "A pilot framed as a pilot is trustworthy; a pilot framed as a launch is a small deception the practice owner has to maintain. Offer B only with the framing stated to participants up front: this is one cohort, this is a test, and here is what a refund looks like if the test does not hold.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "vulnerability-without-guarantee",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "A bounded pilot is a visible, refusable act: asking real people for real money for something unproven. That exposure is the price of the information. Option C is not braver than option B; option C is option B with the feedback loop removed.",
+   "attribution_kind": "blackceo_adaptation"
+  }
+ ],
+ "decisive_arguments": [
+  "The only measured fact supplied is the existing workshop and the 12-seat baseline cohort; demand for a group program is explicitly unmeasured, so option C commits spend and reputation against zero demand evidence.",
+  "Option B is the smallest structure that produces the missing evidence, and paid enrollment is the least gameable version of that evidence; a free or discounted pilot would measure politeness, not intent.",
+  "Option A leaves the practice's own blind spot intact. Preserving the workshop is a legitimate reason to bound the pilot, not a reason to never ask the question.",
+  "The hard constraint on pilot spend and non-displacement of the workshop is satisfiable under option B, since option B is defined as one bounded cohort staffed by the founder alone; the same constraint is not obviously satisfiable under option C."
+ ],
+ "strongest_objection": "Option B can become the comfortable middle: a pilot run so gently, so discounted, and so carefully staged that the pilot cannot fail and therefore cannot inform. If the cohort is filled with the founder's most loyal graduates, if the price is set where no one would refuse, and if the founder has already privately decided to launch regardless of the result, the pilot produces the feeling of evidence and none of the cost. The pilot is only trustworthy if the founder writes down in advance what result would stop the launch, and shows that number to someone who will hold the founder to that number.",
+ "conditions": [
+  {
+   "id": "cond-1",
+   "description": "Measure stated demand from the existing workshop graduates before the pilot is offered publicly; the supplied brief states this demand is unmeasured.",
+   "kind": "evidence_required",
+   "blocking": true,
+   "verification_method": "Recorded response count and enrollment count from an offer made only to the current cohort, with the raw numbers retained and reported even if unfavorable.",
+   "required_evidence": [
+    "Enrollment count from the offer to existing workshop graduates",
+    "Stated price actually charged per seat"
+   ],
+   "responsible_role": "practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": []
+  },
+  {
+   "id": "cond-2",
+   "description": "Financial feasibility of the pilot must be checked against committed cash by the seat owning that domain before spend is committed; the brief records this critical domain as unresolved.",
+   "kind": "prerequisite",
+   "blocking": true,
+   "verification_method": "Documented cost ceiling for the single cohort and a written comparison against committed cash, produced by the responsible seat and attached to the decision record.",
+   "required_evidence": [
+    "Pilot cost ceiling for one cohort",
+    "Committed cash position at decision time"
+   ],
+   "responsible_role": "financial feasibility checker (required seat)",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": []
+  },
+  {
+   "id": "cond-3",
+   "description": "Pre-commit the stop rule in writing: the specific enrollment and satisfaction result that ends the group program rather than expanding the group program.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "Written stop rule dated before the pilot offer opens, with the numbers stated, held by a person other than the founder.",
+   "required_evidence": [
+    "Pre-registered stop threshold",
+    "Name of the holder of that threshold"
+   ],
+   "responsible_role": "practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": []
+  },
+  {
+   "id": "cond-4",
+   "description": "Participants are told plainly at enrollment that this is one test cohort, not a standing program, and what happens if the test does not continue.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "The enrollment language used for the pilot is retained and checked against the launch framing before any broad offer is made.",
+   "required_evidence": [
+    "Pilot enrollment copy as sent",
+    "Refund or continuation term disclosed to participants"
+   ],
+   "responsible_role": "practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": [
+    "cond-1"
+   ]
+  },
+  {
+   "id": "cond-5",
+   "description": "The pilot must not displace or degrade the existing six-week workshop during the bounded run.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "Workshop cohort size and delivery dates for the overlapping period are recorded and compared to the stated baseline.",
+   "required_evidence": [
+    "Existing workshop schedule for the pilot period",
+    "Existing workshop enrollment for that period"
+   ],
+   "responsible_role": "practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": []
+  }
+ ],
+ "critical_unknowns": [
+  "Whether workshop graduates actually want a group program is unmeasured in this case; the brief states this directly.",
+  "Whether the fictional pilot is affordable at committed cash levels is unresolved, and the brief marks financial feasibility as an unresolved critical domain.",
+  "Whether one founder can staff a bounded cohort without degrading the existing workshop is an assumption in the brief, not an established fact.",
+  "What price the market will bear for the group program, and whether anyone will pay that price, is not stated anywhere in the supplied material."
+ ],
+ "change_my_mind": "Show me enrollment and completion numbers, not interest. If the pilot runs and the paid seats do not fill, or fill only with people who would have bought anything the practice offered, I move off option B toward option A. If the pilot fills at full price with people outside the existing cohort and the workshop held the baseline, I move past option B toward a second bounded cohort before any broad launch. I would also move if the affordability check comes back negative: a pilot the practice cannot afford is not a smaller version of option C, the unaffordable pilot is option C on credit.",
+ "challenges_answered": [
+  "chal-001",
+  "chal-002",
+  "chal-003",
+  "chal-004",
+  "chal-005"
+ ],
+ "lenses_used": [
+  "avoided-conversation",
+  "trust-and-honesty-framing",
+  "exposure-versus-guarantee",
+  "evidence-quality-of-pilot"
+ ],
+ "quotes": [],
+ "evidence_strength": "low",
+ "minority_position": "A reasonable seat could read the same facts as a case for option A rather than option B: with demand unmeasured and affordability unresolved, the disciplined move is to keep selling the proven workshop and gather the demand evidence at zero cost, through a short offer to the existing cohort, without committing to a cohort at all. That is a real position, and option B only beats that position if the founder actually treats the pilot as a test with a stop rule rather than a launch with a rehearsal.",
+ "host": {
+  "scope": {
+   "tenant_id": "local-tenant",
+   "company_id": "local-company",
+   "installation_id": "e24c1559-5303-4370-82da-577856a32955",
+   "owner_subject": "local-owner"
+  },
+  "operation_id": "op:e24c1559-5303-4370-82da-577856a32955:local-tenant:sess-canary-demo-2:a1:round-1:brene-brown:b13eb86089efd37b",
+  "route_id": "claude-nine-configured",
+  "session_id": "sess-canary-demo-2",
+  "stamped_at": "2026-10-16T13:26:34.791Z",
+  "source_status": "not_applicable"
+ }
+}

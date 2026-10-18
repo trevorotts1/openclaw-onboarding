@@ -40,6 +40,17 @@
  *   it (RP-046-3, DEFECT-046-B Cause 2). Validation itself is never
  *   weakened: an out-of-enum card_kind still fails and flows to the
  *   one permitted repair.
+ * - The contract is also stated in prose, per call (RP-046-4,
+ *   DEFECT-046-C; cli/card-contract.ts): the single exact card_kind,
+ *   the complete required-field list, the opaque-ID format rule, the
+ *   challenge IDs issued for this call (an empty issuance in Round 1,
+ *   where challenges_answered must be an empty array), and the
+ *   due_at format with a concrete example. Two enforced rules live
+ *   only in zod refinements and never reach the JSON Schema the
+ *   model sees, so before this repair they were conveyed nowhere.
+ *   The one permitted repair restates the full contract beside the
+ *   validator's verbatim failures (Section 15.5), instead of
+ *   forwarding the error strings alone.
  * - Completed operations are never redone: a stored card for the same
  *   logical operation (session, round, seat, input hash) is reused on
  *   resume instead of spending again (Section 15.3).
@@ -84,6 +95,10 @@ import {
 } from '../contracts/index.js';
 import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/index.js';
 import { deriveHardConstraintFindings } from '../scoring/decision.js';
+import {
+  cardContractInstruction,
+  cardRepairInstruction,
+} from './card-contract.js';
 import { parseCardResponseText } from './card-text.js';
 import { CouncilError, invalidInput } from './errors.js';
 import { OPERATION_LEASE_HEARTBEAT_MS } from './leases.js';
@@ -828,11 +843,30 @@ export class CouncilEngine {
     // all (the system text said "matching the supplied schema" but
     // none was supplied), so a harness-backed model had to guess the
     // closed discriminator value and the exact field shape.
+    // RP-046-4 (DEFECT-046-C): the instruction also states the
+    // contract in prose for THIS call (cli/card-contract.ts), because
+    // the opaque-ID and UTC-timestamp rules are zod refinements that
+    // never reach the JSON Schema, and the required-field list and
+    // this call's challenge issuance existed nowhere in prose. The
+    // challenge issuance is read from the operation's own input: an
+    // advisor call carries the challenges assigned to the seat (an
+    // empty issuance in Round 1, where no challenges exist yet).
+    const assignedChallenges = (
+      extraInput as {
+        challenges_for_seat?: Array<{ crux_id?: unknown }>;
+      }
+    ).challenges_for_seat;
+    const challengeIds: string[] | null =
+      purpose === 'advisor'
+        ? (Array.isArray(assignedChallenges) ? assignedChallenges : [])
+            .map((c) =>
+              c && typeof c.crux_id === 'string' ? c.crux_id : null,
+            )
+            .filter((v): v is string => v !== null)
+        : null;
     const outputContract = {
       card_kind: purpose,
-      instruction:
-        'Return exactly one JSON object and nothing else: no prose, no markdown, no code fences. ' +
-        `The object's "card_kind" field must be exactly "${purpose}" and the object must conform to the supplied JSON Schema.`,
+      instruction: cardContractInstruction(purpose, challengeIds),
       json_schema: cardAuthorJsonSchema(purpose),
     };
     const systemWithContract = `${system}\n${outputContract.instruction}`;
@@ -881,7 +915,7 @@ export class CouncilEngine {
           model_policy: session.spec.model_policy,
           system:
             repairs > 0
-              ? `${systemWithContract}\nYour previous output failed validation: ${lastIssues.join('; ')}. Return a corrected card only.`
+              ? `${systemWithContract}\n${cardRepairInstruction(purpose, challengeIds, lastIssues)}`
               : systemWithContract,
           input: requestInput,
         };
