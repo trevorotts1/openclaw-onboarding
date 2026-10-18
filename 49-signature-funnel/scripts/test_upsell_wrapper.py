@@ -398,13 +398,19 @@ class ConfigFragmentTests(unittest.TestCase):
         # presence assertion plus the two honest absences (checkout
         # closed by design per CR-S49-003; downsell_1 has no consumer
         # until Skill 81 lands on main).
+        # Downsell assembly re-point (S49 downsell wrapper assembly,
+        # disclosed in its assembly report): Skill 81 has since landed
+        # on main (PR #2229, train #2235) and the downsell_1 consumer
+        # ships in this tree, so the merged config now wires six
+        # roles; the presence assertion below is the exact six-role
+        # set and checkout is the one remaining honest absence. Every
+        # per-entry assertion is unchanged.
         config = load(CONFIG)
         adapters = config["adapters"]
         self.assertEqual(set(adapters),
-                         {"landing", "product_selection", "upsell_1",
-                          "upsell_2", "thank_you"})
+                         {"downsell_1", "landing", "product_selection",
+                          "upsell_1", "upsell_2", "thank_you"})
         self.assertNotIn("checkout", adapters)
-        self.assertNotIn("downsell_1", adapters)
         commands = {}
         for role in ("upsell_1", "upsell_2"):
             spec = adapters[role]
