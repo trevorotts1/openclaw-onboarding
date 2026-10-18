@@ -39,10 +39,16 @@ import jsonschema
 # suggests — and validate_event dispatches on the event's stamped
 # version, failing closed on any other, missing, or non-string
 # version (the same registry/dispatch as the L1 events module).
+# v1.2 acceptance (CR-S44-003, consumer side): the vendored copy is a
+# byte-identical copy of shared-utils/signature_launch/events/
+# purchase-event.v1.2.schema.json. Acceptance only — nothing here
+# stamps 1.2, and parent_order_ref is never required, never identity,
+# never used for grouping or dedupe.
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "normalizer"
 _SCHEMA_CANDIDATES = [
     _SCHEMA_DIR / "purchase-event.schema.json",
     _SCHEMA_DIR / "purchase-event.v1.1.schema.json",
+    _SCHEMA_DIR / "purchase-event.v1.2.schema.json",
 ]
 
 _SCHEMAS: dict = {}
@@ -82,9 +88,12 @@ def validate_event(event: dict) -> dict:
     """Validate a normalized envelope against its stamped schema
     version. Same contract as events.validate_event: v1.0 validates
     as before; v1.1 additionally allows the optional nullable
-    contact_ref; an unknown, missing, or non-string schema_version
-    fails closed, as does a non-object event. Raises on an invalid
-    event, returns the event on success."""
+    contact_ref; v1.2 additionally allows the optional nullable
+    parent_order_ref (acceptance only — parent_order_ref is never
+    required and is not part of any identity, grouping, or dedupe
+    key). An unknown, missing, or non-string schema_version fails
+    closed, as does a non-object event. Raises on an invalid event,
+    returns the event on success."""
     if not isinstance(event, dict):
         raise jsonschema.ValidationError(
             f"purchase event must be an object, got {type(event).__name__}")

@@ -27,6 +27,44 @@ class HandoffError(ValueError):
     pass
 
 
+# Schema 1.2 acceptance (CR-S44-003): the packet reference now carries
+# the 1.2 schema beside the 1.0 one, so both versions resolve. The 1.0
+# file and what this fixture emits are unchanged — it still stamps 1.0.
+# Unknown versions fail closed.
+PACKET_EVENT_SCHEMA_V12 = (PACKET_EVENT_SCHEMA.parent
+                           / "purchase-event.v1.2.schema.json")
+_PACKET_EVENT_SCHEMAS = {
+    "1.0": PACKET_EVENT_SCHEMA,
+    "1.2": PACKET_EVENT_SCHEMA_V12,
+}
+
+
+def load_packet_event_schema(version: str) -> dict:
+    """Resolve the packet purchase-event schema for a schema_version.
+    An unknown, missing, or non-string version fails closed."""
+    if not isinstance(version, str) or version not in _PACKET_EVENT_SCHEMAS:
+        raise HandoffError(
+            f"unsupported packet purchase-event schema_version {version!r}: "
+            f"fail closed (installed schemas: "
+            f"{sorted(_PACKET_EVENT_SCHEMAS)})")
+    path = _PACKET_EVENT_SCHEMAS[version]
+    if not path.exists():
+        raise HandoffError(
+            f"packet purchase-event schema {version} not found: {path}")
+    return json.loads(path.read_text())
+
+
+def validate_packet_event(event: dict) -> dict:
+    """Validate an event against the packet schema for its stamped
+    schema_version. 1.0 validates exactly as before; 1.2 is accepted
+    with its optional parent_order_ref; an unknown, missing, or
+    non-string version fails closed."""
+    version = event.get("schema_version") if isinstance(event, dict) else None
+    schema = load_packet_event_schema(version)
+    jsonschema.validate(event, schema)
+    return event
+
+
 def build_purchase_event(*, attempt, tenant_id: str, location_id: str, launch_id: str,
                          native_order_ref: str, native_transaction_ref: str | None,
                          occurred_at: str, received_at: str, evidence_ref: str,
@@ -60,9 +98,8 @@ def build_purchase_event(*, attempt, tenant_id: str, location_id: str, launch_id
         "evidence_ref": evidence_ref,
         "test_only": test_only,
     }
-    schema = json.loads(PACKET_EVENT_SCHEMA.read_text())
     try:
-        jsonschema.validate(event, schema)
+        validate_packet_event(event)
     except jsonschema.ValidationError as exc:
         raise HandoffError(f"event fails the packet purchase-event schema: {exc.message}") from exc
     return event
@@ -104,11 +141,12 @@ class EntitlementGrantor:
         # handed. A dict merely claiming `succeeded` grants nothing; the
         # event must satisfy the packet purchase-event schema (tenant,
         # location, order ref, evidence ref, line items) AND be succeeded.
-        schema = json.loads(PACKET_EVENT_SCHEMA.read_text())
         try:
-            jsonschema.validate(event, schema)
+            validate_packet_event(event)
         except jsonschema.ValidationError as exc:
             raise HandoffError(f"unvalidated event refused at the granting boundary: {exc.message}") from exc
+        except HandoffError as exc:
+            raise HandoffError(f"unvalidated event refused at the granting boundary: {exc}") from exc
         if event.get("event_type") != "purchase_observed":
             # Review defect N2: a refund_observed or payment_updated event
             # must never grant entitlements, even if it claims succeeded.
