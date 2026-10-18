@@ -133,6 +133,27 @@ export type BudgetReservationState =
   | 'expired'
   | 'unknown';
 
+/**
+ * How well the money on a reservation is known (WER-010). The union is
+ * structurally identical to queue/producer.ts CostKnowledge; it is
+ * restated here because budgets is the lower layer and must not import
+ * upward from the queue.
+ *
+ * - `verified`: a metered/confirmed amount.
+ * - `estimated`: a bounded quote that may differ from the final charge.
+ * - `unknown`: pricing or usage is not known. An unknown reservation
+ *   ALWAYS keeps a non-zero conservative hold and is never reported or
+ *   settled as zero. A zero-unit unknown charge is refused at reserve
+ *   time because that would silently treat unknown money as free.
+ */
+export type BudgetCostKnowledge = 'estimated' | 'verified' | 'unknown';
+
+const COST_KNOWLEDGE: ReadonlySet<BudgetCostKnowledge> = new Set([
+  'estimated',
+  'verified',
+  'unknown',
+]);
+
 /** Default hold lifetime for a reservation that is never finalized. */
 export const DEFAULT_RESERVATION_HOLD_TTL_MS = 900_000;
 
@@ -169,6 +190,8 @@ export interface DurableBudgetReservation {
   estimate_minor: number;
   actual_minor: number | null;
   currency: string;
+  /** estimated | verified | unknown; unknown is never treated as zero. */
+  cost_knowledge: BudgetCostKnowledge;
   /** The pinned CWE-008 snapshot this charge belongs to. Never migrates. */
   route_snapshot: PinnedRouteSnapshot;
   route_snapshot_fingerprint: string;
@@ -188,6 +211,12 @@ export interface ReserveInput {
   estimate_minor: number;
   /** Defaults to the grant record's currency; a mismatch is refused. */
   currency?: string | null;
+  /**
+   * estimated | verified | unknown. Defaults to `estimated`. When
+   * `unknown`, estimate_minor is a conservative hold and must be > 0:
+   * unknown money is never reserved, reported, or settled as zero.
+   */
+  cost_knowledge?: BudgetCostKnowledge;
   /** The caller's current operation lease epoch (Section 15.8 fence). */
   lease_epoch: number;
   route_snapshot: PinnedRouteSnapshot;
@@ -215,6 +244,12 @@ export interface DurableBudgetSnapshot extends BudgetSnapshot {
     /** Worst-case outstanding: estimates held plus committed actuals. */
     outstanding_minor: number;
     committed_actual_minor: number;
+    /** Holds that are not yet finalized (reserved and unknown rows). */
+    held_minor: number;
+    /** Holds whose completion is unknown; still counted, never zero. */
+    unknown_minor: number;
+    /** Active reservations minted with cost_knowledge 'unknown'. */
+    unknown_cost_reservations: number;
     /** Null only when no reservation and no grant name a currency. */
     currency: string | null;
   };
@@ -257,6 +292,86 @@ interface JournalChargeFacts {
   original_operation_id: string | null;
   route_snapshot: PinnedRouteSnapshot;
   lease_epoch: number;
+  cost_knowledge: BudgetCostKnowledge;
+}
+
+/** How far an operation got, as observed by the reconciler. */
+export type ReconcileDispatch =
+  | 'not_dispatched'
+  | 'dispatched_no_response'
+  | 'response_observed';
+
+export interface ReconcileOperationInput {
+  session_id: string;
+  operation_id: string;
+  lease_epoch: number;
+  dispatch: ReconcileDispatch;
+  /** Required for response_observed: the confirmed actual charge. */
+  actual_minor?: number | null;
+  /** Defaults to `verified`; `unknown` is never a settlement. */
+  cost_knowledge?: BudgetCostKnowledge;
+}
+
+export type ReconcileOutcome =
+  | 'nothing_to_reconcile'
+  | 'released_not_dispatched'
+  | 'settled'
+  | 'already_settled'
+  | 'held_unknown'
+  | 'already_released'
+  | 'already_expired';
+
+export interface ReconcileResult {
+  outcome: ReconcileOutcome;
+  session_id: string;
+  operation_id: string;
+  reservation: DurableBudgetReservation | null;
+  charged_minor: number | null;
+  currency: string | null;
+  /** True only for a recorded not-dispatched release. */
+  released_not_dispatched: boolean;
+}
+
+export interface GrantRenewalInput {
+  grant_id: string;
+  session_id: string;
+  /** Current operation lease epoch; a stale generation cannot renew. */
+  lease_epoch: number;
+  /** Capacity added to the durable ceiling; safe integer > 0. */
+  additional_minor: number;
+  currency?: string | null;
+  /** Optional extension; never shortens the existing expiry. */
+  new_expires_at?: string | null;
+  /** Operator/authority reference recorded with the renewal. */
+  authority_ref?: string | null;
+}
+
+export interface GrantRenewalResult {
+  grant_id: string;
+  currency: string;
+  previous_max_cost_minor: number;
+  new_max_cost_minor: number;
+  expires_at: string;
+  /** Historical usage at renewal time; renewal never resets it. */
+  committed_actual_minor: number;
+  consumed_provider_requests: number;
+  active_reservations: number;
+}
+
+/** Durable granted ceiling plus its live usage and holds (WER-010). */
+export interface DurableGrantLedger {
+  grant_id: string;
+  status: string;
+  expires_at: string;
+  max_cost_minor: number | null;
+  currency: string | null;
+  committed_actual_minor: number;
+  held_minor: number;
+  unknown_minor: number;
+  outstanding_minor: number;
+  remaining_minor: number | null;
+  consumed_provider_requests: number;
+  active_reservations: number;
 }
 
 export interface DurableBudgetServiceDeps {
@@ -422,6 +537,18 @@ export class DurableBudgetService {
         );
       }
 
+      const costKnowledge = input.cost_knowledge ?? 'estimated';
+      if (!COST_KNOWLEDGE.has(costKnowledge)) {
+        throw budgetInvalidInput(
+          `cost_knowledge must be estimated|verified|unknown; received ${String(costKnowledge)}.`,
+        );
+      }
+      if (costKnowledge === 'unknown' && input.estimate_minor === 0) {
+        throw budgetInvalidInput(
+          'Unknown money cannot be reserved at zero: an unknown charge always keeps a conservative non-zero hold. Supply the worst-case estimate, or state cost_knowledge estimated|verified for a genuinely zero charge.',
+        );
+      }
+
       const existing = this.reservationRow(
         handle,
         envelope,
@@ -581,6 +708,7 @@ export class DurableBudgetService {
           original_operation_id: input.original_operation_id ?? null,
           estimate_minor: input.estimate_minor,
           currency,
+          cost_knowledge: costKnowledge,
           lease_epoch: input.lease_epoch,
           hold_expires_at: holdExpiresAt,
           route_snapshot: input.route_snapshot,
@@ -614,6 +742,7 @@ export class DurableBudgetService {
         estimate_minor: input.estimate_minor,
         actual_minor: null,
         currency,
+        cost_knowledge: costKnowledge,
         route_snapshot: input.route_snapshot,
         route_snapshot_fingerprint: fingerprint,
         lease_epoch: input.lease_epoch,
@@ -639,10 +768,26 @@ export class DurableBudgetService {
       operation_id: string;
       lease_epoch: number;
       actual_minor: number;
+      /** verified (default) or estimated; `unknown` is never a settle. */
+      cost_knowledge?: BudgetCostKnowledge;
     },
   ): DurableBudgetReservation {
     if (!Number.isSafeInteger(input.actual_minor) || input.actual_minor < 0) {
       throw budgetInvalidInput('actual_minor must be a safe integer >= 0.');
+    }
+    const knowledge = input.cost_knowledge ?? 'verified';
+    if (!COST_KNOWLEDGE.has(knowledge) || knowledge === 'unknown') {
+      throw budgetInvalidInput(
+        'A settlement must carry cost_knowledge verified or estimated. Unknown money is held, not settled; call markProviderCompletionUnknown and reconcile later.',
+      );
+    }
+    const minted = this.journalFacts(envelope, input.session_id).get(
+      input.operation_id,
+    );
+    if (minted?.cost_knowledge === 'unknown' && knowledge !== 'verified') {
+      throw budgetInvalidInput(
+        `Reservation ${input.operation_id} was minted with cost_knowledge unknown; only a verified amount may settle it. An estimate never resolves unknown money.`,
+      );
     }
     return this.finalize(envelope, input, {
       outcome: 'settled',
@@ -671,6 +816,7 @@ export class DurableBudgetService {
       payload: (row) => ({
         actual_minor: input.actual_minor,
         currency: row.currency,
+        cost_knowledge: knowledge,
       }),
     });
   }
@@ -977,6 +1123,9 @@ export class DurableBudgetService {
       grant?.currency ?? (rows.length > 0 ? rows[0].currency : null);
     let outstanding = 0;
     let committedActual = 0;
+    let held = 0;
+    let unknownMoney = 0;
+    let unknownCostReservations = 0;
     for (const row of active) {
       outstanding +=
         row.state === 'committed'
@@ -984,6 +1133,12 @@ export class DurableBudgetService {
           : row.estimate_minor;
       if (row.state === 'committed') {
         committedActual += row.actual_minor ?? row.estimate_minor;
+      } else {
+        held += row.estimate_minor;
+        if (row.state === 'unknown') unknownMoney += row.estimate_minor;
+        if (facts.get(row.operation_id)?.cost_knowledge === 'unknown') {
+          unknownCostReservations += 1;
+        }
       }
     }
     return {
@@ -1006,6 +1161,9 @@ export class DurableBudgetService {
         authorized_minor: grant ? grant.max_cost_minor : null,
         outstanding_minor: outstanding,
         committed_actual_minor: committedActual,
+        held_minor: held,
+        unknown_minor: unknownMoney,
+        unknown_cost_reservations: unknownCostReservations,
         currency,
       },
       envelope_breakdown: {
@@ -1029,6 +1187,430 @@ export class DurableBudgetService {
         ]),
       },
     };
+  }
+
+  // ------------------------------------------------------- grant lifecycle
+
+  /**
+   * The durable granted ceiling with its live usage and held
+   * reservations (WER-010). A read-only projection over the grant row
+   * (the durable authority) and the reservation rows (the durable
+   * usage): nothing here is a process-local counter.
+   */
+  grantLedger(
+    envelope: AuthorizationEnvelope,
+    grantId: string,
+  ): DurableGrantLedger {
+    const grant = this.db.read((handle) => {
+      this.assertSchema(handle);
+      return this.grantRow(handle, envelope, grantId);
+    });
+    if (!grant) {
+      throw new BudgetCapacityError(
+        'BUDGET_GRANT_NOT_FOUND',
+        `No run grant record ${grantId} exists in this scope.`,
+        { retryable: false, detail: { grant_id: grantId } },
+      );
+    }
+    const rows = this.db.read((handle) =>
+      this.grantRows(handle, envelope, grantId),
+    );
+    const facts = new Map<string, JournalChargeFacts>();
+    for (const row of rows) {
+      const fact = this.journalFacts(envelope, row.session_id).get(row.operation_id);
+      if (fact) facts.set(row.operation_id, fact);
+    }
+    let committed = 0;
+    let held = 0;
+    let unknownMoney = 0;
+    let consumed = 0;
+    let active = 0;
+    for (const row of rows) {
+      if (!ACTIVE_STATES.has(row.state)) continue;
+      active += 1;
+      if (row.state === 'committed') {
+        committed += row.actual_minor ?? row.estimate_minor;
+        consumed += 1;
+      } else {
+        held += row.estimate_minor;
+        if (row.state === 'unknown') {
+          unknownMoney += row.estimate_minor;
+          consumed += 1;
+        }
+      }
+    }
+    const outstanding = committed + held;
+    return {
+      grant_id: grant.id,
+      status: grant.status,
+      expires_at: grant.expires_at,
+      max_cost_minor: grant.max_cost_minor,
+      currency: grant.currency,
+      committed_actual_minor: committed,
+      held_minor: held,
+      unknown_minor: unknownMoney,
+      outstanding_minor: outstanding,
+      remaining_minor:
+        grant.max_cost_minor === null
+          ? null
+          : Math.max(0, grant.max_cost_minor - outstanding),
+      consumed_provider_requests: consumed,
+      active_reservations: active,
+    };
+  }
+
+  /**
+   * Renew one session-bound grant: add authorized money capacity (and
+   * optionally extend expiry) in ONE short transaction, fenced by the
+   * caller's current lease epoch.
+   *
+   * - Only an active, unexpired, bounded grant renews. An unbounded
+   *   grant has nothing to add; a standing (session-less) grant has no
+   *   lease to fence against and is refused here.
+   * - Capacity is ADDITIVE on the durable row. No reservation row, no
+   *   journal event, and no counter is deleted or reset: historical
+   *   usage and consumed counts are reported back unchanged.
+   * - The update is compare-and-swap on the previous ceiling, so two
+   *   concurrent renewals cannot silently overwrite each other.
+   */
+  renewGrantCeiling(
+    envelope: AuthorizationEnvelope,
+    input: GrantRenewalInput,
+  ): GrantRenewalResult {
+    if (!Number.isSafeInteger(input.additional_minor) || input.additional_minor <= 0) {
+      throw budgetInvalidInput(
+        'additional_minor must be a safe integer > 0. A renewal adds capacity; it never revokes.',
+      );
+    }
+    if (!Number.isSafeInteger(input.lease_epoch) || input.lease_epoch < 0) {
+      throw budgetInvalidInput('lease_epoch must be a safe integer >= 0.');
+    }
+    const now = this.clock.nowUtc();
+    return this.db.write((handle) => {
+      this.assertSchema(handle);
+      this.assertSessionUsable(handle, envelope, input.session_id);
+      const grant = this.grantRow(handle, envelope, input.grant_id);
+      if (!grant) {
+        throw new BudgetCapacityError(
+          'BUDGET_GRANT_NOT_FOUND',
+          `No run grant record ${input.grant_id} exists in this scope. Nothing was renewed.`,
+          { retryable: false, detail: { grant_id: input.grant_id } },
+        );
+      }
+      if (grant.status !== 'active' || grant.expires_at <= now) {
+        throw new BudgetCapacityError(
+          'BUDGET_GRANT_INACTIVE',
+          `Run grant ${grant.id} is not active (status ${grant.status}, expires ${grant.expires_at}). A revoked, expired, or exhausted grant cannot be renewed.`,
+          { retryable: false, detail: { grant_id: grant.id } },
+        );
+      }
+      if (grant.session_id !== input.session_id) {
+        throw new BudgetCapacityError(
+          'BUDGET_GRANT_SESSION_MISMATCH',
+          `Run grant ${grant.id} is bound to session ${grant.session_id ?? '(none)'}, not ${input.session_id}. Only a session-bound grant has a lease to fence a renewal.`,
+          { retryable: false, detail: { grant_id: grant.id } },
+        );
+      }
+      this.assertEpoch(
+        envelope,
+        input.session_id,
+        `grant:${grant.id}`,
+        input.lease_epoch,
+      );
+      if (grant.max_cost_minor === null) {
+        throw budgetInvalidInput(
+          `Run grant ${grant.id} has no money ceiling to renew (unbounded). Nothing was renewed.`,
+        );
+      }
+      const currency = grant.currency;
+      if (!currency) {
+        throw budgetInvalidInput(
+          `Run grant ${grant.id} names no currency, so a money renewal cannot be expressed.`,
+        );
+      }
+      if (input.currency !== undefined && input.currency !== null && input.currency !== currency) {
+        throw new BudgetCapacityError(
+          'BUDGET_CURRENCY_MISMATCH',
+          `Renewal currency ${input.currency} does not match grant currency ${currency}.`,
+          { retryable: false, detail: { grant_id: grant.id } },
+        );
+      }
+      let expiresAt = grant.expires_at;
+      if (input.new_expires_at !== undefined && input.new_expires_at !== null) {
+        const parsed = Date.parse(input.new_expires_at);
+        if (Number.isNaN(parsed) || new Date(parsed).toISOString() !== input.new_expires_at) {
+          throw budgetInvalidInput(
+            'new_expires_at must be a UTC ISO 8601 timestamp.',
+          );
+        }
+        if (input.new_expires_at > expiresAt) expiresAt = input.new_expires_at;
+      }
+      const previous = grant.max_cost_minor;
+      const next = previous + input.additional_minor;
+      if (!Number.isSafeInteger(next)) {
+        throw budgetInvalidInput(
+          'The renewed ceiling would exceed the safe integer range. Split the renewal.',
+        );
+      }
+      const result = handle
+        .prepare(
+          `UPDATE council_approvals
+              SET max_cost_minor = ?, expires_at = ?
+            WHERE tenant_id = ? AND company_id = ? AND id = ? AND kind = 'run_grant'
+              AND status = 'active' AND max_cost_minor = ?`,
+        )
+        .run(
+          next,
+          expiresAt,
+          envelope.tenant_id,
+          envelope.company_id,
+          grant.id,
+          previous,
+        );
+      if (Number(result.changes) !== 1) {
+        throw new BudgetCapacityError(
+          'BUDGET_GRANT_INACTIVE',
+          `Grant ${grant.id} changed state while renewal was in flight. Nothing was renewed.`,
+          { retryable: true, detail: { grant_id: grant.id } },
+        );
+      }
+      const event = this.journal.append(handle, envelope, input.session_id, {
+        event_id: this.ids.newId(),
+        type: 'grant_issued',
+        from_state: null,
+        to_state: null,
+        actor_subject: envelope.actor_subject,
+        payload: {
+          grant_kind: 'run_grant',
+          lifecycle: 'renewed',
+          grant_id: grant.id,
+          currency,
+          previous_max_cost_minor: previous,
+          added_minor: input.additional_minor,
+          max_cost_minor: next,
+          expires_at: expiresAt,
+          lease_epoch: input.lease_epoch,
+          authority_ref: input.authority_ref ?? null,
+        },
+        created_at: now,
+      });
+      this.outbox.enqueue(handle, envelope, {
+        id: this.ids.newId(),
+        session_id: input.session_id,
+        event_sequence: event.sequence,
+        topic: 'budget.grant_renewed',
+        idempotency_key: `budget:grant:${grant.id}:renewed:${event.sequence}`,
+        payload: {
+          grant_id: grant.id,
+          session_id: input.session_id,
+          previous_max_cost_minor: previous,
+          max_cost_minor: next,
+          event_sequence: event.sequence,
+        },
+        created_at: now,
+      });
+      const ledger = this.grantLedger(envelope, grant.id);
+      return {
+        grant_id: grant.id,
+        currency,
+        previous_max_cost_minor: previous,
+        new_max_cost_minor: next,
+        expires_at: expiresAt,
+        committed_actual_minor: ledger.committed_actual_minor,
+        consumed_provider_requests: ledger.consumed_provider_requests,
+        active_reservations: ledger.active_reservations,
+      };
+    });
+  }
+
+  // ---------------------------------------------------------- reconcile
+
+  /**
+   * Reconcile one operation after a crash (WER-010). Idempotent: the
+   * same observation may be replayed any number of times and charges
+   * once.
+   *
+   * - not_dispatched: a 'reserved' hold is released as free. That is
+   *   the ONLY outcome that frees money. A committed or unknown
+   *   reservation is never released.
+   * - dispatched_no_response: the hold is marked unknown and stays
+   *   counted at its estimate (never zero, never free).
+   * - response_observed: the confirmed actual settles the reservation
+   *   exactly once. Replaying the same amount on an already committed
+   *   reservation returns `already_settled` and charges nothing again;
+   *   a different amount conflicts.
+   * - No row at all (crash before reserve): nothing to reconcile.
+   *
+   * Every branch presents the caller's lease epoch, and the underlying
+   * commit re-checks it inside its own transaction.
+   */
+  reconcileOperation(
+    envelope: AuthorizationEnvelope,
+    input: ReconcileOperationInput,
+  ): ReconcileResult {
+    const dispatch = input.dispatch;
+    if (
+      dispatch !== 'not_dispatched' &&
+      dispatch !== 'dispatched_no_response' &&
+      dispatch !== 'response_observed'
+    ) {
+      throw budgetInvalidInput(
+        'dispatch must be not_dispatched|dispatched_no_response|response_observed.',
+      );
+    }
+    if (
+      input.cost_knowledge !== undefined &&
+      !COST_KNOWLEDGE.has(input.cost_knowledge)
+    ) {
+      throw budgetInvalidInput(
+        'cost_knowledge must be estimated|verified|unknown.',
+      );
+    }
+    const base = {
+      session_id: input.session_id,
+      operation_id: input.operation_id,
+      charged_minor: null,
+      currency: null,
+      released_not_dispatched: false,
+    };
+    const readRow = () =>
+      this.db.read((handle) => {
+        this.assertSchema(handle);
+        this.assertSessionUsable(handle, envelope, input.session_id);
+        return this.reservationRow(
+          handle,
+          envelope,
+          input.session_id,
+          input.operation_id,
+        );
+      });
+    const row = readRow();
+    if (!row) {
+      return {
+        ...base,
+        outcome: 'nothing_to_reconcile',
+        reservation: null,
+      };
+    }
+    this.assertEpoch(
+      envelope,
+      input.session_id,
+      input.operation_id,
+      input.lease_epoch,
+    );
+    const record = () => this.getReservation(envelope, input.session_id, input.operation_id);
+    const result = (
+      outcome: ReconcileOutcome,
+      options: {
+        charged?: number | null;
+        released?: boolean;
+      } = {},
+    ): ReconcileResult => ({
+      ...base,
+      outcome,
+      reservation: record(),
+      charged_minor: options.charged ?? null,
+      currency: row.currency,
+      released_not_dispatched: options.released ?? false,
+    });
+
+    if (dispatch === 'not_dispatched') {
+      if (row.state === 'reserved') {
+        this.release(envelope, {
+          session_id: input.session_id,
+          operation_id: input.operation_id,
+          lease_epoch: input.lease_epoch,
+          reason: 'reconciled: known not dispatched',
+        });
+        return result('released_not_dispatched', { released: true });
+      }
+      if (row.state === 'released') return result('already_released');
+      if (row.state === 'expired') return result('already_expired');
+      // committed or unknown: prior effects stand, never undone.
+      return result(
+        row.state === 'unknown' ? 'held_unknown' : 'already_settled',
+        { charged: row.actual_minor },
+      );
+    }
+
+    if (dispatch === 'dispatched_no_response') {
+      if (row.state === 'reserved') {
+        this.markProviderCompletionUnknown(envelope, {
+          session_id: input.session_id,
+          operation_id: input.operation_id,
+          lease_epoch: input.lease_epoch,
+        });
+      }
+      if (row.state === 'unknown' || row.state === 'reserved') {
+        return result('held_unknown');
+      }
+      if (row.state === 'committed') {
+        return result('already_settled', { charged: row.actual_minor });
+      }
+      return result(row.state === 'released' ? 'already_released' : 'already_expired');
+    }
+
+    // response_observed
+    if (input.actual_minor === undefined || input.actual_minor === null) {
+      throw budgetInvalidInput(
+        'response_observed reconciliation requires actual_minor (a safe integer >= 0).',
+      );
+    }
+    if (!Number.isSafeInteger(input.actual_minor) || input.actual_minor < 0) {
+      throw budgetInvalidInput('actual_minor must be a safe integer >= 0.');
+    }
+    const knowledge = input.cost_knowledge ?? 'verified';
+    if (row.state === 'committed') {
+      if (row.actual_minor === input.actual_minor) {
+        return result('already_settled', { charged: row.actual_minor });
+      }
+      throw new BudgetCapacityError(
+        'BUDGET_RECONCILE_CONFLICT',
+        `Operation ${input.operation_id} is already committed at ${row.actual_minor ?? 'unknown'} ${row.currency}; reconciliation observed ${input.actual_minor} ${row.currency}. A committed charge is never silently rewritten.`,
+        {
+          retryable: false,
+          action: 'Review both records; correct the charge through an audited adjustment.',
+          detail: {
+            operation_id: input.operation_id,
+            committed_minor: row.actual_minor,
+            observed_minor: input.actual_minor,
+          },
+        },
+      );
+    }
+    if (row.state === 'released' || row.state === 'expired') {
+      throw new BudgetCapacityError(
+        'BUDGET_RECONCILE_CONFLICT',
+        `Operation ${input.operation_id} ended as ${row.state} without dispatch; a response cannot settle it.`,
+        { retryable: false, detail: { operation_id: input.operation_id } },
+      );
+    }
+    try {
+      const settled = this.settle(envelope, {
+        session_id: input.session_id,
+        operation_id: input.operation_id,
+        lease_epoch: input.lease_epoch,
+        actual_minor: input.actual_minor,
+        cost_knowledge: knowledge,
+      });
+      return result('settled', { charged: settled.actual_minor });
+    } catch (error) {
+      if (
+        error instanceof BudgetCapacityError &&
+        error.code === 'BUDGET_RESERVATION_FINALIZED'
+      ) {
+        // A concurrent settlement won; replay only if it matches.
+        const current = this.getReservation(
+          envelope,
+          input.session_id,
+          input.operation_id,
+        );
+        if (current?.state === 'committed' && current.actual_minor === input.actual_minor) {
+          return result('already_settled', { charged: current.actual_minor });
+        }
+      }
+      throw error;
+    }
   }
 
   // ------------------------------------------------------------ internals
@@ -1334,6 +1916,24 @@ export class DurableBudgetService {
       .all(envelope.tenant_id, envelope.company_id, sessionId) as ReservationRow[];
   }
 
+  /** Every reservation row charged to one grant, newest last. */
+  private grantRows(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    grantId: string,
+  ): ReservationRow[] {
+    return handle
+      .prepare(
+        `SELECT id, session_id, operation_id, grant_id, estimate_minor,
+                actual_minor, currency, state, hold_expires_at, created_at,
+                finalized_at
+           FROM council_budget_reservations
+          WHERE tenant_id = ? AND company_id = ? AND grant_id = ?
+          ORDER BY created_at ASC, id ASC`,
+      )
+      .all(envelope.tenant_id, envelope.company_id, grantId) as ReservationRow[];
+  }
+
   /**
    * Charge facts the reservation row does not carry (kind, original
    * operation, pinned route snapshot, minting epoch) are read from the
@@ -1358,6 +1958,11 @@ export class DurableBudgetService {
             : null,
         route_snapshot: p.route_snapshot as PinnedRouteSnapshot,
         lease_epoch: typeof p.lease_epoch === 'number' ? p.lease_epoch : 0,
+        // Records minted before WER-010 carry no field; estimated is
+        // the honest historical reading (a bounded quote, never free).
+        cost_knowledge: COST_KNOWLEDGE.has(p.cost_knowledge as BudgetCostKnowledge)
+          ? (p.cost_knowledge as BudgetCostKnowledge)
+          : 'estimated',
       });
     }
     return facts;
@@ -1383,6 +1988,7 @@ export class DurableBudgetService {
       estimate_minor: row.estimate_minor,
       actual_minor: row.actual_minor,
       currency: row.currency,
+      cost_knowledge: facts.cost_knowledge,
       route_snapshot: facts.route_snapshot,
       route_snapshot_fingerprint: routeSnapshotFingerprint(facts.route_snapshot),
       lease_epoch: facts.lease_epoch,

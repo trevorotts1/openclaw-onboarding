@@ -66,9 +66,21 @@ import {
 } from '../bridges/host-bridge.js';
 import { CompatibleHttpTransport } from '../providers/compatible.js';
 import type { CouncilRouteSelection as ProviderRouteSelection } from '../providers/selection.js';
-import { InProcessBudgetLedger } from './budget.js';
+import {
+  DurableBudgetLedger,
+  InProcessBudgetLedger,
+  type DurableBudgetGrantBinding,
+} from './budget.js';
 import { SubprocessHostCallTransport } from './host-call-transport.js';
-import { InProcessLeaseProvider } from './leases.js';
+import {
+  DurableOperationLeaseProvider,
+  InProcessLeaseProvider,
+} from './leases.js';
+import type { AuthorizationProvider } from './host-ports.js';
+import {
+  BudgetCapacityError,
+  type PinnedRouteSnapshot,
+} from '../budgets/index.js';
 import { LocalSqliteStore } from './local-store.js';
 import { loadInstalledSeatPack } from './installed-seat-pack.js';
 import { resolveDataDir } from './paths.js';
@@ -234,6 +246,21 @@ function composeDiscoveredTransport(
   });
 }
 
+/**
+ * The engine's operation keys are scope-qualified:
+ * `op:<installation>:<tenant>:<session>:...` (with `:retry:` / `:repair:`
+ * suffixes for follow-up operations). The session is the fourth
+ * segment, which is the key the durable lease generation is raised on.
+ * A key that does not carry a session keeps the foundation lease path
+ * rather than guessing.
+ */
+export function sessionIdFromOperationKey(operationKey: string): string | null {
+  const parts = operationKey.split(':');
+  if (parts[0] !== 'op' || parts.length < 4) return null;
+  const sessionId = parts[3];
+  return sessionId.length > 0 ? sessionId : null;
+}
+
 export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
   const dataDir = resolveDataDir({
     override: options.dataDir ?? null,
@@ -247,6 +274,99 @@ export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
   const clock: CouncilHost['clock'] = {
     nowUtc: () => new Date().toISOString(),
   };
+  // CWE-050 composition (CWE-049 standalone list item 2) plus the
+  // WER-010 durable budget wiring: the authorization stack owns the
+  // ONE durable budget service and the scoped repository the lease
+  // generation is written through. Both are composed before the host
+  // so the budget and capacity ports below are durable, never
+  // process-local counters.
+  const authorization = createStandaloneRunAuthorization({ dataDir, clock });
+  const grantBindings = new Map<string, DurableBudgetGrantBinding>();
+  const isDurableGrant = (grant: RunGrant): boolean => {
+    try {
+      return (
+        authorization.grants.loadGrantRecord(
+          authorization.envelope,
+          grant.grant_id,
+        ) !== null
+      );
+    } catch {
+      return false;
+    }
+  };
+  const pinnedRouteSnapshot = (sessionId: string): PinnedRouteSnapshot => {
+    const session = authorization.repositories.getSession(
+      authorization.envelope,
+      sessionId,
+    );
+    if (!session) {
+      throw new BudgetCapacityError(
+        'BUDGET_STORE_UNAVAILABLE',
+        `Session ${sessionId} is not mirrored into the durable authorization store, so no route snapshot can be pinned for its reservation. No reservation was recorded.`,
+        {
+          retryable: false,
+          action:
+            'Mirror the session into the authorization store before starting the run.',
+          detail: { session_id: sessionId },
+        },
+      );
+    }
+    const policy = session.spec.model_policy;
+    return {
+      schema: 'wise-elders.route-selection/v1',
+      selectionSource: policy.selection,
+      routeId: policy.route_id,
+      routeRevision: 1,
+      routeKind: 'fixed_model',
+      providerSlug: 'standalone',
+      requestedRoute: policy.route_id,
+      requestedModelOrAlias: policy.requested_model_id,
+      combinationMembers: null,
+      reasoning: {
+        requested: policy.reasoning_preference,
+        applied: null,
+        supported: null,
+        limitation: null,
+      },
+      fallbackPolicy: policy.fallback_policy,
+      providerAccountRef: null,
+      capabilitySnapshot: {
+        contextWindowTokens: null,
+        maxOutputTokens: null,
+        capabilities: ['text'],
+        supportedReasoningLevels: null,
+      },
+      credential: {
+        state: 'not_required',
+        envVar: null,
+        source: null,
+        checked: [],
+      },
+      identityLevel: 'configured',
+      scope: {
+        tenantId: session.scope.tenant_id,
+        companyId: session.scope.company_id,
+        installationId: session.scope.installation_id,
+        ownerSubject: session.scope.owner_subject,
+      },
+      createdAt: session.spec.created_at,
+    };
+  };
+  const durableLeases = new DurableOperationLeaseProvider({
+    repositories: authorization.repositories,
+    envelope: authorization.envelope,
+    clock,
+    sessionIdForOperation: sessionIdFromOperationKey,
+    fallback: new InProcessLeaseProvider(),
+  });
+  const durableBudget = new DurableBudgetLedger({
+    service: authorization.budget,
+    envelope: authorization.envelope,
+    grantFor: (sessionId) => grantBindings.get(sessionId) ?? null,
+    routeSnapshotFor: pinnedRouteSnapshot,
+    leaseEpochFor: (sessionId) => durableLeases.currentEpoch(sessionId),
+    fallback: new InProcessBudgetLedger(),
+  });
   // RP-046-1 live route composition: bind the real adapters to the
   // client's existing configured routes, discovered read-only. A
   // discovered route whose configuration cannot be bound stays
@@ -322,8 +442,8 @@ export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
         return state === 'present' || state === 'not_required';
       },
     },
-    budget: new InProcessBudgetLedger(),
-    capacity: new InProcessLeaseProvider(),
+    budget: durableBudget,
+    capacity: durableLeases,
     events: {
       async publish(event: Omit<CouncilEvent, 'sequence'>): Promise<CouncilEvent> {
         return store.appendEvent(event);
@@ -348,9 +468,34 @@ export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
   // CWE-050 composition (CWE-049 build report, standalone composition
   // list item 2): the host's grant resolution IS the standalone run
   // authorization service over the authorization store in the same
-  // data directory, under the provisioned installation namespace.
-  const authorization = createStandaloneRunAuthorization({ dataDir });
+  // data directory, under the provisioned installation namespace. The
+  // WER-010 bridge captures the resolved grant so the durable budget
+  // ledger reserves against the SAME grant record. An injected
+  // provider (fixtures, sample runs) is still honoured; its grant is
+  // marked synthetic when the durable store never issued it, and only
+  // then does the foundation ledger serve the session.
   const composedHost = withRunAuthorization(host, authorization);
+  let activeAuthorize: AuthorizationProvider = authorization.authorize;
+  const wrappedAuthorize: AuthorizationProvider = {
+    async resolveRunGrant(grantRef: string, sessionId: string) {
+      const grant = await activeAuthorize.resolveRunGrant(grantRef, sessionId);
+      if (grant) {
+        grantBindings.set(sessionId, {
+          grant,
+          durable: isDurableGrant(grant),
+        });
+      }
+      return grant;
+    },
+  };
+  Object.defineProperty(composedHost, 'authorize', {
+    configurable: true,
+    enumerable: true,
+    get: () => wrappedAuthorize,
+    set: (provider: AuthorizationProvider) => {
+      activeAuthorize = provider;
+    },
+  });
   return { host: composedHost, dataDir, store, routeDiscovery };
 }
 
