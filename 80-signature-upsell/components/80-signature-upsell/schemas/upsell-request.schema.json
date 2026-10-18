@@ -194,6 +194,42 @@
      }
     }
    }
+  },
+  {
+   "if": {
+    "properties": {
+     "schema_version": {
+      "const": "1.1"
+     }
+    },
+    "required": [
+     "schema_version"
+    ]
+   },
+   "then": {
+    "required": [
+     "prompt_policy_id"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "schema_version": {
+      "const": "1.0"
+     }
+    },
+    "required": [
+     "schema_version"
+    ]
+   },
+   "then": {
+    "not": {
+     "required": [
+      "prompt_policy_id"
+     ]
+    }
+   }
   }
  ],
  "description": "Skill 80 instance request. Extends the reference page-request.schema.json (all of its identity/approval/brand/route fields are required here unchanged) and aligns its offer/price fields with offer.schema.json and route rules with route-graph.schema.json. Adds the upsell eligibility, U2 entry-context, disclosure and payment-capability contracts from spec 10 sections 3, 5 and 6. TEST ONLY examples live in fixtures/.",
@@ -666,6 +702,11 @@
    ],
    "type": "object"
   },
+  "prompt_policy_id": {
+   "type": "string",
+   "minLength": 1,
+   "description": "v1.1 (Q12 prompt-policy reconciliation, S49): OPTIONAL name of the governing prompt policy, minted by the common registry only. Stamped by dispatch_launch.build_requests from the launch record's prompt_policy_id (top level beside brand_ref/brand_hash, plan-approved content bound by the plan document hash) when the record names one; when the record names none, dispatch emits 1.0 requests and the key is absent entirely, never null. Consumers must tolerate absence."
+  },
   "request_id": {
    "minLength": 1,
    "type": "string"
@@ -738,7 +779,10 @@
    "type": "object"
   },
   "schema_version": {
-   "const": "1.0"
+   "enum": [
+    "1.0",
+    "1.1"
+   ]
   },
   "source_landing_copy_ref": {
    "description": "Reference to the source landing copy this upsell derives from (spec 10 section 3).",
