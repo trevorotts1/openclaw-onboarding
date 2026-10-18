@@ -17,9 +17,32 @@ plus the buyer's ev1 entitlement_version
 (Store.entitlement_version, CR-S82-002 item 5).
 
 PURE READ MODEL: this module only SELECTs. It never writes to the
-store, never grants, never sends. delivery_url is always None: the
-durable store carries no delivery-URL source today (the downstream
-fulfillment executor owns delivery); null is contract-valid.
+store, never grants, never sends. delivery_url is None unless the
+launch record's delivery binding supplies one for a GRANTED
+entitlement (CR-S82-003, below); null is contract-valid.
+
+DELIVERY BINDING (CR-S82-003, ruling S82-DEC-DELIVERYURL-01; S49's
+launch schema 1.2, landed by PR #2222): the launch record carries an
+OPTIONAL top-level `delivery_bindings` object keyed by
+entitlement_id, each binding {"delivery_kind": one of access /
+download / schedule_included_service, "delivery_url": an https URL
+or null (kind bound, no destination recorded yet)}. Absence of the
+key, or of an entitlement's entry, is the only encoding of
+"unbound". When the caller passes the launch record and an
+entitlement's aggregated state is granted AND a binding exists for
+it, the entry emits the bound kind as next_action and the bound URL
+as delivery_url, in place of the pre-binding granted behavior
+(access / None). Every other case — unbound entitlements, and every
+non-granted state bound or not — is byte-identical to the
+pre-binding producer: the binding is consulted only in the granted
+branch, a bound-but-not-granted entitlement keeps delivery_url
+null, and the producer never guesses a kind or fabricates a URL. A
+malformed binding (not an object, unknown keys, a kind outside the
+binding enum, a missing field, or a URL that is neither null nor an
+https string) fails closed with VocabularyError rather than passing
+through. The binding is NOT an entitlement_version input: ev1 is
+computed exactly as before (CR-S82-002 item-5 settlement
+undisturbed).
 
 STATE ASSEMBLY — per (line, entitlement) unit, precedence top-down:
 
@@ -72,7 +95,10 @@ the S82 contract section 2; anything outside them fails closed):
 
   unit outcome                              next_action
   ----------------------------------------  -------------------------
-  granted                                   access
+  granted                                   access (or the bound
+                                            delivery_kind when a
+                                            launch-record binding
+                                            exists, CR-S82-003)
   pending, fulfillment parked 'unknown'     support
   pending, fulfillment in flight            noncommercial_next_step
   pending, payment not settled              manage_purchase
@@ -94,14 +120,17 @@ the S82 contract section 2; anything outside them fails closed):
   vocabulary slots, 'download' and 'schedule_included_service',
   cannot be selected from durable-store facts: the store carries no
   per-entitlement delivery-kind metadata (downloadable vs access vs
-  bookable service). They stay unemitted until a launch-record
-  binding supplies that kind; the producer never guesses.
+  bookable service). They are emitted only when a launch-record
+  delivery binding supplies that kind for a granted entitlement
+  (CR-S82-003 section above); the producer never guesses.
 
 FAIL-CLOSED: every emitted next_action is checked against the six
 names; a decision-table edit producing anything else raises
 VocabularyError instead of emitting a map S82 would reject.
 """
 from __future__ import annotations
+
+import re
 
 # The six approved classifications, verbatim from the S82 contract
 # (s82-contract-copy.md, section 2; blob db6efbbe...). S44 may not
@@ -116,6 +145,18 @@ NEXT_ACTIONS = frozenset({
 })
 
 MAP_STATES = frozenset({"granted", "pending", "not_granted", "revoked"})
+
+# The delivery-kind enum of S49's launch schema 1.2 delivery_bindings
+# (a strict subset of NEXT_ACTIONS: a binding may only name a
+# delivery kind, never e.g. 'support' or 'manage_purchase').
+BINDING_KINDS = frozenset({
+    "access",
+    "download",
+    "schedule_included_service",
+})
+
+# Mirrors the schema's delivery_url pattern (^https://\S+$).
+_BINDING_URL = re.compile(r"^https://\S+$")
 
 _STATE_RANK = {"not_granted": 0, "revoked": 1, "pending": 2,
                "granted": 3}
@@ -133,6 +174,58 @@ def _check_vocabulary(name: str) -> str:
             f"next_action {name!r} is outside the six approved "
             "classifications; refusing to emit the fulfillment map")
     return name
+
+
+def _bound_delivery(bindings: dict, entitlement: str):
+    """Validate one entitlement's delivery binding (CR-S82-003) and
+    return (delivery_kind, delivery_url). The caller has already
+    established the entitlement is present in `bindings`. Anything
+    malformed fails closed with VocabularyError — the producer
+    refuses the map rather than passing a bad binding through."""
+    binding = bindings[entitlement]
+    if not isinstance(binding, dict):
+        raise VocabularyError(
+            f"delivery binding for {entitlement!r} is not an object; "
+            "refusing to emit the fulfillment map")
+    if set(binding) != {"delivery_kind", "delivery_url"}:
+        raise VocabularyError(
+            f"delivery binding for {entitlement!r} must carry exactly "
+            "delivery_kind and delivery_url; refusing to emit the "
+            "fulfillment map")
+    kind = binding["delivery_kind"]
+    if kind not in BINDING_KINDS:
+        raise VocabularyError(
+            f"delivery_kind {kind!r} for {entitlement!r} is outside "
+            "the launch schema's binding enum; refusing to emit the "
+            "fulfillment map")
+    url = binding["delivery_url"]
+    if url is not None and not (isinstance(url, str)
+                                and _BINDING_URL.match(url)):
+        raise VocabularyError(
+            f"delivery_url for {entitlement!r} is neither null nor "
+            "an https URL; refusing to emit the fulfillment map")
+    return kind, url
+
+
+def _extract_bindings(launch_record) -> dict:
+    """The launch record's top-level delivery_bindings object, or {}
+    when no record (or no bindings key) is supplied — absence is the
+    encoding of 'unbound' (launch schema 1.2). A present-but-malformed
+    bindings value fails closed."""
+    if launch_record is None:
+        return {}
+    if not isinstance(launch_record, dict):
+        raise VocabularyError(
+            "launch_record is not an object; refusing to emit the "
+            "fulfillment map")
+    bindings = launch_record.get("delivery_bindings")
+    if bindings is None:
+        return {}
+    if not isinstance(bindings, dict):
+        raise VocabularyError(
+            "delivery_bindings is not an object; refusing to emit "
+            "the fulfillment map")
+    return bindings
 
 
 def _unit_from_book(state: str, fulfillment_states: list[str]):
@@ -186,14 +279,21 @@ def _latest_event_outcomes(store, tenant_id: str, launch_id: str,
 
 
 def build_fulfillment_map(store, tenant_id: str, launch_id: str,
-                          contact_ref: str) -> dict:
+                          contact_ref: str, launch_record=None) -> dict:
     """Assemble the fulfillment map for one buyer. Read-only.
+
+    `launch_record` is optional: the launch's record of record (S49,
+    launch schema 1.2). When it carries a `delivery_bindings` entry
+    for a GRANTED entitlement, that entry's kind and URL are emitted
+    for the entitlement (CR-S82-003); every other output is identical
+    to the no-record call.
 
     Returns {"tenant_id", "launch_id", "contact_ref",
              "entitlement_version", "entitlements": {entitlement_id:
              {"state", "delivery_url", "next_action"}}} — the inner
     dict is exactly the map shape of the S82 contract section 2.
     """
+    bindings = _extract_bindings(launch_record)
     line_refs = store.buyer_lines(tenant_id, launch_id, contact_ref)
     book = {(lr, ent): st for lr, ent, st in
             store.buyer_entitlement_rows(tenant_id, launch_id,
@@ -221,9 +321,16 @@ def build_fulfillment_map(store, tenant_id: str, launch_id: str,
             units[entitlement],
             key=lambda u: (-_STATE_RANK[u[1]], u[0]))[0]
         assert state in MAP_STATES, state
+        delivery_url = None
+        if state == "granted" and entitlement in bindings:
+            # CR-S82-003: the launch record's binding supplies this
+            # granted entitlement's delivery kind and URL. This is
+            # the ONLY branch the binding may touch.
+            action, delivery_url = _bound_delivery(bindings,
+                                                   entitlement)
         entitlements[entitlement] = {
             "state": state,
-            "delivery_url": None,
+            "delivery_url": delivery_url,
             "next_action": _check_vocabulary(action),
         }
     return {

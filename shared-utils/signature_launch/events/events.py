@@ -1,11 +1,10 @@
 """S44 L1 reference implementation — Signature Launch purchase events.
 
-Dual-version build (schema v1.1 switch, CR-S44-001 follow-up): the
-original module's single-schema validator is replaced by a registry
-that accepts both v1.0 and v1.1, each schema registered under the
-version its own schema_version const declares. Placed in the packaged
-tree as the successor to the v1.0-only staged copy; see
-STAGING-NOTES.md in this directory for provenance and hashes.
+LANE-B READINESS BUILD (schema v1.1 switch, CR-S44-001 follow-up).
+This is a lane copy of work/events/events.py with dual-version
+validation added. It is NOT landed anywhere: the originals in the work
+layout and in the packaged tree are untouched. Placement instructions
+are in this lane's REPORT.md.
 
 TEST-ONLY / L1 (deterministic, in-memory). This module implements the
 semantics required by packet doc 14 sections 4-6 and doc 02 section 8:
@@ -28,6 +27,15 @@ shared-utils/signature_launch/domain/):
   and nullable, an opaque native contact ID only, never PII; when
   present it must be a string or null (the schema also rejects an
   empty string via minLength);
+- v1.2 events validate against the v1.2 schema (CR-S44-003, S49
+  ruling; landed by PR #2190 in train #2235, main 9ccd6536):
+  parent_order_ref is OPTIONAL and nullable — the opaque provider
+  order identity of the initial order, populated only from a real
+  provider read-back, never synthesized, never derived, and never
+  load-bearing for dedupe, grants, or revocations. ACCEPTANCE ONLY
+  in this step: normalize_order_event does not stamp "1.2" and does
+  not carry parent_order_ref through; producer stamping is a later,
+  separate step in the CR-S44-003 sequence;
 - any other schema_version — or a missing one — FAILS CLOSED.
 
 It does NOT call GHL, does NOT prove any live behavior, and must never be
@@ -50,15 +58,20 @@ import jsonschema
 # is the last fallback. Every candidate file is registered under the
 # version its own schema_version const declares, never under the
 # version its filename suggests — in domain/, the un-suffixed
-# purchase-event.schema.json IS v1.1, while the vendored copy beside
+# purchase-event.schema.json IS the current version (v1.2 since the
+# PR #2190 landing; v1.1 before it) with the preserved versions
+# beside it under versioned names, while the vendored copy beside
 # the packaged events module is v1.0.
 _HERE = Path(__file__).resolve().parent
 _SCHEMA_CANDIDATES = [
     _HERE / "purchase-event.schema.json",
     _HERE / "purchase-event.v1.0.schema.json",
     _HERE / "purchase-event.v1.1.schema.json",
+    _HERE / "purchase-event.v1.2.schema.json",
     _HERE.parent / "domain" / "purchase-event.schema.json",
     _HERE.parent / "domain" / "purchase-event.v1.0.schema.json",
+    _HERE.parent / "domain" / "purchase-event.v1.1.schema.json",
+    _HERE.parent / "domain" / "purchase-event.v1.2.schema.json",
 ]
 # Packet fallback (room development layout) only when this file sits
 # deep enough for the packet tree to be an ancestor. Guarded: an
@@ -110,9 +123,11 @@ def validate_event(event: dict) -> dict:
     """Validate a normalized envelope against its stamped schema version.
 
     v1.0 validates as before; v1.1 additionally allows the optional
-    nullable contact_ref. An unknown, missing, or non-string
-    schema_version fails closed, as does a v1.1 event presented when
-    no v1.1 schema is installed alongside this module.
+    nullable contact_ref; v1.2 additionally allows the optional
+    nullable parent_order_ref (acceptance only — nothing in this
+    module stamps "1.2" yet). An unknown, missing, or non-string
+    schema_version fails closed, as does an event whose version's
+    schema is not installed alongside this module.
     """
     if not isinstance(event, dict):
         raise jsonschema.ValidationError(
@@ -145,6 +160,11 @@ def normalize_order_event(raw: dict, bindings: Dict[str, str]) -> dict:
     opaque native contact ID, or null), the envelope stamps "1.1" and
     carries the value through; otherwise it stamps "1.0" exactly as
     before. The value is never derived from a name or email.
+
+    v1.2 note: a read-back carrying parent_order_ref is NOT stamped
+    "1.2" and the field is not carried through by this function.
+    Producer stamping is the later CR-S44-003 step; this build is
+    acceptance-only (validate_event accepts the "1.2" stamp).
     """
     if not raw.get("provider_event_id"):
         raise ValueError("quarantine: no verified provider event identity")
