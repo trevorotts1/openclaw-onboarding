@@ -1,5 +1,12 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.6: wave-2 cohort (frozen route snapshot, installed-CLI bridge)
+
+- Freezes the normalized route snapshot contract (`runtime/src/providers/`, schema `wise-elders.route-snapshot/v1`): session owner, route and account reference, host/config selection, API family, requested model or combination alias, permitted members and fallbacks, requested / supported / applied reasoning kept distinct, capability version, policy hash and rate/concurrency limits. Configured identity and transport-reported identity are separate fields, and an unreported provider member stays explicitly `UNKNOWN` rather than being assumed. The snapshot carries a stable hash that WER-007, WER-008 and WER-009 consume instead of inventing their own route shapes.
+- Pins the member **set** while excluding per-member transport evidence from the pin body, so recording evidence later can never move the pin on a combination route. `withTransportReportedIdentity` now also recomputes authoritatively rather than re-asserting the stale published stamp.
+- Resolves the installed Council CLI through the WER-004 release receipt (`runtime/src/bridges/`), independent of the current working directory or a checkout's `dist` folder, and propagates route-discovery diagnostics and the real route catalog through the bridge wrapper instead of swallowing them. A missing or invalid receipt fails with a concrete recovery action, and a failed browser open preserves the usable URL.
+- Replaces a frozen `readdirSync` directory literal in the bridges test with a membership check that still fails on a missing module and on a stray file, so a deliberate addition no longer breaks it.
+
 ## v1.0.5: wave-1 repair cohort (supervisor, installer, durable producer)
 
 - Adds the engineering supervisor bootstrap (`scripts/supervisor/`): a deterministic ~60s health observer, a 600s full-sweep planner written as a pure function over injected time, durable leader/fencing-generation state, and the STARTING/HEALTHY/DEGRADED/PAUSED/STOPPING/STOPPED machine with the explicit-stop fence. Policy ships as `wise-elders.hybrid-supervisor-policy/v2` with `binding_status: TEMPLATE_NOT_BOUND`. Native-adapter binding is deliberately left `UNKNOWN` rather than invented.
