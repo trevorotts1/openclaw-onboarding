@@ -698,11 +698,35 @@ def _deliverables_feature_paraphrase_match(d1_items, u1_items, d1_ent,
     return True
 
 
+def _distinguishing_tokens(a_tokens, b_tokens):
+    """Tokens unique to one id once the shared prefix is removed.
+
+    S71-02b: two ids for distinct products in the same record family
+    (golden-daybreak-u1, golden-daybreak-d1) share their record/launch
+    prefix. That prefix is a property of the record, not of the
+    entitlement, so it must never carry a match between them. Tokens
+    present on both sides are dropped, leaving only the tokens that
+    actually tell the two entitlements apart.
+    """
+    shared = a_tokens & b_tokens
+    return a_tokens - shared, b_tokens - shared
+
+
 def _entitlement_sets_match(a, b):
     """True when two entitlement id lists are the same set under renamed
-    ids (lane 5 D-13): equal size and every id token-matches a distinct
-    id on the other side. Genuinely different ids (extra-lite versus
-    extra-full) share too few tokens to match."""
+    ids (lane 5 D-13): equal size and every id matches a distinct id on
+    the other side after the shared record/launch prefix is discounted.
+    Genuinely different ids (extra-lite versus extra-full, or
+    golden-daybreak-u1 versus golden-daybreak-d1) keep a distinguishing
+    token on one side and therefore do not match (S71-02b).
+
+    Discounting the shared prefix means a rename is recognised only when
+    the two ids carry the same distinguishing token set -- stemming,
+    synonym folding and token order are still normalised by
+    _content_tokens, so "daybreak-fasttrack" and "fasttrack-daybreak"
+    are the same id renamed, while a differing distinguishing token is a
+    different entitlement.
+    """
     la = [str(x) for x in a] if isinstance(a, list) else []
     lb = [str(x) for x in b] if isinstance(b, list) else []
     if not la or len(la) != len(lb):
@@ -712,7 +736,10 @@ def _entitlement_sets_match(a, b):
         tokens = _content_tokens(eid)
         best = None
         for i, candidate in enumerate(pool):
-            if candidate is not None and _jaccard(tokens, candidate) >= 0.5:
+            if candidate is None:
+                continue
+            left, right = _distinguishing_tokens(tokens, candidate)
+            if not left and not right:
                 best = i
                 break
         if best is None:
