@@ -235,6 +235,120 @@ def smooth_transition_check(envelope, hop_s, boundary_s, mult=SMOOTH_FLUX_MULT):
 
 # ---- the gate --------------------------------------------------------------
 
+#: Option A (Trevor order, 2026-10-17). A provider places a gear change where
+#: the SONG wants it, not at a clock second: Suno returned -7.77 dB drops at
+#: 6 s and 44 s while the ordered seam sat at 16 s, so a window pinned to the
+#: ordered second measured a RISE and refused a take that carries a real drop.
+#: The windows are therefore LOCATED across a search region around the ordered
+#: seam. Every threshold below is untouched -- only WHERE the windows are
+#: sampled moves, and the located second is recorded on the take.
+PACE_SEARCH_MARGIN_S = 10.0   # how far either side of the ordered seam we look
+PACE_LOCATE_WIN_S = 3.0       # one window's length
+PACE_LOCATE_STEP_S = 0.5      # candidate-seam grid
+
+
+def locate_gear_change(samples, sr, lo_s, hi_s, win_s=PACE_LOCATE_WIN_S,
+                       step_s=PACE_LOCATE_STEP_S):
+    """The strongest MEASURED gear change inside [lo_s, hi_s), and where it is.
+
+    Candidates are scored with ``window_stats`` -- the same reader the ordered
+    seam uses -- and the winner is the seam with the largest energy drop
+    (ties go to the earlier seam). Thresholds are NOT applied here: the caller
+    judges the returned windows against the unchanged PACE_* floors, so a take
+    with no qualifying change still fails.
+
+    Returns {"found": bool, "at_s", "before", "problem", "onset_reduction",
+    "energy_drop_db", "meets": {"onset_reduction", "energy_drop"}}. ``found``
+    is True only when BOTH floors are met at some candidate; otherwise the
+    strongest candidate is still returned so the refusal can be reported with
+    real numbers rather than an empty result."""
+    if hasattr(samples, "tolist"):   # numpy array from the decode path
+        samples = samples.tolist()
+    if samples is None or not sr:
+        return {"found": False, "at_s": None, "before": None, "problem": None,
+                "onset_reduction": None, "energy_drop_db": None,
+                "meets": {"onset_reduction": False, "energy_drop": False},
+                "reason": "no samples supplied"}
+    lo = max(0.0, float(lo_s))
+    hi = max(lo, float(hi_s))
+    best, best_meeting = None, None
+    t = lo
+    while t + step_s <= hi + 1e-9:
+        b = window_stats(samples, sr, t - win_s, t)
+        p = window_stats(samples, sr, t, t + win_s)
+        if b is None or p is None:
+            t += step_s
+            continue
+        drop = b["rms_dbfs"] - p["rms_dbfs"]
+        red = (1.0 - p["onset_rate_per_s"] / b["onset_rate_per_s"]
+               if b["onset_rate_per_s"] > 0 else None)
+        cand = {"at_s": round(t, 3), "before": b, "problem": p,
+                "onset_reduction": None if red is None else round(red, 4),
+                "energy_drop_db": round(drop, 3),
+                "meets": {"onset_reduction": red is not None and red >= PACE_ONSET_REDUCTION,
+                          "energy_drop": drop >= PACE_ENERGY_DROP_DB}}
+        if best is None or cand["energy_drop_db"] > best["energy_drop_db"]:
+            best = cand
+        if all(cand["meets"].values()):
+            if best_meeting is None or cand["at_s"] < best_meeting["at_s"]:
+                best_meeting = cand
+        t += step_s
+    if best is None:
+        return {"found": False, "at_s": None, "before": None, "problem": None,
+                "onset_reduction": None, "energy_drop_db": None,
+                "meets": {"onset_reduction": False, "energy_drop": False},
+                "reason": "no measurable window in [%.1f, %.1f) s" % (lo, hi)}
+    out = dict(best_meeting or best)
+    out["found"] = best_meeting is not None
+    out["search"] = {"lo_s": lo, "hi_s": hi, "win_s": win_s, "step_s": step_s}
+    out["strongest"] = {"at_s": best["at_s"],
+                        "energy_drop_db": best["energy_drop_db"],
+                        "onset_reduction": best["onset_reduction"],
+                        "meets": best["meets"]}
+    return out
+
+
+def locate_return(samples, sr, lo_s, hi_s, before, win_s=PACE_LOCATE_WIN_S,
+                  step_s=PACE_LOCATE_STEP_S):
+    """The FIRST window after a located drop that is back on the opening
+    baseline, and where it is.
+
+    The return carries the same problem as the drop: a provider puts it where
+    the song wants it, so a window pinned to the ordered return second
+    measures the wrong moment and refuses a take that does come back. The
+    bounds are the SAME approved ones (PACE_RETURN_TOL onset, PACE_RETURN_DB
+    energy against the opening window); only WHERE the window is sampled
+    moves, and the located second is reported."""
+    b = _window(before, "before")
+    if hasattr(samples, "tolist"):
+        samples = samples.tolist()
+    lo = max(0.0, float(lo_s))
+    hi = max(lo, float(hi_s))
+    best = None
+    t = lo
+    while t + step_s <= hi + 1e-9:
+        w = window_stats(samples, sr, t, t + win_s)
+        if w is not None and b["onset_rate"] > 0:
+            onset_gap = abs(w["onset_rate_per_s"] - b["onset_rate"]) / b["onset_rate"]
+            energy_gap = abs(w["rms_dbfs"] - b["rms_dbfs"])
+            ok = (onset_gap <= PACE_RETURN_TOL and energy_gap <= PACE_RETURN_DB)
+            cand = {"at_s": round(t, 3), "after": w,
+                    "onset_gap": round(onset_gap, 4),
+                    "energy_gap_db": round(energy_gap, 3), "ok": ok}
+            if best is None or (cand["ok"], -cand["at_s"]) > (best["ok"], -best["at_s"]):
+                best = cand
+            if ok:
+                best = cand
+                break
+        t += step_s
+    if best is None:
+        return {"found": False, "at_s": None, "after": None,
+                "onset_gap": None, "energy_gap_db": None,
+                "reason": "no measurable window in [%.1f, %.1f) s" % (lo, hi)}
+    best["found"] = best.pop("ok")
+    return best
+
+
 def _window(obj, name):
     if not isinstance(obj, dict):
         raise PaceError("%s window must be a mapping, got %r" % (name, obj))
@@ -268,7 +382,7 @@ def octave_fold_bpm(bpm_a, bpm_b, tol_oct=OCTAVE_TOL_OCT):
 
 def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
                         hop_s=None, bpm_before=None, bpm_after=None, reason=None,
-                        return_boundary_s=None, method=False):
+                        return_boundary_s=None, method=False, located_at_s=None):
     """Judge one ordered gear change: before -> problem -> after.
 
     PASS needs ALL of: >= 30% onset-rate reduction, >= 3 dB energy drop, the
@@ -342,6 +456,24 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
             fold = None
     verdict = "PASS" if all(checks.values()) else "FAIL"
     failed = sorted(k for k, v in checks.items() if not v)
+    _loc = (" [change located at %.1f s]" % located_at_s
+            if isinstance(located_at_s, (int, float)) else "")
+    if verdict == "PASS":
+        if method:
+            _detail = ("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
+                       "%+.2f dB; the Hero Shift moves to %.3f/s and %+.2f dB vs the "
+                       "opening (any clear change, either direction)"
+                       % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
+                          -energy_drop, a["onset_rate"], -energy_gap))
+        else:
+            _detail = ("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
+                       "%+.2f dB, back to %.3f/s and %+.2f dB"
+                       % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
+                          -energy_drop, a["onset_rate"], -energy_gap))
+    else:
+        _detail = ("no gear change: %s (onsets %.3f -> %.3f/s, %+.2f dB)"
+                   % (", ".join(failed), b["onset_rate"], p["onset_rate"], -energy_drop))
+    _detail += _loc
     return {
         "schema": SCHEMA,
         "verdict": verdict,
@@ -362,6 +494,9 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
         "smooth_transition_return": return_seam,
         "octave_fold": fold,
         "bpm_grants_pass": False,
+        #: Option A: WHERE the measured change actually sits, when the caller
+        #: located it (locate_gear_change) instead of sampling the ordered second.
+        "located_at_s": located_at_s,
         #: W1-method-song-U2: which second-seam rule judged this take.
         "method": bool(method),
         "second_seam_rule": ("hero_shift_any_clear_change" if method
@@ -372,19 +507,7 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
                   "return_energy_is_symmetric": True,
                   "mandatory_seams": PACE_SEAM_COUNT,
                   "peak_min_spacing_s": PEAK_MIN_SPACING_S},
-        "detail": (("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
-                    "%+.2f dB; the Hero Shift moves to %.3f/s and %+.2f dB vs the "
-                    "opening (any clear change, either direction)"
-                    % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
-                       -energy_drop, a["onset_rate"], -energy_gap))
-                   if method else
-                   ("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
-                    "%+.2f dB, back to %.3f/s and %+.2f dB"
-                    % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
-                       -energy_drop, a["onset_rate"], -energy_gap)))
-                  if verdict == "PASS" else
-                  ("no gear change: %s (onsets %.3f -> %.3f/s, %+.2f dB)"
-                   % (", ".join(failed), b["onset_rate"], p["onset_rate"], -energy_drop)),
+        "detail": _detail,
         "reason": reason,
         #: NEW ACCEPTANCE RULE: every threshold here is set by this fix.
         "thresholds_are_new_acceptance_rules": True,
@@ -409,6 +532,11 @@ def judge_plan_pace(plan, before, problem, after, **kw):
         # WW-23: the SECOND mandatory seam (the return) rides the order too.
         if order.get("return_boundary_s") is not None:
             kw.setdefault("return_boundary_s", order["return_boundary_s"])
+        # Option A: the measured second the change was located at, when the
+        # caller scanned for it (locate_gear_change) rather than sampling the
+        # ordered seam. Recorded on the take; no threshold reads it.
+        if order.get("located_at_s") is not None:
+            kw.setdefault("located_at_s", order["located_at_s"])
         # W1-method-song-U2: a METHOD order judges the second seam as the Hero
         # Shift -- any clear change, either direction -- not as a return.
         kw.setdefault("method", bool(order.get("method")))

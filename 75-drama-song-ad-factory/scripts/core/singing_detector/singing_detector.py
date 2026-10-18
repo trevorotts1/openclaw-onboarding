@@ -199,9 +199,29 @@ def load_guard(free_gb_probe=None, reserve_gb: float = 2.0,
 
 # ---- pitch / note analysis -------------------------------------------------
 
+def ffmpeg_exe(name="ffmpeg"):
+    """ffmpeg as an ABSOLUTE path. A bare name is resolved through PATH first,
+    then the usual install locations. A sanitized PATH (launchd, cron, a
+    governed subprocess) has no Homebrew bin, and `nice` then fails with
+    "ffmpeg: No such file or directory" even though ffmpeg is installed --
+    which surfaces as STEM_UNREADABLE on every stem."""
+    if _gos.path.isabs(name) and _gos.path.exists(name):
+        return name
+    for d in _gos.environ.get("PATH", "").split(_gos.pathsep):
+        cand = _gos.path.join(d, name) if d else name
+        if _gos.path.isfile(cand) and _gos.access(cand, _gos.X_OK):
+            return cand
+    for cand in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg",
+                 "/usr/bin/ffmpeg"):
+        if _gos.path.exists(cand):
+            return cand
+    return name
+
+
 def decode_stem(stem_path, ffmpeg="ffmpeg", sr=SR):
     """One stem -> float32 mono at sr via one ffmpeg process. Raises
     RuntimeError when ffmpeg is missing or the file is unreadable."""
+    ffmpeg = ffmpeg_exe(ffmpeg)
     try:
         raw = _LG.run_ffmpeg(
             [ffmpeg, "-v", "error", "-threads", "4", "-i", str(stem_path),
