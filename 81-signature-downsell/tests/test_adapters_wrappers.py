@@ -1,18 +1,22 @@
 """S81-05 adapter wrappers: the shared action wrapper and the S06
 install wrapper, reconciled against the confirmed binding map
 (adapters/provisional-binding-map.md, replaced in place 2026-10-17:
-5 MAPPED, 0 PARTIAL, 1 UNMAPPED against the confirmed S79/S06
+6 MAPPED, 0 PARTIAL, 0 UNMAPPED against the confirmed S79/S06
 contract, revision 1 as completed by revision 2 section 8A, SHA-256
 07f6b75794a3a8e98aad02a94fb82bcdec78d1264b0a56fa3bda066484b3022f).
 
 Pins: MAPPED points pass through (entry-guard eligibility per
 CR-S81-003 / section 8A.1, honored allow and refusal alike; decline
 recording per CR-S81-004 / section 8A.2, the record permanently
-distinct from failed); the one UNMAPPED point (pending lockout,
-CR-S81-001) still fails closed by name: its disposition was accepted
-under S81-DEC-G4-SUBDISP-01 but the wrapper edits are staged until
-the follow-on candidate lands, so the lockout pins below are
-UNCHANGED local-mirror pins this cycle; decline carries no charge
+distinct from failed); the pending lockout point (row 2,
+CR-S81-001) passes through to the confirmed section 8A.5 submission
+operation: its disposition was accepted under
+S81-DEC-G4-SUBDISP-01 and the staged wrapper edits executed in the
+follow-on cycle on the landing of the candidate carrying revision 2
+(PR #2228, train #2235), so the lockout pins below pin the
+confirmed carrier discipline (a repeat while pending is rejected
+before the submission point is invoked and never reaches the
+component); decline carries no charge
 and never calls the purchase point; an unknown outcome surfaces as
 pending_confirmation with reconcile_required set, per the confirmed
 section 8A.4 (no unknown_outcome state name exists), and blocks
@@ -47,9 +51,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "adapters"))
 sys.path.insert(0, str(ROOT / "validators"))
 
+import shared_action_wrapper  # noqa: E402
 from shared_action_wrapper import (  # noqa: E402
-    BINDING_POINTS, IDEMPOTENCY_KEY_GAP, AdapterBindingError,
-    DownsellActionAdapter)
+    BINDING_POINTS, AdapterBindingError, DownsellActionAdapter)
 from s06_install_wrapper import (  # noqa: E402
     InstallPlanError, build_install_plan)
 
@@ -147,9 +151,15 @@ class FakeComponent:
 class BindingMapShapeTests(unittest.TestCase):
     def test_map_counts_match_the_confirmed_record(self):
         statuses = [p["status"] for p in BINDING_POINTS.values()]
-        self.assertEqual(statuses.count("MAPPED"), 5)
+        self.assertEqual(statuses.count("MAPPED"), 6)
         self.assertEqual(statuses.count("PARTIAL"), 0)
-        self.assertEqual(statuses.count("UNMAPPED"), 1)
+        self.assertEqual(statuses.count("UNMAPPED"), 0)
+        # Row 2 moved on CR-S81-001's follow-on execution: MAPPED to
+        # the confirmed submission operation (section 8A.5).
+        self.assertEqual(BINDING_POINTS["pending_lockout"]["status"],
+                         "MAPPED")
+        self.assertEqual(BINDING_POINTS["pending_lockout"]["hook"],
+                         "submit_purchase")
 
 
 class MappedPassThroughTests(unittest.TestCase):
@@ -228,6 +238,21 @@ class MappedPassThroughTests(unittest.TestCase):
         self.assertEqual(out["route"], "thank_you")
         self.assertEqual(comp.decline_calls, [dict(CTX_U2)])
 
+    def test_pending_lockout_point_passes_through_to_submit(self):
+        # Row 2 (CR-S81-001, revision 2 section 8A.5): the point is
+        # MAPPED to the confirmed submission operation, and invoking
+        # the point passes through to the component's submit hook,
+        # returning its result. Deliberately rewritten from the
+        # staged fail-closed pin on the follow-on execution.
+        comp = FakeComponent(
+            submit_results=[{"state": "pending_confirmation"}])
+        adapter = DownsellActionAdapter(comp)
+        out = adapter.call_point("pending_lockout", dict(CTX_U2))
+        self.assertEqual(out, {"state": "pending_confirmation"})
+        self.assertEqual(comp.submit_calls, [dict(CTX_U2)])
+        self.assertEqual(
+            adapter.binding_point_status("pending_lockout"), "MAPPED")
+
 
 class FailClosedPointTests(unittest.TestCase):
     def test_entry_guard_hook_missing_fails_closed(self):
@@ -263,14 +288,6 @@ class FailClosedPointTests(unittest.TestCase):
             adapter.read_status("d1-attempt-1")
         self.assertEqual(cm.exception.code,
                          "D1-ADAPTER-UNRECOGNIZED-RESULT-STATE")
-
-    def test_pending_lockout_point_fails_closed_by_name(self):
-        comp = FakeComponent()
-        adapter = DownsellActionAdapter(comp)
-        with self.assertRaises(AdapterBindingError) as cm:
-            adapter.call_point("pending_lockout", "d1-attempt-1")
-        self.assertEqual(cm.exception.code,
-                         "D1-ADAPTER-PENDING-LOCKOUT-UNMAPPED")
 
     def test_paid_without_native_readback_fails_closed(self):
         comp = FakeComponent(submit_results=[{"state": "paid"}])
@@ -560,17 +577,30 @@ class LockoutAndReconcileRequiredTests(unittest.TestCase):
         self.assertEqual(cm.exception.code,
                          "D1-ADAPTER-RETRY-BLOCKED-RECONCILE-REQUIRED")
 
-    def test_no_idempotency_key_is_invented(self):
-        # CR-S81-001: no idempotency/dedup key is named yet (the key
-        # definition is due in S79's confirmed-interface revision,
-        # 2026-10-18). The gap is named; the wrapper adds no key to
-        # the caller's context.
-        self.assertEqual(IDEMPOTENCY_KEY_GAP,
-                         "D1-ADAPTER-IDEMPOTENCY-KEY-UNDEFINED")
+    def test_no_idempotency_key_is_coined_and_gap_label_retired(self):
+        # CR-S81-001 as closed by revision 2 section 8A.5: where an
+        # interface of this kind would name an idempotency key, the
+        # contract names the attempt-integrity carrier instead, so
+        # the wrapper coins no key and adds none to the caller's
+        # context; and the staged gap label that stood open while
+        # the follow-on edits were staged is retired: the wrapper
+        # module no longer carries it, and the lockout refusal no
+        # longer names it.
+        self.assertFalse(hasattr(shared_action_wrapper,
+                                 "IDEMPOTENCY_KEY_GAP"))
         comp = FakeComponent(submit_results=[dict(PAID)])
         adapter = DownsellActionAdapter(comp)
         adapter.submit_purchase(dict(CTX_U2), dict(GOOD_ENTRY))
         self.assertNotIn("idempotency_key", comp.submit_calls[0])
+        comp2 = FakeComponent(
+            submit_results=[{"state": "pending_confirmation"}])
+        adapter2 = DownsellActionAdapter(comp2)
+        adapter2.submit_purchase(dict(CTX_U2), dict(GOOD_ENTRY))
+        with self.assertRaises(AdapterBindingError) as cm:
+            adapter2.submit_purchase(dict(CTX_U2), dict(GOOD_ENTRY))
+        self.assertEqual(cm.exception.code,
+                         "D1-ADAPTER-REPEAT-ATTEMPT-LOCKED-OUT")
+        self.assertNotIn("IDEMPOTENCY", str(cm.exception))
 
     def test_second_submit_after_success_is_refused(self):
         comp = FakeComponent(submit_results=[dict(PAID), dict(PAID)])
@@ -807,7 +837,7 @@ class FailClosedBranchPinTests(unittest.TestCase):
         self.assertEqual(adapter.binding_point_status("decline"),
                          "MAPPED")
         self.assertEqual(adapter.binding_point_status("pending_lockout"),
-                         "UNMAPPED")
+                         "MAPPED")
 
 
 class InstallFailClosedPinTests(unittest.TestCase):
