@@ -20,6 +20,20 @@ Cases:
   D  Fail-closed: a tampered emitter (tests/fixtures/tampered_emitter.py,
      a stub standing in for a misbehaving consumer) whose request_id is
      not the request's is refused and leaves no result file.
+  E  The wrapper CLI end to end with the REAL emitter (the invocation
+     path case A covered before the config retirement re-point moved
+     case A to the shipped native entry): a 1.0 request on the legacy
+     path, and a 1.1 request carrying prompt_policy_id under the
+     prompt-policy adoption map (map 1.2 item 3, executed at flip time
+     per map 2.3 step 3(a)). The enriched seam artifact must carry the
+     id verbatim at 1.1 and no such key at 1.0, and must validate
+     against the landed Skill 78 selection-request profile; both
+     results must pass collect_launch_receipts.validate_result.
+  F  The profile pair rule at the wrapper's mirror check: 1.1 without
+     the field, 1.0 carrying the field, an empty id, a non-string id,
+     and an unknown schema_version are each refused naming the defect;
+     a well-formed 1.1 passes with the id verbatim; a 1.1 request
+     without the field fails closed at the CLI with no result file.
 
 Requests are built with dispatch_launch's own request_input_hash and
 dispatch_key so request_id/input_hash are genuine dispatch values.
@@ -59,10 +73,10 @@ def say(name, good, detail=""):
     print(f"[{'PASS' if good else 'FAIL'}] {name}" + (f" :: {detail}" if detail else ""))
 
 
-def make_request(launch, offer_refs, page_id):
+def make_request(launch, offer_refs, page_id, version="1.0", policy_id=None):
     ih = dl.request_input_hash(launch, page_id, "product_selection")
-    return {
-        "schema_version": "1.0",
+    req = {
+        "schema_version": version,
         "tenant_id": launch["tenant_id"],
         "location_id": launch["location_id"],
         "launch_id": launch["launch_id"],
@@ -82,6 +96,9 @@ def make_request(launch, offer_refs, page_id):
         "allowed_write_target": "local_only",
         "test_only": bool(launch["test_only"]),
     }
+    if policy_id is not None:
+        req["prompt_policy_id"] = policy_id
+    return req
 
 
 def run_cli(req_path, res_path, work_dir, launch, mappings, extra=()):
@@ -217,6 +234,119 @@ def case_d(tmp):
         proc.stderr.strip()[:200])
 
 
+def case_e(tmp):
+    launch = json.loads(GOLDEN.read_text())
+    mains = [o["offer_id"] for o in launch["offers"] if o["slot"] == "main"]
+    profile = json.loads(
+        (S78_DIR / "schema" / "selection-request.schema.json").read_text())
+    mappings = HERE / "fixtures" / "mappings-golden.json"
+
+    def profile_check(name, doc):
+        try:
+            import jsonschema
+            jsonschema.validate(doc, profile)
+            say(name, True)
+        except Exception as exc:  # jsonschema present in this env
+            say(name, False, str(exc)[:200])
+
+    # E-legacy: a 1.0 request end to end through the wrapper CLI and the
+    # REAL emitter. This is the invocation path that was broken on base
+    # (the wrapper's emitter argv predates the emitter's current CLI)
+    # and that no shipped case exercised after the re-point.
+    req10 = make_request(launch, mains, "TEST-LAUNCH-S78-GOLDEN-SELECTION")
+    work = tmp / "e10"; work.mkdir()
+    req_p, res_p = work / "request.json", work / "result.json"
+    req_p.write_text(json.dumps(req10, indent=2) + "\n")
+    proc = run_cli(req_p, res_p, work, GOLDEN, mappings)
+    say("E wrapper CLI exits 0 on a 1.0 request (real emitter)",
+        proc.returncode == 0, proc.stderr.strip()[:200])
+    if proc.returncode == 0:
+        res = json.loads(res_p.read_text())
+        fails = rc.validate_result(res, req10)
+        say("E 1.0 result passes collect_launch_receipts.validate_result",
+            fails == [], "; ".join(fails))
+        enriched = json.loads(
+            (work / "selection-request.enriched.json").read_text())
+        say("E 1.0 enriched artifact stays 1.0, no prompt_policy_id key",
+            enriched["schema_version"] == "1.0"
+            and "prompt_policy_id" not in enriched)
+        profile_check(
+            "E 1.0 enriched artifact validates against the landed profile",
+            enriched)
+
+    # E: a 1.1 request carrying prompt_policy_id passes through the
+    # wrapper into the enriched seam artifact, verbatim.
+    req11 = make_request(launch, mains, "TEST-LAUNCH-S78-GOLDEN-SELECTION",
+                         version="1.1", policy_id="kie-rule-12-band")
+    work = tmp / "e11"; work.mkdir()
+    req_p, res_p = work / "request.json", work / "result.json"
+    req_p.write_text(json.dumps(req11, indent=2) + "\n")
+    proc = run_cli(req_p, res_p, work, GOLDEN, mappings)
+    say("E wrapper CLI exits 0 on a 1.1 request (real emitter)",
+        proc.returncode == 0, proc.stderr.strip()[:200])
+    if proc.returncode == 0:
+        res = json.loads(res_p.read_text())
+        fails = rc.validate_result(res, req11)
+        say("E 1.1 result passes collect_launch_receipts.validate_result",
+            fails == [], "; ".join(fails))
+        enriched = json.loads(
+            (work / "selection-request.enriched.json").read_text())
+        say("E enriched artifact is 1.1 and carries the id verbatim",
+            enriched["schema_version"] == "1.1"
+            and enriched.get("prompt_policy_id") == "kie-rule-12-band",
+            f"prompt_policy_id={enriched.get('prompt_policy_id')!r}")
+        profile_check(
+            "E 1.1 enriched artifact validates against the landed profile",
+            enriched)
+
+
+def case_f(tmp):
+    launch = json.loads(GOLDEN.read_text())
+    mains = [o["offer_id"] for o in launch["offers"] if o["slot"] == "main"]
+    rows = sw.normalize_mapping_rows(json.loads(
+        (HERE / "fixtures" / "mappings-golden.json").read_text()))
+    targets = sw.enrich_checkout_targets(launch, mains, rows)
+    base_req = make_request(launch, mains, "TEST-LAUNCH-S78-GOLDEN-SELECTION")
+
+    def fails_for(**over):
+        doc = dict(base_req)
+        doc.update(over)
+        return sw.validate_selection_request(
+            sw.build_selection_request(doc, targets))
+
+    f = fails_for(schema_version="1.1")
+    say("F 1.1 without prompt_policy_id refused naming the field",
+        any("prompt_policy_id" in x for x in f), "; ".join(f))
+    f = fails_for(prompt_policy_id="kie-rule-12-band")
+    say("F 1.0 carrying prompt_policy_id refused naming the field",
+        any("prompt_policy_id" in x for x in f), "; ".join(f))
+    f = fails_for(schema_version="1.1", prompt_policy_id="")
+    say("F 1.1 with an empty prompt_policy_id refused",
+        any("prompt_policy_id" in x for x in f), "; ".join(f))
+    f = fails_for(schema_version="1.1", prompt_policy_id=42)
+    say("F 1.1 with a non-string prompt_policy_id refused",
+        any("prompt_policy_id" in x for x in f), "; ".join(f))
+    f = fails_for(schema_version="1.2", prompt_policy_id="kie-rule-12-band")
+    say("F unknown schema_version refused",
+        any("schema_version" in x for x in f), "; ".join(f))
+    good = dict(base_req, schema_version="1.1",
+                prompt_policy_id="kie-rule-12-band")
+    sel = sw.build_selection_request(good, targets)
+    say("F well-formed 1.1 passes the mirror, id verbatim",
+        sw.validate_selection_request(sel) == []
+        and sel["prompt_policy_id"] == "kie-rule-12-band")
+    req = make_request(launch, mains, "TEST-LAUNCH-S78-GOLDEN-SELECTION",
+                       version="1.1")
+    work = tmp / "f"; work.mkdir()
+    req_p, res_p = work / "request.json", work / "result.json"
+    req_p.write_text(json.dumps(req, indent=2) + "\n")
+    proc = run_cli(req_p, res_p, work, GOLDEN,
+                   HERE / "fixtures" / "mappings-golden.json")
+    say("F wrapper CLI fails closed on 1.1 with no prompt_policy_id",
+        proc.returncode == 3 and "prompt_policy_id" in proc.stderr
+        and not res_p.exists(), proc.stderr.strip()[:200])
+
+
 def main():
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -224,6 +354,8 @@ def main():
         case_b()
         case_c(tmp)
         case_d(tmp)
+        case_e(tmp)
+        case_f(tmp)
     bad = [r for r in RESULTS if not r[1]]
     print(f"\n{len(RESULTS) - len(bad)}/{len(RESULTS)} checks passed")
     return 1 if bad else 0
