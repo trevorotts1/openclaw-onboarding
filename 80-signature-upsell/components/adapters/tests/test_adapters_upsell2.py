@@ -11,6 +11,7 @@ and determinism against the stored expected bundles.
 Run: python3 -m unittest discover -s tests -v   (from adapters/)
 """
 
+import copy
 import json
 import sys
 import unittest
@@ -287,6 +288,141 @@ class Upsell2SuppressionTests(unittest.TestCase):
         self.assertEqual(disposition["action"], "route_to_final_thank_you")
         self.assertEqual(disposition["reason"], "incompatible_entitlement")
         self.assertFalse(disposition["charge_action_emitted"])
+
+
+_DROP = object()  # variant() sentinel: remove the key entirely
+
+U2_POLICY_FIXTURE = FIXTURES / "request-upsell2-from-upsell1-policy.testonly.json"
+U2_REQUEST_VIA_U1 = FIXTURES / "request-upsell2-from-upsell1.testonly.json"
+U2_REQUEST_VIA_D1 = SKILL_DIR / "fixtures" / "request-upsell2.testonly.json"
+
+
+def variant_of(path, **changes):
+    request = copy.deepcopy(load(path))
+    for key, value in changes.items():
+        if value is _DROP:
+            request.pop(key, None)
+        else:
+            request[key] = value
+    return request
+
+
+@unittest.skipUnless(jsonschema, "jsonschema not available")
+class Upsell2PromptPolicySchemaTests(unittest.TestCase):
+    """Adoption map 1.4 pair cases at the schema layer, instance
+    upsell_2, exercised on BOTH entry-path request fixtures."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.schema = load(SKILL_DIR / "schemas" / "upsell-request.schema.json")
+
+    def test_pair_cases_on_both_entry_paths(self):
+        for path in (U2_REQUEST_VIA_U1, U2_REQUEST_VIA_D1):
+            # 1.0 without the field: valid (the legacy shape).
+            jsonschema.validate(load(path), self.schema)
+            # 1.1 with the field: valid (the adoption delta).
+            jsonschema.validate(
+                variant_of(path, schema_version="1.1",
+                           prompt_policy_id="kie-rule-12-band"),
+                self.schema)
+            # 1.0 carrying the field: refused.
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(
+                    variant_of(path, prompt_policy_id="kie-rule-12-band"),
+                    self.schema)
+            # 1.1 without the field: refused.
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(
+                    variant_of(path, schema_version="1.1"), self.schema)
+
+    def test_stored_11_fixture_validates(self):
+        jsonschema.validate(load(U2_POLICY_FIXTURE), self.schema)
+
+    def test_11_empty_null_and_nonstring_ids_refused(self):
+        for bad_id in ("", None, 11, {"policy_id": "kie-rule-12-band"}):
+            bad = variant_of(U2_REQUEST_VIA_U1, schema_version="1.1",
+                             prompt_policy_id=bad_id)
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(bad, self.schema)
+
+    def test_unknown_versions_refused(self):
+        for version in ("1.2", "2.0"):
+            bad = variant_of(U2_REQUEST_VIA_U1, schema_version=version)
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(bad, self.schema)
+
+
+class Upsell2PromptPolicyAdapterTests(unittest.TestCase):
+    """Adoption map 1.4 item 2: the runtime mirror's explicit pair check
+    and the page-plan pass-through, instance upsell_2."""
+
+    def test_11_via_u1_builds_and_carries_the_id_in_the_page_plan(self):
+        bundle = build_u2(load(U2_POLICY_FIXTURE),
+                          "journey-upsell2-from-upsell1.testonly.json")
+        check = bundle["result"]["eligibility_check"]
+        self.assertEqual(check["verdict"], "eligible")
+        self.assertEqual(check["qualifying_purchase_slot"], "upsell_1")
+        self.assertEqual(bundle["page_plan"]["prompt_policy_id"],
+                         "kie-rule-12-band")
+        # The result profile is unchanged: no policy field rides there.
+        self.assertNotIn("prompt_policy_id", bundle["result"])
+
+    def test_11_via_d1_builds_and_carries_the_id_in_the_page_plan(self):
+        request = variant_of(U2_REQUEST_VIA_D1, schema_version="1.1",
+                             prompt_policy_id="kie-rule-12-band")
+        bundle = build_u2(request, "journey-upsell2-from-downsell1.testonly.json")
+        check = bundle["result"]["eligibility_check"]
+        self.assertEqual(check["verdict"], "eligible")
+        self.assertEqual(check["qualifying_purchase_slot"], "downsell_1")
+        self.assertEqual(bundle["page_plan"]["prompt_policy_id"],
+                         "kie-rule-12-band")
+
+    def test_11_bundle_matches_10_bundle_apart_from_the_plan_citation(self):
+        bundle_10 = build_via_u1()
+        bundle_11 = build_u2(load(U2_POLICY_FIXTURE),
+                             "journey-upsell2-from-upsell1.testonly.json")
+        self.assertEqual(bundle_11["result"], bundle_10["result"])
+        self.assertEqual(bundle_11["native_binding"], bundle_10["native_binding"])
+        plan_11 = dict(bundle_11["page_plan"])
+        self.assertEqual(plan_11.pop("prompt_policy_id"), "kie-rule-12-band")
+        self.assertEqual(plan_11, bundle_10["page_plan"])
+        self.assertNotIn("prompt_policy_id", bundle_10["page_plan"])
+
+    def test_11_without_field_fails_closed(self):
+        with self.assertRaises(common.AdapterError):
+            build_u2(variant_of(U2_REQUEST_VIA_U1, schema_version="1.1"),
+                     "journey-upsell2-from-upsell1.testonly.json")
+
+    def test_10_with_field_fails_closed(self):
+        with self.assertRaises(common.AdapterError):
+            build_u2(variant_of(U2_REQUEST_VIA_U1,
+                                prompt_policy_id="kie-rule-12-band"),
+                     "journey-upsell2-from-upsell1.testonly.json")
+
+    def test_11_empty_null_and_nonstring_ids_fail_closed(self):
+        for bad_id in ("", None, 11, {"policy_id": "kie-rule-12-band"}):
+            with self.assertRaises(common.AdapterError):
+                build_u2(variant_of(U2_REQUEST_VIA_U1, schema_version="1.1",
+                                    prompt_policy_id=bad_id),
+                         "journey-upsell2-from-upsell1.testonly.json")
+
+    def test_unknown_versions_fail_closed(self):
+        for version in ("1.2", "2.0"):
+            with self.assertRaises(common.AdapterError):
+                build_u2(variant_of(U2_REQUEST_VIA_U1, schema_version=version),
+                         "journey-upsell2-from-upsell1.testonly.json")
+
+    def test_unregistered_id_passes_the_adapter_pair_check(self):
+        # Pinned open-string behavior (as in adoption 1.2 D-4): refusing
+        # an unknown id is a registry-layer act at dispatch and at the
+        # Q11 aggregator (map section 4 citation rule), not an adapter
+        # act; this mirror enforces the pair rule and the field's shape.
+        bundle = build_u2(
+            variant_of(U2_REQUEST_VIA_U1, schema_version="1.1",
+                       prompt_policy_id="an-unregistered-policy"),
+            "journey-upsell2-from-upsell1.testonly.json")
+        self.assertEqual(bundle["page_plan"]["prompt_policy_id"],
+                         "an-unregistered-policy")
 
 
 if __name__ == "__main__":
