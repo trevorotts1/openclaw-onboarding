@@ -38,7 +38,7 @@ jobs:
         working-directory: 77-council-of-wise-elders/runtime
         run: |
           npm run build
-          node --import tsx --test tests/wer013-primary-coverage.test.ts
+          node --import tsx --test src/sources/sources.test.ts tests/wer013-primary-coverage.test.ts
       - name: Verify Skill 22 legacy books and canonical Council roster are preserved
         working-directory: 77-council-of-wise-elders/runtime
         run: |
