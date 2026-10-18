@@ -96,6 +96,49 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(got["request_version"], 2)
         self.assertEqual(got["receipt"], {"status_claimed": "verified"})
 
+    def test_request_same_version_redispatch_persists(self):
+        # The receiver's resume path: a request stored non-complete at
+        # version 1 is redispatched at version 1 after remediation, and
+        # each new outcome must persist at that same version.
+        r1 = {"status_claimed": "blocked-auth"}
+        r2 = {"status_claimed": "partial"}
+        r3 = {"status_claimed": "verified"}
+        r4 = {"status_claimed": "partial-again"}
+        self.assertTrue(self.store.put_request(
+            "r-redispatch", 1, "T1", "blocked-auth", r1))
+        # same version, prior state not complete: replacement persists
+        self.assertTrue(self.store.put_request(
+            "r-redispatch", 1, "T1", "partial", r2))
+        got = self.store.get_request("r-redispatch")
+        self.assertEqual(got["request_version"], 1)
+        self.assertEqual(got["tenant_id"], "T1")
+        self.assertEqual(got["state"], "partial")
+        self.assertEqual(got["receipt"], r2)
+        # same version again, still not complete: completion persists
+        self.assertTrue(self.store.put_request(
+            "r-redispatch", 1, "T1", "complete", r3))
+        got = self.store.get_request("r-redispatch")
+        self.assertEqual(got["request_version"], 1)
+        self.assertEqual(got["tenant_id"], "T1")
+        self.assertEqual(got["state"], "complete")
+        self.assertEqual(got["receipt"], r3)
+        # a completed record is terminal at its version: a same-version
+        # write is refused and the stored record is untouched
+        self.assertFalse(self.store.put_request(
+            "r-redispatch", 1, "T1", "partial", r4))
+        got = self.store.get_request("r-redispatch")
+        self.assertEqual(got["request_version"], 1)
+        self.assertEqual(got["tenant_id"], "T1")
+        self.assertEqual(got["state"], "complete")
+        self.assertEqual(got["receipt"], r3)
+        # a superseded (lower) version write is refused too
+        self.assertFalse(self.store.put_request(
+            "r-redispatch", 0, "T1", "received", None))
+        got = self.store.get_request("r-redispatch")
+        self.assertEqual(got["request_version"], 1)
+        self.assertEqual(got["state"], "complete")
+        self.assertEqual(got["receipt"], r3)
+
     def test_lease_fencing(self):
         t1 = self.store.acquire_lease("T1", "location:L1", "box-a")
         self.assertEqual(t1, 1)

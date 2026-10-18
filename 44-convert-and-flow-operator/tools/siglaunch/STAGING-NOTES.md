@@ -212,3 +212,64 @@ under both the room TMPDIR rule and a default TMPDIR: store 14,
 receiver 38, normalizer 12, provisioning 3, processor 7, timing 5,
 fulfillment_map 16, acceptance 13 — all OK. Detail: the events
 package STAGING-NOTES, lane I successor section.
+
+## Successor — 2026-10-17: A16 executor realignment + store-guard reconciliation (S44 coordinator)
+
+Branch `s44/siglaunch-a16-executor-store-fix`, based on main
+`e1692494a21c037d95208e2075b657b161b5d7d9` (post-train-#2220 main;
+the tools/siglaunch tree is unchanged on main since the PR #2181
+landing, verified by an empty diff for this tree between main
+6e1542c6 and e1692494).
+
+Basis: the A16 execution chain of 2026-10-17. The packaged copies
+landed by PR #2181 were byte-identical to the drifted work-layout
+originals (packaged `receiver/caf_executor.py` SHA-256
+`2d69c17f6d8ee91b905ac4521508dafb37dfbd00f7527a6465bb25da5fb0574a`,
+packaged `store/store.py` SHA-256
+`a5e052fd2e96af4ffe2807c853a9f80e173d230313e15c46776055924aa5ace6`),
+and the drift stopped the first real A16 dispatch: the executor
+called a caf CLI surface the installed engine does not have
+(per-command `--json` on export, a positional build plan, a
+nonexistent `workflows qc` verb, folder-based export), and the
+store's superseded-version guard refused every same-version
+redispatch write, so no redispatch outcome ever persisted. Both
+defects were fixed in the work layout (Lane FIX-EXECUTOR and Lane
+FIX-STORE, 2026-10-17), verified there (full room suite 156/156
+under both TMPDIR conditions, plus the 13 acceptance tests), closed
+by MAIN, and proven live (the A16 store's first persisted redispatch
+outcome, state "partial", on the 2026-10-17 resume run 3). This
+successor places those exact fixed bytes. No version bump is in
+this candidate: `skill-version.txt` is read fresh from main at
+merge time (the PR #2181 G3 lesson).
+
+### Files added or changed in this successor
+
+| Staged path | Source | State |
+|---|---|---|
+| `siglaunch/receiver/caf_executor.py` | `work/receiver/caf_executor.py` | REPLACED — realigned to the installed engine's real CLI surface (top-level `--json`/`--experimental`, build `--from-plan`, read-back via `export --workflow-id`/`--out`, AC20 snapshot re-grounded on `workflows list`, QC leg on the skill-root `qc-built-workflow.sh`). Byte-identical to source, SHA-256 `af865200f597a710901a1ee10963490e3cf09aa0e7267095d2c5c6a2027fae1d` |
+| `siglaunch/receiver/test_caf_executor.py` | `work/receiver/test_caf_executor.py` | REPLACED — rebuilt on a fake runner keyed by the actually-invoked subcommands. Byte-identical, SHA-256 `2db1195cfc05511e47f6ba6babbf78e9f16b7cf08103e110aa41635d05d3ff18` |
+| `siglaunch/receiver/test_cli_surface_contract.py` | `work/receiver/test_cli_surface_contract.py` | NEW — pins the adapter's assumptions to the real `caf --help` output of the room worktree's engine (skips, never fails, when no engine worktree is present). Byte-identical, SHA-256 `d80cf2ca0557df61aff455cd3b00fcc1d86b2cff7d9c1167773ed3703a8e2dde` |
+| `siglaunch/receiver/test_e2e_dryrun.py` | `work/receiver/test_e2e_dryrun.py` | REPLACED — realigned onto the same real-surface fixtures. Byte-identical, SHA-256 `dfab8b4025ecff5261ec99cc5e7faf69caa2b2a046c778dbf566a5a817a09c06` |
+| `siglaunch/store/store.py` | `work/store/store.py` | REPLACED — `put_request` reconciled with the receiver's resume semantics: refusal only for a greater version, or same version over a completed record. Byte-identical, SHA-256 `8b7b0d3505f82ab3991bbef87f4bb2e8340d108194aa1ffb2cd9e57631967de8` |
+| `siglaunch/store/test_store.py` | `work/store/test_store.py` | REPLACED — additions only (new redispatch-persistence test); no pre-existing test modified. Byte-identical, SHA-256 `38ca392af2c9e8bc1f91154ebe8f28f4b6feaa40a8aa5853fc0d5e8fc0ac11ca` |
+
+No placement adaptations were needed: every placed file is
+byte-identical to its work-layout source, and the packaged suites
+below pass as placed.
+
+### Test results (staged tree, this successor, `python3 -m unittest discover -p "test_*.py"` per subdir)
+
+| Suite | Ran | Result |
+|---|---|---|
+| store (test_store 8 + test_entitlement_version 7) | 15 | OK under both TMPDIR conditions |
+| receiver (test_receiver 12 + lane F regressions 19 + test_caf_executor 10 + test_e2e_dryrun 2 + CLI surface contract 6, run against the room worktree's real engine help) | 49 | OK under both TMPDIR conditions |
+| normalizer | 12 | OK |
+| provisioning | 3 | OK |
+| processor | 7 | OK |
+| timing | 5 | OK |
+| fulfillment_map | 16 | OK |
+| acceptance (A17/A19 4 + A18/A20 4 + A21 5; A18 wall 1.2991s / 1.1132s, both < 5.0s) | 13 | OK under both TMPDIR conditions |
+| **Total (tools/siglaunch tree)** | **120** | **120/120 passing** |
+
+The events package (`shared-utils/signature_launch/events`, 44
+tests) is untouched by this successor.

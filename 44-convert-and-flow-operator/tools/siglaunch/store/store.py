@@ -416,15 +416,30 @@ class Store:
     def put_request(self, request_id: str, request_version: int,
                     tenant_id: str, state: str,
                     receipt: Optional[dict]) -> bool:
-        """Insert-or-replace guarded by monotonic request_version: a
-        superseded version write is refused (returns False)."""
+        """Insert-or-replace guarded by monotonic request_version.
+
+        Reconciled rule: a write is refused (returns False, the stored
+        record untouched) only when the stored request_version is
+        GREATER than the incoming version (a superseded write), or
+        when the stored version EQUALS the incoming version and the
+        stored state is "complete" — a completed record is terminal
+        at its version. Otherwise the write proceeds: no stored row, a
+        higher incoming version, or the same version while the prior
+        state is not complete. Same-version replacement while the
+        prior state is not complete is the receiver's resume path: a
+        request stored as e.g. "blocked-auth" at version 1 is
+        redispatched at version 1 after remediation, and its new
+        outcome (partial, failed, complete) must persist."""
         conn = self._conn()
         conn.execute("BEGIN IMMEDIATE")
         try:
             row = conn.execute(
-                "SELECT request_version FROM requests WHERE request_id=?",
+                "SELECT request_version, state FROM requests"
+                " WHERE request_id=?",
                 (request_id,)).fetchone()
-            if row and row[0] >= request_version:
+            if row and (row[0] > request_version
+                        or (row[0] == request_version
+                            and row[1] == "complete")):
                 conn.execute("COMMIT")
                 return False
             conn.execute(
