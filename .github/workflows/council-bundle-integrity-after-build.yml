@@ -28,6 +28,9 @@ jobs:
           node scripts/build-bundles.mjs
           node scripts/doctor.mjs
           node scripts/verify-bundles.mjs
+      - name: Verify extracted distribution and tamper rejection
+        working-directory: 77-council-of-wise-elders
+        run: node --test scripts/tests/bundle-extraction.test.mjs
       - name: Build runtime in-place with dependencies
         working-directory: 77-council-of-wise-elders/runtime
         run: |

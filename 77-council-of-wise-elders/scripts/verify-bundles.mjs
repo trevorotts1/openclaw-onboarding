@@ -87,9 +87,24 @@ if (manifest.archive?.status === "deferred_to_final_integration") {
 }
 if (manifest.archive?.status === "generated") {
   if (existsSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill"))) {
-    pass("distributable archive present, as recorded in the manifest");
+    const archiveHash = createHash("sha256")
+      .update(readFileSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill")))
+      .digest("hex");
+    if (archiveHash === manifest.archive.sha256) {
+      pass("distributable archive SHA-256 matches the source manifest");
+    } else {
+      fail("distributable archive SHA-256 is missing or does not match the source manifest");
+    }
   } else {
     fail("manifest records the archive as generated but the .skill file is missing");
+  }
+}
+
+if (manifest.archive?.status === "extracted_distribution") {
+  if (existsSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill"))) {
+    fail("extracted distribution unexpectedly contains a nested archive");
+  } else {
+    pass("extracted distribution requires no self-nested archive");
   }
 }
 
