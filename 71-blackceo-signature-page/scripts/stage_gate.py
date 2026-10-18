@@ -171,9 +171,13 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
     """
     brand = brand_path_for(run_dir)
     spec = STAGES[stage]
+    # S44-05: the substituted values are shell tokens, not raw text. A run
+    # directory containing a space (or non-ASCII) must survive the
+    # shlex.split in run_one_validator as ONE argv entry, so quote each
+    # value before it enters the command string.
     substitutions = {
-        "{run_dir}": str(run_dir),
-        "{brand}": str(brand),
+        "{run_dir}": shlex.quote(str(run_dir)),
+        "{brand}": shlex.quote(str(brand)),
     }
     if "{copy_version}" in cmd:
         # S4 CR-2 / S1 copy wiring: the copy spec path is selected by the
@@ -218,7 +222,9 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
             sauce = ""
     # Always substitute {sauce}, even when empty: an unsubstituted token would be
     # shipped to the validator as a literal argument.
-    substitutions["{sauce}"] = sauce
+    # An empty {sauce} must stay empty (quoting "" would add a spurious
+    # empty argv entry); a set flag is a single safe token.
+    substitutions["{sauce}"] = shlex.quote(sauce) if sauce else ""
     if "{file}" in cmd:
         if not files:
             return None, [f"per-file validator has no files to validate "
@@ -229,7 +235,7 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
             per_file_cmd = per_file_cmd.replace(k, v)
         return ("__per_file__", per_file_cmd, files), []
     if files:
-        substitutions["{file}"] = files[0]
+        substitutions["{file}"] = shlex.quote(files[0])
     for k, v in substitutions.items():
         cmd = cmd.replace(k, v)
     return cmd, []
@@ -397,7 +403,7 @@ def run_validators(run_dir, stage, receipt):
                 failures.append(profile_line)
                 continue
             for fpath in files:
-                cmd = cmd_tpl.replace("{file}", fpath)
+                cmd = cmd_tpl.replace("{file}", shlex.quote(fpath))
                 line = run_one_validator(cmd, run_dir)
                 if line:
                     failures.append(line)
@@ -1908,10 +1914,12 @@ def run_item_validators(run_dir, stage, artifact_rel):
         except Exception:
             sauce = ""
     for raw in spec.get("validators", []):
-        cmd = (raw.replace("{run_dir}", str(run_dir))
-                  .replace("{brand}", str(brand))
-                  .replace("{file}", str(run_dir / artifact_rel))
-                  .replace("{sauce}", sauce))
+        # S44-05: quote each path token so a spaced/non-ASCII run dir
+        # survives run_one_validator's shlex.split as one argv entry.
+        cmd = (raw.replace("{run_dir}", shlex.quote(str(run_dir)))
+                  .replace("{brand}", shlex.quote(str(brand)))
+                  .replace("{file}", shlex.quote(str(run_dir / artifact_rel)))
+                  .replace("{sauce}", shlex.quote(sauce) if sauce else ""))
         line = run_one_validator(cmd, run_dir)
         if line:
             failures.append(line)

@@ -76,53 +76,63 @@ class Receiver:
         self.configured_location = configured_location
 
     # ── refusals write nothing (exit discipline) ─────────────────────────
-    @staticmethod
-    def _refuse(exit_code: int, code: str, detail: str) -> tuple[int, dict]:
-        return exit_code, {"refused": code, "detail": detail}
+    def _refuse(self, request: dict, exit_code: int, code: str,
+                detail: str) -> tuple[int, dict]:
+        """A refusal is a receipt too (artifact-contracts.md:664-666;
+        automation-handoff.md:207-213): it echoes the dispatch binding and
+        carries the verbatim reason in `dispatch_refusal`. Nothing is
+        stored or written on this path (design 1.2 exit discipline)."""
+        return exit_code, {
+            "outcome": "refused",
+            "status": "blocked",
+            "request_id": request.get("request_id"),
+            "request_version": request.get("request_version"),
+            "handoff_sha256": request.get("handoff_sha256"),
+            "refused": code,
+            "detail": detail,
+            "dispatch_refusal": {"code": code, "reason": detail},
+        }
 
     def dispatch(self, request: dict) -> tuple[int, dict]:
         # 1. envelope shape
         unknown = set(request) - _ENVELOPE_FIELDS
         if unknown:
-            return self._refuse(EXIT_VALIDATION, "UNKNOWN_FIELDS",
+            return self._refuse(request, EXIT_VALIDATION, "UNKNOWN_FIELDS",
                                 f"unknown envelope fields: {sorted(unknown)}")
         missing = _REQUIRED - set(request)
         if missing:
-            return self._refuse(EXIT_VALIDATION, "MISSING_FIELDS",
+            return self._refuse(request, EXIT_VALIDATION, "MISSING_FIELDS",
                                 f"missing envelope fields: {sorted(missing)}")
         # 1b. handoff hash-lock, when carried, must be a SHA-256 hex
         # string; a malformed lock is refused, never echoed downstream
         # (publish-verify compares against this value mechanically).
         handoff_sha = request.get("handoff_sha256")
         if handoff_sha is not None and not _is_sha256_hex(handoff_sha):
-            return self._refuse(
-                EXIT_VALIDATION, "HANDOFF_HASH_INVALID",
+            return self._refuse(request, EXIT_VALIDATION,
+                "HANDOFF_HASH_INVALID",
                 "handoff_sha256 is present but is not a 64-character "
                 "SHA-256 hex string")
         # 2. deploy mode: fail-closed, never defaulted
         if request["deploy_mode"] != "draft-only":
-            return self._refuse(
-                EXIT_VALIDATION, "DEPLOY_MODE",
+            return self._refuse(request, EXIT_VALIDATION, "DEPLOY_MODE",
                 "deploy_mode must be exactly 'draft-only'; absent or any "
                 "other value is refused, never defaulted")
         # 3. tenant gate: the request's location must be the configured one
         if request["location_id"] != self.configured_location:
-            return self._refuse(
-                EXIT_GATE, "WRONG_LOCATION",
+            return self._refuse(request, EXIT_GATE, "WRONG_LOCATION",
                 "request location is not this box's configured location; "
                 "refused before any engine call")
         # 4. approval hash over the plan as received
         approval = request["approval"]
         if approval.get("plan_hash") != plan_hash(request["plan"]):
-            return self._refuse(EXIT_VALIDATION, "PLAN_HASH_MISMATCH",
+            return self._refuse(request, EXIT_VALIDATION, "PLAN_HASH_MISMATCH",
                                 "approval plan_hash does not match the "
                                 "plan in this request")
         # 5. prior state: idempotent redispatch / superseded version
         prior = self.store.get_request(request["request_id"])
         if prior is not None:
             if request["request_version"] < prior["request_version"]:
-                return self._refuse(
-                    EXIT_VALIDATION, "SUPERSEDED",
+                return self._refuse(request, EXIT_VALIDATION, "SUPERSEDED",
                     "request_version is lower than the recorded version")
             if prior["state"] == "complete" and prior["receipt"] is not None:
                 return EXIT_OK, prior["receipt"]
@@ -131,11 +141,15 @@ class Receiver:
         token_state = probe.get("token_state")
         if token_state != "healthy":
             receipt = self._receipt_shell(request, probe)
+            receipt["outcome"] = "refused"
+            receipt["status"] = "blocked"
             receipt["status_claimed"] = "blocked-auth"
-            receipt["notes"].append(
-                f"token_state={token_state}: no writes attempted; "
-                "remediation differs by state (absent vs revoked) and is "
-                "owned by the S06 auth entry point")
+            reason = (f"token_state={token_state}: no writes attempted; "
+                      "remediation differs by state (absent vs revoked) and "
+                      "is owned by the S06 auth entry point")
+            receipt["dispatch_refusal"] = {
+                "code": "BLOCKED_AUTH", "reason": reason}
+            receipt["notes"].append(reason)
             self.store.put_request(request["request_id"],
                                    request["request_version"],
                                    request["location_id"], "blocked-auth",
@@ -145,7 +159,7 @@ class Receiver:
         try:
             builder_plans, exceptions = self._normalize_plan(request)
         except ValueError as e:
-            return self._refuse(EXIT_VALIDATION, "PLAN_INVALID", str(e))
+            return self._refuse(request, EXIT_VALIDATION, "PLAN_INVALID", str(e))
         # 8. per-workflow execution with resume semantics
         receipt = self._receipt_shell(request, probe)
         prior_ops = {}
@@ -169,6 +183,13 @@ class Receiver:
         for entry in exceptions:
             receipt["operations"].append(
                 self._exception_op(entry))
+        # Top-level stage-14 form_exceptions (artifact-contracts.md:657):
+        # the packet-sanctioned no_workflow_reason entries, verbatim.
+        receipt["form_exceptions"] = [
+            {"form_id": entry["form_id"],
+             "no_workflow_reason": entry["no_workflow_reason"]}
+            for entry in exceptions if entry.get("form_id")]
+        receipt["outcome"] = "accepted" if all_ok else "failed"
         receipt["status_claimed"] = "verified" if all_ok else "partial" \
             if any(op["status_claimed"] in ("created", "reused")
                    for op in receipt["operations"]) else "failed"
@@ -203,10 +224,12 @@ class Receiver:
         "conversational (the envelope carries no form roles, so the "
         "derived opt-in/purchase/booking trigger set cannot be computed "
         "receiver-side; it is derived by the stage-14 mapper from the "
-        "handoff), ghl_pack_version (no executor surface reports it), "
-        "qc.checklist_instance path, qc.checklist_complete and the WF "
-        "item count (no checklist instance is created through the "
-        "executor contract)")
+        "handoff), conversational_overrides (owner-approved exceptions "
+        "are not on the envelope), conversational_not_present (derived "
+        "with the trigger set), ghl_pack_version (no executor surface "
+        "reports it), qc.checklist_instance path, qc.checklist_complete "
+        "and the WF item count (no checklist instance is created through "
+        "the executor contract)")
 
     def _receipt_shell(self, request: dict, probe: dict) -> dict:
         notes = list(request.get("notes", []))
@@ -227,6 +250,16 @@ class Receiver:
             # seam packet sections 2/4: the hash-lock echo (None when
             # the dispatch carried no handoff)
             "handoff_sha256": request.get("handoff_sha256"),
+            # Stage-14 receipt fields (artifact-contracts.md:656-667).
+            # outcome is set by the dispatch path; the four fields the
+            # receiver cannot know stay None (explicitly absent, never an
+            # empty string or an invented value) and are named in notes.
+            "outcome": None,
+            "form_exceptions": [],
+            "conversational": None,
+            "conversational_overrides": None,
+            "conversational_not_present": None,
+            "ghl_pack_version": None,
             "status_claimed": None,
             "operations": [],
             "notes": notes,
@@ -450,9 +483,17 @@ class Receiver:
               "folder": builder_plan.get("folder"),
               "build_method": self._build_method(declared, probe),
               "trigger": self._trigger_record(declared),
+              # artifact-contracts.md:663-664: the mechanism recorded
+              # alongside the trigger, not only nested inside it.
+              "mechanism": declared.get("mechanism"),
               "qc": {"script": "qc-built-workflow.sh",
                      "exit_code": None, "rubric": None,
-                     "checklist_instance": None},
+                     "checklist_instance": None,
+                     # The executor contract creates no checklist
+                     # instance, so these stay explicitly unknown
+                     # (automation-handoff.md:196-204) rather than
+                     # invented.
+                     "checklist_complete": None, "wf_items": None},
               "readback_summary": {"exists": False, "status": None}}
         # dependency precheck (Phase-A receipts are the input contract)
         missing = self.executor.dependencies_present(
@@ -478,7 +519,9 @@ class Receiver:
         op["qc"] = {"script": "qc-built-workflow.sh",
                     "exit_code": result.get("qc_exit_code"),
                     "rubric": result.get("rubric"),
-                    "checklist_instance": result.get("checklist_instance")}
+                    "checklist_instance": result.get("checklist_instance"),
+                    "checklist_complete": result.get("checklist_complete"),
+                    "wf_items": result.get("wf_items")}
         checks = []
         checks.append({
             "name": "object_exists",
@@ -548,3 +591,116 @@ def judge_receipt(receipt: dict) -> dict:
     overall = "VERIFIED" if counted and all(
         v == "VERIFIED" for v in counted) else "NOT_VERIFIED"
     return {"overall": overall, "operations": verdicts}
+
+# ── stage-14 outcome record (the Skill 71 filing surface) ────────────────
+# The receiver's own receipt keeps the raw export in operations[].readback
+# for judge_receipt(). The stage-14 contract names the per-workflow
+# readback {exists, status} and a flat trigger; this translation emits
+# exactly the outcome record that automation_handoff.py's
+# file_dispatch_receipt() (CLI: --outcome <file>) consumes.
+
+def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
+    """Translate a dispatch return into the stage-14 outcome record.
+
+    Citations:
+      - artifact-contracts.md:656-667: workflows[], form_exceptions,
+        conversational, conversational_overrides,
+        conversational_not_present, ghl_pack_version, and the dispatch
+        binding request_id / request_version / handoff_sha256 / outcome.
+      - automation-handoff.md:186-213: per workflow workflow_id, name,
+        trigger (form_submitted + form_id) with the mechanism alongside,
+        build_method, qc.script / exit_code / checklist_instance /
+        checklist_complete / wf_items, readback {exists, status}; a
+        refusal or failure carries its verbatim reason.
+
+    A field this dispatch genuinely cannot know is None — explicitly
+    absent, never "" or invented data — and is named in `unproducible`
+    (automation-handoff.md: an un-named omission is a defect)."""
+    outcome = result.get("outcome")
+    if outcome not in ("accepted", "refused", "failed"):
+        if result.get("status_claimed") == "blocked-auth":
+            outcome = "refused"
+        elif exit_code == EXIT_OK:
+            outcome = "accepted"
+        else:
+            outcome = "failed"
+    record = {
+        "outcome": outcome,
+        "request_id": request.get("request_id"),
+        "request_version": request.get("request_version"),
+        "handoff_sha256": request.get("handoff_sha256"),
+    }
+    unproducible = []
+    # Form exceptions are the envelope's no_workflow_reason entries,
+    # verbatim (artifact-contracts.md:657; automation-handoff.md:205-206).
+    record["form_exceptions"] = [
+        {"form_id": w["form_id"],
+         "no_workflow_reason": w["no_workflow_reason"]}
+        for w in request.get("workflows") or []
+        if isinstance(w, dict) and w.get("form_id")
+        and isinstance(w.get("no_workflow_reason"), str)
+        and w["no_workflow_reason"].strip()]
+    if outcome == "refused":
+        refusal = result.get("dispatch_refusal") or {}
+        record["refusal"] = {
+            "code": refusal.get("code") or result.get("refused"),
+            "reason": refusal.get("reason") or result.get("detail")}
+        record["workflows"] = None
+    elif outcome == "failed":
+        errors = [e for op in result.get("operations", [])
+                  for e in (op.get("errors") or [])]
+        record["failure"] = {
+            "code": "DISPATCH_FAILED",
+            "reason": "; ".join(errors) if errors else None}
+        if not errors:
+            unproducible.append("failure.reason")
+        record["workflows"] = None
+    else:
+        workflows = []
+        for i, op in enumerate(result.get("operations", [])):
+            if op.get("status_claimed") == "skipped":
+                continue  # already recorded in form_exceptions
+            trig = op.get("trigger") or {}
+            origin = trig.get("origin") if isinstance(trig, dict) else None
+            wf = {"workflow_id": op.get("workflow_id"),
+                  "name": op.get("name")}
+            if isinstance(origin, dict) \
+                    and origin.get("type") == "form_submitted" \
+                    and origin.get("form_id"):
+                wf["trigger"] = {"type": "form_submitted",
+                                 "form_id": origin["form_id"]}
+            else:
+                wf["trigger"] = None
+                unproducible.append(f"workflows[{i}].trigger")
+            mechanism = op.get("mechanism")
+            wf["mechanism"] = mechanism if isinstance(mechanism, dict) else None
+            if wf["mechanism"] is None:
+                unproducible.append(f"workflows[{i}].mechanism")
+            wf["build_method"] = op.get("build_method")
+            if wf["build_method"] not in ("caf-cli",
+                                          "tier4-browser-backstop"):
+                unproducible.append(f"workflows[{i}].build_method")
+            qc_in = op.get("qc") or {}
+            wf["qc"] = {"script": qc_in.get("script"),
+                        "exit_code": qc_in.get("exit_code")}
+            for key in ("checklist_instance", "checklist_complete",
+                        "wf_items"):
+                wf["qc"][key] = qc_in.get(key)
+                if qc_in.get(key) is None:
+                    unproducible.append(f"workflows[{i}].qc.{key}")
+            rb = op.get("readback_summary")
+            if isinstance(rb, dict) and "exists" in rb and "status" in rb:
+                wf["readback"] = {"exists": rb["exists"],
+                                  "status": rb["status"]}
+            else:
+                wf["readback"] = None
+                unproducible.append(f"workflows[{i}].readback")
+            workflows.append(wf)
+        record["workflows"] = workflows
+    # The receiver derives none of these (named in the receipt notes).
+    for key in ("conversational", "conversational_overrides",
+                "conversational_not_present", "ghl_pack_version"):
+        record[key] = None
+        unproducible.append(key)
+    record["unproducible"] = unproducible
+    return record

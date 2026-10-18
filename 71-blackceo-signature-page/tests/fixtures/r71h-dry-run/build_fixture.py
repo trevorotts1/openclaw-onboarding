@@ -220,11 +220,13 @@ def write_inputs(run: Path):
             "folder": "FIXTURE / R71H Dry-Run",
             "workflows": [
                 {"form_id": "FORM-1", "slug": "fixture-optin-followup",
+                 "name": "fixture-optin-followup",
                  "expected_steps": 4, "allow_multiple": False,
                  "mechanism": {"type": "contact_tag",
                                "tag": "fixture-optin-signed-up"}},
                 {"form_id": "FORM-2",
                  "slug": "fixture-order-confirmation",
+                 "name": "fixture-order-confirmation",
                  "expected_steps": 3, "allow_multiple": True,
                  "mechanism": {"type": "native",
                                "build_method": "tier4-browser-backstop"}},
