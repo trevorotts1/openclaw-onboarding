@@ -94,7 +94,8 @@
 #       The atomic procedure. --dry-run prints the plan and touches nothing.
 #       exit 0 = upgraded (or already correct), 78 = REFUSED / rolled back
 #       (box left exactly as found), 70 = ROLLBACK FAILED (needs a human now),
-#       3 = undetermined, 2 = usage.
+#       3 = undetermined, 2 = usage,
+#       79 = REFUSED (this box is a container).
 #
 # Environment:
 #   OC_ATOMIC_QUIESCE_PROOF_SECONDS  window used to prove the once-a-minute
@@ -172,6 +173,24 @@ _resolve_root() {
   OC_CONFIG="$OC_ROOT_DIR/openclaw.json"
   LOCK_FILE="$OC_ROOT_DIR/.openclaw-maintenance-lock"
   UIDN="$(id -u 2>/dev/null || echo 0)"
+}
+
+# ── Are we INSIDE a container? The docker branch of _detect_supervisor only
+# ── proves a container literally named `openclaw` exists on a LOCAL daemon.
+# ── Inside a container there is no docker binary and no socket, so that check
+# ── reads "none" and the procedure would proceed where it must never run.
+# ── These markers are authoritative and are checked FIRST. /proc does not
+# ── exist on macOS, where the reads simply fail.
+# agent-pull-fix: R9
+_running_in_container() {
+  [ -f /.dockerenv ] && return 0
+  [ -f /.containerenv ] && return 0
+  [ -f /run/.containerenv ] && return 0
+  if [ -r /proc/1/cgroup ] \
+     && grep -Eq 'docker|kubepods|containerd|libpod' /proc/1/cgroup 2>/dev/null; then
+    return 0
+  fi
+  return 1
 }
 
 # ── MEASURED version. Never a recorded one: the fleet record for the box that
@@ -516,6 +535,13 @@ do_upgrade() {
   local staged new_version ts
 
   _resolve_root
+  # agent-pull-fix: R9
+  if _running_in_container; then
+    _refuse_banner \
+      "This script is running INSIDE A CONTAINER. Its OpenClaw binary lives in the image, which this repo does not build or pull, so the binary change and the config change cannot be made atomic. The host's docker daemon is not reachable from in here either." \
+      "Nothing was changed. Run this on the HOST, not inside the container."
+    return 79
+  fi
   SUPERVISOR="$(_detect_supervisor)"
 
   # ── PREFLIGHT. Everything that could refuse is checked BEFORE anything stops,
