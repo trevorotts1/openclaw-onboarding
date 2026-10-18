@@ -9,5 +9,6 @@
  */
 export * from './capacity.js';
 export * from './errors.js';
+export * from './producer.js';
 export * from './runner.js';
 export * from './workers.js';
