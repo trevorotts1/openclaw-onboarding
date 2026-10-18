@@ -1,0 +1,205 @@
+{
+ "schema_version": "wise-elders.card/v1",
+ "session_id": "sess-canary-demo-2",
+ "brief_revision": 1,
+ "seat_id": "russell-brunson",
+ "input_manifest_sha256": "60e186dd7c15d14091942f9df7066614d3b3090f91458b917beb431de5fa2d61",
+ "pack_version": "v1.0.0",
+ "card_kind": "advisor",
+ "round": 1,
+ "stance": "conditional",
+ "preferred_option_id": "B",
+ "option_scores": [
+  {
+   "option_id": "A",
+   "score": 4.5,
+   "rationale": "Status quo preserves the existing six-week workshop and the invented 12-seat baseline, and it violates no constraint. But it answers nothing about the seat's core question: who wants a group program, how they would find it, and what path converts interest into a purchase. Option A leaves unk-1 (demand for a group program unmeasured) exactly where it is, so the practice pays no cost and also buys no information. Defensible as a holding position, weak as a decision.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "B",
+   "score": 8.5,
+   "rationale": "A bounded paid pilot is the only listed option that tests the three things this seat exists to test, in the only order that produces usable signal: a defined who, a route by which they hear about it, and an actual transaction that separates real interest from polite interest. The word 'paid' is doing the load-bearing work — free attendance measures willingness to attend, not willingness to buy, and a group program's viability is a purchase question. B is also the only forward option that can satisfy con-1's budget cap and non-displacement requirement, because it is bounded by definition. Scored below 10 because the pilot design is unspecified in the brief and asm-1 (founder-only staffing) is an unverified assumption, so execution risk is real even though the option is correct.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "C",
+   "score": 1.5,
+   "rationale": "Broad launch commits full delivery, marketing, and support cost against demand that this brief explicitly records as unmeasured (unk-1), while con-1 caps spend to a small invented budget and forbids displacing the existing workshop. C is the option most likely to breach the hard constraint and the least likely to return a clean learning signal, because a broad launch mixes price, audience, and delivery into one number that cannot be attributed. There is no evidence in the manifest supporting launch-scale demand.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  }
+ ],
+ "framework_applications": [
+  {
+   "framework_id": "offer-first-sequencing",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "Build the group program as an offer before building it as a product. Option B should be written down as a single named offer with a specific who, a specific outcome, a price, and a reason to act now — the pilot is the offer's first live test, not a rehearsal for one. If the offer cannot be stated in those terms, the pilot is not ready to run.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "traffic-before-scale",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "The brief asks whether to pilot, but says nothing about how anyone would hear about a group program. A pilot cohort with no defined traffic path to it tests the wrong thing. Before the cohort runs, name one audience already reachable — the invented 12-seat workshop roster is the only audience evidenced in this brief — and one route by which that audience is invited. One audience, one route, then measure.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "paid-signal-over-free-signal",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "Price the pilot. A free or heavily discounted cohort returns attendance, which is a weak proxy, and can produce a false positive that then justifies Option C on bad evidence. Set a real price, even a small one, and treat conversion at that price as the pilot's primary result rather than satisfaction scores.",
+   "attribution_kind": "blackceo_adaptation"
+  }
+ ],
+ "decisive_arguments": [
+  "Option B is the only option that converts an unmeasured demand question (unk-1) into a measured one, and it does so within the budget cap and non-displacement requirement stated in con-1.",
+  "The demand question is a purchase question, not an interest question. Only a paid cohort distinguishes wanting a group program from being willing to buy one.",
+  "Option C spends at launch scale against demand this brief records as unmeasured, and is the option most likely to breach the hard constraint in con-1.",
+  "Option A is safe but inert: it preserves the 12-seat workshop baseline from fact-1 while leaving the practice with no evidence for or against a group program at any future date.",
+  "The pilot is bounded, so its downside is capped by design while its learning value is not."
+ ],
+ "strongest_objection": "The brief never establishes that the existing audience wants a group format at all, and a paid pilot presupposes an audience willing to show up and pay. If the invented workshop graduates want one-to-one attention rather than a group container, the pilot will produce a negative result that is about format preference, not about price or demand — and a practice could wrongly read that negative as proof the group program is unviable rather than as proof the offer was aimed at the wrong who. A stronger sequencing would test format preference cheaply before pricing a cohort, which is a real gap in Option B as currently framed.",
+ "conditions": [
+  {
+   "id": "cond-pilot-offer-defined",
+   "description": "The pilot must exist as a single written offer — named who, named outcome, named price, named start date — before any invitation goes out. A cohort assembled without a stated offer cannot be evaluated.",
+   "kind": "prerequisite",
+   "blocking": true,
+   "verification_method": "Read the written offer document and confirm all four elements are present and specific; reject any offer with an unnamed audience or an unstated price.",
+   "required_evidence": [
+    "Written pilot offer with audience, outcome, price, and date"
+   ],
+   "responsible_role": "program owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": []
+  },
+  {
+   "id": "cond-audience-and-route",
+   "description": "One reachable audience and one route of invitation must be named in advance, drawn from people already known to the practice rather than a new cold channel. The invented workshop roster is the only evidenced audience in this brief.",
+   "kind": "prerequisite",
+   "blocking": true,
+   "verification_method": "Confirm the audience source and the invite route are documented and that the route does not require spend beyond the con-1 cap.",
+   "required_evidence": [
+    "Named audience source",
+    "Named invitation route",
+    "Cost estimate for the route"
+   ],
+   "responsible_role": "program owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": [
+    "cond-pilot-offer-defined"
+   ]
+  },
+  {
+   "id": "cond-budget-and-nondisplacement",
+   "description": "Pilot spend must be shown to sit inside the small invented budget cap and must be shown not to consume capacity that the existing six-week workshop depends on. This mirrors the hard constraint con-1 and the financial feasibility question raised as an unresolved critical domain.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "Compare committed pilot spend against the stated cap and confirm workshop scheduling and staffing remain unchanged for the pilot window.",
+   "required_evidence": [
+    "Pilot spend figure against cap",
+    "Workshop schedule for the pilot window"
+   ],
+   "responsible_role": "tiffany-aliche (financial feasibility seat)",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": []
+  },
+  {
+   "id": "cond-paid-not-free",
+   "description": "The pilot must carry a real price. A free pilot does not test the purchase question this seat exists to answer, and a positive free-pilot result must not be treated as evidence for Option C.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "Confirm the offer states a non-zero price and that results are reported in terms of paid conversions, not attendance.",
+   "required_evidence": [
+    "Stated pilot price",
+    "Conversion count at that price"
+   ],
+   "responsible_role": "program owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": [
+    "cond-pilot-offer-defined"
+   ]
+  },
+  {
+   "id": "cond-stop-rule",
+   "description": "Option C must not be triggered by pilot completion alone. A stated numeric result at the pilot price, agreed before the cohort starts, is required before any broad launch is considered.",
+   "kind": "safeguard",
+   "blocking": false,
+   "verification_method": "Confirm a pre-agreed numeric threshold exists in writing before the cohort starts and that the launch decision cites that threshold.",
+   "required_evidence": [
+    "Pre-agreed numeric threshold"
+   ],
+   "responsible_role": "program owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": [
+    "cond-paid-not-free"
+   ]
+  },
+  {
+   "id": "cond-format-preference-check",
+   "description": "Before pricing a full cohort, ask the known audience directly whether they want a group container or continued one-to-one work. This addresses the gap named in the strongest objection and is cheap relative to running the wrong pilot.",
+   "kind": "evidence_required",
+   "blocking": false,
+   "verification_method": "Collect and read direct responses from the known audience on format preference before the offer is finalised.",
+   "required_evidence": [
+    "Direct format-preference responses from the known audience"
+   ],
+   "responsible_role": "program owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": [
+    "cond-audience-and-route"
+   ]
+  }
+ ],
+ "critical_unknowns": [
+  "FICTIONAL: Whether workshop graduates want a group program at all is unmeasured in this invented case (unk-1).",
+  "Whether the fictional pilot is affordable at committed cash levels, raised as an unresolved financial feasibility question tied to con-1.",
+  "How any prospective participant would hear about a group program: no traffic source or invitation route is evidenced in this brief.",
+  "The price a pilot cohort would bear at all, and therefore whether any conversion figure would be meaningful.",
+  "Whether one bounded cohort can be staffed by the founder alone, which is stated only as an assumption (asm-1) and not as evidence."
+ ],
+ "change_my_mind": "I would move off Option B if the format-preference check came back showing the known audience wants one-to-one work rather than a group container — that would mean the pilot tests the wrong thing and the correct move is to re-aim the offer before spending on a cohort. I would move toward Option C if a paid pilot returned conversions at the stated price at or above a threshold agreed in advance, with the workshop schedule and spend cap from con-1 provably intact. I would move toward Option A if the pilot could not clear the con-1 budget cap or could not be run without consuming workshop capacity, since a constraint-breaching pilot is not a cheap test at all.",
+ "challenges_answered": [],
+ "lenses_used": [
+  "audience demand and willingness to pay",
+  "traffic and distribution path",
+  "offer construction and price",
+  "bounded risk and reversal cost",
+  "evidence sufficiency under a single-source manifest"
+ ],
+ "quotes": [],
+ "evidence_strength": "low",
+ "minority_position": "If a majority of seats read the demand question as unanswerable from this brief and therefore favour the status quo, the minority position I would hold is that doing nothing is not the neutral choice: Option A is a decision to keep the group program untested indefinitely, and the cost of that decision grows each time the question is deferred. A bounded, priced pilot with a pre-agreed numeric stop rule carries capped downside and is cheaper than another cycle of not knowing.",
+ "host": {
+  "scope": {
+   "tenant_id": "local-tenant",
+   "company_id": "local-company",
+   "installation_id": "e24c1559-5303-4370-82da-577856a32955",
+   "owner_subject": "local-owner"
+  },
+  "operation_id": "op:e24c1559-5303-4370-82da-577856a32955:local-tenant:sess-canary-demo-2:a1:round-1:russell-brunson:60e186dd7c15d140",
+  "route_id": "claude-nine-configured",
+  "session_id": "sess-canary-demo-2",
+  "stamped_at": "2026-10-16T13:23:46.712Z",
+  "source_status": "not_applicable"
+ }
+}
