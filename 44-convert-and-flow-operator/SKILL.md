@@ -61,9 +61,12 @@ uncertain whether the last build succeeded, verify with `caf workflows list` (or
 `workflows export`) before rebuilding — never rebuild blind.
 
 **Step 9 — QC GATE (before declaring done):** BINDING GATE — the build agent MUST NOT say
-"done" until an independent MiniMax QC sub-agent passes all checklist items and the filled
-checklist is handed to the client. Sequence: announce to client → spawn MiniMax sub-agent
-(via sessions_send, verify model available first) → QC runs `caf workflows export` +
+"done" until an independent QC sub-agent (a different model than the build agent — the
+client's selected QC model, or their configured default where it differs; see INSTRUCTIONS.md
+Step 9.2) passes all checklist items and the filled checklist is handed to the client.
+Sequence: announce to client → spawn the independent QC sub-agent (via sessions_send;
+resolve the model per Step 9.2 and verify it is available first; record which model ran)
+→ QC runs `caf workflows export` +
 `qc-built-workflow.sh <wf-id>` item-by-item → all WF-1..21 PASS → THEN compute the **weighted
 quality rubric** (`references/workflow-quality-rubric.md`, 8 dimensions, ≥ 8.5 to ship) → hand
 client the filled checklist + the rubric score. The rubric is a SUPERSET OVERLAY computed AFTER
@@ -90,9 +93,9 @@ specific low dimension. HALLUCINATION FAIL: hard stop + redo on reasoning-model 
    Step 9 AFTER WF-1..21)
 4c. **universal-sops/funnel-automation-build-quality-rubric.md** — the library-aware FAB-QC ≥ 8.5
    overlay (shared scorer `shared-utils/fab_qc.py`); run at Step 9.3c via `qc-built-workflow.sh --fab`
-5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21;
-   then emits the weighted rubric floor score + the FAB-QC overlay with `--fab`); invoked by the
-   MiniMax QC sub-agent at Step 9
+5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21,22;
+   plus WF-19 under `--conversational`; then emits the weighted rubric floor score + the FAB-QC
+   overlay with `--fab`); invoked by the independent QC sub-agent at Step 9
 6. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
 7. **QC.md** — human-readable checklist (authoritative install-QC script is `qc-convert-and-flow.sh`)
 8. **CHANGELOG.md** — skill version history
@@ -428,9 +431,9 @@ discoverability.
 6. CHANGELOG.md
 7. skill-version.txt
 8. qc-convert-and-flow.sh — automated install-level QC validator (static + live modes)
-9. qc-built-workflow.sh — per-build QC script (takes workflow-id, asserts WF-3/4/5/6/7/12/15/18/21,
-   emits per-item PASS/FAIL JSON AND the weighted quality-rubric floor score; invoked by MiniMax
-   QC sub-agent at Step 9)
+9. qc-built-workflow.sh — per-build QC script (takes workflow-id, asserts WF-3/4/5/6/7/12/15/18/21/22,
+   plus WF-19 under --conversational; emits per-item PASS/FAIL JSON AND the weighted
+   quality-rubric floor score; invoked by the independent QC sub-agent at Step 9)
 10. platform/mac/ — Mac-specific paths + auto-re-grab recipe
 11. platform/vps/ — VPS-specific paths
 12. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)

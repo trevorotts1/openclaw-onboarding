@@ -45,8 +45,11 @@ class TokenManager:
 
     Token sources (in priority order):
     1. Cached token (if < 50 minutes old)
-    2. Firebase refresh token (from GHL_FIREBASE_REFRESH_TOKEN env var)
-    3. Direct Firebase token (from GHL_FIREBASE_TOKEN env var)
+    2. Firebase refresh token, resolved through the canonical env chain in
+       internal/transport.py (_resolve_refresh_token): GOHIGHLEVEL_ ->
+       CAF_ -> GHL_ alias order. This legacy client delegates to that single
+       resolver so the two paths can never diverge again.
+    3. Direct Firebase token (same chain via _resolve_direct_token)
     """
 
     def __init__(self):
@@ -59,8 +62,10 @@ class TokenManager:
         if self._token and (time.time() - self._token_time) < 3000:
             return self._token
 
-        # 2. Try Firebase refresh token
-        refresh_token = os.environ.get("GHL_FIREBASE_REFRESH_TOKEN", "").strip()
+        # 2. Try Firebase refresh token (canonical chain via transport resolver)
+        from cli_anything.gohighlevel.internal.transport import (
+            _resolve_refresh_token, _resolve_direct_token)
+        refresh_token = _resolve_refresh_token()
         if refresh_token:
             token = self._refresh_firebase(refresh_token)
             if token:
@@ -75,8 +80,8 @@ class TokenManager:
             )
             sys.exit(1)
 
-        # 3. Try direct Firebase token from env
-        token = os.environ.get("GHL_FIREBASE_TOKEN", "").strip()
+        # 3. Try direct Firebase token from env (canonical chain via transport)
+        token = _resolve_direct_token()
         if token:
             self._token = token
             self._token_time = time.time()
@@ -84,7 +89,8 @@ class TokenManager:
 
         print(
             "Error: No Firebase token available for internal API.\n"
-            "Set GHL_FIREBASE_REFRESH_TOKEN (preferred) or GHL_FIREBASE_TOKEN.\n"
+            "Set GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (preferred; CAF_ and GHL_ "
+            "aliases accepted) or a direct Firebase token.\n"
             "Get the refresh token from the GHL Chrome extension.",
             file=sys.stderr,
         )

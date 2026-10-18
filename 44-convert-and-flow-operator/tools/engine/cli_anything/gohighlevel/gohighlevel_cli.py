@@ -1090,8 +1090,9 @@ def workflows_build(ctx, plan_file, folder):
     """Build a workflow from a plan JSON file (internal API, write-gated).
 
     Requires --experimental. Supports conversational and mechanical workflows.
-    A TRINITY check is enforced for conversational plans (plans with a
-    'conversational' flag or 'playbook' key).
+    NOTE: build performs NO TRINITY check. Conversational plans are gated at
+    Step 9 QC via qc-built-workflow.sh <wf-id> --conversational (WF-19), which
+    executes Skill 38's qc-trinity-registry.sh; a non-zero result fails QC.
     """
     _require_experimental(ctx)
     try:
