@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wise-elders.hybrid-supervisor-policy/v2",
+  "title": "Hybrid Council of Wise Elders supervisor policy (v2.4 embedded template)",
+  "description": "Versioned supervisor policy embedded verbatim from the v2.4 hybrid execution plan. This file is a TEMPLATE: it is not bound to any installed runtime, scheduled job or live sweep. Binding is a later unit (HYB-05).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "document_version",
+    "binding_status",
+    "full_sweep_interval_seconds",
+    "health_tick_seconds",
+    "heartbeat_suspect_after_seconds",
+    "max_concurrent_workflows",
+    "max_agents_per_workflow",
+    "max_total_agents",
+    "require_independent_non_author_review",
+    "require_exact_head_checks",
+    "require_atomic_expected_head_merge_guard",
+    "standing_repository_merge_authorized",
+    "vercel_required",
+    "cloudflare_build_required",
+    "customer_remote_access_opt_in",
+    "explicit_stop_disables_automatic_engineering_restart"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "wise-elders.hybrid-supervisor-policy/v2"
+    },
+    "document_version": {
+      "type": "string",
+      "const": "2.4"
+    },
+    "binding_status": {
+      "type": "string",
+      "const": "TEMPLATE_NOT_BOUND",
+      "enum": ["TEMPLATE_NOT_BOUND"]
+    },
+    "full_sweep_interval_seconds": {
+      "type": "integer",
+      "const": 600,
+      "minimum": 60
+    },
+    "health_tick_seconds": {
+      "type": "integer",
+      "const": 60,
+      "minimum": 1
+    },
+    "heartbeat_suspect_after_seconds": {
+      "type": "integer",
+      "const": 180,
+      "minimum": 1
+    },
+    "max_concurrent_workflows": {
+      "type": "integer",
+      "const": 50,
+      "minimum": 1
+    },
+    "max_agents_per_workflow": {
+      "type": "integer",
+      "const": 10,
+      "minimum": 1
+    },
+    "max_total_agents": {
+      "type": "integer",
+      "const": 500,
+      "minimum": 1
+    },
+    "require_independent_non_author_review": {
+      "type": "boolean",
+      "const": true
+    },
+    "require_exact_head_checks": {
+      "type": "boolean",
+      "const": true
+    },
+    "require_atomic_expected_head_merge_guard": {
+      "type": "boolean",
+      "const": true
+    },
+    "standing_repository_merge_authorized": {
+      "type": "boolean",
+      "const": true
+    },
+    "vercel_required": {
+      "type": "boolean",
+      "const": false
+    },
+    "cloudflare_build_required": {
+      "type": "boolean",
+      "const": true
+    },
+    "customer_remote_access_opt_in": {
+      "type": "boolean",
+      "const": true
+    },
+    "explicit_stop_disables_automatic_engineering_restart": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}
