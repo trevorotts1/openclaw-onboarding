@@ -2,7 +2,7 @@
 
 ### What Changed
 - Keep generated runtime files outside Council source integrity hashes and report structural readiness separately from live usability.
-- Verify the extracted distribution without requiring a self-nested archive, and bind the distributable archive SHA-256 in the outer source manifest.
+- Verify extracted content only in explicitly selected distribution mode. Source doctor and verifier require the archive and its outer-manifest SHA-256; mutable manifest status cannot exempt a source release.
 - Require a supported Node runtime and working SQLite before installing the Council runtime.
 - Load the installed nine advisor packs with source identity and bounded private-source handling.
 - Require traceable primary teaching coverage without promoting partial evidence to complete-book coverage. Include the existing source contract suite in CI.

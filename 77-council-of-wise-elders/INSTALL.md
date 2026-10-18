@@ -93,6 +93,13 @@ restore never resurrects stale council state.
    `node scripts/verify-bundles.mjs --root <installed-folder>` and
    require the aggregate tree hash to match the manifest. A mismatch
    stops the install; do not hand-patch the installed tree.
+4. If you extracted a `.skill` archive instead of copying the full source folder,
+   add `--distribution` to both commands. This explicitly verifies extracted
+   content without requiring the archive to contain itself. For the Step 8
+   shell QC command, also pass `--distribution`. The default source mode
+   requires the distributable archive and its SHA-256. Never select the mode
+   from the manifest status, and never use distribution mode to certify a
+   source release. These checks prove file consistency, not publisher identity.
 
 ## Step 4: Isolated dependency install
 

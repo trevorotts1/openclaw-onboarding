@@ -3,15 +3,19 @@
 // Recomputes the tree hash and compares it with manifest.json, checks
 // the SKILL.md frontmatter name against the portable skill name, and
 // checks that no state files live inside the folder.
-// Usage: node verify-bundles.mjs [--root <skill-folder>]
+// Usage: node verify-bundles.mjs [--root <skill-folder>] [--distribution]
+// Default: source package including its archive. --distribution explicitly checks
+// an extracted package without certifying the original source archive.
 // Exit 0 on agreement, 1 on any drift.\n// Generated runtime/dist and runtime/node_modules are excluded from source integrity.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkArchiveContract } from "./archive-contract.mjs";
 
 const args = process.argv.slice(2);
+const distribution = args.includes("--distribution");
 const rootIdx = args.indexOf("--root");
 const root = rootIdx >= 0
   ? resolve(args[rootIdx + 1])
@@ -82,31 +86,11 @@ const stateHits = [...current.keys()].filter((rel) =>
 if (stateHits.length === 0) pass("no state files inside the skill folder");
 else fail(`state files present: ${stateHits.join(", ")}`);
 
-if (manifest.archive?.status === "deferred_to_final_integration") {
-  console.log("INFO archive council-of-wise-elders.skill deferred to final integration, as recorded in the manifest");
-}
-if (manifest.archive?.status === "generated") {
-  if (existsSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill"))) {
-    const archiveHash = createHash("sha256")
-      .update(readFileSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill")))
-      .digest("hex");
-    if (archiveHash === manifest.archive.sha256) {
-      pass("distributable archive SHA-256 matches the source manifest");
-    } else {
-      fail("distributable archive SHA-256 is missing or does not match the source manifest");
-    }
-  } else {
-    fail("manifest records the archive as generated but the .skill file is missing");
-  }
-}
-
-if (manifest.archive?.status === "extracted_distribution") {
-  if (existsSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill"))) {
-    fail("extracted distribution unexpectedly contains a nested archive");
-  } else {
-    pass("extracted distribution requires no self-nested archive");
-  }
-}
+const archiveErrors = checkArchiveContract(root, manifest, distribution);
+for (const error of archiveErrors) fail(error);
+if (archiveErrors.length === 0) pass(distribution
+  ? "explicit extracted distribution has no self-nested archive"
+  : "source archive SHA-256 matches the source manifest");
 
 console.log(failures === 0 ? "VERIFY: PASS" : `VERIFY: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

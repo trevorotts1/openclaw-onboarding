@@ -4,7 +4,9 @@
 // frontmatter and version agreement, the nine-seat roster with exact
 // profile labels, JSON validity, manifest agreement, and the rule
 // that no council state lives inside the skill folder.
-// Usage: node doctor.mjs [--root <skill-folder>]
+// Usage: node doctor.mjs [--root <skill-folder>] [--distribution]
+// Default: source package including its archive. --distribution explicitly checks
+// an extracted package without certifying the original source archive.
 // Exit 0 when every check passes, 1 otherwise. No network, no writes.\n// Generated runtime/dist and runtime/node_modules are not part of source integrity.
 
 import { execFileSync } from "node:child_process";
@@ -12,8 +14,10 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkArchiveContract } from "./archive-contract.mjs";
 
 const args = process.argv.slice(2);
+const distribution = args.includes("--distribution");
 const rootIdx = args.indexOf("--root");
 const root = rootIdx >= 0
   ? resolve(args[rootIdx + 1])
@@ -172,6 +176,11 @@ else fail(`state files inside skill folder: ${stateHits.map((p) => relative(root
 const manifestPath = join(root, "manifest.json");
 if (existsSync(manifestPath)) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const archiveErrors = checkArchiveContract(root, manifest, distribution);
+  for (const error of archiveErrors) fail(error);
+  if (archiveErrors.length === 0) pass(distribution
+    ? "explicit extracted distribution has no self-nested archive"
+    : "source archive SHA-256 matches the source manifest");
   const pairs = [];
   for (const p of walk(root)) {
     const rel = relative(root, p).split("\\").join("/");
