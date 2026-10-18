@@ -187,6 +187,18 @@ export interface ProcessIdentity {
   gid: number | null;
   user: string | null;
   uid_source: 'observed' | 'unobservable';
+  /**
+   * Windows account domain (`USERDOMAIN`) when observable. null on platforms
+   * that have no such value and when it cannot be observed.
+   */
+  domain: string | null;
+  /**
+   * Windows `COMPUTERNAME` when observable. Recorded evidence only; it is
+   * never used as a service name.
+   */
+  computer_name: string | null;
+  /** Whether `user` came from a real observation or stays unobservable. */
+  user_source: 'observed' | 'unobservable';
   /** Resolved service name. NEVER the hostname and NEVER `localhost`. */
   service_name: string | null;
   service_name_source: ServiceNameSource;

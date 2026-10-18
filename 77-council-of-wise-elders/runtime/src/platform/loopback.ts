@@ -30,6 +30,16 @@ import {
 /** Environment marker used by several container runtimes. */
 const CONTAINER_ENV_KEYS = ['container', 'container_id', 'OPENCLAW_CONTAINER'] as const;
 
+/**
+ * Windows-only container markers. Windows containers have no `/.dockerenv`
+ * and no cgroup table, so only an explicit runtime marker is evidence.
+ */
+const WINDOWS_CONTAINER_ENV_KEYS = [
+  'CONTAINER_SANDBOX_MOUNT_POINT',
+  'DOTNET_RUNNING_IN_CONTAINER',
+  'KUBERNETES_SERVICE_HOST',
+] as const;
+
 /** cgroup text markers for the common runtimes. */
 const CGROUP_CONTAINER_MARKERS =
   /(docker|kubepods|containerd|libpod|podman|lxc|lxd|crio|garden)/i;
@@ -45,8 +55,10 @@ const CGROUP_FILES = ['/proc/self/cgroup', '/proc/1/cgroup'] as const;
  *
  * `present` requires a positive marker. `absent` requires a successfully
  * read cgroup state (on Linux) or a platform where no Linux container marker
- * can apply. A read failure leaves the answer `unknown`, which the callers
- * turn into BLOCKED_PLATFORM.
+ * can apply (macOS). Windows has neither `/.dockerenv` nor a cgroup table, so
+ * without a runtime environment marker the answer is `unknown`, which the
+ * callers turn into BLOCKED_PLATFORM instead of assuming "not a container".
+ * A read failure also leaves the answer `unknown`.
  */
 export function observeContainer(
   options: { env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform } = {},
@@ -66,7 +78,12 @@ export function observeContainer(
     }
   }
 
-  for (const key of CONTAINER_ENV_KEYS) {
+  const envKeys =
+    platform === 'win32'
+      ? [...CONTAINER_ENV_KEYS, ...WINDOWS_CONTAINER_ENV_KEYS]
+      : [...CONTAINER_ENV_KEYS];
+  for (const key of envKeys) {
+    if (platform === 'win32') checked.push(`env:${key}`);
     const value = env[key];
     if (typeof value === 'string' && value.trim().length > 0) {
       markers.push(`env:${key}`);
@@ -77,9 +94,23 @@ export function observeContainer(
     return { evidence: 'present', markers, checked, error: null };
   }
 
+  if (platform === 'win32') {
+    // Windows has no `/.dockerenv` and no cgroup table. Absence of a marker
+    // does not prove this is a host process, so the answer stays unknown and
+    // the callers surface BLOCKED_PLATFORM.
+    checked.push('platform:win32', 'marker:/.dockerenv', 'marker:/run/.containerenv', 'cgroup(none)');
+    return {
+      evidence: 'unknown',
+      markers,
+      checked,
+      error:
+        'Windows exposes no container marker file and no cgroup table; only runtime environment markers are observable, and none is present.',
+    };
+  }
+
   if (platform !== 'linux') {
-    // No Linux container marker can apply; on macOS/Windows this process is
-    // a host process unless a marker above said otherwise.
+    // No Linux container marker can apply; on macOS this process is a host
+    // process unless a marker above said otherwise.
     checked.push(`platform:${platform}`);
     return { evidence: 'absent', markers, checked, error: null };
   }

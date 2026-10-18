@@ -14,7 +14,10 @@
  * to `localhost` or to a fixed port.
  *
  * `uid`/`gid` are observed where the platform exposes them and reported as
- * `unobservable` where it does not (Windows); they are never invented.
+ * `unobservable` where it does not (Windows); they are never invented. On
+ * Windows the observable account facts are `os.userInfo().username` with
+ * `USERNAME` as fallback, plus `USERDOMAIN` and `COMPUTERNAME`. When none of
+ * them resolve the user stays `unobservable`.
  */
 
 import { hostname as osHostname, userInfo } from 'node:os';
@@ -30,6 +33,8 @@ export interface ServiceIdentityOptions {
   /** Highest-precedence service name. */
   serviceName?: string | null;
   env?: NodeJS.ProcessEnv;
+  /** Platform whose observable identity values are read. Default `process.platform`. */
+  platform?: NodeJS.Platform;
   /** Injected process ids; defaults to `process.getuid()`/`getgid()` when present. */
   uid?: number | null;
   gid?: number | null;
@@ -75,9 +80,18 @@ export function resolveServiceIdentity(
   options: ServiceIdentityOptions = {},
 ): { ok: true; identity: ProcessIdentity } | PlatformRefusal {
   const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  const windows = platform === 'win32';
   const uid = options.uid !== undefined ? options.uid : observeUid();
   const gid = options.gid !== undefined ? options.gid : observeGid();
-  const user = options.user !== undefined ? options.user : observeUser();
+  const observedUser = options.user !== undefined ? options.user : observeUser();
+  // Windows: os.userInfo() is tried first; `USERNAME` is the observable
+  // fallback when it fails. Neither is invented when both are absent.
+  const user = observedUser ?? (windows ? trimmed(env.USERNAME) : null);
+  const domain = windows ? trimmed(env.USERDOMAIN) : null;
+  const computerName = windows
+    ? trimmed(env.COMPUTERNAME) ?? (process.platform === 'win32' ? observeHostname() : null)
+    : null;
 
   let serviceName: string | null = null;
   let source: ServiceNameSource = 'unresolved';
@@ -106,6 +120,9 @@ export function resolveServiceIdentity(
     gid,
     user,
     uid_source: uid === null ? 'unobservable' : 'observed',
+    domain,
+    computer_name: computerName,
+    user_source: user === null ? 'unobservable' : 'observed',
     service_name: serviceName,
     service_name_source: source,
     hostname: options.hostname !== undefined ? options.hostname : observeHostname(),
