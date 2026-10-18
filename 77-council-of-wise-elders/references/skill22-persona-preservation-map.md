@@ -8,7 +8,7 @@
 - `22-book-to-persona-coaching-leadership-system/persona-categories.json`, canonical existing persona **registry**
 - `22-book-to-persona-coaching-leadership-system/personas/<key>/`, existing **derived** book-persona files
 
-## EXISTING CLIENT WORK — retain/reuse, do not replace or recreate
+## EXISTING CLIENT WORK , retain/reuse, do not replace or recreate
 
 | Council advisor | Existing Skill 22 registered persona folders | Repo artifact maturity |
 |---|---|---|

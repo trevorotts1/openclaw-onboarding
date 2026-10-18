@@ -1,4 +1,4 @@
-# Council of Wise Elders — portable runtime (current composition)
+# Council of Wise Elders , portable runtime (current composition)
 
 The Council runtime contains the typed protocol, SQLite local store,
 authorization service, route discovery and provider transports. **An offline
