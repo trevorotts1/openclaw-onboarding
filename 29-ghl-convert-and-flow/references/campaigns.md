@@ -70,3 +70,63 @@ curl --request GET 'https://services.leadconnectorhq.com/workflows/' \
 - Common 400/401 causes:
   - Missing required path/query/body fields
   - Missing `Version` header when required
+
+#### POST /contacts/{contactId}/workflow/{workflowId} - Add Contact to Workflow
+- Description: Enroll a contact in a workflow. This is a contact mutation, not workflow authoring.
+- Documented at: `https://marketplace.gohighlevel.com/docs/ghl/contacts/add-contact-to-workflow/`
+- Security: bearer
+- Token type: Private Integration Token or OAuth Access Token
+- Required scopes: Not stated on the operation page (UNKNOWN).
+- Required headers: Version (`v3`)
+- Required path params: contactId, workflowId
+- Required query params: locationId
+- Required body fields: eventStartTime (ISO-8601)
+- HTTP structure:
+  - Method: POST
+  - URL: https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}
+  - Headers: Authorization + Version (v3)
+- cURL template:
+```bash
+curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}?locationId=<LOCATION_ID>' \
+  -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
+  -H 'Version: v3' \
+  -H 'Content-Type: application/json' \
+  --data '{"eventStartTime":"2026-10-18T12:00:00Z"}'
+```
+- Documented response: 200 with `{succeeded, succeded}` (both spellings appear in the documentation).
+- No idempotency key is documented; reconcile by reading enrollment state before retrying.
+- Common 400/401 causes:
+  - Missing required path/query/body fields
+  - Body without `eventStartTime`
+  - Missing `Version` header when required
+  - Invalid/expired token or wrong token type for endpoint security
+
+#### DELETE /contacts/{contactId}/workflow/{workflowId} - Remove Contact from Workflow
+- Description: Remove a contact from a workflow. Operator-gated: removal ends in-flight workflow progress.
+- Documented at: `https://marketplace.gohighlevel.com/docs/ghl/contacts/delete-contact-from-workflow/`
+- Security: bearer
+- Token type: Private Integration Token or OAuth Access Token
+- Required scopes: Not stated on the operation page (UNKNOWN).
+- Required headers: Version (`v3`)
+- Required path params: contactId, workflowId
+- Required query params: locationId
+- Required body fields: eventStartTime (ISO-8601)
+- HTTP structure:
+  - Method: DELETE
+  - URL: https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}
+  - Headers: Authorization + Version (v3)
+- cURL template:
+```bash
+curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}?locationId=<LOCATION_ID>' \
+  -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
+  -H 'Version: v3' \
+  -H 'Content-Type: application/json' \
+  --data '{"eventStartTime":"2026-10-18T12:00:00Z"}'
+```
+- Documented response: 200 with `{succeeded, succeded}` (both spellings appear in the documentation).
+- No idempotency key is documented; reconcile by re-reading enrollment state, never by blind retry.
+- Common 400/401 causes:
+  - Missing required path/query/body fields
+  - Body without `eventStartTime`
+  - Missing `Version` header when required
+  - Invalid/expired token or wrong token type for endpoint security

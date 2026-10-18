@@ -3,7 +3,7 @@
 > **Scope of this file:** All endpoints under the `calendars` module (calendars, appointments, slots, groups, resources).
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — for the calendars and appointments operations in this file, `v3` (`evidence/W01/GU-004-CONTRACT-FREEZE.md` §5.3). Read the operation page at `https://marketplace.gohighlevel.com/docs/ghl/calendars/<operation-slug>/` before using any other supported literal. Never send one value for every call.
 
 ---
 

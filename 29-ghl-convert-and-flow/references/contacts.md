@@ -3,7 +3,7 @@
 > **Scope of this file:** All endpoints under the `contacts` module.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-07-28` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — for the contacts operations in this file, `v3` (`evidence/W01/GU-004-CONTRACT-FREEZE.md` §5.1). Read the operation page at `https://marketplace.gohighlevel.com/docs/ghl/contacts/<operation-slug>/` before using any other supported literal. Never send one value for every call.
 >
 > **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
 > (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
