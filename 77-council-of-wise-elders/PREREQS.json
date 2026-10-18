@@ -1,1 +1,46 @@
-{"prerequisites":[{"check":{"skill":"01-teach-yourself-protocol"},"id":"teach-yourself-protocol","label":"Skill 01 (Teach Yourself Protocol): installer must read this skill's docs before acting","satisfy":"Run Skill 01's Teach Yourself Protocol (it installs on Wave 1, before this skill's wave) so the installing agent reads every .md in this folder before touching the system.","severity":"required","type":"skill"},{"check":{"skill":"02-back-yourself-up-protocol"},"id":"back-yourself-up-protocol","label":"Skill 02 (Back Yourself Up Protocol): backup discipline for the installer's backup step","satisfy":"Run Skill 02's Back Yourself Up Protocol (Wave 1) so the backup in INSTALL.md Step 2 uses the box's established backup discipline.","severity":"required","type":"skill"},{"check":{"binary":"node","minVersion":"18.0.0"},"id":"node-runtime","label":"Node.js 18 or newer for the skill's doctor, bundle, and QC scripts","satisfy":"Install Node.js 18 or newer through the box's normal runtime setup, then rerun the skill's scripts.","severity":"required","type":"binary"},{"check":{"note":"The pinned Command Center (see cc-compat.json) carries no council contract. The portable skill installs and registers regardless; managed visual mode reports its precise not-ready state until a paired Command Center release lands. Standalone mode is unaffected. Never report visual mode as ready."},"id":"managed-mode-command-center","label":"Managed (visual) mode needs a Command Center release carrying the council contract; none exists yet","satisfy":"No action available at install time. Install the skill; managed mode becomes available when a compatible Command Center release is installed through its own update path.","severity":"optional","type":"manual"}],"skill":"77-council-of-wise-elders"}
+{
+  "prerequisites": [
+    {
+      "check": {
+        "skill": "01-teach-yourself-protocol"
+      },
+      "id": "teach-yourself-protocol",
+      "label": "Skill 01 (Teach Yourself Protocol): installer must read this skill's docs before acting",
+      "satisfy": "Run Skill 01's Teach Yourself Protocol (it installs on Wave 1, before this skill's wave) so the installing agent reads every .md in this folder before touching the system.",
+      "severity": "required",
+      "type": "skill"
+    },
+    {
+      "check": {
+        "skill": "02-back-yourself-up-protocol"
+      },
+      "id": "back-yourself-up-protocol",
+      "label": "Skill 02 (Back Yourself Up Protocol): backup discipline for the installer's backup step",
+      "satisfy": "Run Skill 02's Back Yourself Up Protocol (Wave 1) so the backup in INSTALL.md Step 2 uses the box's established backup discipline.",
+      "severity": "required",
+      "type": "skill"
+    },
+    {
+      "check": {
+        "binary": "node",
+        "minVersion": "22.13.0"
+      },
+      "id": "node-runtime",
+      "label": "Node.js 22.13+ or 24+ to run Council with built-in SQLite",
+      "satisfy": "Use the host's managed Node.js 22.13+ or 24+ runtime for Council. The installer runs a real in-memory node:sqlite write/read preflight before installing. Standalone packaging/doctor scripts may run on an older Node, but this does not make the runtime usable.",
+      "severity": "required",
+      "type": "binary"
+    },
+    {
+      "check": {
+        "note": "The pinned Command Center (see cc-compat.json) carries no council contract. The portable skill installs and registers regardless; managed visual mode reports its precise not-ready state until a paired Command Center release lands. Standalone mode is unaffected. Never report visual mode as ready."
+      },
+      "id": "managed-mode-command-center",
+      "label": "Managed (visual) mode needs a Command Center release carrying the council contract; none exists yet",
+      "satisfy": "No action available at install time. Install the skill; managed mode becomes available when a compatible Command Center release is installed through its own update path.",
+      "severity": "optional",
+      "type": "manual"
+    }
+  ],
+  "skill": "77-council-of-wise-elders"
+}

@@ -311,8 +311,8 @@ TRACE
 #     48-facebook-ad-generator/tools/ghl_media.py, which does not exist next to a
 #     standalone materialized department (rc=8, PRESENTATION_GHL_MODULE_MISSING).
 # Both are environment-dependent accidents, not the thing this section means to test
-# (GATE 2 bypass-scan behavior). Building one self-contained fixture — with a REAL,
-# import-standalone ghl_media.py (the Skill-06 copy, not the sibling-walking shim) —
+# (GATE 2 bypass-scan behavior). Building one self-contained fixture with the real
+# Skill-06 ghl_media.py and its sibling dependencies (not the sibling-walking shim)
 # and pointing every invocation at it with --scripts-dir makes the test hermetic
 # everywhere: CI, this box, and any other box, regardless of what is or isn't
 # materialized under $OC_WORKSPACE.
@@ -322,6 +322,10 @@ cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/sc
 # GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
 # co-located in SCRIPTS_DIR or it refuses before we ever reach GATE 2 (bypass-scan).
 cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
+# Copy the real resolver and evidence modules required at import time. Importing
+# them does not resolve credentials or make network calls.
+cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_secret_resolver.py" "$FAKE_SCRIPTS/ghl_secret_resolver.py" || exit 1
+cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_evidence.py" "$FAKE_SCRIPTS/ghl_evidence.py" || exit 1
 # ...with the embedded, hash-locked copy of the KIE prompt enforcer it ships beside it (no shared-utils on this fake box).
 cp "$REPO_ROOT/06-ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py" "$FAKE_SCRIPTS/_kie_prompt_enforcer_embedded.py" 2>/dev/null || true
 cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'

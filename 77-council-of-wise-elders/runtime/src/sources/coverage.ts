@@ -194,18 +194,38 @@ export function computeWorkCoverage(
 ): WorkCoverage {
   const matched = records.filter((r) => recordMatchesWork(r, work, seatId));
   const substantive = matched.filter((r) => r.quality === 'primary_substantive');
-  const substantiveIds = new Set(substantive.map((r) => r.source_id));
-  const versionOf = new Map(substantive.map((r) => [r.source_id, sourceVersionOf(r)]));
-  const usable = evidence.filter(
-    (u) =>
-      u.seat_id === seatId && substantiveIds.has(u.source_id) &&
-      u.source_version === versionOf.get(u.source_id) &&
-      u.locator.value.trim().length > 0,
-  );
-  const concepts = usable.filter(
-    (u) => u.kind === 'concept' && TEACHING_MARKS.has(u.mark),
-  ).length;
-  const cases = usable.filter((u) => u.kind === 'application_case').length;
+  const sourceById = new Map(substantive.map((r) => [r.source_id, r]));
+
+  // An evidence_id alone is not provenance. Each counted concept must
+  // name an actual source-version and a locator present in that source
+  // record. Duplicating one locator three times is not three
+  // independently traceable concepts. BlackCEO-created adaptations and
+  // third-party commentary never satisfy a primary-author foundation.
+  const eligible = evidence.filter((u) => {
+    const source = sourceById.get(u.source_id);
+    if (!source || u.seat_id !== seatId || u.source_version !== sourceVersionOf(source)) {
+      return false;
+    }
+    if (!TEACHING_MARKS.has(u.mark)) return false;
+    if (!(u.paraphrase?.trim() || u.excerpt?.trim())) return false;
+    const loc = u.locator.value.trim();
+    return loc.length > 0 &&
+      source.locators.some((candidate) =>
+        candidate.kind === u.locator.kind && candidate.value.trim() === loc,
+      );
+  });
+  const independentlyLocated = (kind: EvidenceUnit['kind']) => {
+    const locators = new Set<string>();
+    for (const unit of eligible) {
+      if (unit.kind !== kind) continue;
+      locators.add(JSON.stringify([
+        unit.source_id, unit.locator.kind, unit.locator.value.trim(),
+      ]));
+    }
+    return locators.size;
+  };
+  const concepts = independentlyLocated('concept');
+  const cases = independentlyLocated('application_case');
   const gateMet =
     concepts >= MIN_TRACEABLE_CONCEPTS && cases >= MIN_APPLICATION_CASES;
 
@@ -219,12 +239,13 @@ export function computeWorkCoverage(
   if (matched.length === 0) {
     workClass = stubbed ? 'bibliographic_only' : 'missing';
   } else if (gateMet) {
-    const viaBook = substantive.some(
-      (r) => r.source_type === 'book',
-    );
-    workClass = work.kind === 'book' && viaBook
-      ? 'complete_book'
-      : 'primary_teaching';
+    // 'book' describes the publication, not the breadth of ingestion.
+    // Three grounded concepts and one example can support a primary-
+    // teaching claim, but CANNOT prove the complete book was ingested.
+    // Section 8.3 source records have no audited full-work ingestion
+    // receipt. Until that proof is introduced, fail closed rather than
+    // quietly upgrading primary teaching to complete-book coverage.
+    workClass = 'primary_teaching';
   } else if (substantive.length > 0 || concepts > 0) {
     workClass = 'partial';
   } else {

@@ -1,0 +1,40 @@
+name: Council approved Skill 22 personas (read-only)
+
+on:
+  pull_request:
+    paths:
+      - "22-book-to-persona-coaching-leadership-system/personas/**"
+      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
+      - "77-council-of-wise-elders/runtime/src/contracts/enums.ts"
+      - "77-council-of-wise-elders/SKILL.md"
+      - "77-council-of-wise-elders/scripts/audit-skill22-personas.mjs"
+      - "77-council-of-wise-elders/scripts/tests/audit-skill22-personas.test.mjs"
+      - ".github/workflows/council-existing-skill22-persona-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  approved-roster:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Verify nine-seat freeze and existing original Book-to-Persona artifacts
+        run: node --test 77-council-of-wise-elders/scripts/tests/audit-skill22-personas.test.mjs
+      - name: Produce read-only full SHA-256 provenance inventory
+        run: |
+          node 77-council-of-wise-elders/scripts/audit-skill22-personas.mjs --check
+          node 77-council-of-wise-elders/scripts/audit-skill22-personas.mjs --json > "${{ runner.temp }}/council-existing-skill22.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: council-existing-skill22-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/council-existing-skill22.json
+          retention-days: 21

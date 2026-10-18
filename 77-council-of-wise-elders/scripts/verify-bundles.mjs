@@ -3,15 +3,19 @@
 // Recomputes the tree hash and compares it with manifest.json, checks
 // the SKILL.md frontmatter name against the portable skill name, and
 // checks that no state files live inside the folder.
-// Usage: node verify-bundles.mjs [--root <skill-folder>]
-// Exit 0 on agreement, 1 on any drift.
+// Usage: node verify-bundles.mjs [--root <skill-folder>] [--distribution]
+// Default: source package including its archive. --distribution explicitly checks
+// an extracted package without certifying the original source archive.
+// Exit 0 on agreement, 1 on any drift.\n// Generated runtime/dist and runtime/node_modules are excluded from source integrity.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkArchiveContract } from "./archive-contract.mjs";
 
 const args = process.argv.slice(2);
+const distribution = args.includes("--distribution");
 const rootIdx = args.indexOf("--root");
 const root = rootIdx >= 0
   ? resolve(args[rootIdx + 1])
@@ -21,10 +25,17 @@ let failures = 0;
 const pass = (m) => console.log(`PASS ${m}`);
 const fail = (m) => { failures += 1; console.log(`FAIL ${m}`); };
 
-function walk(dir, out = []) {
+function isGeneratedRuntimePath(rel) {
+  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
+    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/");
+}
+
+function walk(dir, out = [], base = dir) {
   for (const name of readdirSync(dir).sort()) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
+    const rel = relative(base, p).split("\\").join("/");
+    if (isGeneratedRuntimePath(rel)) continue;
+    if (statSync(p).isDirectory()) walk(p, out, base);
     else out.push(p);
   }
   return out;
@@ -75,16 +86,11 @@ const stateHits = [...current.keys()].filter((rel) =>
 if (stateHits.length === 0) pass("no state files inside the skill folder");
 else fail(`state files present: ${stateHits.join(", ")}`);
 
-if (manifest.archive?.status === "deferred_to_final_integration") {
-  console.log("INFO archive council-of-wise-elders.skill deferred to final integration, as recorded in the manifest");
-}
-if (manifest.archive?.status === "generated") {
-  if (existsSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill"))) {
-    pass("distributable archive present, as recorded in the manifest");
-  } else {
-    fail("manifest records the archive as generated but the .skill file is missing");
-  }
-}
+const archiveErrors = checkArchiveContract(root, manifest, distribution);
+for (const error of archiveErrors) fail(error);
+if (archiveErrors.length === 0) pass(distribution
+  ? "explicit extracted distribution has no self-nested archive"
+  : "source archive SHA-256 matches the source manifest");
 
 console.log(failures === 0 ? "VERIFY: PASS" : `VERIFY: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);
