@@ -1,7 +1,7 @@
 ---
 name: signature-thank-you
 description: Builds the terminal Signature Launch thank-you / confirmation page — the final purchase-confirmation and access experience that shows exactly what the customer actually purchased (verified against the normalized purchase snapshot and S44 entitlement state), its actual charges and terms, and what happens next. This is NOT an upsell page and carries NO new pitch, new offer, or new-charge CTA; a page that says "thank you" while selling something is an upsell page owned by Skill 80. Purchased product names, amounts, totals, order numbers, and billing schedules are allowed and required here because they identify completed purchases. Fulfillment authority is S44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching this page.
-version: 0.3.0
+version: 0.3.1
 ---
 
 # Signature Thank-You and Fulfillment (Skill 82)
