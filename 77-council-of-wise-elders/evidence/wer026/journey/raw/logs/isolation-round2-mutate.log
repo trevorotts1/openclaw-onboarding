@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "error": {
+    "code": "COUNCIL_SESSION_NOT_FOUND",
+    "message": "No council session exists with ID sess-w11u002-round1.",
+    "retryable": false,
+    "action": "Check the session ID and try again.",
+    "request_id": null
+  }
+}
+round2_mutates_round1_exit=3

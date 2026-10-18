@@ -1,0 +1,37 @@
+{
+  "ok": true,
+  "preview": {
+    "schema_version": "wise-elders.run-preview/v1",
+    "preview_id": "480aaae0-a365-420c-97f8-f5ed9ae0e925",
+    "session_id": "sess-w11u002-round3",
+    "brief_revision": 1,
+    "brief_sha256": "85f51c5d9e7ce4f0e925906df244afb62871bcd02cf1d3f890b2c7f932b2bd45",
+    "mode": "full",
+    "seat_ids": [
+      "simon-sinek",
+      "td-jakes",
+      "oprah-winfrey",
+      "tiffany-aliche",
+      "russell-brunson",
+      "michelle-obama",
+      "brene-brown",
+      "dennis-kimbro",
+      "les-brown"
+    ],
+    "purpose": "council_run",
+    "route_policy_sha256": "96d75052b29eac7ec9f6fb4080ed5862b7710408a927f71f8f9ea8907a641041",
+    "pack_version": "pack-fixture-1.0.0",
+    "ceilings": {
+      "max_provider_requests": 50,
+      "max_output_repairs": 9,
+      "max_transport_retries": 8,
+      "max_input_tokens": null,
+      "max_output_tokens": null,
+      "max_money": null
+    },
+    "money_bounded": false,
+    "created_at": "2026-10-18T20:09:50.355Z",
+    "expires_at": "2026-10-18T20:24:50.355Z",
+    "preview_sha256": "d7713d13ec837376700083a045cd6c90bc42c78eecc733de4747cd53e56ec593"
+  }
+}

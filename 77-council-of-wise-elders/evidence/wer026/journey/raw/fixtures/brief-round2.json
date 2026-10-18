@@ -1,0 +1,99 @@
+{
+  "schema_version": "wise-elders.brief/v1",
+  "brief_id": "brief-w11u002-round2",
+  "session_id": "sess-w11u002-round2",
+  "revision": 1,
+  "question": "Does the pilot cohort retain at the measured baseline after the pricing change?",
+  "facts": [
+    {
+      "id": "fact-2",
+      "statement": "Measured baseline facts recorded for round 2.",
+      "evidence_ids": [
+        "ev-r2-retention"
+      ]
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "asm-1",
+      "statement": "Pilot capacity exists for one cohort.",
+      "evidence_ids": []
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "unk-1",
+      "statement": "Pilot cohort retention is not yet measured.",
+      "evidence_ids": []
+    }
+  ],
+  "constraints": [
+    {
+      "id": "con-1",
+      "description": "Pilot spend must stay within the approved budget.",
+      "hard": true,
+      "applies_to_option_ids": [
+        "B",
+        "C"
+      ]
+    }
+  ],
+  "options": [
+    {
+      "id": "A",
+      "label": "Keep the current offer",
+      "kind": "status_quo"
+    },
+    {
+      "id": "B",
+      "label": "Pilot the revised offer",
+      "kind": "bounded_test"
+    },
+    {
+      "id": "C",
+      "label": "Launch the revised offer broadly",
+      "kind": "change"
+    }
+  ],
+  "relevance_weights": {
+    "simon-sinek": 2,
+    "td-jakes": 3,
+    "oprah-winfrey": 2,
+    "tiffany-aliche": 3,
+    "russell-brunson": 3,
+    "michelle-obama": 2,
+    "brene-brown": 3,
+    "dennis-kimbro": 2,
+    "les-brown": 2
+  },
+  "critical_domains": [
+    {
+      "schema_version": "wise-elders.critical-domain-requirement/v1",
+      "domain": "financial_feasibility",
+      "status": "unresolved",
+      "trigger_evidence_ids": [
+        "ev-r2-retention"
+      ],
+      "trigger_field_paths": [
+        "constraints.con-1"
+      ],
+      "required_seat_id": "tiffany-aliche",
+      "required_checker": "seat",
+      "unresolved_questions": [
+        "Is the pilot affordable at committed cash levels?"
+      ],
+      "policy_version": "critical-domains/v1"
+    }
+  ],
+  "evidence_manifest": [
+    {
+      "evidence_id": "ev-r2-retention",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source_kind": "client_document",
+      "locator": "doc:ev-r2-retention"
+    }
+  ],
+  "private_preference_ref": null,
+  "created_at": "2026-10-14T02:00:00Z",
+  "display_timezone": "America/New_York"
+}

@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "error": {
+    "code": "RUN_AUTHORIZATION_REQUIRED",
+    "message": "No valid run authorization was found for this session. A council run spends the client's inference allowance, so it cannot start without a real grant (Section 25.6).",
+    "retryable": false,
+    "action": "Create a run preview and approve it through the run-authorization service (CWE-049), then start with that grant reference.",
+    "request_id": null
+  }
+}
+failed_b_start_exit=3

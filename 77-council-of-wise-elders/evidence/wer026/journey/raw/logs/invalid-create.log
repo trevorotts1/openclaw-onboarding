@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "error": {
+    "code": "COUNCIL_INVALID_INPUT",
+    "message": "spec.brief_sha256 does not match the canonical hash of the supplied brief.",
+    "retryable": false,
+    "action": "Correct the input and try again.",
+    "request_id": null
+  }
+}
+invalid_create_exit=2

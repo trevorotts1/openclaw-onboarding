@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "error": {
+    "code": "COUNCIL_VERDICT_NOT_READY",
+    "message": "Session sess-w11u002-round1 is ROUND_1 and has no validated verdict yet.",
+    "retryable": false,
+    "action": "Check status; a verdict exists only after VERIFYING completes.",
+    "request_id": null
+  }
+}
+failed_c_later_verdict_exit=3
