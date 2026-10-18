@@ -22,6 +22,17 @@ ADDITIVE CHANGES (no happy-path behavior change):
   transient None result (exchange-failed) before raising TOKEN_REFRESH_FAILED.
   This is disjoint from the request()-level 401/403 retry: this covers the
   one-time refresh failure observed live, NOT an HTTP auth rejection.
+
+RULED CHANGE (2026-10-18, MAIN ruling A16-INTERNALAPI-2026-10-18, made
+knowingly and recorded): _do_request()'s HTTP layer moved from raw urllib to
+the requests library. Controlled isolation (S06, 2026-10-18) proved the raw
+urllib transport through this VM's egress proxy gets multi-KB responses from
+backend.leadconnectorhq.com reset or truncated (1 pass in 6), while requests
+(urllib3) from the same VM with identical headers and token passes 3/3 and
+every control arm passes from the Mac Mini. Everything else is unchanged:
+same headers, token scrub, 30s timeout, call_count, 401/403 retry signal,
+429 shape, and error dict shapes. _refresh_firebase() still uses urllib —
+its small securetoken exchange is not the failing surface.
 """
 from __future__ import annotations
 
@@ -32,6 +43,8 @@ import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
+
+import requests
 
 from cli_anything.gohighlevel.internal.adapter_types import AdapterError
 
@@ -84,7 +97,7 @@ def _resolve_direct_token() -> str:
 # ── InternalTransport ─────────────────────────────────────────────────────────
 
 class InternalTransport:
-    """Firebase JWT auth + raw HTTP against backend.leadconnectorhq.com.
+    """Firebase JWT auth + HTTP (requests) against backend.leadconnectorhq.com.
 
     Behavior is byte-identical to the original InternalGHLClient on the happy
     path.  The only functional change: sys.exit(1) is replaced with
@@ -210,12 +223,16 @@ class InternalTransport:
         body: dict | None,
         token: str,
     ) -> Optional[dict]:
-        """Raw HTTP call.  Returns None on 401/403 (triggers retry), dict otherwise.
+        """HTTP call via requests.  Returns None on 401/403 (triggers retry),
+        dict otherwise.
 
-        PRESERVED EXACTLY: ASCII scrub, 30s timeout, call_count.
-        ADDITIVE: "version": "2021-07-28" header (REQUIRED by the internal
-        backend — its absence returns 401 on agency endpoints like /locations/
-        and /users/); 429 recognized explicitly, reset header passed through.
+        PRESERVED EXACTLY: ASCII scrub, headers, 30s timeout, call_count,
+        return shapes.  "version": "2021-07-28" header is REQUIRED by the
+        internal backend — its absence returns 401 on agency endpoints like
+        /locations/ and /users/; 429 recognized explicitly, reset header
+        passed through.  HTTP layer is requests per the 2026-10-18 ruled
+        change recorded in the module docstring (raw urllib truncated
+        multi-KB backend responses through this VM's egress proxy).
         """
         from cli_anything.gohighlevel.internal.endpoints import BASE_URL as _BASE_URL
         self._call_count += 1
@@ -231,19 +248,17 @@ class InternalTransport:
         }
         url = f"{_BASE_URL}{path}"
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body else None
-        req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, context=_CTX, timeout=30) as resp:
-                text = resp.read().decode()
-                return json.loads(text) if text else {}
-        except urllib.error.HTTPError as e:
-            if e.code in (401, 403):
+            resp = requests.request(
+                method, url, data=data, headers=headers, timeout=30
+            )
+            if resp.status_code in (401, 403):
                 return None  # signal for retry
-            if e.code == 429:
-                # Additive: surface 429 + reset header; caller never retries a 429
+            if resp.status_code == 429:
+                # Surface 429 + reset header; caller never retries a 429
                 reset_header = ""
                 try:
-                    reset_header = e.headers.get("X-RateLimit-Daily-Reset", "")
+                    reset_header = resp.headers.get("X-RateLimit-Daily-Reset", "")
                 except Exception:
                     pass
                 return {
@@ -253,7 +268,15 @@ class InternalTransport:
                     "message": "Rate limit exceeded",
                     "rate_limit_reset": reset_header,
                 }
-            error_body = e.read().decode() if e.fp else ""
-            return {"_error": True, "http_code": e.code, "code": e.code, "message": error_body[:200]}
+            if resp.status_code >= 400:
+                error_body = resp.content.decode("utf-8", "replace")
+                return {
+                    "_error": True,
+                    "http_code": resp.status_code,
+                    "code": resp.status_code,
+                    "message": error_body[:200],
+                }
+            text = resp.content.decode("utf-8")
+            return json.loads(text) if text else {}
         except Exception as ex:
             return {"_error": True, "http_code": None, "message": str(ex)}
