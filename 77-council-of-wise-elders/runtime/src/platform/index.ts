@@ -13,6 +13,7 @@
 
 export * from './types.js';
 export * from './mounts.js';
+export * from './windows.js';
 export * from './loopback.js';
 export * from './identity.js';
 export * from './ports.js';
