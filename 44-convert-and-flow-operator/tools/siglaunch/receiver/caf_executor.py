@@ -390,6 +390,37 @@ class CafExecutor:
         workflow_id = (stats.get("workflow_id")
                        or stats.get("id")
                        or (stats.get("created") or [{}])[0].get("id"))
+        if not workflow_id:
+            # The engine CLI's REAL stats contract (utils/
+            # workflow_builder.py build_from_plan -> stats dict,
+            # emitted by gohighlevel_cli._emit_build_result): the
+            # ONLY carrier of created workflow IDs on success is
+            # stats["workflow_ids"], a {slug: id} map. There is no
+            # top-level "workflow_id"/"id"/"created" key in a real
+            # build result. Layer-8 defect, A16 run 7 (2026-10-18):
+            # the native build SUCCEEDED but this extraction read
+            # only the legacy keys above, returned None with empty
+            # errors, and export/QC/judge never ran. Fixed under
+            # MAIN's layer-8 ruling, option (a); regression-pinned
+            # by test_stats_shape_regression.py, which feeds the
+            # REAL stats shape through build(). Extraction prefers
+            # the value for a slug in this build's own plan (plan
+            # keys other than "folder"); a single-entry map is
+            # unambiguous and is taken as-is; a multi-entry map
+            # with no plan slug match extracts NOTHING (fail-closed:
+            # never guess which workflow a receipt belongs to).
+            ids_map = stats.get("workflow_ids")
+            if isinstance(ids_map, dict) and ids_map:
+                plan_slugs = [k for k in builder_plan if k != "folder"]
+                for slug in plan_slugs:
+                    candidate = ids_map.get(slug)
+                    if isinstance(candidate, str) and candidate:
+                        workflow_id = candidate
+                        break
+                if not workflow_id and len(ids_map) == 1:
+                    only = next(iter(ids_map.values()))
+                    if isinstance(only, str) and only:
+                        workflow_id = only
         result["workflow_id"] = workflow_id
         if code != 0 or not workflow_id:
             return result
