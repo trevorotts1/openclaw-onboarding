@@ -71,7 +71,6 @@ in the module body (fixtures are passed in by the caller).
 """
 from __future__ import annotations
 
-import shutil
 import subprocess
 
 import numpy as np
@@ -208,9 +207,10 @@ def ffmpeg_exe(name="ffmpeg"):
     which surfaces as STEM_UNREADABLE on every stem."""
     if _gos.path.isabs(name) and _gos.path.exists(name):
         return name
-    found = shutil.which(name)
-    if found:
-        return found
+    for d in _gos.environ.get("PATH", "").split(_gos.pathsep):
+        cand = _gos.path.join(d, name) if d else name
+        if _gos.path.isfile(cand) and _gos.access(cand, _gos.X_OK):
+            return cand
     for cand in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg",
                  "/usr/bin/ffmpeg"):
         if _gos.path.exists(cand):
