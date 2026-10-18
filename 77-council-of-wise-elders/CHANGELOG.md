@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.4: Russell retained-source intake
+
+- Registers DotCom Secrets and Expert Secrets via Skill22 and binds ten original paraphrases to retained-source hashes and edition-specific locators.
+- Records primary-teaching coverage for both Russell anchors without upgrading other seats, semantic evaluation, full-book certification or installed readiness.
+- Preserves private-source exclusions and publishes the approved two-persona incremental index as prebuilt-index-v2.4.3 (101 personas / 1,441 rows), with every prior row unchanged.
+
 ## Unreleased: final packaging (CWE-039)
 
 No version change: versions are taken at merge time only. This entry

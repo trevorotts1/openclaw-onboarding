@@ -1,0 +1,745 @@
+{
+  "schema": "wise-elders.canonical-skill22-export/v1",
+  "scope": "shared_pack",
+  "packages": [
+    {
+      "seat_id": "simon-sinek",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "td-jakes",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "oprah-winfrey",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "tiffany-aliche",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "russell-brunson",
+      "pack_version": "1.0.1",
+      "sources": [
+        {
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "work_id": "work-dotcom-secrets",
+          "work_title": "DotCom Secrets",
+          "credited_authors": [
+            "Russell Brunson"
+          ],
+          "original_speaker": null,
+          "source_type": "book",
+          "publisher_or_host": "Morgan James Publishing",
+          "edition_or_publication_date": "2015",
+          "retrieved_at": "2026-10-18",
+          "canonical_url": null,
+          "private_asset_id": "retained-russell-dotcom-secrets-epub",
+          "content_sha256": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "rights_status": "reference_only",
+          "allowed_scope": "shared_pack",
+          "locators": [
+            {
+              "kind": "section",
+              "value": "Secret #1, “The Secret Formula,” EPUB text/part0010.html, local spine 014.txt, subsections Question #1 through Question #4."
+            },
+            {
+              "kind": "section",
+              "value": "Secret #2, “The Value Ladder,” EPUB text/part0011.html, spine 015.txt; and Secret #3, “From a Ladder to a Funnel,” EPUB text/part0012.html, spine 016.txt, introductory explanation and Figure 3.2 prose."
+            },
+            {
+              "kind": "section",
+              "value": "Secret #10, “Seven Phases of a Funnel,” EPUB text/part0021.html, spine 025.txt, “It’s All About the Pre-Frame” and phases #1-#7."
+            },
+            {
+              "kind": "section",
+              "value": "Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB text/part0026_split_001.html, spine 032.txt, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3."
+            },
+            {
+              "kind": "section",
+              "value": "Secret #13, “The Best Bait,” EPUB text/part0024.html, spine 028.txt, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB text/part0026_split_001.html, spine 032.txt, “Sample Structure #1: The Next Thing.”"
+            }
+          ],
+          "quality": "primary_substantive"
+        },
+        {
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "work_id": "work-expert-secrets",
+          "work_title": "Expert Secrets",
+          "credited_authors": [
+            "Russell Brunson"
+          ],
+          "original_speaker": null,
+          "source_type": "book",
+          "publisher_or_host": "Hay House, Inc.",
+          "edition_or_publication_date": "First Hay House edition, May 2020",
+          "retrieved_at": "2026-10-18",
+          "canonical_url": null,
+          "private_asset_id": "retained-russell-expert-secrets-epub",
+          "content_sha256": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "rights_status": "reference_only",
+          "allowed_scope": "shared_pack",
+          "locators": [
+            {
+              "kind": "section",
+              "value": "Secret 1, EPUB document chapter01.xhtml (local extracted file 013.txt)"
+            },
+            {
+              "kind": "section",
+              "value": "Secret 4, EPUB document chapter04.xhtml (local extracted file 017.txt)"
+            },
+            {
+              "kind": "section",
+              "value": "Secret 10, EPUB document chapter10.xhtml (local extracted file 025.txt)"
+            },
+            {
+              "kind": "section",
+              "value": "Secret 14, EPUB document chapter14.xhtml (local extracted file 030.txt)"
+            },
+            {
+              "kind": "section",
+              "value": "Secret 9, EPUB document chapter09.xhtml (local extracted file 024.txt)"
+            }
+          ],
+          "quality": "primary_substantive"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-dc-c1",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #1, “The Secret Formula,” EPUB text/part0010.html, local spine 014.txt, subsections Question #1 through Question #4."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C1 - Secret Formula.** The book makes four questions the starting design constraint: choose the customer, find existing places that customer gathers, design an attractive entry offer, and identify the ultimate result the business can provide. This changes the task from selling an arbitrary product to designing a path for a specific customer. Locator: Secret #1, “The Secret Formula,” EPUB `text/part0010.html`, local spine `014.txt`, subsections Question #1 through Question #4.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-c2",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #2, “The Value Ladder,” EPUB text/part0011.html, spine 015.txt; and Secret #3, “From a Ladder to a Funnel,” EPUB text/part0012.html, spine 016.txt, introductory explanation and Figure 3.2 prose."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C2 - Value Ladder versus funnel.** The ladder describes a portfolio of increasing value and price; the funnel is the actual sequence that offers those levels to customers. The source allows different customers to receive different affordable levels and acknowledges that only some will reach the highest-service offer. Locator: Secret #2, “The Value Ladder,” EPUB `text/part0011.html`, spine `015.txt`; and Secret #3, “From a Ladder to a Funnel,” EPUB `text/part0012.html`, spine `016.txt`, introductory explanation and Figure 3.2 prose.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-c3",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #10, “Seven Phases of a Funnel,” EPUB text/part0021.html, spine 025.txt, “It’s All About the Pre-Frame” and phases #1-#7."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C3 - Seven phases and pre-frame.** The customer journey begins before the landing page: traffic temperature and pre-frame shape understanding, then subscription, purchase and further buying reveal readiness; longer-term value delivery and a changed selling environment support later offers. The source warns that excessive short-term selling can damage the longer relationship. Locator: Secret #10, “Seven Phases of a Funnel,” EPUB `text/part0021.html`, spine `025.txt`, “It’s All About the Pre-Frame” and phases #1-#7.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-c4",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB text/part0026_split_001.html, spine 032.txt, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3."
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-C4 - Relevant OTO design.** The source rejects simply repeating the first product or offering an unrelated item. It proposes a next complementary need, faster implementation or personal help, and explicitly warns against implying that the first purchase will not work without the upgrade. Locator: Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB `text/part0026_split_001.html`, spine `032.txt`, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-dc-case1",
+          "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+          "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+          "locator": {
+            "kind": "section",
+            "value": "Secret #13, “The Best Bait,” EPUB text/part0024.html, spine 028.txt, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB text/part0026_split_001.html, spine 032.txt, “Sample Structure #1: The Next Thing.”"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "- **DC-CASE1 - DotComSecrets Labs, a genuine source-reported application.** In the book's own business example, a physical split-testing book becomes a free-plus-shipping entry offer. The order form adds the Conversion Krusher template as an optional paid bump; subsequent offers address traffic, webinar selling and high-ticket selling. This illustrates an entry item plus adjacent implementation needs, with further relationship-based offers after acquisition. The author reports favorable immediate revenue from that sequence, but the report does not supply independent verification, complete costs or a guarantee of transfer to another business. Locator: Secret #13, “The Best Bait,” EPUB `text/part0024.html`, spine `028.txt`, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB `text/part0026_split_001.html`, spine `032.txt`, “Sample Structure #1: The Next Thing.”",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c1",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 1, EPUB document chapter01.xhtml (local extracted file 013.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C1 - Earned framework. Locator: Secret 1, EPUB document `chapter01.xhtml` (local extracted file `013.txt`),** the five phases from dreamer through reporter/framework creator/servant/expert, connects learning with service before larger authority claims. This supports the pilot-first gate above.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c2",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 4, EPUB document chapter04.xhtml (local extracted file 017.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C2 - Switch versus stack. Locator: Secret 4, EPUB document `chapter04.xhtml` (local extracted file `017.txt`),** headings “The Opportunity Switch” and “The Opportunity Stack,” distinguishes introducing a new route from subsequent offers that support the route. This supports coherent value-ladder design.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c3",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 10, EPUB document chapter10.xhtml (local extracted file 025.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C3 - Four story roles. Locator: Secret 10, EPUB document `chapter10.xhtml` (local extracted file `025.txt`),** the four core stories and false-belief inventory, separates origin from vehicle, internal, and external concerns. This supports diagnosing the objection before choosing an anecdote.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-c4",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 14, EPUB document chapter14.xhtml (local extracted file 030.txt)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-C4 - Cumulative offer. Locator: Secret 14, EPUB document `chapter14.xhtml` (local extracted file `030.txt`),** Stack slides and slides16-43, repeatedly returns to the whole bundle after explaining a component. This supports cumulative recap rather than isolated bonus descriptions.",
+          "excerpt": null
+        },
+        {
+          "evidence_id": "ev-russell-brunson-es-case1",
+          "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+          "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+          "locator": {
+            "kind": "section",
+            "value": "Secret 9, EPUB document chapter09.xhtml (local extracted file 024.txt)"
+          },
+          "kind": "application_case",
+          "mark": "reported_example",
+          "original_speaker": null,
+          "claim_ids": [],
+          "seat_id": "russell-brunson",
+          "paraphrase": "**ES-CASE1 - Genuine source application case, paraphrased. Locator: Secret 9, EPUB document `chapter09.xhtml` (local extracted file `024.txt`),** the potato-gun DVD Epiphany Bridge example, recounts worsening advertising economics and guidance from Mike Filsaime leading to an added kit/upsell opportunity. Brunson links the change to both a commercial outcome and family aspirations. This is a reported autobiographical case illustrating the bridge structure, not independently verified business evidence or a forecast for the reader. It differs from the fictional workshop-planning examples used below.",
+          "excerpt": null
+        }
+      ],
+      "claimed_titles": [
+        "DotCom Secrets",
+        "Expert Secrets"
+      ]
+    },
+    {
+      "seat_id": "michelle-obama",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "brene-brown",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "dennis-kimbro",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    },
+    {
+      "seat_id": "les-brown",
+      "pack_version": "1.0.1",
+      "sources": [],
+      "evidence": [],
+      "claimed_titles": []
+    }
+  ],
+  "seats": [
+    {
+      "seat_id": "simon-sinek",
+      "package_sha256": "b86311571cf803490ce43e1731cdfadcee290deee93cb92223513b5c8bcfbdee",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "start-with-why",
+          "title": "Start with Why",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "td-jakes",
+      "package_sha256": "796fee138633c2e72c9593d1adb49059e4efbb7d53460a52354fd02e75dd210c",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "instinct",
+          "title": "Instinct",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "disruptive-thinking",
+          "title": "Disruptive Thinking",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "dont-drop-the-mic",
+          "title": "Don't Drop the Mic",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "oprah-winfrey",
+      "package_sha256": "6fbf9f3461edbe5eec5186382d2c565467012ec55bea4400148886db3d39a88a",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "the-path-made-clear",
+          "title": "The Path Made Clear",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "verified-first-person",
+          "title": "Verified first-person interviews and reflections",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "tiffany-aliche",
+      "package_sha256": "50bbb05e9f43ef4cf1f64d82b8d8574076432575af197351dba330fba5a6c2f7",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "get-good-with-money",
+          "title": "Get Good with Money",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "russell-brunson",
+      "package_sha256": "34da6c82cc4651f4424931afc85ecdd7ed00931b2f3956444a9f521b9b07297b",
+      "evidence_units": 10,
+      "qualification": "primary_teaching_based",
+      "works": [
+        {
+          "work_key": "dotcom-secrets",
+          "title": "DotCom Secrets",
+          "work_class": "primary_teaching",
+          "matched_source_ids": [
+            "src-russell-brunson-dotcom-secrets-retained-epub"
+          ],
+          "traceable_concepts": 4,
+          "application_cases": 1,
+          "gate_met": true
+        },
+        {
+          "work_key": "expert-secrets",
+          "title": "Expert Secrets",
+          "work_class": "primary_teaching",
+          "matched_source_ids": [
+            "src-russell-brunson-expert-secrets-retained-epub"
+          ],
+          "traceable_concepts": 4,
+          "application_cases": 1,
+          "gate_met": true
+        }
+      ]
+    },
+    {
+      "seat_id": "michelle-obama",
+      "package_sha256": "c81a34679bef0be56a969fd499cd6369a9b9645782641685bdb11240880b511e",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "becoming",
+          "title": "Becoming",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "the-light-we-carry",
+          "title": "The Light We Carry",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "brene-brown",
+      "package_sha256": "4987dd00ee9d5c5015061894c26209aff1e2d981745e5f2b9e76ebd5bf817f82",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "dare-to-lead",
+          "title": "Dare to Lead",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "braving",
+          "title": "BRAVING documented material",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "dennis-kimbro",
+      "package_sha256": "da8609fd29020ca52a86ffd911abbb909a732d77aa8809381c808f0556cf9a34",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "think-and-grow-rich-a-black-choice",
+          "title": "Think and Grow Rich: A Black Choice",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "the-wealth-choice",
+          "title": "The Wealth Choice",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    },
+    {
+      "seat_id": "les-brown",
+      "package_sha256": "0b5a0a57f40c9ba6c9c6d25a075758311fec692d9778cd272a29e36914b21217",
+      "evidence_units": 0,
+      "qualification": "incomplete",
+      "works": [
+        {
+          "work_key": "its-not-over-until-you-win",
+          "title": "It's Not Over Until You Win",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        },
+        {
+          "work_key": "verified-public-teaching",
+          "title": "Verified public teaching",
+          "work_class": "missing",
+          "matched_source_ids": [],
+          "traceable_concepts": 0,
+          "application_cases": 0,
+          "gate_met": false
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "evidence_id": "ev-russell-brunson-dc-c1",
+      "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+      "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+      "start_line": 59,
+      "end_line": 59,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-dc-c2",
+      "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+      "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+      "start_line": 60,
+      "end_line": 60,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-dc-c3",
+      "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+      "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+      "start_line": 61,
+      "end_line": 61,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-dc-c4",
+      "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+      "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+      "start_line": 62,
+      "end_line": 62,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-dc-case1",
+      "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+      "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+      "start_line": 63,
+      "end_line": 63,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-es-c1",
+      "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+      "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+      "start_line": 61,
+      "end_line": 61,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-es-c2",
+      "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+      "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+      "start_line": 62,
+      "end_line": 62,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-es-c3",
+      "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+      "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+      "start_line": 63,
+      "end_line": 63,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-es-c4",
+      "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+      "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+      "start_line": 64,
+      "end_line": 64,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    },
+    {
+      "evidence_id": "ev-russell-brunson-es-case1",
+      "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+      "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+      "start_line": 65,
+      "end_line": 65,
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "simon-sinek",
+      "persona_key": "sinek-find-your-why"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "simon-sinek",
+      "persona_key": "sinek-start-with-why"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "td-jakes",
+      "persona_key": "jakes-instinct"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "tiffany-aliche",
+      "persona_key": "aliche-get-good-with-money"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "brunson-marketing-secrets-blackbook"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "brunson-network-marketing-secrets"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-lead-funnels"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-the-funnel-hackers-cookbook"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "russell-brunson",
+      "persona_key": "russell-brunson-traffic-secrets"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "michelle-obama",
+      "persona_key": "obama-becoming"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "michelle-obama",
+      "persona_key": "obama-light-we-carry"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "brene-brown",
+      "persona_key": "brown-atlas-of-heart"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "dennis-kimbro",
+      "persona_key": "kimbro-the-wealth-choice"
+    },
+    {
+      "code": "PERSONA_MAPPING_MISSING",
+      "seat_id": "dennis-kimbro",
+      "persona_key": "kimbro-what-makes-great-great"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "simon-sinek"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "td-jakes"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "oprah-winfrey"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "tiffany-aliche"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "michelle-obama"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "brene-brown"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "dennis-kimbro"
+    },
+    {
+      "code": "SEAT_HAS_NO_EXPORTED_EVIDENCE",
+      "seat_id": "les-brown"
+    }
+  ],
+  "mapping_sha256": "0f399d379b6f37849c9aa418ddcd1d06d376877d6379bdb6c36ed06eb4b9be21",
+  "source_verification": "Mapping assertions retained; original access, passage fidelity and permission are not independently certified by this exporter."
+}

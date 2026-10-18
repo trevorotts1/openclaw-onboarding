@@ -522,13 +522,14 @@ test('Q07: card structure keeps Jakes at one vote and lenses on their own seat',
 // Standing conditions: audits, determinism, absent packs.
 // ---------------------------------------------------------------------------
 
-test('all nine committed packs audit valid at bibliographic_only, no higher', () => {
+test('all nine committed packs audit valid with only supported source qualification', () => {
   for (const folder of Object.values(SEAT_FOLDERS)) {
     const { validation, audit } = auditPack(loadPack(folder), {
       audited_at: '2026-10-14T00:00:00.000Z',
     });
     assert.equal(validation.valid, true, folder);
-    assert.equal(audit.qualification, 'bibliographic_only', folder);
+    assert.equal(audit.qualification, folder === 'russell-brunson'
+      ? 'primary_teaching_based' : 'bibliographic_only', folder);
     assert.equal(verifyAuditIntegrity(audit), true, folder);
   }
 });

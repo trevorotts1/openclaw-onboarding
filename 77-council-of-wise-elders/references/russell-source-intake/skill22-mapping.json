@@ -1,0 +1,315 @@
+{
+  "schema": "wise-elders.skill22-mapping/v1",
+  "pack_version": "1.0.1",
+  "revoked_source_ids": [],
+  "entries": [
+    {
+      "persona_key": "russell-brunson-dotcom-secrets",
+      "source": {
+        "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+        "work_id": "work-dotcom-secrets",
+        "work_title": "DotCom Secrets",
+        "credited_authors": [
+          "Russell Brunson"
+        ],
+        "original_speaker": null,
+        "source_type": "book",
+        "publisher_or_host": "Morgan James Publishing",
+        "edition_or_publication_date": "2015",
+        "retrieved_at": "2026-10-18",
+        "canonical_url": null,
+        "private_asset_id": "retained-russell-dotcom-secrets-epub",
+        "content_sha256": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+        "rights_status": "reference_only",
+        "allowed_scope": "shared_pack",
+        "locators": [
+          {
+            "kind": "section",
+            "value": "Secret #1, “The Secret Formula,” EPUB text/part0010.html, local spine 014.txt, subsections Question #1 through Question #4."
+          },
+          {
+            "kind": "section",
+            "value": "Secret #2, “The Value Ladder,” EPUB text/part0011.html, spine 015.txt; and Secret #3, “From a Ladder to a Funnel,” EPUB text/part0012.html, spine 016.txt, introductory explanation and Figure 3.2 prose."
+          },
+          {
+            "kind": "section",
+            "value": "Secret #10, “Seven Phases of a Funnel,” EPUB text/part0021.html, spine 025.txt, “It’s All About the Pre-Frame” and phases #1-#7."
+          },
+          {
+            "kind": "section",
+            "value": "Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB text/part0026_split_001.html, spine 032.txt, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3."
+          },
+          {
+            "kind": "section",
+            "value": "Secret #13, “The Best Bait,” EPUB text/part0024.html, spine 028.txt, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB text/part0026_split_001.html, spine 032.txt, “Sample Structure #1: The Next Thing.”"
+          }
+        ],
+        "quality": "primary_substantive"
+      },
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018",
+      "shared_export_approved": true,
+      "passages": [
+        {
+          "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+          "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+          "start_line": 59,
+          "end_line": 59,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-dc-c1",
+            "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+            "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+            "locator": {
+              "kind": "section",
+              "value": "Secret #1, “The Secret Formula,” EPUB text/part0010.html, local spine 014.txt, subsections Question #1 through Question #4."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+          "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+          "start_line": 60,
+          "end_line": 60,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-dc-c2",
+            "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+            "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+            "locator": {
+              "kind": "section",
+              "value": "Secret #2, “The Value Ladder,” EPUB text/part0011.html, spine 015.txt; and Secret #3, “From a Ladder to a Funnel,” EPUB text/part0012.html, spine 016.txt, introductory explanation and Figure 3.2 prose."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+          "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+          "start_line": 61,
+          "end_line": 61,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-dc-c3",
+            "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+            "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+            "locator": {
+              "kind": "section",
+              "value": "Secret #10, “Seven Phases of a Funnel,” EPUB text/part0021.html, spine 025.txt, “It’s All About the Pre-Frame” and phases #1-#7."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+          "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+          "start_line": 62,
+          "end_line": 62,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-dc-c4",
+            "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+            "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+            "locator": {
+              "kind": "section",
+              "value": "Funnel #1, “Two-Step, Free-Plus-Shipping,” EPUB text/part0026_split_001.html, spine 032.txt, “The OTO Script,” Rules #1-#2 and Sample Structures #1-#3."
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-dotcom-secrets/persona-blueprint.md",
+          "sha256": "08a70b7fd3118844075cef33dfbd1e462974c824a09e76ab3efd32c1dd96ce01",
+          "start_line": 63,
+          "end_line": 63,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-dc-case1",
+            "source_id": "src-russell-brunson-dotcom-secrets-retained-epub",
+            "source_version": "0b9a1df5bb1f5e47ef0beb68c400ccd079b79dddd9b4bf033575814462d179f9",
+            "locator": {
+              "kind": "section",
+              "value": "Secret #13, “The Best Bait,” EPUB text/part0024.html, spine 028.txt, subsection “DotComSecrets Labs”; OTO rationale corroboration in EPUB text/part0026_split_001.html, spine 032.txt, “Sample Structure #1: The Next Thing.”"
+            },
+            "kind": "application_case",
+            "mark": "reported_example",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        }
+      ]
+    },
+    {
+      "persona_key": "russell-brunson-expert-secrets",
+      "source": {
+        "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+        "work_id": "work-expert-secrets",
+        "work_title": "Expert Secrets",
+        "credited_authors": [
+          "Russell Brunson"
+        ],
+        "original_speaker": null,
+        "source_type": "book",
+        "publisher_or_host": "Hay House, Inc.",
+        "edition_or_publication_date": "First Hay House edition, May 2020",
+        "retrieved_at": "2026-10-18",
+        "canonical_url": null,
+        "private_asset_id": "retained-russell-expert-secrets-epub",
+        "content_sha256": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+        "rights_status": "reference_only",
+        "allowed_scope": "shared_pack",
+        "locators": [
+          {
+            "kind": "section",
+            "value": "Secret 1, EPUB document chapter01.xhtml (local extracted file 013.txt)"
+          },
+          {
+            "kind": "section",
+            "value": "Secret 4, EPUB document chapter04.xhtml (local extracted file 017.txt)"
+          },
+          {
+            "kind": "section",
+            "value": "Secret 10, EPUB document chapter10.xhtml (local extracted file 025.txt)"
+          },
+          {
+            "kind": "section",
+            "value": "Secret 14, EPUB document chapter14.xhtml (local extracted file 030.txt)"
+          },
+          {
+            "kind": "section",
+            "value": "Secret 9, EPUB document chapter09.xhtml (local extracted file 024.txt)"
+          }
+        ],
+        "quality": "primary_substantive"
+      },
+      "hash_basis": "retained_original",
+      "provenance_reference": "russell-retained-source-intake-20261018",
+      "shared_export_approved": true,
+      "passages": [
+        {
+          "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+          "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+          "start_line": 61,
+          "end_line": 61,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-es-c1",
+            "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+            "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+            "locator": {
+              "kind": "section",
+              "value": "Secret 1, EPUB document chapter01.xhtml (local extracted file 013.txt)"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+          "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+          "start_line": 62,
+          "end_line": 62,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-es-c2",
+            "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+            "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+            "locator": {
+              "kind": "section",
+              "value": "Secret 4, EPUB document chapter04.xhtml (local extracted file 017.txt)"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+          "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+          "start_line": 63,
+          "end_line": 63,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-es-c3",
+            "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+            "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+            "locator": {
+              "kind": "section",
+              "value": "Secret 10, EPUB document chapter10.xhtml (local extracted file 025.txt)"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+          "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+          "start_line": 64,
+          "end_line": 64,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-es-c4",
+            "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+            "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+            "locator": {
+              "kind": "section",
+              "value": "Secret 14, EPUB document chapter14.xhtml (local extracted file 030.txt)"
+            },
+            "kind": "concept",
+            "mark": "paraphrase",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        },
+        {
+          "file": "russell-brunson-expert-secrets/persona-blueprint.md",
+          "sha256": "88ccaa662d2a0ce375d50fc941404058e558d106112e9421a9efd83a6ee824ab",
+          "start_line": 65,
+          "end_line": 65,
+          "text_field": "paraphrase",
+          "evidence": {
+            "evidence_id": "ev-russell-brunson-es-case1",
+            "source_id": "src-russell-brunson-expert-secrets-retained-epub",
+            "source_version": "23e7dc891cde521b406ab8f1e2b5a21a6a3e566fe50a2b6349fc251575794647",
+            "locator": {
+              "kind": "section",
+              "value": "Secret 9, EPUB document chapter09.xhtml (local extracted file 024.txt)"
+            },
+            "kind": "application_case",
+            "mark": "reported_example",
+            "original_speaker": null,
+            "claim_ids": [],
+            "seat_id": "russell-brunson"
+          }
+        }
+      ]
+    }
+  ]
+}

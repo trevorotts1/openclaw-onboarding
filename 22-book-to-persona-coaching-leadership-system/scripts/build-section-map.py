@@ -168,7 +168,7 @@ def build_map() -> dict:
             "heading_style_counts": heading_style_counts,
             "governance_section_resolved_count": governance_resolved,
             "notes": [
-                "Template A (28 personas): Section 1 = 'Identity & Voice'. The "
+                f"Template A ({template_counts.get('A', 0)} personas): Section 1 = 'Identity & Voice'. The "
                 "Agent Governance Framework (lettered A-D subsections: "
                 "Execution Standard / Quality Control Protocol / Failure "
                 "Pattern Recognition / Task Mode Activation Language) lives at "
@@ -198,7 +198,7 @@ def build_map() -> dict:
                 "a condensed 7-section structure with NO lettered A-D "
                 "governance subsections anywhere (closest analog: Section 5 "
                 "'Task Mode', which is plain narrative). governance_section is "
-                "null for this ONE persona (98/99 resolve). Consumers MUST "
+                f"null for this ONE persona ({governance_resolved}/{len(personas)} resolve). Consumers MUST "
                 "treat null as 'no structured governance excerpt on this "
                 "blueprint' and degrade honestly (fall back to whatever "
                 "literal Section 4 contains, never fabricate governance "
