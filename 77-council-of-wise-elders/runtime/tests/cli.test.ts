@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { runCli, type CliIo } from '../src/cli/dispatcher.js';
 import { skillRootFromModule } from '../src/cli/dispatcher.js';
+import { createLocalHost } from '../src/cli/local-host.js';
 import { tempDataDir } from './helpers.js';
 
 function capture(): { io: CliIo; out: () => string; err: () => string } {
@@ -47,7 +48,14 @@ test('cli: unknown command is a usage error with exit 2', async () => {
 test('cli: doctor is offline, JSON clean, and reports honest not-ready items', async () => {
   const c = capture();
   const dir = tempDataDir('cli doctor');
-  const code = await runCli(['doctor', '--json', '--data-dir', dir], c.io);
+  // A bare doctor on a machine with configured harness roots truthfully
+  // reports live_routes_composed true (real transports compose; pinned by
+  // the rp0461 cases in cli-route-composition.test.ts). This case pins the
+  // not-ready contract, so route discovery is explicitly disabled to make
+  // the environment deterministic instead of asserting per-machine state.
+  const code = await runCli(['doctor', '--json', '--data-dir', dir], c.io, {
+    createHost: (opts) => createLocalHost({ ...opts, discoverRoutes: false }),
+  });
   assert.equal(code, 0);
   const data = JSON.parse(c.out()) as {
     ok: boolean;
