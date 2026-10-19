@@ -123,8 +123,9 @@ function isSkillFolder(dir: string): boolean {
  * The ACTUAL skill folder. Two mechanisms, in order:
  *
  * 1. The install record written by scripts/council-runtime-install.sh
- *    (`../../install-record.json`, relative to the bundled entry at
- *    runtime/dist/council-entry.mjs). The installed prefix carries no
+ *    (`../../install-record.json`, which from the bundled entry at
+ *    runtime/dist/council-entry.mjs is <prefix>/install-record.json,
+ *    where the installer writes it). The installed prefix carries no
  *    SKILL.md, advisors/ or manifest.json, so the climb below can never
  *    find the skill folder there; the record is the install's own
  *    statement of which folder it was built from.
@@ -133,12 +134,15 @@ function isSkillFolder(dir: string): boolean {
  *
  * null when neither applies: the guard then has no root, and every
  * command that must keep state out of the skill tree refuses rather
- * than measuring a guessed boundary.
+ * than measuring a guessed boundary (see runCli: doctor reports
+ * data_dir_outside_skill_tree as not ready; session, authorization,
+ * sample and the host-backed commands throw invalidInput).
  */
 export function skillRootForAssets(): string | null {
-  // From the bundled entry (runtime/dist/<entry>) the record is two
-  // levels up; the dispatcher's own source and dist locations are also
-  // two levels down from runtime/, so one relative URL serves all three.
+  // Only the bundled entry (runtime/dist/<entry>) resolves this URL to
+  // <prefix>/install-record.json, where the installer writes it. From
+  // runtime/{src,dist}/cli/ it resolves to runtime/install-record.json,
+  // so there the record is found only if placed beside runtime/.
   try {
     const record = JSON.parse(
       readFileSync(new URL('../../install-record.json', import.meta.url), 'utf8'),
@@ -357,7 +361,24 @@ export async function runCli(
     const skillRoot = resolvedRoot ?? undefined;
     const makeHost =
       deps.createHost ?? ((opts) => createLocalHost({ ...opts, skillRoot }));
-    const hostFor = (): LocalHost => makeHost({ dataDir, skillRoot });
+    // No skill folder found: there is no boundary to measure, so every
+    // command that resolves a data dir refuses (Section 16.1) rather
+    // than skipping the guard or measuring a guessed boundary.
+    const refuseWithoutRoot = (): void => {
+      if (resolvedRoot === null) {
+        throw invalidInput(
+          'The skill folder could not be located (no install-record.json and no SKILL.md + advisors/ + manifest.json above this binary), so the data directory cannot be checked against Section 16.1. Refusing.',
+        );
+      }
+    };
+    const dataDirFor = (): string => {
+      refuseWithoutRoot();
+      return resolveDataDir({ override: dataDir ?? null, skillRoot });
+    };
+    const hostFor = (): LocalHost => {
+      refuseWithoutRoot();
+      return makeHost({ dataDir, skillRoot });
+    };
     const engineFor = (host: CouncilHost) => new CouncilEngine(host);
 
     if (command === undefined) {
@@ -382,7 +403,7 @@ export async function runCli(
         });
         let dir: string | null = null;
         try {
-          dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+          dir = dataDirFor();
           checks.push({
             name: 'data_dir_outside_skill_tree',
             ok: true,
@@ -529,7 +550,7 @@ export async function runCli(
         // Confirmation is wired to the controlling terminal, never
         // stdin; in --json mode results stay on stdout and the
         // confirmation still uses the terminal.
-        const dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+        const dir = dataDirFor();
         await handleAuthorizationCommand(sub, positionals.slice(2), flags, {
           dataDir: dir,
           json,
@@ -574,7 +595,7 @@ export async function runCli(
             `Could not read session input files: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
-        const dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+        const dir = dataDirFor();
         const created = await engine.createSession({
           spec,
           brief,
@@ -611,6 +632,7 @@ export async function runCli(
         if (sub !== 'run') {
           throw usageError('Usage: blackceo-council sample run [--json]');
         }
+        refuseWithoutRoot();
         const sample = buildSampleSession();
         const { host } = createLocalHost({
           dataDir,

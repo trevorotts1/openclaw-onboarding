@@ -45,7 +45,9 @@ function capture() {
 }
 
 function guardLine(text: string): string {
-  const line = text.split('\n').find((l) => l.includes('data_dir_outside_skill_tree'));
+  const line = text
+    .split(/\n| \| /)
+    .find((l) => l.includes('data_dir_outside_skill_tree'));
   assert.ok(line, `doctor did not report the guard: ${text}`);
   return line;
 }
@@ -87,7 +89,7 @@ test('doctor accepts a data dir outside the skill folder', async () => {
 function installedPrefixDoctor(
   record: string | null,
   dataDir: string,
-): { root: string; out: string; raw: string } {
+): { root: string; out: string; sample: string; raw: string } {
   const fixture = mkdtempSync(join(tmpdir(), 'council-prefix-'));
   try {
     const dist = join(fixture, 'runtime', 'dist');
@@ -118,8 +120,12 @@ function installedPrefixDoctor(
         'let out = "";',
         `await runCli(['doctor', '--data-dir', ${JSON.stringify(dataDir)}],`,
         '  { out: (t) => { out += t; }, err: (t) => { out += t; } },',
-        "  { createHost: () => { throw new Error('host-built'); } });",
+        '  { createHost: () => ({ host: { transportRegistry: { listRoutes: () => [] } } }) as never });',
         'process.stdout.write("OUT " + out.replace(/\\n/g, " | ") + "\\n");',
+        'let sampleOut = "";',
+        "const sampleRc = await runCli(['sample', 'run'],",
+        '  { out: (t) => { sampleOut += t; }, err: (t) => { sampleOut += t; } }, {});',
+        'process.stdout.write("SAMPLE " + sampleRc + " " + sampleOut.replace(/\\n/g, " | ") + "\\n");',
       ].join('\n'),
     );
     assert.equal(existsSync(join(cliDir, 'SKILL.md')), false);
@@ -132,6 +138,7 @@ function installedPrefixDoctor(
     return {
       root: (/^ROOT (.*)$/m.exec(text)?.[1] ?? '').trim(),
       out: /OUT (.*)/.exec(text)?.[1] ?? text,
+      sample: /SAMPLE (.*)/.exec(text)?.[1] ?? text,
       raw: text,
     };
   } finally {
@@ -144,18 +151,26 @@ test('installed prefix: measures the recorded skill folder', () => {
   assert.equal(inside.root, SKILL_ROOT, `the record names the skill folder: ${inside.raw}`);
   assert.match(
     guardLine(inside.out),
-    /inside the skill folder/,
+    /\[not ready\] data_dir_outside_skill_tree.*inside the skill folder/,
     'the guard refuses a data dir inside the recorded folder',
   );
 
-  // Outside the recorded folder as a sibling path, never inside the
-  // skill folder itself.
-  const ok = installedPrefixDoctor(SKILL_ROOT, join(runtimeRoot, 'outside-state'));
+  // A path that really is outside the recorded skill folder.
+  const ok = installedPrefixDoctor(SKILL_ROOT, join(SKILL_ROOT, '..', 'outside-state'));
   assert.equal(ok.root, SKILL_ROOT);
-  assert.match(guardLine(ok.out), /\[ok\]/);
+  assert.match(guardLine(ok.out), /\[ok\] data_dir_outside_skill_tree/);
 });
 
-test('installed prefix without a record has no root', () => {
-  const r = installedPrefixDoctor(null, join(SKILL_ROOT, 'state'));
-  assert.equal(r.root, 'null', 'no record, no guessed root');
+test('installed prefix without a record has no root and refuses', () => {
+  for (const dataDir of [join(SKILL_ROOT, 'state'), join(SKILL_ROOT, '..', 'outside-state')]) {
+    const r = installedPrefixDoctor(null, dataDir);
+    assert.equal(r.root, 'null', 'no record, no guessed root');
+    assert.match(
+      guardLine(r.out),
+      /\[not ready\] data_dir_outside_skill_tree.*skill folder could not be located/,
+      `doctor refuses ${dataDir} when there is no boundary to measure`,
+    );
+    assert.match(r.sample, /^[1-9]\d* /, 'sample run exits non-zero without a root');
+    assert.match(r.sample, /skill folder could not be located/);
+  }
 });
