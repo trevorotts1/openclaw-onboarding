@@ -1,0 +1,110 @@
+{
+  "schema": "skill71-reference-library/v1",
+  "purpose": "Reference images the image stages attach, each with a public link in the operator's GoHighLevel media library and a fingerprint (the reference's own palette and brand text) that the bleed QC check uses. A reference is structure only: references/reference-image-use.md.",
+  "library": "BlackCEO LLC GoHighLevel media library, folder sigpage-reference-images",
+  "uploaded": "2026-10-19",
+  "references": [
+    {
+      "name": "design-board-example",
+      "kind": "design-board",
+      "use": "Design Board stage: the look and structure of a brand design board (palette, type, imagery, icon and application panels). Layout and arrangement only.",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/3831124e-a6c3-4c54-9ea5-1990c00bec14.png",
+      "sha256": "4b3df24b2c4d1f8fb65446fad251090c04a2f91eca86d1f46cfaefab6fb15f56",
+      "bytes": 1857969,
+      "origin": "owner-supplied example, Design Board (1).png",
+      "signature_palette": [
+        "#28513F",
+        "#DAAAA6",
+        "#BC5248",
+        "#93504F",
+        "#C49A45",
+        "#E2C98F",
+        "#F7F2E9",
+        "#28231F"
+      ],
+      "signature_palette_source": "hex codes printed on the board itself",
+      "brand_text": [
+        "Set for Life",
+        "A richer you lives here",
+        "Wealth looks good on you",
+        "Discipline creates freedom",
+        "Intentional money",
+        "A brighter tomorrow",
+        "Same goals higher standards",
+        "More intentional tomorrows",
+        "Dream bigger build wealth",
+        "Editorial financial elegance for grown folks",
+        "Make Room for My Richer Life",
+        "The Set for Life Financial Makeover",
+        "Your paycheck didn't get the memo",
+        "The math ain't mathing",
+        "Everything costs more"
+      ]
+    },
+    {
+      "name": "set-for-life-desktop-wireframe",
+      "kind": "wireframe",
+      "use": "Wireframe stage: grayscale block structure, annotation style and section rhythm of a long-form page.",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/1c75678d-18fa-4fae-9854-a2338ed1b73b.png",
+      "sha256": "89053173165d0efc45d134a136fb95212258990bc815fc272d91786bd44552d9",
+      "bytes": 2110007,
+      "origin": "assets/visual-standards/wireframes/set-for-life-desktop-wireframe.png",
+      "signature_palette": [],
+      "signature_palette_source": "grayscale artifact, no chromatic color",
+      "brand_text": [
+        "Set for Life",
+        "A richer you lives here",
+        "Wealth looks good on you",
+        "Discipline creates freedom",
+        "Intentional money",
+        "A brighter tomorrow",
+        "Same goals higher standards",
+        "More intentional tomorrows",
+        "Dream bigger build wealth",
+        "Editorial financial elegance for grown folks",
+        "Make Room for My Richer Life",
+        "The Set for Life Financial Makeover",
+        "Your paycheck didn't get the memo",
+        "The math ain't mathing",
+        "Everything costs more"
+      ]
+    },
+    {
+      "name": "set-for-life-desktop-mockup",
+      "kind": "mockup",
+      "use": "Visual-mockup and final-mockups stages: how a finished long-form page is composed. Composition and polish only.",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/57997068-c7b6-4df8-886d-e90d3eb9cc42.png",
+      "sha256": "af639085ec400d4b27a57f4455e79718a6ac103a00aae908318248fc14ef8a3a",
+      "bytes": 3696112,
+      "origin": "assets/visual-standards/mockups/set-for-life-desktop-mockup.png",
+      "signature_palette": [
+        "#28513F",
+        "#DAAAA6",
+        "#BC5248",
+        "#93504F",
+        "#C49A45",
+        "#E2C98F",
+        "#F7F2E9",
+        "#28231F"
+      ],
+      "signature_palette_source": "same brand palette as the design board; mockup measured in tests",
+      "brand_text": [
+        "Set for Life",
+        "A richer you lives here",
+        "Wealth looks good on you",
+        "Discipline creates freedom",
+        "Intentional money",
+        "A brighter tomorrow",
+        "Same goals higher standards",
+        "More intentional tomorrows",
+        "Dream bigger build wealth",
+        "Editorial financial elegance for grown folks",
+        "Make Room for My Richer Life",
+        "The Set for Life Financial Makeover",
+        "Your paycheck didn't get the memo",
+        "The math ain't mathing",
+        "Everything costs more"
+      ]
+    }
+  ]
+}

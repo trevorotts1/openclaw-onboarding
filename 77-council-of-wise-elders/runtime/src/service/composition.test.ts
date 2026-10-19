@@ -22,16 +22,12 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import {
-  entrySha256,
-  routeBudgetApprovalsPath,
-  type RouteBudgetEntry,
-} from '../budgets/route-budget.js';
+import type { RouteBudgetEntry } from '../budgets/route-budget.js';
 import { composeCouncilService, startCouncilService } from './composition.js';
 import { CouncilFrontDoor } from './front-door.js';
 import { evaluateServiceReadiness } from './readiness.js';
@@ -304,7 +300,6 @@ test('three composable routes: route layer is ready, the route is chosen per ses
     const routes = (await (await fetch(`${outcome.origin}/api/council/routes`)).json()) as {
       routes: Array<{ route_id: string; composable: boolean; default_for: string[] }>;
       harness_defaults: Record<string, { route_id: string }>;
-      budgets: Array<{ route_id: string; model: string | null; state: string }>;
     };
     assert.deepEqual(
       routes.routes.map((r) => r.route_id).sort(),
@@ -316,7 +311,7 @@ test('three composable routes: route layer is ready, the route is chosen per ses
       ['deepseek'],
     );
     assert.equal(routes.harness_defaults['claude-code'].route_id, 'claude-configured');
-    assert.ok(routes.budgets.length >= 3, 'every route reports a budget state');
+    assert.equal('budgets' in routes, false, 'no approval state is offered to the client');
   } finally {
     await composition.door.stop();
     await composition.stop();
@@ -324,13 +319,12 @@ test('three composable routes: route layer is ready, the route is chosen per ses
   }
 });
 
-test('an unapproved route budget reads awaiting operator approval; approving it needs no restart', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'w28-wiring-budget-'));
+test('a fresh install is ready with no approval step, measured or not', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'w28-wiring-limits-'));
   const dataDir = join(root, 'data');
   mkdirSync(dataDir, { recursive: true });
   const configPath = join(root, 'route-budgets.json');
-  const entry = budgetEntry();
-  writeBudgetConfig(configPath, [entry]);
+  writeBudgetConfig(configPath, [budgetEntry()]);
   const composition = composeCouncilService({
     ...options(dataDir),
     routeHomeDir: threeRouteHome(root),
@@ -342,58 +336,16 @@ test('an unapproved route budget reads awaiting operator approval; approving it 
   if (outcome.outcome !== 'started') return;
   try {
     const deliberation = composition.backend.deliberation;
-    const before = deliberation.readiness();
-    assert.equal(before.ready, false);
-    const budgetCheck = before.checks.find((c) => c.name === 'route_budget');
-    assert.equal(budgetCheck?.bound, false);
-    assert.match(budgetCheck?.detail ?? '', /awaiting operator approval/);
-    // The proposed numbers are shown so the operator can sign off.
-    assert.match(budgetCheck?.detail ?? '', /claude-nine-configured/);
-    assert.match(budgetCheck?.detail ?? '', /context 200000 tokens/);
-    assert.match(budgetCheck?.detail ?? '', /3\.1 min bytes per token/);
-    // Everything else the council needs is bound.
-    assert.deepEqual(
-      before.checks.filter((c) => !c.bound).map((c) => c.name),
-      ['route_budget'],
-    );
-
+    const ready = deliberation.readiness();
+    assert.equal(ready.ready, true, JSON.stringify(ready.checks.filter((c) => !c.bound)));
+    assert.equal(ready.checks.find((c) => c.name === 'route_budget')?.bound, true);
     const route = byLayer(await composition.door.readiness({ offline: true })).get('route');
     assert.equal(route?.state, 'ready');
-    assert.match(route?.artifact ?? '', /awaiting operator approval/);
-
-    // A convene is refused with 503 COMPOSITION_NOT_READY and makes no session.
-    const refused = await fetch(`${outcome.origin}/api/council/convene`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sample: true, route_id: 'claude-nine-configured' }),
-    });
-    assert.equal(refused.status, 503);
-    assert.equal(((await refused.json()) as { code: string }).code, 'COMPOSITION_NOT_READY');
-
-    // The operator approval is the matching file in the service data dir.
-    writeFileSync(
-      routeBudgetApprovalsPath(dataDir),
-      JSON.stringify([
-        {
-          route_id: entry.route_id,
-          model: entry.model,
-          entry_sha256: entrySha256(entry),
-          approved_by: 'fixture-operator',
-          approved_at: '2026-10-19T12:00:00.000Z',
-        },
-      ]),
-      'utf8',
-    );
-    const after = deliberation.readiness();
-    assert.equal(after.ready, true, 'no restart: the approval is read on the next check');
-    assert.match(
-      after.checks.find((c) => c.name === 'route_budget')?.detail ?? '',
-      /approved: claude-nine-configured/,
-    );
-
-    // Changing the numbers after approval needs a fresh approval.
-    writeBudgetConfig(configPath, [budgetEntry({ measured_min_bytes_per_token: 2.5 })]);
-    assert.equal(deliberation.readiness().ready, false);
+    assert.doesNotMatch(route?.artifact ?? '', /approv/i);
+    // Changing the numbers (or having none) never un-readies the council.
+    writeBudgetConfig(configPath, [budgetEntry({ measured_min_bytes_per_token: null })]);
+    assert.equal(deliberation.readiness().ready, true);
+    assert.equal(existsSync(join(dataDir, 'route-budget-approvals.json')), false);
   } finally {
     await composition.door.stop();
     await composition.stop();

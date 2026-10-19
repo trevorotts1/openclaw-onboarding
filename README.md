@@ -1,6 +1,10 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
+> **v27.1.44 - Council (Skill 77) v1.0.27: Roast-Room chamber screen.** The chamber page now shows the council as a seated room: a top bar with a six-step progress strip, the decision with a bar per option, nine advisors with full-name pills and Pixar-style portraits, a key-points list and an advisor card.
+>
 > **v27.1.43 - Council (Skill 77) v1.0.26: live council.** The client picks the model for each council run (the running harness default if they do not), a convened session is deliberated end to end with live events, convening is the approval (every run is still audited), token budgets go live only after the operator approves the measured numbers, and the elders speak from the client's own Book-to-Persona material with labelled web research for current facts. Existing compatibility pin: **v7.6.112**.
+>
+> **v27.1.42 - Council (Skill 77) v1.0.25: W27 hardening.** First-status pre-warm so the first Council status call answers from a warm cache, the service launcher upstreamed into the skill, the skill root resolved from the installed binary, and a live chamber view over real sessions. Existing compatibility pin: **v7.6.112**.
 >
 > **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
 >
@@ -21,13 +25,13 @@
 > **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v27.1.43.
+> **Version:** see `/version` - this repo at v27.1.44.
 
 
 
 Private interview invitation validity follows the issuing Command Center. With paired v7.6.123, links remain reusable until completion, then expire **24 hours after the first completion**; older issuers retain their declared expiry and reuse rules. Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v27.1.43
+## Current release: v27.1.44
 
 ### Standard company placeholder (v26.4.9)
 If a client's AI Workforce interview is still incomplete 14 days after onboarding started
@@ -199,7 +203,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v27.1.43** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v27.1.44** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

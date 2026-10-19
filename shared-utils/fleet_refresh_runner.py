@@ -2688,11 +2688,19 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
         res.step_skip("update-999", f"dry-run (999 at {repo}"
                       + ("; 9Router box: would run --skills-only only" if nr["skills_only"] else "") + ")")
         return
-    pull = subprocess.run(["git", "-C", str(repo), "pull", "--ff-only", "--quiet"],
+    # CAN005: git_ff_sync.sh = fetch --prune + ff-only pull, and a branch whose upstream was
+    # deleted on origin is moved to the default branch only when that loses nothing (rc 3 = left untouched).
+    pull = subprocess.run(["sh", str(Path(__file__).resolve().parent / "git_ff_sync.sh"), str(repo)],
                           capture_output=True, text=True, timeout=180)
+    if pull.returncode == 3:
+        res.update_999["needs_attention"] = pull.stdout.strip()
+        res.step_skip("update-999", f"NEEDS ATTENTION - {pull.stdout.strip()[:300]} (in {repo})")
+        return
     if pull.returncode != 0:
         res.step_fail("update-999", f"git pull --ff-only failed in {repo}: {(pull.stderr or pull.stdout).strip()[:200]}")
         return
+    if pull.stdout.strip():
+        res.update_999["branch_switch"] = pull.stdout.strip()
     res.update_999["to_sha"] = _git(repo, "rev-parse", "HEAD")
     bash = _bash4() or "bash"
     if nr["skills_only"]:

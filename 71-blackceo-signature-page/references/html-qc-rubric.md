@@ -94,6 +94,18 @@ agent invented.
     image boxes. 10 = none anywhere; below 8 = any visible placeholder. (When
     `intake.test_run` is true, a validator reports these as WARN instead of
     FAIL — the reviewer still records the score honestly.)
+12. **Composition treatments** — every image slot's declared `data-treatment`
+    (one id from `references/composition-treatments.json`) is rendered with its
+    CSS equivalent and the page meets the per-page composition budget
+    (`scripts/validate_page.py` measures it: section classifier, shape corner
+    test, light-field luminance and texture, face-zone, two-pass legibility).
+    Legibility guardrails hold: no words over a face, a 5 to 10 percent safe
+    margin, contrast 4.5:1 for body and 3:1 for display type at the worse of
+    the p5 and p95 backdrop, a scrim of 55 percent or more under body copy on a
+    photo, no more than 60 words directly on a photo, and a light field that is
+    both light and textured. 10 = every declared treatment measures as declared;
+    below 8 = a declared mask is a rectangle, an overlay measures as a split, or
+    any guardrail fails.
 
 ## Auto-fails (any one = stage FAIL regardless of scores)
 

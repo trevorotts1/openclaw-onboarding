@@ -198,6 +198,21 @@ def run_health_gate(skills_dir: Path) -> dict:
     return r
 
 
+def gate_verdict_lines(detail: str) -> str:
+    """The gate's failing/undetermined items: each '<item>: FAIL|UNDETERMINED - ...'
+    line plus the indented '    - ' entries printed under it (CAN004: these used
+    to sit unread inside gate.detail)."""
+    out, keep = [], False
+    for ln in (detail or "").splitlines():
+        if ": FAIL" in ln or "UNDETERMINED" in ln:
+            keep = True
+        elif keep and not ln.startswith("    "):
+            keep = False
+        if keep:
+            out.append(ln.rstrip())
+    return "\n".join(out)
+
+
 def run_full_stage(skills_dir: Path | None = None) -> dict:
     """The whole shared stage: repairs, then the health gate."""
     skills_dir = Path(skills_dir) if skills_dir else _skills_dir(_oc_root())
@@ -212,8 +227,11 @@ def run_full_stage(skills_dir: Path | None = None) -> dict:
         status = "gate-undetermined"
     elif repair["status"] != "ok":
         status = "ran-with-notes"
-    return {"status": status, "repair": repair, "gate": gate,
-            "skills_dir": str(skills_dir)}
+    rep = {"status": status, "repair": repair, "gate": gate,
+           "skills_dir": str(skills_dir)}
+    if status in ("gate-failed", "gate-undetermined"):
+        rep["reason"] = gate_verdict_lines(gate.get("detail", ""))[:1500]
+    return rep
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

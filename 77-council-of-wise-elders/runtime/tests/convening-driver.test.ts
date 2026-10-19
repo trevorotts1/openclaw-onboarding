@@ -332,8 +332,8 @@ test('a second sample convene gets a distinct session id', async () => {
   assert.deepEqual(r.settled.map((s) => s.result.status), ['completed', 'completed']);
 });
 
-test('unbound routeBudget or catalog refuses COMPOSITION_NOT_READY naming them, creating no session and no grant', async () => {
-  const r = rig('unbound', { catalog: null, routeBudget: false });
+test('an unbound catalog refuses COMPOSITION_NOT_READY naming it, creating no session and no grant', async () => {
+  const r = rig('unbound', { catalog: null });
   const driver = driverFor(r);
   await assert.rejects(
     driver.convene({ sample: true, route: { route_id: FIXTURE_ROUTE }, requested_by: 'owner-1' }),
@@ -341,12 +341,8 @@ test('unbound routeBudget or catalog refuses COMPOSITION_NOT_READY naming them, 
       assert.ok(error instanceof DriverRefusal);
       assert.equal(error.code, 'COMPOSITION_NOT_READY');
       assert.equal(error.http_status, 503);
-      assert.deepEqual(error.detail.unbound, ['material_catalog', 'route_budget']);
-      // First-run refusal tells the operator exactly what to run, and that nothing self-approves.
-      assert.match(error.recovery, /measure-route-bytes-per-token\.mjs --route /);
-      assert.match(error.recovery, /approve-route-budget\.mjs --route /);
-      assert.match(error.recovery, /Nothing is approved automatically/);
-      assert.equal(typeof error.detail.summary, 'string');
+      assert.deepEqual(error.detail.unbound, ['material_catalog']);
+      assert.doesNotMatch(`${error.message} ${error.recovery}`, /budget|approv/i);
       return true;
     },
   );
@@ -499,8 +495,8 @@ function consultSession(r: Rig, sessionId: string) {
     route_snapshot: snap,
     route_policy_sha256: canonicalHash({ route_snapshot: snap }),
     ceilings: {
-      max_provider_requests: 50,
-      max_output_repairs: 9,
+      max_provider_requests: 62,
+      max_output_repairs: 27,
       max_transport_retries: 8,
       max_input_tokens: null,
       max_output_tokens: null,

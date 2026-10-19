@@ -1,6 +1,7 @@
 {
   "brand_id": "<client-slug>",
   "source": "CLIENT_MUST_SUPPLY (brand intake sheet or owner-provided brand guide)",
+  "_palette_note": "Fill palette with the client's own #RRGGBB colors: scripts/brand_colors.py record writes it from the client's answer. Slots gold/navy/cream are accent-CTA, dark, light; extra hex keys are allowed. brand_id must name this client (it is checked against intake brand_owner).",
   "palette": {"gold": "CLIENT_MUST_SUPPLY", "navy": "CLIENT_MUST_SUPPLY", "cream": "CLIENT_MUST_SUPPLY"},
   "logo_only_colors": {"black": "CLIENT_MUST_SUPPLY", "white": "CLIENT_MUST_SUPPLY"},
   "color_tolerance": 3,

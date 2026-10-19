@@ -26,11 +26,8 @@
  * The deliberation composition's host bindings (W28) are all bound here:
  * the elder-knowledge catalog and seat briefing loader, the standalone
  * trusted principal, a transport resolved per pinned route snapshot, and
- * the approval-gated route budget. The route budget only reports bound
- * once the operator has approved measured numbers, so until then
- * `DeliberationService.readiness()` says "awaiting operator approval"
- * with the proposed numbers and a convene is refused (503
- * COMPOSITION_NOT_READY). Convening is wired through one driver; this
+ * the route limits (measured numbers where shipped, conservative
+ * defaults otherwise; no approval step). Convening is wired through one driver; this
  * module never claims a completed deliberation or a live advisor turn.
  *
  * Lifecycle: one database handle, one worker supervisor, one listener.
@@ -89,19 +86,7 @@ import {
   type CouncilWorkerHandle,
 } from '../queue/workers.js';
 import type { PinnedRouteSnapshot } from '../budgets/index.js';
-import {
-  loadRouteBudgetApprovals,
-  loadRouteBudgetConfig,
-  routeBudgetApprovalsPath,
-  routeBudgetConfigPath,
-  routeBudgetRecovery,
-  routeBudgetResolver,
-  routeBudgetStatus,
-  type RouteBudgetApproval,
-  type RouteBudgetConfig,
-  type RouteBudgetEntry,
-  type RouteBudgetState,
-} from '../budgets/route-budget.js';
+import { routeBudgetConfigPath, routeBudgetResolver } from '../budgets/route-budget.js';
 import { resolveBookToPersonaRoot } from '../sources/persona-root.js';
 import {
   createElderKnowledge,
@@ -484,7 +469,6 @@ interface RouteProbeOptions {
 
 interface RouteBudgetFiles {
   configPath: string | null;
-  approvalsPath: string;
 }
 
 function discoverRoutes(options: RouteProbeOptions): readonly DiscoveredRoute[] {
@@ -499,148 +483,12 @@ function discoverRoutes(options: RouteProbeOptions): readonly DiscoveredRoute[] 
   }
 }
 
-// ---------------------------------------------------------- route budgets
-
-function formatNumber(value: number | null): string {
-  return value === null ? 'unmeasured' : String(value);
-}
-
-/** The proposed numbers an operator is asked to approve, in plain words. */
-function describeProposed(entry: RouteBudgetEntry): string {
-  const model = entry.model === null ? 'any model' : entry.model;
-  return `${entry.route_id} (${model}): context ${formatNumber(
-    entry.context_window_tokens,
-  )} tokens, max output ${formatNumber(entry.max_output_tokens)} tokens, ${formatNumber(
-    entry.measured_min_bytes_per_token,
-  )} min bytes per token, safety factor ${entry.safety_factor}`;
-}
-
-interface RouteBudgetOverview {
-  /** True when at least one measured entry carries a matching approval. */
-  bound: boolean;
-  states: Array<{ route_id: string; model: string | null; state: RouteBudgetState['state'] }>;
-  detail: string;
-}
-
-/**
- * Re-read the budget config and the operator approvals. Cheap, and it is
- * what lets an approval written while the service runs take effect with
- * no restart. An unreadable config is reported, never papered over.
- */
-function readRouteBudgets(files: RouteBudgetFiles): {
-  config: RouteBudgetConfig | null;
-  approvals: RouteBudgetApproval[];
-  error: string | null;
-} {
-  if (files.configPath === null) {
-    return { config: null, approvals: [], error: 'no route budget config path resolved' };
-  }
-  try {
-    return {
-      config: loadRouteBudgetConfig(files.configPath),
-      approvals: loadRouteBudgetApprovals(files.approvalsPath),
-      error: null,
-    };
-  } catch (error) {
-    return {
-      config: null,
-      approvals: [],
-      error: error instanceof Error ? error.name : 'unknown error',
-    };
-  }
-}
-
-function routeBudgetOverview(files: RouteBudgetFiles): RouteBudgetOverview {
-  const { config, approvals, error } = readRouteBudgets(files);
-  if (!config) {
-    return {
-      bound: false,
-      states: [],
-      detail: `route budget config unreadable (${error}); no route can be budgeted until it is repaired`,
-    };
-  }
-  const states: RouteBudgetOverview['states'] = [];
-  const approved: string[] = [];
-  const awaiting: string[] = [];
-  const unmeasured: string[] = [];
-  for (const entry of config.entries) {
-    const status = routeBudgetStatus(config, approvals, entry.route_id, entry.model);
-    states.push({ route_id: entry.route_id, model: entry.model, state: status.state });
-    if (status.state === 'approved') {
-      approved.push(`${entry.route_id}${entry.model === null ? '' : ` (${entry.model})`}`);
-    } else if (status.state === 'awaiting_approval' && status.proposed) {
-      awaiting.push(describeProposed(status.proposed));
-    } else {
-      unmeasured.push(status.proposed ? describeProposed(status.proposed) : entry.route_id);
-    }
-  }
-  const parts: string[] = [];
-  if (approved.length > 0) parts.push(`approved: ${approved.join(', ')}`);
-  if (awaiting.length > 0) {
-    parts.push(`awaiting operator approval, proposed numbers: ${awaiting.join('; ')}`);
-  }
-  if (unmeasured.length > 0) {
-    parts.push(`not yet measured, needs a live measurement then operator approval: ${unmeasured.join('; ')}`);
-  }
-  if (parts.length === 0) parts.push('no route budget entries are configured');
-  return { bound: approved.length > 0, states, detail: parts.join('; ') };
-}
-
-/** Per-session guard: the chosen route must carry an approved budget. */
-class RouteBudgetNotApprovedError extends Error {
-  readonly code = 'COMPOSITION_NOT_READY' as const;
-  readonly http_status = 503 as const;
-  readonly detail: Record<string, unknown>;
-  readonly recovery: string;
-  constructor(detail: Record<string, unknown>, recovery: string) {
-    super('The chosen route has no operator-approved budget.');
-    this.name = 'RouteBudgetNotApprovedError';
-    this.detail = detail;
-    this.recovery = recovery;
-  }
-}
-
-function assertRouteBudgetApproved(
-  files: RouteBudgetFiles,
-  snapshot: PinnedRouteSnapshot,
-): void {
-  const { config, approvals } = readRouteBudgets(files);
-  const status = config
-    ? routeBudgetStatus(config, approvals, snapshot.routeId, snapshot.requestedModelOrAlias)
-    : null;
-  if (status?.state === 'approved') return;
-  const state = status?.state ?? 'no_entry';
-  const proposed = status && 'proposed' in status ? status.proposed : null;
-  throw new RouteBudgetNotApprovedError(
-    {
-      unbound: 'route_budget',
-      route_id: snapshot.routeId,
-      model: snapshot.requestedModelOrAlias,
-      route_budget_state: state,
-      summary:
-        state === 'awaiting_approval' && proposed
-          ? `awaiting operator approval, proposed numbers: ${describeProposed(proposed)}`
-          : state === 'not_measured' && proposed
-            ? `not yet measured: ${describeProposed(proposed)}`
-            : 'no route budget entry covers this route and model',
-    },
-    routeBudgetRecovery(snapshot.routeId, state),
-  );
-}
-
 /** The `GET /api/council/routes` answer: what the agent offers the client. */
 function routesResponse(
   options: RouteProbeOptions,
 ): CouncilRoutesResponse {
   const routes = listRouteOptions({ homeDir: options.routeHomeDir, env: options.routeEnv });
-  const overview = routeBudgetOverview(options.budgets);
-  const budgets = [...overview.states];
-  for (const route of routes) {
-    if (!budgets.some((b) => b.route_id === route.route_id)) {
-      budgets.push({ route_id: route.route_id, model: null, state: 'no_entry' });
-    }
-  }
-  return { routes, harness_defaults: HARNESS_DEFAULTS, budgets };
+  return { routes, harness_defaults: HARNESS_DEFAULTS };
 }
 
 function routeProbe(options: RouteProbeOptions): ReadinessProbe {
@@ -676,7 +524,6 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
       notes.push(`hinted route ${options.routeId} is not composable`);
     }
     if (typeof options.providerDispatch === 'function') notes.push('dispatch port bound');
-    notes.push(`route budget: ${routeBudgetOverview(options.budgets).detail}`);
     return { state: 'ready', artifact: notes.join('; ') };
   };
 }
@@ -769,7 +616,7 @@ function workerProbe(
     } catch (error) {
       return blocked(
         'WORKER_LEDGER_UNREADABLE',
-        `The worker is running but the durable budget ledger could not be read (${error instanceof Error ? error.name : 'unknown error'}).`,
+        `The worker is running but the durable spend ledger could not be read (${error instanceof Error ? error.name : 'unknown error'}).`,
         'Check the council database handle, then re-run service-readiness; the supervisor keeps durable work intact.',
       );
     }
@@ -999,40 +846,14 @@ function composeBackend(input: {
     resolveTransport:
       input.resolveTransport ??
       ((snapshot: PinnedRouteSnapshot) => transportForSnapshot(snapshot, transportOptions)),
-    // Re-reads the config and the operator approvals on each call: an
-    // approval written while the service runs takes effect with no restart.
-    routeBudget: input.route.budgets.configPath
-      ? routeBudgetResolver({
-          configPath: input.route.budgets.configPath,
-          approvalsPath: input.route.budgets.approvalsPath,
-        })
-      : null,
+    // Always bound: measured numbers where shipped, conservative defaults
+    // otherwise. Nothing needs approving.
+    routeBudget: routeBudgetResolver({ configPath: input.route.budgets.configPath }),
     loadSeatBriefing: elderKnowledge.loadSeatBriefing,
     workerId: WORKER_ID,
     // A fenced settle is reported like any worker failure (declared below).
     onFencedSettle: (error, context) => recordWorkerError(error, context),
   });
-
-  // The resolver is always callable, so the protocol's own readiness would
-  // call the budget bound. It is bound only once the operator approved
-  // measured numbers; say so, with the proposed numbers, until then.
-  const protocolReadiness = deliberation.readiness.bind(deliberation);
-  deliberation.readiness = () => {
-    const base = protocolReadiness();
-    const overview = routeBudgetOverview(input.route.budgets);
-    const checks = base.checks.map((check) =>
-      check.name === 'route_budget'
-        ? {
-            name: check.name,
-            bound: check.bound && overview.bound,
-            detail: overview.bound
-              ? `route-budget resolver bound; ${overview.detail}`
-              : overview.detail,
-          }
-        : check,
-    );
-    return { ready: checks.every((check) => check.bound), checks };
-  };
 
   // The canonical durable producer the front-door admission sink forwards
   // to. It shares the one handle, journal and outbox with the workers.
@@ -1111,9 +932,6 @@ function composeBackend(input: {
         scope: trustedScope,
         nowUtc: input.nowUtc,
       });
-      // Refuse before a session exists: a route without an approved budget
-      // cannot assemble context, and a half-run session would be worse.
-      assertRouteBudgetApproved(input.route.budgets, resolved.snapshot);
       return resolved;
     },
     recordFreshFacts: (sessionId, facts) => {
@@ -1213,7 +1031,6 @@ export function composeCouncilService(
       configPath:
         options.routeBudgetConfigPath ??
         (skillRoot ? routeBudgetConfigPath(skillRoot, options.routeEnv) : null),
-      approvalsPath: routeBudgetApprovalsPath(dataDir),
     },
   };
 

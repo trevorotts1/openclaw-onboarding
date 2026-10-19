@@ -64,7 +64,7 @@ export const validBrief = {
     { id: 'unk-1', statement: 'Pilot cohort retention is not yet measured.', evidence_ids: [] },
   ],
   constraints: [
-    { id: 'con-1', description: 'Pilot spend must stay within the approved budget.', hard: true, applies_to_option_ids: ['B', 'C'] },
+    { id: 'con-1', description: 'Pilot spend must stay within the amount already set aside.', hard: true, applies_to_option_ids: ['B', 'C'] },
   ],
   options: [
     { id: 'A', label: 'Keep the current offer', kind: 'status_quo' },

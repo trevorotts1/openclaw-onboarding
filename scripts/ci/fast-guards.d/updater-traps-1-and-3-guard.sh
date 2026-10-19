@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Folded from .github/workflows/updater-traps-1-and-3-guard.yml (job ".clawdbot pre-clear refuses on a live box; CC bootstrap never clones a second board"). Generated once by the CIO002 fold; edit freely.
 set -e
+# Never write the real ~/.gitconfig: point global git config at a throwaway file.
+export GIT_CONFIG_GLOBAL="$(mktemp "${TMPDIR:-/tmp}/guard-gitconfig.XXXXXX")"
+trap 'rm -f "$GIT_CONFIG_GLOBAL"' EXIT
 cd "$GITHUB_WORKSPACE"
 ( # step: Configure git identity (needed for local test-fixture repos)
 set -e

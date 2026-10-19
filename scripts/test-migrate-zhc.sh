@@ -381,7 +381,7 @@ mkdir -p "$WARN_BASE/.openclaw/workspace"
 make_company "$WARN_BASE/clawd/zero-human-company" "zulu" 2
 
 # Write the test script to a temp file to avoid heredoc-inside-$()-in-subshell issues
-WARN_SCRIPT="$(mktemp "$FIXTURE_ROOT/warn_check_XXXXXX.py")"
+WARN_SCRIPT="$(mktemp "$FIXTURE_ROOT/warn_check_XXXXXX")"
 cat > "$WARN_SCRIPT" <<SCRIPTEOF
 import sys, os
 sys.path.insert(0, "$SHARED_UTILS")

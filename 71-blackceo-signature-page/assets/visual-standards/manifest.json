@@ -13,6 +13,21 @@
   "mockups_including_hybrid_board": 5,
   "note": "Five logical wireframes and five logical mockups per ANALYSIS.md; slices and part files are the same artifacts cut for review, so the file count exceeds the artifact count."
  },
+ "wireframe_style_references": {
+  "note": "Which bundled sheet a wireframe request attaches as its one style reference, by stage and form. The machine-readable source is references/wireframe-build-spec.json; scripts/wireframe_spec.py applies it. The greyscale Set for Life wireframe and its slices and parts are never attached.",
+  "standard": {
+   "desktop-wireframe": "wireframes/chatgpt-wireframe-1.png",
+   "mobile-tablet": "wireframes/chatgpt-wireframe-4.png"
+  },
+  "long-form": {
+   "desktop-wireframe": "wireframes/chatgpt-wireframe-3.png",
+   "mobile-tablet": "wireframes/chatgpt-wireframe-4.png"
+  },
+  "never_attached": [
+   "wireframes/chatgpt-wireframe-2.png",
+   "wireframes/set-for-life-desktop-wireframe.png"
+  ]
+ },
  "file_count": 44,
  "files": [
   {
@@ -21,7 +36,8 @@
    "bytes": 1793734,
    "sha256": "9af8dc4f391638bd2b8e6d55465057570fb880b5a4e3efff79131e97f5eb6649",
    "width_px": 724,
-   "height_px": 2172
+   "height_px": 2172,
+   "role": "wireframe style reference: desktop-wireframe stage, Standard form"
   },
   {
    "file": "wireframes/chatgpt-wireframe-2.png",
@@ -29,7 +45,8 @@
    "bytes": 1377371,
    "sha256": "977fdd7b1b82c346065f2fa315fe568bf95a295515c4d99ab2e439d05d6dd1c4",
    "width_px": 724,
-   "height_px": 2172
+   "height_px": 2172,
+   "role": "never attached: a narrowed desktop with side-by-side rows, not a phone stack"
   },
   {
    "file": "wireframes/chatgpt-wireframe-3.png",
@@ -37,7 +54,8 @@
    "bytes": 1774101,
    "sha256": "a0c5c77df95f9e74299e2065f9353199a9f98ae2e828ed01f89313741e6893d1",
    "width_px": 724,
-   "height_px": 2172
+   "height_px": 2172,
+   "role": "wireframe style reference: desktop-wireframe stage, Long-Form form"
   },
   {
    "file": "wireframes/chatgpt-wireframe-4.png",
@@ -45,7 +63,8 @@
    "bytes": 1869247,
    "sha256": "85e445c93acd5ebf0d07c3246231880ee879f07383ef3ba08c3cfa52e4297e33",
    "width_px": 724,
-   "height_px": 2172
+   "height_px": 2172,
+   "role": "wireframe style reference: mobile-tablet stage, Long-Form form and Standard form (with the single-column rule)"
   },
   {
    "file": "wireframes/set-for-life-desktop-wireframe-slice1.png",
@@ -101,7 +120,8 @@
    "bytes": 2110007,
    "sha256": "89053173165d0efc45d134a136fb95212258990bc815fc272d91786bd44552d9",
    "width_px": 1440,
-   "height_px": 16736
+   "height_px": 16736,
+   "role": "analyzed, not a target style: greyscale; annotation conventions only; never attached to a wireframe request"
   },
   {
    "file": "wireframes/sfl-wireframe-part1.png",
@@ -367,5 +387,9 @@
    "width_px": 780,
    "height_px": 48894
   }
- ]
+ ],
+ "hosted_catalog": {
+  "file": "reference-catalog.json",
+  "note": "Typed list of the images hosted in the BlackCEO operator media library (wireframe, mockup, hybrid-image-map, mood-board, mockup-crop) with url, sha256, viewport, sections, traits and pair. Not part of the bundled-file count above: hosted images are not bundled here."
+ }
 }

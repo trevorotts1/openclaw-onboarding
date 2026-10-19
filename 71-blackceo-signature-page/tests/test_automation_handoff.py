@@ -87,7 +87,8 @@ def fixture_contract(td: Path) -> Path:
 def make_run(td: Path, intake_extra=None):
     run = td / "run"
     run.mkdir(parents=True, exist_ok=True)
-    brand = {"grade": {"min_mean_saturation": None, "min_luma_std": None},
+    brand = {"brand_id": "fixture", "palette": {"gold": "#C0392B", "navy": "#1B2A41", "cream": "#FAF3E0"},
+             "grade": {"min_mean_saturation": None, "min_luma_std": None},
              "founder_photos": [], "font_policy": {}}
     write_json(run / "brand-fixture.json", brand)
     intake = {"page_version": "standard", "brand_owner": "Fixture",

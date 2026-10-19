@@ -14,7 +14,6 @@
  * WER-023 remote access) and is never claimed here.
  */
 
-import type { RouteBudgetState } from '../budgets/route-budget.js';
 import type { ConveneAccepted, ConveneInput } from './driver.js';
 import type { HARNESS_DEFAULTS, RouteOption } from './route-choice.js';
 
@@ -281,11 +280,6 @@ export type ConveneHarnessName = (typeof CONVENE_HARNESSES)[number];
 export interface CouncilRoutesResponse {
   routes: RouteOption[];
   harness_defaults: typeof HARNESS_DEFAULTS;
-  budgets: Array<{
-    route_id: string;
-    model: string | null;
-    state: RouteBudgetState['state'];
-  }>;
 }
 
 export interface CouncilConveningPort {

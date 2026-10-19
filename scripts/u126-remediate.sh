@@ -78,7 +78,7 @@ _agents_list_blocks_upgrade() {
   local cfg="${OC_ROOT}/openclaw.json" py out rc
   [[ -f "$cfg" ]] || return 1
   command -v python3 >/dev/null 2>&1 || { printf 'python3 unavailable; config never inspected'; return 0; }
-  py="$(mktemp "${TMPDIR:-/tmp}/f1-agents-list.XXXXXX.py")" || { printf 'could not create temp file for the detector'; return 0; }
+  py="$(mktemp "${TMPDIR:-/tmp}/f1-agents-list.XXXXXX")" || { printf 'could not create temp file for the detector'; return 0; }
   cat > "$py" <<'PYEOF'
 import json, sys
 try:

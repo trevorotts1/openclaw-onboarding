@@ -25,7 +25,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TrustedPrincipal } from '../authorization/index.js';
-import { routeBudgetRecovery } from '../budgets/route-budget.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import { buildSampleSession } from '../cli/fixture-transport.js';
 import type { Clock, IdSource, StoredSession } from '../cli/host-ports.js';
@@ -145,10 +144,16 @@ export interface CouncilDriverDeps {
 const APPROVAL_BASIS = 'convening_is_approval (Trevor decision 2026-10-19)';
 const DEFAULT_PACK_VERSION = 'live-elder-knowledge/v1';
 
-/** Protocol runaway guard only; money and token ceilings stay unset. */
+/**
+ * Protocol runaway guard only; money and token ceilings stay unset.
+ * Sized for the nine-seat, three-round council: 27 operations, each
+ * allowed its one repair (27), plus the 8 transport retries = 62, so a
+ * real model that needs a repair on most operations cannot starve the
+ * session (real run: 9 repairs were spent by mid Round 2).
+ */
 const CONVENING_CEILINGS: RunCeilings = {
-  max_provider_requests: 50,
-  max_output_repairs: 9,
+  max_provider_requests: 62,
+  max_output_repairs: 27,
   max_transport_retries: 8,
   max_input_tokens: null,
   max_output_tokens: null,
@@ -314,29 +319,12 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     const readiness = deps.deliberation.readiness();
     if (!readiness.ready) {
       const unbound = readiness.checks.filter((c) => !c.bound);
-      const budget = unbound.find((c) => c.name === 'route_budget');
-      // Resolve the route first: a route that does not exist is refused as such,
-      // and a real route refuses with its own budget state and recovery.
-      let perRoute: { recovery?: string; detail?: Record<string, unknown> } = {};
-      let routeId: string | undefined;
-      if (budget) {
-        try {
-          routeId = (await route(input.route ?? {})).snapshot.routeId;
-        } catch (error) {
-          if (errorCode(error) !== 'COMPOSITION_NOT_READY') throw error;
-          perRoute = error as typeof perRoute;
-        }
-      }
       throw new DriverRefusal(
         'COMPOSITION_NOT_READY',
         `The council is not ready to convene: ${unbound.map((c) => c.name).join(', ')} not bound.`,
-        budget
-          ? (perRoute.recovery ?? routeBudgetRecovery(routeId))
-          : 'Bind the missing services (see detail.checks), then convene again.',
+        'Bind the missing services (see detail.checks), then convene again.',
         503,
         {
-          ...(budget ? { summary: budget.detail } : {}),
-          ...perRoute.detail,
           unbound: unbound.map((c) => c.name),
           checks: unbound.map((c) => ({ name: c.name, detail: c.detail })),
         },

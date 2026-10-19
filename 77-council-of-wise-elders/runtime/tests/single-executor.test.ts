@@ -17,11 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import {
-  entrySha256,
-  routeBudgetApprovalsPath,
-  type RouteBudgetEntry,
-} from '../src/budgets/route-budget.js';
+import type { RouteBudgetEntry } from '../src/budgets/route-budget.js';
 import { DeterministicFixtureTransport } from '../src/cli/fixture-transport.js';
 import type { ModelTransport } from '../src/cli/host-ports.js';
 import { startCouncilService } from '../src/service/composition.js';
@@ -86,19 +82,6 @@ test('a slow real-shaped round settles every operation: one executor, no fenced 
   });
   try {
     assert.equal(service.outcome.outcome, 'started');
-    writeFileSync(
-      routeBudgetApprovalsPath(dataDir),
-      JSON.stringify([
-        {
-          route_id: ENTRY.route_id,
-          model: ENTRY.model,
-          entry_sha256: entrySha256(ENTRY),
-          approved_by: 'fixture-operator',
-          approved_at: '2026-10-19T12:00:00.000Z',
-        },
-      ]),
-      'utf8',
-    );
     const origin = service.origin as string;
     const accepted = await fetch(`${origin}/api/council/convene`, {
       method: 'POST',
@@ -198,19 +181,6 @@ async function fencedSettle(mode: 'valid' | 'invalid') {
   });
   try {
     backend = service.composition.backend as never;
-    writeFileSync(
-      routeBudgetApprovalsPath(dataDir),
-      JSON.stringify([
-        {
-          route_id: ENTRY.route_id,
-          model: ENTRY.model,
-          entry_sha256: entrySha256(ENTRY),
-          approved_by: 'fixture-operator',
-          approved_at: '2026-10-19T12:00:00.000Z',
-        },
-      ]),
-      'utf8',
-    );
     const accepted = await fetch(`${service.origin}/api/council/convene`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

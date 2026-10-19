@@ -1922,7 +1922,7 @@ CTA placement: Opening standalone CTA required.
 One dominant claim, a secondary offer connection, and an opening CTA group. Mark a few meaningful phrases for emphasis. Keep the photograph in support of the promise, not above it at the expense of the first view.
 -->
 <!-- MOBILE COMPOSITION NOTE - NOT FOR PUBLICATION:
-Phone order: claim, named-offer support, first CTA, then hero image. Use complete phrase groups in the headline; H1 40/44 plus selected 28/36 emphasis. Keep long copy out of image overlays.
+Phone order: claim, named-offer support, first CTA, then hero image. Use complete phrase groups in the headline; H1 40/44 plus selected 28/36 emphasis. Keep long body copy (more than 60 words) off photos: it goes on a card, the scrim side or a plain band. Headlines, captions and short CTA reasons may sit on a photo, inside the slot's copy zone and clear of its subject zone (references/composition-treatments.json).
 -->
 
 

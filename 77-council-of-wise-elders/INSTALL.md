@@ -25,8 +25,8 @@ runtime and packs land.
 
 Required to run (later units, stated here so nobody mistakes an installed
 scaffold for a working council): a valid client scope, approved source
-packs, a selected functioning route, a data store, budget and permission,
-and sufficient context and capacity.
+packs, a selected functioning route, a data store, and sufficient context and
+capacity.
 
 Required for visual managed mode: a compatible Command Center, an
 authenticated pairing and scope, the council migration applied through the
@@ -189,59 +189,23 @@ From the INSTALLED folder (not only the source tree):
 
 ## Step 9: Permitted live acceptance
 
-Only with explicit authorization, a real client-selected route, and a
-recorded budget:
+Only with a real client-selected route:
 
 - The runtime and all nine advisor packs are built and ship in this
   package. Live acceptance convenes one bounded council on a
   synthetic, unmistakably labeled fixture decision through the
-  installed runtime, under the run-authorization lifecycle (preview,
-  approve, start), and verifies the full report order in
-  references/report-template.md, the saved session readback, and the
-  provider usage against the recorded budget.
-- Without that authorization, record the installation as
+  installed runtime (convening is the approval; there is no separate
+  approval step), and verifies the full report order in
+  references/report-template.md and the saved session readback.
+- Without a live route, record the installation as
   INSTALLED_NOT_LIVE_VERIFIED: installed and offline-verified, live
   unverified. Never simulate a session or invent a verdict to fill
   the gap.
 - The not-ready report is still the correct result wherever a named
   prerequisite is actually missing (no client-selected route, no
-  compatible Command Center release for managed mode, no run grant);
+  compatible Command Center release for managed mode);
   it names the missing prerequisite precisely rather than claiming
   the council itself is unbuilt.
-
-## Step 9b: Route budget (first-run operator step)
-
-A fresh install ships `config/route-budgets.json` with every route
-unmeasured, so the first convene on any route is refused with
-`COMPOSITION_NOT_READY` and a message naming the route and these steps.
-This is deliberate: the budget converts the model's token limits into the
-byte limits the council can count, and a wrong number wastes paid calls.
-Nothing is approved automatically, and the client cannot approve it.
-
-1. Measure, only if the refusal says the route is "not measured"
-   (operator, from the skill folder; spends the client's model allowance,
-   so only with their go): `node scripts/measure-route-bytes-per-token.mjs
-   --route ID --write`. It sends eight small fixed samples, prints the
-   PROPOSED entry, and writes it to this skill folder's
-   `config/route-budgets.json` (or the file named by
-   `WISE_ELDERS_ROUTE_BUDGETS`). It approves nothing. If the refusal says
-   "awaiting approval", skip this step: measuring again replaces the numbers
-   being reviewed. A fleet `update-skills` sync replaces the skill folder,
-   so a locally measured entry is lost on update until the approved numbers
-   are committed to the shipped `config/route-budgets.json`.
-   `--save-measurements FILE` keeps the raw readings; `--measurements FILE`
-   recomputes the same entry offline with no model call.
-2. Review the proposed numbers (smallest bytes per token, safety factor,
-   context window, output limit).
-3. Approve exactly those numbers: `node scripts/approve-route-budget.mjs
-   --route ID --approved-by NAME --data-dir DIR`. DIR is the council
-   service data folder, outside the skill folder. If the proposed numbers
-   change later, the approval no longer matches and the route returns to
-   "awaiting approval".
-4. No restart is needed: the service re-reads both files on every convene.
-
-Each route (Claude, claude-nine, DeepSeek) needs its own measurement and
-approval before it can convene.
 
 ## Step 10: Release receipt
 

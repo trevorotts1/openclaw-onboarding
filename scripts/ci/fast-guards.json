@@ -1284,6 +1284,7 @@
      "shared-utils/oct4_frontdoor.py",
      "shared-utils/lib-frontdoor.sh",
      "tests/unit/one-front-door-full-path.test.sh",
+     "tests/unit/frontdoor-verdict-after-install.test.sh",
      ".github/workflows/one-front-door-full-path-guard.yml"
     ]
    },
@@ -1299,6 +1300,7 @@
      "shared-utils/oct4_frontdoor.py",
      "shared-utils/lib-frontdoor.sh",
      "tests/unit/one-front-door-full-path.test.sh",
+     "tests/unit/frontdoor-verdict-after-install.test.sh",
      ".github/workflows/one-front-door-full-path-guard.yml"
     ]
    }
@@ -3391,6 +3393,42 @@
      "scripts/ci/fast-guards.d/tamper-guard-manifest.sh",
      "tests/unit/tamper-guard.test.py",
      "**/integrity-manifest.json"
+    ]
+   }
+  }
+ },
+ {
+  "name": "can004-frontdoor-gate-guard",
+  "was": "(new, CAN004)",
+  "script": "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/lib-frontdoor.sh",
+     "shared-utils/oct4_frontdoor.py",
+     "scripts/health/library-gate-check.sh",
+     "23-ai-workforce-blueprint/scripts/repair/repair-directors-doctrine.py",
+     "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
+     "tests/unit/frontdoor-gate-fail-not-module-error.test.sh",
+     "tests/unit/gate-repair-empty-department.test.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/lib-frontdoor.sh",
+     "shared-utils/oct4_frontdoor.py",
+     "scripts/health/library-gate-check.sh",
+     "23-ai-workforce-blueprint/scripts/repair/repair-directors-doctrine.py",
+     "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
+     "tests/unit/frontdoor-gate-fail-not-module-error.test.sh",
+     "tests/unit/gate-repair-empty-department.test.sh"
     ]
    }
   }

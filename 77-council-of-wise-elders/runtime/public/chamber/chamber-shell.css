@@ -156,6 +156,7 @@
 /* Past sessions */
 .ch-sessions-status { margin: 0 0 var(--ch-space-3); font-size: 14px; line-height: 1.5; color: var(--ch-ink-muted); }
 .ch-sessions-status:empty { display: none; }
+.ch-sessions-hint { margin: var(--ch-space-3) 0 0; font-size: 14px; line-height: 1.5; color: var(--ch-ink-muted); }
 .ch-sessions-list { list-style: none; margin: 0 0 var(--ch-space-3); padding: 0; display: grid; gap: var(--ch-space-2); }
 .ch-sessions-item {
   display: grid;

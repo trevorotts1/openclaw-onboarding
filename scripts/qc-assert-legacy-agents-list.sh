@@ -158,7 +158,7 @@ fi
 # repo's dev boxes run Homebrew bash 5.x, so a heredoc form that parses fine
 # during authoring can abort on every client box. Same two-step, and the same
 # reason, as scripts/qc-assert-config-write-chown.sh.
-QC_PY_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/qc-legacy-agents-list-analysis.XXXXXX.py")"
+QC_PY_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/qc-legacy-agents-list-analysis.XXXXXX")"
 cat > "$QC_PY_SCRIPT" <<'PYEOF'
 import json
 import sys

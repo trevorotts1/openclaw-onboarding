@@ -132,33 +132,33 @@ test('convene --brief and --fresh-facts files are sent; origin comes from env th
 test('convene: a 503 COMPOSITION_NOT_READY refusal prints code and recovery, exit 3', async () => {
   const f = fakeFetch(503, {
     code: 'COMPOSITION_NOT_READY',
-    detail: { unbound: ['routeBudget'] },
-    recovery: 'Approve the route budget, then retry.',
+    detail: { unbound: ['material_catalog'] },
+    recovery: 'Bind the missing services, then retry.',
   });
   const c = capture();
   const code = await runConvene(['--sample'], { fetchImpl: f.fetchImpl, env: {}, io: c.io });
   assert.equal(code, 3);
   assert.equal(c.out(), '');
   assert.ok(c.err().includes('COMPOSITION_NOT_READY'));
-  assert.ok(c.err().includes('routeBudget'));
-  assert.ok(c.err().includes('Approve the route budget, then retry.'));
+  assert.ok(c.err().includes('material_catalog'));
+  assert.ok(c.err().includes('Bind the missing services, then retry.'));
 
   const j = capture();
   await runConvene(['--sample', '--json'], { fetchImpl: f.fetchImpl, env: {}, io: j.io });
   const env = JSON.parse(j.err());
   assert.equal(env.error.code, 'COMPOSITION_NOT_READY');
-  assert.equal(env.error.action, 'Approve the route budget, then retry.');
+  assert.equal(env.error.action, 'Bind the missing services, then retry.');
 });
 
 test('convene: a refusal with a plain-English summary prints the summary, not raw JSON', async () => {
   const f = fakeFetch(503, {
     code: 'COMPOSITION_NOT_READY',
-    detail: { unbound: ['route_budget'], summary: 'no route has an approved budget yet' },
-    recovery: 'Ask the operator to approve the route budget.',
+    detail: { unbound: ['material_catalog'], summary: 'the elder catalog is not bound yet' },
+    recovery: 'Bind the missing services, then retry.',
   });
   const c = capture();
   await runConvene(['--sample'], { fetchImpl: f.fetchImpl, env: {}, io: c.io });
-  assert.ok(c.err().includes('no route has an approved budget yet'));
+  assert.ok(c.err().includes('the elder catalog is not bound yet'));
   assert.ok(!c.err().includes('"unbound"'));
 });
 
@@ -198,7 +198,6 @@ test('routes --json prints the service JSON unchanged', async () => {
   const body = {
     routes: [{ route_id: 'claude-configured', provider_slug: 'claude', kind: 'harness', composable: true, failure_code: null, default_for: ['claude-code'] }],
     harness_defaults: { 'claude-code': { route_id: 'claude-configured', model: 'sonnet' } },
-    budgets: [],
   };
   const f = fakeFetch(200, body);
   const c = capture();

@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.43"
+ONBOARDING_VERSION="v27.1.44"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2051,7 +2051,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.43 - safe_json_edit
+# v27.1.44 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4479,6 +4479,7 @@ _content_current_exit() {
     echo "  → [CONTENT RECHECK] skills content is current, but the GHL MCP retirement/convergence check FAILED — exiting 2, never 0." >&2
     exit 2
   fi
+  if declare -F frontdoor_final_verdict >/dev/null 2>&1; then frontdoor_final_verdict || exit $?; fi
   exit 0
 }
 # <<< GHL-MCP-RETIREMENT-GATE-END
@@ -4645,6 +4646,27 @@ retire_legacy_sunday_crontab() {
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
+# CAN006: the front-door verdict that decides this run's exit code. The early
+# tail in main() only latches (_FD_EARLY_RC); once the install + manifest/stamp
+# are done, a failed early verdict is re-judged against the freshly installed
+# tree. Returns 0 (clean now) or the early rc (still failing: 2 gate, 1 no stage).
+# Callers: _content_current_exit and the end of main(), before registry-parity.
+frontdoor_final_verdict() {
+  [ "${_FD_EARLY_RC:-0}" -ne 0 ] || return 0
+  if [ -n "${_FRONTDOOR_STAGE_PY:-}" ] && declare -F frontdoor_run_stage >/dev/null 2>&1; then
+    echo "  ℹ [FRONT DOOR] re-running the shared stage against the freshly installed tree..."
+    if frontdoor_run_stage "${_FRONTDOOR_STAGE_PY}"; then
+      echo "  ✓ [FRONT DOOR] repairs + health gate clean after the install ($FRONTDOOR_STATUS)"
+      echo "${FRONTDOOR_JSON:-{\"frontdoor\":{\"status\":\"$FRONTDOOR_STATUS\"}}}" \
+        > "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+      return 0
+    fi
+    rm -f "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+  fi
+  echo "  ✗ [FRONT DOOR] still failing after the install -- content is current (stamp written); exiting ${_FD_EARLY_RC} = infrastructure needs attention" >&2
+  return "$_FD_EARLY_RC"
+}
+
 main() {
   # ----------------------------------------------------------
   # U001 — MUTEX (MUST stay the first action in main): take the global
@@ -4933,7 +4955,17 @@ main() {
       fi
     fi
   fi
-  if [ "$fd_rc" -ne 0 ]; then exit "$fd_rc"; fi
+  # CAN006 (fleet roll 20261019): this tail runs BEFORE the content install and
+  # the manifest/stamp write below, so it judges the box's PREVIOUS tree. It used
+  # to `exit` here -- a gate failure on the old tree (e.g. a department without a
+  # director) aborted the update that ships the repair, leaving the stamp and
+  # .onboarding-content-manifest.json at the old version (the roll then failed
+  # role-library: "content manifest is for v27.1.29, not v27.1.36"). Latch the
+  # verdict instead and re-run the stage after the install: frontdoor_final_verdict.
+  _FD_EARLY_RC="$fd_rc"
+  if [ "$fd_rc" -ne 0 ]; then
+    echo "  ℹ [FRONT DOOR] verdict on the PRE-update tree was rc=$fd_rc -- continuing the install, the stage re-runs against the new tree before exit" >&2
+  fi
 
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
@@ -5927,6 +5959,19 @@ except Exception:
 
     local _pip_db_dir="$HOME/.openclaw/workspace/data/coaching-personas"
     [ -d "/data/.openclaw" ] && _pip_db_dir="/data/.openclaw/workspace/data/coaching-personas"
+    # CAN013: a local-Ollama-mode index (provider='ollama' rows) is deliberately
+    # NOT the Gemini asset, so its sentinel never equals release_tag; U6b keeps it
+    # by design. Reporting it stale would force a full pass on every roll forever.
+    local _pip_local=0
+    _pip_local="$(python3 -c 'import sqlite3,sys
+try:
+    c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True); print(c.execute("SELECT COUNT(*) FROM embeddings WHERE provider = \"ollama\"").fetchone()[0]); c.close()
+except Exception:
+    print(0)' "$_pip_db_dir/gemini-index.sqlite" 2>/dev/null || echo 0)"
+    if [ "${_pip_local:-0}" -gt 0 ] 2>/dev/null; then
+      echo "  ✓ [PERSONA INDEX] state=local-mode ($_pip_local provider=ollama rows) — sentinel not applicable"
+      return 0
+    fi
     local _pip_sentinel=""
     _pip_sentinel="$(cat "$_pip_db_dir/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
 
@@ -7360,12 +7405,21 @@ try:
 except Exception:
     print("")' "$_U6B_MANIFEST" 2>/dev/null || true)"
       _U6B_SENTINEL_VAL="$(cat "$_U6B_COACHING_DB_DIR/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
-      if [ "${_RECONCILE_OK:-1}" = "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; then
+      # CAN013: a local-Ollama-mode box (provision_persona_index sets
+      # _PIDX_LOCAL_MODE=1) KEEPS its own index by design, so its sentinel can
+      # never reach the Gemini release_tag. That is not an incomplete provision.
+      _U6B_SENTINEL_NA=0
+      [ "${_PIDX_LOCAL_MODE:-0}" = "1" ] && _U6B_SENTINEL_NA=1
+      if [ "${_RECONCILE_OK:-1}" = "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || { [ "$_U6B_SENTINEL_NA" != "1" ] && [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; }; then
         _U6B_PERSONA_FAIL=1
         _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index completion re-assertion FAILED (reconcile_ok=${_RECONCILE_OK:-unset}, sentinel=${_U6B_SENTINEL_VAL:-<missing>}, manifest release_tag=${_U6B_RELEASE_TAG:-<unknown>}) — persona provisioning incomplete on this box"
         echo "  ✗ [D3] U6b completion re-assertion FAILED — sentinel(${_U6B_SENTINEL_VAL:-<missing>}) != release_tag(${_U6B_RELEASE_TAG:-<unknown>}) or reconcile not ok(${_RECONCILE_OK:-unset})"
       else
-        echo "  ✓ [D3] U6b completion re-assertion PASSED (sentinel == manifest release_tag, reconcile ok)"
+        if [ "$_U6B_SENTINEL_NA" = "1" ]; then
+          echo "  ✓ [D3] U6b completion re-assertion PASSED (local Ollama mode: own index kept by design, sentinel n/a, reconcile ok)"
+        else
+          echo "  ✓ [D3] U6b completion re-assertion PASSED (sentinel == manifest release_tag, reconcile ok)"
+        fi
       fi
 
       # F2.1: if a re-download could not preserve some client-local persona
@@ -12656,6 +12710,10 @@ BACKUP_BLOCK
   # whatever exit code the rest of this run would otherwise report and exits
   # 78 (EX_CONFIG) directly, the moment it is detected, rather than folding
   # into the normal return-code decision tree.
+  # CAN006: re-judge a failed pre-install front-door verdict now that the new
+  # tree and stamp are in place; folded into the final return code below.
+  _FD_FINAL_RC=0
+  frontdoor_final_verdict || _FD_FINAL_RC=$?
   _REGISTRY_PARITY_POST_RC=0
   registry_parity_gate post || _REGISTRY_PARITY_POST_RC=$?
   if [ "$_REGISTRY_PARITY_POST_RC" -ne 0 ]; then
@@ -12721,7 +12779,7 @@ BACKUP_BLOCK
   if [ "${_PRES_DEPS_CONVERGE_RC:-0}" -ne 0 ]; then
     return 2
   fi
-  return 0
+  return "${_FD_FINAL_RC:-0}"
 }
 
 main "$@"

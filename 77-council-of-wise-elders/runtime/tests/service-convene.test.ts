@@ -8,13 +8,11 @@
  *
  * Proven here:
  * - GET /api/council/routes lists the configured routes;
- * - with no operator budget approval POST /api/council/convene is a 503
- *   COMPOSITION_NOT_READY that creates no session;
- * - writing a matching approval file lets the very next convene succeed
- *   with no service restart: 202, then an SSE client on events_path
- *   receives the session's state transitions, cards and verdict, in
- *   order, from council_events;
- * - a route without an approved budget is refused per session;
+ * - a fresh install (no approval file of any kind) convenes at once:
+ *   202, then an SSE client on events_path receives the session's state
+ *   transitions, cards and verdict, in order, from council_events;
+ * - a route with no measured numbers convenes too, on the built-in
+ *   conservative defaults;
  * - a malformed body is a typed 422, and the endpoint sits behind the
  *   same fence as admissions.
  *
@@ -28,11 +26,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import {
-  entrySha256,
-  routeBudgetApprovalsPath,
-  type RouteBudgetEntry,
-} from '../src/budgets/route-budget.js';
+import type { RouteBudgetEntry } from '../src/budgets/route-budget.js';
 import { DeterministicFixtureTransport } from '../src/cli/fixture-transport.js';
 import {
   startCouncilService,
@@ -66,17 +60,10 @@ function entry(routeId: string, model: string | null): RouteBudgetEntry {
 
 const ENTRIES = [entry('claude-nine-configured', null), entry('claude-configured', 'sonnet')];
 
-function approvalFor(e: RouteBudgetEntry): Record<string, unknown> {
-  return {
-    route_id: e.route_id,
-    model: e.model,
-    entry_sha256: entrySha256(e),
-    approved_by: 'fixture-operator',
-    approved_at: '2026-10-19T12:00:00.000Z',
-  };
-}
-
-async function startFixture(extraEnv: Record<string, string> = {}): Promise<Fixture> {
+async function startFixture(
+  extraEnv: Record<string, string> = {},
+  entries: RouteBudgetEntry[] = ENTRIES,
+): Promise<Fixture> {
   const root = mkdtempSync(join(tmpdir(), 'w28-convene-'));
   const dataDir = join(root, 'data');
   const home = join(root, 'home');
@@ -92,7 +79,7 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Fixt
   const configPath = join(root, 'route-budgets.json');
   writeFileSync(
     configPath,
-    JSON.stringify({ schema: 'wise-elders.route-budgets/v1', entries: ENTRIES }),
+    JSON.stringify({ schema: 'wise-elders.route-budgets/v1', entries }),
     'utf8',
   );
   const service = await startCouncilService({
@@ -189,7 +176,6 @@ test('GET /api/council/routes lists the configured routes through the real liste
     const body = (await response.json()) as {
       routes: Array<{ route_id: string; composable: boolean; default_for: string[] }>;
       harness_defaults: Record<string, { route_id: string; model: string }>;
-      budgets: Array<{ route_id: string; model: string | null; state: string }>;
     };
     assert.deepEqual(
       body.routes.map((r) => r.route_id).sort(),
@@ -200,38 +186,17 @@ test('GET /api/council/routes lists the configured routes through the real liste
       route_id: 'claude-nine-configured',
       model: 'harness_default',
     });
-    assert.deepEqual(
-      body.budgets.map((b) => [b.route_id, b.model, b.state]),
-      [
-        ['claude-nine-configured', null, 'awaiting_approval'],
-        ['claude-configured', 'sonnet', 'awaiting_approval'],
-      ],
-    );
+    assert.equal('budgets' in body, false, 'no approval state is offered to the client');
   } finally {
     await stopFixture(fixture);
   }
 });
 
-test('convene is refused 503 until the operator approves, then runs with no restart', async () => {
+test('a fresh install convenes at once: no approval step, no restart', async () => {
   const fixture = await startFixture();
   try {
     const db = fixture.service.composition.backend.repositories;
-    // 1. No approval: refused before any session or grant exists.
-    const refused = await convene(fixture.origin, { sample: true, route_id: 'claude-nine-configured' });
-    assert.equal(refused.status, 503);
-    const refusedBody = (await refused.json()) as {
-      code: string;
-      detail: { unbound: string[]; checks: Array<{ name: string; detail: string }> };
-      recovery: string;
-    };
-    assert.equal(refusedBody.code, 'COMPOSITION_NOT_READY');
-    assert.deepEqual(refusedBody.detail.unbound, ['route_budget']);
-    assert.match(refusedBody.detail.checks[0].detail, /awaiting operator approval/);
-    assert.match(refusedBody.detail.checks[0].detail, /3\.1 min bytes per token/);
-    // Measured and awaiting approval: approve only. Measuring again would
-    // overwrite the numbers the operator is about to review.
-    assert.doesNotMatch(refusedBody.recovery, /measure-route-bytes-per-token/);
-    assert.match(refusedBody.recovery, /approve-route-budget\.mjs --route claude-nine-configured/);
+    assert.equal(existsSync(join(fixture.dataDir, 'route-budget-approvals.json')), false);
     // A route that does not exist is refused as such, never given a command.
     const unknown = await convene(fixture.origin, { sample: true, route_id: 'no-such-route' });
     const unknownBody = (await unknown.json()) as { code: string; recovery: string };
@@ -244,14 +209,7 @@ test('convene is refused 503 until the operator approves, then runs with no rest
       'a refused convene creates no session',
     );
 
-    // 2. The operator approval is one file in the service data dir.
-    writeFileSync(
-      routeBudgetApprovalsPath(fixture.dataDir),
-      JSON.stringify([approvalFor(ENTRIES[0])]),
-      'utf8',
-    );
-
-    // 3. The very next convene succeeds. Nothing restarted.
+    // The very first convene on a fresh install succeeds.
     const accepted = await convene(fixture.origin, {
       sample: true,
       route_id: 'claude-nine-configured',
@@ -325,33 +283,20 @@ test('convene is refused 503 until the operator approves, then runs with no rest
   }
 });
 
-test('a route whose budget is not approved is refused per session, even when another is approved', async () => {
-  const fixture = await startFixture();
+test('a route with no measured numbers convenes too, on the built-in defaults', async () => {
+  const fixture = await startFixture({}, []);
   try {
-    writeFileSync(
-      routeBudgetApprovalsPath(fixture.dataDir),
-      JSON.stringify([approvalFor(ENTRIES[0])]),
-      'utf8',
-    );
-    const backend = fixture.service.composition.backend;
-    const refused = await convene(fixture.origin, {
+    assert.equal(existsSync(join(fixture.dataDir, 'route-budget-approvals.json')), false);
+    const accepted = await convene(fixture.origin, {
       sample: true,
       route_id: 'claude-configured',
       model: 'sonnet',
+      requested_by: 'fixture-client',
     });
-    assert.equal(refused.status, 503);
-    const body = (await refused.json()) as {
-      code: string;
-      detail: { route_id: string; route_budget_state: string; summary: string };
-      recovery: string;
-    };
-    assert.equal(body.code, 'COMPOSITION_NOT_READY');
-    assert.equal(body.detail.route_id, 'claude-configured');
-    assert.equal(body.detail.route_budget_state, 'awaiting_approval');
-    assert.match(body.detail.summary, /awaiting operator approval/);
-    assert.doesNotMatch(body.recovery, /measure-route-bytes-per-token/);
-    assert.match(body.recovery, /approve-route-budget\.mjs --route claude-configured/);
-    assert.equal(backend.repositories.listSessions(backend.ownerEnvelope).length, 0);
+    assert.equal(accepted.status, 202);
+    const body = (await accepted.json()) as { events_path: string };
+    const frames = await readEvents(`${fixture.origin}${body.events_path}`, 'COMPLETED');
+    assert.ok(frames.some((f) => f.to_state === 'COMPLETED'));
   } finally {
     await stopFixture(fixture);
   }
@@ -367,11 +312,6 @@ test('a malformed convene body is a typed 422 and creates nothing', async () => 
       assert.match(body.code, /^CONVENE_BODY_/);
     }
     // An unknown route is the driver's typed refusal, not a crash.
-    writeFileSync(
-      routeBudgetApprovalsPath(fixture.dataDir),
-      JSON.stringify([approvalFor(ENTRIES[0])]),
-      'utf8',
-    );
     const unknown = await convene(fixture.origin, { sample: true, route_id: 'nope-configured' });
     assert.equal(unknown.status, 409);
     assert.equal(((await unknown.json()) as { code: string }).code, 'ROUTE_NOT_CONFIGURED');
@@ -389,11 +329,6 @@ test('a malformed convene body is a typed 422 and creates nothing', async () => 
 test('both endpoints sit behind the admission fence: a draining service convenes nothing', async () => {
   const fixture = await startFixture();
   try {
-    writeFileSync(
-      routeBudgetApprovalsPath(fixture.dataDir),
-      JSON.stringify([approvalFor(ENTRIES[0])]),
-      'utf8',
-    );
     fixture.service.composition.door.drain();
     const fenced = await convene(fixture.origin, { sample: true, route_id: 'claude-nine-configured' });
     assert.equal(fenced.status, 503);
@@ -424,11 +359,6 @@ test('each seat\'s knowledge layer is journaled: live Book-to-Persona where pres
   );
   const fixture = await startFixture({ BOOK_TO_PERSONA_ROOT: store });
   try {
-    writeFileSync(
-      routeBudgetApprovalsPath(fixture.dataDir),
-      JSON.stringify([approvalFor(ENTRIES[0])]),
-      'utf8',
-    );
     const accepted = await convene(fixture.origin, {
       sample: true,
       route_id: 'claude-nine-configured',
