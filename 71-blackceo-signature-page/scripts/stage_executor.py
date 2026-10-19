@@ -69,6 +69,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import reference_use  # noqa: E402  SPF022: reference images are structure only
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
+OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
 
@@ -778,7 +779,28 @@ def record_bleed(entry: dict, out: Path, request: dict, provider, stage: str) ->
                   f"{json.dumps(bleed, sort_keys=True)[:400]}")
 
 
-def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
+def overview_boards(stage: str, run_dir: Path, provider, request_name: str,
+                    expect: int | None = None) -> dict:
+    """Second client deliverable next to the review PDFs: the combined
+    overview boards (desktop, mobile, and the combined desktop + mobile board),
+    all sections on one image each (references/overview-board.md).
+    Pure Pillow, no provider call; fails closed on a missing section. Stub
+    mode never composes, same as compose()."""
+    if provider.name != "kie":
+        return {"status": "skipped", "reason": "stub provider writes placeholders only"}
+    cmd = [sys.executable, str(OVERVIEW_BOARD), str(run_dir), "--stage", stage,
+           "--request", request_name]
+    if expect:
+        cmd += ["--expect", str(expect)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(SKILL_ROOT))
+    return {"status": "pass" if proc.returncode == 0 else "fail",
+            "command": f"build_overview_board.py {run_dir} --stage {stage}",
+            "exit": proc.returncode,
+            "output": (proc.stdout + proc.stderr).strip()[:600]}
+
+
+def run_stage(stage: str, run_dir: Path, request: dict, provider,
+              request_name: str = DEFAULT_REQUEST) -> dict:
     if stage not in LAYOUT:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
     sections = request["sections"]
@@ -829,6 +851,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                           f"{entry['geometry_mismatch']}")
             records.append(entry)
     composition = compose(stage, run_dir, provider)
+    composition["overview_boards"] = overview_boards(
+        stage, run_dir, provider, request_name, len(sections))
     record = {
         "stage": stage,
         "provider": provider.name,
@@ -974,7 +998,7 @@ def main(argv=None) -> int:
             return 0
         request = load_request(run_dir, args.request)
         for stage in stages:
-            record = run_stage(stage, run_dir, request, provider)
+            record = run_stage(stage, run_dir, request, provider, args.request)
             files = len(record["images"])
             print(f"STAGE {stage} images={files} provider={record['provider']} "
                   f"mode={record['mode']} record={stage}/{RECORD}")
@@ -983,6 +1007,13 @@ def main(argv=None) -> int:
             comp = record["composition"]
             print(f"COMPOSE {stage} status={comp.get('status')}"
                   + (f" reason={comp.get('reason')}" if comp.get("reason") else ""))
+            board = comp.get("overview_boards")
+            if board:
+                print(f"OVERVIEW_BOARD {stage} status={board['status']}"
+                      + (f"\n{board['output']}" if board.get("output") else ""))
+                if board["status"] == "fail":
+                    print(f"FAIL: {stage} overview boards did not build; the client set is not ready")
+                    return 1
         return 0
     except ExecutorError as exc:
         print(f"FAIL: {exc}")
