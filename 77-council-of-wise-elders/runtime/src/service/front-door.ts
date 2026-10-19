@@ -109,6 +109,12 @@ function chamberAssetRoot(): URL | null {
   return null;
 }
 
+/** The chamber is only a landing target when its own entry page exists. */
+function chamberLandingReady(): boolean {
+  const root = chamberAssetRoot();
+  return root !== null && existsSync(new URL('index.html', root));
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
@@ -424,9 +430,26 @@ export class CouncilFrontDoor {
     }
     const method = req.method ?? 'GET';
 
-    // Root landing page only. Every other unknown path still falls through
-    // to the SERVICE_ROUTE_NOT_FOUND catch-all unchanged.
+    // The chamber is what a person opening this URL came for. When the
+    // packaged entry page exists, `/` redirects to it with a relative
+    // Location (never an absolute loopback URL an authenticated phone
+    // cannot reach). Without the assets the root keeps the honest status
+    // page, and the diagnostics always remain reachable at `/status`.
     if (method === 'GET' && path === '/') {
+      if (chamberLandingReady()) {
+        res.writeHead(302, {
+          location: '/chamber/',
+          'content-length': 0,
+          'cache-control': 'no-store',
+        });
+        res.end();
+        return;
+      }
+      sendHtml(res, await this.renderLanding());
+      return;
+    }
+
+    if (method === 'GET' && path === '/status') {
       sendHtml(res, await this.renderLanding());
       return;
     }
