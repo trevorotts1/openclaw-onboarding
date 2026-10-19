@@ -691,6 +691,14 @@ class FrozenRegistryConformanceTest(unittest.TestCase):
                 name: (SYNTHETIC_TENANT if name == "locationId" else "synthetic_value")
                 for name in re.findall(r"\{([^{}]+)\}", frozen.path_template)
             }
+            # GHL-150: a row may declare a required query parameter (and a
+            # closed value set).  Supply the documented value; the omission
+            # refusal is covered by tests/test_public_media_required_query.py.
+            enums = dict(frozen.query_enums)
+            query = {
+                name: (enums.get(name) or ("synthetic_value",))[0]
+                for name in tuple(frozen.required_query)
+            }
             transport.responses = [resp(200)]
             adapter = make_adapter(
                 transport,
@@ -703,6 +711,7 @@ class FrozenRegistryConformanceTest(unittest.TestCase):
                     operation_id=frozen.operation_id,
                     tenant=fake_tenant(),
                     path_params=params or None,
+                    query=query or None,
                 )
                 self.assertEqual(transport.last["version"], frozen.version)
                 self.assertEqual(result.version_header, frozen.version)

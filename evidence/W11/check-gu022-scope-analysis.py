@@ -30,6 +30,21 @@ ANALYSIS = os.path.join(EVIDENCE, "gu022-403-scope-analysis.md")
 FACTS = os.path.join(EVIDENCE, "ghl-111-scope-facts.json")
 TENANT = "XCgFTEA1oDvsPnTqqgoB"
 
+# GHL-150 (2026-10-19): real 200s were observed on this tenant for exactly
+# these operations.  The checked-in record is bound to it, and the tenant this
+# analysis probed stays unbound, which is still default-deny here.
+VERIFIED_TENANT = "Mct54Bwi1KlNouGXQcDX"
+VERIFIED_OPERATIONS = frozenset(
+    {
+        "locations.get",
+        "contacts.list",
+        "contacts.search",
+        "custom_fields.list",
+        "pipelines.list",
+        "media.files.list",
+    }
+)
+
 
 def check_registry() -> None:
     # GHL-140 registered the read the analysis said was missing. Registration is
@@ -59,6 +74,7 @@ def check_documents() -> dict:
         "This location is not accessible from this token!",
         "GET /locations/{locationId}",
         "capability_disabled",
+        "Mct54Bwi1KlNouGXQcDX",
     ):
         assert needle in text, f"analysis missing: {needle}"
     assert facts["credential_never_printed"] is True
@@ -93,6 +109,24 @@ def check_gate() -> None:
         assert result.status.value == "denied", (op, result.status)
         assert result.http_status is None, (op, result.http_status)
         assert (result.error or {}).get("rule") == "capability_disabled", (op, result.error)
+
+
+def check_capability_record() -> None:
+    from gohighlevel.public.capability import load_capability_record
+
+    gate = load_capability_record(tenant=VERIFIED_TENANT)
+    assert len(gate) == len(VERIFIED_OPERATIONS), len(gate)
+    for operation_id in sorted(VERIFIED_OPERATIONS):
+        capability = gate.get(operation_id)
+        assert capability.enabled, operation_id
+        assert capability.read_verified, operation_id
+        assert capability.activation == "VERIFIED", operation_id
+        assert not capability.provisional, operation_id
+    for operation_id in ("contacts.get", "media.upload", "pipelines.get"):
+        assert not gate.get(operation_id).enabled, operation_id
+    # The tenant this analysis probed is not the verified tenant, so the record
+    # loads nothing for it: tenant mismatch still fails closed.
+    assert len(load_capability_record(tenant=TENANT)) == 0
 
 
 def check_no_secret_in_evidence(docs: dict) -> None:
@@ -133,5 +167,9 @@ if __name__ == "__main__":
     check_registry()
     docs = check_documents()
     check_gate()
+    check_capability_record()
     check_no_secret_in_evidence(docs)
-    print("OK: registry, scopes, default-deny gate and no-secret checks passed")
+    print(
+        "OK: registry, scopes, default-deny gate, capability record and "
+        "no-secret checks passed"
+    )
