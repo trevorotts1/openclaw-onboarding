@@ -288,8 +288,18 @@ test('copy table: headline, round label and explainer for each state', () => {
   S.apply(m, stateFrame(1, 'ROUND_1'));
   assert.equal(
     S.view(m, 0).round.explain,
-    'Each advisor writes an independent position on claude-configured (sonnet-test). Their lines play here as soon as the round is in.',
+    'Each advisor writes an independent position on Claude Code (sonnet-test). Their lines play here as soon as the round is in.',
   );
+  // A raw route id never reaches the explainer: a friendly label stands in.
+  assert.equal(S.routeLabel('demo-replay', null), 'Sample replay');
+  assert.equal(S.routeLabel('deepseek-configured', 'latest_deepseek_flash'), 'DeepSeek (newest DeepSeek Flash)');
+  assert.equal(S.routeLabel('claude-nine-configured', 'harness_default'), 'Claude Code (Nine)');
+  assert.equal(S.routeLabel('some-new-route', 'glm-5.3'), 'glm-5.3');
+  assert.equal(S.routeLabel('some-new-route', null), 'the selected model');
+  assert.equal(S.routeLabel(null, null), '');
+  const sample = S.create({ session_id: 'x', brief: { question: 'q', options: OPTIONS }, spec: { mode: 'consult', seat_ids: ['simon-sinek'], model_policy: { route_id: 'demo-replay', requested_model_id: null } } });
+  S.apply(sample, stateFrame(1, 'ROUND_1'));
+  assert.equal(S.view(sample, 0).round.explain, 'Each advisor writes an independent position on Sample replay. Their lines play here as soon as the round is in.');
   const bare = S.create({ session_id: 'x', brief: { question: 'q', options: OPTIONS } });
   S.apply(bare, stateFrame(1, 'ROUND_1'));
   assert.equal(S.view(bare, 0).round.explain, 'Each advisor writes an independent position. Their lines play here as soon as the round is in.');

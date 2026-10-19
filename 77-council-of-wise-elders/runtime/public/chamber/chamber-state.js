@@ -18,7 +18,7 @@
  * card_accepted never carries the card text, so a card is "pending" until
  * applyRecord supplies its content from the session read.
  *
- * API: ns.state = {create, apply, applyRecord, view, stepOf}.
+ * API: ns.state = {create, apply, applyRecord, view, stepOf, routeLabel}.
  */
 (function (root) {
   'use strict';
@@ -347,8 +347,25 @@
     return s.replace(/_/g, ' ');
   }
 
+  /* Friendly names for the model routes: a raw route id never reaches the screen. */
+  var ROUTE_LABELS = {
+    'demo-replay': 'Sample replay',
+    'claude-configured': 'Claude Code',
+    'claude-nine-configured': 'Claude Code (Nine)',
+    'deepseek-configured': 'DeepSeek'
+  };
+  var MODEL_LABELS = { latest_deepseek_flash: 'newest DeepSeek Flash', harness_default: '' };
+
+  function routeLabel(routeId, model) {
+    if (!routeId) return '';
+    var m = has(MODEL_LABELS, model) ? MODEL_LABELS[model] : model || '';
+    var name = has(ROUTE_LABELS, routeId) ? ROUTE_LABELS[routeId] : m || 'the selected model';
+    return has(ROUTE_LABELS, routeId) && m ? name + ' (' + m + ')' : name;
+  }
+
   function explainer(m) {
-    var route = m.route.routeId ? ' on ' + m.route.routeId + (m.route.model ? ' (' + m.route.model + ')' : '') : '';
+    var label = routeLabel(m.route.routeId, m.route.model);
+    var route = label ? ' on ' + label : '';
     return 'Each advisor writes an independent position' + route + '. Their lines play here as soon as the round is in.';
   }
 
@@ -482,5 +499,5 @@
     };
   }
 
-  ns.state = { create: create, apply: apply, applyRecord: applyRecord, view: view, stepOf: stepOf };
+  ns.state = { create: create, apply: apply, applyRecord: applyRecord, view: view, stepOf: stepOf, routeLabel: routeLabel };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -24,7 +24,7 @@ const roomCss = readFileSync(join(chamberDir, 'chamber-room.css'), 'utf8');
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Any = any;
 
-const SEATS: Record<string, { name: string; short: string; domain: string; weighing: string }> = {
+const SEATS: Record<string, { name: string; pill?: string; short: string; domain: string; weighing: string }> = {
   'simon-sinek': { name: 'Simon Sinek', short: 'Sinek', domain: 'purpose and strategic alignment', weighing: 'does this express why we exist?' },
   'td-jakes': { name: 'T. D. Jakes', short: 'Jakes', domain: 'instinct and reinvention', weighing: 'what is the client sensing?' },
   'oprah-winfrey': { name: 'Oprah Winfrey', short: 'Oprah', domain: 'intention and significance', weighing: 'what is the real intention?' },
@@ -32,7 +32,7 @@ const SEATS: Record<string, { name: string; short: string; domain: string; weigh
   'russell-brunson': { name: 'Russell Brunson', short: 'Brunson', domain: 'offers and conversion', weighing: 'who wants this?' },
   'michelle-obama': { name: 'Michelle Obama', short: 'Obama', domain: 'grounded leadership', weighing: 'how do we move with integrity?' },
   'brene-brown': { name: 'Brené Brown', short: 'Brené Brown', domain: 'courage and trust', weighing: 'what hard conversation is avoided?' },
-  'dennis-kimbro': { name: 'Dr. Dennis Kimbro', short: 'Kimbro', domain: 'ownership and wealth', weighing: 'does this build ownership?' },
+  'dennis-kimbro': { name: 'Dr. Dennis Kimbro', pill: 'Dennis Kimbro', short: 'Kimbro', domain: 'ownership and wealth', weighing: 'does this build ownership?' },
   'les-brown': { name: 'Les Brown', short: 'Les Brown', domain: 'self-belief and action', weighing: 'is the obstacle real?' },
 };
 const ORDER = Object.keys(SEATS);
@@ -593,20 +593,21 @@ test('pills are one line on the arc, shrink with the seat gap, and wrap inside t
   const pill = cssNoComments.match(/\n\.ch-seat-pill\s*\{([^}]*)\}/);
   assert.ok(pill, 'base pill rule');
   assert.match(pill[1], /white-space:\s*nowrap/);
-  assert.match(pill[1], /font-size:\s*clamp\(10px/, 'type shrinks with the seat gap');
+  assert.match(pill[1], /font-size:\s*clamp\(9px/, 'type shrinks with the seat gap');
   assert.doesNotMatch(pill[1], /max-width/, 'no max-width squeezing the arc pills to two lines');
   const phone = cssNoComments.slice(cssNoComments.indexOf('max-width: 599.98px'));
   assert.match(phone, /\.ch-seat-pill\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere[^}]*max-width:\s*calc\(var\(--ch-room-step\) - 4px\)/);
   assert.match(phone, /\.ch-seat\s*\{[^}]*--ch-room-step:\s*calc\(\(100cqw - var\(--ch-room-w\)\) \* 0\.22\)/);
 });
 
-test('the pill shows the short name only (full names are wider than the seat gap)', () => {
+test('the pill shows the full name (pill text where given, else the seat name)', () => {
   const b = boot();
   b.push(liveView({}));
   const pills = b.q('ch-seat-pill');
   assert.equal(pills.length, 9);
   const labels = pills.map((p) => p.textContent);
-  assert.deepEqual(labels, ORDER.map((id) => SEATS[id].short));
+  assert.deepEqual(labels, ORDER.map((id) => SEATS[id].pill || SEATS[id].name));
+  assert.deepEqual(labels, ['Simon Sinek', 'T. D. Jakes', 'Oprah Winfrey', 'Tiffany Aliche', 'Russell Brunson', 'Michelle Obama', 'Brené Brown', 'Dennis Kimbro', 'Les Brown']);
 });
 
 /* ---- Click targets (W29 fix round 2): a face or pill opens ITS seat ------- */

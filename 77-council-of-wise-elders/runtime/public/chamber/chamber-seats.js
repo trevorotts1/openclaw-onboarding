@@ -1,5 +1,6 @@
 /* Seat data for the nine elders. Text is copied from each shipped pack
  * (advisors/<seat>/profile.json); tests/chamber-seats.test.ts guards drift.
+ * `pill` (optional) is the name pill text when it differs from `name`.
  * `weighing` is a short paraphrase of the pack's owned question. */
 (function (root) {
   var ns = root.councilChamber = root.councilChamber || {};
@@ -55,7 +56,7 @@
       sources: ["Dare to Lead", "Documented BRAVING material", "Atlas of the Heart"]
     },
     {
-      id: "dennis-kimbro", name: "Dr. Dennis Kimbro", short: "Kimbro",
+      id: "dennis-kimbro", name: "Dr. Dennis Kimbro", pill: "Dennis Kimbro", short: "Kimbro",
       domain: "ownership, wealth creation, and achievement",
       owns: "Does the decision build enduring capability, ownership, and wealth, or merely create more activity?",
       weighing: "does this build lasting capability, ownership and wealth, or just more activity?",

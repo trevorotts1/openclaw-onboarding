@@ -20,6 +20,7 @@ interface Seat {
   id: string;
   name: string;
   short: string;
+  pill?: string;
   domain: string;
   owns: string;
   weighing: string;
@@ -64,6 +65,7 @@ test('short names are unique and weighing lines are well formed', () => {
   const shorts = Array.from(seats.order, (id) => seats.get(id).short);
   assert.equal(new Set(shorts).size, shorts.length);
   assert.deepEqual(shorts, ['Sinek', 'Jakes', 'Oprah', 'Aliche', 'Brunson', 'Obama', 'Brené Brown', 'Kimbro', 'Les Brown']);
+  assert.equal(seats.get('dennis-kimbro').pill, 'Dennis Kimbro');
   for (const id of seats.order) {
     const w = seats.get(id).weighing;
     assert.ok(w.length > 0 && w.length <= 90, `${id} weighing length ${w.length}`);

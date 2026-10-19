@@ -422,7 +422,7 @@
       if (!usable) label.setAttribute('data-disabled', 'true');
       radio.addEventListener('change', updateSubmit);
       label.appendChild(radio);
-      label.appendChild(make('span', 'ch-composer-route-name', route.route_id + ' (' + route.provider_slug + ')'));
+      label.appendChild(make('span', 'ch-composer-route-name', ns.state.routeLabel(route.route_id, null)));
       if (usable) {
         label.appendChild(make('span', 'ch-composer-route-line', 'Default model: ' + defaultModelText(route.route_id, body.harness_defaults)));
         label.appendChild(make('span', 'ch-composer-route-line', 'Budget: ' + budgetText(route.route_id, budgets)));

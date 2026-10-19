@@ -12,6 +12,7 @@ Eight Opus-passed pieces, integrated once on top of v1.0.26 (W29-U001). In plain
 - **Advisor data and portraits** (`patch/W29-F-seatdata`): names, roles and weighing lines for all nine advisors plus cut-out Pixar-style portraits.
 - **Brand theme** (`patch/W29-G-theme`): one set of BlackCEO color tokens (black, cream, gold) used everywhere; no navy.
 - **Live state** (`patch/W29-H-state`): turns the live event stream into what the screen shows, keeps a clearly labelled demo replay, and adds card details to the stream so bars, lines and the advisor card come from real cards.
+- **Full names and no model codes** (`W29-fullnames`): each advisor's name pill now shows the full name (Simon Sinek, Russell Brunson, Dennis Kimbro and so on; it wraps to two lines on narrow phones), and the screen shows a friendly model label such as "Sample replay" or "Claude Code" instead of an internal route code.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.43).
 
 ## v1.0.26: live council (client-chosen model, service driver, Book-to-Persona elders)

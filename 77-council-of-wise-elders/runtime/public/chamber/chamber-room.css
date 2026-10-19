@@ -141,21 +141,21 @@
 .ch-seat-pill {
   display: inline-block;
   /* The type shrinks with --ch-room-step (the gap between neighbouring seats)
-     so the widest adjacent pair (the two Browns and Kimbro) still clears. */
+     so the widest adjacent full names (Russell Brunson, Michelle Obama) clear
+     each other on one line. Narrower rooms wrap at a space instead (below). */
   pointer-events: auto;
   padding: 0.3em 0.45em;
   border: 1px solid var(--ch-line-strong);
   border-radius: var(--ch-radius-chip, 6px);
   background: var(--ch-surface-3);
   color: var(--ch-ink);
-  font-size: clamp(10px, calc((var(--ch-room-step) - 5px) / 6.6), 12px);
+  font-size: clamp(9px, calc((var(--ch-room-step) - 6px) / 8.8), 12px);
   font-weight: 700;
   line-height: 1.2;
   text-align: center;
   text-wrap: balance;
-  /* One line, always. Nine seats are only 11 percent of the seat area apart, so
-     the pill carries the short name (full names are wider than the gap and would
-     overlap their neighbours); the full name is in the button's aria-label. */
+  /* One line on a wide desktop room: the pill shows the full name, sized to the
+     seat gap above. Narrower rooms and phones let it wrap at a space (below). */
   white-space: nowrap;
   flex: none;
   width: max-content;
@@ -476,8 +476,8 @@
   }
 
   /* Two rows of five and four: seats are 22 percent of the seat area apart.
-     A pill never exceeds that gap less 4px; 'Brené Brown' and 'Les Brown'
-     wrap at the space, and nothing can overflow its border. */
+     A pill never exceeds that gap less 4px; two-word full names wrap at the
+     space, and nothing can overflow its border. */
   .ch-seat-pill {
     padding: 3px 4px;
     font-size: 11px;
@@ -513,15 +513,15 @@
   }
 }
 
-/* Narrow room (under 740px: the type is already at its 10px floor): a pill may
-   wrap at a space, never wider than 1.2 steps, and a long word breaks inside
+/* Narrow room (under 860px: the type is already at its 9px floor): a pill may
+   wrap at a space, never wider than one step, and a long word breaks inside
    its border instead of spilling out of it. */
 @media (min-width: 600px) {
-  @container (max-width: 740px) {
+  @container (max-width: 860px) {
     .ch-seat-pill {
       white-space: normal;
       width: auto;
-      max-width: calc(var(--ch-room-step) * 1.2);
+      max-width: calc(var(--ch-room-step) - 4px);
       overflow-wrap: anywhere;
     }
   }
