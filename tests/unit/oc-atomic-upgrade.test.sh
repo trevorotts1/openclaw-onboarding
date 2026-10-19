@@ -846,6 +846,31 @@ esac
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
+echo "--- (11) CAN010: a leftover literal-named temp file must not break the upgrade ---"
+# BSD/macOS mktemp only randomizes TRAILING X's. A template like
+# oc-schema.XXXXXX.json is therefore used LITERALLY: once that file exists
+# (leftover from any earlier or parallel run) mktemp fails and the upgrade
+# rolls back. Pre-create every literal name the old and new templates could
+# produce, in a private TMPDIR, then require the upgrade to still succeed.
+H11="$(make_box b11 legacy)"; S11="$SANDBOX/stubs11"; ST11="$SANDBOX/state11"
+make_stubs "$S11" "$ST11" versioned
+T11="$SANDBOX/tmp11"; mkdir -p "$T11"
+: > "$T11/oc-schema.XXXXXX.json"; : > "$T11/oc-schema.XXXXXX"
+OUT11="$( export TMPDIR="$T11"; run_atomic "$H11" "$S11" "$ST11" )"; RC11=$?
+if [ "$RC11" -eq 0 ] && [ "$(cfg_shape "$H11/.openclaw/openclaw.json")" = "ENTRIES:3" ]; then
+  pass "11a: upgrade + migration succeeded with the literal-named temp files already present"
+else
+  fail "11a: upgrade FAILED with a colliding leftover temp file (rc=$RC11). Output: $OUT11"
+fi
+LEFT11="$(ls -A "$T11" | grep -vxE 'oc-schema\.XXXXXX(\.json)?' || true)"
+if [ -z "$LEFT11" ]; then
+  pass "11b: the upgrade removed every temp file it created"
+else
+  fail "11b: the upgrade leaked temp file(s): $LEFT11"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
   echo "FAIL: $FAIL check(s) failed -- CI guard triggered"

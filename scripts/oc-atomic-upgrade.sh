@@ -854,7 +854,7 @@ do_upgrade() {
   # ── 6. ASK THE NEW BINARY WHICH SCHEMA IT SPEAKS ───────────────────────────
   # This is the authority. The transform is only correct against a build that
   # reads `entries`; nothing else in this procedure may assume it.
-  schema_file="$(mktemp "${TMPDIR:-/tmp}/oc-schema.XXXXXX.json")" || {
+  schema_file="$(mktemp "${TMPDIR:-/tmp}/oc-schema.XXXXXX")" || {
     _rollback "could not create a temp file for the schema probe"; return $?; }
   if ! openclaw config schema > "$schema_file" 2>/dev/null; then
     rm -f "$schema_file"

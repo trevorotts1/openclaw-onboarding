@@ -738,7 +738,7 @@ else
 fi
 
 # Test 9b: guard FAILS on a planted violation (use grep, not git grep — planted file is untracked)
-PLANTED="$(mktemp /tmp/planted-XXXXXX.py)"
+PLANTED="$(mktemp /tmp/planted-XXXXXX)"
 echo 'open("agents/main/SOUL.md", "w").write("test")' > "$PLANTED"
 PLANTED_RESULT=$(grep -nE 'agents/(main|[a-z-]+)/(SOUL|IDENTITY|MEMORY|AGENTS|TOOLS|USER|HEARTBEAT)\.md' "$PLANTED" \
   | grep -vE '(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/)' \

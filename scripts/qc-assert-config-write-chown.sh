@@ -272,7 +272,7 @@ fi
 # heredoc's body under `/bin/bash -n` (GNU bash 3.2.57, arm64-apple-darwin).
 # A heredoc that is NOT nested inside `$(...)` does not trigger it, hence
 # this two-step: write, then invoke.
-QC_PY_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/qc-config-write-chown-analysis.XXXXXX.py")"
+QC_PY_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/qc-config-write-chown-analysis.XXXXXX")"
 cat > "$QC_PY_SCRIPT" <<'PYEOF'
 import re
 import sys

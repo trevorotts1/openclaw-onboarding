@@ -86,7 +86,7 @@ if [ -d "$R/.git" ]; then
   fi
 elif ! { mkdir -p "$(dirname "$R")" && git clone -q --depth 1 --single-branch --branch main "$REPO_URL" "$R"; }; then
   log "WARNING: no usable onboarding copy (could not create $R) — falling back to the root updater fetched from main (same FULL path per OCT4 #10; narrower transport only, no snapshot/rollback machinery around it)"
-  tmp="$(mktemp "${TMPDIR:-/tmp}/openclaw-update-XXXXXX.sh")"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/openclaw-update-XXXXXX")"
   trap 'rm -f "$tmp"' EXIT
   curl -fsSL --max-time 60 "$UPDATER_URL" -o "$tmp" || { log "ERROR: could not download update-skills.sh"; exit 1; }
   bash "$tmp" $WFU_FLAGS
