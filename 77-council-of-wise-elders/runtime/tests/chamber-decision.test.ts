@@ -148,11 +148,14 @@ test('badgesModel: Sample decision only when sample and not demo; Verdict when s
 
 // ------------------------------------------------------------ fake DOM
 
+const focused: { current: FakeNode | null } = { current: null };
+
 class FakeNode {
   tagName: string;
   className = '';
   id = '';
   hidden = false;
+  tabIndex = 0;
   type = '';
   style: Record<string, string> = {};
   attrs: Record<string, string> = {};
@@ -202,6 +205,12 @@ class FakeNode {
   addEventListener(t: string, fn: () => void) {
     (this.listeners[t] ||= []).push(fn);
   }
+  focus() {
+    focused.current = this;
+  }
+  contains(n: unknown): boolean {
+    return n === this || this.children.some((c) => c.contains(n));
+  }
   find(cls: string): FakeNode[] {
     const own = this.className.split(/\s+/).includes(cls) ? [this] : [];
     return own.concat(...this.children.map((c) => c.find(cls)));
@@ -213,6 +222,8 @@ function boot() {
   const host = new FakeNode('section');
   host.id = 'ch-decision';
   const events: string[] = [];
+  const details: unknown[] = [];
+  focused.current = null;
   let push: (v: View) => void = () => {};
   const live = {
     started: 0,
@@ -229,18 +240,26 @@ function boot() {
     document: {
       getElementById: (id: string) => (id === 'ch-decision' ? host : null),
       createElement: (t: string) => new FakeNode(t),
-      dispatchEvent: (e: { type: string }) => events.push(e.type),
+      dispatchEvent: (e: { type: string; detail?: unknown }) => {
+        events.push(e.type);
+        details.push(e.detail);
+      },
+      get activeElement() {
+        return focused.current;
+      },
     },
     CustomEvent: class {
       type: string;
-      constructor(t: string) {
+      detail: unknown;
+      constructor(t: string, init?: { detail?: unknown }) {
         this.type = t;
+        this.detail = init && init.detail;
       }
     },
     councilChamber: { live },
   };
   runInNewContext(jsSource, sandbox);
-  return { host, events, live, push: (v: View) => push(v) };
+  return { host, events, details, live, push: (v: View) => push(v) };
 }
 
 test('DOM: empty state shows the invitation and wires both buttons', () => {
@@ -255,6 +274,28 @@ test('DOM: empty state shows the invitation and wires both buttons', () => {
   host.find('ch-dec-demo')[0].listeners.click[0]();
   assert.deepEqual(events, ['chamber:open-composer']);
   assert.equal(live.started, 1);
+});
+
+test('DOM: focus moves to the title when the focused empty-state button is hidden', () => {
+  const { host, events, details, push } = boot();
+  const title = host.find('ch-dec-title')[0];
+  host.find('ch-dec-new')[0].listeners.click[0]();
+  assert.equal((details[0] as { opener: unknown }).opener, title, 'composer opener survives the hide');
+  assert.deepEqual(events, ['chamber:open-composer']);
+  focused.current = host.find('ch-dec-demo')[0];
+  push({ mode: 'demo', session: { question: 'Q?', options: [] } });
+  assert.equal(host.find('ch-dec-actions')[0].hidden, true);
+  assert.equal(focused.current, title);
+  assert.equal(title.tabIndex, -1);
+});
+
+test('DOM: focus elsewhere is left alone when the empty state hides', () => {
+  const { host, push } = boot();
+  const other = new FakeNode('input');
+  focused.current = other;
+  push({ mode: 'demo', session: { question: 'Q?', options: [] } });
+  assert.equal(focused.current, other);
+  assert.equal(host.find('ch-dec-title')[0].tabIndex, 0);
 });
 
 test('DOM: a replayed vote sequence updates rows, keeps node identity and marks the verdict', () => {

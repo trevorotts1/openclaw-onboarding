@@ -98,7 +98,7 @@
   var actions = el('div', 'ch-dec-actions');
   actions.appendChild(
     button('ch-btn ch-btn--primary ch-dec-new', 'New question', function () {
-      document.dispatchEvent(new CustomEvent('chamber:open-composer'));
+      document.dispatchEvent(new CustomEvent('chamber:open-composer', { detail: { opener: title } }));
     })
   );
   actions.appendChild(
@@ -172,6 +172,11 @@
     setText(title, empty ? 'Ask the council a question' : session.question || 'Council question');
     setText(sub, empty ? 'Nine advisors, three rounds, one verdict.' : '');
     setHidden(sub, !empty);
+    // Hiding the focused empty-state button would drop focus to <body> (WCAG 2.4.3): park it on the title.
+    if (!empty && actions.contains(document.activeElement)) {
+      title.tabIndex = -1;
+      title.focus();
+    }
     setHidden(actions, !empty);
     setHidden(list, model.length === 0);
     renderBadges(badgesModel(session));
