@@ -228,10 +228,18 @@ _assert_domain() {
     *) echo "MALFORMED-DOMAIN \$1" >> "\$STATE/bad_domains" ;;
   esac
 }
+# Real bootout is ASYNCHRONOUS. With bootout_delay set, it only schedules the
+# unload: the job stays "loaded" until that many seconds have passed.
+_settle() {
+  if [ -f "\$STATE/unload_at_\$1" ] && [ "\$(date +%s)" -ge "\$(cat "\$STATE/unload_at_\$1")" ]; then
+    rm -f "\$STATE/loaded_\$1" "\$STATE/unload_at_\$1"
+  fi
+}
 case "\${1:-}" in
   print)
     _assert_domain "\${2:-}"
     LBL="\$(basename "\${2:-}")"
+    _settle "\$LBL"
     [ -f "\$STATE/loaded_\$LBL" ] || exit 1
     P="\$(cat "\$STATE/pid" 2>/dev/null)"
     if [ -f "\$STATE/pid_flip" ]; then P=\$((P+1)); printf '%s' "\$P" > "\$STATE/pid"; fi
@@ -242,17 +250,34 @@ case "\${1:-}" in
     _assert_domain "\${2:-}"
     LBL="\$(basename "\${2:-}")"
     if [ -f "\$STATE/bootout_noop" ]; then exit 0; fi
+    if [ -f "\$STATE/bootout_delay" ]; then
+      echo \$(( \$(date +%s) + \$(cat "\$STATE/bootout_delay") )) > "\$STATE/unload_at_\$LBL"
+      exit 0
+    fi
     rm -f "\$STATE/loaded_\$LBL"
     exit 0
     ;;
   bootstrap)
     _assert_domain "\${2:-}"
     LBL="\$(basename "\${3:-}" .plist)"
+    _settle "\$LBL"
     if [ -f "\$STATE/bootstrap_fail" ]; then exit 1; fi
+    [ -f "\$STATE/loaded_\$LBL" ] && exit 17     # already loaded / still tearing down
     touch "\$STATE/loaded_\$LBL"
     exit 0
     ;;
 esac
+exit 0
+EOF
+
+  # curl: the ONLY thing that may answer /healthz in this suite -- the real
+  # curl would hit whatever gateway is live on the dev box's port 18789.
+  cat > "$dir/curl" <<EOF
+#!/bin/bash
+STATE="$state"
+echo "curl \$*" >> "\$STATE/events"
+if [ -f "\$STATE/healthz_down" ]; then printf '000'; exit 7; fi
+printf '200'
 exit 0
 EOF
 
@@ -267,7 +292,7 @@ EOF
 #!/bin/bash
 echo "a-box"
 EOF
-  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname"
+  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl"
 }
 
 # make_box <name> <config-kind> -> echoes the box HOME
@@ -285,6 +310,7 @@ run_atomic() {
   touch "$state/loaded_ai.openclaw.gateway"     # the gateway starts out running
   HOME="$home" PATH="$stubs:/usr/bin:/bin:/usr/sbin:/sbin" \
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
+    OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
     bash "$script" --upgrade 2>&1
 }
 
@@ -597,6 +623,84 @@ fi
 [ "$(sha_of "$CFG8")" = "$SHA8_BEFORE" ] \
   && pass "8c: the config is byte-identical — a live gateway's config was never rewritten" \
   || fail "8c: the config was rewritten while the gateway was still loaded"
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (11) CAN001: async bootout must be POLLED, and rollback must PROVE the gateway is back ---"
+# Roll 20261019 canary: bootout returned, the job was still tearing down 2s
+# later, the script refused ("STILL LOADED"), rolled back WITHOUT re-bootstrapping
+# the gateway, and printed "exactly as it was found" -- the gateway was gone
+# (launchctl: Could not find service, /healthz 000).
+
+# 11a. bootout takes 4s to complete (longer than the old fixed `sleep 2`).
+H11="$(make_box b11 clean)"; S11="$SANDBOX/stubs11"; ST11="$SANDBOX/state11"
+make_stubs "$S11" "$ST11" versioned
+echo 4 > "$ST11/bootout_delay"
+OUT11="$(T_BOOTOUT_TIMEOUT=10 run_atomic "$H11" "$S11" "$ST11")"; RC11=$?
+if [ "$RC11" -eq 0 ] && [ -f "$ST11/npm_installs" ]; then
+  pass "11a: a bootout that completes after 4s is POLLED to completion and the upgrade proceeds (rc=0)"
+else
+  fail "11a: slow-but-successful bootout was treated as a failure (rc=$RC11, installs=$([ -f "$ST11/npm_installs" ] && echo yes || echo no)). Output: $OUT11"
+fi
+
+# 11b. the incident replay: slow bootout + a later failure -> rollback must leave
+# the gateway loaded, answering /healthz, and say so truthfully.
+H11B="$(make_box b11b legacy)"; S11B="$SANDBOX/stubs11b"; ST11B="$SANDBOX/state11b"
+make_stubs "$S11B" "$ST11B" versioned 1
+echo 4 > "$ST11B/bootout_delay"
+OUT11B="$(T_BOOTOUT_TIMEOUT=10 run_atomic "$H11B" "$S11B" "$ST11B")"; RC11B=$?
+# Let the slow bootout finish, THEN ask launchd (the stub) for the job's state.
+# Checking only at script exit is how the canary missed it: the gateway looked
+# fine until the teardown that had been issued earlier completed.
+sleep 5
+if [ "$RC11B" -eq 78 ] && "$S11B/launchctl" print "gui/501/ai.openclaw.gateway" >/dev/null 2>&1 \
+   && [ "$(cat "$ST11B/version")" = "$OLD_V" ]; then
+  pass "11b: slow bootout + forced failure -> rolled back (rc=78), gateway loaded, binary $OLD_V"
+else
+  fail "11b: rollback after a slow bootout left the box wrong (rc=$RC11B, loaded=$("$S11B/launchctl" print "gui/501/ai.openclaw.gateway" >/dev/null 2>&1 && echo yes || echo no), version=$(cat "$ST11B/version")). Output: $OUT11B"
+fi
+case "$OUT11B" in
+  *"PROVEN back"*) pass "11c: the rollback output says the gateway was PROVEN back (loaded + pid + /healthz 200)" ;;
+  *) fail "11c: no 'PROVEN back' line -- the restore was claimed without proof. Output: $OUT11B" ;;
+esac
+grep -q 'healthz' "$ST11B/events" 2>/dev/null \
+  && pass "11d: /healthz was actually queried during the rollback" \
+  || fail "11d: the rollback never queried /healthz"
+
+# 11e. FALSE-CLAIM GUARD: the rollback cannot re-load the gateway. It must NOT
+# claim success; it must exit 70 and name the job as down.
+H11E="$(make_box b11e legacy)"; S11E="$SANDBOX/stubs11e"; ST11E="$SANDBOX/state11e"
+make_stubs "$S11E" "$ST11E" versioned 1
+OUT11E="$(
+  touch "$ST11E/loaded_ai.openclaw.gateway"
+  # bootstrap works for the first start only if we let it; here it never does.
+  touch "$ST11E/bootstrap_fail"
+  HOME="$H11E" PATH="$S11E:/usr/bin:/bin:/usr/sbin:/sbin" \
+    OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
+    OC_ATOMIC_BOOTOUT_TIMEOUT=3 OC_ATOMIC_HEALTH_TIMEOUT=3 \
+    bash "$ATOMIC" --upgrade 2>&1
+)"; RC11E=$?
+if [ "$RC11E" -eq 70 ]; then
+  pass "11e: a gateway that cannot be re-loaded -> rollback exits 70 (needs a human), not 78"
+else
+  fail "11e: expected rc=70 when the gateway cannot be re-loaded, got $RC11E. Output: $OUT11E"
+fi
+case "$OUT11E" in
+  *"exactly as it was found"*|*"gateway started again"*|*"rollback complete"*)
+    fail "11f: FALSE CLAIM -- the rollback reported success while the gateway is not loaded. Output: $OUT11E" ;;
+  *) pass "11f: no false 'rollback complete / exactly as it was found / started again' claim was printed" ;;
+esac
+
+# 11g. gateway re-loads fine but /healthz never answers 200 -> must NOT claim success.
+H11G="$(make_box b11g legacy)"; S11G="$SANDBOX/stubs11g"; ST11G="$SANDBOX/state11g"
+make_stubs "$S11G" "$ST11G" versioned 1
+touch "$ST11G/healthz_down"
+OUT11G="$(T_HEALTH_TIMEOUT=3 run_atomic "$H11G" "$S11G" "$ST11G")"; RC11G=$?
+if [ "$RC11G" -eq 70 ]; then
+  pass "11g: job loaded but /healthz != 200 -> rollback exits 70, not a clean 78"
+else
+  fail "11g: expected rc=70 when /healthz never answers, got $RC11G. Output: $OUT11G"
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""

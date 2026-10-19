@@ -63,6 +63,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Any failure after the quiesce restores BOTH the old binary AND the old config
 # and starts the gateway again. A failed upgrade must never leave a dark box.
+# "Starts the gateway again" is PROVEN, never assumed: the job is re-loaded if it
+# was loaded when this began (even when the quiesce itself is what failed), and
+# the rollback only reports success once launchd shows it loaded with a pid AND
+# GET /healthz returns 200. The restored binary is re-measured the same way.
 # If the rollback itself fails, this exits 70 (EX_SOFTWARE) with a banner naming
 # exactly what is left broken and the literal commands to repair it — that case
 # is the only one where a human is strictly required.
@@ -106,6 +110,14 @@
 #                                    (default 25; the crash-loop period is ~11s,
 #                                    so this spans at least two respawns)
 #   OC_ATOMIC_NPM                    npm binary (default: npm)
+#   OC_ATOMIC_BOOTOUT_TIMEOUT        seconds to wait for a booted-out job to
+#                                    actually leave launchd (default 60). bootout
+#                                    is ASYNCHRONOUS: it returns before the
+#                                    job is gone (the process gets SIGTERM and
+#                                    up to ExitTimeOut, 20s by default, to exit).
+#   OC_ATOMIC_HEALTH_TIMEOUT         seconds a ROLLBACK waits to PROVE the gateway
+#                                    is back: job loaded, pid present, and
+#                                    GET /healthz == 200 (default 60)
 #
 # ⚠️ INTERPRETER: written for stock /bin/bash 3.2.57, which is what the fleet's
 # Macs run. No associative arrays, no `mapfile`, no `${x^^}`, and never a
@@ -125,6 +137,8 @@ DRY_RUN=0
 QUIESCE_PROOF_SECONDS="${OC_ATOMIC_QUIESCE_PROOF_SECONDS:-75}"
 STABILITY_SECONDS="${OC_ATOMIC_STABILITY_SECONDS:-25}"
 NPM_BIN="${OC_ATOMIC_NPM:-npm}"
+BOOTOUT_TIMEOUT="${OC_ATOMIC_BOOTOUT_TIMEOUT:-60}"
+HEALTH_TIMEOUT="${OC_ATOMIC_HEALTH_TIMEOUT:-60}"
 
 GATEWAY_LABEL="ai.openclaw.gateway"
 SELFHEAL_LABEL="com.openclaw.service-remediate"
@@ -134,6 +148,7 @@ STATE_QUIESCED=0
 STATE_BINARY_CHANGED=0
 STATE_CONFIG_CHANGED=0
 STATE_SELFHEAL_BOOTED_OUT=0
+GATEWAY_LOADED_AT_START=0   # the job/container the rollback must put back
 OLD_VERSION=""
 CONFIG_BACKUP=""
 OC_CONFIG=""
@@ -244,6 +259,48 @@ _gateway_pid() {
   esac
 }
 
+# ── Bounded poll: run "$@" once a second until it succeeds or $1 seconds pass.
+# ── launchctl bootout/bootstrap return BEFORE launchd has finished, so a single
+# ── check right after one is a race, not a measurement.
+_poll() {
+  local t="$1" i=0
+  shift
+  while :; do
+    "$@" && return 0
+    [ "$i" -ge "$t" ] && return 1
+    sleep 1; i=$((i+1))
+  done
+}
+
+_job_loaded()  { launchctl print "gui/$UIDN/$1" >/dev/null 2>&1; }
+_job_unloaded() { ! _job_loaded "$1"; }
+_gateway_unloaded() { _job_unloaded "$GATEWAY_LABEL"; }
+
+# Is the gateway job/container present right now? (Not whether it is healthy.)
+_gateway_loaded() {
+  case "$SUPERVISOR" in
+    launchd) _job_loaded "$GATEWAY_LABEL" ;;
+    docker)  [ "$(docker inspect -f '{{.State.Running}}' openclaw 2>/dev/null)" = "true" ] ;;
+    *)       return 1 ;;
+  esac
+}
+
+# gateway.port from the config, default 18789 (same rule as ghl-mcp-autostart.sh).
+_gateway_port() {
+  OC_CFG="$OC_CONFIG" python3 -c 'import json,os
+try:
+    print(int((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("port") or 18789))
+except Exception:
+    print(18789)' 2>/dev/null || echo 18789
+}
+
+# rc 0 ONLY when GET /healthz answers 200. No curl = cannot prove = rc 1.
+_healthz_ok() {
+  command -v curl >/dev/null 2>&1 || return 1
+  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+        "http://127.0.0.1:$(_gateway_port)/healthz" 2>/dev/null)" = "200" ]
+}
+
 _config_sha() {
   [ -f "$OC_CONFIG" ] || { printf ''; return 0; }
   if command -v shasum >/dev/null 2>&1; then
@@ -277,21 +334,27 @@ _lock_release() { rm -f "$LOCK_FILE" 2>/dev/null; }
 # QUIESCE
 # ─────────────────────────────────────────────────────────────────────────────
 _quiesce() {
+  # Rollback state is set BEFORE the stop it undoes (see the state block at the
+  # top). It used to be set after, so a quiesce that failed returned early with
+  # STATE_QUIESCED=0 and the rollback never restarted the gateway it had just
+  # booted out -- then printed "exactly as it was found".
+  STATE_QUIESCED=1
   case "$SUPERVISOR" in
     launchd)
       # The self-heal agent first: booting the gateway out while its watchdog is
       # still armed just races it back up within 5 minutes.
-      if launchctl print "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1; then
-        launchctl bootout "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1
+      if _job_loaded "$SELFHEAL_LABEL"; then
         STATE_SELFHEAL_BOOTED_OUT=1
+        launchctl bootout "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1
         _ok "self-heal agent $SELFHEAL_LABEL booted out"
       fi
       # bootout, NOT kickstart -k. kickstart restarts the process and leaves the
       # job loaded; KeepAlive then respawns it every ~11s. Only bootout is a stop.
+      # bootout is ASYNCHRONOUS: it returns before the job has left launchd, so
+      # a one-shot check straight after it races the teardown. Poll, bounded.
       launchctl bootout "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1
-      sleep 2
-      if launchctl print "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1; then
-        _err "gateway job $GATEWAY_LABEL is STILL LOADED after bootout — refusing to continue"
+      if ! _poll "$BOOTOUT_TIMEOUT" _gateway_unloaded; then
+        _err "gateway job $GATEWAY_LABEL is STILL LOADED ${BOOTOUT_TIMEOUT}s after bootout — refusing to continue"
         return 1
       fi
       _ok "gateway job booted out of gui/$UIDN (not merely restarted)"
@@ -306,7 +369,6 @@ _quiesce() {
       _ok "no supervisor found — nothing to quiesce"
       ;;
   esac
-  STATE_QUIESCED=1
   return 0
 }
 
@@ -348,24 +410,76 @@ _start_gateway() {
         _err "no LaunchAgent plist at $plist — cannot bootstrap the gateway back"
         return 1
       fi
-      launchctl bootstrap "gui/$UIDN" "$plist" >/dev/null 2>&1
+      launchctl bootstrap "gui/$UIDN" "$plist" >/dev/null 2>&1 || return 1
       ;;
-    docker) docker start openclaw >/dev/null 2>&1 ;;
+    docker) docker start openclaw >/dev/null 2>&1 || return 1 ;;
     none)   return 0 ;;
   esac
   return 0
+}
+
+# One tick of the rollback's "put the gateway back" loop. rc 0 ONLY when the job
+# is loaded, has a pid, and /healthz answers 200 -- each earlier miss does the
+# one corrective action for that miss and returns 1 so _poll re-checks.
+_restore_gateway_step() {
+  case "$SUPERVISOR" in
+    launchd)
+      if ! _job_loaded "$GATEWAY_LABEL"; then
+        launchctl bootstrap "gui/$UIDN" "$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" >/dev/null 2>&1
+        return 1
+      fi
+      if [ -z "$(_gateway_pid)" ]; then
+        launchctl kickstart "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1
+        return 1
+      fi
+      ;;
+    docker)
+      if ! _gateway_loaded; then docker start openclaw >/dev/null 2>&1; return 1; fi
+      ;;
+  esac
+  _healthz_ok
+}
+
+# Put back the gateway the rollback stopped, and PROVE it. A bootstrap exit code
+# is a claim; loaded + pid + /healthz 200 is the result.
+_restore_gateway() {
+  if [ "$SUPERVISOR" = "launchd" ] && [ ! -f "$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" ]; then
+    _err "no LaunchAgent plist at $HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist — cannot bootstrap the gateway back"
+    return 1
+  fi
+  if _poll "$HEALTH_TIMEOUT" _restore_gateway_step; then
+    _ok "gateway PROVEN back: $SUPERVISOR state loaded, pid $(_gateway_pid), /healthz 200"
+    return 0
+  fi
+  local l=no h=no p
+  _gateway_loaded && l=yes
+  _healthz_ok && h=yes
+  p="$(_gateway_pid)"
+  _err "gateway NOT proven back within ${HEALTH_TIMEOUT}s (job loaded: $l; pid: ${p:-none}; /healthz 200: $h)"
+  return 1
 }
 
 _restore_selfheal() {
   [ "$STATE_SELFHEAL_BOOTED_OUT" = "1" ] || return 0
   local plist="$HOME/Library/LaunchAgents/$SELFHEAL_LABEL.plist"
   if [ -f "$plist" ]; then
-    launchctl bootstrap "gui/$UIDN" "$plist" >/dev/null 2>&1
-    STATE_SELFHEAL_BOOTED_OUT=0
-    _ok "self-heal agent $SELFHEAL_LABEL bootstrapped back"
+    # bootstrap while the earlier bootout is still tearing down fails, so retry
+    # until launchd actually reports the job loaded -- not until bootstrap exits 0.
+    if _poll "$HEALTH_TIMEOUT" _selfheal_rearm_step; then
+      STATE_SELFHEAL_BOOTED_OUT=0
+      _ok "self-heal agent $SELFHEAL_LABEL back and loaded"
+      return 0
+    fi
+    _warn "self-heal agent $SELFHEAL_LABEL is NOT loaded after bootstrap. Re-run platform/mac/service-selfheal/install-service-remediate.sh"
   else
     _warn "self-heal plist $plist is gone — could not re-arm $SELFHEAL_LABEL. Re-run platform/mac/service-selfheal/install-service-remediate.sh"
   fi
+  return 1
+}
+_selfheal_rearm_step() {
+  _job_loaded "$SELFHEAL_LABEL" && return 0
+  launchctl bootstrap "gui/$UIDN" "$HOME/Library/LaunchAgents/$SELFHEAL_LABEL.plist" >/dev/null 2>&1
+  _job_loaded "$SELFHEAL_LABEL"
 }
 
 # ── Prove the gateway STAYED up. A pid at t0 proves it launched; the same pid
@@ -403,7 +517,7 @@ _prove_started() {
 # ROLLBACK — undoes, in reverse, exactly what was recorded as done.
 # ─────────────────────────────────────────────────────────────────────────────
 _rollback() {
-  local why="$1" failed=0
+  local why="$1" failed=0 proved=""
   echo "" >&2
   _err "ROLLING BACK: $why"
 
@@ -417,6 +531,7 @@ _rollback() {
     # QC-ALLOW-NO-CHOWN: redirect through the existing inode — owner/group/mode preserved by construction.
     if cat "$CONFIG_BACKUP" > "$OC_CONFIG" 2>/dev/null; then
       _ok "config restored from $CONFIG_BACKUP (inode/owner/mode preserved)"
+      proved="$proved config"
       STATE_CONFIG_CHANGED=0
     else
       _err "CONFIG RESTORE FAILED — the backup is intact at $CONFIG_BACKUP"
@@ -426,8 +541,11 @@ _rollback() {
 
   if [ "$STATE_BINARY_CHANGED" = "1" ] && [ -n "$OLD_VERSION" ]; then
     _say "reinstalling the previous binary: openclaw@$OLD_VERSION"
-    if "$NPM_BIN" install -g "openclaw@$OLD_VERSION" >/dev/null 2>&1; then
-      _ok "binary restored to openclaw@$OLD_VERSION"
+    # The install's exit code is a claim; the MEASURED version is the result.
+    "$NPM_BIN" install -g "openclaw@$OLD_VERSION" >/dev/null 2>&1
+    if [ "$(_measured_version)" = "$OLD_VERSION" ]; then
+      _ok "binary restored to openclaw@$OLD_VERSION (measured)"
+      proved="$proved binary=$OLD_VERSION"
       STATE_BINARY_CHANGED=0
     else
       _err "BINARY RESTORE FAILED — this box may be left on a build its config does not match"
@@ -436,16 +554,23 @@ _rollback() {
   fi
 
   if [ "$STATE_QUIESCED" = "1" ]; then
-    if _start_gateway; then
-      _ok "gateway started again"
-      STATE_QUIESCED=0
+    if [ "$GATEWAY_LOADED_AT_START" = "1" ]; then
+      # Re-load what we booted out, then PROVE it (loaded + pid + /healthz 200).
+      # Never claim a restart from an exit code.
+      if _restore_gateway; then
+        proved="$proved gateway(loaded+pid+healthz200)"
+        STATE_QUIESCED=0
+      else
+        _err "GATEWAY RESTORE NOT PROVEN — the box is DOWN or unhealthy"
+        failed=1
+      fi
     else
-      _err "GATEWAY RESTART FAILED — the box is DOWN"
-      failed=1
+      _say "no loaded gateway ($SUPERVISOR) when this began — nothing was booted out, nothing to put back"
+      STATE_QUIESCED=0
     fi
   fi
 
-  _restore_selfheal
+  _restore_selfheal || failed=1
   _lock_release
 
   if [ "$failed" = "1" ]; then
@@ -460,12 +585,14 @@ _rollback() {
     echo "  ##    npm install -g openclaw@${OLD_VERSION:-<version>}" >&2
     echo "  ##    launchctl bootstrap gui/\$(id -u) \\" >&2
     echo "  ##      \$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" >&2
+    echo "  ##    launchctl kickstart gui/\$(id -u)/$GATEWAY_LABEL" >&2
+    echo "  ##    curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/healthz   # must print 200" >&2
     echo "  ##  Then re-arm the self-heal agent:" >&2
     echo "  ##    bash platform/mac/service-selfheal/install-service-remediate.sh" >&2
     echo "  ################################################################" >&2
     return 70
   fi
-  _ok "rollback complete — this box is exactly as it was found"
+  _ok "rollback complete and VERIFIED:${proved:- nothing needed undoing}"
   return 78
 }
 
@@ -543,6 +670,8 @@ do_upgrade() {
     return 79
   fi
   SUPERVISOR="$(_detect_supervisor)"
+  # What the rollback must put back, recorded BEFORE anything is stopped.
+  _gateway_loaded && GATEWAY_LOADED_AT_START=1
 
   # ── PREFLIGHT. Everything that could refuse is checked BEFORE anything stops,
   # ── so a refusal costs the box nothing at all.
