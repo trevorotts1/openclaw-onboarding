@@ -261,6 +261,21 @@ def copy_contract(section: dict) -> str:
     return "\n".join(lines)
 
 
+def negative_block() -> str:
+    """The skill's own defect-class negative block, applied at the wire."""
+    return (
+        "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
+        "same number twice, do not skip a number. Do not mis-number the 7 steps: "
+        "exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 once each, and exactly 7 "
+        "step labels. Do not garble any label, mug slogan, or caption: no "
+        "\"BIGNEFIT\", \"BTEP 7\", \"DISCIFIONAL\", \"FREIDOM\", "
+        "\"Folow Gnlume Sno Home\", \"widhh\", and no invented, dropped, "
+        "doubled, or substituted characters anywhere. Do not print any text that "
+        "is not in the verbatim copy above; no placeholder tokens, no agent "
+        "notes, no lorem, no bracketed markers, no captions, watermarks, or "
+        "production labels.")
+
+
 def frame_contract(width: int, ratio: str) -> str:
     return (
         "FRAME CONTRACT — this image is ONE section slice, not a full page. "
@@ -338,7 +353,8 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     if copy and copy in body:
         body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
     blocks = [b for b in (copy_contract(section),
-                          frame_contract(width, ratio or "")) if b]
+                          frame_contract(width, ratio or ""),
+                          negative_block()) if b]
     prompt = "\n\n".join(blocks + [body]).strip()
     cap = prompt_cap(request.get("model"))
     if cap and len(prompt) > cap:
