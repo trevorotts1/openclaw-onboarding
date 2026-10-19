@@ -5959,6 +5959,19 @@ except Exception:
 
     local _pip_db_dir="$HOME/.openclaw/workspace/data/coaching-personas"
     [ -d "/data/.openclaw" ] && _pip_db_dir="/data/.openclaw/workspace/data/coaching-personas"
+    # CAN013: a local-Ollama-mode index (provider='ollama' rows) is deliberately
+    # NOT the Gemini asset, so its sentinel never equals release_tag; U6b keeps it
+    # by design. Reporting it stale would force a full pass on every roll forever.
+    local _pip_local=0
+    _pip_local="$(python3 -c 'import sqlite3,sys
+try:
+    c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True); print(c.execute("SELECT COUNT(*) FROM embeddings WHERE provider = \"ollama\"").fetchone()[0]); c.close()
+except Exception:
+    print(0)' "$_pip_db_dir/gemini-index.sqlite" 2>/dev/null || echo 0)"
+    if [ "${_pip_local:-0}" -gt 0 ] 2>/dev/null; then
+      echo "  ✓ [PERSONA INDEX] state=local-mode ($_pip_local provider=ollama rows) — sentinel not applicable"
+      return 0
+    fi
     local _pip_sentinel=""
     _pip_sentinel="$(cat "$_pip_db_dir/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
 
@@ -7392,12 +7405,21 @@ try:
 except Exception:
     print("")' "$_U6B_MANIFEST" 2>/dev/null || true)"
       _U6B_SENTINEL_VAL="$(cat "$_U6B_COACHING_DB_DIR/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
-      if [ "${_RECONCILE_OK:-1}" = "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; then
+      # CAN013: a local-Ollama-mode box (provision_persona_index sets
+      # _PIDX_LOCAL_MODE=1) KEEPS its own index by design, so its sentinel can
+      # never reach the Gemini release_tag. That is not an incomplete provision.
+      _U6B_SENTINEL_NA=0
+      [ "${_PIDX_LOCAL_MODE:-0}" = "1" ] && _U6B_SENTINEL_NA=1
+      if [ "${_RECONCILE_OK:-1}" = "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || { [ "$_U6B_SENTINEL_NA" != "1" ] && [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; }; then
         _U6B_PERSONA_FAIL=1
         _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index completion re-assertion FAILED (reconcile_ok=${_RECONCILE_OK:-unset}, sentinel=${_U6B_SENTINEL_VAL:-<missing>}, manifest release_tag=${_U6B_RELEASE_TAG:-<unknown>}) — persona provisioning incomplete on this box"
         echo "  ✗ [D3] U6b completion re-assertion FAILED — sentinel(${_U6B_SENTINEL_VAL:-<missing>}) != release_tag(${_U6B_RELEASE_TAG:-<unknown>}) or reconcile not ok(${_RECONCILE_OK:-unset})"
       else
-        echo "  ✓ [D3] U6b completion re-assertion PASSED (sentinel == manifest release_tag, reconcile ok)"
+        if [ "$_U6B_SENTINEL_NA" = "1" ]; then
+          echo "  ✓ [D3] U6b completion re-assertion PASSED (local Ollama mode: own index kept by design, sentinel n/a, reconcile ok)"
+        else
+          echo "  ✓ [D3] U6b completion re-assertion PASSED (sentinel == manifest release_tag, reconcile ok)"
+        fi
       fi
 
       # F2.1: if a re-download could not preserve some client-local persona
