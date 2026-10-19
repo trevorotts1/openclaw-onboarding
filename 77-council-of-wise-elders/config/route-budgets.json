@@ -1,0 +1,38 @@
+{
+  "schema": "wise-elders.route-budgets/v1",
+  "entries": [
+    {
+      "route_id": "claude-nine-configured",
+      "model": null,
+      "context_window_tokens": null,
+      "max_output_tokens": null,
+      "measured_min_bytes_per_token": null,
+      "safety_factor": 0.8,
+      "response_schema_bytes": 10159,
+      "measured_at": null,
+      "measurement_basis": "not measured; PROPOSED entry awaiting a live run of scripts/measure-route-bytes-per-token.mjs. response_schema_bytes=10159 is the compact JSON size of the largest card schema (CouncilCard) in schemas/json-schemas.json, an upper bound and not a measurement"
+    },
+    {
+      "route_id": "claude-configured",
+      "model": "sonnet",
+      "context_window_tokens": null,
+      "max_output_tokens": null,
+      "measured_min_bytes_per_token": null,
+      "safety_factor": 0.8,
+      "response_schema_bytes": 10159,
+      "measured_at": null,
+      "measurement_basis": "not measured; PROPOSED entry awaiting a live run of scripts/measure-route-bytes-per-token.mjs. response_schema_bytes=10159 is the compact JSON size of the largest card schema (CouncilCard) in schemas/json-schemas.json, an upper bound and not a measurement"
+    },
+    {
+      "route_id": "deepseek-configured",
+      "model": null,
+      "context_window_tokens": null,
+      "max_output_tokens": null,
+      "measured_min_bytes_per_token": null,
+      "safety_factor": 0.8,
+      "response_schema_bytes": 10159,
+      "measured_at": null,
+      "measurement_basis": "not measured; PROPOSED entry awaiting a live run of scripts/measure-route-bytes-per-token.mjs. response_schema_bytes=10159 is the compact JSON size of the largest card schema (CouncilCard) in schemas/json-schemas.json, an upper bound and not a measurement"
+    }
+  ]
+}
