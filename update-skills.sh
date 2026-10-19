@@ -4188,6 +4188,45 @@ deliver_canonical_scripts_tree() {
   echo "  ✓ Full canonical $label tree delivered and verified ($files files; additive, local-only files retained)"
 }
 # <<< CANONICAL-SCRIPTS-DELIVERY-END
+# >>> GHL-MCP-RETIREMENT-PRUNE-BEGIN
+# W07 / GU-019: mirror of install.sh's post-copy prune (:GHL-MCP-RETIREMENT-SCRIPTS).
+# The GHL community MCP is RETIRED. deliver_canonical_scripts_tree and the
+# platform copy above are ADDITIVE ("remove after, not exclude" — cp cannot
+# delete a stale file), so every roll would re-deliver the supervision surfaces
+# that the retirement transaction just took off the box. This prunes them from
+# the DESTINATION immediately after each delivery. Same glob-driven convention
+# as install.sh: ghl-mcp-*.sh (launcher, probe, runtime gate, pin tooling),
+# the supervised QC gate, the shared paths library, and the VPS start script.
+# The platform VPS dir is globbed, not named: the launcher's basename must not
+# appear in updater CODE for the same reason install.sh:4080 keeps it out of
+# installer CODE ("the updater mentions the launcher" is one rename away from
+# "the updater runs the launcher").
+# Idempotent: already-absent files count as nothing, rc is always 0 — a prune
+# can never fail the roll. One log line names what was removed.
+# Do not re-add a caller for a retired service.
+prune_retired_ghl_mcp_surfaces() {
+  local scripts_root="$1" platform_root="$2" removed=0 _rel _names=""
+  for _rel in "$scripts_root"/ghl-mcp-*.sh \
+              "$scripts_root"/qc-assert-ghl-mcp-supervised.sh \
+              "$scripts_root"/lib/ghl-mcp-paths.sh \
+              "$platform_root"/vps/36-ghl-mcp-setup-scripts/*ghl-mcp*.sh; do
+    [ -e "$_rel" ] || [ -L "$_rel" ] || continue
+    rm -f "$_rel" 2>/dev/null || true
+    if [ -e "$_rel" ] || [ -L "$_rel" ]; then
+      echo "  ⚠ retired box: could NOT remove re-delivered $_rel — check permissions." >&2
+      continue
+    fi
+    removed=$((removed + 1))
+    _names="$_names ${_rel#"$scripts_root"/}"
+  done
+  if [ "$removed" -gt 0 ]; then
+    echo "  ✓ Community GHL MCP retired — pruned $removed supervision file(s):$_names (RETIRED, not retained)"
+  else
+    echo "  ✓ Community GHL MCP retired — nothing to prune in $scripts_root (already absent)"
+  fi
+  return 0
+}
+# <<< GHL-MCP-RETIREMENT-PRUNE-END
 # ----------------------------------------------------------
 # U006 — Co-locate the canonical presentation entry script + its guard
 # into the materialized Presentations department scripts/ directory.
@@ -4908,6 +4947,11 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+  # Retire-by-prune: the canonical delivery above is additive and re-delivers
+  # the retired community-MCP supervision scripts on EVERY roll (including
+  # content-current re-rolls, which exit 0 before the wiring loop's retirement
+  # transaction). Prune them from the destination NOW, after the copy.
+  prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST" "$SKILLS_DIR/../platform"
 
   # UPF002/U1: stage extensions/ BEFORE the "# Cleanup" rm -rf "$TEMP_EXTRACT"
   # (the clone is gone by the time the plugin installers run near the end).
@@ -4975,6 +5019,9 @@ main() {
 if [ -d "$ONBOARDING_DIR/platform" ]; then
     mkdir -p "$SKILLS_DIR/../platform"
     cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+    # Retire-by-prune: the platform copy re-delivers the retired VPS start
+    # script above. Prune it from the destination immediately after the copy.
+    prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST" "$SKILLS_DIR/../platform"
 fi
 if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
     echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
