@@ -53,6 +53,7 @@ MODULES = [
     "test_item13_production_method.py",
     "test_item12_hybrid_board.py",
     "test_item15_trait_gates.py",
+    "test_wireframe_build_spec.py",
     "test_item25_part_naming.py",
     "test_item16_parity_gate.py",
     "test_item26_delivered_filename.py",

@@ -231,6 +231,37 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
     return picks
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wireframe_spec  # noqa: E402  SPF016: wireframe style reference + build-spec prompt
+
+
+def style_refs(stage: str, request: dict, strict: bool = False) -> list:
+    """The one wireframe style reference a desktop or mobile wireframe job
+    attaches (chosen by stage and form), first in attach order; [] for the
+    other stages. A request that still lists the greyscale sheet is refused."""
+    try:
+        return wireframe_spec.reference_urls(stage, request, strict)
+    except wireframe_spec.SpecError as exc:
+        raise ExecutorError(str(exc))
+
+
+def wireframe_body(stage: str, section: dict, index: int, width: int,
+                   request: dict, body: str) -> str:
+    """Prepend the annotated build-spec block to a wireframe stage's prose,
+    after refusing prose that asks for a colourless sheet."""
+    if stage not in wireframe_spec.WIREFRAME_STAGES:
+        return body
+    try:
+        wireframe_spec.refuse_colourless_prose(stage, body)
+        block = wireframe_spec.prompt_block(
+            stage, section, index, len(request.get("sections") or []), width, request)
+    except wireframe_spec.SpecError as exc:
+        raise ExecutorError(str(exc))
+    if not (request.get("stage_prompts") or {}).get(stage):
+        return block  # the generic one-line fallback prose adds nothing to the build spec
+    return f"{block}\n\n{body}".strip()
+
+
 def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
                  index: int) -> str:
     """Per-section, per-platform ratio: the pixel-mate's, never one 3:4 for all."""
@@ -556,6 +587,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = sanitize_prompt(body)
     if copy and copy in body:
         body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
+    body = wireframe_body(stage, section, index, width, request, body)
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block()
@@ -603,8 +635,8 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
-    refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
-                              job["references"]))
+    refs = list(dict.fromkeys(str(r) for r in (job.get("style_refs") or []) +
+                              (request.get("references") or []) + job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
@@ -764,6 +796,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
         for template, width, height in targets:
             out = run_dir / stage / template.format(n=index)
             ratio = target_ratio(stage, template, section, run_dir, index)
+            style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True)
@@ -773,6 +806,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "label": f"{stage} section {index:02d} {width}px",
                 "ratio": ratio,
                 "references": [str(p) for p in refs],
+                "style_refs": style,
                 "prompt": prompt, "prompt_sizes": prompt_sizes,
             }
             result = provider.generate(job, request)
@@ -791,7 +825,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "provider": result.get("provider"),
                 "mode": result.get("mode"),
                 "task_id": result.get("task_id"),
-                "inputs": job["references"],
+                "inputs": build_input(job, request)["input_urls"],
             }
             if actual:
                 a, b = ratio.split(":")
@@ -911,7 +945,8 @@ def main(argv=None) -> int:
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True)
-                            refs = prior_slices(stage, run_dir, index, template)
+                            refs = style_refs(stage, request) + prior_slices(
+                                stage, run_dir, index, template)
                         except ExecutorError as exc:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
@@ -923,6 +958,10 @@ def main(argv=None) -> int:
                               f"floor={sizes['floor_chars']} "
                               f"target={sizes['target_chars']} "
                               f"max={sizes['max_chars']} refs={len(refs)}")
+                        if stage in wireframe_spec.WIREFRAME_STAGES:
+                            print(f"PREFLIGHT_WIREFRAME_REFS {stage} {name} "
+                                  f"form={wireframe_spec.form_of(request)} "
+                                  f"{wireframe_spec.describe_refs(refs)}")
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:

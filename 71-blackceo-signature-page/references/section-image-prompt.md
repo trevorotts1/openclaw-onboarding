@@ -47,15 +47,20 @@ Long-form adds 2A/3A/4A only; the numbered sections never renumber.
 
 ## Palette tokens
 
-**Wireframe — photo-wireframe dialect.** Grayscale with exactly one red.
+**Wireframe — photo-wireframe dialect.** (The hexes below are the bundled
+example sheets' own brand colours, a structure and tonal-weight benchmark. A
+client's wireframe uses that client's resolved palette in the same roles:
+primary for the chip, CTA fill and edge bars; darkest colour for the dark
+bands; lightest colours for the light grounds.) Grayscale with exactly one red.
 Ink `#111111` and `#242424`; paper `#ffffff`; band gray `#f6f6f6`; rule
 gray `#e8e8e8`; signal red one of `#c8091a`, `#d90110`, `#ca0a19`,
 `#d40213` — pick one and use it everywhere. Full-bleed white/black bands
 alternate; photos are darkened black-and-white with thin red edge bars.
 
-**Wireframe — grayscale dialect.** No saturated pixels. `#f6f6f6` band,
-`#ffffff` paper, `#e8e8e8` rule, `#242424` ink; 15 alternating content
-bands between the meta bar and the footer.
+**Wireframe — grayscale dialect (RETIRED, owner 2026-10-19).** Not a
+palette to prompt: a grayscale, no-colour sheet fails trait W8. Recorded for
+history only: no saturated pixels, `#f6f6f6` band, `#ffffff` paper, `#e8e8e8`
+rule, `#242424` ink.
 
 **Mockup — Tier H (flat, sparse).** Cream `#f7f2e9`, ivory `#fffdf9`,
 green `#28513f`, blush `#f0dedb`, rose `#93504f`, brick `#bc5248` as the

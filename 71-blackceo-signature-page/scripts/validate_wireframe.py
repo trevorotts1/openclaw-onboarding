@@ -3,7 +3,8 @@
 
 Usage:
   python3 scripts/validate_wireframe.py <run_dir> <stage> [--brand <brand.json>]
-  stage is desktop-wireframe or mobile-tablet.
+  python3 scripts/validate_wireframe.py --image <png> --brand <brand.json> [--sheet]
+  stage is desktop-wireframe or mobile-tablet; --image runs the pixel traits only.
 
 The stage must produce <stage>/section-plan.json: an ordered array of
 sections, each {section_id, copy_block_ids: [...], image_slot_ids: [...],
@@ -60,7 +61,33 @@ reference_traits: [...]}. Checks, all deterministic:
      color (no brand color present), or when more than 25 percent of
      its chromatic pixels measure off-palette.
 
-The measured verdicts (W1-W6) are written into the run record at
+  8. Style extensions (SPF016; the look of the owner's wireframes 1, 3, 4):
+       W1 (numbering): when a section's plan entry records the printed chip
+           `section_tag` (for example "2A") the tags must run in sequence,
+           each exactly once, none skipped; `badge_reads` ({"steps": ["1",
+           ...]}) lists the numerals read off a badge sequence and each must
+           run 1..n once each. W1 (chip, pixels): each slice carries a
+           compact filled accent-colour block (the section chip) in its top
+           left zone.
+       W3 (ratios): a printed ratio label must be a valid label
+           (VALID_RATIO_LABELS); "3:9" is 1:3 written unreduced and FAILs.
+       W4 (palette share): counted against the RESOLVED client palette, on
+           chromatic pixels only: a slice must show at least ACCENT_MIN_SHARE
+           of pixels near a chromatic palette colour (grey pixels never count
+           toward a brand colour). A chromatic pixel also counts as on-brand
+           when its hue is within HUE_TOLERANCE_DEG of a chromatic palette
+           colour (an anti-aliased edge of the accent keeps its hue); this
+           repairs a false off-brand reading on any real sheet with a chip.
+       W8 (negative trait): a greyscale, no-colour sheet FAILs when the
+           resolved palette has a chromatic colour: a slice whose chromatic
+           pixel share is under GREYSCALE_MAX_CHROMA is the grey line-work
+           style the owner rejected. A palette with no chromatic colour has
+           nothing to measure and W8/chip/accent are reported as not measured.
+     `--image <png> [--sheet] [--brand <brand.json>]` runs only the pixel
+     traits (W1 chip, W4 accent share, W8) on one image; `--sheet` treats it
+     as a whole-page sheet (chips anywhere) instead of one section slice.
+
+The measured verdicts (W1-W6, W8) are written into the run record at
 `<run_dir>/private/wireframe-verdicts.json`, one entry per wireframe
 stage. Every verdict is computed here from the plan record, the
 measured slice width, and the sampled pixels; nothing is copied from a
@@ -95,6 +122,21 @@ PALETTE_MIN_SHARE = 0.02
 OFF_BRAND_MAX_SHARE = 0.25
 NEUTRAL_CHANNEL_SPREAD = 12
 MIN_ART_DIRECTION_CHARS = 8
+# SPF016 style traits.
+VALID_RATIO_LABELS = {"1:1", "4:5", "5:4", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16",
+                      "21:9", "9:21", "27:16", "16:27", "9:8", "8:9", "3:1", "1:3"}
+ACCENT_MIN_SATURATION = 0.45   # a palette entry is an accent colour (not black, white, cream,
+ACCENT_MIN_VALUE = 0.35        # charcoal or a deep navy) at this HSV saturation and value
+HUE_TOLERANCE_DEG = 20      # anti-aliased blends of an accent with white, black or grey keep its hue
+CHROMA_SPREAD = 24          # a pixel is chromatic at this max-min channel spread
+GREYSCALE_MAX_CHROMA = 0.0025
+ACCENT_MIN_SHARE = 0.0025
+STYLE_WIDTH = 720           # measurement width; chips are found at this scale
+CHIP_WIDTH_FRAC = (0.04, 0.40)
+CHIP_HEIGHT_FRAC = (0.012, 0.08)
+CHIP_ASPECT = (1.5, 8.0)
+CHIP_MIN_FILL = 0.75
+CHIP_ZONE = (0.50, 0.25)    # a slice's chip sits in its top-left zone (x fraction, y fraction)
 
 
 def load_json(path):
@@ -301,13 +343,14 @@ def measure_slice_colors(path, palette, allowed):
     chromatic = 0
     off_brand = 0
     off_counts = {}
+    accents = accent_colors(palette)
     for rgb in pixels:
         if near(rgb, palette):
             palette_hits += 1
         if max(rgb) - min(rgb) <= NEUTRAL_CHANNEL_SPREAD:
             continue  # neutral: B/W plates, text, anti-aliasing
         chromatic += 1
-        if not near(rgb, allowed):
+        if not near(rgb, allowed) and not (accents and near_accent_hue(rgb, accents)):
             off_brand += 1
             bucket = tuple((c // 16) * 16 for c in rgb)
             off_counts[bucket] = off_counts.get(bucket, 0) + 1
@@ -318,6 +361,236 @@ def measure_slice_colors(path, palette, allowed):
     return (palette_hits / total,
             (off_brand / chromatic) if chromatic else 0.0,
             dominant)
+
+
+def _hsv(rgb):
+    import colorsys
+    h, s, v = colorsys.rgb_to_hsv(*(c / 255 for c in rgb))
+    return h * 360, s, v
+
+
+def accent_colors(palette):
+    """Chromatic palette entries: the colours that make a sheet read as this
+    client's. Near-neutral and deep entries (black, white, cream, charcoal, a
+    deep navy) are excluded."""
+    return [rgb for rgb in palette
+            if _hsv(rgb)[1] >= ACCENT_MIN_SATURATION and _hsv(rgb)[2] >= ACCENT_MIN_VALUE]
+
+
+def near_accent_hue(rgb, accents):
+    """A chromatic pixel is a blend of an accent when its hue is within
+    HUE_TOLERANCE_DEG of one: anti-aliasing never turns red into purple."""
+    hue = _hsv(rgb)[0]
+    return any(min(abs(hue - a), 360 - abs(hue - a)) <= HUE_TOLERANCE_DEG
+               for a in (_hsv(c)[0] for c in accents))
+
+
+def _mask_near(img, colors, tolerance):
+    from PIL import Image, ImageChops
+    out = None
+    for color in colors:
+        diff = ImageChops.difference(img, Image.new("RGB", img.size, tuple(color)))
+        r, g, b = diff.split()
+        worst = ImageChops.lighter(ImageChops.lighter(r, g), b)
+        mask = worst.point(lambda v, tol=tolerance: 255 if v <= tol else 0)
+        out = mask if out is None else ImageChops.lighter(out, mask)
+    return out
+
+
+def _find_chips(mask, slice_zone):
+    """Compact, filled rectangular blocks in an accent mask (the section chip
+    and CTA chips). Text knocked out of a chip is closed by a dilation first."""
+    from PIL import ImageFilter
+    width, height = mask.size
+    closed = mask.filter(ImageFilter.MaxFilter(7))
+    data = bytearray(closed.tobytes())
+    chips = []
+    pos = data.find(255)
+    while pos != -1:
+        stack = [pos]
+        data[pos] = 128
+        x0 = x1 = pos % width
+        y0 = y1 = pos // width
+        count = 0
+        while stack:
+            p = stack.pop()
+            count += 1
+            y, x = divmod(p, width)
+            x0, x1, y0, y1 = min(x0, x), max(x1, x), min(y0, y), max(y1, y)
+            for q in (p - 1 if x else -1, p + 1 if x < width - 1 else -1,
+                      p - width if y else -1, p + width if y < height - 1 else -1):
+                if q >= 0 and data[q] == 255:
+                    data[q] = 128
+                    stack.append(q)
+        w, h = x1 - x0 + 1, y1 - y0 + 1
+        if (CHIP_WIDTH_FRAC[0] * width <= w <= CHIP_WIDTH_FRAC[1] * width
+                and CHIP_HEIGHT_FRAC[0] * width <= h <= CHIP_HEIGHT_FRAC[1] * width
+                and CHIP_ASPECT[0] <= w / h <= CHIP_ASPECT[1]
+                and count / (w * h) >= CHIP_MIN_FILL
+                and (not slice_zone or (x0 <= CHIP_ZONE[0] * width
+                                        and y0 <= CHIP_ZONE[1] * height))):
+            chips.append((x0, y0, w, h))
+        pos = data.find(255, pos + 1)
+    return chips
+
+
+def measure_style(path, palette, slice_zone=True):
+    """SPF016 pixel traits for one slice or sheet, or None when unreadable /
+    Pillow is missing. Returns {chroma, accent, chips, accents}: the share of
+    chromatic pixels, the share near a chromatic palette colour, the chip-like
+    blocks found, and how many chromatic palette colours there are (zero means
+    the palette is achromatic and nothing is measurable)."""
+    try:
+        from PIL import Image, ImageChops
+    except Exception:
+        return None
+    accents = accent_colors(palette)
+    try:
+        with Image.open(path) as src:
+            img = src.convert("RGB")
+        if img.size[0] > STYLE_WIDTH:
+            img = img.resize((STYLE_WIDTH, max(1, round(img.size[1] * STYLE_WIDTH / img.size[0]))),
+                             Image.BOX)
+        total = img.size[0] * img.size[1]
+        r, g, b = img.split()
+        hi = ImageChops.lighter(ImageChops.lighter(r, g), b)
+        lo = ImageChops.darker(ImageChops.darker(r, g), b)
+        chroma = ImageChops.difference(hi, lo).point(
+            lambda v: 255 if v >= CHROMA_SPREAD else 0).histogram()[255] / total
+        if not accents:
+            return {"chroma": chroma, "accent": 0.0, "chips": [], "accents": 0}
+        mask = _mask_near(img, accents, BRAND_PIXEL_TOLERANCE)
+        accent = mask.histogram()[255] / total
+        chips = _find_chips(mask, slice_zone)
+    except Exception:
+        return None
+    return {"chroma": chroma, "accent": accent, "chips": chips, "accents": len(accents)}
+
+
+def style_failures(where, measured, brand_name):
+    """Named lines per trait for one slice: {'W1': [...], 'W4': [...], 'W8': [...]}."""
+    out = {"W1": [], "W4": [], "W8": []}
+    if measured is None or not measured["accents"]:
+        return out
+    if measured["chroma"] < GREYSCALE_MAX_CHROMA:
+        out["W8"].append(
+            f"{where}: greyscale no-colour style W8 (negative trait): "
+            f"{measured['chroma']:.2%} of pixels carry any colour, but the client's "
+            f"palette from {brand_name} has a chromatic brand colour; a grey line-work "
+            f"or colourless sheet is not the wireframe style")
+    if measured["accent"] < ACCENT_MIN_SHARE:
+        out["W4"].append(
+            f"{where}: off-brand colors W4 (palette share counted against the resolved "
+            f"client palette): only {measured['accent']:.2%} of pixels sit near a "
+            f"chromatic colour of {brand_name}")
+    if not measured["chips"] and measured["chroma"] >= GREYSCALE_MAX_CHROMA:
+        out["W1"].append(
+            f"{where}: missing annotation W1 (numbered section chip): no compact "
+            f"filled accent-colour chip block found in the slice's top-left zone")
+    elif not measured["chips"]:
+        out["W1"].append(
+            f"{where}: missing annotation W1 (numbered section chip): the slice has "
+            f"no chip block because it carries no colour")
+    return out
+
+
+def _tag_key(tag):
+    m = re.fullmatch(r"0*(\d+)([A-Za-z]?)", str(tag).strip())
+    return (int(m.group(1)), m.group(2).upper()) if m else None
+
+
+def tag_sequence_failures(tags):
+    """Printed section tags must run in sequence, once each, none skipped:
+    1, 2, 2A, 3, 3A ... (a lettered tag follows its parent, or opens a
+    number whose plain tag is replaced, as 5A, 5B, 5C)."""
+    failures, seen = [], set()
+    base, letter = 0, ""
+
+    def expected():
+        nxt = [str(base + 1)]
+        if base:
+            nxt.append(f"{base}{chr(ord(letter or '@') + 1)}")
+        return " or ".join(nxt)
+
+    for raw in tags:
+        key = _tag_key(raw)
+        if key is None:
+            failures.append(f"printed tag {raw!r} is not a section number")
+            continue
+        n, lt = key
+        shown = f"{n}{lt}"
+        if shown in seen:
+            failures.append(f"printed tag {shown} appears more than once; "
+                            f"after {base}{letter} expected {expected()}")
+            continue
+        seen.add(shown)
+        if not lt and n == base + 1:
+            base, letter = n, ""
+        elif lt and base and n == base and lt == chr(ord(letter or "@") + 1):
+            letter = lt
+        elif lt and n == base + 1 and lt == "A":
+            base, letter = n, "A"
+        else:
+            failures.append(f"printed tag {shown} is out of sequence after "
+                            f"{base}{letter}: expected {expected()}")
+            if (n, lt) > (base, letter):
+                base, letter = n, lt
+    return failures
+
+
+def badge_failures(reads):
+    """Badge numerals read off a sheet ({name: [..]}) must run 1..n once each."""
+    failures = []
+    if not isinstance(reads, dict):
+        return failures
+    for name, values in reads.items():
+        if not isinstance(values, list):
+            continue
+        got = []
+        for v in values:
+            text = str(v).strip()
+            got.append(int(text) if re.fullmatch(r"\d{1,2}", text) else text)
+        want = list(range(1, len(got) + 1))
+        if got != want:
+            failures.append(f"badge sequence {name!r} reads {[str(g) for g in got]}, "
+                            f"expected {[str(w) for w in want]} (once each, in order, "
+                            f"no icon or other symbol in place of a number)")
+    return failures
+
+
+def sequence_failures(plan):
+    """W1 sequential numbering from the plan record, one named line each."""
+    failures = []
+    tagged = [(s.get("section_id") or f"entry {i}", s["section_tag"])
+              for i, s in enumerate(plan)
+              if isinstance(s, dict) and s.get("section_tag") not in (None, "")]
+    if tagged:
+        for line in tag_sequence_failures([tag for _sid, tag in tagged]):
+            failures.append(f"missing annotation W1 (sequential numbering): {line}")
+    for i, section in enumerate(plan):
+        if isinstance(section, dict):
+            sid = section.get("section_id") or f"entry {i}"
+            for line in badge_failures(section.get("badge_reads")):
+                failures.append(f"section {sid!r}: missing annotation W1 "
+                                f"(sequential numbering): {line}")
+    return failures
+
+
+def ratio_label_failures(plan):
+    """W3: a printed ratio label must be a valid label (3:9 is not)."""
+    failures = []
+    for section in plan:
+        if not isinstance(section, dict):
+            continue
+        sid = section.get("section_id") or "(unnamed section)"
+        for slot_id, label in slot_labels(section).items():
+            value = label.get("aspect_ratio") if isinstance(label, dict) else None
+            if isinstance(value, str) and re.sub(r"\s", "", value) not in VALID_RATIO_LABELS:
+                failures.append(
+                    f"section {sid!r} slot {slot_id!r}: slot label W3 prints an invalid "
+                    f"ratio {value!r} (valid labels: "
+                    f"{', '.join(sorted(VALID_RATIO_LABELS))})")
+    return failures
 
 
 def annotation_failures(plan, stage, measured_width=None):
@@ -491,8 +764,65 @@ def write_run_record(run_dir, stage, traits, section_count, slice_count):
     summary = ", ".join(f"{t} {traits[t]['verdict']}" for t in sorted(traits))
     print(f"WROTE: {VERDICTS_REL} ({stage}: {summary})")
 
+def image_mode(args):
+    """--image <png> [--sheet] --brand <brand.json>: the pixel traits only."""
+    def take(flag):
+        if flag in args:
+            i = args.index(flag)
+            val = args[i + 1] if i + 1 < len(args) else None
+            del args[i:i + 2]
+            return val
+        return None
+    sheet = "--sheet" in args
+    if sheet:
+        args.remove("--sheet")
+    image, brand_arg = take("--image"), take("--brand")
+    if not image or not brand_arg or args:
+        print("usage: validate_wireframe.py --image <png> --brand <brand.json> [--sheet]")
+        return 2
+    try:
+        brand = load_json(Path(brand_arg))
+        palette, allowed = brand_color_sets(brand)
+    except Exception as exc:
+        print(f"ERROR: unreadable input: brand file {brand_arg}: {exc}")
+        return 2
+    measured = measure_style(Path(image), palette, slice_zone=not sheet)
+    if measured is None:
+        print(f"ERROR: unreadable input: {image} (Pillow and a readable PNG are required)")
+        return 2
+    name = Path(brand_arg).name
+    lines = style_failures(f"image {Path(image).name}", measured, name)
+    share = measure_slice_colors(Path(image), palette, allowed)
+    print(f"MEASURED chroma={measured['chroma']:.2%} accent={measured['accent']:.2%} "
+          f"chips={len(measured['chips'])} chromatic_palette_colors={measured['accents']} "
+          f"palette_share={share[0]:.1%} off_brand={share[1]:.0%}" if share else
+          f"MEASURED chroma={measured['chroma']:.2%} accent={measured['accent']:.2%} "
+          f"chips={len(measured['chips'])}")
+    if not measured["accents"]:
+        print("NOT MEASURED: the palette has no chromatic colour, so W1 chip, W4 accent "
+              "share and W8 have nothing to measure")
+    if share is not None and measured["accents"]:
+        if share[0] < PALETTE_MIN_SHARE:
+            lines["W4"].append(f"image {Path(image).name}: off-brand colors W4: palette share "
+                               f"{share[0]:.1%} is under {PALETTE_MIN_SHARE:.0%}")
+        elif share[1] > OFF_BRAND_MAX_SHARE:
+            lines["W4"].append(f"image {Path(image).name}: off-brand colors W4: {share[1]:.0%} of "
+                               f"chromatic pixels measure off-palette (dominant {share[2]})")
+    bad = 0
+    for trait in ("W1", "W4", "W8"):
+        if lines[trait]:
+            bad = 1
+            for line in lines[trait]:
+                print(f"FAIL {trait}: {line}")
+        else:
+            print(f"PASS {trait}")
+    return bad
+
+
 def main(argv):
     args = list(argv[1:])
+    if "--image" in args:
+        return image_mode(args)
     brand_arg = None
     if "--brand" in args:
         idx = args.index("--brand")
@@ -663,11 +993,12 @@ def main(argv):
         except Exception:
             measured_width = None
     annotation = annotation_failures(plan, stage, measured_width)
+    annotation["W1"] += sequence_failures(plan)
     for trait in ("W1", "W2", "W5", "W6"):
         failures.extend(annotation[trait])
 
     # (6) Slot-label trait W3 (Item 15).
-    w3_failures = slot_label_failures(plan, inventory_by_id)
+    w3_failures = slot_label_failures(plan, inventory_by_id) + ratio_label_failures(plan)
     failures.extend(w3_failures)
 
     # (7) Brand-color trait W4 (Item 15): measured slice colors.
@@ -709,12 +1040,27 @@ def main(argv):
 
     failures.extend(w4_failures)
 
-    # (8) Emit the measured W1-W6 verdicts into the run record, pass or
+    # (7b) SPF016 style traits on the pixels: chip (W1), accent share counted
+    # against the resolved client palette (W4), greyscale negative trait (W8).
+    w8_failures = []
+    for idx, p in enumerate(slices):
+        measured = measure_style(p, palette)
+        section = plan_by_index[idx] if idx < len(plan_by_index) else {}
+        sid = section.get("section_id") if isinstance(section, dict) else None
+        where = f"section {sid!r} slice {p.name}" if sid else f"slice {p.name}"
+        lines = style_failures(where, measured, brand_path.name)
+        annotation["W1"] += lines["W1"]
+        w4_failures += lines["W4"]
+        w8_failures += lines["W8"]
+        failures.extend(lines["W1"] + lines["W4"] + lines["W8"])
+
+    # (8) Emit the measured W1-W6, W8 verdicts into the run record, pass or
     # fail: the record is what later readers trust, never a plan flag.
     verdicts = {}
     for trait, lines in (("W1", annotation["W1"]), ("W2", annotation["W2"]),
                          ("W3", w3_failures), ("W4", w4_failures),
-                         ("W5", annotation["W5"]), ("W6", annotation["W6"])):
+                         ("W5", annotation["W5"]), ("W6", annotation["W6"]),
+                         ("W8", w8_failures)):
         verdicts[trait] = {"verdict": "fail" if lines else "pass",
                            "failures": list(lines)}
     write_run_record(run_dir, stage, verdicts, len(plan), len(slices))
@@ -727,7 +1073,7 @@ def main(argv):
     print(f"PASS: {stage} section-plan is complete and ordered "
           f"({len(plan_ids)} sections, {len(plan_slot_ids)} slots, "
           f"{len(slices)} section slices; annotations W1/W2/W5/W6, slot "
-          f"labels W3, and brand colors W4 verified)")
+          f"labels W3, brand colors W4, and the not-greyscale trait W8 verified)")
     return 0
 
 

@@ -812,6 +812,19 @@ named line per section or slot. The plan entry is the annotation
 record; the reviewer verifies the record against the printed sheet by
 eye (the validator does no OCR).
 
+Style extensions to the same validator (the look of the owner's wireframes
+1, 3 and 4, in the client's colors; trait text in `references/qc-contract.md`).
+A plan entry may also carry `section_tag` (the chip text as printed, for example
+`"2A"`) and `badge_reads` (`{"steps": ["1", "2", "3", "4", "5", "6", "7"]}`, the
+numerals read off a badge sequence). The validator fails a tag sequence that
+repeats, skips or reorders a number, and any badge sequence that is not 1 to n
+once each (W1). A slot label's `aspect_ratio` that is not a valid label, such as
+`3:9`, fails W3. On the pixels, each slice must carry a compact filled
+accent-colour chip block in its top-left zone (W1), a chromatic colour of the
+resolved client palette (W4, grey never counts), and enough colour to not be the
+greyscale no-colour style (W8, the negative trait). `--image <png> --brand
+<brand.json> [--sheet]` runs the pixel traits on one image.
+
 ## Mockup section generation record (`final-mockups/generation-record.json`)
 
 The `final-mockups` stage (the single client-judged mockup) carries one

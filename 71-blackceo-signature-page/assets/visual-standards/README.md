@@ -37,6 +37,47 @@ mockups including the hybrid board (per `ANALYSIS.md`); counted as
 files it is 44 images, because the long-form pages also ship cut into
 slices and parts for native-resolution review.
 
+## Which sheet is the wireframe style reference (owner decision, 2026-10-19)
+
+The owner's Drive folder `wireframes` holds five files. Of the files
+numbered 1 to 4, the owner likes **1, 3 and 4**; the unnumbered
+black-and-white sheet is the one he does not love. A wireframe request sends
+exactly one of the bundled sheets as its style reference, chosen by stage and
+form (`references/wireframe-build-spec.json`, applied by
+`scripts/wireframe_spec.py`, listed in `manifest.json` under
+`wireframe_style_references` and as a `role` on each file):
+
+| Stage | Standard form | Long-Form form |
+|---|---|---|
+| `desktop-wireframe` | `chatgpt-wireframe-1.png` (Standard desktop) | `chatgpt-wireframe-3.png` (Long-Form desktop) |
+| `mobile-tablet` | `chatgpt-wireframe-4.png` plus the rule "true single-column phone stack, never side-by-side rows" | `chatgpt-wireframe-4.png` (Long-Form mobile) |
+
+- `chatgpt-wireframe-2.png` (Standard mobile) is **never attached**. It is a
+  narrowed desktop frame with side-by-side text and image rows, not a phone
+  stack.
+- `set-for-life-desktop-wireframe.png` (with its slices and parts) was
+  analyzed and is **not a target style**. It is strictly greyscale: no brand
+  colour, outlined CTAs, crossed-box slots. It was the first reference in
+  every earlier wireframe request, which is why those sheets came out as
+  grey line work on ivory. It is never attached to a wireframe request, and a
+  request that still lists it is refused by name. What survives from it is
+  two annotation conventions, now written rules: a widths header strip
+  ("1440 PX PAGE / 1200 PX CONTENT") on the first slice, and one behaviour
+  note per section.
+- The sheets are drawn in their own brand's red and black. They teach
+  structure only. A client's wireframe is rendered in that client's resolved
+  brand colours (the BRAND COLORS line of the prompt); the example red or
+  black, or any other client's colours, is never hard-coded.
+- The sheets carry flaws a model must not copy, listed to the generator in
+  the prompt and checked by W1, W3 and W4 in `references/qc-contract.md`:
+  sheet 1 prints "DESKTOR" and "SECTION 3" twice (4 skipped); sheet 2 prints
+  05 twice (04 skipped) and "3:9"; sheet 3 prints "BIGNEFIT 2", "BTEP 7",
+  badges 44 and 52, "SC" for 5C, a second "3A" where 4A belongs, a step
+  sequence that repeats numbers, and "3:9"; sheet 4 numbers its founder-letter
+  parts 01, 02, 05, 04, 05, 06 and misspells "featofe". Sheets 3 and 4 also
+  draw the founder letter as six parts; the letter stays one continuous
+  reading block (SOP Stage 5).
+
 ## Provenance and handling
 
 Source: Trevor's Drive folder, downloaded 2026-10-15 and held at

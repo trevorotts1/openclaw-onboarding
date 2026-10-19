@@ -613,7 +613,14 @@ class WireframeValidatorTest(unittest.TestCase):
         # 9,000px per slice: the desktop page floor is 16,736px summed, so the
         # compliant two-slice fixture is a real long-scroll page, not a card.
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.Image.new("RGB", (width, height), self.NAVY).save(path)
+        img = self.Image.new("RGB", (width, height), self.NAVY)
+        # SPF016: a real slice carries a section chip and accent-coloured fills
+        # (the brand file's gold); a flat navy slice is the colourless style.
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([40, 40, 240, 100], fill=(201, 162, 39))
+        draw.rectangle([0, 600, width, 1000], fill=(201, 162, 39))
+        img.save(path)
 
     def write_plan(self, plan):
         write(self.run / "desktop-wireframe" / "section-plan.json", json.dumps(plan))

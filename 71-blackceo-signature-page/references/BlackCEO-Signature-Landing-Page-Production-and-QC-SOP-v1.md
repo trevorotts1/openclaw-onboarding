@@ -167,6 +167,8 @@ A header strip on the sheet states the page width and the content width. The ann
 
 Create a creative composition through meaningful hierarchy, mixed image proportions, offset frames, varied scale, typography-only panels and spacing. Do not substitute a monotonous stack of identical editor blocks. Creativity does not justify random order or missing content.
 
+**The sheet language and the style reference.** The sheet follows the owner's wireframes 1, 3 and 4 (`assets/visual-standards/README.md`): a numbered chip and name tab on every section, inline type specs, image plates labelled with ratio and art direction, a filled primary CTA with microcopy, contiguous bands that alternate light and dark, and, for Long-Form, each pain band answered by a lettered solution band. Colour comes only from the client's resolved brand colors, never from the example sheets. The generation request attaches one bundled sheet as its style reference, by stage and form (Standard desktop sheet 1, Long-Form desktop sheet 3, mobile sheet 4), as set in `references/wireframe-build-spec.json`; the greyscale Set for Life sheet is never attached, because a colourless sheet is the style the owner rejected (trait W8). Chip numbers run in sequence with none repeated or skipped, and a ratio label is a valid ratio. The founder letter is still one continuous reading block, though two bundled sheets draw it as six parts.
+
 ### B. Start the image inventory
 
 Assign every requested generated image its stable ID, intended role, dimensions/aspect, desktop slot and expected mobile role. Identify existing logo/product/identity assets separately. Zero-image panels remain valid. Read only the image guide's crop/face/hair requirements section during this planning so crop, face, hair and scene requirements are not discovered after the layout is locked. The art direction printed on each slot's label is that slot's inventory role, stated on the sheet so the layout and the inventory cannot drift apart.
@@ -190,6 +192,8 @@ The spec image set is produced by one fixed method, for the wireframe stages and
 ### A. Reflow; do not shrink desktop
 
 The mobile wireframe is the same artifact in its mobile form: a designed, annotated build spec rendered as images in the client's brand colors, one section slice per section at the 390px phone width, carrying the same printed annotations as the desktop sheet (section number and name, type specs, image slots labeled with aspect ratio and art direction, the run's real copy, CTA chips with microcopy specs, behavior notes) under a header strip stating page width and content width. Mobile-specific direction is printed as a behavior note on the section it governs (for example "CTA before portrait on mobile").
+
+The mobile style reference is the owner's long-form mobile sheet (`chatgpt-wireframe-4`) for both forms, with the rule that a Standard page is also a true single-column phone stack: never the side-by-side text-and-image rows of the bundled Standard mobile sheet, which is a narrowed desktop and is never attached (`references/wireframe-build-spec.json`). The sheet language, colour rule and numbering rule of Stage 4A apply unchanged.
 
 Build a readable phone layout using the same copy and assigned assets. Main content is one readable column. Image-led details may be offset where the map calls for them, but never leave long copy in a narrow strip beside an image. Keep the first CTA and opening purpose usable before a long image procession.
 

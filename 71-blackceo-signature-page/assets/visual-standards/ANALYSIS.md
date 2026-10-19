@@ -46,3 +46,13 @@ Generated with an image model in the GPT-image family (file names are ChatGPT Im
 7. HTML PARITY: the responsive-html stage builds to MATCH the approved mockup, with a side-by-side parity check (render vs mockup) as its gate evidence, per Trevor's standing rule that the live page must match the approved mockup.
 
 Status: analysis delivered to Trevor 2026-10-15; skill changes NOT yet ordered or built. The current Simulator Room run continues under the old stage design; its final-mockups stage is where a real-image artifact first appears in that run.
+
+## Update 2026-10-19 (wireframe style reference)
+
+The fix list above has since been built. One decision was added: the wireframe
+stages no longer send the greyscale Set for Life sheet as their style
+reference. They send `chatgpt-wireframe-1` (Standard desktop), `-3` (Long-Form
+desktop) or `-4` (mobile) by stage and form, and the prompt asks for an annotated
+build spec in the client's resolved brand colors. See `README.md` in this
+folder ("Which sheet is the wireframe style reference") and
+`references/wireframe-build-spec.json`.
