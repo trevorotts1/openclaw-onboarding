@@ -220,7 +220,7 @@ class CopySourceAndTierRoundFourTests(unittest.TestCase):
             request = self._request(metadata={"copy_source": str(source)})
             self.assertEqual(exe.copy_source_ctas(run, request)["S05"], "SHOW ME THE SYSTEM")
 
-    def test_copy_source_wins_a_conflict_with_a_warning(self):
+    def test_inline_cta_survives_a_raw_id_copy_conflict_with_a_note(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)
             (run / "inputs").mkdir()
@@ -231,8 +231,45 @@ class CopySourceAndTierRoundFourTests(unittest.TestCase):
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
                 data = exe.load_request(run, "r.json")
-            self.assertEqual(data["sections"][4]["cta"], "SHOW ME THE SYSTEM")
-            self.assertIn("WARN cta_conflict section S05", stderr.getvalue())
+            self.assertEqual(data["sections"][4]["cta"], "JOIN THE FREE TRAINING")
+            note = stderr.getvalue()
+            self.assertIn("NOTE cta_namespace section S05", note)
+            self.assertIn("SHOW ME THE SYSTEM", note)
+            self.assertNotIn("WARN cta_conflict", note)
+
+    def test_run_003_band_layout_keeps_all_six_mapping_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "copy.json").write_text(json.dumps(self.COPY), encoding="utf-8")
+            sections = [
+                {"section_id": "S01", "cta": "SAVE MY SEAT"},
+                {"section_id": "S02", "cta": None},
+                {"section_id": "S03", "cta": None},
+                {"section_id": "S04", "cta": "SHOW ME THE SYSTEM"},
+                {"section_id": "S05", "cta": "JOIN THE FREE TRAINING"},
+                {"section_id": "S06", "cta": "SAVE MY SEAT"},
+            ]
+            for section in sections:
+                section.update({"copy": "Sentence ends here.", "slots": []})
+            (run / "r.json").write_text(
+                json.dumps({"model": "stub", "sections": sections}),
+                encoding="utf-8")
+            data = exe.load_request(run, "r.json")
+            self.assertEqual(
+                [exe._cta_label(s.get("cta")) or "-" for s in data["sections"]],
+                ["SAVE MY SEAT", "-", "-", "SHOW ME THE SYSTEM",
+                 "JOIN THE FREE TRAINING", "SAVE MY SEAT"])
+
+    def test_run_001_copy_source_layout_resolves_two_of_six(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "copy.json").write_text(json.dumps(self.COPY), encoding="utf-8")
+            (run / "r.json").write_text(json.dumps(self._request()), encoding="utf-8")
+            data = exe.load_request(run, "r.json")
+            labels = [exe._cta_label(s.get("cta")) for s in data["sections"]]
+            self.assertEqual(len([label for label in labels if label]), 2)
+            self.assertIn("SAVE MY SEAT", labels)
+            self.assertIn("SHOW ME THE SYSTEM", labels)
 
     def test_no_copy_source_and_cta_required_refuses(self):
         with tempfile.TemporaryDirectory() as tmp:

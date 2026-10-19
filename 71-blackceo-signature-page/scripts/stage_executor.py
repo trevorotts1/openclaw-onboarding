@@ -483,11 +483,16 @@ def load_request(run_dir: Path, name: str) -> dict:
         s.setdefault("section_name", s["section_id"])
         inline = _cta_label(s.get("cta"))
         source = ctas.get(str(s["section_id"]))
-        if source:
-            if inline and inline != source:
-                print(f"WARN cta_conflict section {s['section_id']}: inline "
-                      f"{inline!r} disagrees with the copy source {source!r}; "
-                      "the copy source wins", file=sys.stderr)
+        if inline:
+            # Band layouts re-key canonical copy ids, so a raw-id hit is not
+            # authority: the builder's mapping-derived inline label wins.
+            if source and source != inline:
+                print(f"NOTE cta_namespace section {s['section_id']}: raw-id "
+                      f"copy value {source} differs from mapping-derived inline "
+                      f"{inline}; inline (canonical via band mapping) retained",
+                      file=sys.stderr)
+        elif source:
+            # Copy-source layouts leave cta null; resolve from the run's copy.
             s["cta"] = source
         if required:
             s.setdefault("cta_required", True)
@@ -897,6 +902,8 @@ def main(argv=None) -> int:
             refused = 0
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
+                    cta = _cta_label(section.get("cta")) or "-"
+                    print(f"PREFLIGHT_CTA {stage} {section['section_id']} -> {cta}")
                     for template, width, _height in LAYOUT[stage]:
                         name = template.format(n=index)
                         try:
