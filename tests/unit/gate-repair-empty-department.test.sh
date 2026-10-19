@@ -11,6 +11,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPAIR="$REPO_ROOT/23-ai-workforce-blueprint/scripts/repair/repair-directors-doctrine.py"
 T="$(mktemp -d "${TMPDIR:-/tmp}/gate-repair-empty-XXXXXX")"
 trap 'rm -rf "$T"' EXIT
+export OPENCLAW_PLATFORM=mac   # hermetic: the repair refuses to run on a runner with no ~/.openclaw (fails identically on main without this)
 fail=0; ok() { echo "  ok   $1"; }; bad() { echo "  FAIL $1"; fail=1; }
 
 # gate runs as a copy beside a stub general-task check (the real sibling is a different change)
