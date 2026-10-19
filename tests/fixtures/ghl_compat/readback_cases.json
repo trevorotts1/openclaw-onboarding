@@ -1,0 +1,390 @@
+{
+  "_meta": {
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_public_readback_reconcile.py",
+    "contract_revision": "GU-004-2026-10-18",
+    "purpose": "Write to readback pairs per operation family, including mismatch, absent-readback and a write that did not land."
+  },
+  "placeholders": [
+    "LOCATION_ID_EXAMPLE",
+    "CONTACT_ID_EXAMPLE",
+    "INVOICE_ID_EXAMPLE",
+    "OPPORTUNITY_ID_EXAMPLE",
+    "PRODUCT_ID_EXAMPLE",
+    "ORDER_ID_EXAMPLE",
+    "COUPON_ID_EXAMPLE",
+    "EVENT_ID_EXAMPLE",
+    "CALENDAR_ID_EXAMPLE",
+    "EMAIL_EXAMPLE",
+    "FIRST_NAME_EXAMPLE",
+    "OTHER_EMAIL_EXAMPLE"
+  ],
+  "readback_result_enum": [
+    "verified",
+    "verified_absent",
+    "mismatch",
+    "absent",
+    "unreadable"
+  ],
+  "assertions": {
+    "write_2xx_without_verified_readback_status": "unknown_outcome",
+    "reconcile_uses_same_operation_readback_row": true,
+    "reconcile_never_switches_credential_class_or_version": true,
+    "reconcile_not_found_means_write_provably_did_not_land": true,
+    "reconcile_conflict_means_write_landed_differently_than_intended": true,
+    "unreconciled_unknown_outcome_blocks_further_calls_with_same_key": true
+  },
+  "cases": [
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-contacts-upsert-verified",
+      "operation_id": "contacts.upsert",
+      "family": "contacts",
+      "readback_operation_id": "contacts.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "contact": {
+          "id": "CONTACT_ID_EXAMPLE",
+          "email": "EMAIL_EXAMPLE",
+          "locationId": "LOCATION_ID_EXAMPLE"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4 (contacts.upsert reconciles with contacts.get)"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "conflict",
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-contacts-upsert-mismatch",
+      "operation_id": "contacts.upsert",
+      "family": "contacts",
+      "readback_operation_id": "contacts.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "contact": {
+          "id": "CONTACT_ID_EXAMPLE",
+          "email": "OTHER_EMAIL_EXAMPLE",
+          "locationId": "LOCATION_ID_EXAMPLE"
+        }
+      },
+      "expected_readback_result": "mismatch",
+      "source": "GU-004 \u00a72.3+\u00a72.4 (2xx write with readback mismatch)"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-contacts-create-search-verified",
+      "operation_id": "contacts.create",
+      "family": "contacts",
+      "readback_operation_id": "contacts.search",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "contacts": [
+          {
+            "id": "CONTACT_ID_EXAMPLE",
+            "email": "EMAIL_EXAMPLE"
+          }
+        ]
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-contacts-update-verified",
+      "operation_id": "contacts.update",
+      "family": "contacts",
+      "readback_operation_id": "contacts.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "contact": {
+          "id": "CONTACT_ID_EXAMPLE",
+          "firstName": "FIRST_NAME_EXAMPLE"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-contacts-delete-verified-absent",
+      "operation_id": "contacts.delete",
+      "family": "contacts",
+      "readback_operation_id": "contacts.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 404,
+      "readback_observed": {
+        "statusCode": 404,
+        "message": "contact not found (synthetic)"
+      },
+      "expected_readback_result": "verified_absent",
+      "source": "GU-004 \u00a73.3 B-REPEAT-DELETE (absence proves the delete)"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-opportunities-create-verified",
+      "operation_id": "opportunities.create",
+      "family": "opportunities",
+      "readback_operation_id": "opportunities.get",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "opportunity": {
+          "id": "OPPORTUNITY_ID_EXAMPLE",
+          "status": "open"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "conflict",
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-opportunities-update-mismatch",
+      "operation_id": "opportunities.update",
+      "family": "opportunities",
+      "readback_operation_id": "opportunities.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "opportunity": {
+          "id": "OPPORTUNITY_ID_EXAMPLE",
+          "status": "lost"
+        }
+      },
+      "expected_readback_result": "mismatch",
+      "source": "GU-004 \u00a72.3+\u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-invoices-create-verified",
+      "operation_id": "invoices.create",
+      "family": "payments_commerce",
+      "readback_operation_id": "invoices.get",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "invoice": {
+          "id": "INVOICE_ID_EXAMPLE",
+          "status": "draft",
+          "altId": "LOCATION_ID_EXAMPLE"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4 (invoices.create reconciles with invoices.get)"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "not_found",
+      "retry_permitted_after_reconcile": true,
+      "id": "rb-invoices-create-did-not-land",
+      "operation_id": "invoices.create",
+      "family": "payments_commerce",
+      "readback_operation_id": "invoices.get",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 404,
+      "readback_observed": {
+        "statusCode": 404,
+        "message": "invoice not found (synthetic)"
+      },
+      "expected_readback_result": "absent",
+      "source": "GU-004 \u00a72.4 (reconcile not_found = the write provably did not land)"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "conflict",
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-invoices-record-payment-mismatch",
+      "operation_id": "invoices.recordPayment",
+      "family": "payments_commerce",
+      "readback_operation_id": "invoices.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "invoice": {
+          "id": "INVOICE_ID_EXAMPLE",
+          "status": "sent",
+          "amountPaid": 0
+        }
+      },
+      "expected_readback_result": "mismatch",
+      "source": "GU-004 \u00a72.3+\u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-products-create-verified",
+      "operation_id": "products.create",
+      "family": "payments_commerce",
+      "readback_operation_id": "products.get",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "product": {
+          "id": "PRODUCT_ID_EXAMPLE",
+          "locationId": "LOCATION_ID_EXAMPLE"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-orders-record-payment-verified",
+      "operation_id": "orders.recordPayment",
+      "family": "payments_commerce",
+      "readback_operation_id": "orders.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "order": {
+          "id": "ORDER_ID_EXAMPLE",
+          "status": "paid"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-coupons-create-verified",
+      "operation_id": "coupons.create",
+      "family": "payments_commerce",
+      "readback_operation_id": "coupons.get",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "coupon": {
+          "id": "COUPON_ID_EXAMPLE",
+          "altId": "LOCATION_ID_EXAMPLE"
+        }
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "ok",
+      "expected_reconciliation_required": false,
+      "expected_reconcile_outcome": null,
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-appointments-create-verified",
+      "operation_id": "appointments.create",
+      "family": "conversations_calendars",
+      "readback_operation_id": "calendars.events.list",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "events": [
+          {
+            "id": "EVENT_ID_EXAMPLE",
+            "calendarId": "CALENDAR_ID_EXAMPLE"
+          }
+        ]
+      },
+      "expected_readback_result": "verified",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "not_found",
+      "retry_permitted_after_reconcile": true,
+      "id": "rb-social-post-create-absent",
+      "operation_id": "social.posts.create",
+      "family": "social",
+      "readback_operation_id": "social.posts.get",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 404,
+      "readback_observed": {
+        "statusCode": 404,
+        "message": "post not found (synthetic)"
+      },
+      "expected_readback_result": "absent",
+      "source": "GU-004 \u00a72.4"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "unavailable",
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-media-upload-unreadable",
+      "operation_id": "media.upload",
+      "family": "content",
+      "readback_operation_id": "media.files.list",
+      "readback_kind": "read",
+      "write_http_status": 201,
+      "readback_http_status": 200,
+      "readback_observed": {
+        "unparseable_body": "<binary-or-empty response, synthetic>"
+      },
+      "expected_readback_result": "unreadable",
+      "source": "GU-004 \u00a72.3 (2xx write, readback unreadable)"
+    },
+    {
+      "expected_write_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_reconcile_outcome": "unavailable",
+      "retry_permitted_after_reconcile": false,
+      "id": "rb-contacts-upsert-readback-timeout",
+      "operation_id": "contacts.upsert",
+      "family": "contacts",
+      "readback_operation_id": "contacts.get",
+      "readback_kind": "read",
+      "write_http_status": 200,
+      "readback_http_status": null,
+      "transport_error": "timeout",
+      "readback_observed": null,
+      "expected_readback_result": "absent",
+      "source": "GU-004 \u00a72.3+\u00a72.4 (readback unavailable, reconcile again later)"
+    }
+  ]
+}

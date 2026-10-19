@@ -44,3 +44,18 @@ the store, its location, or its TTL.
 (entry module, actions, schemas, stores) for INTEGRATION's registry
 wiring. Discoverability in the installed registry remains
 INTEGRATION-owned; the manifest is the descriptor S78 supplies.
+
+## Descriptor is not an installation
+
+A runtime descriptor is NOT an installation. `runtime-manifest.json`
+carries `descriptor_only: true`, `proof_level: "descriptor_only"`, and
+`installation.state: "not_installed"` with null proof/evidence fields.
+Registering or reading the manifest proves only that the entry module
+and action set exist; it proves no native page, route, or price is
+installed in any tenant.
+
+Installation and live proof come only from an authorized install run
+that emits `installed_test_verified` or later. Until such a run exists,
+`page_result` stays L1 (`authored` / `locally_verified` / `blocked`),
+and no descriptor field may be read as installation or live evidence.
+

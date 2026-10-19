@@ -227,8 +227,9 @@ the installed GHL skill (it handles auth, rate limits and retries).
   **Tier 0 `caf`** (Skill 44) PRIMARY: a subprocess, so it works in sub-agents too (MCP
   does not); groups conversations · calendars · contacts · payments · locations; run
   `caf --help` / `caf <group> --help` — **do NOT guess flag names.** **Tier 1** official
-  GHL MCP, orchestrator session ONLY · **Tier 2** community MCP (billing/products/
-  subscriptions/Voice only) · **Tier 3** raw REST to `services.leadconnectorhq.com`
+  GHL MCP, orchestrator session ONLY · **Tier 2** community MCP RETIRED — NOT a
+  route, never call or restart it; billing/products/subscriptions/Voice go
+  official MCP → Tier 3 · **Tier 3** raw REST to `services.leadconnectorhq.com`
   (shapes in TOOLS.md `SKILL38: GHL_API_QUICK_REFERENCE`). **Media upload stays Tier 3.**
 - The inbound entry is UNCHANGED regardless of tier (Custom Webhook → OpenClaw hook, FLAT
   23-key raw body, `hooks.mappings` template, `deliver:false`).

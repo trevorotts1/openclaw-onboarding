@@ -1,568 +1,66 @@
 #!/usr/bin/env bash
-# ghl-mcp-probe.sh — v25.1.10
+# ghl-mcp-probe.sh — INERT TOMBSTONE (W07 retirement)
 #
-# THE ALIVE-NOT-JUST-LISTENING TEST for the GHL Community MCP (Tier 2, skill 36).
+# GHL_MCP_RETIRED=1 — the GHL Community MCP (Tier 2, skill 36) is RETIRED.
 #
-# WHY THIS EXISTS
-#   For two days every agent init on the fleet hung for the full 30s
-#   connectionTimeoutMs against a GHL MCP that was UP. The compiled
-#   dist/main.js was stale — it predated upstream's `await
-#   server.connect(transport)` — so the socket accepted the connection and the
-#   MCP handshake was answered by nobody.
+# WHY THIS FILE STILL EXISTS (and does almost nothing)
+#   Other scripts, docs, plists and QC gates reference this path, so the file
+#   must stay present and syntactically valid. What is GONE — deleted, not
+#   parked behind a flag — is every capability that could probe, heal, alert on
+#   or restart the retired service: no bounded self-heal, no launchctl
+#   kickstart, no pm2 restart, no systemctl restart, no streak state, no
+#   operator cards, no Ranger escalation. A future edit cannot re-arm a branch
+#   that no longer exists; reaching the old verbs means rewriting this file
+#   from scratch, and the gate (scripts/qc-assert-ghl-mcp-supervised.sh) reads
+#   the GHL_MCP_RETIRED marker below as the contract.
 #
-#   Nothing detected it, because nothing asked for an ANSWER:
-#     - launchd KeepAlive / pm2 / systemd only watch the PROCESS. It was alive.
-#     - `lsof -i :8765` only watches the SOCKET. It was open.
-#     - GET /health is served by express BEFORE the MCP transport is wired, so
-#       a deaf server happily returns {"status":"healthy","tools":N}.
-#   A liveness check that cannot fail is not a liveness check.
+# INVOCATION BEHAVIOUR (tombstones fail loudly, never silently succeed)
+#   Any invocation — whatever flags are passed — prints an unconditional
+#   refusal naming the retirement and the archive path, then exits 69.
+#   There is no --heal, no --quiet success path, no off-switch that returns 0.
+#   69 (EX_UNAVAILABLE) is outside this probe's historical 0/2/3/4/5 verdict
+#   vocabulary, so an old caller can never mistake a refusal for a verdict.
 #
-# WHAT THIS DOES
-#   1. GET  /health           — is a GHL MCP (not Cognee) listening at all?
-#   2. POST /mcp  JSON-RPC    — `initialize`; a real MCP response containing
-#                               serverInfo MUST arrive within --timeout seconds.
-#                               This is the assertion the outage would have failed.
-#   3. Tool-surface sanity    — the live tool count must sit inside the band for
-#                               the configured GHL_TOOL_PROFILE, proving the
-#                               profile actually took effect and the box is not
-#                               quietly serving the full 858-tool catalogue.
-#
-# USAGE
-#   ghl-mcp-probe.sh --once                 # probe, print STATUS, exit
-#   ghl-mcp-probe.sh --once --heal          # + ONE bounded restart, then re-probe
-#   ghl-mcp-probe.sh --once --skip-profile  # liveness only (used by the installer)
-#   ghl-mcp-probe.sh --once --quiet         # exit code only
-#   [--timeout N] [--url http://localhost:8765]
-#
-# EXIT CODES (callers gate on these)
-#   0  OK            — answering JSON-RPC, profile in band
-#   2  NO_LISTENER   — nothing (or the wrong service) on the port
-#   3  DEAF          — listening + /health green, NO JSON-RPC response  ← the outage
-#   4  PROFILE_DRIFT — answering, but the tool surface is not the configured profile
-#   5  UNHEALTHY     — /health responded but not as a healthy GHL MCP
-#
-# Never exits non-zero for its own internal problems (missing curl/python3 is
-# reported as an honest SKIP with exit 0) — a broken probe must not masquerade
-# as a broken server.
-#
-# WHAT CHANGED IN v25.1.10 (operator incident 2026-09-15: the probe WAS the outage)
-#   On a heavily loaded operator box one /health check took longer than the old
-#   5-second limit. The probe "healed" by force-restarting a HEALTHY server,
-#   waited only 20 seconds while a cold start on a loaded box takes 60-120s,
-#   declared NO_LISTENER and filed a Command Center card. Every 15 minutes.
-#   347 forced restarts and 72 identical cards later, the board's stale-task
-#   sweep was paging the operator's phone about cards nobody could groom.
-#   Five rules now hold, all bash-3.2 safe:
-#     1. Timeouts fit a loaded box: /health 20s (GHL_MCP_HEALTH_TIMEOUT),
-#        JSON-RPC 30s (GHL_MCP_PROBE_TIMEOUT default; --timeout still wins).
-#     2. --heal never restarts on the FIRST failing tick. A restart needs a
-#        streak: the previous tick must already have failed.
-#     3. After a restart the re-probe waits up to 180s (36 x 5s), not 20s.
-#     4. ONE alert per outage: the operator card AND the Rescue Rangers page
-#        both fire on the 3rd consecutive identical failure, once per streak
-#        (GHL_MCP_PROBE_ALERT_STREAK). No card per tick, ever. The RECOVERED
-#        card only follows an outage that was actually alerted.
-#     5. Operator off-switch: GHL_MCP_PROBE_DISABLED=1 or a marker file at
-#        $HOME/.openclaw/.ghl-mcp-probe-disabled (or /data/.openclaw/...)
-#        makes every run report DISABLED and exit 0, and stops
-#        ghl-mcp-autostart.sh from (re)installing the schedule.
-#        GHL_MCP_PROBE_DISABLED=0 forces ON for one run (markers ignored).
-#   Test hooks (unit test only, never set on a box): GHL_MCP_PROBE_ROUTE_CMD
-#   replaces the Command Center ingest helper; GHL_MCP_PROBE_HEAL_CMD replaces
-#   the supervisor restart.
+# RETIREMENT OF RECORD
+#   bash scripts/ghl-mcp-autostart.sh --retire   (inventory, archive, disable
+#   resurrection, stop, verify, receipt — run by update-skills.sh)
+#   Archive: <OC_ROOT>/.retired/archive-<UTC>/
+#   Receipt: <OC_ROOT>/.retired/ghl-mcp-retirement.json
+#   Terminal states: RETIRED_VERIFIED_OFF | MIGRATION_FAILED
 
 set -u
 
-ONCE=1
-QUIET=0
-HEAL=0
-SKIP_PROFILE=0
-URL=""
-TIMEOUT=""
+GHL_MCP_RETIRED=1
+GHL_MCP_TOMBSTONE_EXIT="${GHL_MCP_TOMBSTONE_EXIT:-69}"
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --once)         ONCE=1 ;;
-    --quiet)        QUIET=1 ;;
-    --heal)         HEAL=1 ;;
-    --skip-profile) SKIP_PROFILE=1 ;;
-    --timeout)      TIMEOUT="${2:-}"; shift ;;
-    --url)          URL="${2:-}"; shift ;;
-    *) : ;;
-  esac
-  shift
-done
-
+# Read-only path derivation for the message below. A tombstone never mkdir's,
+# never opens a log, never writes a file on the box it refuses on.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-# ── Shared pin/profile config (single source of truth) ───────────────────────
-# v21.6.0/R1: $OC_CONFIG/config/ (the FIRST two candidates) is where both
-# installers now deliver config/. Before that fix this list missed on every
-# box, so the probe could not see GHL_MCP_EXPECT_MIN_TOOLS /
-# GHL_MCP_EXPECT_MAX_TOOLS / a non-default profile — meaning a box deliberately
-# moved to `stable` would report PROFILE_DRIFT forever and page the operator
-# every 15 minutes.
-#
-# ⚠️ KEEP IN SYNC with ghl-mcp-autostart.sh, the VPS overlay,
+# ── Historical pin/profile resolver list — UNREACHABLE by design ─────────────
+# ⚠️ KEEP IN SYNC with scripts/ghl-mcp-autostart.sh, scripts/
+# ghl-mcp-assert-runtime.sh, the VPS overlay, scripts/
 # qc-assert-ghl-mcp-supervised.sh and the delivery step in BOTH installers.
-# scripts/qc-assert-pin-delivery-paths.sh fails CI if they drift.
+# Retained ONLY because scripts/qc-assert-ghl-mcp-pin-resolvers.py and
+# scripts/qc-assert-pin-delivery-paths.sh parse this literal list and fail on
+# drift (a consumer list narrower than the digest checker's is split-brain).
+# Nothing at or below the refusal below reads it — the loop body does nothing.
 for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
           "$HOME/.openclaw/config/ghl-mcp-pin.env" \
           "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
           "/data/.openclaw/config/ghl-mcp-pin.env" \
           "/data/.openclaw/onboarding/config/ghl-mcp-pin.env"; do
-  # shellcheck disable=SC1090
-  [ -f "$_c" ] && { . "$_c"; break; }
+  :
 done
+unset _c
 
-GHL_MCP_PORT="${GHL_MCP_PORT:-8765}"
-GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-30}"
-# v25.1.10: /health gets its own, generous ceiling. 5s was the trigger of the
-# 2026-09-15 self-inflicted outage loop on a loaded box.
-GHL_MCP_HEALTH_TIMEOUT="${GHL_MCP_HEALTH_TIMEOUT:-20}"
-# v25.1.10: alert (card + Rangers page) only on the Nth consecutive identical
-# failure, once per streak. 3 x 15 min = ~45 minutes of a genuinely stuck server.
-GHL_MCP_PROBE_ALERT_STREAK="${GHL_MCP_PROBE_ALERT_STREAK:-3}"
-# v25.1.10: how long a post-restart re-probe may wait for a cold start.
-GHL_MCP_PROBE_HEAL_WAIT_SECONDS="${GHL_MCP_PROBE_HEAL_WAIT_SECONDS:-180}"
-GHL_MCP_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE:-curated}"
-GHL_MCP_EXPECT_MIN_TOOLS="${GHL_MCP_EXPECT_MIN_TOOLS:-1}"
-GHL_MCP_EXPECT_MAX_TOOLS="${GHL_MCP_EXPECT_MAX_TOOLS:-200}"
-[ -n "$TIMEOUT" ] && GHL_MCP_PROBE_TIMEOUT="$TIMEOUT"
-[ -z "$URL" ] && URL="http://localhost:${GHL_MCP_PORT}"
-URL="${URL%/}"
+# ── Unconditional refusal (not behind any flag) ──────────────────────────────
+printf 'STATUS: ghl-mcp-probe=RETIRED (exit %s) — inert tombstone; GHL Community MCP (Tier 2, skill 36) is RETIRED (GHL_MCP_RETIRED=1); no probe, no self-heal, no restart; retirement of record: bash scripts/ghl-mcp-autostart.sh --retire; archive: <OC_ROOT>/.retired/archive-<UTC>/; receipt: <OC_ROOT>/.retired/ghl-mcp-retirement.json; terminal states: RETIRED_VERIFIED_OFF | MIGRATION_FAILED\n' \
+  "$GHL_MCP_TOMBSTONE_EXIT"
+printf '[ghl-mcp-probe] REFUSED — the GHL Community MCP (Tier 2, skill 36) is RETIRED (GHL_MCP_RETIRED=1).\n' >&2
+printf '[ghl-mcp-probe] This probe is an inert tombstone: it no longer probes, heals, alerts or restarts anything.\n' >&2
+printf '[ghl-mcp-probe] Retirement of record: bash scripts/ghl-mcp-autostart.sh --retire\n' >&2
+printf '[ghl-mcp-probe] Archive: <OC_ROOT>/.retired/archive-<UTC>/   Receipt: <OC_ROOT>/.retired/ghl-mcp-retirement.json\n' >&2
+printf '[ghl-mcp-probe] Terminal states: RETIRED_VERIFIED_OFF | MIGRATION_FAILED. Do not add a start, heal or restart path back.\n' >&2
 
-# R12 — HONOUR GHL_MCP_LOG_DIR. This used to be computed here and the caller's
-# GHL_MCP_LOG_DIR was ignored outright — the very variable the autostart passes
-# into the launchd plist, the pm2 ecosystem, the systemd unit and the supervisor
-# loop. Two consequences, both real:
-#   1. The probe's log location was coincidental rather than configured.
-#   2. tests/unit/ghl-mcp-probe.test.sh had no way to redirect it, so running the
-#      unit test appended real-looking OK/DEAF/NO_LISTENER/PROFILE_DRIFT verdicts
-#      to the BOX's production probe.log. The operator box's probe.log was found
-#      to be 100% test output, which makes a genuine DEAF verdict indistinguish-
-#      able from a fixture in the probe's only durable record.
-if [ -n "${GHL_MCP_LOG_DIR:-}" ]; then
-  LOG_DIR="$GHL_MCP_LOG_DIR"
-elif [ -d /data/logs ]; then
-  LOG_DIR="/data/logs"
-else
-  LOG_DIR="$HOME/Library/Logs/ghl-mcp"
-fi
-mkdir -p "$LOG_DIR" 2>/dev/null || true
-
-# ── LOG ROTATION (fleet gap: these logs never rotated — 5.4 MB on the operator
-# box, 2.2 MB on a second fleet box, both growing since May). copytruncate,
-# because the supervisor holds an open fd: renaming would leave the server
-# writing to an
-# orphaned inode. The launcher rotates at (re)start; this repeats it every run so
-# a server that stays up for months still gets rotated.
-GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
-GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP:-3}"
-rotate_log() {
-  local f="$1" max="$GHL_MCP_LOG_MAX_BYTES" keep="$GHL_MCP_LOG_KEEP" sz i
-  [ -f "$f" ] || return 0
-  sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
-  [ -n "$sz" ] || return 0
-  [ "$sz" -gt "$max" ] 2>/dev/null || return 0
-  rm -f "${f}.${keep}" 2>/dev/null || true
-  i=$((keep-1))
-  while [ "$i" -ge 1 ]; do
-    [ -f "${f}.${i}" ] && mv "${f}.${i}" "${f}.$((i+1))" 2>/dev/null || true
-    i=$((i-1))
-  done
-  cp "$f" "${f}.1" 2>/dev/null && : > "$f"
-}
-for _lf in "$LOG_DIR/stderr.log" "$LOG_DIR/stdout.log" \
-           "$LOG_DIR/ghl-mcp.log" "$LOG_DIR/ghl-mcp.err.log" "$LOG_DIR/probe.log"; do
-  rotate_log "$_lf"
-done
-
-say() { [ "$QUIET" = "1" ] || printf '%s\n' "$*"; }
-report() {
-  local state="$1"; shift
-  local _crf
-  # JEV-127: count ONLY genuine failure records. The old pattern
-  # ('card-route-failure') also matched report()'s own STATUS lines
-  # ('card-route-failures=N'), so the counter counted itself (0, 1, 2, ...).
-  _crf=$(grep -c 'card-route-failure target=' "$LOG_DIR/probe.log" 2>/dev/null)
-  case "$_crf" in ''|*[!0-9]*) _crf=0 ;; esac
-  if [ "$_crf" -gt 0 ] 2>/dev/null; then
-    say "STATUS: ghl-mcp-probe=${state} $* card-route-failures=${_crf}"
-    printf '%s STATUS: ghl-mcp-probe=%s %s card-route-failures=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$*" "$_crf" >> "$LOG_DIR/probe.log" 2>/dev/null || true
-  else
-    # Zero failures: byte-identical to HEAD (no count suffix at all).
-    say "STATUS: ghl-mcp-probe=${state} $*"
-    printf '%s STATUS: ghl-mcp-probe=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$*" >> "$LOG_DIR/probe.log" 2>/dev/null || true
-  fi
-}
-
-# ── Operator off-switch (v25.1.10) ───────────────────────────────────────────
-# A scheduled job that is still installed must be INERT once the operator has
-# turned the probe off, so the switch is honoured here and not only by the
-# installer. No probe, no restart, no alert. Exit 0: this is a decision, not a
-# server verdict.
-probe_disabled_reason() {
-  # Explicit env wins in both directions: 1 = off, 0 = on (marker files are
-  # ignored, for the unit test and deliberate one-off manual runs), unset or
-  # empty = the marker files decide.
-  case "${GHL_MCP_PROBE_DISABLED:-}" in
-    1) printf 'GHL_MCP_PROBE_DISABLED=1'; return 0 ;;
-    0) return 1 ;;
-  esac
-  local m
-  for m in "${HOME:-}/.openclaw/.ghl-mcp-probe-disabled" "/data/.openclaw/.ghl-mcp-probe-disabled"; do
-    case "$m" in /.openclaw/*) continue ;; esac
-    [ -f "$m" ] && { printf '%s' "$m"; return 0; }
-  done
-  return 1
-}
-if _DIS="$(probe_disabled_reason)"; then
-  report "DISABLED" "(operator off-switch present: ${_DIS} — no probe, no restart, no alert; remove it to re-enable)"
-  exit 0
-fi
-
-if ! command -v curl >/dev/null 2>&1; then
-  report "SKIPPED_NO_CURL" "(curl not on PATH — cannot probe; this is a probe gap, NOT a server verdict)"
-  exit 0
-fi
-
-# JEV-118: a failed card route must leave a DURABLE trace. say() is silenced
-# under --quiet and the sole quiet caller (ghl-mcp-autostart.sh) discards both
-# streams, so a WARNING via say() alone vanished while the streak file still
-# recorded escalated=1 and suppressed every later attempt. warn_no_card says it
-# AND appends it to $LOG_DIR/probe.log, which no QUIET flag and no caller
-# redirection can discard. Happy-path verdicts already log via report(); only
-# failures gain a line here, and only in this same file.
-warn_no_card() {
-  local msg="$1" target="${2:-unknown}"
-  # Unconditional stderr: say() prints nothing under --quiet, and this warning
-  # must survive it. The probe.log append below survives even discarded streams.
-  printf '%s\n' "$1" >&2
-  printf '%s card-route-failure target=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$target" "$msg" >> "$LOG_DIR/probe.log" 2>/dev/null || true
-}
-alert_operator() {
-  local title="$1" body="$2" route=""
-  # v25.1.10 test hook: the unit test used to reach the REAL ingest helper and
-  # file genuine cards on the operator's board. Never set this on a box.
-  # JEV-802: `task` mode, not a department slug. A slug call needs the target
-  # department to exist on the board; the operator alert must land whether or not
-  # it does. `task` lets Command Center pick (General Task when nothing fits).
-  if [ -n "${GHL_MCP_PROBE_ROUTE_CMD:-}" ]; then
-    # operator/internal alert route — empty requester envelope by design (mc-route.sh:127-131).
-    MC_ROUTE_REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}" MC_ROUTE_REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}" \
-      "$GHL_MCP_PROBE_ROUTE_CMD" task "$title" "$body" >/dev/null 2>&1 \
-      || warn_no_card " [ghl-mcp-probe] WARNING — the operator alert card was NOT created (route hook failed): $title" "${GHL_MCP_PROBE_ROUTE_CMD:-unset}"
-    return 0
-  fi
-  for c in "$SELF_DIR/mc-route.sh" \
-           "$HOME/.openclaw/onboarding/scripts/mc-route.sh" \
-           "$HOME/.openclaw/skills/scripts/mc-route.sh" \
-           "/data/.openclaw/onboarding/scripts/mc-route.sh"; do
-    [ -x "$c" ] && { route="$c"; break; }
-  done
-  # Never drop the alert silently: if no router is present the operator is told on
-  # stderr AND in the durable probe log (JEV-118: stderr alone vanishes under
-  # --quiet with both streams discarded), so a missing helper cannot look like
-  # "nothing to report".
-  if [ -z "$route" ]; then
-    warn_no_card " [ghl-mcp-probe] WARNING — no mc-route.sh helper found, so the operator alert card was NOT created: $title" "none-found:${SELF_DIR}/mc-route.sh,$HOME/.openclaw/onboarding/scripts/mc-route.sh,$HOME/.openclaw/skills/scripts/mc-route.sh,/data/.openclaw/onboarding/scripts/mc-route.sh" >&2
-    return 0
-  fi
-  # operator/internal alert route — empty requester envelope by design (mc-route.sh:127-131).
-  MC_ROUTE_REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}" MC_ROUTE_REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}" \
-    bash "$route" task "$title" "$body" >/dev/null 2>&1 \
-    || warn_no_card " [ghl-mcp-probe] WARNING — the operator alert card was NOT created (mc-route.sh failed): $title" "$route" >&2
-}
-
-# ── R13: ALERT ROUTING — card by default, Rangers only on a sustained outage ──
-# The probe already self-heals ONCE, so a single transient must never page a
-# human. The escalation threshold is therefore 3 CONSECUTIVE identical non-OK
-# verdicts — 45 minutes at the 15-minute cadence — which is a genuinely stuck
-# server, not a blip. State lives in one small file so it survives between runs.
-#
-#   $LOG_DIR/.probe-streak  ->  "<state> <consecutive_count> <escalated:0|1>"
-#
-# Reset on OK/RECOVERED. Escalation fires EXACTLY ONCE per unbroken streak (the
-# `escalated` flag): Rescue Rangers enforces a hard 25-exchange-per-day cap, so a
-# probe that re-paged every 15 minutes would burn a client's whole daily budget
-# on one incident and lock out real escalations.
-STREAK_FILE="$LOG_DIR/.probe-streak"
-
-read_streak() {   # echoes "state count escalated"
-  if [ -f "$STREAK_FILE" ]; then
-    tr -d '\r' < "$STREAK_FILE" 2>/dev/null | head -1
-  else
-    printf 'NONE 0 0'
-  fi
-}
-write_streak() { printf '%s %s %s\n' "$1" "$2" "$3" > "$STREAK_FILE" 2>/dev/null || true; }
-clear_streak() { rm -f "$STREAK_FILE" 2>/dev/null || true; }
-
-# Rescue Rangers escalation — the n8n webhook documented in
-# scripts/rescue-escalation-section.md.tpl. Fail-soft in every direction and it
-# NEVER changes the probe's exit code.
-#
-# IDENTITY IS FAIL-CLOSED ON PURPOSE. An escalation whose boxName is not this
-# box's canonical fleet slug cannot be attributed, is not counted against the
-# right account, and pollutes the shared Rangers queue. If either the webhook URL
-# or FLEET_STANDING_BOX_SLUG is absent we do NOT invent one and do NOT send a
-# malformed payload — we say so on the operator card instead, which is always
-# sent alongside. No client identity is hardcoded here; every field comes from
-# the box's own environment at runtime.
-escalate_rescue_rangers() {
-  local state="$1" detail="$2"
-  local url="${RESCUE_RANGERS_WEBHOOK_URL:-}"
-  local slug="${FLEET_STANDING_BOX_SLUG:-}"
-  if [ -z "$url" ] || [ -z "$slug" ]; then
-    local missing=""
-    [ -z "$url" ]  && missing="RESCUE_RANGERS_WEBHOOK_URL"
-    [ -z "$slug" ] && missing="${missing:+$missing and }FLEET_STANDING_BOX_SLUG"
-    say "  [ghl-mcp-probe] Rangers escalation SKIPPED (missing $missing) — the operator card carries the signal instead"
-    return 0
-  fi
-  command -v curl >/dev/null 2>&1 || return 0
-  local payload ver
-  ver="$(openclaw --version 2>/dev/null | head -1 | tr -d '"' || echo unknown)"
-  payload="$(GHLP_SLUG="$slug" GHLP_STATE="$state" GHLP_DETAIL="$detail" GHLP_VER="${ver:-unknown}" \
-    GHLP_PERSON="${RESCUE_RANGERS_PERSON:-operator}" \
-    GHLP_CLIENT="${RESCUE_RANGERS_CLIENT_NAME:-$slug}" \
-    GHLP_AGENT="${RESCUE_RANGERS_AGENT_NAME:-ghl-mcp-probe}" \
-    GHLP_BOXTYPE="${RESCUE_RANGERS_BOX_TYPE:-unknown}" \
-    GHLP_RETURN="${RESCUE_RANGERS_RETURN_TO:-}" \
-    python3 - <<'PYEOF' 2>/dev/null || true
-import json, os
-p = {
-    "action": "escalate",
-    "person": os.environ.get("GHLP_PERSON", "operator"),
-    "clientName": os.environ.get("GHLP_CLIENT", ""),
-    "agentName": os.environ.get("GHLP_AGENT", "ghl-mcp-probe"),
-    "boxName": os.environ.get("GHLP_SLUG", ""),
-    "boxType": os.environ.get("GHLP_BOXTYPE", "unknown"),
-    "openclawVersion": os.environ.get("GHLP_VER", "unknown"),
-    "problem": ("GHL Tier 2 community MCP has been " + os.environ.get("GHLP_STATE", "")
-                + " for 3 consecutive 15-minute probes (~45 minutes). " + os.environ.get("GHLP_DETAIL", "")),
-    "alreadyTried": ("1. ghl-mcp-probe --heal performed one bounded supervisor restart and re-probed. "
-                     "2. The restart did not restore a JSON-RPC response. "
-                     "3. Next step is scripts/ghl-mcp-autostart.sh, which re-pins, rebuilds from the vetted "
-                     "commit into a temp dir and swaps dist/ only on success."),
-    "returnTo": os.environ.get("GHLP_RETURN", ""),
-}
-print(json.dumps(p))
-PYEOF
-)"
-  [ -n "$payload" ] || return 0
-  # NO ARRAYS HERE, deliberately. macOS ships bash 3.2 and BOTH periodic callers
-  # invoke this script as `/bin/bash …` (the launchd probe plist and the VPS cron
-  # line), so expanding an EMPTY array as "${hdr[@]}" under `set -u` aborts with
-  # `hdr[@]: unbound variable` — which is the common case, since most boxes have
-  # no RESCUE_RANGERS_WEBHOOK_SECRET. Two explicit branches are bash-3.2 safe.
-  if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
-    curl -sS -m 10 -X POST "$url" -H 'Content-Type: application/json' \
-      -H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}" \
-      --data-binary "$payload" >/dev/null 2>&1 || true
-  else
-    curl -sS -m 10 -X POST "$url" -H 'Content-Type: application/json' \
-      --data-binary "$payload" >/dev/null 2>&1 || true
-  fi
-  say "  [ghl-mcp-probe] escalated to Rescue Rangers (3 consecutive ${state} verdicts)"
-}
-
-# ── 1. Is anything (and the RIGHT thing) listening? ──────────────────────────
-HEALTH_BODY=""
-check_health() {
-  HEALTH_BODY="$(curl -fsS --max-time "$GHL_MCP_HEALTH_TIMEOUT" "${URL}/health" 2>/dev/null || true)"
-  [ -n "$HEALTH_BODY" ] || return 2
-  case "$HEALTH_BODY" in
-    *0.5.3-local*|*cognee*|*Cognee*) return 2 ;;   # wrong service on the port
-  esac
-  case "$HEALTH_BODY" in
-    *'"status":"healthy"'*|*healthy*) return 0 ;;
-    *) return 5 ;;
-  esac
-}
-
-# ── 2. Does it ANSWER? (the assertion the outage would have failed) ──────────
-MCP_BODY=""
-check_responds() {
-  MCP_BODY="$(curl -sS --max-time "$GHL_MCP_PROBE_TIMEOUT" -X POST "${URL}/mcp" \
-    -H 'Content-Type: application/json' \
-    -H 'Accept: application/json, text/event-stream' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ghl-mcp-probe","version":"1"}}}' \
-    2>/dev/null || true)"
-  case "$MCP_BODY" in
-    *serverInfo*) return 0 ;;
-    *) return 3 ;;
-  esac
-}
-
-# ── 3. Did the tool profile actually take effect? ────────────────────────────
-TOOL_COUNT=""
-check_profile() {
-  TOOL_COUNT="$(printf '%s' "$HEALTH_BODY" | sed -n 's/.*"tools":[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
-  [ -n "$TOOL_COUNT" ] || return 0     # cannot read a count -> do not invent a verdict
-  [ "$TOOL_COUNT" -ge "$GHL_MCP_EXPECT_MIN_TOOLS" ] 2>/dev/null || return 4
-  [ "$TOOL_COUNT" -le "$GHL_MCP_EXPECT_MAX_TOOLS" ] 2>/dev/null || return 4
-  return 0
-}
-
-# ── Bounded self-heal: exactly ONE restart attempt, then re-probe ────────────
-heal_once() {
-  say "  [ghl-mcp-probe] attempting ONE bounded restart (the previous tick also failed: a sustained fault, not one slow check)"
-  if [ -n "${GHL_MCP_PROBE_HEAL_CMD:-}" ]; then
-    # v25.1.10 unit-test hook only. Never set on a box.
-    "$GHL_MCP_PROBE_HEAL_CMD" >/dev/null 2>&1 || true
-  elif [ "$(uname -s)" = "Darwin" ]; then
-    launchctl kickstart -k "gui/$(id -u)/com.clawd.ghl-mcp" >/dev/null 2>&1 || true
-  elif command -v pm2 >/dev/null 2>&1 && pm2 describe ghl-community-mcp >/dev/null 2>&1; then
-    pm2 restart ghl-community-mcp >/dev/null 2>&1 || true
-  elif command -v systemctl >/dev/null 2>&1; then
-    sudo -n systemctl restart ghl-mcp >/dev/null 2>&1 || true
-  fi
-  # v25.1.10: a cold start on a loaded box takes 60-120s (credential pre-check
-  # plus a GHL connection test that may itself wait 30s). The old 20-second
-  # ceiling is how a restart of a healthy server became a NO_LISTENER verdict
-  # and a fresh card every 15 minutes.
-  local waited=0 step=5
-  [ "$step" -gt "$GHL_MCP_PROBE_HEAL_WAIT_SECONDS" ] 2>/dev/null && step="$GHL_MCP_PROBE_HEAL_WAIT_SECONDS"
-  while [ "$waited" -lt "$GHL_MCP_PROBE_HEAL_WAIT_SECONDS" ]; do
-    sleep "$step"
-    waited=$((waited + step))
-    if check_health && check_responds; then return 0; fi
-  done
-  return 1
-}
-
-run_probe() {
-  local rc
-  check_health; rc=$?
-  if [ "$rc" != "0" ]; then
-    return "$rc"
-  fi
-  check_responds; rc=$?
-  if [ "$rc" != "0" ]; then
-    return "$rc"
-  fi
-  if [ "$SKIP_PROFILE" = "0" ]; then
-    check_profile; rc=$?
-    [ "$rc" != "0" ] && return "$rc"
-  fi
-  return 0
-}
-
-run_probe
-RC=$?
-
-# ── R13: streak state is read BEFORE any heal decision (v25.1.10) ────────────
-# The previous tick's verdict decides whether a failure now is a sustained fault
-# (restart-worthy) or a single slow check (record it, restart nothing).
-_PREV="$(read_streak)"
-_PREV_STATE="$(printf '%s' "$_PREV" | awk '{print $1}')"
-_PREV_COUNT="$(printf '%s' "$_PREV" | awk '{print $2}')"
-_PREV_ESC="$(printf '%s' "$_PREV" | awk '{print $3}')"
-[ -n "$_PREV_STATE" ] || _PREV_STATE="NONE"
-case "$_PREV_COUNT" in ''|*[!0-9]*) _PREV_COUNT=0 ;; esac
-case "$_PREV_ESC"   in ''|*[!0-9]*) _PREV_ESC=0 ;; esac
-
-if [ "$RC" != "0" ] && [ "$HEAL" = "1" ]; then
-  if [ "$_PREV_COUNT" -ge 1 ] && [ "$_PREV_STATE" != "OK" ] && [ "$_PREV_STATE" != "NONE" ]; then
-    if heal_once; then
-      report "RECOVERED" "(a bounded restart restored a JSON-RPC response on ${URL}; prior state rc=${RC}, streak was ${_PREV_COUNT})"
-      # The RECOVERED card closes the loop for a reader who received a DOWN
-      # card. If no outage was ever alerted (the streak never reached the
-      # threshold) there is nothing to close: log it and stay quiet. Still
-      # rate-limited to one per hour per box for a flapping server.
-      if [ "$_PREV_ESC" = "1" ]; then
-        _RECOV_STAMP="$LOG_DIR/.probe-recovered-last"
-        _now="$(date -u +%s 2>/dev/null || echo 0)"
-        _last=0
-        [ -f "$_RECOV_STAMP" ] && _last="$(tr -dc '0-9' < "$_RECOV_STAMP" 2>/dev/null | head -1)"
-        [ -n "$_last" ] || _last=0
-        if [ "$((_now - _last))" -ge 3600 ] 2>/dev/null; then
-          alert_operator "GHL MCP recovered after probe restart" \
-            "ghl-mcp-probe restarted the Tier 2 community MCP on ${URL} after ${_PREV_COUNT} consecutive failed probes (prior rc=${RC}). It is answering now. Check ${LOG_DIR} if this repeats."
-          printf '%s\n' "$_now" > "$_RECOV_STAMP" 2>/dev/null || true
-        else
-          say "  [ghl-mcp-probe] RECOVERED alert suppressed (one per hour per box; last $((_now - _last))s ago)"
-        fi
-      else
-        say "  [ghl-mcp-probe] recovered before any alert went out — nothing to announce"
-      fi
-      clear_streak
-      exit 0
-    fi
-    run_probe; RC=$?
-  else
-    say "  [ghl-mcp-probe] first failing tick (rc=${RC}) — recorded, NOT restarting: a restart on one slow check is how a healthy server used to be knocked over every 15 minutes"
-  fi
-fi
-
-# ── R13: streak accounting, computed BEFORE the verdict dispatch below ────────
-_STATE_NAME="OK"
-case "$RC" in
-  0) _STATE_NAME="OK" ;;
-  2) _STATE_NAME="NO_LISTENER" ;;
-  3) _STATE_NAME="DEAF" ;;
-  4) _STATE_NAME="PROFILE_DRIFT" ;;
-  *) _STATE_NAME="UNHEALTHY" ;;
-esac
-
-_STREAK=1
-_ESCALATED=0
-if [ "$RC" = "0" ]; then
-  clear_streak
-else
-  if [ "$_PREV_STATE" = "$_STATE_NAME" ]; then
-    _STREAK=$((_PREV_COUNT + 1))
-    _ESCALATED="$_PREV_ESC"
-  fi
-  write_streak "$_STATE_NAME" "$_STREAK" "$_ESCALATED"
-fi
-
-# ONE alert per outage (v25.1.10). The operator card and the Rescue Rangers
-# page fire together on the GHL_MCP_PROBE_ALERT_STREAK-th CONSECUTIVE identical
-# non-OK verdict (default 3 = ~45 minutes), exactly once per unbroken streak.
-# Before this, the card went out on EVERY failing tick while only the page was
-# throttled: 72 identical cards on one board in ten days.
-maybe_alert() {
-  local title="$1" body="$2" detail="$3"
-  [ "$RC" = "0" ] && return 0
-  if [ "$_STREAK" -lt "$GHL_MCP_PROBE_ALERT_STREAK" ] 2>/dev/null; then
-    say "  [ghl-mcp-probe] ${_STATE_NAME} streak ${_STREAK}/${GHL_MCP_PROBE_ALERT_STREAK} — no alert yet (a transient must not page anyone)"
-    return 0
-  fi
-  if [ "$_ESCALATED" != "0" ]; then
-    say "  [ghl-mcp-probe] ${_STATE_NAME} continues (streak ${_STREAK}) — already alerted once for this outage"
-    return 0
-  fi
-  alert_operator "$title" "$body"
-  escalate_rescue_rangers "$_STATE_NAME" "$detail"
-  write_streak "$_STATE_NAME" "$_STREAK" 1
-}
-
-case "$RC" in
-  0)
-    report "OK" "(${URL} answers JSON-RPC; tools=${TOOL_COUNT:-?}, profile=${GHL_MCP_TOOL_PROFILE})"
-    exit 0 ;;
-  2)
-    report "NO_LISTENER" "(nothing healthy on ${URL} — the Tier 2 MCP is DOWN or another service owns the port; streak ${_STREAK})"
-    maybe_alert "GHL MCP DOWN (no listener)" \
-      "ghl-mcp-probe found no healthy GHL MCP on ${URL} for ${_STREAK} consecutive 15-minute probes. Tier 2 GHL tools will not resolve. Re-run scripts/ghl-mcp-autostart.sh on this box." \
-      "Nothing healthy is listening on ${URL}; Tier 2 GHL tools do not resolve."
-    exit 2 ;;
-  3)
-    report "DEAF" "(/health is green but NO JSON-RPC response within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-dist deafness signature: every agent init will burn the full connectionTimeoutMs; streak ${_STREAK})"
-    maybe_alert "GHL MCP DEAF (alive but not answering)" \
-      "ghl-mcp-probe: ${URL}/health is green but /mcp returned no JSON-RPC response in ${GHL_MCP_PROBE_TIMEOUT}s for ${_STREAK} consecutive probes. This is the stale-compiled-dist signature. Re-run scripts/ghl-mcp-autostart.sh (it rebuilds dist from the vetted commit)." \
-      "/health is green but /mcp answers no JSON-RPC within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-compiled-dist deafness signature. Every agent init on this box burns the full connectionTimeoutMs."
-    exit 3 ;;
-  4)
-    report "PROFILE_DRIFT" "(answering, but tools=${TOOL_COUNT} is outside the ${GHL_MCP_EXPECT_MIN_TOOLS}..${GHL_MCP_EXPECT_MAX_TOOLS} band for profile=${GHL_MCP_TOOL_PROFILE} — GHL_TOOL_PROFILE is not in effect; streak ${_STREAK})"
-    maybe_alert "GHL MCP tool-profile drift" \
-      "ghl-mcp-probe: ${URL} reports ${TOOL_COUNT} tools, outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}, for ${_STREAK} consecutive probes. The service definition may have lost the profile env. Re-run scripts/ghl-mcp-autostart.sh." \
-      "The live tool count (${TOOL_COUNT}) is outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}; the service definition appears to have lost the profile env."
-    exit 4 ;;
-  *)
-    report "UNHEALTHY" "(${URL}/health responded but not as a healthy GHL MCP)"
-    exit 5 ;;
-esac
+exit "$GHL_MCP_TOMBSTONE_EXIT"

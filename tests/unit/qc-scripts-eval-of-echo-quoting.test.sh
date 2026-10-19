@@ -63,6 +63,27 @@ QC36="$REPO_ROOT/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 if [ ! -f "$QC36" ]; then
   fail "site-36: $QC36 not found"
 else
+
+  # W07 RETIREMENT: the Tier-2 /health and /execute probes were removed with the
+  # community MCP, so the quoting lock has nothing to guard on this site. Keep the
+  # original lock reachable (if Tier-2 is ever restored this branch is skipped and
+  # the full body below runs unchanged), and assert the retirement otherwise.
+  if ! grep -q '^assert "Tier 2 /health responds healthy"' "$QC36"; then
+    if grep -q 'T2_HEALTH\|T2_CALL\|Tier 2 /health' "$QC36"; then
+      fail "site-36: retired Tier-2 probe text still present"
+    else
+      pass "site-36: Tier-2 probes retired (no quoting surface left)"
+    fi
+    if grep -qiE 'Tier 1|official' "$QC36"; then
+      pass "site-36: official Tier-1 surface still asserted"
+    else
+      fail "site-36: official Tier-1 surface no longer asserted"
+    fi
+    echo ""
+    echo "RESULTS: $PASS passed, $FAIL failed"
+    [ "$FAIL" -gt 0 ] && exit 1
+    exit 0
+  fi
   extract_assert "$QC36" > "$ASSERT_FILE"
   # Pull the REAL argument strings the shell actually hands assert() — capture
   # them by eval'ing the real line with a capture stub, so the exact quoting

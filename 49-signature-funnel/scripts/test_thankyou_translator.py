@@ -58,6 +58,43 @@ def load(name: str):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def resolve_repo_root(start: Path) -> Path:
+    """Nearest ancestor that looks like a checkout, for both layouts.
+
+    The onboarding repository puts skills at the repo root; a deployed
+    999 package puts them under ``.claude/skills``, so ``HERE.parents[1]``
+    is NOT the repository root there. Both layouts carry shared-utils at
+    the root (the same marker the Launcher's constants.py uses).
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / "shared-utils").is_dir() and (
+                (candidate / ".claude").is_dir()
+                or (candidate / "CONTROL").is_dir()):
+            return candidate
+    return start.parents[1]
+
+
+def resolve_s82_root(repo_root: Path) -> Path:
+    """Skill 82's tree under either naming convention.
+
+    The onboarding repository uses ``82-signature-thank-you`` at the
+    repository root; a 999 package uses the bare slug under
+    ``.claude/skills``. Nothing here spells a numbered directory as the
+    only option, so the same test runs in both layouts.
+    """
+    for candidate in (
+            repo_root / "82-signature-thank-you",
+            repo_root / "signature-thank-you",
+            repo_root / ".claude" / "skills" / "signature-thank-you",
+            repo_root / ".claude" / "skills" / "82-signature-thank-you"):
+        if (candidate / "scripts" / "run_manifest.py").is_file():
+            return candidate
+    raise FileNotFoundError(
+        "skill 82 tree not found under either naming convention: "
+        f"looked for 82-signature-thank-you / signature-thank-you under "
+        f"{repo_root} and {repo_root / '.claude' / 'skills'}")
+
+
 def stage(td: Path, req=None, res=None, man=None, with_artifact=True):
     req = load("page-request.json") if req is None else req
     res = load("thank-you-result.json") if res is None else res
@@ -326,11 +363,12 @@ def main() -> int:
     # map 1.6's readiness evidence form: the translator proven
     # against the manifest S82 actually emits, not a hand-written
     # stand-in.
-    repo_root = HERE.parents[1]
-    s82_scripts = repo_root / "82-signature-thank-you" / "scripts"
+    repo_root = resolve_repo_root(HERE)
+    s82_root = resolve_s82_root(repo_root)
+    s82_scripts = s82_root / "scripts"
     sys.path.insert(0, str(s82_scripts))
     import run_manifest as s82_emitter  # noqa: E402
-    view = json.loads((repo_root / "82-signature-thank-you" / "fixtures"
+    view = json.loads((s82_root / "fixtures"
                        / "test-only-order-view.json").read_text(
                            encoding="utf-8"))
     for f in ("tenant_id", "location_id", "launch_id", "test_only"):
@@ -351,7 +389,7 @@ def main() -> int:
     try:
         import jsonschema
         mschema = json.loads(
-            (repo_root / "82-signature-thank-you" / "schemas"
+            (s82_root / "schemas"
              / "run-manifest.schema.json").read_text(encoding="utf-8"))
         jsonschema.validate(man_real, mschema)
         say(True, "emitter-built companion manifest validates against "

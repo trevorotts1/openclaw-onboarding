@@ -1,23 +1,23 @@
 ---
 name: ghl-convert-and-flow
-description: Domain-specific reference files for the GoHighLevel (Convert and Flow) API v2 — Tier 3 direct REST API access covering contacts, conversations, pipelines, calendars, payments, and more. Use after Tier 0 (Convert and Flow CLI, skill 44) and the Tier 1/2 MCPs per skill 36's 6-tier escalation rules.
+description: Domain-specific reference files for the GoHighLevel (Convert and Flow) public REST API — Tier 3 direct REST access covering contacts, conversations, pipelines, calendars, payments, and more. Use after Tier 0 (Convert and Flow CLI, skill 44) and the official MCP per skill 36. The community GHL MCP is retired and is not a route.
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
 
-# GHL API Skill - GoHighLevel / Convert and Flow API v2
+# GHL API Skill - GoHighLevel / Convert and Flow
 
 > **TYP Note:** This skill pack replaces direct use of the 430K master reference.
 > NEVER paste the master reference into context or core files.
 > ALWAYS read the appropriate `references/*.md` file at query time.
 
-> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then **Tier 1 (Official MCP, `ghl-mcp`)** for blogs/CLI gaps, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools, on-demand via curl)** before falling here. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for the full 6-tier escalation rules.
+> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct public REST. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then the **official GHL MCP (`ghl-mcp`)** for operations its catalog covers, before falling here. The **community GHL MCP is retired**: it is not a route, fresh installs omit it, and an updated box must verify it is off (service unloaded and de-registered — a stopped process is not a retirement, because a `RunAtLoad=true` job resurfaces at login). Official MCP plus public REST are the supported routes. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for official-MCP setup and the client-endpoint matrix.
 
 ---
 
 ## What Is This Skill?
 
-**GHL = Convert & Flow = Go High Level** — one white-label platform. The default app URL is `app.convertandflow.com`; the underlying API backend is `services.leadconnectorhq.com`. The "API key" IS the Private Integration Token (`pit-` prefix) — there are no separate legacy API keys; that term is retired. The GHL API v2 gives programmatic access to contacts, conversations, pipelines, calendars, payments, users, and more.
+**GHL = Convert & Flow = Go High Level** — one white-label platform. The default app URL is `app.convertandflow.com`; the underlying API backend is `services.leadconnectorhq.com`. The "API key" IS the Private Integration Token (`pit-` prefix) — there are no separate legacy API keys; that term is retired. The public GHL REST API gives programmatic access to contacts, conversations, pipelines, calendars, payments, users, and more, with the `Version` header selected per operation.
 
 This skill pack provides:
 - Domain-specific reference files carved from the 413-endpoint master reference
@@ -53,7 +53,7 @@ GHL enforces per-location rate limits. General guidance from the master referenc
 
 ```
 Authorization: Bearer $GOHIGHLEVEL_API_KEY
-Version: 2021-07-28
+Version: <this operation's version>   # e.g. v3, 2023-02-21, 2021-07-28, 2021-04-15
 Content-Type: application/json
 ```
 
@@ -147,9 +147,9 @@ fi
 ```
 
 Never print the token value — names only. Media uploads require a **location** PIT and use
-`Version: 2021-07-28` (see `references/medias.md`) — which is also the default for every
-other app except the seven listed in "Version Header Rule" above. Confirm the Version
-header per-app; do not blanket-change it.
+`Version: 2021-07-28` (see `references/medias.md`). That value belongs to media: confirm the
+Version header **per operation** against the table above, and never assume one value for every
+call or sweep a version string across operations.
 
 ---
 

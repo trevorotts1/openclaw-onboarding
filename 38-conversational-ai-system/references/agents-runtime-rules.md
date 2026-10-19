@@ -189,8 +189,11 @@ use this order (degrade DOWN one tier on failure — never end the turn silently
 - **Tier 1 — official GHL MCP (`ghl-mcp__*`).** Orchestrator session ONLY (never
   in a sub-agent). Use if caf is absent/`caf doctor` fails and you are the
   orchestrator.
-- **Tier 2 — community MCP.** Only for billing / products / subscriptions / Voice
-  that the official MCP lacks.
+- **Tier 2 — community MCP. RETIRED — NOT A ROUTE.** That transport was retired
+  (GU-019/GU-020/GU-021): never call it, never restart it, never re-add it as a
+  fallback. Billing / products / subscriptions / Voice that the official MCP lacks
+  go straight to Tier 3 public REST (`/invoices`, `/orders`, `/subscriptions`,
+  `/payments/*` on `services.leadconnectorhq.com`).
 - **Tier 3 — raw REST to `services.leadconnectorhq.com`.** The documented
   LAST-RESORT fallback — the exact curl shapes are in TOOLS.md
   (`SKILL38: GHL_API_QUICK_REFERENCE`). Keep using it whenever caf/MCP are

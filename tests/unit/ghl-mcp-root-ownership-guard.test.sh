@@ -72,11 +72,58 @@ pass "(setup) extracted GHL-MCP-ROOT-OWNERSHIP-GUARD block, contains all load-be
 # refactor that changed the return code without updating the caller would
 # make this whole fix invisible again behind the exact symptom it exists to
 # stop being confused with.
-if grep -qF 'assert_ownership_matches_runtime_user || return 3' "$SRC" \
-   && grep -q '_PIN_RC" = "3"' "$SRC"; then
-  pass "(setup) ensure_repo_at_pin() returns 3 on the guard's refusal, and the caller special-cases rc=3 before the generic PIN_MISMATCH/BUILD_FAILED branches"
+#
+# PRESENCE CHECK: ensure_repo_at_pin() was deleted along with the start/pin
+# path when the community MCP was retired (GU-019), so the wiring it carried is
+# gone with it — and with no caller left, there is nothing that can fall through
+# to a generic PIN_MISMATCH report. The original wiring assertions stay here,
+# reachable behind the presence check: restoring ensure_repo_at_pin() re-arms
+# them instead of bypassing them. What locks the tree now is the retirement
+# contract that replaced the caller.
+if grep -qF 'ensure_repo_at_pin() {' "$SRC"; then
+  if grep -qF 'assert_ownership_matches_runtime_user || return 3' "$SRC" \
+     && grep -q '_PIN_RC" = "3"' "$SRC"; then
+    pass "(setup) ensure_repo_at_pin() returns 3 on the guard's refusal, and the caller special-cases rc=3 before the generic PIN_MISMATCH/BUILD_FAILED branches"
+  else
+    fail "(setup) the ensure_repo_at_pin()/caller wiring for rc=3 is missing or was refactored — ROOT_OWNERSHIP_MISMATCH could silently fall through to a generic report again"
+  fi
 else
-  fail "(setup) the ensure_repo_at_pin()/caller wiring for rc=3 is missing or was refactored — ROOT_OWNERSHIP_MISMATCH could silently fall through to a generic report again"
+  _code_of() { awk '{ sub(/#.*/, ""); print }' "$1"; }   # live code only
+  C_AUTO="$(mktemp "${TMPDIR:-/tmp}/ghl-root-code.XXXXXX")"
+  _code_of "$SRC" > "$C_AUTO"
+
+  # G1: the caller is gone as live code, not merely unwired.
+  if grep -qE 'ensure_repo_at_pin[[:space:]]*\(\)[[:space:]]*\{' "$C_AUTO"; then
+    fail "G1: ensure_repo_at_pin() is defined as live code in scripts/ghl-mcp-autostart.sh — the pin-gate caller is back, so the rc=3 wiring assertion above must be re-armed"
+  else
+    pass "G1: ensure_repo_at_pin() (the pin-gate caller this defect lived in) is not defined as live code — retirement removed the checkout path wholesale"
+  fi
+
+  # G2: the operations whose "dubious ownership" fatal the defect swallowed no
+  #     longer run at all.
+  if grep -qE 'git[[:space:]]+(clone|checkout)' "$C_AUTO"; then
+    fail "G2: a live git clone/checkout still ships in scripts/ghl-mcp-autostart.sh — a root-owned checkout can silently no-op again"
+  else
+    pass "G2: no live git clone/checkout in scripts/ghl-mcp-autostart.sh (comment-stripped) — the checkout whose silent failure hid this defect cannot run"
+  fi
+
+  # G3: the refusal is why nothing reaches a pin gate.
+  if grep -qF 'report "START_REFUSED_RETIRED"' "$C_AUTO"; then
+    pass "G3: the script refuses to start (live START_REFUSED_RETIRED) — no live path reaches the pin/build gate the old caller guarded"
+  else
+    fail "G3: scripts/ghl-mcp-autostart.sh no longer reports START_REFUSED_RETIRED on a live line — the retirement refusal is gone"
+  fi
+
+  # G4 (control): the comment-stripper must still yield real live function
+  #     definitions, otherwise the two absence claims above (G1, G2) could pass
+  #     on an empty strip.
+  if grep -qE 'oc_mcp_unset[[:space:]]*\(\)[[:space:]]*\{' "$C_AUTO"; then
+    pass "G4: control — comment-stripped autostart still contains live function definitions (oc_mcp_unset), so G1/G2 are absence claims about real code"
+  else
+    fail "G4: control failed — comment-stripped scripts/ghl-mcp-autostart.sh contains no live function definitions; G1/G2 prove nothing"
+  fi
+
+  rm -f "$C_AUTO"
 fi
 
 # ── Harness: source the block with log()/report() stubbed, MCP_DIR pointed at

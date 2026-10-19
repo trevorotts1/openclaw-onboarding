@@ -84,8 +84,9 @@ key."* The autonomous REST path currently populates **none** of this; it is a re
   is the main point. `source=transcript`.
 - **Upload image → GHL returns a link → reference THAT media-storage link in the HTML.** That link is
   how images pull into the page. `source=transcript`.
-- **NO browser control for media storage.** Use one of: **GHL API**, **GHL official MCP**, **GHL
-  community MCP**, or **Skill 44** to create folders and upload. `source=transcript`.
+- **NO browser control for media storage.** Use one of: **GHL API**, **GHL official MCP**, or
+  **Skill 44** to create folders and upload. `source=transcript` (the transcript also named the
+  community MCP; that transport is RETIRED and is not a route).
 - Tooling already exists: `ghl_media.py` (`create_media_folder`, `upload_media`, folder-name prefix).
   This run does **not** re-implement it; it documents the per-build STEP.
 
@@ -94,7 +95,7 @@ key."* The autonomous REST path currently populates **none** of this; it is a re
 ## 4. Pre-build dependencies — "grocery shopping" (transcript, ~19:24–21:27)
 
 Think the funnel/page out first; build dependencies **in advance**:
-- **Forms, calendars, tags, workflows** — create via **Skill 44 / GHL API / GHL community MCP** (not
+- **Forms, calendars, tags, workflows** — create via **Skill 44 / GHL API** (not
   browser) before building the page, so they can be embedded. `source=transcript`.
 - **Custom forms MUST push submissions into the contact record** — when a custom form is filled out it
   has to write into the person's CRM contact record. Already encoded as the form→CRM proof gate;

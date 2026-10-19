@@ -9,8 +9,12 @@ HARD RULE (PRD Section 0 / Acceptance Criterion 20):
 
   No live workflow is ever mutated without a captured rollback artifact on disk.
 
-`restore(client, snapshot_path)` replays a snapshot via the internal PUT to
-return the workflow to its prior state.
+`restore(client, snapshot_path)` replays a snapshot's CONTENT via the internal
+PUT.  The revision is never replayed: a fresh read supplies the current
+system-owned `version`, so a stale snapshot cannot overwrite a newer revision
+(GU-003 disposition 13).  There is no public V4 restore operation — the freeze
+records it as the `B-RESTORE-NONE` capability gap — so restore stays on the
+Skill 44 private rail as a fresh-revision update, never a stale-wire replay.
 
 Accepts either an InternalAdapter (preferred) or a legacy InternalGHLClient
 (backward-compat) — both expose .location_id and the GET/PUT paths needed.
@@ -105,14 +109,29 @@ def capture(
     raw = _client_get(client, workflow_id)
     if raw is None:
         return None
+    return capture_payload(loc, workflow_id, raw, label)
 
+
+def capture_payload(
+    location_id: str,
+    workflow_id: str,
+    payload: dict,
+    label: str = "",
+) -> Path:
+    """Write an already-read workflow/definition payload as a snapshot.
+
+    Used by the public V4 update surface, whose current state is read through
+    the public adapter instead of the private client.  The pre-write snapshot
+    rule (AC 20) is transport-independent: it is about the captured bytes, not
+    which rail produced them.
+    """
     ts = _timestamp_str()
     safe_label = "".join(c for c in label if c.isalnum() or c in "-_")
     filename = f"{ts}-{safe_label}.json" if safe_label else f"{ts}.json"
 
-    snap_dir = snapshot_dir(loc, workflow_id)
+    snap_dir = snapshot_dir(location_id, workflow_id)
     snap_path = snap_dir / filename
-    snap_path.write_text(json.dumps(raw, indent=2, default=str), encoding="utf-8")
+    snap_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     return snap_path
 
 
@@ -121,10 +140,13 @@ def restore(
     workflow_id: str,
     snapshot_path: Path | str,
 ) -> dict:
-    """Restore a workflow to its snapshot state via the internal PUT.
+    """Restore a workflow's CONTENT to its snapshot state via the internal PUT.
 
-    Strips server-managed keys (STRIP_KEYS) before the PUT so GHL does not
-    reject the payload.  Returns the API response dict.
+    The snapshot is a content record, not a wire replay: the current revision
+    is read fresh and substituted into the body, so restoring never overwrites
+    a newer revision with the snapshot's historical one (GU-003 disposition 13).
+    Server-managed keys (STRIP_KEYS) are stripped as before.  Returns the API
+    response dict.
 
     Args:
         client:        InternalAdapter or legacy InternalGHLClient.
@@ -132,8 +154,13 @@ def restore(
         snapshot_path: Path to the previously captured snapshot JSON.
 
     Raises:
-        FileNotFoundError: if snapshot_path does not exist.
-        ValueError:        if the snapshot JSON is missing 'name' or 'workflowData'.
+        FileNotFoundError:       if snapshot_path does not exist.
+        ValueError:              if the snapshot JSON carries neither the
+                                 private {'name', 'workflowData'} shape nor
+                                 the V4 {'status', 'definition'} envelope whose
+                                 definition has a 'name'.
+        RuntimeError:            if the fresh read fails — a restore never
+                                 proceeds on a blind replay.
     """
     from cli_anything.gohighlevel.internal.contract import STRIP_KEYS
 
@@ -143,13 +170,42 @@ def restore(
 
     data: dict = json.loads(snap.read_text(encoding="utf-8"))
 
+    # Two documented snapshot shapes.  The public V4 rail captures the
+    # {status, definition} envelope (capture_payload of read_definition_document),
+    # which previously failed the 'name'/'workflowData' gate below and made every
+    # V4 snapshot unrestorable.  Flatten the definition so it restores; a V4
+    # definition carries no workflowData, so only the private shape keeps that
+    # gate.
+    is_v4_envelope = False
+    if "workflowData" not in data and isinstance(data.get("definition"), dict):
+        envelope = data
+        data = dict(envelope["definition"])
+        is_v4_envelope = True
+
     if "name" not in data:
         raise ValueError("Snapshot is missing required 'name' field.")
-    if "workflowData" not in data:
+    if not is_v4_envelope and "workflowData" not in data:
         raise ValueError("Snapshot is missing required 'workflowData' field.")
 
-    # Build a clean PUT body — strip server-managed fields
+    # Fresh read — the revision is system-owned.  The snapshot's historical
+    # version is NEVER replayed.
+    current = _client_get(client, workflow_id)
+    if current is None:
+        raise RuntimeError(
+            f"Fresh read of workflow {workflow_id} failed — refusing to restore "
+            "from a stale snapshot."
+        )
+    current_version = current.get("version")
+
+    # Build a clean PUT body — strip server-managed fields, then bind the
+    # CURRENT revision.  When the fresh read carries no usable revision, the
+    # snapshot's historical one is DROPPED, never replayed: omitting the field
+    # is the only non-guess option.
     put_body: dict = {k: v for k, v in data.items() if k not in STRIP_KEYS}
+    if current_version is None:
+        put_body.pop("version", None)
+    else:
+        put_body["version"] = current_version
 
     return _client_put(client, workflow_id, put_body, workflow_name=data.get("name", ""))
 

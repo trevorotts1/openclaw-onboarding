@@ -198,7 +198,7 @@ Then click 'Create Token'."
 
 CRITICAL - TELL THEM:
 "⚠️ IMPORTANT: The token will only be shown ONCE! Copy it immediately and paste it 
-here so I can save it for you. It looks like this: oEYwm7BpJVvtywdi6F6B5ymr"
+here so I can save it for you. It looks like this: <VERCEL_TOKEN-REDACTED-ROTATE>"
 
 WAIT FOR TOKEN:
   → When they provide the token, validate it using the API call in INSTALL.md

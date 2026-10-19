@@ -24,7 +24,7 @@
       "evidence": {
         "api": "tools/ghl_rest_canvas.py — pure REST JSON splice into the page blob; \"GLUE, NOT THE CLICKER\" — no drag, no browser, no network of its own.",
         "browser": "tools/ghl_iframe_drag.py PAGE/FUNNEL CODE-ELEMENT DRAG FALLBACK (B-U16 item 1) — GHL_PAGE_CODE_DRAG flag-wired UI-drive fallback, wired in U30.",
-        "mcp": "tools/ghl_media.py — \"folders/uploads go via the GHL API / official MCP / community MCP / Skill 44, NEVER by driving the page builder UI\" (media-object rung for page content)."
+        "mcp": "tools/ghl_media.py — folders/uploads go via the GHL API / official MCP / Skill 44, NEVER by driving the page builder UI (media-object rung for page content). The community MCP is RETIRED and is not a rung: the docstring wording predates the retirement, so read 'official MCP' only."
       }
     },
     "funnel": {
@@ -57,14 +57,14 @@
     "community": {
       "order": ["mcp", "browser"],
       "evidence": {
-        "mcp": "tools/ghl_community_builder.py — \"spec §3 marks it ASSUMED until the first-hour Tier-1/Tier-2 tool-list check; the router flips primary automatically if a create tool is found.\"",
+        "mcp": "tools/ghl_community_builder.py — \"spec §3 marks it ASSUMED until the first-hour Tier-1 tool-list check; the router flips primary automatically if a create tool is found.\" (Tier 2 — the community MCP — is RETIRED and unassigned in ghl_object_router.py, so only Tier 1 official MCP can ever satisfy this check.)",
         "browser": "tools/ghl_community_builder.py — \"GoHighLevel has NO known public create API for a community/group ... The create surface is therefore browser-only\" (today's actual path, U106-hardened)."
       }
     },
     "course": {
       "order": ["mcp", "browser"],
       "evidence": {
-        "mcp": "tools/ghl_course_builder.py — same Tier-1/Tier-2 tool-list check as the community builder; router flips primary automatically if a create tool is found.",
+        "mcp": "tools/ghl_course_builder.py — same Tier-1 tool-list check as the community builder (Tier 2 community MCP is RETIRED and unassigned in ghl_object_router.py); router flips primary automatically if a create tool is found.",
         "browser": "tools/ghl_course_builder.py — \"GoHighLevel has NO known public create API for a course ... The create + outline surface is browser-only\" (today's actual path, U106-hardened)."
       }
     },
@@ -72,7 +72,7 @@
       "order": ["api", "mcp"],
       "evidence": {
         "api": "tools/ghl_media.py — proven POST services.leadconnectorhq.com/medias/upload-file Bearer-PIT call.",
-        "mcp": "tools/ghl_media.py — \"official MCP / community MCP / Skill 44\" alternate upload path.",
+        "mcp": "tools/ghl_media.py — \"official MCP / Skill 44\" alternate upload path. The community MCP rung is RETIRED and removed from this ladder.",
         "browser_excluded": "tools/ghl_media.py — \"NO browser control for media storage ... NEVER by driving the page builder UI\" — browser is explicitly forbidden for this surface, not merely unproven."
       }
     }

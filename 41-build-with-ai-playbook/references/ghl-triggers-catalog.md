@@ -2,6 +2,13 @@
 
 Source: https://help.gohighlevel.com/support/solutions/articles/155000002292-a-list-of-workflow-triggers
 
+**Snapshot, not a complete list.** This catalog is a planning aid. Trigger availability is
+tenant-specific and **capability-version-gated**: an entry here may be unavailable on the
+operator's plan, and a trigger absent here may still exist. The authoritative contract for
+what is callable is the public V4 adapter's per-operation registry; use the official MCP
+`search_operations` / `describe_operation` tools to discover the live surface. Report an
+honest gap rather than promising a trigger the catalog cannot prove.
+
 Every trigger entry below carries three things the agent needs: what fires it, what to use it for
 (Use when), and the filters that narrow who actually enters. Filters are optional but strongly
 recommended on almost every trigger. For the mechanics of setting filters correctly, the agent MUST
