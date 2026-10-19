@@ -11,6 +11,7 @@ one place the wording lives:
   roles_for_run(run_dir)               the same, read from the run (scripts/brand_colors.py when present)
   page_block(roles, ground)            PAGE COLOR SYSTEM block for one section slice
   grade_block(roles)                   IMAGE COLOR GRADE block (Trevor's wording) for any image
+  foreign_hexes(text, roles)           #hex colors in prose that are not the client's (callers refuse them)
   ground_for(index, section)           which of hero / dark / light this section sits on
   stage_blocks(stage, index, section, roles)   (page_block, grade_block) for a stage, or ("", "")
 
@@ -135,13 +136,13 @@ def roles(palette: dict, palette_roles: dict | None = None) -> dict:
             continue
         accent = c
         break
-    return {"hero": hero, "dark": dark, "light": light, "accent": accent}
+    return {"hero": hero, "dark": dark, "light": light, "accent": accent, "palette": colors}
 
 
 def roles_for_run(run_dir) -> dict | None:
-    """The run's client roles, or None when no usable palette resolves (the caller warns).
-    Uses scripts/brand_colors.py (the resolved-palette gate) when that module is present; otherwise
-    the brand file intake.json names (no client-ownership check until SPF019 brand_colors lands)."""
+    """The run's client roles, or None when no usable palette resolves (mockup and image stages then
+    refuse). Uses scripts/brand_colors.py (the resolved-palette gate) when that module is present;
+    otherwise stage_gate.brand_path_for_checked, with the file's brand_id tied to intake brand_owner."""
     run_dir = Path(run_dir)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
@@ -154,21 +155,36 @@ def roles_for_run(run_dir) -> dict | None:
             return None
         palette, pr = res.palette, (res.brand or {}).get("palette_roles")
     else:
+        # The stage gate's own lookup (private/brand.json, intake brand_file, skill default), so the
+        # prompt and the gate never read different files; the file must belong to this run's client.
+        import stage_gate
         try:
-            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
-            named = Path(str(intake.get("brand_file") or ""))
-            path = next((p for p in ([named] if named.is_absolute() else
-                                     [run_dir / named, named]) if p.is_file()), None)
-            brand = json.loads(path.read_text(encoding="utf-8")) if path else None
+            owner = json.loads((run_dir / "intake.json").read_text(encoding="utf-8")).get("brand_owner")
+            brand = json.loads(stage_gate.brand_path_for_checked(run_dir).read_text(encoding="utf-8"))
         except (OSError, ValueError, AttributeError):
             return None
+        norm = lambda t: re.sub(r"[^a-z0-9]", "", str(t or "").lower())
         if not isinstance(brand, dict) or not isinstance(brand.get("palette"), dict):
             return None
+        if not norm(owner) or norm(brand.get("brand_id")) != norm(owner):
+            return None  # another client's palette is never used
         palette, pr = brand["palette"], brand.get("palette_roles")
     try:
         return roles(palette, pr if isinstance(pr, dict) else None)
     except ValueError:
         return None
+
+
+ANY_HEX = re.compile(r"#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})\b")
+
+
+def foreign_hexes(text: str, r: dict) -> list:
+    """Every #hex in `text` that is not one of the client's palette colors (sorted, upper case).
+    Stage prose that names an old or example palette would fight the blocks above; callers refuse it."""
+    allowed = {c.upper() for c in (r.get("palette") or [r["hero"], r["dark"], r["light"], r.get("accent")]) if c}
+    found = {("#" + "".join(ch * 2 for ch in h[1:]) if len(h) == 4 else h).upper()
+             for h in ANY_HEX.findall(text or "")}
+    return sorted(found - allowed)
 
 
 def ground_for(index: int, section: dict | None = None) -> str:

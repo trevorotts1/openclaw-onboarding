@@ -121,13 +121,41 @@ class WiringTests(unittest.TestCase):
         self.assertGreaterEqual(sizes["contract_chars"], sizes["hypersaturation_chars"])
         self.assertTrue(prompt.startswith("VERBATIM COPY"))
 
-    def test_wireframe_stage_and_no_palette_get_nothing(self):
+    def test_wireframe_stage_gets_no_blocks(self):
         req = dict(REQUEST, _hypersat=hs.roles({}, CLIENT))
         wire = exe.stage_prompt("desktop-wireframe", SECTION, 1, 1440, req, "3:4")
         self.assertNotIn(hs.MARKER_PAGE, wire)
         self.assertNotIn(hs.MARKER_GRADE, wire)
-        bare = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, REQUEST, "3:4")
-        self.assertNotIn(hs.MARKER_PAGE, bare)
+
+    def test_mockup_stage_without_a_palette_refuses_never_sends_bare(self):
+        for stage in hs.MOCKUP_STAGES:
+            with self.assertRaises(exe.ExecutorError) as cm:
+                exe.stage_prompt(stage, SECTION, 1, 1440, dict(REQUEST, _hypersat=None), "3:4")
+            self.assertIn("no resolved client palette", str(cm.exception))
+
+    def test_prose_naming_another_palette_refuses(self):
+        req = dict(REQUEST, _hypersat=hs.roles({}, CLIENT))
+        req["stage_prompts"] = dict(req["stage_prompts"],
+                                    **{"visual-mockup": "Ground ivory #FAF9F5, CTA rust #a64335, ink #0a0a12. {copy}"})
+        with self.assertRaises(exe.ExecutorError) as cm:
+            exe.stage_prompt("visual-mockup", SECTION, 1, 1440, req, "3:4")
+        self.assertIn("#A64335", str(cm.exception))
+        self.assertIn("#FAF9F5", str(cm.exception))
+        self.assertNotIn("#0A0A12", str(cm.exception))  # the client's own hex is fine
+
+    def test_foreign_hexes_reads_three_digit_and_ignores_client_colors(self):
+        r = hs.roles({}, CLIENT)
+        self.assertEqual(hs.foreign_hexes("a #fff b #0b5fff c #F00", r), ["#FF0000"])
+        self.assertEqual(hs.foreign_hexes("#0B5FFF #0a0a12 #FFB400 #FFFFFF", r), [])
+        self.assertEqual(hs.foreign_hexes("#abc", r), ["#AABBCC"])
+
+    def test_item_without_a_palette_refuses(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d)
+            (run / "image-inventory-prompts").mkdir()
+            (run / "image-inventory-prompts" / "IMG-001.txt").write_text("Founder at a desk.")
+            with self.assertRaises(exe.ExecutorError):
+                exe.run_item(run, "image-generation-qc", "IMG-001", {}, exe.StubProvider(), False)
 
     def test_run_without_a_palette_resolves_to_none(self):
         with tempfile.TemporaryDirectory() as d:
@@ -144,6 +172,22 @@ class WiringTests(unittest.TestCase):
             r = hs.roles_for_run(run)
             self.assertIsNotNone(r)
             self.assertEqual(r["hero"], "#0B5FFF")
+
+    def test_run_resolves_the_same_brand_file_as_the_stage_gate(self):
+        # owner order: intake names only the owner -> the skill's bundled file for that owner; a pinned
+        # private/brand.json wins; another client's owner never gets the bundled palette.
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d)
+            (run / "intake.json").write_text(json.dumps({"brand_owner": "blackceo"}))
+            r = hs.roles_for_run(run)
+            self.assertIsNotNone(r)
+            self.assertEqual((r["hero"], r["dark"], r["light"]), ("#C9A227", "#1A1A2E", "#F5F0E8"))
+            (run / "private").mkdir()
+            (run / "private" / "brand.json").write_text(json.dumps(
+                {"brand_id": "blackceo", "palette": {"a": "#0B5FFF", "b": "#0A0A12", "c": "#FFFFFF"}}))
+            self.assertEqual(hs.roles_for_run(run)["hero"], "#0B5FFF")
+            (run / "intake.json").write_text(json.dumps({"brand_owner": "someone-else"}))
+            self.assertIsNone(hs.roles_for_run(run))
 
 
 @unittest.skipIf(Image is None, "Pillow not importable")

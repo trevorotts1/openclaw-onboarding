@@ -50,6 +50,9 @@ class StageExecutorTests(unittest.TestCase):
         self.run_dir.mkdir()
         (self.run_dir / "production-request.json").write_text(
             json.dumps(REQUEST), encoding="utf-8")
+        # the bundled BlackCEO palette resolves for BlackCEO's own run; mockup stages need one
+        (self.run_dir / "intake.json").write_text(
+            json.dumps({"brand_owner": "blackceo"}), encoding="utf-8")
 
     def tearDown(self):
         self.tmp.cleanup()

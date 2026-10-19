@@ -479,9 +479,8 @@ def load_request(run_dir: Path, name: str) -> dict:
         raise ExecutorError("production request needs a non-empty 'sections' array")
     data["_hypersat"] = hypersaturation.roles_for_run(run_dir)
     if data["_hypersat"] is None:
-        print("WARN hypersaturation: no resolved client palette, so the page color system and image "
-              "grade blocks are omitted; resolve the client's brand colors first "
-              "(scripts/brand_colors.py)", file=sys.stderr)
+        print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
+              "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -566,8 +565,21 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block()
-    page_color, image_grade = hypersaturation.stage_blocks(
-        stage, index, section, request.get("_hypersat"))
+    roles = request.get("_hypersat")
+    if stage in hypersaturation.MOCKUP_STAGES:
+        # Hypersaturation is built in, never optional: no palette, or prose that names another
+        # palette, refuses the prompt instead of sending it without (or against) the blocks.
+        if not roles:
+            raise ExecutorError(
+                f"{stage} section {index}: no resolved client palette, so the page color system and "
+                "image color grade cannot be built; resolve the client's brand colors first")
+        foreign = hypersaturation.foreign_hexes(body, roles)
+        if foreign:
+            raise ExecutorError(
+                f"{stage} section {index}: design prose names colors outside the client palette "
+                f"({', '.join(foreign)}); remove them or use the client's own hex values, the "
+                "PAGE COLOR SYSTEM block carries the palette")
+    page_color, image_grade = hypersaturation.stage_blocks(stage, index, section, roles)
     blocks = [b for b in (copy_block, page_color, image_grade, frame_block, neg_block) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
@@ -840,6 +852,13 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
     roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
+    if not roles:
+        raise ExecutorError(f"item {item}: no resolved client palette, so the image color grade "
+                            "cannot be added; resolve the client's brand colors first")
+    foreign = hypersaturation.foreign_hexes(prompt, roles)
+    if foreign:
+        raise ExecutorError(f"item {item}: prompt names colors outside the client palette "
+                            f"({', '.join(foreign)}); remove them or use the client's own hex values")
     graded = hypersaturation.item_prompt(prompt, roles)
     if graded != prompt:
         cap = prompt_cap(request.get("model"))

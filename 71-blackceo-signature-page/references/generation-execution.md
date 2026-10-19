@@ -93,8 +93,19 @@ resolved client palette (never a default, never another client's colors):
   already carries one, and is refused rather than trimmed if prompt plus block passes the model
   maximum.
 
-With no resolved client palette the blocks are omitted and a `WARN hypersaturation` line names
-why. The rules and evidence are `references/hypersaturation-framework.md`; the page-level pixel
+Hypersaturation is never optional, and never against the client's palette. The executor
+**refuses** (`REFUSED` in `--preflight`, `FAIL` otherwise, exit 1) a `visual-mockup`,
+`final-mockups` or `--item` prompt when:
+
+- no client palette resolves. The fallback reads the brand file the way the stage gate does
+  (`private/brand.json`, else `intake.json` `brand_file`, else the skill's bundled file) and
+  requires the file's `brand_id` to match `intake.json` `brand_owner`; a missing, unreadable or
+  other-client file resolves nothing. Once `scripts/brand_colors.py` is on main it is the resolver.
+- the design prose (the request's `stage_prompts` text, or the item prompt) carries any `#hex`
+  that is not one of the client's palette colors (`hypersaturation.foreign_hexes`). A builder
+  must delete old or example palette text; the PAGE COLOR SYSTEM block carries the palette.
+
+The rules and evidence are `references/hypersaturation-framework.md`; the page-level pixel
 check is `scripts/validate_page_color.py`.
 
 ## Composition

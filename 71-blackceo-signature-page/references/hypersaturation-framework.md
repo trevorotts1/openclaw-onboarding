@@ -150,7 +150,10 @@ carries the block is not given a second copy.
 | `references/section-image-prompt.md`, `references/qc-contract.md` | the example set's colors and golden-hour look are now a structure benchmark only; the client's colors and this framework govern. |
 
 The blocks are written to win over any other palette or "warm", "muted" or "ivory" wording in the same
-prompt, because a request builder's design prose can still carry an old look; builders must not.
+prompt, because a request builder's design prose can still carry an old look; builders must not, and the
+executor enforces it: a mockup or item prompt whose prose carries a `#hex` outside the client's palette, or
+that has no resolved client palette at all, is refused before any provider call (never sent without the
+blocks, never sent against them).
 Budget: about 1,800 characters for the page block and 600 for the grade, inside the model band
 (GPT Image 2.5: floor 16,000, target 19,000, maximum 20,000) like every other contract block.
 
@@ -174,7 +177,7 @@ off-role light grounds and accent panels remain reviewer-judged traits.
 
 | Lane (branch) | What this framework uses from it | State at this commit |
 |---|---|---|
-| SPF019 `sigpage-brand-colors` (R69) | the resolved client palette: `scripts/brand_colors.py` `resolve(run_dir)`; `hypersaturation.roles_for_run()` calls it when present | not on main; until it lands, `roles_for_run` reads the brand file `intake.json` names, with no client-ownership check |
+| SPF019 `sigpage-brand-colors` (R69) | the resolved client palette: `scripts/brand_colors.py` `resolve(run_dir)`; `hypersaturation.roles_for_run()` calls it when present | not on main; until it lands, `roles_for_run` uses the stage gate's own brand lookup (`brand_path_for_checked`) and requires the file's `brand_id` to equal `intake.json` `brand_owner`, so prompt and gate read the same file |
 | SPF022 `sigpage-reference-use` (R72) | the media-library upload method (`ghl-media-upload.sh`, reuse by SHA-256) and the structure-only reference contract (`references/reference-image-use.md`, `reference-library.json`) | upload method used; the contract file is not on main |
 | SPF023 `sigpage-composition-library` (R73) | the composition vocabulary (`references/composition-patterns.md`: `mask-arch`, `mask-circle`, `mask-pill`, `caption-over-photo`) behind R7 | not on main |
 | SPF025 `sigpage-design-style-choice` (R75) | Style B Circle, Style C Hybrid (`references/design-styles.md`): VB's arched and rounded crops map there | branch has no commits yet, so the file does not exist; the mapping is stated here, not linked |
