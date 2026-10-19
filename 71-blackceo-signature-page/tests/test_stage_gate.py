@@ -429,6 +429,10 @@ class StageGateTest(unittest.TestCase):
         write(run / "copy" / "copy-manifest.json", "{}")
         write(run / "font-action-plan" / "font-map.json", json.dumps({"fonts": {}}))
         write(run / "font-action-plan" / "action-plan.md", "plan")
+        # SPF021: the design board precedes every wireframe; its validator is
+        # disabled by the fixture contract, so the artifacts only need to exist.
+        write(run / "design-board" / "design-board.png", "stub")
+        write(run / "design-board" / "production-record.json", "{}")
         # Update Plan Item 11: the wireframe stages deliver the spec
         # image set (section slices, stitched full-page PNG, combined
         # PDF); the retired part-*.png exports no longer satisfy the
@@ -485,6 +489,7 @@ class StageGateTest(unittest.TestCase):
             ("intake", "intake-agent", "intake-reviewer", {"grounding": 9, "craft": 9}),
             ("copy", "copy-writer", "copy-reviewer", {"clarity": 9, "voice": 9}),
             ("font-action-plan", "font-planner", None, None),
+            ("design-board", "board-lead", "board-reviewer", {"fidelity": 9}),
             ("desktop-wireframe", "wireframe-lead", "wireframe-reviewer", {"layout": 9}),
             ("mobile-tablet", "mobile-lead", "mobile-reviewer", {"responsiveness": 9}),
             ("visual-mockup", "mock-builder", None, None),
@@ -505,6 +510,10 @@ class StageGateTest(unittest.TestCase):
                     write_review(run, stage, item, item_criteria,
                                  "mock-session", "mock-review-session",
                                  fixture_env)
+            elif stage == "design-board":
+                write_review(run, stage, "design-board", criteria,
+                             f"sess-author-{stage}", f"sess-reviewer-{stage}",
+                             {**fixture_env, "AGENT_ID": reviewer})
             elif reviewer:
                 write_review(run, stage, "stage", criteria,
                              f"sess-author-{stage}", f"sess-reviewer-{stage}",
@@ -848,6 +857,10 @@ class StageGateTest(unittest.TestCase):
         write(run / "copy" / "copy-manifest.json", "{}")
         write(run / "font-action-plan" / "font-map.json", json.dumps({"fonts": {}}))
         write(run / "font-action-plan" / "action-plan.md", "plan")
+        # SPF021: the design board precedes every wireframe; its validator is
+        # disabled by the fixture contract, so the artifacts only need to exist.
+        write(run / "design-board" / "design-board.png", "stub")
+        write(run / "design-board" / "production-record.json", "{}")
         # Update Plan Item 11: the wireframe stages deliver the spec
         # image set (one section slice per planned section, stitched
         # full-page PNG, combined PDF); the retired part-*.png exports
@@ -928,14 +941,16 @@ class StageGateTest(unittest.TestCase):
         gate("init", str(run), expect=0)
         authors = {
             "intake": "intake-agent", "copy": "copy-writer",
-            "font-action-plan": "font-planner", "desktop-wireframe": "wireframe-lead",
+            "font-action-plan": "font-planner", "design-board": "board-lead",
+            "desktop-wireframe": "wireframe-lead",
             "mobile-tablet": "mobile-lead", "visual-mockup": "mock-builder",
             "image-inventory-prompts": "prompt-writer",
             "image-generation-qc": "image-gen",
             "image-map-upload": "map-builder", "final-mockups": "final-builder",
         }
         reviewers = {
-            "copy": "copy-reviewer", "desktop-wireframe": "wireframe-reviewer",
+            "copy": "copy-reviewer", "design-board": "board-reviewer",
+            "desktop-wireframe": "wireframe-reviewer",
             "mobile-tablet": "mobile-reviewer", "image-inventory-prompts": "prompt-reviewer",
             "image-generation-qc": "image-reviewer",
         }
@@ -944,6 +959,7 @@ class StageGateTest(unittest.TestCase):
         # reviewer session distinct from the author session, before close.
         review_items = {
             "copy": [("stage", {"clarity": 9})],
+            "design-board": [("design-board", {"fidelity": 9})],
             "desktop-wireframe": [("stage", {"layout": 9})],
             "mobile-tablet": [("stage", {"reflow": 8})],
             "visual-mockup": [("desktop-part-01", {"composition_fidelity": 9}),
@@ -962,6 +978,7 @@ class StageGateTest(unittest.TestCase):
         }
         review_sessions = {
             "copy": ("copy-session", "copy-review-session"),
+            "design-board": ("board-session", "board-review-session"),
             "desktop-wireframe": ("wireframe-session", "wireframe-review-session"),
             "mobile-tablet": ("mobile-session", "mobile-review-session"),
             "visual-mockup": ("mock-session", "mock-review-session"),

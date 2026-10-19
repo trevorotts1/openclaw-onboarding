@@ -303,6 +303,20 @@ Open every URL and verify the actual subject/file, not merely an HTTP success. C
 
 **Output:** complete Image Map with working URLs. **QC/repair:** every passed asset has the correct hosted link, no mismatched or stale entries, and no private production data is embedded in the image itself.
 
+## Stage 10.5 - The Design Board: the client approves the visual direction, built from the page's real images
+
+Every page of the funnel (landing, order, checkout, upsell, downsell, thank-you; whichever the client actually has) gets one Design Board once its images have been created and before the mockup is built. The board is the client's own brand colors, their logo and the page's actual section images on one sheet, in the structure of `references/design-board.md`. It is the framework the mockup, the build and the install follow. Placement: after the image chain, before the mockup; the wireframes and the layout proof before it are internal and are not the client's design look. Whether the board must instead come before the wireframes (which would put the image chain ahead of them) is Trevor's ruling and is open; the order stays as built until he rules. It is never made from art-direction text: a board whose pictures are drawn from a description is not the page's board.
+
+**Preconditions:** the client's brand colors are resolved (check what the run already knows, ask only when none is known; `scripts/brand_colors.py`), the font map exists, and the image chain has closed (Stages 7 to 10), so every image slot has its generated or supplied file. The board's images are found from the run's own artifacts (the wireframe image inventory and section plan, the image map, the generation stage's files, the supplied assets). A slot with no file refuses the board by name.
+
+**Produce:** `scripts/stage_executor.py <run_dir> --stages design-board` (preflight first, free). The board is model-generated, one image per page, from the contract blocks, the exact palette, the logo and the page's real images as references; it is read back at native resolution (`design_board.py finalize`), and the read-back is checked against the board image itself (tesseract), never taken on the caller's word.
+
+**Approve:** the board goes to the client through the fleet's own client-message path. The client's approval is recorded with `design_board.py approve --by <client> --evidence <message or link>` in `design-board/production-record.json`, bound to the board, the image set and the palette hashes. A client change request, or any later change to a page image, remakes the board and needs a fresh approval.
+
+**Gate (fail closed):** the mockup and everything after it do not start for a page without a current recorded approval of that page's board. The stage gate refuses `final-mockups` until `design-board` closes, and `stage_executor.py` refuses `final-mockups` on the same record. The approval is bound to the page's images, re-derived from the run's artifacts at every check, so a replaced or edited image makes it stale.
+
+**Output:** `design-board/design-board.png` and `design-board/production-record.json`. **QC/repair:** the board QC checklist in `references/qc-contract.md` (palette equals the resolved client palette and is in the board's pixels, logo present, images are the page's actual section images, every block on the board legible in the image, no other client's brand text); the repair rule is the standard failed-only loop.
+
 ## Stage 11 - The mockup: finalize the layout proof with the actual assets
 
 ### A. Replace temporary imagery

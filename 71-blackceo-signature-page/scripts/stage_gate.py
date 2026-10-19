@@ -88,6 +88,22 @@ def save_state(run_dir, state):
     return state_path
 
 
+def design_board_start_failures(run_dir, stage):
+    """SPF021: the design-board stage starts only on the client's resolved brand colors
+    (resolution consumed from scripts/brand_colors.py through design_board.py)."""
+    if stage != "design-board":
+        return []
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import design_board
+        design_board.brand_resolution(run_dir)
+    except design_board.BoardError as exc:
+        return [f"stage design-board cannot start: {exc}"]
+    finally:
+        sys.path.pop(0)
+    return []
+
+
 def brand_path_for(run_dir):
     """The run's brand file: the one scripts/brand_colors.py resolved (see brand_colors.brand_path)."""
     return _brand_colors().brand_path(run_dir)
@@ -2943,6 +2959,7 @@ def cmd_check(run_dir, stage):
         if hygiene_failures:
             return fail_exit(hygiene_failures)
     failures = check_requires(run_dir, stage) + brand_color_failures(run_dir, stage)
+    failures += design_board_start_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: stage {stage} may start (all dependencies closed with matching receipts and artifacts)")

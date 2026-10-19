@@ -46,6 +46,13 @@ Usage:
   python3 scripts/stage_executor.py <run_dir> --stage image-generation-qc
       --item IMG-001 [--provider stub|kie] [--allow-paid]
 
+  # the page's Design Board (SPF021): runs alone, after the image chain, before final-mockups
+  python3 scripts/stage_executor.py <run_dir> --stages design-board [--preflight]
+
+The final-mockups stage refuses to start until the page's design board has a current recorded
+client approval (scripts/design_board.py gate; references/design-board.md). The board itself
+refuses to start until every image slot of the page has its real file.
+
 Exit codes: 0 every requested stage produced its images; 1 a named
 failure or refusal; 2 usage.
 """
@@ -74,6 +81,7 @@ HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
+BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
 
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 # per stage: list of (output template, width, height-hint)
@@ -766,14 +774,20 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
-    refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
-                              job["references"]))
+    exact = bool(job.get("exact_references"))
+    if exact:  # the design board: exactly the job's attachments (client logo, the page's images)
+        refs = [str(r) for r in job["references"]]
+    else:
+        refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
+                                  job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
     extra = request.get("input_extra")
     if isinstance(extra, dict):
         base.update(extra)
+    if exact:  # a request-level extra can never add a picture to the board either
+        base["input_urls"] = refs
     return base
 
 
@@ -1028,6 +1042,69 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
     return record
 
 
+def load_board_request(run_dir: Path, name: str) -> dict:
+    """The production request as the board needs it: sections and slots, no copy rules."""
+    try:
+        data = json.loads((run_dir / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read production request {run_dir / name}: {exc}")
+    if not isinstance(data, dict) or not isinstance(data.get("sections"), list):
+        raise ExecutorError("production request needs a 'sections' array")
+    return data
+
+
+def design_board_module():
+    sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+    try:
+        import design_board
+    finally:
+        sys.path.pop(0)
+    return design_board
+
+
+def require_board_approval(run_dir: Path, request_name: str) -> None:
+    """Fail closed: final-mockups does not start for a page whose design board has no current
+    recorded client approval (references/design-board.md)."""
+    failures = design_board_module().gate_failures(run_dir, request_name)
+    if failures:
+        raise ExecutorError("; ".join(failures))
+
+
+def board_job(run_dir: Path, request: dict):
+    """(plan, job) for the page's design board: one image, the client logo and the page's
+    section images as references, the contract and palette in the prompt."""
+    board = design_board_module()
+    try:
+        plan = board.plan(run_dir, request)
+        prompt, sizes = board.compose_prompt(plan, request, run_dir)
+    except board.BoardError as exc:
+        raise ExecutorError(str(exc))
+    width, height = board.BOARD_PX
+    job = {"stage": BOARD_STAGE, "index": 1, "section": {"section_id": plan["role"]},
+           "out": run_dir / board.BOARD_FILE, "width": width, "height": height,
+           "label": f"{BOARD_STAGE} {plan['role']}", "ratio": board.BOARD_RATIO,
+           "references": board.references(plan, run_dir), "exact_references": True,
+           "prompt": prompt, "prompt_sizes": sizes}
+    return plan, job
+
+
+def run_board(run_dir: Path, request: dict, provider, overwrite: bool) -> dict:
+    board = design_board_module()
+    plan, job = board_job(run_dir, request)
+    if job["out"].exists() and not overwrite:
+        raise ExecutorError(f"{job['out']} exists; pass --overwrite to remake the board "
+                            "(a remade board needs a fresh client approval)")
+    board.build_overflow_sheet(plan, run_dir)  # real images that do not fit the attachments
+    result = provider.generate(job, request)
+    try:
+        revision = int(board.load_record(run_dir).get("revision", 0)) + 1
+    except board.BoardError:
+        revision = 1
+    record = board.write_record(run_dir, plan, job["prompt"], result, revision)
+    print(f"GENERATED {BOARD_STAGE} {board.BOARD_FILE} sha256={record['board']['sha256']}")
+    return record
+
+
 def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              overwrite: bool) -> dict:
     prompt_path = run_dir / "image-inventory-prompts" / f"{item}.txt"
@@ -1123,11 +1200,34 @@ def main(argv=None) -> int:
         return 2
     stages = [s.strip() for s in args.stages.split(",") if s.strip()]
     for stage in stages:
-        if stage not in STAGES:
-            print(f"FAIL: unknown stage {stage!r}; expected one of {list(STAGES)}")
+        if stage not in STAGES and stage != BOARD_STAGE:
+            print(f"FAIL: unknown stage {stage!r}; expected one of {[BOARD_STAGE, *STAGES]}")
             return 2
+    board_requested = BOARD_STAGE in stages
+    stages = [s for s in stages if s != BOARD_STAGE]
     try:
+        if board_requested and (stages or args.item):
+            raise ExecutorError("run the design board on its own: the client approves it before "
+                                "the final-mockups stage starts")
+        if board_requested:
+            request = load_board_request(run_dir, args.request)
+            if args.preflight:
+                plan, job = board_job(run_dir, request)
+                sz = job["prompt_sizes"]
+                print(f"PREFLIGHT {BOARD_STAGE} {plan['role']} ratio={job['ratio']} "
+                      f"chars={sz['chars']} floor={sz['floor_chars']} max={sz['max_chars']} "
+                      f"refs={len(job['references'])} slots={len(plan['slots'])} "
+                      f"required_blocks={','.join(plan['expected']['required_blocks'])}")
+                print(f"PREFLIGHT_COLORS {BOARD_STAGE} {plan['role']} "
+                      + " ".join(f"{x['name']}={x['hex']}" for x in plan["palette"]))
+                return 0
+            record = run_board(run_dir, request, make_provider(args, run_dir), args.overwrite)
+            print(f"STAGE {BOARD_STAGE} images=1 provider={record['generation']['provider']} "
+                  f"mode={record['generation']['mode']} record={design_board_module().RECORD_FILE}")
+            return 0
         brand_block = require_brand_colors(run_dir)
+        if "final-mockups" in stages and not args.item:  # before any call: a refused run spends nothing
+            require_board_approval(run_dir, args.request)
         if args.preflight:
             request = load_request(run_dir, args.request)
             request["_brand_block"] = brand_block

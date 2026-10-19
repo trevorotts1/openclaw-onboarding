@@ -6,6 +6,7 @@
     "intake": {"status": "ready", "attempts": 0},
     "copy": {"status": "qc_failed", "attempts": 1},
     "font-action-plan": {"status": "ready", "attempts": 0},
+    "design-board": {"status": "blocked", "attempts": 0},
     "desktop-wireframe": {"status": "working", "attempts": 0},
     "mobile-tablet": {"status": "blocked", "attempts": 0},
     "visual-mockup": {"status": "blocked", "attempts": 0},

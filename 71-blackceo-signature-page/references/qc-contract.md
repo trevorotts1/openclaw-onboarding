@@ -256,6 +256,32 @@ generic page fails several of them.
 16. founder close: portrait, script signature, capitals name and title,
     final CTA.
 
+## Design Board (stage design-board; SPF021)
+
+`scripts/design_board.py validate` is the deterministic floor, run by the stage gate at close
+with `--require-approval`. Contract and block list: `references/design-board.md`.
+
+1. Palette on the board is the run's resolved client palette (roles and hex), every printed hex
+   is a palette hex, every palette hex is printed, and every palette color is present in the
+   board's pixels.
+2. The client's logo file is present and unchanged since the board was made.
+3. Images are the page's actual section images, re-derived from the run's own artifacts (wireframe
+   inventory and section plan, image map, generation files, supplied assets) at every check: same
+   slots, files and bytes as recorded; no slot without a real file (no art-direction tile).
+4. Every block on the board (required for the page role, plus any optional one declared) is legible:
+   each declared text (tagline, caption, tile, cue, label, title line, phrase line, banner second
+   line) is in the transcript and the board image itself (read by tesseract, not the caller)
+   shows that text, judged per text, not per block; the transcript is supported by the image overall.
+5. No foreign client brand text (other clients' names, the example board's words).
+6. Not a stub placeholder; the board file is unchanged since it was recorded; the page role matches the run.
+7. A recorded client approval (`approved`, approver, evidence, time) bound to the current board, image
+   set, palette and page role.
+
+Reviewer criteria (Review Receipt v2, each applicable criterion at least 8): reads as the client's brand;
+the logo is faithful, not restyled; each image tile is the page's image and undistorted; spacing and
+hierarchy are clean; no garbled or invented text. A palette, logo, image or foreign-brand failure is an
+auto-fail.
+
 ## Failed-only repair loop
 
 1. Run initial QC.

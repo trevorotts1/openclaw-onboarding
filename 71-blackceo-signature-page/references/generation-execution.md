@@ -11,7 +11,8 @@ service's documented `--pipeline-command` seam expects, and it is the command a
 ## Command
 
 ```sh
-# the four image stages, end to end (inert by default)
+# the four image stages, end to end (inert by default); final-mockups needs the page's
+# approved Design Board, so run the first three, the image chain and the board before it
 python3 scripts/stage_executor.py <run_dir> --provider stub
 
 # the real route: Skill 74, one `run --mode active` per image
@@ -140,6 +141,20 @@ Hypersaturation is never optional, and never against the client's palette. The e
 
 The rules and evidence are `references/hypersaturation-framework.md`; the page-level pixel
 check is `scripts/validate_page_color.py`.
+
+## Design board (stage `design-board`)
+
+`--stages design-board` produces the page's Design Board (`references/design-board.md`): one
+4:3 image, the client logo and all of the page's real section images attached as references (a
+page with more than fit is attached as individual images plus one contact sheet of the real
+files), the resolved palette and the contract blocks in the prompt. The request-level
+`references` above are not sent with it: the call carries exactly the logo and the page's images.
+It runs alone, after the image
+chain, and refuses a page with any image slot that has no file yet. `--preflight` composes and
+checks it for free, and the stub board never validates. `final-mockups` refuses to start (preflight
+included, and before any call in a multi-stage run) until `design_board.py gate` passes (a current
+recorded client approval of the board's images, palette and file). The wireframe, mobile,
+layout-proof stages and item mode are not gated by the board: they come before it.
 
 ## Composition
 
