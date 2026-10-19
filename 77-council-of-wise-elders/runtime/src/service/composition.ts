@@ -42,41 +42,64 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resolveStandaloneInstallation, standaloneScope } from '../cli/authorization.js';
+import {
+  resolveStandaloneInstallation,
+  standaloneEnvelope,
+  standalonePrincipal,
+  standaloneScope,
+  type StandaloneInstallation,
+} from '../cli/authorization.js';
+import { SubprocessHostCallTransport } from '../cli/host-call-transport.js';
+import type { ModelTransport } from '../cli/host-ports.js';
 import {
   RouteDiscoveryError,
   discoverConfiguredRoutes,
+  resolveDiscoveredCredential,
   resolveRouteForDispatch,
   type DiscoveredRoute,
   type RouteDiscoveryOptions,
 } from '../cli/route-discovery.js';
 import type { Clock, IdSource } from '../contracts/index.js';
-import { SEAT_IDS } from '../contracts/enums.js';
+import { SEAT_IDS, type SeatId } from '../contracts/enums.js';
+import type { MaterialCatalog } from '../context/types.js';
+import type { StoredSession } from '../cli/host-ports.js';
 import {
   COUNCIL_SCHEMA_SQL,
   COUNCIL_TABLES_SECTION_16_2,
 } from '../persistence/index.js';
 import { parsePersistenceConfig } from '../persistence/config.js';
-import { envelopeFromScope } from '../persistence/envelope.js';
+import { envelopeFromScope, type AuthorizationEnvelope } from '../persistence/envelope.js';
 import { ensureInstallationProfile } from '../persistence/profile.js';
 import { CouncilRepositories } from '../persistence/repositories.js';
 import { CouncilDatabase } from '../persistence/sqlite.js';
 import {
   composeDeliberationService,
+  type DeliberationCompositionDeps,
   type DeliberationService,
 } from '../protocol/composition.js';
+import { CompatibleHttpTransport } from '../providers/compatible.js';
+import type { CouncilRouteSelection } from '../providers/selection.js';
+import { DurableOperationProducer } from '../queue/producer.js';
 import type { RunnerTimers } from '../queue/runner.js';
 import {
   startCouncilWorkers,
   stopCouncilWorkers,
   type CouncilWorkerHandle,
 } from '../queue/workers.js';
+import type { PinnedRouteSnapshot } from '../budgets/index.js';
+import { createDurableAdmissionSink } from './durable-admission.js';
+import {
+  journalEventStreamAdapter,
+  repositorySessionReader,
+  type CouncilEventStreamAdapter,
+  type CouncilSessionReader,
+} from './events.js';
 import { CouncilFrontDoor, isLoopbackHost } from './front-door.js';
 import {
   SERVICE_IDENTITY_PATH,
@@ -159,6 +182,14 @@ export interface CouncilServiceCompositionOptions {
   workerPollIntervalMs?: number;
   /** Injected runner timers (tests). Default: unref'd system timers. */
   workerTimers?: RunnerTimers;
+  /**
+   * The CWE-022 material catalog the deliberation context assembler reads
+   * evidence from. The standalone service has no installed Skill 22 export
+   * by default, so this stays null there and `DeliberationService.readiness()`
+   * reports the catalog unbound. A host that has an adapted export supplies
+   * the catalog it built; the service never invents evidence.
+   */
+  materialCatalog?: MaterialCatalog | null;
 }
 
 /** The backend members this root actually constructed. */
@@ -174,6 +205,10 @@ export interface CouncilServiceBackend {
   outbox: CouncilRepositories['outbox'];
   /** The durable deliberation composition (runner, jobs, ledger, grants). */
   deliberation: DeliberationService;
+  /** The canonical durable producer the default admission sink forwards to. */
+  producer: DurableOperationProducer;
+  /** The owner/write envelope every local composition member acts under. */
+  ownerEnvelope: AuthorizationEnvelope;
   /** The running supervisor, or null when workers were disabled. */
   workers: CouncilWorkerHandle | null;
   /** Stop workers (awaiting in-flight work), then close the database once. */
@@ -237,6 +272,106 @@ function resolveTsxCli(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Seat briefings are the advisor packs' own `briefing.md`. They are read
+ * lazily per seat and per run; a missing file is null (the seat has no
+ * briefing), never invented text.
+ */
+function seatBriefingLoader(
+  skillRoot: string | null,
+): (seatId: SeatId) => Promise<{ briefing_text: string } | null> {
+  return async (seatId) => {
+    if (!skillRoot) return null;
+    try {
+      const text = readFileSync(join(skillRoot, 'advisors', seatId, 'briefing.md'), 'utf8');
+      return { briefing_text: text };
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * The pinned budget snapshot and the transport selection are the same
+ * frozen CWE-008 selection document. Copy the published fields explicitly
+ * so a shape drift is a compile error, never a cast that hides it.
+ */
+function selectionFromSnapshot(snapshot: PinnedRouteSnapshot): CouncilRouteSelection {
+  const credentialState = snapshot.credential.state;
+  if (
+    credentialState !== 'present' &&
+    credentialState !== 'absent' &&
+    credentialState !== 'not_required'
+  ) {
+    throw new Error(
+      `Route snapshot credential state ${JSON.stringify(credentialState)} is not a canonical presence state; no transport is composed.`,
+    );
+  }
+  const credentialSource = snapshot.credential.source;
+  if (
+    credentialSource !== null &&
+    credentialSource !== 'process.env' &&
+    credentialSource !== 'env_file' &&
+    credentialSource !== 'openclaw_json' &&
+    credentialSource !== 'openclaw_auth_store'
+  ) {
+    throw new Error(
+      `Route snapshot credential source ${JSON.stringify(credentialSource)} is not a canonical source name; no transport is composed.`,
+    );
+  }
+  return {
+    schema: snapshot.schema,
+    selectionSource: snapshot.selectionSource,
+    routeId: snapshot.routeId,
+    routeRevision: snapshot.routeRevision,
+    routeKind: snapshot.routeKind,
+    providerSlug: snapshot.providerSlug,
+    requestedRoute: snapshot.requestedRoute,
+    requestedModelOrAlias: snapshot.requestedModelOrAlias,
+    combinationMembers: snapshot.combinationMembers,
+    reasoning: snapshot.reasoning,
+    fallbackPolicy: snapshot.fallbackPolicy,
+    providerAccountRef: snapshot.providerAccountRef,
+    capabilitySnapshot: snapshot.capabilitySnapshot,
+    credential: {
+      state: credentialState,
+      envVar: snapshot.credential.envVar,
+      source: credentialSource,
+      checked: snapshot.credential.checked,
+    },
+    identityLevel: snapshot.identityLevel,
+    scope: snapshot.scope,
+    createdAt: snapshot.createdAt,
+  };
+}
+
+/**
+ * Compose the real transport for the one selected route, at flight time.
+ * A harness route runs its own executable; a compatible route uses the
+ * configured endpoint and resolves the credential value only when a call
+ * is made. No credential is read during composition or readiness.
+ */
+function transportForRoute(
+  route: DiscoveredRoute,
+  env: NodeJS.ProcessEnv | undefined,
+  snapshot: PinnedRouteSnapshot,
+): ModelTransport | null {
+  if (route.harness?.executable) {
+    return new SubprocessHostCallTransport({
+      executable: route.harness.executable,
+      configDir: route.harness.configDir,
+    });
+  }
+  if (route.compatible) {
+    return new CompatibleHttpTransport({
+      selection: selectionFromSnapshot(snapshot),
+      baseUrl: route.compatible.baseUrl,
+      credentialResolver: async () => resolveDiscoveredCredential(route, env ?? process.env),
+    });
+  }
+  return null;
 }
 
 function blocked(
@@ -739,14 +874,24 @@ function discoveryProbe(input: {
  */
 function composeBackend(input: {
   dataDir: string;
+  /** The provisioned standalone installation this backend writes under. */
+  installation: StandaloneInstallation;
   clock: Clock;
   ids: IdSource;
   startWorkers: boolean;
   workerPollIntervalMs?: number;
   workerTimers?: RunnerTimers;
+  /** The deliberation host bindings this root could resolve truthfully. */
+  deliberationHost: {
+    catalog: MaterialCatalog | null;
+    resolvePrincipal: DeliberationCompositionDeps['resolvePrincipal'];
+    resolveTransport: DeliberationCompositionDeps['resolveTransport'];
+    routeBudget: DeliberationCompositionDeps['routeBudget'];
+    loadSeatBriefing?: DeliberationCompositionDeps['loadSeatBriefing'];
+  };
 }): CouncilServiceBackend {
   const config = parsePersistenceConfig();
-  const installation = resolveStandaloneInstallation(input.dataDir);
+  const installation = input.installation;
   ensureInstallationProfile(input.dataDir, {
     authority_mode: config.authority_mode,
     authority_ref: null,
@@ -785,14 +930,24 @@ function composeBackend(input: {
     db,
     clock: input.clock,
     ids: input.ids,
-    // The service root does not own a material catalog, a trusted
-    // principal resolver, a transport resolver or verified route limits.
-    // They stay honestly unbound; DeliberationService.readiness() says so.
-    catalog: null,
-    resolvePrincipal: null,
-    resolveTransport: null,
-    routeBudget: null,
+    catalog: input.deliberationHost.catalog,
+    resolvePrincipal: input.deliberationHost.resolvePrincipal,
+    resolveTransport: input.deliberationHost.resolveTransport,
+    routeBudget: input.deliberationHost.routeBudget,
+    loadSeatBriefing: input.deliberationHost.loadSeatBriefing,
     workerId: WORKER_ID,
+  });
+
+  // The canonical durable producer the front-door admission sink forwards
+  // to. It shares the one handle, journal and outbox with the workers.
+  const ownerEnvelope = standaloneEnvelope(installation, 'write');
+  const producer = new DurableOperationProducer({
+    db,
+    repositories,
+    jobs: deliberation.jobs,
+    outbox: repositories.outbox,
+    clock: input.clock,
+    ids: input.ids,
   });
 
   let workers: CouncilWorkerHandle | null = null;
@@ -833,6 +988,8 @@ function composeBackend(input: {
     journal: repositories.journal,
     outbox: repositories.outbox,
     deliberation,
+    producer,
+    ownerEnvelope,
     workers,
     stop,
   };
@@ -853,13 +1010,43 @@ export function composeCouncilService(
   const dataDir = options.dataDir ?? defaultServiceDataDir();
   mkdirSync(dataDir, { recursive: true });
 
+  const installation = resolveStandaloneInstallation(dataDir);
+  const routeOptions = {
+    routeId: options.routeId,
+    routeHomeDir: options.routeHomeDir,
+    routeEnv: options.routeEnv,
+    providerDispatch: options.providerDispatch,
+  };
+  const routeSelection = selectRoute(routeOptions);
+  const selectedRoute = routeSelection.route;
+  const skillRoot = resolveSkillRoot();
+
   const backend = composeBackend({
     dataDir,
+    installation,
     clock,
     ids,
     startWorkers: options.startWorkers !== false,
     workerPollIntervalMs: options.workerPollIntervalMs,
     workerTimers: options.workerTimers,
+    deliberationHost: {
+      // A catalog is bound only when the host supplies an adapted Skill 22
+      // export; the service never invents evidence candidates.
+      catalog: options.materialCatalog ?? null,
+      resolvePrincipal: (_session: StoredSession) => standalonePrincipal(installation),
+      // A transport is bound only when a real route resolved. The provider
+      // credential is resolved at flight time, never during composition.
+      resolveTransport: selectedRoute
+        ? (snapshot: PinnedRouteSnapshot) =>
+            transportForRoute(selectedRoute, options.routeEnv, snapshot)
+        : null,
+      // The verified route budget needs canonical byte limits. Route
+      // discovery publishes contextWindowTokens only (route-discovery.ts),
+      // and no verified token->byte conversion exists in this runtime, so
+      // this stays honestly null rather than guessing a limit.
+      routeBudget: null,
+      loadSeatBriefing: seatBriefingLoader(skillRoot),
+    },
   });
 
   const identity = buildServiceIdentity({
@@ -872,19 +1059,28 @@ export function composeCouncilService(
   let doorRef: CouncilFrontDoor | null = null;
   const origin = (): string | null => doorRef?.getOrigin() ?? null;
 
-  const routeOptions = {
-    routeId: options.routeId,
-    routeHomeDir: options.routeHomeDir,
-    routeEnv: options.routeEnv,
-    providerDispatch: options.providerDispatch,
-  };
-
+  const readEnvelope = standaloneEnvelope(installation, 'read');
   const door = new CouncilFrontDoor({
     identity,
     host: options.host,
     ports: options.ports,
     fetchImpl: options.fetchImpl,
-    admissionSink: options.admissionSink,
+    // ONE composition binds the durable admission, event stream and
+    // session reader over the same store/journal/outbox the workers use.
+    admissionSink:
+      options.admissionSink ??
+      createDurableAdmissionSink({
+        producer: backend.producer,
+        envelope: backend.ownerEnvelope,
+      }),
+    eventsAdapter: journalEventStreamAdapter({
+      journal: backend.journal,
+      envelope: readEnvelope,
+    }),
+    sessionReader: repositorySessionReader({
+      repositories: backend.repositories,
+      envelope: readEnvelope,
+    }),
     readiness: {
       nowUtc,
       discovery: discoveryProbe({
