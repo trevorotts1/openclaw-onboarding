@@ -66,13 +66,22 @@ frontdoor_run_stage() {
     echo "{\"frontdoor\":{\"status\":\"failed\",\"reason\":\"module missing: $lib\"}}"
     return 1
   }
-  local report
-  report="$(OC_FRONTDOOR_PYTHON="$py" "$py" "$lib" --json 2>/dev/null)" || {
-    echo "[front-door] WARN: shared stage could not run (module errored): $lib" >&2
+  # The module exits 1 for a gate-failed / gate-undetermined VERDICT, so a
+  # non-zero exit is NOT proof the module errored: trust the report it printed
+  # and only call it "module errored" when no parseable report came out. The
+  # real stderr/traceback goes into the reason (it used to be sent to /dev/null).
+  local report rc=0 errf reason
+  errf="$(mktemp "${TMPDIR:-/tmp}/oc-frontdoor-err.XXXXXX" 2>/dev/null || echo /dev/null)"
+  report="$(OC_FRONTDOOR_PYTHON="$py" "$py" "$lib" --json 2>"$errf")" || rc=$?
+  if ! printf '%s' "$report" | "$py" -c 'import json,sys; assert json.load(sys.stdin)["status"]' >/dev/null 2>&1; then
+    reason="module errored (exit $rc): $lib: $(tail -c 400 "$errf" 2>/dev/null | tr '\n' ' ')"
+    [ "$errf" = /dev/null ] || rm -f "$errf"
+    echo "[front-door] WARN: shared stage could not run: $reason" >&2
     FRONTDOOR_STATUS="failed"
-    echo "{\"frontdoor\":{\"status\":\"failed\",\"reason\":\"module errored: $lib\"}}"
+    printf '%s' "$reason" | "$py" -c 'import json,sys; print(json.dumps({"frontdoor":{"status":"failed","reason":sys.stdin.read()}}))'
     return 1
-  }
+  fi
+  [ "$errf" = /dev/null ] || { [ ! -s "$errf" ] || cat "$errf" >&2; rm -f "$errf"; }
   FRONTDOOR_JSON="$report"
   FRONTDOOR_STATUS="$(printf '%s' "$report" | OC_FRONTDOOR_PYTHON="$py" "$py" -c '
 import json,sys
