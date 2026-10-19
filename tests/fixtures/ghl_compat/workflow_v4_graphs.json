@@ -1,0 +1,303 @@
+{
+  "_meta": {
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_workflow_v4_graph_preservation.py",
+    "contract_revision": "GU-004-CONTRACT-FREEZE@2026-10-18",
+    "purpose": "Synthetic V4 definition graphs with expected diff outcomes: linear, branch with an unknown-but-supported node, omitted step, non-integer revision, stale revision, published conflict."
+  },
+  "graph_contract": {
+    "operation_id": "workflows.definition.update",
+    "version_header": "v4",
+    "level": "S (staging-documented)",
+    "doc_url": "https://staging.marketplace.gohighlevel.com/docs/ghl/workflows/update-workflow-definition/index.html",
+    "definition_fields": ["version", "name", "source", "triggers", "actions", "edges"],
+    "optional_fields": ["triggerRelation", "settings", "folderName", "folderPath", "createFolderIfMissing"],
+    "documented_action_types_used": ["sms", "add_contact_tag", "if_else", "wait", "webhook"],
+    "rules": {
+      "complete_replacement": true,
+      "steps_absent_from_request_are_deleted": true,
+      "revision_echo_required": true,
+      "stale_revision_http_status": 422,
+      "missing_revision_http_status": 422,
+      "non_integer_revision_http_status": 422,
+      "published_workflow_http_status": 409,
+      "status_change_advances_version": true,
+      "auto_unpublish_allowed": false,
+      "unknown_but_supported_nodes_preserved": true
+    }
+  },
+  "graphs": [
+    {
+      "case_id": "simple_linear_update",
+      "note": "Simple linear graph: trigger -> sms -> wait -> webhook. The request echoes the revision and changes one action property.",
+      "prior": {
+        "version": 3,
+        "name": "Synthetic Linear Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"},
+          {"id": "act_wait", "type": "wait", "name": "Wait 1 day", "duration": "1d"},
+          {"id": "act_webhook", "type": "webhook", "name": "Call Webhook", "url": "https://example.invalid/hook"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"},
+          {"id": "e_2", "from": "act_sms", "to": "act_wait"},
+          {"id": "e_3", "from": "act_wait", "to": "act_webhook"}
+        ]
+      },
+      "request": {
+        "version": 3,
+        "name": "Synthetic Linear Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"},
+          {"id": "act_wait", "type": "wait", "name": "Wait 2 days", "duration": "2d"},
+          {"id": "act_webhook", "type": "webhook", "name": "Call Webhook", "url": "https://example.invalid/hook"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"},
+          {"id": "e_2", "from": "act_sms", "to": "act_wait"},
+          {"id": "e_3", "from": "act_wait", "to": "act_webhook"}
+        ]
+      },
+      "expected": {
+        "outcome": "update",
+        "added": [],
+        "removed": [],
+        "modified": ["act_wait"],
+        "write_performed": true,
+        "http_status": 200
+      }
+    },
+    {
+      "case_id": "branch_with_unknown_but_supported_node",
+      "note": "if_else branch with an action type outside the documented set. The unknown-but-supported node must survive round-trip unchanged; only the touched action appears in the diff.",
+      "prior": {
+        "version": 5,
+        "name": "Synthetic Branch Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_if", "type": "if_else", "name": "Check Tag"},
+          {"id": "act_tag_yes", "type": "add_contact_tag", "name": "Tag Matched", "tags": ["TAG_PLACEHOLDER"]},
+          {"id": "act_sms_no", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"},
+          {"id": "act_unknown_synthetic", "type": "synthetic_unknown_supported_node_type", "name": "Undocumented Node", "config": {"synthetic_key": "SYNTHETIC_VALUE"}}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_if"},
+          {"id": "e_2", "from": "act_if", "to": "act_tag_yes", "branch": "yes"},
+          {"id": "e_3", "from": "act_if", "to": "act_sms_no", "branch": "no"},
+          {"id": "e_4", "from": "act_tag_yes", "to": "act_unknown_synthetic"}
+        ]
+      },
+      "request": {
+        "version": 5,
+        "name": "Synthetic Branch Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_if", "type": "if_else", "name": "Check Tag"},
+          {"id": "act_tag_yes", "type": "add_contact_tag", "name": "Tag Matched", "tags": ["TAG_PLACEHOLDER"]},
+          {"id": "act_sms_no", "type": "sms", "name": "Send Follow-up SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"},
+          {"id": "act_unknown_synthetic", "type": "synthetic_unknown_supported_node_type", "name": "Undocumented Node", "config": {"synthetic_key": "SYNTHETIC_VALUE"}}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_if"},
+          {"id": "e_2", "from": "act_if", "to": "act_tag_yes", "branch": "yes"},
+          {"id": "e_3", "from": "act_if", "to": "act_sms_no", "branch": "no"},
+          {"id": "e_4", "from": "act_tag_yes", "to": "act_unknown_synthetic"}
+        ]
+      },
+      "expected": {
+        "outcome": "update",
+        "added": [],
+        "removed": [],
+        "modified": ["act_sms_no"],
+        "preserved_nodes": ["act_unknown_synthetic"],
+        "preserved_edges": ["e_4"],
+        "write_performed": true,
+        "http_status": 200,
+        "note": "Unknown-but-supported node type is not an added, removed or modified node; preservation is asserted explicitly."
+      }
+    },
+    {
+      "case_id": "omitted_step_deletion_detected",
+      "note": "Complete replacement: act_wait and its two edges are absent from the request, so they are deleted. The diff must surface the deletion before apply.",
+      "prior": {
+        "version": 8,
+        "name": "Synthetic Omission Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"},
+          {"id": "act_wait", "type": "wait", "name": "Wait 1 day", "duration": "1d"},
+          {"id": "act_tag", "type": "add_contact_tag", "name": "Apply Tag", "tags": ["TAG_PLACEHOLDER"]},
+          {"id": "act_webhook", "type": "webhook", "name": "Call Webhook", "url": "https://example.invalid/hook"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"},
+          {"id": "e_2", "from": "act_sms", "to": "act_wait"},
+          {"id": "e_3", "from": "act_wait", "to": "act_tag"},
+          {"id": "e_4", "from": "act_tag", "to": "act_webhook"}
+        ]
+      },
+      "request": {
+        "version": 8,
+        "name": "Synthetic Omission Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"},
+          {"id": "act_tag", "type": "add_contact_tag", "name": "Apply Tag", "tags": ["TAG_PLACEHOLDER"]},
+          {"id": "act_webhook", "type": "webhook", "name": "Call Webhook", "url": "https://example.invalid/hook"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"},
+          {"id": "e_5", "from": "act_sms", "to": "act_tag"},
+          {"id": "e_4", "from": "act_tag", "to": "act_webhook"}
+        ]
+      },
+      "expected": {
+        "outcome": "deletion_detected",
+        "added": ["e_5"],
+        "removed": ["act_wait", "e_2", "e_3"],
+        "modified": [],
+        "write_performed": false,
+        "note": "Omitted steps are deleted by contract; detection is required before any apply."
+      }
+    },
+    {
+      "case_id": "non_integer_revision",
+      "note": "definition.version is the workflow's own integer counter. A non-integer revision is a validation_error and nothing is written.",
+      "prior": {
+        "version": 12,
+        "name": "Synthetic Revision Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"}
+        ]
+      },
+      "request": {
+        "version": 12.5,
+        "name": "Synthetic Revision Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"}
+        ]
+      },
+      "expected": {
+        "outcome": "validation_error",
+        "http_status": 422,
+        "write_performed": false,
+        "error_rule": "validation_error",
+        "rejected_revision_values": [12.5, "12"],
+        "note": "The adapter must never coerce or guess a revision; a string or float revision is rejected before transport."
+      }
+    },
+    {
+      "case_id": "stale_revision_conflict",
+      "note": "Stale revision against the current definition: 422 with nothing written.",
+      "prior": {
+        "version": 12,
+        "name": "Synthetic Revision Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"}
+        ]
+      },
+      "request": {
+        "version": 11,
+        "name": "Synthetic Revision Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"}
+        ]
+      },
+      "expected": {
+        "outcome": "validation_error",
+        "http_status": 422,
+        "write_performed": false,
+        "error_rule": "validation_error",
+        "rebase_policy": "re-read the definition, re-apply the intent, retry only with the fresh version",
+        "note": "Stale version writes nothing."
+      }
+    },
+    {
+      "case_id": "published_workflow_conflict",
+      "note": "A published workflow refuses the definition write with 409. The adapter must not unpublish to force the write.",
+      "prior": {
+        "version": 12,
+        "status": "published",
+        "name": "Synthetic Published Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"}
+        ]
+      },
+      "request": {
+        "version": 12,
+        "name": "Synthetic Published Flow",
+        "source": "synthetic",
+        "triggers": [
+          {"id": "trg_1", "type": "contact_created", "name": "Contact Created"}
+        ],
+        "actions": [
+          {"id": "act_sms", "type": "sms", "name": "Send Changed SMS", "message": "SYNTHETIC_MESSAGE_PLACEHOLDER"}
+        ],
+        "edges": [
+          {"id": "e_1", "from": "trg_1", "to": "act_sms"}
+        ]
+      },
+      "expected": {
+        "outcome": "conflict",
+        "http_status": 409,
+        "write_performed": false,
+        "auto_unpublish_allowed": false,
+        "note": "409 is surfaced; status change is a separate authorized action and advances the version, so the definition must be re-read afterwards."
+      }
+    }
+  ]
+}

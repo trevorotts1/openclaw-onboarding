@@ -28,9 +28,21 @@ ext() { awk -v s="$1" 'index($0, s)==1 {f=1} f {print} f && $0=="}" {exit}' "$SC
   ext 'install_periodic_probe() {'
   ext 'oc_mcp_unset() {'
   ext 'oc_mcp_unset_verb_supported() {'
-  ext 'deregister_tier2() {'
 } > "$TMP/fns.sh"
-for f in gw_up install_periodic_probe deregister_tier2; do
+# W07 retirement: deregister_tier2() is deleted with the live start flow. The
+# behaviour it proved — never calling the gateway CLI while the gateway is down —
+# now lives in the retirement transaction, so assert it there instead.
+if grep -q 'mcp unset' "$SCRIPT" && grep -q '_ghl_gw_up' "$SCRIPT"; then
+  pass "0b: retirement de-registration is gateway-guarded"
+else
+  fail "0b: retirement de-registration lost its gateway guard"
+fi
+if sed 's/^[[:space:]]*#.*$//' "$SCRIPT" | grep -q 'config set env\.vars\.GHL_COMMUNITY_MCP_URL'; then
+  fail "0c: script still writes GHL_COMMUNITY_MCP_URL (retirement requires it absent)"
+else
+  pass "0c: no GHL_COMMUNITY_MCP_URL write remains"
+fi
+for f in gw_up install_periodic_probe; do
   grep -q "^$f() {" "$TMP/fns.sh" && pass "0: extracted $f from the shipped script" || fail "0: could not extract $f"
 done
 
@@ -62,7 +74,7 @@ run_case() {  # run_case <fn> ; echoes call-log path. env: no crontab on PATH so
 
 echo "--- D03: gateway DOWN (closed port) -> zero openclaw calls ---"
 write_cfg "$PORT_CLOSED"
-for fn in deregister_tier2 install_periodic_probe; do
+for fn in install_periodic_probe; do
   c="$(run_case "$fn")"; n="$(wc -l < "$c" | tr -d ' ')"
   [ "$n" = "0" ] && pass "1: $fn made 0 openclaw CLI calls with the gateway down" \
                  || fail "1: $fn made $n openclaw CLI call(s) with the gateway down: $(tr '\n' '|' < "$c")"
@@ -80,7 +92,7 @@ PY
 HS_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$PORT_UP/healthz" && break; sleep 0.3; done
 write_cfg "$PORT_UP"
-for fn in deregister_tier2 install_periodic_probe; do
+for fn in install_periodic_probe; do
   c="$(run_case "$fn")"; n="$(wc -l < "$c" | tr -d ' ')"
   [ "$n" -ge 1 ] && pass "2: $fn calls the CLI when /healthz answers 200 ($n call(s))" \
                  || fail "2: $fn made no CLI call although /healthz answers 200 (guard over-blocks)"

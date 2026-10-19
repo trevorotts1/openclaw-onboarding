@@ -234,6 +234,821 @@ LOG_DIR="$GHL_MCP_RESOLVED_LOG_DIR"
 GHL_MCP_PM2_HOME="$GHL_MCP_RESOLVED_PM2_HOME"
 OC_JSON="$OC_ROOT/openclaw.json"
 SECRETS_ENV="$OC_ROOT/secrets/.env"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RETIREMENT MODE — GU-019/020/021. OPERATOR DECISION: the community MCP is
+# RETIRED. This script is now a RETIREMENT tool, not a starter.
+#
+# Stages implemented here: 1 INVENTORY, 3 ARCHIVE (secret-free), 4 DISABLE
+# RESURRECTION, 5 STOP ONLY THE MATCHED SERVICE, 6 VERIFY OFF, 7 RECEIPT.
+# Stage 2 (replacement surfaces) is enforced by update-skills.sh BEFORE it
+# calls --retire: a caller that still needs Tier 2 must never be stopped.
+#
+#   --retire [--dry-run]   run the ordered transaction / print the plan
+#   --status               retirement-aware assertion; changes nothing
+#   --help
+#
+# Exit: 0 = VERIFIED_OFF (or a dry run / status); 1 = MIGRATION_FAILED.
+# Retirement is the ONE mode that may exit non-zero — the legacy wiring path
+# below still exits 0 by its own contract.
+#
+# IDENTIFICATION IS EXACT. Every probe and every stop matches the plist label,
+# the pm2 app name, the systemd unit name or the full supervise-script path.
+# There is no pkill/pgrep on a broad pattern ("ghl", "node", the port) and the
+# container/box is never touched.
+# ═══════════════════════════════════════════════════════════════════════════
+GHL_MCP_MODE="start"
+GHL_MCP_DRY_RUN=0
+for _ghl_arg in "$@"; do
+  case "$_ghl_arg" in
+    --retire|retire)             GHL_MCP_MODE="retire" ;;
+    --status|--inventory|status) GHL_MCP_MODE="status" ;;
+    --dry-run|-n)                GHL_MCP_DRY_RUN=1 ;;
+    --start|start)               GHL_MCP_MODE="start" ;;
+    --help|-h)
+      printf 'ghl-mcp-autostart.sh — the community GHL MCP is RETIRED.\n\n'
+      printf '  --retire [--dry-run]  inventory, archive, disable resurrection, stop, verify, receipt\n'
+      printf '  --status              report VERIFIED_OFF or the live surfaces (no changes)\n'
+      printf '  (no arguments)        refuses to start: this script never starts the service again\n'
+      exit 0 ;;
+    *) log "ignoring unknown argument: $_ghl_arg" ;;
+  esac
+done
+unset _ghl_arg
+
+RETIRE_LABEL="com.clawd.ghl-mcp"
+RETIRE_PROBE_LABEL="com.clawd.ghl-mcp-probe"
+RETIRE_PLIST="$HOME/Library/LaunchAgents/${RETIRE_LABEL}.plist"
+RETIRE_PROBE_PLIST="$HOME/Library/LaunchAgents/${RETIRE_PROBE_LABEL}.plist"
+RETIRE_PM2_APP="ghl-community-mcp"
+RETIRE_SYSTEMD_UNIT="ghl-mcp"
+RETIRE_SYSTEMD_PATH="/etc/systemd/system/ghl-mcp.service"
+RETIRE_SUPERVISE="$MCP_DIR/.ghl-mcp-supervise.sh"
+RETIRE_DIR="$OC_ROOT/.retired"
+RETIRE_STATE_FILE="$RETIRE_DIR/ghl-mcp-retirement.json"
+RETIRE_FAIL_FILE="$RETIRE_DIR/ghl-mcp-migration-failed.json"
+# A retired box no longer needs the pin. Read it (read-only) only to learn the
+# configured port; absence is NOT an error in retirement mode.
+RETIRE_PIN=""
+for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
+          "$OC_ROOT/config/ghl-mcp-pin.env" \
+          "$HOME/.openclaw/config/ghl-mcp-pin.env" \
+          "/data/.openclaw/config/ghl-mcp-pin.env"; do
+  [ -f "$_c" ] && { RETIRE_PIN="$(ghl_mcp_canon_dir "$(dirname "$_c")")/$(basename "$_c")"; break; }
+done
+unset _c
+RETIRE_PORT="${GHL_MCP_PORT:-}"
+if [ -z "$RETIRE_PORT" ] && [ -n "$RETIRE_PIN" ]; then
+  RETIRE_PORT="$( . "$RETIRE_PIN" >/dev/null 2>&1; printf '%s' "${GHL_MCP_PORT:-}" )"
+fi
+RETIRE_PORT="${RETIRE_PORT:-8765}"
+
+# ── small helpers ───────────────────────────────────────────────────────────
+_ghl_sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" 2>/dev/null | cut -d' ' -f1
+  else return 1; fi
+}
+
+_ghl_json_str() { printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\r' '  '; }
+
+_ghl_json_array() {  # newline-separated items -> ["a","b"]
+  local out="" first=1 item
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    [ "$first" = "1" ] || out="$out,"
+    out="$out\"$(_ghl_json_str "$item")\""
+    first=0
+  done <<EOF
+${1:-}
+EOF
+  printf '[%s]' "$out"
+}
+
+_ghl_launchd_loaded() {
+  command -v launchctl >/dev/null 2>&1 || return 1
+  launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1
+}
+
+# prints: disabled | enabled | absent | unknown
+_ghl_launchd_override() {
+  command -v launchctl >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  local o
+  o="$(launchctl print-disabled "gui/$(id -u)" 2>/dev/null || true)"
+  [ -n "$o" ] || { printf 'unknown'; return 0; }
+  case "$o" in
+    *"\"$1\" => disabled"*) printf 'disabled' ;;
+    *"\"$1\" => enabled"*)  printf 'enabled' ;;
+    *)                      printf 'absent' ;;
+  esac
+}
+
+# rc: 0 tag present, 1 absent, 2 cannot read (no crontab on this box)
+_ghl_cron_has() {
+  command -v crontab >/dev/null 2>&1 || return 2
+  local l; l="$(crontab -l 2>/dev/null || true)"
+  case "$l" in *"$1"*) return 0 ;; esac
+  return 1
+}
+
+# rc: 0 probe job present, 1 absent, 2 cannot read
+_ghl_oc_cron_has() {
+  command -v openclaw >/dev/null 2>&1 || return 2
+  local o
+  o="$(openclaw cron list 2>/dev/null)" || return 2
+  case "$o" in *ghl-mcp-probe*) return 0 ;; esac
+  return 1
+}
+
+# rc: 0 registered, 1 absent, 2 cannot read
+_ghl_mcp_registered() {
+  [ -f "$OC_JSON" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 2
+  python3 - "$OC_JSON" <<'PYEOF'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(2)
+servers = (d.get("mcp") or {}).get("servers") or {}
+sys.exit(0 if "ghl-community-mcp" in servers else 1)
+PYEOF
+}
+
+# The pm2 home (an EXISTING one) in which the app is registered. Empty when pm2
+# is absent or the app is not registered anywhere. Never points PM2_HOME at a
+# directory that does not exist — that would spawn a daemon on a read.
+_ghl_pm2_home_with_app() {
+  command -v pm2 >/dev/null 2>&1 || return 0
+  local h
+  for h in "$GHL_MCP_PM2_HOME" "$OC_ROOT/.pm2" "$HOME/.pm2" "/data/.pm2" "/root/.pm2"; do
+    [ -n "$h" ] && [ -d "$h" ] || continue
+    if PM2_HOME="$h" pm2 jlist 2>/dev/null | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RETIRE_PM2_APP\""; then
+      printf '%s' "$h"; return 0
+    fi
+  done
+  for h in $(ps -eo args 2>/dev/null | sed -n 's/.*God Daemon (\(.*\))$/\1/p'); do
+    [ -r "$h/pm2.pid" ] || continue
+    if PM2_HOME="$h" pm2 jlist 2>/dev/null | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RETIRE_PM2_APP\""; then
+      printf '%s' "$h"; return 0
+    fi
+  done
+  return 0
+}
+
+# PIDs whose COMMAND LINE carries one of THIS INSTALL's exact paths. Never a
+# broad name: "ghl", "node" and the port are deliberately absent.
+_ghl_matched_pids() {
+  command -v pgrep >/dev/null 2>&1 || return 0
+  local pat p cmd out=""
+  for pat in "$MCP_DIR/dist/main.js" "$MCP_DIR/.ghl-mcp-launch.sh" "$RETIRE_SUPERVISE"; do
+    [ -n "$pat" ] || continue
+    for p in $(pgrep -f -- "$pat" 2>/dev/null || true); do
+      case " $out " in *" $p "*) continue ;; esac
+      cmd="$(ps -o command= -p "$p" 2>/dev/null || true)"
+      case "$cmd" in *"$pat"*) out="$out $p" ;; esac
+    done
+  done
+  printf '%s' "$out"
+}
+
+# prints: listening | none | unknown
+_ghl_listener_state() {
+  local o
+  if command -v lsof >/dev/null 2>&1; then
+    o="$(lsof -nP -iTCP:"$RETIRE_PORT" -sTCP:LISTEN 2>/dev/null | tail -n +2)"
+    if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
+    return 0
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    o="$(ss -ltn 2>/dev/null | awk -v p=":${RETIRE_PORT}" 'NR>1 && index($4,p) {print; exit}')"
+    if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
+    return 0
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    o="$(netstat -an 2>/dev/null | awk -v p=".${RETIRE_PORT} " '/LISTEN/ && index($0,p) {print; exit}')"
+    if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
+    return 0
+  fi
+  printf 'unknown'
+}
+
+_ghl_gw_up() {
+  command -v curl >/dev/null 2>&1 || return 1
+  local port code
+  port="18789"
+  if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    port="$(python3 - "$OC_JSON" <<'PYEOF' 2>/dev/null || printf '18789'
+import json, sys
+try:
+    print(int((json.load(open(sys.argv[1])).get("gateway") or {}).get("port") or 18789))
+except Exception:
+    print(18789)
+PYEOF
+)"
+  fi
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${port:-18789}/healthz" 2>/dev/null || true)"
+  [ "$code" = "200" ]
+}
+
+# ── Stage 1: INVENTORY ──────────────────────────────────────────────────────
+# Every surface is reported. A surface that cannot be read is `undetermined`,
+# and an undetermined surface BLOCKS a VERIFIED_OFF claim (a false negative is
+# exactly what this stage exists to prevent).
+RET_INV_KINDS=""
+RET_INV_UNDET=""
+_ret_inv_add()   { RET_INV_KINDS="${RET_INV_KINDS}$1
+"; }
+_ret_inv_undet() { RET_INV_UNDET="${RET_INV_UNDET}$1
+"; }
+
+_ghl_ret_inventory() {
+  RET_INV_KINDS=""; RET_INV_UNDET=""; RET_INV_INSTALL=0
+  [ -d "$MCP_DIR" ] && RET_INV_INSTALL=1
+
+  if [ "$PLATFORM" = "mac" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+      _ghl_launchd_loaded "$RETIRE_LABEL" && _ret_inv_add "launchd-service:$RETIRE_LABEL"
+      [ -f "$RETIRE_PLIST" ] && _ret_inv_add "launchd-plist:$RETIRE_PLIST"
+      _ghl_launchd_loaded "$RETIRE_PROBE_LABEL" && _ret_inv_add "launchd-probe:$RETIRE_PROBE_LABEL"
+      [ -f "$RETIRE_PROBE_PLIST" ] && _ret_inv_add "launchd-probe-plist:$RETIRE_PROBE_PLIST"
+    elif [ -f "$RETIRE_PLIST" ]; then
+      _ret_inv_add "launchd-plist:$RETIRE_PLIST"
+      _ret_inv_undet "launchd-service(no-launchctl)"
+    fi
+  fi
+
+  if command -v pm2 >/dev/null 2>&1; then
+    _ph="$(_ghl_pm2_home_with_app)"
+    [ -n "$_ph" ] && _ret_inv_add "pm2-app:$RETIRE_PM2_APP@$_ph"
+    unset _ph
+  fi
+
+  if [ -f "$RETIRE_SYSTEMD_PATH" ]; then
+    _ret_inv_add "systemd-unit-file:$RETIRE_SYSTEMD_PATH"
+  elif command -v systemctl >/dev/null 2>&1; then
+    case "$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+      enabled|enabled-runtime) _ret_inv_add "systemd-unit:$RETIRE_SYSTEMD_UNIT" ;;
+    esac
+  fi
+
+  if command -v pgrep >/dev/null 2>&1; then
+    _pids="$(_ghl_matched_pids)"
+    [ -n "$_pids" ] && _ret_inv_add "process:$MCP_DIR"
+    unset _pids
+  else
+    _ret_inv_undet "process(no-pgrep)"
+  fi
+
+  _ghl_cron_has "# managed:ghl-mcp-probe"
+  case $? in 0) _ret_inv_add "cron-probe:managed:ghl-mcp-probe" ;; 2) _ret_inv_undet "cron(no-crontab)" ;; esac
+  _ghl_cron_has "# managed:ghl-mcp-pm2-resurrect"
+  case $? in 0) _ret_inv_add "cron-resurrect:managed:ghl-mcp-pm2-resurrect" ;; esac
+
+  _ghl_oc_cron_has
+  case $? in
+    0) _ret_inv_add "openclaw-cron:ghl-mcp-probe" ;;
+    2) _ret_inv_undet "openclaw-cron(unreadable)" ;;
+  esac
+
+  _ghl_mcp_registered
+  case $? in
+    0) _ret_inv_add "mcp-servers:ghl-community-mcp" ;;
+    2) _ret_inv_undet "mcp-servers(unreadable)" ;;
+  esac
+}
+
+# ── Stage 6: VERIFY OFF (read-only, evidence not inference) ─────────────────
+RET_V_OK=""; RET_V_LIVE=""; RET_V_UNKNOWN=""
+_ret_v_ok()   { RET_V_OK="${RET_V_OK} $1"; }
+_ret_v_live() { RET_V_LIVE="${RET_V_LIVE} $1"; }
+_ret_v_unk()  { RET_V_UNKNOWN="${RET_V_UNKNOWN} $1"; }
+
+_ghl_ret_verify() {
+  RET_V_OK=""; RET_V_LIVE=""; RET_V_UNKNOWN=""
+
+  if [ "$PLATFORM" = "mac" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+      if _ghl_launchd_loaded "$RETIRE_LABEL"; then
+        _ret_v_live "launchd:$RETIRE_LABEL"
+      elif [ -f "$RETIRE_PLIST" ]; then
+        _ret_v_live "launchd-plist:$RETIRE_PLIST"
+      else
+        case "$(_ghl_launchd_override "$RETIRE_LABEL")" in
+          disabled|absent) _ret_v_ok "launchd:$RETIRE_LABEL" ;;
+          enabled)         _ret_v_live "launchd-override:$RETIRE_LABEL" ;;
+          *)               _ret_v_unk "launchd:$RETIRE_LABEL" ;;
+        esac
+      fi
+      if _ghl_launchd_loaded "$RETIRE_PROBE_LABEL"; then
+        _ret_v_live "launchd-probe:$RETIRE_PROBE_LABEL"
+      elif [ -f "$RETIRE_PROBE_PLIST" ]; then
+        _ret_v_live "launchd-probe-plist:$RETIRE_PROBE_PLIST"
+      else
+        case "$(_ghl_launchd_override "$RETIRE_PROBE_LABEL")" in
+          disabled|absent) _ret_v_ok "launchd-probe:$RETIRE_PROBE_LABEL" ;;
+          enabled)         _ret_v_live "launchd-probe-override:$RETIRE_PROBE_LABEL" ;;
+          *)               _ret_v_unk "launchd-probe:$RETIRE_PROBE_LABEL" ;;
+        esac
+      fi
+    else
+      _ret_v_unk "launchd(no-launchctl)"
+    fi
+  fi
+
+  if command -v pm2 >/dev/null 2>&1; then
+    if [ -n "$(_ghl_pm2_home_with_app)" ]; then _ret_v_live "pm2:$RETIRE_PM2_APP"; else _ret_v_ok "pm2:$RETIRE_PM2_APP"; fi
+  else
+    _ret_v_ok "pm2:not-installed"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    _en="$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)"
+    _ac="$(systemctl is-active "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)"
+    case "$_en" in enabled|enabled-runtime) _ret_v_live "systemd-enabled:$_en" ;; esac
+    case "$_ac" in active|activating) _ret_v_live "systemd-active:$_ac" ;; esac
+    if [ -z "$_en$_ac" ]; then _ret_v_unk "systemd"; else _ret_v_ok "systemd:${_en:-none}/${_ac:-none}"; fi
+    unset _en _ac
+  elif [ -f "$RETIRE_SYSTEMD_PATH" ]; then
+    _ret_v_live "systemd-unit-file:$RETIRE_SYSTEMD_PATH"
+  else
+    _ret_v_ok "systemd:not-installed"
+  fi
+
+  if command -v pgrep >/dev/null 2>&1; then
+    if [ -n "$(_ghl_matched_pids)" ]; then _ret_v_live "process:$MCP_DIR"; else _ret_v_ok "process:none"; fi
+  else
+    _ret_v_unk "process(no-pgrep)"
+  fi
+
+  _ghl_cron_has "# managed:ghl-mcp-probe"
+  case $? in 0) _ret_v_live "cron-probe" ;; 1) _ret_v_ok "cron-probe" ;; 2) _ret_v_unk "cron(no-crontab)" ;; esac
+  _ghl_cron_has "# managed:ghl-mcp-pm2-resurrect"
+  case $? in 0) _ret_v_live "cron-resurrect" ;; 1) _ret_v_ok "cron-resurrect" ;; esac
+
+  _ghl_oc_cron_has
+  case $? in 0) _ret_v_live "openclaw-cron:ghl-mcp-probe" ;; 1) _ret_v_ok "openclaw-cron" ;; 2) _ret_v_unk "openclaw-cron" ;; esac
+
+  _ghl_mcp_registered
+  case $? in 0) _ret_v_live "mcp-servers:ghl-community-mcp" ;; 1) _ret_v_ok "mcp-servers" ;; 2) _ret_v_unk "mcp-servers" ;; esac
+
+  case "$(_ghl_listener_state)" in
+    none)      _ret_v_ok "port:$RETIRE_PORT" ;;
+    listening) _ret_v_live "port:$RETIRE_PORT" ;;
+    *)         _ret_v_unk "port:$RETIRE_PORT" ;;
+  esac
+}
+
+_ghl_ret_is_off() {
+  [ -z "${RET_V_LIVE// /}" ] && [ -z "${RET_V_UNKNOWN// /}" ]
+}
+# ── Stage 3: ARCHIVE (secret-free, inert, never auto-restored) ──────────────
+RET_ARCHIVE_DIR=""
+RET_MANIFEST_HASH=""
+
+# The actual secret VALUES this box holds — used to prove the archive does not
+# contain them. Never printed, never written to the manifest.
+_ghl_ret_secret_values() {
+  local v val
+  for v in GOHIGHLEVEL_API_KEY GHL_API_KEY; do
+    val="$(printenv "$v" 2>/dev/null || true)"
+    [ -n "$val" ] && printf '%s\n' "$val"
+    if [ -f "$SECRETS_ENV" ]; then
+      val="$(grep -E "^${v}=" "$SECRETS_ENV" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+      [ -n "$val" ] && printf '%s\n' "$val"
+    fi
+  done
+  for v in "$MCP_DIR/.env" "$MCP_DIR/.ghl-mcp.env"; do
+    [ -f "$v" ] || continue
+    grep -hE '^(GHL_API_KEY|GOHIGHLEVEL_API_KEY)=' "$v" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'"
+  done
+  if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    python3 - "$OC_JSON" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for k in ("GHL_API_KEY", "GOHIGHLEVEL_API_KEY", "GOHIGHLEVEL_LOCATION_ID"):
+    v = ((d.get("env") or {}).get("vars") or {}).get(k)
+    if v:
+        print(v)
+PYEOF
+  fi
+}
+
+_ghl_ret_archive_secret_scan() {
+  local d="$1" val rc=0
+  # 1. No credential-shaped FILE may survive the excludes.
+  if find "$d" -type f -not -path '*node_modules*' \( -name '.env' -o -name '.ghl-mcp.env' -o -name '*.pem' \
+       -o -name '*.key' -o -name 'credentials.json' -o -name 'cookies*' -o -name 'token*' \) \
+       2>/dev/null | grep -q .; then
+    return 1
+  fi
+  # 2. No live secret VALUE may appear anywhere in the archived bytes.
+  while IFS= read -r val; do
+    [ -n "$val" ] || continue
+    if grep -rIlF --exclude-dir="*node_modules*" -- "$val" "$d" 2>/dev/null | grep -q .; then
+      rc=1
+      break
+    fi
+  done <<EOF
+$(_ghl_ret_secret_values)
+EOF
+  [ "$rc" = "0" ] || return 1
+  # 3. No private-key block.
+  if grep -rIlE --exclude-dir="*node_modules*" -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$d" 2>/dev/null | grep -q .; then
+    return 1
+  fi
+  return 0
+}
+
+_ghl_ret_archive() {
+  local src="$MCP_DIR" dest payload f
+  dest="$RETIRE_DIR/archive-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$dest/tree" "$dest/supervisor" 2>/dev/null || return 1
+
+  if [ -d "$src" ]; then
+    command -v tar >/dev/null 2>&1 || return 1
+    payload="$dest/community-mcp.tar"
+    ( cd "$src" && tar -cf "$payload" \
+        --exclude 'node_modules' --exclude '*/node_modules' --exclude './node_modules' \
+        --exclude '*node_modules*' \
+        --exclude '.env' --exclude './.env' --exclude '.ghl-mcp.env' --exclude './.ghl-mcp.env' \
+        --exclude '.git' --exclude './.git' \
+        --exclude '*.log' --exclude 'logs' --exclude './logs' \
+        --exclude '*.db' --exclude '*.sqlite' --exclude '*.sqlite3' \
+        . 2>/dev/null ) || return 1
+    tar -xf "$payload" -C "$dest/tree" 2>/dev/null || return 1
+    rm -f "$payload"
+  fi
+
+  for f in "$RETIRE_PLIST" "$RETIRE_PROBE_PLIST" "$RETIRE_SYSTEMD_PATH" "$RETIRE_PIN"; do
+    [ -n "$f" ] && [ -f "$f" ] && cp -p "$f" "$dest/supervisor/" 2>/dev/null
+  done
+  for f in "$HOME/Library/LaunchAgents/${RETIRE_LABEL}.plist".* \
+           "$HOME/Library/LaunchAgents/${RETIRE_PROBE_LABEL}.plist".* \
+           "$MCP_DIR/ecosystem.config.js" "$MCP_DIR/.ghl-mcp-supervise.sh" \
+           "$MCP_DIR/.ghl-mcp-launch.sh" "$MCP_DIR/.ghl-mcp-build.json"; do
+    [ -f "$f" ] && cp -p "$f" "$dest/supervisor/" 2>/dev/null
+  done
+  if command -v crontab >/dev/null 2>&1; then
+    crontab -l 2>/dev/null | grep -E 'managed:ghl-mcp-(probe|pm2-resurrect)' \
+      > "$dest/supervisor/crontab-managed.txt" 2>/dev/null || true
+  fi
+
+  # Manifest: sha256 of EVERY archived file, then the digest of the manifest.
+  ( cd "$dest" && find . -type f ! -name 'manifest.sha256' -print | LC_ALL=C sort | \
+    while IFS= read -r f; do
+      h="$(_ghl_sha256_file "$f" 2>/dev/null || true)"
+      [ -n "$h" ] && printf '%s  %s\n' "$h" "${f#./}"
+    done ) > "$dest/manifest.sha256" 2>/dev/null || return 1
+  [ -s "$dest/manifest.sha256" ] || return 1
+  RET_MANIFEST_HASH="$(_ghl_sha256_file "$dest/manifest.sha256" 2>/dev/null || true)"
+  [ -n "$RET_MANIFEST_HASH" ] || return 1
+
+  RET_ARCHIVE_DIR="$dest"
+  _ghl_ret_archive_secret_scan "$dest" || return 2
+  return 0
+}
+
+# ── Stage 4 + 5: DISABLE RESURRECTION, STOP ONLY THE MATCHED SERVICE ────────
+RET_DISABLED=""
+RET_STOP_NOTES=""
+_ret_dis()  { RET_DISABLED="${RET_DISABLED}$1
+"; }
+_ret_stop() { RET_STOP_NOTES="${RET_STOP_NOTES}$1
+"; }
+
+_ghl_systemctl() {
+  if [ "$(id -u 2>/dev/null || echo 0)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
+}
+_ghl_rm_root() {
+  if [ "$(id -u 2>/dev/null || echo 0)" = "0" ]; then rm -f "$1"; else sudo -n rm -f "$1"; fi
+}
+
+_ghl_ret_remove_cron_tag() {  # <tag>
+  local tag="$1" cur new
+  command -v crontab >/dev/null 2>&1 || return 1
+  cur="$(crontab -l 2>/dev/null || true)"
+  case "$cur" in *"$tag"*) ;; *) return 0 ;; esac
+  new="$(printf '%s\n' "$cur" | grep -vF "$tag" 2>/dev/null || true)"
+  printf '%s\n' "$new" | grep -v '^$' | crontab - >/dev/null 2>&1 || return 1
+  case "$(crontab -l 2>/dev/null || true)" in *"$tag"*) return 1 ;; esac
+  return 0
+}
+
+# Move a plist (and its historical .bak copies) into the inert archive.
+_ghl_ret_archive_plist() {  # <plist>
+  local p="$1" b
+  [ -f "$p" ] || return 0
+  mkdir -p "$RET_ARCHIVE_DIR/supervisor" 2>/dev/null || return 1
+  mv "$p" "$RET_ARCHIVE_DIR/supervisor/$(basename "$p")" 2>/dev/null || return 1
+  for b in "$p".*; do
+    [ -f "$b" ] || continue
+    mv "$b" "$RET_ARCHIVE_DIR/supervisor/$(basename "$b")" 2>/dev/null || true
+  done
+  return 0
+}
+
+_ghl_ret_disable_stop() {
+  RET_DISABLED=""; RET_STOP_NOTES=""
+
+  # 4.1 / 4.2 — probe schedules go FIRST. A probe that heals can restart the
+  # service after we stop it; the schedule must be gone before the stop.
+  if _ghl_cron_has "# managed:ghl-mcp-probe"; then
+    if _ghl_ret_remove_cron_tag "# managed:ghl-mcp-probe"; then
+      _ret_dis "cron:# managed:ghl-mcp-probe"
+    else
+      _ret_dis "cron-removal-FAILED:# managed:ghl-mcp-probe"
+    fi
+  fi
+  if _ghl_oc_cron_has; then
+    if command -v openclaw >/dev/null 2>&1 && _ghl_gw_up; then
+      openclaw cron delete --name "ghl-mcp-probe" >/dev/null 2>&1 || true
+    fi
+    if _ghl_oc_cron_has; then
+      _ret_dis "openclaw-cron-removal-FAILED:ghl-mcp-probe"
+    else
+      _ret_dis "openclaw-cron:ghl-mcp-probe"
+    fi
+  fi
+
+  # 4.2b — launchd probe job: bootout + disable + quarantine the plist.
+  if [ "$PLATFORM" = "mac" ] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$RETIRE_PROBE_LABEL" >/dev/null 2>&1 || true
+    if [ -f "$RETIRE_PROBE_PLIST" ]; then launchctl bootout "gui/$(id -u)" "$RETIRE_PROBE_PLIST" >/dev/null 2>&1 || true; fi
+    launchctl disable "gui/$(id -u)/$RETIRE_PROBE_LABEL" >/dev/null 2>&1 || true
+    _ghl_ret_archive_plist "$RETIRE_PROBE_PLIST" || true
+    if _ghl_launchd_loaded "$RETIRE_PROBE_LABEL"; then
+      _ret_dis "launchd-probe-bootout-FAILED:$RETIRE_PROBE_LABEL"
+    else
+      _ret_dis "launchd-probe:$RETIRE_PROBE_LABEL"
+    fi
+  fi
+
+  # 5.0 — the detached setsid RELAUNCH LOOP is a restart authority. Stop it by
+  # the exact PID whose cmdline carries the supervise script path; never by a
+  # broad pattern. Only after that can the launchd/pm2 job stay stopped.
+  if command -v pgrep >/dev/null 2>&1; then
+    local p cmd i
+    for p in $(_ghl_matched_pids); do
+      cmd="$(ps -o command= -p "$p" 2>/dev/null || true)"
+      case "$cmd" in
+        *"$RETIRE_SUPERVISE"*)
+          kill -TERM "$p" 2>/dev/null || true
+          i=0
+          while kill -0 "$p" 2>/dev/null && [ "$i" -lt 10 ]; do sleep 1; i=$((i+1)); done
+          if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null || true; sleep 1; fi
+          if kill -0 "$p" 2>/dev/null; then
+            _ret_stop "setsid-supervise-STILL-RUNNING:pid=$p"
+          else
+            _ret_dis "setsid-supervise:$p"
+          fi
+          ;;
+      esac
+    done
+    unset p cmd i
+  fi
+
+  # 4.1 / 5.1 — launchd service: bootout (stop) + disable (the resurrection
+  # bit; bootout alone leaves the job enabled) + quarantine the plist.
+  if [ "$PLATFORM" = "mac" ] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$RETIRE_LABEL" >/dev/null 2>&1 || true
+    if [ -f "$RETIRE_PLIST" ]; then launchctl bootout "gui/$(id -u)" "$RETIRE_PLIST" >/dev/null 2>&1 || true; fi
+    launchctl disable "gui/$(id -u)/$RETIRE_LABEL" >/dev/null 2>&1 || true
+    _ghl_ret_archive_plist "$RETIRE_PLIST" || true
+    _ret_dis "launchd:$RETIRE_LABEL"
+    # RE-READ. A bootout that exited 0 (or was swallowed by || true) is not
+    # proof the job stopped; launchd can refuse while the job stays loaded.
+    if _ghl_launchd_loaded "$RETIRE_LABEL"; then
+      _ret_stop "launchd-bootout-FAILED:$RETIRE_LABEL"
+    else
+      _ret_stop "launchd-bootout:$RETIRE_LABEL"
+    fi
+  fi
+
+  # 4.3 / 5.2 — pm2: delete ONLY this app under the home that registers it,
+  # then SAVE. Delete without save leaves the resurrect dump holding the app.
+  local ph
+  ph="$(_ghl_pm2_home_with_app)"
+  if [ -n "$ph" ]; then
+    PM2_HOME="$ph" pm2 delete "$RETIRE_PM2_APP" >/dev/null 2>&1 || true
+    # RE-READ: an exit 0 is not proof the app left the list.
+    if PM2_HOME="$ph" pm2 jlist 2>/dev/null | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RETIRE_PM2_APP\""; then
+      _ret_stop "pm2-delete-FAILED:$RETIRE_PM2_APP@$ph"
+    else
+      _ret_stop "pm2-delete:$RETIRE_PM2_APP@$ph"
+    fi
+    if PM2_HOME="$ph" pm2 save >/dev/null 2>&1; then
+      _ret_dis "pm2-save:$ph"
+    else
+      _ret_dis "pm2-save-FAILED:$ph"
+    fi
+    # 4.4 — the @reboot resurrect line. Remove it ONLY when this app was the
+    # only thing in the dump; otherwise it serves Command Center and is
+    # preserved (save already dropped the retired app, so it cannot come back).
+    local remaining=""
+    remaining="$(PM2_HOME="$ph" pm2 jlist 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | wc -l | tr -d ' ')"
+    if [ "${remaining:-0}" = "0" ]; then
+      if _ghl_ret_remove_cron_tag "# managed:ghl-mcp-pm2-resurrect"; then
+        _ret_dis "cron:# managed:ghl-mcp-pm2-resurrect"
+      fi
+    else
+      _ret_dis "cron-resurrect-RETAINED:serves $remaining other pm2 app(s)"
+    fi
+    unset remaining
+  fi
+  unset ph
+
+  # 4.5 / 5.3 — systemd: disable --now, remove the unit, daemon-reload.
+  if command -v systemctl >/dev/null 2>&1; then
+    case "$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+      enabled|enabled-runtime)
+        _ghl_systemctl disable --now "$RETIRE_SYSTEMD_UNIT" >/dev/null 2>&1 || true
+        # RE-READ both halves; a quiet systemctl is not a receipt.
+        case "$(systemctl is-enabled "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+          enabled|enabled-runtime) _ret_dis "systemd-disable-FAILED:$RETIRE_SYSTEMD_UNIT" ;;
+          *)                       _ret_dis "systemd-disable:$RETIRE_SYSTEMD_UNIT" ;;
+        esac
+        case "$(systemctl is-active "$RETIRE_SYSTEMD_UNIT" 2>/dev/null || true)" in
+          active|activating) _ret_stop "systemd-stop-FAILED:$RETIRE_SYSTEMD_UNIT" ;;
+          *)                 _ret_stop "systemd-stop:$RETIRE_SYSTEMD_UNIT" ;;
+        esac
+        ;;
+    esac
+  fi
+  if [ -f "$RETIRE_SYSTEMD_PATH" ]; then
+    _ghl_rm_root "$RETIRE_SYSTEMD_PATH" >/dev/null 2>&1 || true
+    [ -f "$RETIRE_SYSTEMD_PATH" ] && _ret_dis "systemd-unit-removal-FAILED:$RETIRE_SYSTEMD_PATH"
+    [ -f "$RETIRE_SYSTEMD_PATH" ] || _ret_dis "systemd-unit-removed:$RETIRE_SYSTEMD_PATH"
+    if command -v systemctl >/dev/null 2>&1; then _ghl_systemctl daemon-reload >/dev/null 2>&1 || true; fi
+  fi
+
+  # 4.8 — the mcp.servers registration is a persistence surface even without a
+  # process. Remove it through the CLI (never hand-edit openclaw.json: the
+  # gateway rewrites it from memory) and RE-READ.
+  if _ghl_mcp_registered; then
+    if command -v openclaw >/dev/null 2>&1 && _ghl_gw_up; then
+      openclaw mcp unset "$RETIRE_PM2_APP" >/dev/null 2>&1 || \
+        openclaw mcp remove "$RETIRE_PM2_APP" >/dev/null 2>&1 || true
+      if _ghl_mcp_registered; then
+        _ret_dis "mcp-servers-removal-FAILED:ghl-community-mcp"
+      else
+        _ret_dis "mcp-servers:ghl-community-mcp"
+      fi
+    else
+      _ret_dis "mcp-servers-removal-FAILED:gateway-not-up"
+    fi
+  fi
+
+  # The delivered pin is what a start path needs; on a retired box it is a
+  # re-installation surface. Remove ONLY the delivered copy, never a repo
+  # checkout's own config/ghl-mcp-pin.env.
+  if [ -n "$RETIRE_PIN" ] && [ -f "$RETIRE_PIN" ]; then
+    case "$RETIRE_PIN" in
+      "$OC_ROOT"/config/*|"$HOME"/.openclaw/config/*|/data/.openclaw/config/*)
+        rm -f "$RETIRE_PIN" 2>/dev/null || true
+        [ -f "$RETIRE_PIN" ] && _ret_dis "pin-removal-FAILED:$RETIRE_PIN"
+        [ -f "$RETIRE_PIN" ] || _ret_dis "pin-removed:$RETIRE_PIN"
+        ;;
+    esac
+  fi
+}
+
+# ── Stage 7: RECEIPT ────────────────────────────────────────────────────────
+_ghl_ret_receipt() {  # <final_state> <stage> <reason>
+  local state="$1" stage="$2" reason="$3" path ts kind_list commit
+  if [ "$state" = "VERIFIED_OFF" ]; then path="$RETIRE_STATE_FILE"; else path="$RETIRE_FAIL_FILE"; fi
+  mkdir -p "$RETIRE_DIR" 2>/dev/null || return 1
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  kind_list="$(printf '%s' "$RET_INV_KINDS" | tr '\n' ',' | sed 's/,$//')"
+  commit="${GHL_MCP_VETTED_COMMIT:-}"
+  if [ -z "$commit" ] && [ -d "$MCP_DIR/.git" ]; then
+    commit="$(git -C "$MCP_DIR" rev-parse HEAD 2>/dev/null || true)"
+  fi
+  {
+    printf '{\n'
+    printf '  "schema": "ghl-mcp-retirement-receipt/v1",\n'
+    printf '  "final_state": "%s",\n' "$(_ghl_json_str "$state")"
+    printf '  "stage": "%s",\n' "$(_ghl_json_str "$stage")"
+    printf '  "reason": "%s",\n' "$(_ghl_json_str "$reason")"
+    printf '  "timestamp_utc": "%s",\n' "$ts"
+    printf '  "box": {"hostname": "%s", "user": "%s", "platform": "%s", "cohort": "%s"},\n' \
+      "$(_ghl_json_str "$(hostname 2>/dev/null || printf unknown)")" \
+      "$(_ghl_json_str "$(id -un 2>/dev/null || printf unknown)")" \
+      "$(_ghl_json_str "$PLATFORM")" "$(_ghl_json_str "$PLATFORM")"
+    printf '  "release": {"from": "%s", "to": "%s", "commit": "%s"},\n' \
+      "$(_ghl_json_str "${GHL_MCP_RECEIPT_FROM_RELEASE:-unknown}")" \
+      "$(_ghl_json_str "${GHL_MCP_RECEIPT_TO_RELEASE:-unknown}")" \
+      "$(_ghl_json_str "$commit")"
+    printf '  "old_service": {"kind": "%s", "identity": "%s", "install_dir": "%s", "pin": "%s"},\n' \
+      "$(_ghl_json_str "$kind_list")" \
+      "$(_ghl_json_str "${RETIRE_LABEL}|${RETIRE_PM2_APP}|${RETIRE_SYSTEMD_UNIT}")" \
+      "$(_ghl_json_str "$MCP_DIR")" "$(_ghl_json_str "${RETIRE_PIN:-none}")"
+    printf '  "archive": {"path": "%s", "manifest_sha256": "%s"},\n' \
+      "$(_ghl_json_str "${RET_ARCHIVE_DIR:-none}")" "$(_ghl_json_str "${RET_MANIFEST_HASH:-none}")"
+    printf '  "migrated_callers": %s,\n' "$(_ghl_json_array "${GHL_MCP_RECEIPT_CALLERS:-}")"
+    printf '  "disabled_hooks": %s,\n' "$(_ghl_json_array "$RET_DISABLED")"
+    printf '  "stop_result": %s,\n' "$(_ghl_json_array "$RET_STOP_NOTES")"
+    printf '  "verification": {"ok": %s, "live": %s, "unknown": %s},\n' \
+      "$(_ghl_json_array "$RET_V_OK")" "$(_ghl_json_array "$RET_V_LIVE")" "$(_ghl_json_array "$RET_V_UNKNOWN")"
+    printf '  "remediation": "%s"\n' "$(_ghl_json_str "${GHL_MCP_RECEIPT_REMEDIATION:-}")"
+    printf '}\n'
+  } > "$path" 2>/dev/null || return 1
+  [ -s "$path" ] || return 1
+  if [ -n "$RET_ARCHIVE_DIR" ] && [ -d "$RET_ARCHIVE_DIR" ]; then
+    cp -p "$path" "$RET_ARCHIVE_DIR/receipt.json" 2>/dev/null || true
+  fi
+  return 0
+}
+
+_ghl_ret_fail() {  # <stage> <reason>
+  GHL_MCP_RECEIPT_REMEDIATION="${GHL_MCP_RECEIPT_REMEDIATION:-Resolve the residual surface named above, then re-run: bash $0 --retire}"
+  _ghl_ret_receipt "MIGRATION_FAILED" "$1" "$2" || true
+  report "MIGRATION_FAILED" "(stage=$1 residual=[live:${RET_V_LIVE:-none} unknown:${RET_V_UNKNOWN:-none}] $(printf '%s' "$2") — success marker NOT written; see $RETIRE_FAIL_FILE)"
+  log "MIGRATION_FAILED at stage $1: $2"
+  log "residual live:${RET_V_LIVE:-none} unknown:${RET_V_UNKNOWN:-none}"
+  exit 1
+}
+
+# ── retirement entry point (retire / status only; start falls through) ───────
+_ghl_ret_main() {
+  _ghl_ret_inventory
+  _ghl_ret_verify
+
+  if [ "$GHL_MCP_MODE" = "status" ]; then
+    if _ghl_ret_is_off; then
+      report "RETIRED_VERIFIED_OFF" "(no community MCP surface is live and none is undetermined — checked launchd, pm2, systemd, the supervise loop, both cron schedules, mcp.servers, the process and :$RETIRE_PORT)"
+    else
+      report "SERVICE_PRESENT" "(surfaces=[$(printf '%s' "$RET_INV_KINDS" | tr '\n' ' ')] undetermined=[$(printf '%s' "$RET_INV_UNDET" | tr '\n' ' ')] verify_live=[${RET_V_LIVE}] verify_unknown=[${RET_V_UNKNOWN}] — the community MCP is NOT retired on this box)"
+    fi
+    exit 0
+  fi
+
+  if _ghl_ret_is_off; then
+    if [ -f "$RETIRE_STATE_FILE" ]; then
+      report "RETIRED_VERIFIED_OFF" "(already retired; receipt $RETIRE_STATE_FILE — nothing changed)"
+    else
+      report "RETIRED_VERIFIED_OFF" "(no community MCP surface exists on this box — nothing to retire, nothing changed)"
+    fi
+    exit 0
+  fi
+
+  if [ "$GHL_MCP_DRY_RUN" = "1" ]; then
+    log "DRY RUN — plan (nothing below is executed):"
+    log "  1 INVENTORY  install_dir=$MCP_DIR pin=${RETIRE_PIN:-none} port=$RETIRE_PORT"
+    printf '%s' "$RET_INV_KINDS" | while IFS= read -r l; do [ -n "$l" ] && log "     surface: $l"; done
+    printf '%s' "$RET_INV_UNDET" | while IFS= read -r l; do [ -n "$l" ] && log "     UNDETERMINED (blocks a verified-off claim): $l"; done
+    log "  2 STAGE      enforced by the caller (update-skills.sh) BEFORE --retire"
+    log "  3 ARCHIVE    -> $RETIRE_DIR/archive-<utc>/ (tree + supervisor artifacts + sha256 manifest; no .env/tokens/logs)"
+    log "  4 DISABLE    launchd bootout+disable+quarantine plists; pm2 delete+save+resurrect-cron decision; systemd disable+unit removal; cron probe+resurrect tags; openclaw cron probe; mcp.servers entry"
+    log "  5 STOP       only the matched identity (label / pm2 app / unit / exact supervise path)"
+    log "  6 VERIFY     no process, no listener on :$RETIRE_PORT, supervisor absent-or-disabled, no mcp.servers entry"
+    log "  7 RECEIPT    $RETIRE_STATE_FILE (VERIFIED_OFF) or $RETIRE_FAIL_FILE (MIGRATION_FAILED)"
+    report "RETIRE_DRY_RUN" "(plan printed; nothing was touched. live=[${RET_V_LIVE}] unknown=[${RET_V_UNKNOWN}])"
+    exit 0
+  fi
+
+  # 3 ARCHIVE (fail closed BEFORE anything is stopped)
+  _ghl_ret_archive
+  local _arc_rc=$?
+  if [ "$_arc_rc" = "2" ]; then
+    _ghl_ret_verify
+    _ghl_ret_fail "archive-secret-risk" "the secret scan found credential-shaped bytes or a live secret value under ${RET_ARCHIVE_DIR:-<archive>}; NOTHING was disabled and the source tree was NOT deleted. Inspect and remove the named bytes, then re-run."
+  fi
+  if [ "$_arc_rc" != "0" ]; then
+    _ghl_ret_fail "archive" "could not build a verified secret-free archive under $RETIRE_DIR (tar/find/sha256 unavailable, or the archive dir is not writable). NOTHING was disabled and the source tree was NOT deleted."
+  fi
+
+  # 4 + 5 DISABLE RESURRECTION / STOP ONLY THE MATCHED SERVICE
+  _ghl_ret_disable_stop
+  case "$RET_DISABLED" in
+    *FAILED*) _ghl_ret_verify; _ghl_ret_fail "disable-resurrection" "one or more resurrection paths could not be proven disabled: $(printf '%s' "$RET_DISABLED" | tr '\n' ' ')" ;;
+  esac
+  case "$RET_STOP_NOTES" in
+    *FAILED*|*STILL-RUNNING*) _ghl_ret_verify; _ghl_ret_fail "stop" "the matched service could not be proven stopped: $(printf '%s' "$RET_STOP_NOTES" | tr '\n' ' ')" ;;
+  esac
+
+  # 6 VERIFY OFF
+  _ghl_ret_verify
+  if ! _ghl_ret_is_off; then
+    _ghl_ret_fail "verify-off" "the retired surfaces are still observable"
+  fi
+
+  # 7 RECEIPT — written only after every surface passed.
+  GHL_MCP_RECEIPT_REMEDIATION="none"
+  if ! _ghl_ret_receipt "VERIFIED_OFF" "complete" "community MCP retired and verified off"; then
+    report "MIGRATION_FAILED" "(stage=receipt — every surface verified OFF but the receipt could not be written to $RETIRE_STATE_FILE. The box IS off; fix the directory and re-run --retire.)"
+    exit 1
+  fi
+  report "RETIRED_VERIFIED_OFF" "(community MCP retired: archive=$RET_ARCHIVE_DIR manifest_sha256=${RET_MANIFEST_HASH}; verified no process, no listener on :$RETIRE_PORT, supervisors absent/disabled, no mcp.servers entry; receipt=$RETIRE_STATE_FILE)"
+  exit 0
+}
+
+case "$GHL_MCP_MODE" in
+  retire|status) _ghl_ret_main ;;
+esac
 log "platform=$PLATFORM root=$OC_ROOT install=$MCP_DIR logs=$LOG_DIR (paths lib: $_GHL_PATHS_LIB)"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
@@ -277,8 +1092,6 @@ log "pin config: $_PIN_FILE"
 # Operational defaults only. NOTHING security-relevant (commit, profile, repo
 # URL) may default here — those must come from the delivered pin file.
 GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-30}"   # v25.1.10: 10s tripped on loaded boxes
-GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
-GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP:-3}"
 GHL_MCP_VETTED_COMMIT="${GHL_MCP_VETTED_COMMIT:-}"
 GHL_MCP_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE:-}"
 GHL_MCP_REPO_URL="${GHL_MCP_REPO_URL:-}"
@@ -466,32 +1279,6 @@ GHL_TOKEN="$(_get_env_var GOHIGHLEVEL_API_KEY)"
 GHL_LOC="$(_get_env_var GOHIGHLEVEL_LOCATION_ID)"
 [ -z "$GHL_LOC" ] && GHL_LOC="$(_get_env_var GHL_LOCATION_ID)"
 
-# ── D4: quarantine orphaned node_modules living INSIDE src/ ──────────────────
-# build-server.mjs walks src/ recursively and transpiles every .ts it finds. A
-# node_modules tree that ever landed under src/ turns a build into thousands of
-# third-party transpiles and, on one diagnostic, exits 1 AFTER dist was deleted.
-# We build from `git archive` so this cannot bite the automated path, but a
-# human running `npm run build` in the working tree would still hit it.
-#
-# F16: `-maxdepth` comes IMMEDIATELY after the path, before any other primary.
-# GNU find warns and applies it globally anyway; BSD/macOS find's behaviour with
-# a trailing `-maxdepth` is not guaranteed to be the intended one. Half the fleet
-# is macOS, so the portable ordering is the only correct ordering.
-quarantine_src_orphans() {
-  [ -d "$MCP_DIR/src" ] || return 0
-  local q found=0
-  q="$MCP_DIR/.quarantine-$(date -u +%Y%m%dT%H%M%SZ)"
-  while IFS= read -r nm; do
-    [ -n "$nm" ] || continue
-    mkdir -p "$q" 2>/dev/null || true
-    mv "$nm" "$q/$(printf '%s' "${nm#"$MCP_DIR/"}" | tr '/' '_')" 2>/dev/null && found=1
-  done <<EOF
-$(find "$MCP_DIR/src" -maxdepth 6 -type d -name node_modules 2>/dev/null)
-EOF
-  [ "$found" = "1" ] && log "quarantined orphaned node_modules found under src/ -> $q (D4: they crash upstream's build)"
-  return 0
-}
-
 # >>> GHL-MCP-ROOT-OWNERSHIP-GUARD-BEGIN
 #     (extracted verbatim by tests/unit/ghl-mcp-root-ownership-guard.test.sh)
 # ── 0. Root/ownership mismatch guard (P0, proven live 2026-08-04) ────────────
@@ -548,263 +1335,6 @@ assert_ownership_matches_runtime_user() {
   return 1
 }
 # <<< GHL-MCP-ROOT-OWNERSHIP-GUARD-END
-
-# ── 1. Clone + PIN the community MCP working tree (idempotent) ───────────────
-ensure_repo_at_pin() {
-  command -v git >/dev/null 2>&1 || { log "git not on PATH — cannot pin/build GHL MCP"; return 1; }
-  assert_ownership_matches_runtime_user || return 3
-  mkdir -p "$(dirname "$MCP_DIR")" 2>/dev/null || true
-
-  if [ ! -d "$MCP_DIR/.git" ]; then
-    log "cloning community GHL MCP into $MCP_DIR"
-    # NOT --depth 1: a shallow clone frequently cannot resolve an arbitrary
-    # pinned SHA, which is exactly what turned the old script into a floating
-    # "whatever main is today" install.
-    git clone --no-checkout "$GHL_MCP_REPO_URL" "$MCP_DIR" >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || {
-      log "git clone failed — server cannot be built"; return 1; }
-  fi
-
-  # MIRROR MIGRATION. Every box provisioned before the mirror existed has an
-  # `origin` pointing at the third-party upstream. Nothing else would ever move
-  # it, so those clones would keep fetching from a repository that force-pushes
-  # its history and would break the day the pin is garbage-collected there —
-  # the exact failure the mirror exists to prevent. Repoint it here, on the next
-  # run of this script, before anything is fetched.
-  #
-  # FIX (a): the git errors below used to be swallowed unconditionally
-  # (`2>/dev/null`). They are now CAPTURED and, on a failure this function did
-  # not already anticipate (the ownership guard above handles the specific
-  # root-vs-owner case), surfaced as a WARN rather than silently discarded —
-  # so any future "git just failed here for some other reason" is never
-  # invisible again.
-  local _origin_url _origin_out _origin_rc=0 _seturl_out
-  _origin_out="$(git -C "$MCP_DIR" remote get-url origin 2>&1)" || _origin_rc=$?
-  if [ "$_origin_rc" = "0" ]; then
-    _origin_url="$_origin_out"
-  else
-    _origin_url=""
-    [ -n "$_origin_out" ] && log "WARN: 'git remote get-url origin' in $MCP_DIR failed (rc=$_origin_rc): $_origin_out"
-  fi
-  if [ -n "$_origin_url" ] && [ "$_origin_url" != "$GHL_MCP_REPO_URL" ]; then
-    if _seturl_out="$(git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>&1)"; then
-      log "origin repointed: $_origin_url -> $GHL_MCP_REPO_URL"
-    else
-      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL: ${_seturl_out:-<no output>}"
-    fi
-  fi
-
-  # Fetch the exact object; unshallow an old --depth 1 clone if needed.
-  git -C "$MCP_DIR" fetch --quiet origin "$GHL_MCP_VETTED_COMMIT" 2>/dev/null \
-    || git -C "$MCP_DIR" fetch --quiet --tags origin 2>/dev/null \
-    || true
-  if ! git -C "$MCP_DIR" cat-file -e "${GHL_MCP_VETTED_COMMIT}^{commit}" 2>/dev/null; then
-    git -C "$MCP_DIR" fetch --quiet --unshallow origin 2>/dev/null || true
-  fi
-  if ! git -C "$MCP_DIR" cat-file -e "${GHL_MCP_VETTED_COMMIT}^{commit}" 2>/dev/null; then
-    log "FATAL: pinned commit $GHL_MCP_VETTED_COMMIT not reachable from origin (upstream force-push? bad pin?)"
-    return 2
-  fi
-
-  quarantine_src_orphans
-  # --force: the third-party tree is disposable; local edits are never ours.
-  git -C "$MCP_DIR" checkout --quiet --detach --force "$GHL_MCP_VETTED_COMMIT" 2>>"$LOG_DIR/ghl-mcp-build.log" || {
-    log "FATAL: could not check out pinned commit $GHL_MCP_VETTED_COMMIT"; return 2; }
-  local head
-  head="$(git -C "$MCP_DIR" rev-parse HEAD 2>/dev/null || echo none)"
-  if [ "$head" != "$GHL_MCP_VETTED_COMMIT" ]; then
-    log "FATAL: pin verify failed (HEAD=$head want $GHL_MCP_VETTED_COMMIT)"
-    return 2
-  fi
-  log "working tree pinned at $GHL_MCP_VETTED_COMMIT"
-  return 0
-}
-
-# ── 2. Build hygiene: build the PINNED tree in a temp dir, swap on success ───
-BUILD_STAMP="$MCP_DIR/.ghl-mcp-build.json"
-
-dist_is_sane() {
-  # A dist that exists proves nothing (D1). Require the entrypoint AND the one
-  # line whose absence produced the 30s deafness: `server.connect(transport)`.
-  [ -s "$MCP_DIR/dist/main.js" ] || return 1
-  grep -q 'connect(transport)' "$MCP_DIR/dist/main.js" 2>/dev/null || return 1
-  return 0
-}
-
-stamp_matches() {
-  [ -f "$BUILD_STAMP" ] || return 1
-  grep -q "\"commit\": *\"$GHL_MCP_VETTED_COMMIT\"" "$BUILD_STAMP" 2>/dev/null || return 1
-  # F15: the stamp is self-asserted — it records what the script SAID it built.
-  # Nothing used to bind dist/ to that claim, so a hand-swapped dist/ under a
-  # matching stamp suppressed the rebuild permanently. If the stamp carries a
-  # distSha256, the artifact on disk MUST still hash to it. A stamp written by an
-  # older version has no distSha256; treat that as "cannot verify", not as a
-  # mismatch, so this change never forces a surprise rebuild storm on the fleet.
-  local want have
-  want="$(sed -n 's/.*"distSha256": *"\([0-9a-f]*\)".*/\1/p' "$BUILD_STAMP" 2>/dev/null | head -1)"
-  if [ -n "$want" ] && [ "$want" != "unknown" ]; then
-    have="$(shasum -a 256 "$MCP_DIR/dist/main.js" 2>/dev/null | awk '{print $1}')"
-    if [ -n "$have" ] && [ "$have" != "$want" ]; then
-      log "build stamp does NOT match the artifact (dist/main.js sha256=$have, stamp=$want) — rebuilding from the pin"
-      return 1
-    fi
-  fi
-  return 0
-}
-
-needs_build() {
-  dist_is_sane || return 0
-  stamp_matches || return 0
-  return 1
-}
-
-build_pinned() {
-  command -v npm >/dev/null 2>&1 || { log "npm not on PATH — cannot build"; return 1; }
-  local tmp rc=0 _lock_sha=""
-  tmp="$(mktemp -d "${TMPDIR:-/tmp}/ghl-mcp-build.XXXXXX")" || return 1
-  log "building pinned tree ${GHL_MCP_VETTED_COMMIT:0:12} in $tmp (working tree is NEVER built — D4)"
-  # git archive gives a pristine snapshot of the PINNED commit: no untracked
-  # junk, no orphaned node_modules, no half-applied local edits.
-  if ! git -C "$MCP_DIR" archive "$GHL_MCP_VETTED_COMMIT" | tar -x -C "$tmp" 2>>"$LOG_DIR/ghl-mcp-build.log"; then
-    log "git archive failed"; rm -rf "$tmp"; return 1
-  fi
-  # ── R5: SUPPLY-CHAIN HARDENING OF THE BUILD ───────────────────────────────
-  # Three defects lived in the old block and all three are closed here:
-  #   1. `npm ci … || npm install …` — the fallback SILENTLY discarded lockfile
-  #      pinning. `npm ci` fails precisely when package.json and the lockfile
-  #      disagree; falling back to `npm install` then resolves fresh from the
-  #      registry, voiding the vetting verdict's "dependency graph unchanged"
-  #      claim exactly when it matters most. There is NO fallback now: a missing
-  #      or out-of-sync lockfile is a BUILD FAILURE, and the swap-on-success
-  #      discipline leaves the previous working dist/ untouched.
-  #   2. No `--ignore-scripts` — every preinstall/install/postinstall hook in the
-  #      full transitive tree ran as the box user with the GHL PIT in the
-  #      environment, on every client machine. That is the delivery mechanism for
-  #      essentially every major npm supply-chain incident. CAVEAT, deliberately
-  #      recorded: --ignore-scripts stops lifecycle hooks, NOT all toolchain
-  #      execution. It is necessary, not sufficient; building once in CI and
-  #      shipping a verified artifact is the complete answer.
-  #   3. The prod-dependency refresh ran `npm install` against the WORKING TREE,
-  #      outside the temp-dir discipline and with no lockfile guarantee. It now
-  #      runs as `npm ci --omit=dev` inside the SAME temp dir, before the swap,
-  #      so there is no unpinned install anywhere and no window in which dist/ is
-  #      new while node_modules/ is missing or half-installed.
-  # Verified at the pinned commit before shipping: the lockfile IS present and IS
-  # in sync — `npm ci --ignore-scripts` installs 415 packages and `npm run build`
-  # then produces a dist/main.js containing connect(transport).
-  if [ ! -f "$tmp/package-lock.json" ]; then
-    log "BUILD REFUSED: no package-lock.json at the pinned commit — 'npm ci' cannot pin the dependency tree and we do NOT fall back to 'npm install' (that resolves fresh from the registry and voids the vetting verdict)"
-    rm -rf "$tmp"; return 1
-  fi
-  # Bind the dependency tree to the vetted lockfile when the pin declares a hash.
-  if [ -n "${GHL_MCP_DEPS_LOCK_SHA256:-}" ]; then
-    _lock_sha="$(shasum -a 256 "$tmp/package-lock.json" 2>/dev/null | awk '{print $1}')"
-    if [ -z "$_lock_sha" ] || [ "$_lock_sha" != "$GHL_MCP_DEPS_LOCK_SHA256" ]; then
-      log "BUILD REFUSED: package-lock.json sha256 mismatch (observed=${_lock_sha:-unreadable} expected=$GHL_MCP_DEPS_LOCK_SHA256) — the dependency tree is not the one that was vetted"
-      rm -rf "$tmp"; return 1
-    fi
-    log "lockfile sha256 matches the vetted pin"
-  else
-    _lock_sha="$(shasum -a 256 "$tmp/package-lock.json" 2>/dev/null | awk '{print $1}')"
-    log "lockfile sha256 observed = ${_lock_sha:-unreadable} (GHL_MCP_DEPS_LOCK_SHA256 not declared — recording it, not enforcing it)"
-  fi
-  (
-    cd "$tmp" || exit 1
-    # ── NODE_ENV MUST NOT REACH THE COMPILE INSTALL (npm >= 11.19) ───────────
-    # npm 11.19 made NODE_ENV=production imply `omit=dev`. Every launch surface
-    # this script writes sets NODE_ENV=production, and a roll invoked from one
-    # of them inherits it, so `npm ci` installed 106 packages instead of ~415,
-    # typescript was never installed, and `npm run build` died with
-    # "Cannot find package 'typescript'". npm 11.13 installed the full tree from
-    # the identical command, which is why this appeared as a box-specific fault
-    # rather than a version boundary. Two belts, deliberately:
-    #   unset NODE_ENV   : nothing implies omit=dev for the compile install
-    #   --include=dev    : include beats omit in npm's own precedence rules, so
-    #                      the tree is right even under an .npmrc that sets
-    #                      production=true or an npm_config_omit in the env.
-    # The RUNTIME still runs under NODE_ENV=production: the prune below restores
-    # it explicitly, and every generated launch surface sets it independently.
-    unset NODE_ENV
-    # No `|| npm install` fallback, by design. --ignore-scripts on BOTH installs.
-    npm ci --include=dev --ignore-scripts --no-audit --no-fund >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
-    # FAIL LOUD, not at the compiler. Without this the only evidence is a
-    # "Cannot find package 'typescript'" three screens into a build log, which
-    # reads as an upstream problem rather than a dev-dependency that was omitted.
-    if [ ! -d node_modules/typescript ] && [ ! -x node_modules/.bin/tsc ]; then
-      exit 3
-    fi
-    npm run build >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
-    # Prune to production deps IN THE TEMP DIR, still pinned, still no scripts.
-    NODE_ENV=production npm ci --omit=dev --ignore-scripts --no-audit --no-fund >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
-  ) || rc=$?
-  if [ "$rc" = "3" ]; then
-    log "BUILD REFUSED: 'npm ci --include=dev' completed but node_modules/typescript is ABSENT, so 'npm run build' would fail with \"Cannot find package 'typescript'\". This is the npm >= 11.19 NODE_ENV=production -> omit=dev behaviour (npm $(npm --version 2>/dev/null || echo '?')). Existing dist/ left UNTOUCHED."
-    rm -rf "$tmp"; return 1
-  fi
-  if [ "$rc" != "0" ] || [ ! -s "$tmp/dist/main.js" ] || ! grep -q 'connect(transport)' "$tmp/dist/main.js" 2>/dev/null; then
-    log "BUILD FAILED or produced an unusable dist — existing dist/ left UNTOUCHED (never rm -rf before a good build)"
-    rm -rf "$tmp"; return 1
-  fi
-
-  # Atomic-ish swap: keep the old dist as a rollback, move the verified one in.
-  local ts; ts="$(date -u +%Y%m%dT%H%M%SZ)"
-  if [ -d "$MCP_DIR/dist" ]; then
-    rm -rf "$MCP_DIR/dist.bak-prev" 2>/dev/null || true
-    mv "$MCP_DIR/dist" "$MCP_DIR/dist.bak-prev" 2>/dev/null || true
-  fi
-  if ! mv "$tmp/dist" "$MCP_DIR/dist" 2>/dev/null; then
-    cp -R "$tmp/dist" "$MCP_DIR/dist" 2>/dev/null || {
-      log "FATAL: could not install new dist — rolling back previous dist"
-      [ -d "$MCP_DIR/dist.bak-prev" ] && mv "$MCP_DIR/dist.bak-prev" "$MCP_DIR/dist" 2>/dev/null || true
-      rm -rf "$tmp"; return 1; }
-  fi
-  # R5: install the PINNED, script-suppressed production node_modules built in the
-  # temp dir. The old code ran a second, entirely unpinned `npm install` against
-  # the working tree here — outside the temp-dir discipline, with no lockfile
-  # guarantee, and its failure was only a WARN. Swapping the already-verified tree
-  # instead means there is never a moment where dist/ is new and node_modules/ is
-  # missing, and a failure rolls BOTH back together.
-  if [ -d "$tmp/node_modules" ]; then
-    rm -rf "$MCP_DIR/node_modules.bak-prev" 2>/dev/null || true
-    [ -d "$MCP_DIR/node_modules" ] && mv "$MCP_DIR/node_modules" "$MCP_DIR/node_modules.bak-prev" 2>/dev/null || true
-    if ! mv "$tmp/node_modules" "$MCP_DIR/node_modules" 2>/dev/null; then
-      cp -R "$tmp/node_modules" "$MCP_DIR/node_modules" 2>/dev/null || {
-        log "FATAL: could not install pinned production node_modules — rolling BOTH dist/ and node_modules/ back"
-        rm -rf "$MCP_DIR/node_modules" 2>/dev/null || true
-        [ -d "$MCP_DIR/node_modules.bak-prev" ] && mv "$MCP_DIR/node_modules.bak-prev" "$MCP_DIR/node_modules" 2>/dev/null || true
-        # Move the half-installed dist ASIDE rather than deleting it: the QC gate
-        # forbids `rm -rf …/dist` outright (a failed build must never be able to
-        # leave a box with no server), and keeping it named dist.failed-<ts>
-        # preserves the artifact for diagnosis.
-        [ -d "$MCP_DIR/dist" ] && mv "$MCP_DIR/dist" "$MCP_DIR/dist.failed-$ts" 2>/dev/null || true
-        [ -d "$MCP_DIR/dist.bak-prev" ] && mv "$MCP_DIR/dist.bak-prev" "$MCP_DIR/dist" 2>/dev/null || true
-        rm -rf "$tmp"; return 1; }
-    fi
-    # Success — drop the previous tree rather than leaving hundreds of MB behind
-    # (dist.bak-prev is small and IS kept as the documented rollback).
-    rm -rf "$MCP_DIR/node_modules.bak-prev" 2>/dev/null || true
-  fi
-  # F15: bind the stamp to the ARTIFACT, not just to a claim. The stamp used to
-  # record only which commit the script SAID it built, so a hand-swapped dist/
-  # under a matching stamp suppressed the rebuild forever. Recording
-  # sha256(dist/main.js) and re-verifying it in stamp_matches() closes that.
-  local _dist_sha
-  _dist_sha="$(shasum -a 256 "$MCP_DIR/dist/main.js" 2>/dev/null | awk '{print $1}')"
-  cat > "$BUILD_STAMP" <<EOF
-{
-  "commit": "$GHL_MCP_VETTED_COMMIT",
-  "profile": "$GHL_MCP_TOOL_PROFILE",
-  "builtAt": "$ts",
-  "node": "$(node --version 2>/dev/null || echo unknown)",
-  "distSha256": "${_dist_sha:-unknown}",
-  "depsLockSha256": "${_lock_sha:-unknown}",
-  "bindHost": "$GHL_MCP_BIND_HOST",
-  "builtBy": "ghl-mcp-autostart.sh"
-}
-EOF
-  rm -rf "$tmp"
-  log "build OK — dist/ swapped (previous kept at dist.bak-prev)"
-  return 0
-}
 
 # >>> GHL-MCP-ENV-CREDENTIAL-GUARD-BEGIN
 #     (extracted verbatim by tests/unit/ghl-mcp-env-credential-guard.test.sh)
@@ -1051,111 +1581,6 @@ GUARDEOF
   chmod 644 "$BIND_GUARD" 2>/dev/null || true
 }
 
-# ── 4. D3: the launcher wrapper — crash-only restart, no bad-token loop ──────
-# main.js exits 1 on a bad token at boot. Every supervisor treats non-zero as
-# "crashed" and relaunches → a 10s loop. The wrapper turns an AUTH rejection
-# into a CLEAN exit 0, which every supervisor here is configured NOT to restart.
-LAUNCHER="$MCP_DIR/.ghl-mcp-launch.sh"
-write_launcher() {
-  cat > "$LAUNCHER" <<'LAUNCHEOF'
-#!/usr/bin/env bash
-# .ghl-mcp-launch.sh — generated by ghl-mcp-autostart.sh. DO NOT EDIT BY HAND.
-#
-# Crash-only launcher for the GHL community MCP.
-#   exit 0  -> a deliberate, non-restartable stop (missing/rejected credential).
-#              launchd KeepAlive{SuccessfulExit:false}, pm2 stop_exit_codes:[0],
-#              systemd Restart=on-failure and the fallback loop all honour this,
-#              so a bad PIT can never become a 10s relaunch loop.
-#   exec    -> otherwise the node server REPLACES this shell, so the supervisor
-#              still watches the real process (no wrapper PID indirection).
-set -u
-MCP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-STAMP_DIR="${MCP_DIR}"
-NOTE="${STAMP_DIR}/.ghl-mcp-credential-blocked"
-
-# Load the server env (600-perm) without echoing it.
-# LOG ROTATION (copytruncate). The supervisor holds an open fd on these files,
-# so we copy-then-truncate IN PLACE; renaming would leave the server writing to
-# an orphaned inode. Runs at every (re)start; the periodic probe repeats it so a
-# long-lived process still gets rotated.
-_ghl_rotate() {
-  local f="$1" max="${GHL_MCP_LOG_MAX_BYTES:-10485760}" keep="${GHL_MCP_LOG_KEEP:-3}" sz i
-  [ -f "$f" ] || return 0
-  sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
-  [ -n "$sz" ] || return 0
-  [ "$sz" -gt "$max" ] 2>/dev/null || return 0
-  rm -f "${f}.${keep}" 2>/dev/null || true
-  i=$((keep-1))
-  while [ "$i" -ge 1 ]; do
-    [ -f "${f}.${i}" ] && mv "${f}.${i}" "${f}.$((i+1))" 2>/dev/null || true
-    i=$((i-1))
-  done
-  cp "$f" "${f}.1" 2>/dev/null && : > "$f"
-}
-if [ -n "${GHL_MCP_LOG_DIR:-}" ]; then
-  for _lf in "${GHL_MCP_LOG_DIR}/stdout.log" "${GHL_MCP_LOG_DIR}/stderr.log" \
-             "${GHL_MCP_LOG_DIR}/ghl-mcp.log" "${GHL_MCP_LOG_DIR}/ghl-mcp.err.log"; do
-    _ghl_rotate "$_lf"
-  done
-fi
-
-if [ -f "${MCP_DIR}/.env" ]; then
-  set -a; . "${MCP_DIR}/.env" 2>/dev/null || true; set +a
-fi
-: "${GHL_API_KEY:=}"
-: "${GHL_LOCATION_ID:=}"
-: "${GHL_BASE_URL:=https://services.leadconnectorhq.com}"
-
-if [ -z "$GHL_API_KEY" ] || [ -z "$GHL_LOCATION_ID" ]; then
-  printf '%s ghl-mcp launcher: GHL credential absent — NOT starting (clean exit, no restart loop)\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
-  printf 'credential-absent %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$NOTE" 2>/dev/null || true
-  exit 0
-fi
-
-# Bounded auth preflight: one call, 10s cap. 401/403 => the token is bad; exit
-# cleanly instead of letting main.js exit(1) forever. Any other outcome
-# (network blip, 5xx, curl missing) falls through and starts the server — we
-# never block a start on a transient.
-if command -v curl >/dev/null 2>&1; then
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 10 \
-    "${GHL_BASE_URL}/locations/${GHL_LOCATION_ID}" \
-    -H "Authorization: Bearer ${GHL_API_KEY}" \
-    -H "Version: 2021-07-28" 2>/dev/null || echo 000)"
-  case "$CODE" in
-    401|403)
-      printf '%s ghl-mcp launcher: GHL rejected the PIT (HTTP %s) — NOT starting (clean exit, no restart loop). Rotate/repair the token then re-run ghl-mcp-autostart.sh\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CODE" >&2
-      printf 'auth-rejected http=%s %s\n' "$CODE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$NOTE" 2>/dev/null || true
-      exit 0
-      ;;
-  esac
-fi
-rm -f "$NOTE" 2>/dev/null || true
-
-# D6 (P0 SECURITY): force the listener onto loopback. Upstream hardcodes
-# `app.listen(port, '0.0.0.0')` — no env var can move it — so we preload a guard
-# that rewrites the listen host. This runs LAST (after .env is sourced) so a
-# stale .env cannot clobber NODE_OPTIONS. Every supervisor reaches node through
-# this launcher, so all four inherit the guard from this one place.
-: "${GHL_MCP_BIND_HOST:=127.0.0.1}"
-export GHL_MCP_BIND_HOST
-BIND_GUARD="${MCP_DIR}/.ghl-mcp-bind-guard.cjs"
-if [ -f "$BIND_GUARD" ]; then
-  NODE_OPTIONS="--require \"${BIND_GUARD}\" ${NODE_OPTIONS:-}"
-  export NODE_OPTIONS
-else
-  printf '%s ghl-mcp launcher: WARNING bind guard missing at %s — the server will bind ALL INTERFACES (0.0.0.0). Re-run ghl-mcp-autostart.sh.\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BIND_GUARD" >&2
-fi
-
-NODE_BIN="${GHL_MCP_NODE_BIN:-$(command -v node 2>/dev/null || echo node)}"
-cd "$MCP_DIR" || exit 1
-exec "$NODE_BIN" "${MCP_DIR}/dist/main.js"
-LAUNCHEOF
-  chmod +x "$LAUNCHER" 2>/dev/null || true
-}
-
 # ── Managed cron lines: sentinel-tagged, REPLACED when they drift ────────────
 # F13: the old shape was `crontab -l | grep -Fq "ghl-mcp-probe.sh" && skip`. When
 # the delivered script path changed (…/skills/scripts → …/scripts, or a /data
@@ -1165,7 +1590,6 @@ LAUNCHEOF
 # nothing anywhere reporting a problem. Match on a SENTINEL COMMENT that only we
 # write, and REPLACE the line whenever it differs from the one we intend.
 CRON_TAG_PROBE="# managed:ghl-mcp-probe"
-CRON_TAG_RESURRECT="# managed:ghl-mcp-pm2-resurrect"
 upsert_cron_line() {
   local tag="$1" line="$2" current desired
   command -v crontab >/dev/null 2>&1 || return 1
@@ -1177,41 +1601,6 @@ upsert_cron_line() {
   # Drop every previously-managed line carrying this tag, then append the new one.
   desired="$(printf '%s\n' "$current" | grep -vF "$tag" 2>/dev/null || true)"
   printf '%s\n%s\n' "$desired" "$line" | grep -v '^$' | crontab - >/dev/null 2>&1 || return 1
-  return 0
-}
-
-# ── 5. Health + liveness ─────────────────────────────────────────────────────
-health_ok() {
-  command -v curl >/dev/null 2>&1 || return 1
-  local body
-  body="$(curl -fsS --max-time 5 "http://localhost:${GHL_MCP_PORT}/health" 2>/dev/null || true)"
-  # Healthy = our GHL MCP (reports "healthy" / a tools count). Reject Cognee's
-  # response, which means we hit the wrong port (INSTALL.md §6).
-  # F14: this used to match ONLY the version literal `0.5.3-local`, so any Cognee
-  # UPGRADE would defeat the check here while ghl-mcp-probe.sh still caught it.
-  # Both now use the same discriminator — match the SERVICE, not one version of it.
-  case "$body" in
-    *0.5.3-local*|*cognee*|*Cognee*) return 1 ;;
-    *healthy*|*tools*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-# ── D6: is the live listener actually on loopback? ───────────────────────────
-# Returns 0 = every LISTEN socket on the port is loopback (good)
-#         1 = at least one is a wildcard/routable address (the D6 exposure)
-#         2 = cannot tell (no lsof — common in slim containers). Callers must
-#             treat 2 as UNKNOWN and never report it as either verdict.
-listener_is_loopback() {
-  command -v lsof >/dev/null 2>&1 || return 2
-  local out
-  out="$(lsof -nP -iTCP:"${GHL_MCP_PORT}" -sTCP:LISTEN 2>/dev/null | tail -n +2)"
-  [ -n "$out" ] || return 2
-  # A wildcard bind prints as `*:8765`; an explicit all-interfaces bind as
-  # `0.0.0.0:8765`; IPv6 any as `[::]:8765`.
-  case "$out" in
-    *"*:${GHL_MCP_PORT}"*|*"0.0.0.0:${GHL_MCP_PORT}"*|*"[::]:${GHL_MCP_PORT}"*) return 1 ;;
-  esac
   return 0
 }
 
@@ -1247,426 +1636,6 @@ PROBE="$(
     [ -f "$c" ] && { printf '%s' "$c"; break; }
   done
 )"
-responds_ok() {
-  if [ -n "${PROBE:-}" ]; then
-    # --skip-profile: here we only want the LIVENESS verdict; profile drift is
-    # reported separately by the periodic probe and must not be misread as deaf.
-    GHL_MCP_PORT="$GHL_MCP_PORT" GHL_MCP_PROBE_TIMEOUT="$GHL_MCP_PROBE_TIMEOUT" \
-      bash "$PROBE" --once --quiet --skip-profile >/dev/null 2>&1
-    return $?
-  fi
-  # Inline fallback if the probe script is not co-located.
-  command -v curl >/dev/null 2>&1 || return 1
-  curl -sS --max-time "$GHL_MCP_PROBE_TIMEOUT" -X POST "http://localhost:${GHL_MCP_PORT}/mcp" \
-    -H 'Content-Type: application/json' \
-    -H 'Accept: application/json, text/event-stream' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ghl-mcp-autostart","version":"1"}}}' \
-    2>/dev/null | grep -q 'serverInfo'
-}
-
-# ── 6. Write canonical launchd plist + boot (Mac); pm2/systemd (VPS) ─────────
-start_service_mac() {
-  local PLIST="$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist"
-  local NODE_PATH; NODE_PATH="$(command -v node)"
-  mkdir -p "$HOME/Library/Logs/ghl-mcp" 2>/dev/null || true
-  cat > "$PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.clawd.ghl-mcp</string>
-    <!-- Runs the crash-only launcher, not node directly: the launcher exits 0
-         (no restart) when the PIT is missing/rejected, so a bad token can never
-         become a 10s relaunch loop (D3). It exec's node, so launchd still
-         supervises the real server process. -->
-    <key>ProgramArguments</key><array>
-        <string>/bin/bash</string>
-        <string>${LAUNCHER}</string>
-    </array>
-    <key>WorkingDirectory</key><string>${MCP_DIR}</string>
-    <key>EnvironmentVariables</key><dict>
-        <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>NODE_ENV</key><string>production</string>
-        <!-- main.js/http-server.ts read PORT BEFORE MCP_SERVER_PORT (src/main.ts:55).
-             Pin BOTH to ${GHL_MCP_PORT} so a stray inherited PORT can never bind a random port. -->
-        <key>PORT</key><string>${GHL_MCP_PORT}</string>
-        <key>MCP_SERVER_PORT</key><string>${GHL_MCP_PORT}</string>
-        <!-- D2: without this the registry serves the FULL 858-tool surface. -->
-        <key>GHL_TOOL_PROFILE</key><string>${GHL_MCP_TOOL_PROFILE}</string>
-        <!-- D6 (P0): loopback bind, enforced by .ghl-mcp-bind-guard.cjs which the
-             launcher preloads. Upstream hardcodes app.listen(port,'0.0.0.0'), so
-             this variable is read by OUR guard, never by main.js. -->
-        <key>GHL_MCP_BIND_HOST</key><string>${GHL_MCP_BIND_HOST}</string>
-        <key>GHL_MCP_NODE_BIN</key><string>${NODE_PATH}</string>
-        <!-- Log rotation: the launcher copytruncates these at every (re)start
-             and the periodic probe repeats it while the process is long-lived.
-             Nothing in the fleet rotated them before (5.4 MB and counting). -->
-        <key>GHL_MCP_LOG_DIR</key><string>${HOME}/Library/Logs/ghl-mcp</string>
-        <key>GHL_MCP_LOG_MAX_BYTES</key><string>${GHL_MCP_LOG_MAX_BYTES}</string>
-        <key>GHL_MCP_LOG_KEEP</key><string>${GHL_MCP_LOG_KEEP}</string>
-    </dict>
-    <key>RunAtLoad</key><true/>
-    <!-- CRASH-ONLY (ghl-mcp-setup doctrine). NEVER the unconditional boolean
-         form of KeepAlive: it restarts even a deliberate clean exit, which is
-         what turns the bad-token exit into an infinite 10s relaunch loop.
-         The QC gate rejects the boolean form outright. -->
-    <key>KeepAlive</key><dict>
-        <key>SuccessfulExit</key><false/>
-        <key>Crashed</key><true/>
-    </dict>
-    <!-- 300s: the canonical fleet shape (matches the reference plist verified on
-         a fleet box). Long enough that even a mis-detected crash cannot
-         become a hot relaunch loop. -->
-    <key>ThrottleInterval</key><integer>300</integer>
-    <key>StandardOutPath</key><string>${HOME}/Library/Logs/ghl-mcp/stdout.log</string>
-    <key>StandardErrorPath</key><string>${HOME}/Library/Logs/ghl-mcp/stderr.log</string>
-    <key>ProcessType</key><string>Background</string>
-</dict>
-</plist>
-EOF
-  # Idempotent re-boot: bootout (ignore failure if not loaded) then bootstrap.
-  launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
-  launchctl bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || \
-    launchctl load "$PLIST" >/dev/null 2>&1 || true
-}
-
-# Write the canonical pm2 ecosystem.config.js (PORT + MCP_SERVER_PORT + the tool
-# profile pinned). pm2 is the fleet-standard supervisor on VPS/Docker (no systemd
-# in Hostinger containers). The ecosystem file is the single source of truth pm2
-# reads, so the port/profile can never be inherited and the env is reproducible.
-# SK1-70: the GHL PIT is NOT inlined here (world-readable) — it is loaded at
-# launch from the 600-perm .ghl-mcp.env sitting next to this config.
-write_vps_ecosystem() {
-  # B1: the pm2 `env:` block below sets GHL_LOCATION_ID and therefore OVERRIDES
-  # whatever .env holds. Resolving here as well means the ecosystem can never
-  # re-introduce a location id that resolve_location_id() just proved this
-  # token rejects — including on the D6 fast-path restart, which reaches
-  # start_service_vps() without ever calling write_server_env(). The resolver is
-  # cached, so this is a no-op when the main flow already ran it.
-  resolve_location_id
-  # NEVER clobber a good secret file with an empty one. The main flow reaches
-  # here only after the GHL_TOKEN check, but the D6 fast-path restart above can
-  # also land here on an already-healthy box, where the token is not re-proven.
-  # Writing an empty GHL_API_KEY there would take a WORKING server down.
-  if [ -n "$GHL_TOKEN" ]; then
-    ( umask 077; printf 'GHL_API_KEY=%s\n' "$GHL_TOKEN" > "$MCP_DIR/.ghl-mcp.env" ) 2>/dev/null || true
-    chmod 600 "$MCP_DIR/.ghl-mcp.env" 2>/dev/null || true
-  else
-    log "no GHL token resolvable in this context — leaving the existing .ghl-mcp.env untouched"
-  fi
-  cat > "$MCP_DIR/ecosystem.config.js" <<EOF
-// ghl-community-mcp — pm2 ecosystem (generated by ghl-mcp-autostart.sh)
-// main.js reads PORT before MCP_SERVER_PORT (src/main.ts:55) — BOTH pinned to ${GHL_MCP_PORT}.
-// GHL_TOOL_PROFILE is pinned so the registry never serves the full 858-tool surface.
-// SK1-70: the GHL PIT is loaded from the 600-perm .ghl-mcp.env, never inlined here.
-const fs = require('fs');
-const path = require('path');
-function _loadEnvFile(f) {
-  const out = {};
-  try {
-    fs.readFileSync(f, 'utf8').split('\n').forEach(function (line) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)/);
-      if (m) out[m[1]] = m[2].trim();
-    });
-  } catch (e) { /* no secret file -> the server's own .env provides the creds */ }
-  return out;
-}
-const _secret = _loadEnvFile(path.join(__dirname, '.ghl-mcp.env'));
-module.exports = {
-  apps: [{
-    name: "ghl-community-mcp",
-    cwd: "${MCP_DIR}",
-    // Crash-only launcher (D3): exit 0 = deliberate stop, pm2 must NOT restart.
-    script: ".ghl-mcp-launch.sh",
-    interpreter: "bash",
-    autorestart: true,
-    stop_exit_codes: [0],
-    max_restarts: 10,
-    restart_delay: 5000,
-    exp_backoff_restart_delay: 5000,
-    env: Object.assign({
-      NODE_ENV: "production",
-      PORT: "${GHL_MCP_PORT}",
-      MCP_SERVER_PORT: "${GHL_MCP_PORT}",
-      GHL_TOOL_PROFILE: "${GHL_MCP_TOOL_PROFILE}",
-      // D6 (P0): read by .ghl-mcp-bind-guard.cjs (preloaded by the launcher),
-      // never by main.js — upstream hardcodes its 0.0.0.0 bind.
-      GHL_MCP_BIND_HOST: "${GHL_MCP_BIND_HOST}",
-      GHL_MCP_LOG_DIR: "${LOG_DIR}",
-      GHL_MCP_LOG_MAX_BYTES: "${GHL_MCP_LOG_MAX_BYTES}",
-      GHL_MCP_LOG_KEEP: "${GHL_MCP_LOG_KEEP}",
-      GHL_BASE_URL: "https://services.leadconnectorhq.com",
-      GHL_LOCATION_ID: "${GHL_LOC}"
-    }, _secret),
-    out_file: "${LOG_DIR}/ghl-mcp.log",
-    error_file: "${LOG_DIR}/ghl-mcp.err.log"
-  }]
-};
-EOF
-}
-
-# >>> GHL-MCP-PM2-REGISTRATION-MISMATCH-BEGIN
-#     (extracted verbatim by tests/unit/ghl-mcp-pm2-registration-mismatch.test.sh)
-#
-# DEFECT 2 (proven live 2026-08-04): `pm2 startOrReload` MERGES a regenerated
-# ecosystem.config.js onto an app's EXISTING pm2 registration. When the new
-# file changes `script:`/`interpreter:` — e.g. a box registered under the old
-# `node dist/main.js` shape (no interpreter override) and this run writes the
-# crash-only launcher (`script: ".ghl-mcp-launch.sh"`, `interpreter: "bash"`)
-# — pm2 keeps the STALE `script: dist/main.js` and pairs it with the NEW
-# `interpreter: bash`. bash then tries to execute compiled JavaScript as a
-# shell script and crash-loops. `pm2 delete` + `pm2 start` always registers
-# clean, at the cost of resetting the app's uptime/restart-count history, so
-# it is used ONLY when a live registration actually disagrees with what this
-# run is about to write — never unconditionally (an unconditional delete
-# would lose that history on every ordinary, matching restart, for no
-# reason). Detect, don't assume.
-
-# _pm2_live_registration <app_name> — prints "script|interpreter" for the
-# LIVE pm2 registration of <app_name>, or nothing if it does not exist or
-# cannot be determined (missing pm2/python3). Non-secret fields only (a
-# script path and an interpreter name are not credentials) — this does NOT
-# need the pm2_env secret-filtering discipline scripts/ghl-mcp-assert-
-# runtime.sh uses for the fuller record, but stays scoped to exactly the two
-# fields this comparison needs regardless.
-_pm2_live_registration() {
-  local _name="$1"
-  command -v pm2 >/dev/null 2>&1 || return 1
-  command -v python3 >/dev/null 2>&1 || return 1
-  # `python3 -c "$snippet"` (an ARGUMENT), never `python3 - <<EOF` — a heredoc
-  # attached to `python3 -` is consumed as the SCRIPT SOURCE, which leaves
-  # nothing on stdin for json.load(sys.stdin) to read from the piped `pm2
-  # jlist` output (an immediate EOF, silently caught by the except below, so
-  # this would print nothing for every box, every time). Same discipline as
-  # _GHL_FILTER_PM2_RECORD in scripts/ghl-mcp-assert-runtime.sh.
-  local _snippet='
-import json, os, sys
-name = os.environ.get("NAME", "")
-try:
-    apps = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(0)
-for a in apps:
-    if a.get("name") != name:
-        continue
-    env = a.get("pm2_env") if isinstance(a.get("pm2_env"), dict) else {}
-    script = env.get("pm_exec_path") or a.get("pm_exec_path") or ""
-    interp = env.get("exec_interpreter") or ""
-    print("%s|%s" % (script, interp))
-    break
-'
-  pm2 jlist 2>/dev/null | NAME="$_name" python3 -c "$_snippet" 2>/dev/null
-}
-
-# _pm2_registration_mismatch <app_name> <want_script_basename> <want_interpreter>
-# Returns 0 (MISMATCH -> caller must force `pm2 delete` + `pm2 start`) or
-# 1 (no live app, or it already matches -> `pm2 startOrReload` is safe).
-# No live app at all is NOT a mismatch: a fresh install has nothing stale to
-# collide with, and `startOrReload` already falls through to `pm2 start` on a
-# name pm2 has never seen.
-_pm2_registration_mismatch() {
-  local _name="$1" _want_script="$2" _want_interp="$3"
-  local _live_reg _live_script _live_interp
-  _live_reg="$(_pm2_live_registration "$_name" || true)"
-  [ -n "$_live_reg" ] || return 1
-  _live_script="${_live_reg%%|*}"
-  _live_interp="${_live_reg#*|}"
-  if [ "${_live_script##*/}" != "$_want_script" ] || [ "$_live_interp" != "$_want_interp" ]; then
-    return 0
-  fi
-  return 1
-}
-# <<< GHL-MCP-PM2-REGISTRATION-MISMATCH-END
-
-start_service_vps() {
-  local NODE_PATH; NODE_PATH="$(command -v node)"
-  # $LOG_DIR follows the platform shape (/data/logs on data-rooted boxes,
-  # <OpenClaw root>/logs/ghl-mcp on HOME-layout Linux containers). Never assume /data exists.
-  mkdir -p "$LOG_DIR" 2>/dev/null || true
-  write_vps_ecosystem
-
-  # ── PRIMARY: pm2 (the fleet-standard supervisor; survives container restart via
-  #    `pm2 save` + a reboot-resurrect hook). NEVER a bare nohup. ──────────────
-  if command -v pm2 >/dev/null 2>&1; then
-    # PM2_HOME IS PART OF THE ADDRESS OF THIS APP. pm2 keeps one process list
-    # per PM2_HOME, so an app registered under the default $HOME/.pm2 is
-    # invisible to any later `pm2 describe` that runs with a different home,
-    # and on a client container $HOME/.pm2 lives in the ephemeral layer and is
-    # gone after a recreate, taking the registration with it. Pin it under the
-    # OpenClaw root (the bind-mounted directory) so the registration survives,
-    # and so the runtime gate, which derives the same value from the same
-    # library, inspects the same daemon this branch writes to.
-    export PM2_HOME="$GHL_MCP_PM2_HOME"
-    mkdir -p "$PM2_HOME" 2>/dev/null || true
-    log "starting GHL MCP under pm2 (ecosystem.config.js, PORT=${GHL_MCP_PORT}, profile=${GHL_MCP_TOOL_PROFILE}, PM2_HOME=${PM2_HOME})"
-
-    # D2 (see the GHL-MCP-PM2-REGISTRATION-MISMATCH block above for the full
-    # defect writeup): detect before assuming startOrReload is safe.
-    if _pm2_registration_mismatch ghl-community-mcp ".ghl-mcp-launch.sh" "bash"; then
-      log "pm2 registration MISMATCH detected for ghl-community-mcp — startOrReload would pair a NEW interpreter with a STALE script and crash-loop (D2). Forcing 'pm2 delete' + 'pm2 start' (this app's uptime/restart history resets; there is no way to change script/interpreter on a live pm2 process without one)."
-      ( cd "$MCP_DIR" && pm2 delete ghl-community-mcp >/dev/null 2>&1
-        pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
-    else
-      ( cd "$MCP_DIR" && pm2 startOrReload ecosystem.config.js >/dev/null 2>&1 \
-          || pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
-    fi
-    pm2 save >/dev/null 2>&1 || true
-    install_vps_reboot_resurrect
-    return 0
-  fi
-
-  # ── FALLBACK A: systemd (non-container VPS). Reboot-surviving via enable. ────
-  # GATED ON PASSWORDLESS SUDO (v21.5.0). Writing the unit file needs root, and a
-  # bare `sudo` PROMPTS on a TTY — sudo writes its prompt to /dev/tty, so the
-  # `>/dev/null 2>&1` below does NOT silence it. install.sh Step 14a calls this
-  # script, so a prompt here hangs a whole install. Worse, the old shape swallowed
-  # every sudo failure with `|| true` and then `return 0` — reporting a supervised
-  # server while having installed absolutely nothing, which is precisely the class
-  # of silent false-success this release exists to kill. If root is not available
-  # non-interactively we say so and fall through to the supervised relaunch loop
-  # (FALLBACK B), which needs no privileges at all.
-  if command -v systemctl >/dev/null 2>&1 && ! sudo -n true 2>/dev/null; then
-    log "systemctl present but no passwordless sudo — cannot install the unit; falling through to the supervised relaunch loop"
-  elif command -v systemctl >/dev/null 2>&1; then
-    log "pm2 not found — installing systemd unit ghl-mcp (PORT + profile pinned via Environment=)"
-    sudo -n tee /etc/systemd/system/ghl-mcp.service > /dev/null <<EOF
-[Unit]
-Description=GHL Community MCP Server
-After=network.target
-StartLimitIntervalSec=300
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=$(whoami)
-WorkingDirectory=${MCP_DIR}
-# Pin PORT explicitly (main.js reads PORT before MCP_SERVER_PORT).
-Environment=PORT=${GHL_MCP_PORT}
-Environment=MCP_SERVER_PORT=${GHL_MCP_PORT}
-Environment=GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}
-# D6 (P0): loopback bind, enforced by the launcher's .ghl-mcp-bind-guard.cjs.
-Environment=GHL_MCP_BIND_HOST=${GHL_MCP_BIND_HOST}
-Environment=GHL_MCP_LOG_DIR=${LOG_DIR}
-Environment=GHL_MCP_LOG_MAX_BYTES=${GHL_MCP_LOG_MAX_BYTES}
-Environment=GHL_MCP_LOG_KEEP=${GHL_MCP_LOG_KEEP}
-Environment=NODE_ENV=production
-Environment=GHL_MCP_NODE_BIN=${NODE_PATH}
-# Crash-only launcher (D3): a clean exit 0 (bad/absent PIT) must NOT restart.
-ExecStart=/bin/bash ${LAUNCHER}
-Restart=on-failure
-RestartSec=30
-EnvironmentFile=${MCP_DIR}/.env
-StandardOutput=append:${LOG_DIR}/ghl-mcp.log
-StandardError=append:${LOG_DIR}/ghl-mcp.err.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    sudo -n systemctl daemon-reload >/dev/null 2>&1 || true
-    # Only claim success if the unit actually came up. Otherwise fall through to
-    # the supervised loop rather than returning a supervised-looking lie.
-    if sudo -n systemctl enable --now ghl-mcp >/dev/null 2>&1; then
-      return 0
-    fi
-    log "systemd unit did not enable/start — falling through to the supervised relaunch loop"
-  fi
-
-  # ── FALLBACK B (last resort): supervised relaunch loop, NOT a bare nohup. ────
-  # A bare `nohup node …` does NOT survive session/exec teardown and is the exact
-  # failure that took 12/19 fleet boxes down. This wrapper double-forks a detached
-  # watch loop that re-launches the server if it ever CRASHES (poor-man's pm2),
-  # with PORT + profile pinned, and STOPS on a clean exit 0 (D3).
-  log "neither pm2 nor systemd available — installing supervised relaunch loop (PORT=${GHL_MCP_PORT})"
-  local SUP="$MCP_DIR/.ghl-mcp-supervise.sh"
-  cat > "$SUP" <<EOF
-#!/usr/bin/env bash
-# Detached supervisor for ghl-community-mcp — re-launches on CRASH only.
-cd "${MCP_DIR}" || exit 1
-while true; do
-  PORT="${GHL_MCP_PORT}" MCP_SERVER_PORT="${GHL_MCP_PORT}" \\
-    GHL_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE}" NODE_ENV=production \\
-    GHL_MCP_BIND_HOST="${GHL_MCP_BIND_HOST}" \\
-    GHL_MCP_NODE_BIN="${NODE_PATH}" GHL_MCP_LOG_DIR="${LOG_DIR}" \\
-    GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES}" GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP}" \\
-    /bin/bash "${LAUNCHER}" >> ${LOG_DIR}/ghl-mcp.log 2>&1
-  rc=\$?
-  # Clean exit = deliberate stop (missing/rejected credential). Do NOT loop.
-  [ "\$rc" = "0" ] && break
-  sleep 10
-done
-EOF
-  chmod +x "$SUP" 2>/dev/null || true
-  # setsid detaches from the controlling terminal so it survives exec/session teardown.
-  if command -v setsid >/dev/null 2>&1; then
-    setsid nohup bash "$SUP" >> "$LOG_DIR"/ghl-mcp.log 2>&1 < /dev/null &
-  else
-    nohup bash "$SUP" >> "$LOG_DIR"/ghl-mcp.log 2>&1 < /dev/null &
-  fi
-  disown 2>/dev/null || true
-}
-
-# Wire a reboot-resurrect hook so the pm2-managed MCP comes back after a host
-# reboot / container restart. Matches the fleet pattern used by the Command
-# Center: `pm2 resurrect` via the host @reboot cron AND/OR the Docker container
-# `command:` override. We add the @reboot cron idempotently here; the
-# container-command override is documented in INSTALL.md §5.6 for compose edits.
-install_vps_reboot_resurrect() {
-  command -v pm2 >/dev/null 2>&1 || return 0
-  local PM2_BIN; PM2_BIN="$(command -v pm2)"
-  # Prefer pm2's own startup integration where init systems exist (no-op in bare
-  # containers, which is fine — the @reboot cron + container command cover those).
-  pm2 startup >/dev/null 2>&1 || true
-  # Idempotent @reboot cron entry (covers bare containers + plain VPS reboots).
-  # PM2_HOME is carried EXPLICITLY: cron runs with a near-empty environment, so
-  # a bare `pm2 resurrect` there would resurrect whatever the DEFAULT home holds
-  # (usually nothing) and silently leave the real app down after a reboot.
-  if command -v crontab >/dev/null 2>&1; then
-    local LINE="@reboot PM2_HOME=${GHL_MCP_PM2_HOME} ${PM2_BIN} resurrect >${LOG_DIR}/pm2-resurrect.log 2>&1 ${CRON_TAG_RESURRECT}"
-    upsert_cron_line "$CRON_TAG_RESURRECT" "$LINE" \
-      && log "installed/refreshed @reboot 'pm2 resurrect' cron (reboot-surviving)"
-  fi
-}
-
-# ── 6b. LOG ROTATION (fleet gap: nothing ever rotated these) ─────────────────
-# Two layers, because neither alone is guaranteed:
-#   1. ALWAYS: the generated launcher copytruncates at every (re)start and the
-#      periodic probe repeats it every 15 min. No root, no daemons, works in a
-#      bare container. This is the layer we rely on.
-#   2. BEST-EFFORT: the platform's own rotator (newsyslog on Mac, logrotate on
-#      VPS, pm2-logrotate under pm2) when it can be configured WITHOUT an
-#      interactive sudo prompt. Never blocks, never prompts.
-install_log_rotation() {
-  if [ "$PLATFORM" = "mac" ] || [ "$PLATFORM" = "linux-home" ]; then
-    local NSCONF="/etc/newsyslog.d/com.clawd.ghl-mcp.conf"
-    if [ ! -f "$NSCONF" ] && sudo -n true 2>/dev/null; then
-      printf '# logfilename                                  [owner:group]  mode count size(KB) when  flags\n%s/Library/Logs/ghl-mcp/stderr.log  %s:staff  644  %s  10240  *  GJ\n%s/Library/Logs/ghl-mcp/stdout.log  %s:staff  644  %s  10240  *  GJ\n' \
-        "$HOME" "$(id -un)" "$GHL_MCP_LOG_KEEP" "$HOME" "$(id -un)" "$GHL_MCP_LOG_KEEP" \
-        | sudo -n tee "$NSCONF" >/dev/null 2>&1 \
-        && log "installed newsyslog rotation config $NSCONF (10 MB, keep ${GHL_MCP_LOG_KEEP})" \
-        || log "newsyslog config not installed (no passwordless sudo) — the launcher/probe rotation still applies"
-    else
-      log "newsyslog config present or sudo unavailable — relying on launcher/probe rotation"
-    fi
-  else
-    if command -v pm2 >/dev/null 2>&1; then
-      # pm2-logrotate is the fleet-standard pm2 companion; install is a no-op if present.
-      pm2 install pm2-logrotate >/dev/null 2>&1 || true
-      pm2 set pm2-logrotate:max_size 10M >/dev/null 2>&1 || true
-      pm2 set pm2-logrotate:retain "$GHL_MCP_LOG_KEEP" >/dev/null 2>&1 || true
-      pm2 set pm2-logrotate:compress true >/dev/null 2>&1 || true
-    fi
-    local LRCONF="/etc/logrotate.d/ghl-mcp"
-    if [ ! -f "$LRCONF" ] && command -v logrotate >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-      printf '%s/ghl-mcp*.log {\n    size 10M\n    rotate %s\n    missingok\n    notifempty\n    compress\n    delaycompress\n    copytruncate\n}\n' "$LOG_DIR" "$GHL_MCP_LOG_KEEP" \
-        | sudo -n tee "$LRCONF" >/dev/null 2>&1 \
-        && log "installed logrotate config $LRCONF (10 MB, keep ${GHL_MCP_LOG_KEEP}, copytruncate)" \
-        || log "logrotate config not installed — the launcher/probe rotation still applies"
-    fi
-    # Hostinger Docker note: also cap the container driver in compose —
-    #   logging: { driver: "json-file", options: { max-size: "10m", max-file: "3" } }
-    # That is a compose-file edit, documented in INSTALL.md §5.6.
-  fi
-}
 
 # gw_up: rc 0 ONLY when the OpenClaw gateway answers GET /healthz with 200.
 # NEVER uses the openclaw CLI. On 2026.10.1 a CLI call while the gateway is down
@@ -1836,148 +1805,24 @@ oc_mcp_unset_verb_supported() {
   esac
 }
 
-deregister_tier2() {
-  command -v openclaw >/dev/null 2>&1 || return 0
-  gw_up || { log "gateway not up (no /healthz 200) — skipping openclaw CLI calls in deregister_tier2 (a CLI call now can kill the gateway at bootstrap)"; return 0; }
-  # IDEMPOTENCY GUARD. A single-key `openclaw config set` does NOT rewrite one path:
-  # measured changedPathCount was 10-103 depending on the box. When that rewrite lands
-  # on plugins.allow the gateway logs "config change requires gateway restart
-  # (plugins.allow)" -> SIGUSR1 -> a FULL process restart that kills every in-flight
-  # agent run mid-task. The value written here is normally identical to the value
-  # already stored -- proven by diff: zero keys added, zero removed, exactly one value
-  # changed (meta.lastTouchedAt). So the write was pure churn that restarted gateways.
-  # Only write on a real change. FAIL-OPEN: if the config cannot be read, fall through
-  # to the original write so genuine drift is still repaired.
-  _ghl_want="http://localhost:${GHL_MCP_PORT}"
-  _ghl_cfg="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
-  [ -f "$_ghl_cfg" ] || _ghl_cfg="/data/.openclaw/openclaw.json"
-  _ghl_cur="$(OC_CFG="$_ghl_cfg" python3 -c 'import json,os
-try:
-    d=json.load(open(os.environ["OC_CFG"]))
-    print((((d.get("env") or {}).get("vars")) or {}).get("GHL_COMMUNITY_MCP_URL","") or "")
-except Exception:
-    print("__UNREADABLE__")' 2>/dev/null)"
-  [ -n "$_ghl_cur" ] || _ghl_cur="__UNREADABLE__"
-  if [ "$_ghl_cur" != "$_ghl_want" ]; then
-    openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "$_ghl_want" >/dev/null 2>&1 || true
-  fi
-  unset _ghl_want _ghl_cur _ghl_cfg
-  if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-    log "de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl); installed CLI documents the verb: $(oc_mcp_unset_verb_supported)"
-    if ! oc_mcp_unset ghl-community-mcp; then
-      log "WARN: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted — ghl-community-mcp is STILL registered. Every agent init will keep paying its tool-catalogue/connection cost. Check 'openclaw mcp --help'."
-      return 0
-    fi
-    # RE-READ. The gateway can rewrite openclaw.json from memory, so a command
-    # that exited 0 is not proof the entry is gone.
-    if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-      log "WARN: de-registration command succeeded but ghl-community-mcp is STILL listed — the gateway may have rewritten the config. It will be retried on the next run."
-    else
-      log "ghl-community-mcp de-registered and verified absent from mcp.servers"
-    fi
-  fi
-}
+# deregister_tier2() is GONE (GHL002): it was unreachable — nothing has called
+# it since START was retired — and it still held a live
+# `openclaw config set env.vars.GHL_COMMUNITY_MCP_URL` write, a config mutation
+# behind a service that no longer exists. Zero callers tree-wide was confirmed
+# before the deletion. The two unit tests that EXTRACTED it
+# (tests/unit/ghl-mcp-gateway-guard.test.sh, tests/unit/ghl-mcp-autostart-
+# idempotent-write.test.sh) assert a function that no longer ships and must be
+# re-pointed at whatever still does that job.
+# The oc_mcp_unset / oc_mcp_unset_verb_supported helpers above stay: extracted
+# verbatim by tests/unit/ghl-mcp-unset-verb.test.sh, and they are the
+# correct-verb reference for every other de-registration site in this repo.
 # <<< OC-MCP-UNSET-VERB-END
 
 # ── Main flow ────────────────────────────────────────────────────────────────
 
-# Fast idempotent no-op: healthy AND answering JSON-RPC AND already built from
-# the pinned commit. "A dist exists" is NOT a no-op condition (that is exactly
-# how the stale deaf dist survived two days).
-if [ -f "$BUILD_STAMP" ] && stamp_matches && dist_is_sane && health_ok && responds_ok; then
-  # D6: a HEALTHY box is exactly the box this security fix has to reach. Every
-  # box in the fleet is already healthy, so if the fast path simply returned here
-  # the loopback fix would land on ZERO boxes until the next pin bump — the same
-  # "shipped but never delivered" failure this release exists to end. So: install
-  # the guard + launcher unconditionally, then restart ONLY if the live listener
-  # is provably non-loopback, or if the guard did not exist before (meaning the
-  # running process necessarily predates it and cannot have loaded it).
-  _guard_was_present=0
-  [ -f "$BIND_GUARD" ] && _guard_was_present=1
-  write_bind_guard
-  write_launcher
-  listener_is_loopback; _lb_rc=$?
-  if [ "$_lb_rc" = "1" ] || { [ "$_lb_rc" = "2" ] && [ "$_guard_was_present" = "0" ]; }; then
-    if [ "$_lb_rc" = "1" ]; then
-      log "live listener on :${GHL_MCP_PORT} is NOT bound to loopback — restarting under the bind guard (D6)"
-    else
-      log "bind guard was not installed before this run — restarting so the running server loads it (D6)"
-    fi
-    if [ "$PLATFORM" = "mac" ]; then start_service_mac; else start_service_vps; fi
-    for _i in 1 2 3 4 5 6; do health_ok && break; command -v sleep >/dev/null 2>&1 && sleep 2 || true; done
-  fi
-  deregister_tier2
-  install_log_rotation
-  install_periodic_probe
-  report "HEALTHY_ALREADY" "(pinned ${GHL_MCP_VETTED_COMMIT:0:12}, profile=${GHL_MCP_TOOL_PROFILE}, bind=${GHL_MCP_BIND_HOST}, :${GHL_MCP_PORT} answers JSON-RPC — idempotent no-op)"
-  exit 0
-fi
-
-# Need GHL creds to build a usable server. Honest skip otherwise — NEVER claim
-# the MCP is up when it cannot be.
-if [ -z "$GHL_TOKEN" ]; then
-  report "SKIPPED_NO_CREDS" "(GOHIGHLEVEL_API_KEY/GHL_API_KEY absent — server NOT started; this is an honest gap, not a failure. Set the GHL token then re-run.)"
-  exit 0
-fi
-
-ensure_repo_at_pin
-_PIN_RC=$?
-if [ "$_PIN_RC" = "3" ]; then
-  # ROOT_OWNERSHIP_MISMATCH was already reported (loud, with the exact remedy)
-  # inside assert_ownership_matches_runtime_user() — never re-report it as the
-  # generic PIN_MISMATCH/BUILD_FAILED below, which is exactly the innocent-
-  # looking symptom that hid this root cause in the first place.
-  exit 0
-elif [ "$_PIN_RC" = "2" ]; then
-  report "PIN_MISMATCH" "(cannot check out vetted commit ${GHL_MCP_VETTED_COMMIT:0:12} at $MCP_DIR — refusing to build/start an unpinned third-party MCP. Re-vet upstream and update config/ghl-mcp-pin.env.)"
-  exit 0
-elif [ "$_PIN_RC" != "0" ]; then
-  report "BUILD_FAILED" "(could not clone/pin community MCP at $MCP_DIR — GHL tools will NOT resolve until fixed)"
-  exit 0
-fi
-
-write_server_env
-write_bind_guard
-write_launcher
-
-if needs_build; then
-  if ! build_pinned; then
-    report "BUILD_FAILED" "(build of pinned ${GHL_MCP_VETTED_COMMIT:0:12} failed — previous dist/ left intact; see $LOG_DIR/ghl-mcp-build.log)"
-    exit 0
-  fi
-else
-  log "dist/ already built from the pinned commit and passes the artifact check — skipping build"
-fi
-
-if [ "$PLATFORM" = "mac" ]; then
-  start_service_mac
-else
-  # linux-home boxes (HOME-layout Linux containers) share the VPS supervisor
-  # chain: pm2 if present, systemd if present, else the setsid relaunch loop.
-  start_service_vps
-fi
-
-# Allow the server a moment to boot, then verify (do NOT block on `sleep` long).
-for _i in 1 2 3 4 5 6; do
-  if health_ok; then break; fi
-  command -v sleep >/dev/null 2>&1 && sleep 2 || true
-done
-
-deregister_tier2
-install_log_rotation
-install_periodic_probe
-
-# Credential rejection is reported honestly, not as a mystery failure.
-if [ -f "$MCP_DIR/.ghl-mcp-credential-blocked" ]; then
-  report "TOKEN_REJECTED" "(GHL rejected the PIT at launch — server deliberately NOT running and NOT restart-looping. Rotate/repair GOHIGHLEVEL_API_KEY then re-run this script.)"
-  exit 0
-fi
-
-if health_ok && responds_ok; then
-  report "HEALTHY" "(pinned ${GHL_MCP_VETTED_COMMIT:0:12}, profile=${GHL_MCP_TOOL_PROFILE}, :${GHL_MCP_PORT} answers JSON-RPC; Tier 2 stays on-demand curl — not registered in mcp.servers)"
-elif health_ok; then
-  report "DEAF" "(:${GHL_MCP_PORT} /health is green but the MCP endpoint returned NO JSON-RPC response within ${GHL_MCP_PROBE_TIMEOUT}s — this is the stale-dist deafness signature. Check $LOG_DIR/ghl-mcp-build.log and re-run.)"
-else
-  report "STARTED_UNHEALTHY" "(supervisor installed on :${GHL_MCP_PORT} but /health not green yet — crash-only restart will retry; check $LOG_DIR. GHL tools may not resolve until healthy.)"
-fi
+# GU-019: START IS RETIRED. This point is reached only when the legacy pin gate
+# passed (a box with no pin already refused above with PIN_UNVERIFIED). Either
+# way NOTHING is built, cloned or started — the community MCP is retired and the
+# only supported action is the retirement transaction.
+report "START_REFUSED_RETIRED" "(the community GHL MCP is RETIRED: this script no longer starts, builds, clones or supervises it, and it will not restart itself. Nothing was started. To finish retiring an existing install run: bash $0 --retire ; to inspect: bash $0 --status)"
 exit 0

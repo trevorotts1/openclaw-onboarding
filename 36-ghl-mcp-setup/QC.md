@@ -2,19 +2,20 @@
 
 ## 1. Purpose
 
-Verifies that the 6-tier GHL access chain is fully installed and routing correctly: Convert and Flow CLI (Tier 0, skill 44 — PRIMARY), Official MCP (Tier 1), Community MCP (Tier 2), REST API fallback (Tier 3), agent-browser/Playwright (Tier 4), Codex Computer Use (Tier 5). Confirms the canonical-state block, env vars, disclosure protocol, and platform-aware lifecycle (launchd / systemd) are all in place.
+Verifies that the GHL access chain is installed and routing correctly: Convert and Flow CLI (Tier 0, skill 44 — PRIMARY), Official MCP (Tier 1), REST API fallback (Tier 3), agent-browser/Playwright (Tier 4), Codex Computer Use (Tier 5). It also verifies that the **retired community MCP (Tier 2) is OFF** — absent registration, no loaded unit, no listener — and that the official connection and the custom courier MCP are preserved. Confirms the canonical-state block, disclosure protocol, and client-specific OAuth v2 endpoints are in place.
 
 ## 2. Installation Checks
 
 - [ ] Skill folder exists with all 14 package files: SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, GHL-LOOKUP-SOP.md, CORE_UPDATES.md, QC.md, CHANGELOG.md, skill-version.txt, ghl-mcp-setup-full.md, ghl-mcp-setup.skill, qc-ghl-mcp-setup.sh, wire.sh, PREREQS.json (a live install also creates a runtime `.wired-*` marker file)
 - [ ] Platform detected correctly (macOS/Darwin → desktop, else VPS — via `uname -s`, NOT a quoted `[ -d "~/.openclaw" ]` test)
 - [ ] `$CANONICAL_MASTER` resolves to a real openclaw-master-files folder
-- [ ] `ghl-mcp` (Tier 1) present in `openclaw mcp list`; `ghl-community-mcp` (Tier 2) is **NOT** present — Tier 2 is on-demand curl, de-registered in v1.1.0
-- [ ] Env var `GHL_COMMUNITY_MCP_URL` is set in `openclaw.json` `env.vars`
-- [ ] Repo `~/mcp-servers/ghl-community-mcp` (Mac) or `/data/mcp-servers/ghl-community-mcp` (VPS) is cloned, has `.git`, is checked out at the pinned SHA `3dd9006a`, has `dist/main.js`
-- [ ] `.env` exists in MCP repo with `chmod 600`, contains `GHL_API_KEY` + `GHL_LOCATION_ID` + `MCP_SERVER_PORT` (the community MCP's own required var names, fed from the canonical `GOHIGHLEVEL_*`)
-- [ ] Lifecycle service installed: launchd plist (macOS) at `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` OR pm2 app `ghl-community-mcp` (VPS; systemd unit `/etc/systemd/system/ghl-mcp.service` is the non-container fallback)
-- [ ] Service is currently running (launchd `state = running` OR pm2 `online` OR systemd `active (running)`)
+- [ ] Official MCP connection `ghl-mcp` present in `openclaw mcp list`; the custom courier MCP also present and untouched
+- [ ] `ghl-community-mcp` (retired Tier 2) is **NOT** present in `openclaw mcp list`
+- [ ] `GHL_COMMUNITY_MCP_URL` is **absent** from `openclaw.json` `env.vars`
+- [ ] No required community repo tree. If a legacy tree exists at `~/mcp-servers/ghl-community-mcp` (Mac) or `/data/mcp-servers/ghl-community-mcp` (VPS) it is **archived** (path + digest recorded in the retirement receipt) and carries no unarchived secret-bearing `.env`. The historic pin `32628c979dd8f46e7952f85ce2d98f8028a26c32` is a rollback reference, not an install target.
+- [ ] No retired lifecycle service loaded or enabled: launchd `com.clawd.ghl-mcp` is **not loaded and is disabled** (a `RunAtLoad=true` job that is merely stopped will reappear at login); pm2 has no `ghl-community-mcp`; `ghl-mcp.service` is not enabled
+- [ ] No listener on `127.0.0.1:8765`
+- [ ] Probe job (`com.clawd.ghl-mcp-probe` / `*/15` cron) removed or retirement-aware — it must not kickstart the retired service
 - [ ] This document copied to `$MASTER_FILES_DIR/36-ghl-mcp-setup/`
 
 ## 3. Dependency Checks
@@ -23,10 +24,10 @@ Verifies that the 6-tier GHL access chain is fully installed and routing correct
 - [ ] Skill 02 (Back Yourself Up Protocol) installed
 - [ ] Skill 05 (GHL Setup) installed AND credential path migrated to canonical (`~/.openclaw/secrets/.env` not `~/clawd/secrets/.env`)
 - [ ] Skill 29 (GHL Convert and Flow) installed with `references/` subfolder populated
-- [ ] Node.js ≥ 20 available (`node --version`)
+- [ ] Node.js ≥ 20 **only if** a retained surface declares it. It is not required by the required end state — it was required by the retired community MCP.
 - [ ] curl and python3 available
-- [ ] `lsof` available (used for port collision check)
-- [ ] An active GoHighLevel/Convert and Flow account with PIT that has all required scopes
+- [ ] `lsof` available (used for the retirement no-listener check)
+- [ ] An active GoHighLevel/Convert and Flow account with a PIT for REST (Tier 0/3) and an OAuth grant for the official MCP (Tier 1) — separate credential classes
 
 ## 4. Key Detection
 
@@ -37,7 +38,7 @@ The agent MUST find the canonical credentials by searching in this order:
 - [ ] `printenv | grep -iE "GHL|GOHIGH"`
 - [ ] `~/.env`
 - [ ] Repo-level env files in workspace
-- [ ] Existing MCP server repo `.env`
+- [ ] Archived retired-community repo `.env` — evidence only; read key names, never values
 
 QC fails if:
 - The installer asks for credentials WITHOUT first searching all locations above
@@ -48,18 +49,33 @@ QC fails if:
 
 ### Tier 1 — Official MCP
 
-- [ ] `openclaw mcp show ghl-mcp` returns the streamable-http config with PIT + locationId headers
-- [ ] `tools/list` call returns >= 36 tools
-- [ ] `locations_get-location` call returns real location data (name, address, email, phone)
-- [ ] Agent recognizes Tier 1 is **stateless** (no `Mcp-Session-Id` header issued)
+- [ ] The connection is registered for the client this box actually runs. The documented endpoints are `https://services.leadconnectorhq.com/mcp/anthropic/v2` (Claude) and `https://services.leadconnectorhq.com/mcp/openai/v2/` (ChatGPT/Codex); auth is **OAuth**
+- [ ] `openclaw mcp show ghl-mcp` returns the gateway registration. A PIT bearer + `locationId`/`Version` header on the transitional `/mcp/` endpoint is recorded as a **transitional compatibility registration**, not as the documented auth path
+- [ ] The four documented tool names are recorded: `list_locations`, `search_operations`, `describe_operation`, `execute_operation`
+- [ ] A `tools/list` capture exists for this box (level-4 evidence). **No tool count is asserted** — a count is not an interface and is never parity proof
+- [ ] A real read succeeds (e.g. `list_locations`) and is recorded
+- [ ] The agent does not claim a Claude model routed through the OpenClaw gateway proves a Claude MCP client
 
-### Tier 2 — Community MCP
+### Four evidence levels for MCP — do not collapse them
 
-- [ ] `ghl-community-mcp` is **NOT** registered (Tier 2 is on-demand); `curl $GHL_COMMUNITY_MCP_URL/tools` returns the live tool surface instead
-- [ ] `curl $GHL_COMMUNITY_MCP_URL/health` returns `{"status":"healthy","tools":NNN}` where NNN >= 500
-- [ ] `curl $GHL_COMMUNITY_MCP_URL/tools` returns a tools array with at least 500 entries
-- [ ] `POST $GHL_COMMUNITY_MCP_URL/execute` with `{"name":"ghl_list_products","arguments":{"limit":1}}` returns real product data
-- [ ] If the port appears wrong, hitting it returns NOT Cognee's response (which is `{"status":"ready","version":"0.5.3-local"}`)
+| Level | What it means | Can this repo assert it? |
+|---|---|---|
+| **1. Documented endpoint** | Vendor docs publish the URL for a named client | **Yes** |
+| **2. Documented catalog** | Vendor docs publish exactly four tool names | **Yes** — names only |
+| **3. Account / tenant grant** | This account actually authorizes the connection and scopes | **No** — needs an authorized OAuth connect |
+| **4. Actually observed on this box** | `tools/list` plus one real call, captured here | **No** — needs this box's receipt |
+
+### Tier 2 — RETIRED Community MCP (verify OFF)
+
+There is no healthy community MCP. The pass condition is **absence**:
+
+- [ ] `ghl-community-mcp` is **NOT** registered (`openclaw mcp list`)
+- [ ] No legacy install is being treated as healthy: no `dist/main.js` is being executed, no launchd/pm2/systemd unit is loaded or enabled, and no probe restarts it
+- [ ] No listener on `127.0.0.1:8765`
+- [ ] `GHL_COMMUNITY_MCP_URL` is absent
+- [ ] Any archived tree uses the vetted pin `32628c979dd8f46e7952f85ce2d98f8028a26c32` and profile `curated` (43 crm tools, smoke `crm_list_workspaces`) **as a rollback reference only**
+- [ ] No one "repairs" the retirement by rebuilding because a count looks low (the old 588 / 858 / 500 figures describe other profiles or history)
+- [ ] If 8765 is occupied, the owner is identified and it is not killed on sight — the retired service is removed by its own unit/registration, not by killing whatever holds a port
 
 ### Core files
 
@@ -72,11 +88,12 @@ QC fails if:
 
 ### Behavior
 
-- [ ] Test prompt #1: "What's my business name and main phone?" — reply opens with `[GHL tier used: 1 — locations_get-location]`
-- [ ] Test prompt #2: "How many products do I have in my store?" — reply opens with `[GHL tier used: 2 — ghl_list_products]` and answer matches real product count
-- [ ] Test prompt #3: "How many recurring subscriptions are running?" — reply opens with `[GHL tier used: 2 — list_invoice_schedules]`
-- [ ] Test prompt #4 (trap): "Show me my last 5 payment transactions." — reply opens with `[GHL tier used: 2 — list_transactions]` (NOT Tier 1's read-only payments)
-- [ ] Test prompt #5 (fall-through): "Pull my webhook delivery log for the last 24 hours." — if neither MCP has it, reply shows chain: `[GHL tier used: 3 (Tier 1+2 lacked tool) — raw API GET /hooks/...]`
+- [ ] Test prompt #1: "What's my business name and main phone?" — reply opens with `[GHL tier used: 1 — list_locations]` (or the recorded operation name for this connection)
+- [ ] Test prompt #2: "How many products do I have in my store?" — reply opens with Tier 0 or Tier 3, e.g. `[GHL tier used: 0 — convertandflow products list]` / `[GHL tier used: 3 — raw API GET /products/]`, and matches the real product count
+- [ ] Test prompt #3: "How many recurring subscriptions are running?" — reply opens with `[GHL tier used: 3 — raw API GET /payments/subscriptions]`
+- [ ] Test prompt #4 (trap): "Show me my last 5 payment transactions." — reply opens with `[GHL tier used: 3 — raw API GET /payments/transactions]`, not a Tier 2 tool
+- [ ] Test prompt #5 (fall-through): "Pull my webhook delivery log for the last 24 hours." — reply shows the chain from Tier 1 to Tier 3: `[GHL tier used: 3 (Tier 1 lacked operation) — raw API GET /hooks/...]`
+- [ ] No test produces a Tier 2 disclosure — that tier no longer exists
 
 ### Security
 
@@ -104,8 +121,8 @@ Exit code 0 = setup complete. Any non-zero exit = fix the failed items and re-ru
 The script:
 - Uses canonical Mac paths (`~/.openclaw/...`, `~/Downloads/...`)
 - Reads `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID` from `~/.openclaw/secrets/.env` (canonical) or `~/clawd/secrets/.env` (legacy)
-- Probes Tier 1 (official MCP) for >= 36 tools
-- Probes Tier 2 (community MCP) on `$GHL_COMMUNITY_MCP_URL` for the full tool count (range: >= 500), and confirms it is supervised (launchd Mac / pm2 VPS, systemd fallback) and NOT registered in `mcp.servers`
+- Probes Tier 1 (official MCP) for reachability and records the tool names. **Do not assert a tool count** — the documented catalog is four tools and a count is not parity
+- Verifies Tier 2 retirement: `ghl-community-mcp` absent from `mcp.servers`, no loaded/enabled unit (launchd / pm2 / systemd), no listener on `127.0.0.1:8765`, `GHL_COMMUNITY_MCP_URL` absent. **The script's legacy ">= 500 tools / supervised" assertions are superseded by W07's retirement update; a failure on those lines is the known-stale set and must never be fixed by reinstalling the service**
 - Probes Tier 3 (direct REST) and reads `X-RateLimit-Daily-Remaining` — if low, surfaces reset clock time
 - Asserts AGENTS.md / TOOLS.md / MEMORY.md contain the canonical state block + disclosure-header protocol, and that SOUL.md does NOT carry the legacy protocol (relocated to AGENTS.md in v1.1.0)
 - Verifies secrets file is chmod 600 and the PIT never appears in any tracked .md file
@@ -116,9 +133,9 @@ Score this skill from **0 to 10** after running the checks above.
 
 Rubric:
 - **10/10:** Bundled qc-ghl-mcp-setup.sh exits 0 with zero warnings; all 5 test prompts pass with correct disclosure headers.
-- **8-9/10:** QC exits 0 but with warnings (e.g., tool count slightly below 588, skill 29 not yet installed). Behavior correct.
+- **8-9/10:** QC exits 0 but with warnings (e.g., skill 29 not yet installed, retirement receipt not yet filed). Behavior correct.
 - **6-7/10:** Setup works but one or two non-critical items need cleanup (e.g., missing cross-reference in skill 05/29, README not updated, disclosure header missing on 1-2 test prompts).
-- **0-5/10:** Tier 2 not running, credentials misplaced, MCPs not registered, core .md files not wired, or test prompts producing wrong tier.
+- **0-5/10:** Community MCP still installed or running, credentials misplaced, official connection not registered, core .md files not wired, or test prompts producing wrong tier.
 
 Record:
 - **QC Score:** ____ / 10

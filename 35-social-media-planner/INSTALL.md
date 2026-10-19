@@ -31,7 +31,7 @@ If you have not read the contract, STOP and read it now.
 | **22 — Book-to-Persona** | Content uses persona governance (5-layer alignment). Without it, content defaults to soul.md tone only. |
 | **31 — Upgraded Memory System** | Weekly content logs go into memory-core. Without it, logs land in MEMORY.md directly. |
 | **07 KIE Setup, 66 KIE Image, 67 KIE Video, 74 KIE Live Adapter** | Image and video generation. Images are GPT Image 2.5 Sunburst through Skill 66 policy; every paid job runs the Skill 74 chain (playbook.md Section 8c); video models are picked by Skill 67. The client's own `KIE_API_KEY` is required; shared rules are in `07-kie-setup/references/kie-common-rules.md`. |
-| **36 — GHL MCP Setup** | **STRONGLY RECOMMENDED.** When installed, ALL GHL operations in this skill route through MCPs first (Tier 1 → Tier 2 → fall to raw API as last resort). Without skill 36, this skill falls back to direct GHL Social Planner API. |
+| **36 — GHL MCP Setup** | **STRONGLY RECOMMENDED.** When installed, ALL GHL operations in this skill route through MCPs first (Tier 0 `caf` → Tier 1 official MCP → raw API as last resort). Without skill 36, this skill falls back to direct GHL Social Planner API. (The community MCP Tier 2 is RETIRED and is not a rung.) |
 | **30 — Fish Audio API Reference** | OPTIONAL. Required only if the client wants podcast episodes. If absent, podcast production is skipped and other content continues. |
 
 **Auto-check the prerequisites:**
@@ -238,38 +238,51 @@ fi
 ```
 
 The production playbook follows the 6-tier chain (skill 36), highest applicable tier first:
-- **Social posting:** Tier 0 `caf social create-post` (if Skill 44 installed) → Tier 1 `social-media-posting_create-post` → Tier 2 `create_social_post` → direct API as last resort
-- **Blog publish:** Tier 1 `blogs_create-blog-post` → Tier 2 `create_blog_post` → direct API
-- **Media upload:** Tier 0/Tier 1 not available (no caf/official-MCP media command) → Tier 2 `upload_media_file` → direct API (`POST /medias/upload-file` — documented Tier 3 exception)
-- **Email templates:** Tier 1 `emails_create-template` → Tier 2 `create_email_template` → direct API
+- **Social posting:** Tier 0 `caf social create-post` (if Skill 44 installed) → Tier 1 `social-media-posting_create-post` → direct API as last resort
+- **Blog publish:** Tier 1 `blogs_create-blog-post` → direct API
+- **Media upload:** Tier 0/Tier 1 not available (no caf/official-MCP media command) → direct API (`POST /medias/upload-file` — documented Tier 3 exception)
+- **Email templates:** Tier 1 `emails_create-template` → direct API
+
+> **Tier 2 (community MCP) is RETIRED and is not a rung.** `create_social_post`,
+> `create_blog_post`, `upload_media_file`, `create_email_template` and the rest of
+> the community-MCP tool set belong to a retired transport (GU-009/GU-010). Skip
+> straight from Tier 1 to the raw REST call; never re-add Tier 2 as a fallback.
 
 Every GHL-data response from this skill MUST include the `[GHL tier used: N — tool_name]` disclosure header (Skill 36 protocol).
 
-### Step 5: Verify GHL access — test ONE platform connection
+### Step 5: Verify GHL access — test the connected-account list
 
-Pick Facebook as the smoke test. Use whichever tier matches `ROUTING_MODE`.
+Smoke test the location's Social Planner accounts with the one documented public
+read (the same call `qc-skill35.sh` Section C scores and `scripts/run-publishing-cycle.sh`
+uses for its live preflight):
 
-**MCP-first (Skill 36 installed):**
-```bash
-# Community MCP speaks JSON-RPC (tools/call); the account tool is get_social_accounts.
-# Confirm the exact tool name + endpoint path against your installed community MCP manifest.
-curl -sS -X POST "$GHL_COMMUNITY_MCP_URL" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' \
-  | python3 -m json.tool | head -20
-```
-
-**Direct API (Skill 36 NOT installed):**
 ```bash
 . "$SECRETS_ENV"
-curl -sS \
+# OP-SM-01 accounts.list
+#   GET https://services.leadconnectorhq.com/social-media-posting/{locationId}/accounts
+#   Authorization: Bearer <LOCATION PIT>   Version: 2021-07-28
+#   envelope: {"success":true,"results":{"accounts":[...]}}
+curl -sS -m 10 \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
-  "https://services.leadconnectorhq.com/social-media-posting/oauth/$GOHIGHLEVEL_LOCATION_ID/facebook/accounts" \
+  "https://services.leadconnectorhq.com/social-media-posting/$GOHIGHLEVEL_LOCATION_ID/accounts" \
   | python3 -m json.tool | head -20
 ```
 
-Expected: JSON with at least one connected account. If you get 403, the PIT is missing a scope — go back to Step 3 and have the client add it.
+Tier 0 equivalent when Skill 44 is installed: `caf --json social accounts` (same
+endpoint, same envelope).
+
+> **RETIRED — the community GHL MCP is NOT a route.** The old MCP-first smoke test
+> (`curl "$GHL_COMMUNITY_MCP_URL"` JSON-RPC `tools/call` `get_social_accounts`) is
+> gone: that transport was retired (GU-009/GU-010) and must not be re-added as a
+> fallback. The per-platform `.../social-media-posting/oauth/{locationId}/{platform}/accounts`
+> variant is a get-ONE call that needs an `{accountId}` you do not have, so it is
+> not the smoke test either.
+
+Expected: `results.accounts` listing at least one connected account (one call
+returns every connected platform — no per-platform loop). If you get 403, the PIT
+is missing a scope — go back to Step 3 and have the client add it. A 200 with an
+empty list is not a failure; report it as "nothing connected yet".
 
 ### Step 6: Verify FFmpeg + ImageMagick
 

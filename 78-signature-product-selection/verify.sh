@@ -20,6 +20,18 @@ done
 front_ver="$("$PY" -c "import re,pathlib; t=pathlib.Path('$ROOT/SKILL.md').read_text(); print(re.search(r'^version:\s*(\S+)', t, re.M).group(1))")"
 file_ver="$(tr -d '[:space:]' < "$ROOT/skill-version.txt")"
 if [ "$front_ver" = "$file_ver" ]; then printf '  [PASS] version lockstep %s\n' "$front_ver"; else printf '  [FAIL] version drift %s != %s\n' "$front_ver" "$file_ver"; fails=$((fails+1)); fi
+run "runtime descriptor claims no installation" "$PY" - "$ROOT" <<'PYEOF'
+import json, sys
+from pathlib import Path
+m = json.loads((Path(sys.argv[1]) / "runtime-manifest.json").read_text())
+assert m.get("descriptor_only") is True, m
+assert m.get("proof_level") == "descriptor_only", m
+inst = m.get("installation") or {}
+assert inst.get("state") == "not_installed", inst
+assert inst.get("proof_class") is None and inst.get("installation_evidence") is None, inst
+assert m.get("status") == "build checkpoint, not installed", m.get("status")
+print("descriptor != installation")
+PYEOF
 run "build_selection_plan.py --self-test" "$PY" "$ROOT/scripts/build_selection_plan.py" --self-test
 run "validate_selection_content.py --self-test" "$PY" "$ROOT/scripts/validate_selection_content.py" --self-test
 run "validate_selection_binding.py --self-test" "$PY" "$ROOT/scripts/validate_selection_binding.py" --self-test
