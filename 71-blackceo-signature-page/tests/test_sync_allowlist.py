@@ -45,6 +45,10 @@ def test_onb_only_globs_match_the_real_tree_file():
     globs = CLASSES["onb_only"]["globs"]
     real = [str(p.relative_to(ROOT)) for p in ROOT.rglob("two_strike_adapter.py")
             if p.is_file() and "__pycache__" not in p.parts]
+    if not real and ROOT.parents[1].name == ".claude":
+        # 999 edition: onb_only means the file must be ABSENT here (the
+        # parity checker fails if it is present), so the absence is the pass.
+        return
     assert real, "no two_strike_adapter.py found in the skill tree"
     for rel in real:
         assert classify(rel, CLASSES) == "onb_only", \
