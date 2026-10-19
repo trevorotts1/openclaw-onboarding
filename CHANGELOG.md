@@ -1,3 +1,5 @@
+## [v27.1.42]  -  2026-10-19  -  Council (Skill 77) v1.0.26: live council with a client-chosen model per run, a service driver that actually deliberates a convened session, convening as approval, operator-approved measured budgets, and Book-to-Persona elders with labelled web research
+
 ## [v27.1.41]  -  2026-10-19  -  Council (Skill 77) v1.0.25: first-status pre-warm, upstreamed service launcher, installed-binary skill root, and live chamber view over real sessions
 
 ## [v27.1.36]  -  2026-10-18  -  Register four supplied Oprah and Les Skill22 book personas and integrate their traceable Council evidence; preserve separate teaching gaps.

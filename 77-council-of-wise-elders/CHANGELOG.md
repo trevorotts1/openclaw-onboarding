@@ -1,5 +1,19 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.26: live council (client-chosen model, service driver, Book-to-Persona elders)
+
+Eight Opus-QC-passed patches, integrated once on top of v1.0.25 (W28-U001). In plain English: the client now picks the model for each council run, a convened session is actually deliberated end to end, and the elders speak from the client's own Book-to-Persona material with clearly labelled web research for current facts.
+
+- **Client picks the model per run** (`patch/W28-route-choice`): the model route is resolved per session and passed to the harness as `--model`. With no choice the running harness decides: the claude-nine configured default on claude-nine, Sonnet on Claude Code direct, and the latest DeepSeek Flash on DeepSeek direct (resolved from the provider's model list at run time, today the alias `deepseek-flash`). QC verdict: PASS.
+- **Measured token budgets the operator approves** (`patch/W28-route-budget`): `config/route-budgets.json` ships proposed, unmeasured entries; `measure-route-bytes-per-token.mjs` measures a route and `approve-route-budget.mjs` records a hash-bound approval in the service data directory. A route with no measurement or no approval has no budget, so nothing is live until Trevor approves the numbers. QC verdict: PASS.
+- **Find the client's Book-to-Persona store** (`patch/W28-persona-root-inventory`): resolves the client's own persona store and adds a read-only live inventory (`inventory-live-personas.mjs`) that reports unreadable stores and never prints absolute paths. QC verdict: PASS.
+- **Elder knowledge in three layers** (`patch/W28-elder-knowledge`): the live Book-to-Persona persona from the client's own store first; the shipped 2026-10-14 briefs as the per-elder fallback; and web research for current facts, stored apart from the books and shown under its own "From the web today" heading in the briefing and in the report. QC verdict: PASS.
+- **A convened session is really deliberated** (`patch/W28-convening-driver`): the service driver takes a session through the rounds, runs the workers, and writes `council_events` for the live SSE stream. Convening is the approval: there is no blocking spend gate, and every run is still audited. QC verdict: PASS.
+- **Service wiring** (`patch/W28-service-wiring`): binds the per-session route, the approval-gated budget, elder knowledge and the driver into the service. Adds `GET /api/council/routes` and `POST /api/council/convene` behind the same fence as admissions, and removes the service-wide ROUTE_SELECTION_AMBIGUOUS failure (readiness is ready when one route can be composed). It keeps the W27 `GET /api/council/sessions` list route beside the new routes. QC verdict: PASS.
+- **CLI and agent instructions** (`patch/W28-cli-convene-and-skill-docs`): `blackceo-council routes` and `blackceo-council convene --brief FILE|--sample` with `--route`, `--model`, `--harness` and `--fresh-facts FILE`, and SKILL.md rewritten so the agent asks which model to use, researches current facts with labelled sources, and tells the client which model is running. QC verdict: PASS.
+- **Landing page notices tell the truth** (`patch/W27-landing-notices`): `/status` no longer shows "event stream not bound" and the unbound-route wording when the composition has bound them; the notices follow the real binding. This is the fix the live service already ran uncommitted. QC verdict: PASS.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.42).
+
 ## v1.0.25: W27 hardening batch (status cold path, launcher, skill root, live chamber)
 
 Four Opus-QC-passed patches, integrated once (W27-U001):
