@@ -96,8 +96,10 @@ def good_wireframe_run(td):
             annotated_section("offer", 2, "Offer", "IMG-002", "4:5",
                               "Product still life on cream")]
     write(run / "desktop-wireframe" / "section-plan.json", json.dumps(plan))
-    make_png(run / "desktop-wireframe" / "section-01.png", 1440, 300, NAVY)
-    make_png(run / "desktop-wireframe" / "section-02.png", 1440, 300, GOLD)
+    # Heights sum to 17,000px, above the 16,736px desktop page floor: the
+    # compliant fixture is a real long-scroll page.
+    make_png(run / "desktop-wireframe" / "section-01.png", 1440, 9000, NAVY)
+    make_png(run / "desktop-wireframe" / "section-02.png", 1440, 8000, GOLD)
     write(run / "desktop-wireframe" / "wireframe-full.png", "stub")
     write(run / "desktop-wireframe" / "wireframe.pdf", "stub")
     return run, plan
