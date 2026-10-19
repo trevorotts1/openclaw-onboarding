@@ -5,6 +5,11 @@ to satisfy `G3 — skill content change requires skill-version.txt bump`.
 Markers only; no code change.
 
 - skill-version.txt, SKILL.md frontmatter and this CHANGELOG agree on v2.1.19.
+## [v2.1.20] - 2026-10-19 - capability-gate breadth suite
+
+- adds tests/test_capability_breadth.py exercising the capability gate across 140 operations
+- rebased onto main; previously cut from the v2.1.16 tree, no behavior changes
+- skill-version lockstep v2.1.18 -> v2.1.20
 
 ## [v2.1.18] - 2026-10-19 - safe dotenv loader
 
