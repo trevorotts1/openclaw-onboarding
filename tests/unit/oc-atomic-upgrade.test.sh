@@ -846,27 +846,27 @@ esac
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "--- (11) CAN010: a leftover literal-named temp file must not break the upgrade ---"
+echo "--- (12) CAN010: a leftover literal-named temp file must not break the upgrade ---"
 # BSD/macOS mktemp only randomizes TRAILING X's. A template like
 # oc-schema.XXXXXX.json is therefore used LITERALLY: once that file exists
 # (leftover from any earlier or parallel run) mktemp fails and the upgrade
 # rolls back. Pre-create every literal name the old and new templates could
 # produce, in a private TMPDIR, then require the upgrade to still succeed.
-H11="$(make_box b11 legacy)"; S11="$SANDBOX/stubs11"; ST11="$SANDBOX/state11"
-make_stubs "$S11" "$ST11" versioned
-T11="$SANDBOX/tmp11"; mkdir -p "$T11"
-: > "$T11/oc-schema.XXXXXX.json"; : > "$T11/oc-schema.XXXXXX"
-OUT11="$( export TMPDIR="$T11"; run_atomic "$H11" "$S11" "$ST11" )"; RC11=$?
-if [ "$RC11" -eq 0 ] && [ "$(cfg_shape "$H11/.openclaw/openclaw.json")" = "ENTRIES:3" ]; then
-  pass "11a: upgrade + migration succeeded with the literal-named temp files already present"
+H12="$(make_box b12 legacy)"; S12="$SANDBOX/stubs12"; ST12="$SANDBOX/state12"
+make_stubs "$S12" "$ST12" versioned
+T12="$SANDBOX/tmp12"; mkdir -p "$T12"
+: > "$T12/oc-schema.XXXXXX.json"; : > "$T12/oc-schema.XXXXXX"
+OUT12="$( export TMPDIR="$T12"; run_atomic "$H12" "$S12" "$ST12" )"; RC12=$?
+if [ "$RC12" -eq 0 ] && [ "$(cfg_shape "$H12/.openclaw/openclaw.json")" = "ENTRIES:3" ]; then
+  pass "12a: upgrade + migration succeeded with the literal-named temp files already present"
 else
-  fail "11a: upgrade FAILED with a colliding leftover temp file (rc=$RC11). Output: $OUT11"
+  fail "12a: upgrade FAILED with a colliding leftover temp file (rc=$RC12). Output: $OUT12"
 fi
-LEFT11="$(ls -A "$T11" | grep -vxE 'oc-schema\.XXXXXX(\.json)?' || true)"
-if [ -z "$LEFT11" ]; then
-  pass "11b: the upgrade removed every temp file it created"
+LEFT12="$(ls -A "$T12" | grep -vxE 'oc-schema\.XXXXXX(\.json)?' || true)"
+if [ -z "$LEFT12" ]; then
+  pass "12b: the upgrade removed every temp file it created"
 else
-  fail "11b: the upgrade leaked temp file(s): $LEFT11"
+  fail "12b: the upgrade leaked temp file(s): $LEFT12"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
