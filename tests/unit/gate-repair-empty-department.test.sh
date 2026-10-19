@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/gate-repair-empty-department.test.sh — CAN004 regression lock.
 # repair-directors-doctrine.py deliberately skips a role-less department
-# (skipped_empty) but library-gate-check.sh counted it as "no director", so
+# (skipped_empty, until CAN007 scaffolded a director for it) but library-gate-check.sh counted it as "no director", so
 # repair-then-gate failed on every run (live: branding-dept, daily-briefing-dept)
 # and the content update rolled back. Gate and repair must agree: a department
 # with no role folders only WARNs. Scratch tree only; never the live ~/.openclaw.
@@ -11,6 +11,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPAIR="$REPO_ROOT/23-ai-workforce-blueprint/scripts/repair/repair-directors-doctrine.py"
 T="$(mktemp -d "${TMPDIR:-/tmp}/gate-repair-empty-XXXXXX")"
 trap 'rm -rf "$T"' EXIT
+export OPENCLAW_PLATFORM=mac   # hermetic: the repair refuses to run on a runner with no ~/.openclaw (fails identically on main without this)
 fail=0; ok() { echo "  ok   $1"; }; bad() { echo "  FAIL $1"; fail=1; }
 
 # gate runs as a copy beside a stub general-task check (the real sibling is a different change)
@@ -23,13 +24,17 @@ python3 -c 'print("# Role\n" + "Real authored guidance for this role, step by st
 echo "x" > "$D/branding-dept/AGENTS.md"; echo "x" > "$D/branding-dept/IDENTITY.md"
 echo '{"company":"Fixture Co","yearlyRevenueGoal":1000000}' > "$T/ws/company-config.json"
 
+# gate BEFORE repair: a role-less department is warned about, not hidden (CAN004)
+pre="$(bash "$T/gate/library-gate-check.sh" --workspace "$T/ws" --departments-dir "$D" --company-config "$T/ws/company-config.json" 2>&1)"
+case "$pre" in *'empty-departments: WARN'*) ok "empty department is warned, not hidden";; *) bad "no empty-departments warning";; esac
+
 rep="$(python3 "$REPAIR" --departments-dir "$D" --workspace-dir "$T/ws" --json 2>/dev/null)"
-case "$rep" in *'"branding-dept"'*) ok "repair skips the role-less department";; *) bad "repair did not report skipped_empty: $rep";; esac
+# CAN007: repair now scaffolds a director for the role-less stub, so gate and repair still agree
+[ -d "$D/branding-dept/00-director-of-branding-dept" ] || ls -d "$D"/branding-dept/00-director-of-* >/dev/null 2>&1 && ok "repair scaffolds a director for the role-less department (CAN007)" || bad "no director for role-less department: $rep"
 [ -d "$D/sales/00-director-of-sales" ] && ok "repair scaffolds a director where roles exist" || bad "no director created for sales"
 
 out="$(bash "$T/gate/library-gate-check.sh" --workspace "$T/ws" --departments-dir "$D" --company-config "$T/ws/company-config.json" 2>&1)"; rc=$?
 [ "$rc" = 0 ] && ok "repair-then-gate passes (rc=0)" || { bad "gate rc=$rc"; printf '%s\n' "$out" | sed 's/^/      /'; }
-case "$out" in *'empty-departments: WARN'*branding*|*'empty-departments: WARN'*) ok "empty department is warned, not hidden";; *) bad "no empty-departments warning";; esac
 
 # control: a department WITH roles and no director must still fail the gate
 mkdir -p "$T/ws2/departments/ops/01-specialist"; cp "$D/sales/01-specialist/how-to.md" "$T/ws2/departments/ops/01-specialist/"
