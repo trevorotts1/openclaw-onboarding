@@ -1,3 +1,11 @@
+## [v2.1.19] - 2026-10-19 - version bump above main-carried v2.1.18
+
+GHL-177. Main now carries v2.1.18, so this branch re-bumps one patch above it
+to satisfy `G3 — skill content change requires skill-version.txt bump`.
+Markers only; no code change.
+
+- skill-version.txt, SKILL.md frontmatter and this CHANGELOG agree on v2.1.19.
+
 ## [v2.1.18] - 2026-10-19 - safe dotenv loader
 
 - caf wrapper parses dotenv data instead of executing it with `source`
