@@ -648,6 +648,17 @@ export class DurableJobRunner {
     let session = this.sessionOrThrow(envelope, sessionId);
     if (!RUNNABLE_STATES.has(session.state.state)) return null;
     const candidates = this.listSessionJobs(envelope, sessionId);
+    // One live lease per session: every claim raises the session fencing
+    // generation, so claiming while an operation is in flight would fence
+    // that operation's settle and lose its paid response. Wait for the
+    // live lease to end or expire (T051).
+    const now = this.nowMs();
+    const live = candidates.some(
+      (c) =>
+        (c.state === 'leased' || c.state === 'running') &&
+        (c.lease_expires_at === null || Date.parse(c.lease_expires_at) > now),
+    );
+    if (live) return null;
     for (const candidate of candidates) {
       if (candidate.state === 'leased' || candidate.state === 'running') {
         if (

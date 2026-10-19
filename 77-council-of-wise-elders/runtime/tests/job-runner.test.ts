@@ -1274,3 +1274,89 @@ test('capacity: a full runtime defers the job unspent; a later cycle runs it', a
   jobs = runner.listSessionJobs(worker, setup.session.spec.session_id);
   assert.equal(jobs[0].state, 'succeeded');
 });
+
+test('W30: one live lease per session: a second claim waits, so the in-flight settle is never fenced', async () => {
+  const setup = setupRunningSession('w30-single');
+  const { ctx, worker } = setup;
+  const executor = new FakeExecutor();
+  const runner = makeRunner(ctx, executor);
+  const sessionId = setup.session.spec.session_id;
+  const [seatA, seatB] = setup.session.spec.seat_ids;
+  enqueueSeatOperation(runner, setup, seatA, 'w30-1');
+  enqueueSeatOperation(runner, setup, seatB, 'w30-2');
+
+  const claimA = runner.claimNextOperation(worker, sessionId, 'worker-a');
+  assert.ok(claimA);
+  // Different worker or the same one: neither may claim the second job
+  // while the first holds a live lease (the claim would raise the
+  // session epoch and fence the first settle).
+  assert.equal(runner.claimNextOperation(worker, sessionId, 'worker-b'), null);
+  assert.equal(runner.claimNextOperation(worker, sessionId, 'worker-a'), null);
+  const outcomeA = await runner.executeClaimedOperation(worker, claimA);
+  assert.equal(outcomeA.status, 'committed');
+
+  const claimB = runner.claimNextOperation(worker, sessionId, 'worker-b');
+  assert.ok(claimB, 'the second job is claimable once the first lease ended');
+  assert.equal((await runner.executeClaimedOperation(worker, claimB)).status, 'committed');
+  assert.deepEqual(
+    runner.listSessionJobs(worker, sessionId).map((j) => j.state),
+    ['succeeded', 'succeeded'],
+  );
+});
+
+test('W30: the supervisor recovers an expired lease every cycle, no restart needed', async () => {
+  const setup = setupRunningSession('w30-recover');
+  const { ctx, worker } = setup;
+  const executor = new FakeExecutor();
+  const timers = new ManualTimers();
+  const runner = makeRunner(ctx, executor, { timers });
+  const sessionId = setup.session.spec.session_id;
+  const handle = startCouncilWorkers({
+    runner,
+    scopes: [{ envelope: worker, worker_id: 'worker-1' }],
+    supervisor_id: 'cwe027-w30-recover',
+    timers,
+  });
+  try {
+    enqueueSeatOperation(runner, setup, setup.session.spec.seat_ids[0], 'w30-r1');
+    // The same worker claims and then dies: a stranded leased job that a
+    // claim never reclaims from its own worker id.
+    assert.ok(runner.claimNextOperation(worker, sessionId, 'worker-1'));
+    advanceClock(61_000);
+    wakeCouncilWorkers(handle);
+    await handle.stop();
+    assert.equal(executor.dispatches, 1);
+    assert.deepEqual(
+      runner.listSessionJobs(worker, sessionId).map((j) => j.state),
+      ['succeeded'],
+    );
+  } finally {
+    await stopCouncilWorkers(handle);
+  }
+});
+
+test('W30: a worker failure reaches on_error with its session, never swallowed', async () => {
+  const setup = setupRunningSession('w30-onerror');
+  const { worker } = setup;
+  const seen: Array<{ message: string; session_id?: string }> = [];
+  const boom = new Error('claim exploded');
+  const fakeRunner = {
+    reconcileScope: () => undefined,
+    listSessions: () => [setup.session],
+    claimNextOperation: () => {
+      throw boom;
+    },
+  } as unknown as DurableJobRunner;
+  const handle = startCouncilWorkers({
+    runner: fakeRunner,
+    scopes: [{ envelope: worker, worker_id: 'worker-1' }],
+    supervisor_id: 'cwe027-w30-onerror',
+    timers: new ManualTimers(),
+    on_error: (error, context) =>
+      seen.push({ message: (error as Error).message, session_id: context?.session_id }),
+  });
+  await stopCouncilWorkers(handle);
+  assert.deepEqual(seen, [
+    { message: 'claim exploded', session_id: setup.session.spec.session_id },
+  ]);
+});
