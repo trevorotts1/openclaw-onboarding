@@ -65,6 +65,8 @@ MODULES = [
     "test_provider_gate_a23.py",
     # SPF022: reference images are structure only (prompt block + bleed QC).
     "test_reference_use.py",
+    # SPF020: page color system + image grade blocks and the page-level pixel check.
+    "test_hypersaturation.py",
 ]
 
 def skip_reason(stdout):

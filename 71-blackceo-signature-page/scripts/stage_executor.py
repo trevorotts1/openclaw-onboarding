@@ -68,6 +68,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import reference_use  # noqa: E402  SPF022: reference images are structure only
 import brand_colors  # noqa: E402  SPF019: client brand colors gate
+import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -488,6 +489,10 @@ def load_request(run_dir: Path, name: str) -> dict:
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         raise ExecutorError("production request needs a non-empty 'sections' array")
+    data["_hypersat"] = hypersaturation.roles_for_run(run_dir)
+    if data["_hypersat"] is None:
+        print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
+              "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -575,13 +580,30 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
-    blocks = [b for b in (copy_block, color_block, ref_block, frame_block, neg_block) if b]
+    roles = request.get("_hypersat")
+    if stage in hypersaturation.MOCKUP_STAGES:
+        # Hypersaturation is built in, never optional: no palette, or prose that names another
+        # palette, refuses the prompt instead of sending it without (or against) the blocks.
+        if not roles:
+            raise ExecutorError(
+                f"{stage} section {index}: no resolved client palette, so the page color system and "
+                "image color grade cannot be built; resolve the client's brand colors first")
+        foreign = hypersaturation.foreign_hexes(body, roles)
+        if foreign:
+            raise ExecutorError(
+                f"{stage} section {index}: design prose names colors outside the client palette "
+                f"({', '.join(foreign)}); remove them or use the client's own hex values, the "
+                "PAGE COLOR SYSTEM block carries the palette")
+    page_color, image_grade = hypersaturation.stage_blocks(stage, index, section, roles)
+    blocks = [b for b in (copy_block, color_block, page_color, image_grade, ref_block,
+                          frame_block, neg_block) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
         "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
-                           + len(color_block)),
+                           + len(color_block) + len(page_color) + len(image_grade)),
+        "hypersaturation_chars": len(page_color) + len(image_grade),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
@@ -892,13 +914,25 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
+    roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
+    if not roles:
+        raise ExecutorError(f"item {item}: no resolved client palette, so the image color grade "
+                            "cannot be added; resolve the client's brand colors first")
+    foreign = hypersaturation.foreign_hexes(prompt, roles)
+    if foreign:
+        raise ExecutorError(f"item {item}: prompt names colors outside the client palette "
+                            f"({', '.join(foreign)}); remove them or use the client's own hex values")
+    graded = hypersaturation.item_prompt(prompt, roles)
     if ref_block:
-        prompt = f"{ref_block}\n\n{prompt}"
+        graded = f"{ref_block}\n\n{graded}"
+    if graded != prompt:
         cap = prompt_cap(request.get("model"))
-        if cap and len(prompt) > cap:
+        if cap and len(graded) > cap:
             raise ExecutorError(
-                f"item {item}: prompt with the reference contract is {len(prompt)} chars, "
-                f"over the {cap}-char model maximum; cut item prose, never the contract")
+                f"item {item}: prompt with the reference contract and image color grade is "
+                f"{len(graded)} chars, over the {cap}-char model maximum; cut item prose, "
+                "never the contract or the grade")
+        prompt = graded
     digits = "".join(ch for ch in item if ch.isdigit())
     if not digits:
         raise ExecutorError(f"item id {item!r} carries no number; cannot derive the delivered name")
@@ -997,6 +1031,10 @@ def main(argv=None) -> int:
                         for line in prompt.splitlines():
                             if line.startswith("BRAND COLORS"):
                                 print(f"PREFLIGHT_COLORS {stage} {name} {line}")
+                        if sizes.get("hypersaturation_chars"):
+                            print(f"PREFLIGHT_HYPERSAT {stage} {name} "
+                                  f"ground={hypersaturation.ground_for(index, section)} "
+                                  f"chars={sizes['hypersaturation_chars']}")
                         print(f"PREFLIGHT {stage} {name} ratio={ratio} "
                               f"chars={sizes['chars']} copy={sizes['copy_chars']} "
                               f"contract={sizes['contract_chars']} "

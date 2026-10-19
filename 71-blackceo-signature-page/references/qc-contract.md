@@ -191,7 +191,15 @@ fails review outright.
   client's resolved brand palette per W4/M2, never against these hexes):
   cream #f7f2e9, ivory #fffdf9, deep green #28513f,
   blush #f0dedb, rose #93504f, brick #bc5248; gold (#c49a45, #e2c98f) is an
-  accent only; neither tier uses the wireframe red family.
+  accent only; neither tier uses the wireframe red family. These are the
+  canon example set's own colors, a structure benchmark: a client's mockup
+  uses the client's colors under the page color system below.
+- Page color (hypersaturation): hero color as full-bleed grounds, hard dark
+  and light grounds, two-tone heavy headlines, photos graded to the hero
+  color (`references/hypersaturation-framework.md`, R1 to R9). Measured with
+  `scripts/validate_page_color.py` on the stitched page against thresholds
+  derived from the two reference pages; reviewer-judged for ground order,
+  divider bands and accent panels.
 - Type: a two-tone statement-turn headline (the one exception is an upright
   Title-Case red second line); serif body in the layered tier, sans body in
   the flat tier; tracked-uppercase eyebrows; script overlays and a

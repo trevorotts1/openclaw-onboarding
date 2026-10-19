@@ -57,6 +57,12 @@ alternate; photos are darkened black-and-white with thin red edge bars.
 `#ffffff` paper, `#e8e8e8` rule, `#242424` ink; 15 alternating content
 bands between the meta bar and the footer.
 
+**Mockup — client colors.** A mockup's colors are the client's resolved palette, applied through the
+page color system in `references/hypersaturation-framework.md`: `stage_executor.py` adds the PAGE COLOR
+SYSTEM and IMAGE COLOR GRADE blocks to every mockup prompt, and the IMAGE COLOR GRADE block to every
+image-slot prompt. The Tier H and Tier R hexes below are the canon example set's own colors, a
+structure and tonal-weight benchmark only; never put them in a client's prompt.
+
 **Mockup — Tier H (flat, sparse).** Cream `#f7f2e9`, ivory `#fffdf9`,
 green `#28513f`, blush `#f0dedb`, rose `#93504f`, brick `#bc5248` as the
 dominant shares; gold `#c49a45` and `#e2c98f` rules and caption accents
@@ -202,8 +208,9 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
    and art direction:
    {{slots}}
    Tier R: ~9 portraits per frame, consistent Black-professional casting,
-   hand-chin and upward-gaze poses, jewel and earth blazers, gold hoops,
-   golden-hour bokeh; layered, arched, or diagonal shapes that bleed.
+   hand-chin and upward-gaze poses, wardrobe, set and light graded toward
+   the client's hero color with hero-color rim light; layered, arched, or
+   diagonal shapes that bleed.
    Tier H: sparse square rectangles, photos only where planned; founder
    slot stays the planned portrait or supplied asset.
 
@@ -211,9 +218,11 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
    outcome label and the microcopy line directly under the button.
 
 8. STYLE INPUT — apply `visual-mockup/page-visual-bible.json`:
-   {{style_input}}. Palette for this slice: {{palette_tokens}} (Tier R or
-   Tier H tokens; never wireframe red). Hue-shifting full-width bands,
-   gold hairline rules, leaf or botanical texture only in Tier R.
+   {{style_input}}. Palette for this slice: {{palette_tokens}} (the client's
+   resolved colors per the PAGE COLOR SYSTEM block; never the example
+   set's hexes, never another client's colors). Hard-ground full-width
+   bands in the hero, dark and light colors, hero-color rules and bracket
+   frames.
 
 9. STYLE REFERENCE LINE — print verbatim in the prompt:
    Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text.

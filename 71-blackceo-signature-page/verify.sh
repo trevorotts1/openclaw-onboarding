@@ -82,6 +82,8 @@ for f in \
   references/runtime-adapters.md references/kie-generation-route.md agents/openai.yaml \
   scripts/swarm_runner.py scripts/browser_sessions.py scripts/ship_run_events.py \
   scripts/reference_use.py references/reference-image-use.md references/reference-library.json \
+  scripts/hypersaturation.py scripts/validate_page_color.py \
+  references/hypersaturation-framework.md references/page-color-thresholds.json \
   scripts/validate_copy_structure.py scripts/validate_install.py \
   scripts/validate_funnel_completion.py scripts/check_deliverables.py \
   references/run-events-schema.md references/run-events.schema.json \

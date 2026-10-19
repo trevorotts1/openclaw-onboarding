@@ -83,6 +83,35 @@ The assembly scripts `stitch_sections.py` and `build_hybrid_board.py` are
 unchanged by this wire: they were already content-height. No assembly-canvas
 fix is claimed here or in this change's history.
 
+## Color: hypersaturation, built in
+
+Trevor's order: the images are hypersaturated, always in the client's brand colors. The
+executor adds two blocks, both from `scripts/hypersaturation.py` and filled from the run's
+resolved client palette (never a default, never another client's colors):
+
+- `visual-mockup` and `final-mockups` prompts carry the **PAGE COLOR SYSTEM** block (this
+  section's ground, the hero, dark, light and accent slots, the rules) and the **IMAGE COLOR
+  GRADE** block. Both are counted in `contract_chars`; `hypersaturation_chars` reports their
+  size, and `--preflight` prints `PREFLIGHT_HYPERSAT` per prompt.
+- every image-inventory item prompt (`--item`) gets the **IMAGE COLOR GRADE** block unless it
+  already carries one, and is refused rather than trimmed if prompt plus block passes the model
+  maximum.
+
+Hypersaturation is never optional, and never against the client's palette. The executor
+**refuses** (`REFUSED` in `--preflight`, `FAIL` otherwise, exit 1) a `visual-mockup`,
+`final-mockups` or `--item` prompt when:
+
+- no client palette resolves. The fallback reads the brand file the way the stage gate does
+  (`private/brand.json`, else `intake.json` `brand_file`, else the skill's bundled file) and
+  requires the file's `brand_id` to match `intake.json` `brand_owner`; a missing, unreadable or
+  other-client file resolves nothing. Once `scripts/brand_colors.py` is on main it is the resolver.
+- the design prose (the request's `stage_prompts` text, or the item prompt) carries any `#hex`
+  that is not one of the client's palette colors (`hypersaturation.foreign_hexes`). A builder
+  must delete old or example palette text; the PAGE COLOR SYSTEM block carries the palette.
+
+The rules and evidence are `references/hypersaturation-framework.md`; the page-level pixel
+check is `scripts/validate_page_color.py`.
+
 ## Composition
 
 `stitch_sections.py` (wireframe full-page PNG) and `build_hybrid_board.py` (mockup board) are
