@@ -8362,6 +8362,35 @@ install_skill_44_convert_and_flow_operator_env() {
     local SKILL_DEST="$SKILLS_DIR/44-convert-and-flow-operator"
     local WIRE="$SKILL_DEST/tools/engine/wire-ghl-env.sh"
     local VERIFY="$SKILL_DEST/tools/engine/verify-ghl-live.sh"
+    local CLI_WIRE="$SKILL_DEST/wire.sh"
+
+    # GHL-163: the MODERNIZED GHL client (caf/convertandflow/ghl) must be
+    # installed on a FRESH install, not only by the weekly update path. Skill
+    # 44's root wire.sh is the canonical builder (copy engine -> pip install -e
+    # -> wrappers + drift stamp); it is fail-soft and always exits 0. Without
+    # this, a new box shipped the engine SOURCE but no working CLI, and every
+    # caf call fell back to a source-path import that is not on PATH.
+    local CAF_DIR
+    if [ -d "/data/.openclaw" ]; then
+        CAF_DIR="/data/.openclaw/tools/convert-and-flow-cli"
+    else
+        CAF_DIR="$HOME/.openclaw/tools/convert-and-flow-cli"
+    fi
+    if [ -f "$CLI_WIRE" ]; then
+        note "Installing the modernized GHL client (Skill 44 caf CLI)…"
+        set +e
+        CAF_DIR="$CAF_DIR" bash "$CLI_WIRE" --idempotent
+        local CLI_RC=$?
+        set -e
+        [ "$CLI_RC" -eq 0 ] || warn "Skill 44 wire.sh returned rc=$CLI_RC — caf may be incomplete; see output above."
+        if [ -x "$CAF_DIR/caf" ] && [ -x "$CAF_DIR/convertandflow" ] && [ -x "$CAF_DIR/ghl" ]; then
+            success "Modernized GHL client installed: $CAF_DIR/caf (caf / convertandflow / ghl)"
+        else
+            warn "Modernized GHL client entrypoints missing under $CAF_DIR — caf is NOT startable. Re-run: bash $CLI_WIRE --idempotent"
+        fi
+    else
+        warn "Skill 44 wire.sh not found at $CLI_WIRE — the modernized GHL client was NOT installed (older onboarding bundle?)"
+    fi
 
     if [ ! -f "$WIRE" ]; then
         warn "Skill 44 wire-ghl-env.sh not found at $WIRE — skipping env-wiring (older onboarding bundle?)"
