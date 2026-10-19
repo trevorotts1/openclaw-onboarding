@@ -189,7 +189,13 @@ def check(output, references, client_palette=(), text=None, ocr=True) -> dict:
         result["problems"].append("UNDETERMINED: no fingerprint for " + ", ".join(unknown)
                                   + " (add it to references/reference-library.json)")
     if output.is_file():
-        result["palette"] = palette_bleed(output, list(dict.fromkeys(palette)), client_palette)
+        try:
+            result["palette"] = palette_bleed(output, list(dict.fromkeys(palette)), client_palette)
+        except Exception as exc:  # unreadable image, Pillow missing: say so, never crash, never PASS
+            result["palette"] = {"status": "UNDETERMINED", "reason": f"{type(exc).__name__}: {exc}"}
+            result["problems"].append(
+                f"UNDETERMINED: {output.name} could not be read as an image ({type(exc).__name__}); "
+                "palette leg not run")
         if ocr and text is None:
             text = ocr_text(output)
             if text is None:

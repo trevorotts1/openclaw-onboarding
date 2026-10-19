@@ -65,10 +65,16 @@ with the request's `references` set, so the budget they fit to already includes 
 - `run_item()` prepends the block to image-inventory item prompts when the request carries references,
   and refuses an item whose prompt plus block is over the model maximum.
 - `--preflight` prints `PREFLIGHT_REFERENCES total= library= not_in_library= roles=` once.
-- `run_stage()` runs the QC check on every delivered image of a paid (kie) run and records it as
-  `reference_bleed` in `stage-executor-record.json`, with a named `WARN reference_bleed` line when the
-  result is not PASS. The executor never closes a stage: the stage gate and the reviewer read the record,
-  and a `reference_bleed` that is not PASS fails the image.
+- `run_stage()` and `run_item()` both run the QC check on every delivered image of a paid (kie) run
+  (stage images, and the `Image-NN.png` items that go on the page) and record it as `reference_bleed`
+  in `stage-executor-record.json` (per image, or per item), with a named `WARN reference_bleed` line when
+  the result is not PASS. A stub run or a request with no references records nothing. An image the check
+  cannot open records `UNDETERMINED`; it never aborts the stage and never loses the records of images
+  already paid for.
+- **Enforcement status: recorded, not yet gating.** Nothing in `stage_gate.py`, `qc-contract.md` or the
+  reviewer instructions reads `reference_bleed` today. Until the gate reads it (a follow-up in the files
+  the brand-colors and Design Board lanes also edit, so it lands in the batch merge), the reviewer reads
+  the record and the WARN line by hand, and treats a `reference_bleed` that is not PASS as a failed image.
 - **Design Board stage (R71, Design Board unit):** the stage calls
   `reference_use.reference_block(request["references"], request.get("reference_roles"))`, puts it in its
   prompt, attaches the board link first, and runs `reference_use.check(...)` on the board it generates. The

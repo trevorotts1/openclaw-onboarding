@@ -180,6 +180,45 @@ class BleedCheckTests(unittest.TestCase):
         self.assertEqual(noocr["status"], "UNDETERMINED")
         self.assertTrue(any("OCR unavailable" in p for p in noocr["problems"]))
 
+    def test_unreadable_image_is_undetermined_not_a_crash(self):
+        junk = self.dir / "junk.png"
+        junk.write_text("not an image", encoding="utf-8")
+        result = ru.check(junk, [BOARD["url"]], text="Book your seat today", ocr=False)
+        self.assertEqual(result["status"], "UNDETERMINED")
+        self.assertEqual(result["palette"]["status"], "UNDETERMINED")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(ru.main(["check", str(junk), "--reference", BOARD["url"], "--no-ocr"]), 3)
+
+    def test_item_and_stage_images_both_record_bleed_and_survive_junk(self):
+        class Paid:
+            name, mode = "kie", "paid"
+
+            def __init__(self, colors):
+                self.colors = colors
+
+            def generate(self, job, request):
+                job["out"].parent.mkdir(parents=True, exist_ok=True)
+                if self.colors:
+                    bands(job["out"], self.colors)
+                else:
+                    job["out"].write_text("junk", encoding="utf-8")
+                return {"provider": "kie", "mode": "paid", "model": "m"}
+
+        prompts = self.dir / "image-inventory-prompts"
+        prompts.mkdir()
+        (prompts / "IMG-001.txt").write_text("A desk.", encoding="utf-8")
+        req = {"references": [BOARD["url"]]}
+        with contextlib.redirect_stdout(io.StringIO()):
+            bad = exe.run_item(self.dir, "image-generation-qc", "IMG-001", req,
+                               Paid(BOARD["signature_palette"]), False)
+            self.assertEqual(bad["reference_bleed"]["status"], "FAIL")
+            junk = exe.run_item(self.dir, "image-generation-qc", "IMG-001", req, Paid(None), True)
+        self.assertEqual(junk["reference_bleed"]["status"], "UNDETERMINED")
+        saved = json.loads((self.dir / "image-generation-qc" / exe.RECORD).read_text())
+        self.assertEqual(saved["items"][0]["reference_bleed"]["status"], "UNDETERMINED")
+        self.assertNotIn("reference_bleed", exe.run_item(
+            self.dir, "image-generation-qc", "IMG-001", {}, Paid(["#1F3A93"]), True))
+
     def test_cli_exit_codes(self):
         bad = bands(self.dir / "cli-bad.png", BOARD["signature_palette"])
         good = bands(self.dir / "cli-good.png", ["#1F3A93", "#F28C28", "#FFFFFF"])

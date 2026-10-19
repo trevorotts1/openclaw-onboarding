@@ -70,8 +70,8 @@ composes and checks them with no provider call and no file write.
    the route's ratio enum (`RATIO_ENUM`), not one fixed 3:4 for all parts.
 5. **Reference images are structure only.** Every job that attaches reference images carries the
    labelled `REFERENCE IMAGE - structure only` block (what to take, what never to take, who owns
-   color, logo, imagery and copy), and every delivered image is checked for the reference's palette and
-   brand text. The contract, the media-library links and the check are `references/reference-image-use.md`.
+   color, logo, imagery and copy), and every delivered image of a paid run is checked for the reference's palette and
+   brand text and recorded as `reference_bleed` (recorded, not yet gating; see the reference doc). The contract, the media-library links and the check are `references/reference-image-use.md`.
 
 Canvas geometry is per-image. `target_ratio()` derives each job's ratio from
 its pixel-mate (or the section's slot), and the record carries

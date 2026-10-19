@@ -767,6 +767,17 @@ def reference_bleed(out: Path, request: dict, provider):
     return reference_use.check(out, request["references"], request.get("client_palette") or ())
 
 
+def record_bleed(entry: dict, out: Path, request: dict, provider, stage: str) -> None:
+    """Attach the bleed result to a delivered-image record (run_stage and
+    run_item both route here, so every delivered image gets the same check)."""
+    bleed = reference_bleed(out, request, provider)
+    if bleed:
+        entry["reference_bleed"] = bleed
+        if bleed["status"] != "PASS":
+            print(f"WARN reference_bleed {stage} {out.name}: "
+                  f"{json.dumps(bleed, sort_keys=True)[:400]}")
+
+
 def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
     if stage not in LAYOUT:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
@@ -806,12 +817,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "task_id": result.get("task_id"),
                 "inputs": job["references"],
             }
-            bleed = reference_bleed(out, request, provider)
-            if bleed:
-                entry["reference_bleed"] = bleed
-                if bleed["status"] != "PASS":
-                    print(f"WARN reference_bleed {stage} {out.name}: "
-                          f"{json.dumps(bleed, sort_keys=True)[:400]}")
+            record_bleed(entry, out, request, provider, stage)
             if actual:
                 a, b = ratio.split(":")
                 want = int(a) / int(b)
@@ -872,6 +878,7 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              "sha256": sha256(out), "provider": result.get("provider"),
              "mode": result.get("mode"), "model": result.get("model"),
              "task_id": result.get("task_id"), "at": now_iso()}
+    record_bleed(entry, out, request, provider, stage)
     record_path = run_dir / stage / RECORD
     record = {"stage": stage, "provider": provider.name, "mode": provider.mode,
               "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
