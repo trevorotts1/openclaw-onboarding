@@ -155,9 +155,11 @@ def serialize(obj):
 
 
 def canonical_bytes(obj):
-    """Canonical JSON for plan_hash: sorted keys, compact, UTF-8."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False).encode("utf-8")
+    """Canonical JSON for plan_hash: byte-identical to the receiver's
+    plan_hash() (44-convert-and-flow-operator/tools/siglaunch/receiver/
+    receiver.py: json.dumps(plan, sort_keys=True).encode()). Emitters
+    hash identically to the receiver (R71H F2 cure 1)."""
+    return json.dumps(obj, sort_keys=True).encode()
 
 
 def derive_trigger_classes(fc):
@@ -451,13 +453,20 @@ def build_envelope(handoff, handoff_sha256, *, launch_id, requesting_room,
             raise EnvelopeError(
                 f"form {fid}: mechanism.type must be \"contact_tag\" or "
                 f"\"native\", got {mtype!r}")
+        name = spec.get("name")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise EnvelopeError(
+                f"form {fid}: name must be a non-empty string, got {name!r}")
         origin = {"type": "form_submitted", "form_id": fid}
         workflows.append({"slug": slug, "expected_steps": steps,
                           "allow_multiple": allow, "origin": origin,
                           "mechanism": mechanism})
-        plan[slug] = {"form_id": fid, "origin": origin,
-                      "mechanism": mechanism, "expected_steps": steps,
-                      "allow_multiple": allow}
+        # R71H F2 cure 2: the receiver's plan contract requires a
+        # "name" on every workflow definition before it hashes and
+        # dispatches; the recorded slug is the fallback identity.
+        plan[slug] = {"name": name or slug, "form_id": fid,
+                      "origin": origin, "mechanism": mechanism,
+                      "expected_steps": steps, "allow_multiple": allow}
     plan_hash = sha256_bytes(canonical_bytes(plan))
     return {
         "request_id": request_id,
