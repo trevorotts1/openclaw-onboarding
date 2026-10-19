@@ -97,7 +97,50 @@
     return parts.join(' - ');
   }
 
-  var api = { parseSse: parseSse, newModel: newModel, applyFrame: applyFrame, describeFrame: describeFrame, seatName: seatName };
+  /**
+   * Update the session list in place, keyed by session_id, so a refresh never
+   * removes the button that has keyboard focus. Nodes are created only for new
+   * sessions, removed only for sessions that are gone, and moved only when the
+   * order changed.
+   */
+  function reconcileList(list, sessions, selected, onSelect, doc) {
+    var byId = {};
+    var node = list.firstChild;
+    while (node) { byId[node.getAttribute('data-session-id')] = node; node = node.nextSibling; }
+    var cursor = list.firstChild;
+    sessions.forEach(function (s) {
+      var li = byId[s.session_id];
+      delete byId[s.session_id];
+      var btn;
+      if (li) {
+        btn = li.firstChild;
+      } else {
+        li = doc.createElement('li');
+        li.setAttribute('data-session-id', s.session_id);
+        btn = doc.createElement('button');
+        btn.className = 'council-session-btn';
+        btn.type = 'button';
+        btn.appendChild(doc.createElement('strong'));
+        var meta = doc.createElement('span');
+        meta.className = 'council-meta';
+        btn.appendChild(meta);
+        btn.addEventListener('click', function () { onSelect(s.session_id); });
+        li.appendChild(btn);
+      }
+      btn.setAttribute('aria-pressed', s.session_id === selected ? 'true' : 'false');
+      setText(btn.firstChild, s.question || s.session_id);
+      setText(btn.lastChild, label(s.state) + ' | ' + s.mode + ' | ' + when(s.created_at) +
+        (s.sample ? ' | synthetic sample session' : ''));
+      if (li === cursor) cursor = cursor.nextSibling;
+      else list.insertBefore(li, cursor);
+    });
+    Object.keys(byId).forEach(function (id) { list.removeChild(byId[id]); });
+  }
+
+  /** Assign text only when it differs, so unchanged live regions are not re-announced. */
+  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+
+  var api = { reconcileList: reconcileList, parseSse: parseSse, newModel: newModel, applyFrame: applyFrame, describeFrame: describeFrame, seatName: seatName };
   if (typeof globalThis !== 'undefined') globalThis.councilLive = api;
 
   // ----------------------------------------------------------------- DOM
@@ -273,58 +316,48 @@
   }
 
   function renderList(sessions) {
-    clear(els.list);
-    sessions.forEach(function (s) {
-      var li = el('li');
-      var btn = el('button', null, 'council-session-btn');
-      btn.type = 'button';
-      btn.setAttribute('aria-pressed', s.session_id === selectedId ? 'true' : 'false');
-      btn.appendChild(el('strong', s.question || s.session_id));
-      btn.appendChild(el('span', label(s.state) + ' | ' + s.mode + ' | ' + when(s.created_at) +
-        (s.sample ? ' | synthetic sample session' : ''), 'council-meta'));
-      btn.addEventListener('click', function () { selectSession(s.session_id); });
-      li.appendChild(btn);
-      els.list.appendChild(li);
-    });
+    reconcileList(els.list, sessions, selectedId, selectSession, document);
   }
 
-  function loadList() {
-    els.status.textContent = 'Loading council sessions...';
+  // Only an explicit load (first paint or the Refresh button) shows "Loading"; the
+  // 15 second timer refreshes silently so the polite live region stays quiet.
+  function loadList(announce) {
+    if (announce) setText(els.status, 'Loading council sessions...');
     return fetch('/api/council/sessions', { headers: { accept: 'application/json' } })
       .then(function (res) {
         return res.json().then(function (body) { return { status: res.status, body: body }; });
       })
       .then(function (r) {
-        show(els.error, false);
         if (r.status === 501) {
           lastList = [];
           renderList(lastList);
           show(els.empty, false);
-          els.error.textContent = 'This service cannot list sessions yet (' +
-            (r.body && r.body.code ? r.body.code : 'not bound') + '). Nothing is shown rather than guessing.';
+          setText(els.error, 'This service cannot list sessions yet (' +
+            (r.body && r.body.code ? r.body.code : 'not bound') + '). Nothing is shown rather than guessing.');
           show(els.error, true);
-          els.status.textContent = 'Session list unavailable.';
+          setText(els.status, 'Session list unavailable.');
           return;
         }
         if (r.status !== 200 || !r.body || !Array.isArray(r.body.sessions)) {
           throw new Error('The service answered HTTP ' + r.status + '.');
         }
+        show(els.error, false);
         lastList = r.body.sessions;
         renderList(lastList);
         show(els.empty, lastList.length === 0);
-        els.status.textContent = lastList.length === 0
+        setText(els.status, lastList.length === 0
           ? 'No council sessions yet.'
           : lastList.length + (lastList.length === 1 ? ' council session.' : ' council sessions.') +
-            ' Choose one to watch it.';
+            ' Choose one to watch it.');
       })
       .catch(function (err) {
-        els.error.textContent = 'Could not reach the council service: ' + (err.message || 'request failed') + '.';
+        setText(els.error, 'Could not reach the council service: ' + (err.message || 'request failed') + '.');
         show(els.error, true);
-        els.status.textContent = 'Session list unavailable.';
+        setText(els.status, 'Session list unavailable.');
       });
   }
 
-  els.refresh.addEventListener('click', function () { loadList(); });
+  els.refresh.addEventListener('click', function () { loadList(true); });
   els.reconnect.addEventListener('click', function () { retries = 0; startStream(); });
 
   // Live and sample are mutually exclusive; the sample is never rendered into the live area.
@@ -340,6 +373,6 @@
   show(els.sampleToggle, true);
   els.sampleToggle.addEventListener('click', function () { setSample(!sampleOn); });
 
-  loadList();
-  setInterval(function () { if (!document.hidden && !sampleOn) loadList(); }, LIST_REFRESH_MS);
+  loadList(true);
+  setInterval(function () { if (!document.hidden && !sampleOn) loadList(false); }, LIST_REFRESH_MS);
 })();

@@ -205,6 +205,7 @@ interface Live {
   };
   applyFrame(model: ReturnType<Live['newModel']>, frame: Frame): boolean;
   describeFrame(frame: Frame): string;
+  reconcileList(list: FakeNode, sessions: unknown[], selected: string | null, onSelect: (id: string) => void, doc: unknown): void;
 }
 
 function loadHelpers(): Live {
@@ -254,4 +255,87 @@ test('helpers: frames update state and seats; duplicates and replays are ignored
   assert.equal(live.applyFrame(model, { sequence: 1, type: 'session_created' }), false, 'replay');
   assert.equal(model.events.length, 2);
   assert.match(live.describeFrame(model.events[1]), /card accepted - Simon Sinek, round opening/);
+});
+
+// ------------------------------------------- refresh keeps focus and status quiet
+
+class FakeNode {
+  children: FakeNode[] = [];
+  parentNode: FakeNode | null = null;
+  attrs: Record<string, string> = {};
+  className = '';
+  type = '';
+  private text = '';
+  textWrites = 0;
+  constructor(public tag: string) {}
+  get textContent(): string { return this.text; }
+  set textContent(v: string) { this.text = v; this.textWrites += 1; }
+  get firstChild(): FakeNode | null { return this.children[0] ?? null; }
+  get lastChild(): FakeNode | null { return this.children[this.children.length - 1] ?? null; }
+  get nextSibling(): FakeNode | null {
+    const sibs = this.parentNode?.children ?? [];
+    return sibs[sibs.indexOf(this) + 1] ?? null;
+  }
+  get isConnected(): boolean { return this.parentNode === null ? this.tag === 'ul' : this.parentNode.isConnected; }
+  setAttribute(k: string, v: string): void { this.attrs[k] = v; }
+  getAttribute(k: string): string | null { return this.attrs[k] ?? null; }
+  addEventListener(): void {}
+  appendChild(n: FakeNode): FakeNode { return this.insertBefore(n, null); }
+  insertBefore(n: FakeNode, ref: FakeNode | null): FakeNode {
+    n.parentNode?.removeChild(n);
+    const at = ref ? this.children.indexOf(ref) : this.children.length;
+    this.children.splice(at, 0, n);
+    n.parentNode = this;
+    return n;
+  }
+  removeChild(n: FakeNode): FakeNode {
+    this.children.splice(this.children.indexOf(n), 1);
+    n.parentNode = null;
+    return n;
+  }
+}
+
+test('list refresh updates buttons in place: the focused button survives, keyed by session_id', () => {
+  const live = loadHelpers();
+  const doc = { createElement: (tag: string) => new FakeNode(tag) };
+  const list = new FakeNode('ul');
+  const row = (id: string, state = 'deliberating') => ({
+    session_id: id, question: 'Q ' + id, state, mode: 'quick', created_at: '2026-10-19T12:00:00.000Z',
+  });
+  live.reconcileList(list, [row('a'), row('b')], null, () => {}, doc);
+  const focusedBtn = list.children[1].firstChild as FakeNode;
+  const focusedLi = list.children[1];
+
+  // Same sessions, one state changed, a new session in front: nothing focused is rebuilt.
+  live.reconcileList(list, [row('c'), row('a'), row('b', 'completed')], 'b', () => {}, doc);
+  assert.equal(list.children.length, 3);
+  assert.equal(list.children[2], focusedLi);
+  assert.equal(list.children[2].firstChild, focusedBtn);
+  assert.equal(focusedBtn.isConnected, true);
+  assert.match((focusedBtn.lastChild as FakeNode).textContent, /^completed \|/);
+  assert.equal(focusedBtn.getAttribute('aria-pressed'), 'true');
+
+  // An identical refresh writes no text at all and moves nothing.
+  const writes = focusedBtn.textWrites + (focusedBtn.firstChild as FakeNode).textWrites + (focusedBtn.lastChild as FakeNode).textWrites;
+  const before = list.children.slice();
+  live.reconcileList(list, [row('c'), row('a'), row('b', 'completed')], 'b', () => {}, doc);
+  assert.deepEqual(list.children, before);
+  assert.equal(
+    focusedBtn.textWrites + (focusedBtn.firstChild as FakeNode).textWrites + (focusedBtn.lastChild as FakeNode).textWrites,
+    writes,
+  );
+
+  // A session that disappears is removed; the others keep their nodes.
+  live.reconcileList(list, [row('b', 'completed')], 'b', () => {}, doc);
+  assert.equal(list.children.length, 1);
+  assert.equal(list.children[0], focusedLi);
+});
+
+test('only an explicit load announces "Loading"; the timer refresh stays silent', () => {
+  const script = readFileSync(join(chamberDir, 'chamber-live.js'), 'utf8');
+  assert.match(script, /if \(announce\) setText\(els\.status, 'Loading council sessions\.\.\.'\)/);
+  assert.match(script, /loadList\(false\)/);
+  assert.match(script, /els\.refresh\.addEventListener\('click', function \(\) \{ loadList\(true\); \}\)/);
+  assert.equal(/els\.status\.textContent\s*=/.test(script), false);
+  assert.equal(/clear\(els\.list\)/.test(script), false);
 });
