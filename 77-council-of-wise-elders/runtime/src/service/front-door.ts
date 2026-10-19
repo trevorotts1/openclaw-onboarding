@@ -28,6 +28,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
+import { SEAT_IDS, SESSION_MODES, SESSION_VISIBILITIES } from '../contracts/enums.js';
+import type { ConveneInput } from './driver.js';
 import {
   formatCouncilEventFrame,
   type CouncilEventCursor,
@@ -46,12 +48,14 @@ import {
 } from './readiness.js';
 import { eventsPath, resolveSessionTarget, sessionUrl } from './sessions.js';
 import {
+  CONVENE_HARNESSES,
   DEFAULT_SERVICE_HOST,
   DEFAULT_SERVICE_PORTS,
   SERVICE_API_VERSION,
   type AdmissionDecision,
   type AdmissionRequest,
   type AdmissionSink,
+  type CouncilConveningPort,
   type DrainOutcome,
   type ServiceIdentity,
   type ServiceReadiness,
@@ -93,6 +97,11 @@ export interface FrontDoorOptions {
    * canonical repositories). Unbound keeps the historical 200 body.
    */
   sessionReader?: CouncilSessionReader;
+  /**
+   * Route listing and convening (composition root supplies it over the
+   * composed driver). Unbound answers 501; the door never convenes itself.
+   */
+  convening?: CouncilConveningPort;
   readiness?: FrontDoorReadinessDeps;
 }
 
@@ -452,7 +461,7 @@ export class CouncilFrontDoor {
       if (!res.headersSent) {
         sendJson(res, 500, {
           code: 'SERVICE_REQUEST_FAILED',
-          detail: this.lastServerError,
+          detail: redactHome(this.lastServerError),
         });
       } else {
         res.end();
@@ -541,6 +550,21 @@ export class CouncilFrontDoor {
         return;
       }
       sendJson(res, 200, { sessions: await reader.list() });
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/council/routes') {
+      const convening = this.options.convening;
+      if (!convening) {
+        sendJson(res, 501, conveningNotBound());
+        return;
+      }
+      sendJson(res, 200, await convening.routes());
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/council/convene') {
+      await this.handleConvene(req, res);
       return;
     }
 
@@ -648,6 +672,98 @@ export class CouncilFrontDoor {
       code: 'SERVICE_ROUTE_NOT_FOUND',
       detail: `No service route for ${method} ${path}.`,
     });
+  }
+
+  /**
+   * `POST /api/council/convene`. Convening IS the approval, so this route
+   * sits behind the same fence as admissions (loopback-only listener, drain
+   * and not-owner refusals) and additionally accepts JSON only, which keeps
+   * a cross-site form post from ever spending the client's model allowance.
+   */
+  private async handleConvene(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const fence = this.serviceFence('convene');
+    if (fence) {
+      sendJson(res, 503, fence);
+      return;
+    }
+    const convening = this.options.convening;
+    if (!convening) {
+      sendJson(res, 501, conveningNotBound());
+      return;
+    }
+    if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) {
+      sendJson(res, 415, {
+        code: 'CONVENE_CONTENT_TYPE',
+        detail: 'A convene request must be sent as application/json.',
+        recovery: 'Send the convene body with the content-type: application/json header.',
+      });
+      return;
+    }
+    const body = await readJsonBody(req, 'CONVENE', 'convene');
+    if (!body.ok) {
+      sendJson(res, body.status, { code: body.code, detail: body.detail, recovery: body.recovery });
+      return;
+    }
+    const parsed = parseConveneBody(body.value);
+    if (!parsed.ok) {
+      sendJson(res, 422, {
+        code: 'CONVENE_BODY_INVALID',
+        detail: parsed.detail,
+        recovery:
+          'Send a JSON object with sample or brief, and optionally route_id, model, harness, mode, seat_ids, visibility, fresh_facts and requested_by.',
+      });
+      return;
+    }
+    try {
+      sendJson(res, 202, await convening.convene(parsed.input));
+    } catch (error) {
+      const refusal = conveneRefusal(error);
+      if (!refusal) throw error;
+      sendJson(res, refusal.status, refusal.body);
+    }
+  }
+
+  /**
+   * The fence every state-changing route shares (admissions and convene):
+   * a draining, reused or stopped handle never accepts new work.
+   */
+  private serviceFence(
+    what: 'admission' | 'convene',
+  ): { code: 'SERVICE_DRAINING' | 'SERVICE_NOT_ACTIVE'; detail: string; recovery: string } | null {
+    if (this.draining || this.state === 'draining') {
+      return {
+        code: 'SERVICE_DRAINING',
+        detail: `The service is draining and fences new ${what === 'convene' ? 'convenings' : 'admissions'}.`,
+        recovery:
+          what === 'convene'
+            ? 'Wait for the restart to complete, then convene again.'
+            : 'Wait for the restart to complete, then retry the admission against the owning authority.',
+      };
+    }
+    if (this.state === 'reused') {
+      return {
+        code: 'SERVICE_NOT_ACTIVE',
+        detail:
+          what === 'convene'
+            ? 'This handle reused an existing service; convening belongs to the owning process, not to the reusing launcher.'
+            : 'This handle reused an existing service; admissions belong to the owning process, not to the reusing launcher.',
+        recovery:
+          what === 'convene'
+            ? 'Send the convene request through the verified origin that owns the service.'
+            : 'Send the admission through the verified origin that owns the service.',
+      };
+    }
+    if (this.state !== 'running' || !this.server) {
+      return {
+        code: 'SERVICE_NOT_ACTIVE',
+        detail: 'The front-door service is not running.',
+        recovery:
+          what === 'convene'
+            ? 'Start the local service, then convene again.'
+            : 'Start the local service, then retry the admission.',
+      };
+    }
+    return null;
   }
 
   /**
@@ -879,35 +995,12 @@ ul{margin:.25rem 0;padding-left:1.25rem}
       };
     }
 
-    if (this.draining || this.state === 'draining') {
+    const fence = this.serviceFence('admission');
+    if (fence) {
       return {
         accepted: false,
-        fenced: true,
-        code: 'SERVICE_DRAINING',
-        detail: 'The service is draining and fences new admissions.',
-        recovery:
-          'Wait for the restart to complete, then retry the admission against the owning authority.',
-      };
-    }
-
-    if (this.state === 'reused') {
-      return {
-        accepted: false,
-        fenced: false,
-        code: 'SERVICE_NOT_ACTIVE',
-        detail:
-          'This handle reused an existing service; admissions belong to the owning process, not to the reusing launcher.',
-        recovery: 'Send the admission through the verified origin that owns the service.',
-      };
-    }
-
-    if (this.state !== 'running' || !this.server) {
-      return {
-        accepted: false,
-        fenced: false,
-        code: 'SERVICE_NOT_ACTIVE',
-        detail: 'The front-door service is not running.',
-        recovery: 'Start the local service, then retry the admission.',
+        fenced: fence.code === 'SERVICE_DRAINING',
+        ...fence,
       };
     }
 
@@ -1014,6 +1107,15 @@ ul{margin:.25rem 0;padding-left:1.25rem}
   }
 }
 
+function conveningNotBound(): { code: string; detail: string; recovery: string } {
+  return {
+    code: 'CONVENING_NOT_BOUND',
+    detail:
+      'No convening driver is bound; the service never claims a session was convened without one.',
+    recovery: 'Bind the convening driver in the composition root.',
+  };
+}
+
 type BodyResult =
   | { ok: true; value: unknown }
   | {
@@ -1024,7 +1126,17 @@ type BodyResult =
       recovery: string;
     };
 
-function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
+/**
+ * `prefix` namespaces the typed codes; `label` words the details. The
+ * convene route reports every body problem as 422 (a body that cannot
+ * be understood is an invalid request, not a transport failure).
+ */
+function readJsonBody(
+  req: IncomingMessage,
+  prefix = 'ADMISSION',
+  label = 'admission',
+): Promise<BodyResult> {
+  const unprocessable = prefix === 'CONVENE';
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -1040,9 +1152,9 @@ function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
         finish({
           ok: false,
           status: 413,
-          code: 'ADMISSION_BODY_TOO_LARGE',
-          detail: `An admission body must be at most ${MAX_BODY_BYTES} bytes.`,
-          recovery: 'Send a bounded admission payload.',
+          code: `${prefix}_BODY_TOO_LARGE`,
+          detail: `A${label === 'admission' ? 'n' : ''} ${label} body must be at most ${MAX_BODY_BYTES} bytes.`,
+          recovery: `Send a bounded ${label} payload.`,
         });
         req.destroy();
         return;
@@ -1053,9 +1165,9 @@ function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
       finish({
         ok: false,
         status: 400,
-        code: 'ADMISSION_BODY_UNREADABLE',
+        code: `${prefix}_BODY_UNREADABLE`,
         detail: error.message,
-        recovery: 'Retry the admission with a readable JSON body.',
+        recovery: `Retry the ${label} with a readable JSON body.`,
       });
     });
     req.on('end', () => {
@@ -1064,10 +1176,12 @@ function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
       if (text.trim().length === 0) {
         finish({
           ok: false,
-          status: 400,
-          code: 'ADMISSION_BODY_EMPTY',
-          detail: 'An admission requires a JSON body.',
-          recovery: 'Send a JSON admission with session_id and operation_id.',
+          status: unprocessable ? 422 : 400,
+          code: `${prefix}_BODY_EMPTY`,
+          detail: `A${label === 'admission' ? 'n' : ''} ${label} requires a JSON body.`,
+          recovery: unprocessable
+            ? 'Send a JSON object with sample or brief.'
+            : 'Send a JSON admission with session_id and operation_id.',
         });
         return;
       }
@@ -1076,10 +1190,12 @@ function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
       } catch {
         finish({
           ok: false,
-          status: 400,
-          code: 'ADMISSION_BODY_INVALID_JSON',
-          detail: 'The admission body is not valid JSON.',
-          recovery: 'Send a JSON admission with session_id and operation_id.',
+          status: unprocessable ? 422 : 400,
+          code: `${prefix}_BODY_INVALID_JSON`,
+          detail: `The ${label} body is not valid JSON.`,
+          recovery: unprocessable
+            ? 'Send a JSON object with sample or brief.'
+            : 'Send a JSON admission with session_id and operation_id.',
         });
       }
     });
@@ -1089,4 +1205,160 @@ function readJsonBody(req: IncomingMessage): Promise<BodyResult> {
 /** Convenience export for the composition root's local session URL. */
 export function localSessionUrl(origin: string, sessionId: string): string {
   return sessionUrl(origin, sessionId);
+}
+
+// -------------------------------------------------------------- convening
+
+type ConveneBodyResult = { ok: true; input: ConveneInput } | { ok: false; detail: string };
+
+const CONVENE_BODY_KEYS: ReadonlySet<string> = new Set([
+  'sample',
+  'brief',
+  'mode',
+  'seat_ids',
+  'visibility',
+  'route_id',
+  'model',
+  'harness',
+  'fresh_facts',
+  'requested_by',
+]);
+
+const DEFAULT_REQUESTED_BY = 'service_client';
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Shape validation only. Deep validation of the brief and the seats is the
+ * driver's job (it owns the contract validators); this layer exists so a
+ * malformed request is refused with a typed 422 before any state changes.
+ */
+export function parseConveneBody(value: unknown): ConveneBodyResult {
+  const bad = (detail: string): ConveneBodyResult => ({ ok: false, detail });
+  if (!isPlainObject(value)) return bad('The convene body must be a JSON object.');
+  for (const key of Object.keys(value)) {
+    if (!CONVENE_BODY_KEYS.has(key)) return bad(`Unknown convene field ${JSON.stringify(key)}.`);
+  }
+  const body = value;
+  if (body.sample !== undefined && typeof body.sample !== 'boolean') {
+    return bad('sample must be a boolean.');
+  }
+  if (body.brief !== undefined && !isPlainObject(body.brief)) {
+    return bad('brief must be a JSON object (a decision brief).');
+  }
+  if (body.sample !== true && body.brief === undefined) {
+    return bad('Provide either sample: true or a brief.');
+  }
+  if (body.sample === true && body.brief !== undefined) {
+    return bad('sample and brief are mutually exclusive.');
+  }
+  if (
+    body.mode !== undefined &&
+    !(SESSION_MODES as readonly unknown[]).includes(body.mode)
+  ) {
+    return bad(`mode must be one of ${SESSION_MODES.join(', ')}.`);
+  }
+  if (
+    body.visibility !== undefined &&
+    !(SESSION_VISIBILITIES as readonly unknown[]).includes(body.visibility)
+  ) {
+    return bad(`visibility must be one of ${SESSION_VISIBILITIES.join(', ')}.`);
+  }
+  if (body.seat_ids !== undefined) {
+    if (
+      !Array.isArray(body.seat_ids) ||
+      body.seat_ids.length === 0 ||
+      !body.seat_ids.every((seat) => (SEAT_IDS as readonly unknown[]).includes(seat))
+    ) {
+      return bad('seat_ids must be a non-empty array of known seat ids.');
+    }
+  }
+  for (const key of ['route_id', 'model', 'requested_by'] as const) {
+    if (body[key] !== undefined && !nonEmptyString(body[key])) {
+      return bad(`${key} must be a non-empty string.`);
+    }
+  }
+  if (
+    body.harness !== undefined &&
+    !(CONVENE_HARNESSES as readonly unknown[]).includes(body.harness)
+  ) {
+    return bad(`harness must be one of ${CONVENE_HARNESSES.join(', ')}.`);
+  }
+  let freshFacts: ConveneInput['fresh_facts'];
+  if (body.fresh_facts !== undefined) {
+    if (!Array.isArray(body.fresh_facts)) return bad('fresh_facts must be an array.');
+    freshFacts = [];
+    for (const [index, raw] of body.fresh_facts.entries()) {
+      const at = `fresh_facts[${index}]`;
+      if (!isPlainObject(raw)) return bad(`${at} must be an object.`);
+      if (!nonEmptyString(raw.claim)) return bad(`${at}.claim must be a non-empty string.`);
+      if (!nonEmptyString(raw.url) || !/^https?:\/\/[^\s]+$/i.test(raw.url)) {
+        return bad(`${at}.url must be an http(s) URL.`);
+      }
+      if (raw.title !== undefined && raw.title !== null && typeof raw.title !== 'string') {
+        return bad(`${at}.title must be a string or null.`);
+      }
+      if (!nonEmptyString(raw.retrieved_at) || Number.isNaN(Date.parse(raw.retrieved_at))) {
+        return bad(`${at}.retrieved_at must be an ISO date-time.`);
+      }
+      freshFacts.push({
+        claim: raw.claim,
+        url: raw.url,
+        title: typeof raw.title === 'string' ? raw.title : null,
+        retrieved_at: raw.retrieved_at,
+      });
+    }
+  }
+
+  const input: ConveneInput = {
+    route: {
+      route_id: body.route_id as string | undefined,
+      model: body.model as string | undefined,
+      harness: body.harness as ConveneInput['route']['harness'],
+    },
+    requested_by: (body.requested_by as string | undefined) ?? DEFAULT_REQUESTED_BY,
+  };
+  if (body.sample !== undefined) input.sample = body.sample as boolean;
+  if (body.brief !== undefined) input.brief = body.brief as unknown as ConveneInput['brief'];
+  if (body.mode !== undefined) input.mode = body.mode as ConveneInput['mode'];
+  if (body.seat_ids !== undefined) input.seat_ids = body.seat_ids as ConveneInput['seat_ids'];
+  if (body.visibility !== undefined) {
+    input.visibility = body.visibility as ConveneInput['visibility'];
+  }
+  if (freshFacts) input.fresh_facts = freshFacts;
+  return { ok: true, input };
+}
+
+const REFUSAL_STATUS: ReadonlySet<number> = new Set([409, 422, 503]);
+
+/**
+ * A typed convening refusal (the driver's DriverRefusal or an equivalent
+ * with the same code, recovery and http_status) becomes its HTTP answer.
+ * Anything else is a real failure and is rethrown to the 500 handler.
+ * Host paths are redacted from the detail.
+ */
+function conveneRefusal(
+  error: unknown,
+): { status: number; body: { code: string; detail: unknown; recovery: string } } | null {
+  if (!isPlainObject(error) && !(error instanceof Error)) return null;
+  const e = error as unknown as Record<string, unknown>;
+  if (typeof e.code !== 'string' || typeof e.recovery !== 'string') return null;
+  let status = typeof e.http_status === 'number' ? e.http_status : 0;
+  if (!REFUSAL_STATUS.has(status)) {
+    if (e.code === 'COMPOSITION_NOT_READY') status = 503;
+    else if (e.code === 'CONVENE_INPUT_INVALID' || e.code.startsWith('ROUTE_')) status = 422;
+    else return null;
+  }
+  const raw = e.detail ?? (error instanceof Error ? error.message : '');
+  const detail =
+    typeof raw === 'string'
+      ? redactHome(raw)
+      : JSON.parse(redactHome(JSON.stringify(raw ?? null))) as unknown;
+  return { status, body: { code: e.code, detail, recovery: e.recovery } };
 }

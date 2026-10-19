@@ -22,11 +22,16 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import {
+  entrySha256,
+  routeBudgetApprovalsPath,
+  type RouteBudgetEntry,
+} from '../budgets/route-budget.js';
 import { composeCouncilService, startCouncilService } from './composition.js';
 import { CouncilFrontDoor } from './front-door.js';
 import { evaluateServiceReadiness } from './readiness.js';
@@ -216,4 +221,189 @@ test('startCouncilService starts and stops the door without installing signals',
     rmSync(dataDir, { recursive: true, force: true });
   }
   assert.equal(started.composition.door.getState(), 'stopped');
+});
+
+// ------------------------------------------------- W28 service wiring
+
+/** A temp host with all three configured routes: two harnesses and DeepSeek. */
+function threeRouteHome(root: string): string {
+  const home = join(root, 'home');
+  for (const dir of ['.claude-nine', '.claude', '.openclaw', join('.local', 'bin')]) {
+    mkdirSync(join(home, dir), { recursive: true });
+  }
+  for (const name of ['claude-nine', 'claude']) {
+    const exe = join(home, '.local', 'bin', name);
+    writeFileSync(exe, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(exe, 0o755);
+  }
+  writeFileSync(
+    join(home, '.openclaw', 'openclaw.json'),
+    JSON.stringify({
+      models: {
+        providers: {
+          deepseek: {
+            baseUrl: 'https://api.deepseek.test/v1',
+            api: 'openai-completions',
+            apiKey: 'fixture-key-not-real',
+            models: [{ id: 'deepseek-flash' }],
+          },
+        },
+      },
+    }),
+    'utf8',
+  );
+  return home;
+}
+
+function budgetEntry(extra: Partial<RouteBudgetEntry> = {}): RouteBudgetEntry {
+  return {
+    route_id: 'claude-nine-configured',
+    model: null,
+    context_window_tokens: 200_000,
+    max_output_tokens: 8_000,
+    measured_min_bytes_per_token: 3.1,
+    safety_factor: 0.8,
+    response_schema_bytes: 10_159,
+    measured_at: '2026-10-19T12:00:00.000Z',
+    measurement_basis: 'fixture',
+    ...extra,
+  };
+}
+
+function writeBudgetConfig(path: string, entries: RouteBudgetEntry[]): void {
+  writeFileSync(
+    path,
+    JSON.stringify({ schema: 'wise-elders.route-budgets/v1', entries }),
+    'utf8',
+  );
+}
+
+test('three composable routes: route layer is ready, the route is chosen per session, nothing is ambiguous', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'w28-wiring-routes-'));
+  const dataDir = join(root, 'data');
+  const composition = composeCouncilService({
+    ...options(dataDir),
+    routeHomeDir: threeRouteHome(root),
+    routeEnv: { PATH: '/usr/bin:/bin' } as NodeJS.ProcessEnv,
+  });
+  const outcome = await composition.door.start();
+  assert.equal(outcome.outcome, 'started');
+  if (outcome.outcome !== 'started') return;
+  try {
+    const route = byLayer(await composition.door.readiness({ offline: true })).get('route');
+    assert.equal(route?.state, 'ready');
+    assert.equal(route?.blocker, null);
+    for (const id of ['claude-nine-configured', 'claude-configured', 'deepseek-configured']) {
+      assert.match(route?.artifact ?? '', new RegExp(`${id} configured`));
+    }
+    assert.match(route?.artifact ?? '', /3\/3 route\(s\) composable/);
+    assert.match(route?.artifact ?? '', /chosen per session/);
+    assert.doesNotMatch(JSON.stringify(route), /ROUTE_SELECTION_AMBIGUOUS/);
+
+    // GET /api/council/routes offers every route and the harness defaults.
+    const routes = (await (await fetch(`${outcome.origin}/api/council/routes`)).json()) as {
+      routes: Array<{ route_id: string; composable: boolean; default_for: string[] }>;
+      harness_defaults: Record<string, { route_id: string }>;
+      budgets: Array<{ route_id: string; model: string | null; state: string }>;
+    };
+    assert.deepEqual(
+      routes.routes.map((r) => r.route_id).sort(),
+      ['claude-configured', 'claude-nine-configured', 'deepseek-configured'],
+    );
+    assert.ok(routes.routes.every((r) => r.composable));
+    assert.deepEqual(
+      routes.routes.find((r) => r.route_id === 'deepseek-configured')?.default_for,
+      ['deepseek'],
+    );
+    assert.equal(routes.harness_defaults['claude-code'].route_id, 'claude-configured');
+    assert.ok(routes.budgets.length >= 3, 'every route reports a budget state');
+  } finally {
+    await composition.door.stop();
+    await composition.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an unapproved route budget reads awaiting operator approval; approving it needs no restart', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'w28-wiring-budget-'));
+  const dataDir = join(root, 'data');
+  mkdirSync(dataDir, { recursive: true });
+  const configPath = join(root, 'route-budgets.json');
+  const entry = budgetEntry();
+  writeBudgetConfig(configPath, [entry]);
+  const composition = composeCouncilService({
+    ...options(dataDir),
+    routeHomeDir: threeRouteHome(root),
+    routeEnv: { PATH: '/usr/bin:/bin' } as NodeJS.ProcessEnv,
+    routeBudgetConfigPath: configPath,
+  });
+  const outcome = await composition.door.start();
+  assert.equal(outcome.outcome, 'started');
+  if (outcome.outcome !== 'started') return;
+  try {
+    const deliberation = composition.backend.deliberation;
+    const before = deliberation.readiness();
+    assert.equal(before.ready, false);
+    const budgetCheck = before.checks.find((c) => c.name === 'route_budget');
+    assert.equal(budgetCheck?.bound, false);
+    assert.match(budgetCheck?.detail ?? '', /awaiting operator approval/);
+    // The proposed numbers are shown so the operator can sign off.
+    assert.match(budgetCheck?.detail ?? '', /claude-nine-configured/);
+    assert.match(budgetCheck?.detail ?? '', /context 200000 tokens/);
+    assert.match(budgetCheck?.detail ?? '', /3\.1 min bytes per token/);
+    // Everything else the council needs is bound.
+    assert.deepEqual(
+      before.checks.filter((c) => !c.bound).map((c) => c.name),
+      ['route_budget'],
+    );
+
+    const route = byLayer(await composition.door.readiness({ offline: true })).get('route');
+    assert.equal(route?.state, 'ready');
+    assert.match(route?.artifact ?? '', /awaiting operator approval/);
+
+    // A convene is refused with 503 COMPOSITION_NOT_READY and makes no session.
+    const refused = await fetch(`${outcome.origin}/api/council/convene`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sample: true, route_id: 'claude-nine-configured' }),
+    });
+    assert.equal(refused.status, 503);
+    assert.equal(((await refused.json()) as { code: string }).code, 'COMPOSITION_NOT_READY');
+
+    // The operator approval is the matching file in the service data dir.
+    writeFileSync(
+      routeBudgetApprovalsPath(dataDir),
+      JSON.stringify([
+        {
+          route_id: entry.route_id,
+          model: entry.model,
+          entry_sha256: entrySha256(entry),
+          approved_by: 'fixture-operator',
+          approved_at: '2026-10-19T12:00:00.000Z',
+        },
+      ]),
+      'utf8',
+    );
+    const after = deliberation.readiness();
+    assert.equal(after.ready, true, 'no restart: the approval is read on the next check');
+    assert.match(
+      after.checks.find((c) => c.name === 'route_budget')?.detail ?? '',
+      /approved: claude-nine-configured/,
+    );
+
+    // Changing the numbers after approval needs a fresh approval.
+    writeBudgetConfig(configPath, [budgetEntry({ measured_min_bytes_per_token: 2.5 })]);
+    assert.equal(deliberation.readiness().ready, false);
+  } finally {
+    await composition.door.stop();
+    await composition.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('no readiness path emits the retired ROUTE_SELECTION_AMBIGUOUS code', async () => {
+  await withComposed(async ({ composition }) => {
+    const readiness = await composition.door.readiness({ offline: true });
+    assert.doesNotMatch(JSON.stringify(readiness), /ROUTE_SELECTION_AMBIGUOUS/);
+  });
 });
