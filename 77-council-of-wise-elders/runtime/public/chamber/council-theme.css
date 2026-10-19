@@ -1,36 +1,30 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Council of Wise Elders: scoped visual system (CWE-031, Skill 77)
    ───────────────────────────────────────────────────────────────────────────
-   EVERYTHING in this file is scoped under .council-theme (light product
-   scope) or .council-stage (the nested room-stage scope). No global :root
-   variable is declared or overridden here, and no global Command Center
-   color changes: the council rides the client's own brand through the
-   same --brand-* variables that <BrandTheme/> rewrites per client, with
-   the BlackCEO palette as the fallback (the pattern set by the interview
-   feature's --iv-* layer in globals.css).
+   Brand palette (BlackCEO): cream #F5F0E8 canvas, black ink, gold #C9A227
+   accent. Surfaces are warm and neutral; there is no green, navy, blue or
+   purple anywhere in this file (tests/chamber-theme.test.ts enforces it).
+   Everything is scoped under .council-theme (light product scope) or
+   .council-stage (the nested room-stage scope); no global :root variable
+   is declared or overridden here.
 
    Design law for this feature (owner direction + Directive Sections 21,
    22, 23):
-   - Bright, real, human-looking. The product scope is a warm light paper
-     theme. The ONLY dark surface is the council room stage itself (the
-     Section 22.2 chamber backdrop), nested inside the light product, the
-     same way the interview feature nests .iv-dark panels.
+   - Bright, real, human-looking. The product scope is a warm cream paper
+     theme. The ONLY dark surface is the council room stage itself (warm
+     black), nested inside the light product.
    - Names are never smaller than 16px in primary seat views, never
      clipped into initials; long names wrap to two lines.
-   - Accent color is never used as small body text unless it is the
-     text-safe --council-accent-ink step. Gold/metallic detail is
-     decoration only, never text.
+   - Gold is a fill, ring or graphic. Small text uses the dark-gold
+     --council-accent-ink step, which keeps 4.5:1 on cream.
    - State is never carried by color alone: every state also has a text
      label and a shape marker (see .council-state-* below).
    - Motion is 160 to 260ms, follows committed events only, and is
      removed under prefers-reduced-motion without removing information.
 
-   Contrast: every text pairing in this system is computed in the CWE-031
-   test run (contrast table in visual-benchmark.md). Ordinary text pairs
-   meet 4.5:1; qualifying large text and meaningful graphics meet 3:1.
-   Per-client brand values are re-checked by CWE-042/CWE-044 against the
-   actual client theme (acceptance test T100); the fallback values below
-   are the BlackCEO defaults and are the values verified by CWE-031.
+   Contrast: ordinary text pairs meet 4.5:1 (computed from these values in
+   tests/chamber-theme.test.ts); qualifying large text and meaningful
+   graphics meet 3:1.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .council-theme {
@@ -48,43 +42,36 @@
   --council-leading: 1.55;           /* inside the 1.45-1.65 band */
 
   /* Light product scope: warm paper canvas over the client's surfaces. */
-  --council-canvas: #FAF7F0;
-  --council-surface: var(--bcc-white, #FFFFFF);
-  --council-surface-2: #F4F1EA;
-  --council-line: #E7E1D3;
-  --council-line-strong: #CFC7B4;
-  --council-ink: var(--bcc-text, #1A1D26);
-  --council-ink-soft: #54575F;
-  --council-ink-faint: #5F646D;      /* metadata text; still 4.5:1 on its surfaces */
+  --council-canvas: #F5F0E8;         /* brand cream */
+  --council-surface: #FBF8F2;
+  --council-surface-2: #EDE7DB;
+  --council-line: #DDD5C4;
+  --council-line-strong: #B9AE98;
+  --council-ink: #000000;            /* brand black */
+  --council-ink-soft: #4E4A3F;
+  --council-ink-faint: #5A564A;      /* metadata text; still 4.5:1 on its surfaces */
 
-  /* Accent: rides the live per-client brand scale (BrandTheme). */
-  --council-accent: var(--brand-600, #43A047);        /* fills, rings, graphics, large text */
-  --council-accent-strong: var(--brand-700, #388E3C); /* large text and strong graphics */
-  --council-accent-ink: var(--brand-800, #256528);    /* the ONLY accent step for ordinary text */
-  --council-accent-deep: var(--brand-900, #1B4D1E);   /* primary-action hover fill */
-  --council-accent-wash: var(--brand-50, #E8F5E9);    /* selected/soft fills behind ink text */
-  /* Ink on the primary-action fill. CWE-044 fix (defect D-044-2): the
-     brand scale fixes the 600 step at 42% lightness for every client
-     primary, so no single ink color reaches 4.5:1 on that fill across
-     themes (near-black fails dark primaries such as navy and purple;
-     white fails light ones such as gold and yellow). The primary
-     action therefore fills with the accent-ink step (800) at rest and
-     the deep step (900) on hover, with white ink: white on the 800
-     step measures 5.12:1 to 12.55:1 across the eight gauntlet client
-     themes, and the 900 step is darker still. The T100 contrast
-     suite in the CWE-044 gauntlet is the standing proof. */
-  --council-on-accent: #FFFFFF;
+  /* Accent: brand gold. Fills, rings and graphics use gold; ordinary text
+     uses the dark-gold ink step (6.4:1 on cream). */
+  --council-accent: #C9A227;          /* fills, rings, graphics */
+  --council-accent-strong: #8A6A0A;   /* large text and strong graphics */
+  --council-accent-ink: #6B5309;      /* the ONLY accent step for ordinary text */
+  --council-accent-deep: #5E4A08;     /* hover on dark-gold text */
+  --council-accent-wash: #F3E9C6;     /* selected/soft fills behind ink text */
+  /* Primary action: gold fill with black ink (8.7:1), the brand button. */
+  --council-on-accent: #000000;
+  --council-accent-hover: #DDB43A;
 
   /* Seat state colors. Always paired with a label and a shape marker. */
-  --council-state-support: #1E7B34;
+  --council-state-support: #6B5309;
   --council-state-oppose: #B42318;
   --council-state-uncertain: #8A5A00;
-  --council-state-info: #1D4ED8;
+  --council-state-info: #4E4A3F;
 
   /* Shape */
   --council-radius-card: 20px;
   --council-radius-control: 12px;
-  --council-shadow: 0 1px 2px rgba(20, 22, 26, 0.04), 0 12px 32px rgba(20, 22, 26, 0.06);
+  --council-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(0, 0, 0, 0.07);
 
   /* Targets and room geometry (Sections 22.4, 23). */
   --council-touch-target: 44px;
@@ -105,30 +92,45 @@
   line-height: var(--council-leading);
 }
 
+/* The page behind the scope is cream too: no default white body margin. */
+body:has(> .council-theme) {
+  margin: 0;
+  background: #F5F0E8;
+}
+
 /* ── Room stage scope (Section 22.2 chamber backdrop, nested only) ─────────
-   The stage is a dark green-black chamber surface inside the light product.
-   All stage text pairs are verified in the CWE-031 contrast table. Seat
-   names on the stage use --council-stage-ink at 16px or above. */
+   The stage is a warm-black chamber surface inside the light product. All
+   stage text pairs are computed in tests/chamber-theme.test.ts. Seat names
+   on the stage use --council-stage-ink at 16px or above. */
 .council-theme .council-stage {
-  --council-stage: #111713;
-  --council-stage-raised: #1B241E;
-  --council-stage-ink: #F5F1E8;
-  --council-stage-muted: #C5CCC4;
-  --council-stage-line: #33413A;
-  --council-stage-accent: var(--brand-400, #66BB6A);
+  --council-stage: #0C0B09;
+  --council-stage-raised: #1D1B16;
+  --council-stage-ink: #F5F0E8;
+  --council-stage-muted: #CFC9BD;
+  --council-stage-line: #3A372F;
+  --council-stage-accent: #C9A227;
   --council-stage-detail: #C9A227;   /* embossed council mark only; never text */
   /* State colors lighten on the stage so state text keeps 4.5:1 on the
      dark chamber surfaces (the light-scope steps measure under 3:1 here). */
-  --council-state-support: #7BD88F;
+  --council-state-support: #DDB43A;
   --council-state-oppose: #F2A2A2;
   --council-state-uncertain: #E8B54D;
-  --council-state-info: #9DB9F2;
+  --council-state-info: #D9D3C6;
   background: var(--council-stage);
   color: var(--council-stage-ink);
   border-radius: var(--council-radius-card);
 }
 .council-stage .council-state-abstain { color: var(--council-stage-muted); }
 .council-stage .council-state-abstain::before { border-color: var(--council-stage-muted); }
+
+/* Links stay dark gold, visited or not (no browser-default blue or purple). */
+.council-theme a:any-link { color: var(--council-accent-ink); }
+.council-theme a:any-link:hover { color: var(--council-accent-deep); }
+
+/* The legacy SVG medallions carry their own blue, purple, teal and green
+   rings. Drop their saturation to grey, then tint warm (brand cream/gold)
+   so the advisors page reads cream, black and gold without editing the SVGs. */
+.council-theme img[src$=".svg"] { filter: grayscale(1) sepia(.75) saturate(1.1); }
 
 /* ── Typography ──────────────────────────────────────────────────────────── */
 .council-display {
@@ -183,11 +185,9 @@
   transition: background-color var(--council-dur-fast) var(--council-ease),
               border-color var(--council-dur-fast) var(--council-ease);
 }
-.council-btn-primary { background: var(--council-accent-ink); color: var(--council-on-accent); }
-/* Hover deepens one more scale step to the deep fill; white label
-   text keeps 4.5:1 under every client theme (CWE-044, D-044-2; the
-   pairing rationale is recorded at --council-on-accent above). */
-.council-btn-primary:hover { background: var(--council-accent-deep); color: var(--council-on-accent); }
+/* Brand button: gold fill, black text. */
+.council-btn-primary { background: var(--council-accent); color: var(--council-on-accent); }
+.council-btn-primary:hover { background: var(--council-accent-hover); color: var(--council-on-accent); }
 .council-btn-secondary {
   background: var(--council-surface);
   color: var(--council-accent-ink);
@@ -231,10 +231,11 @@
   max-width: 100%;
 }
 .council-theme :focus-visible {
-  outline: 3px solid var(--council-accent);
+  outline: 3px solid var(--council-accent-ink);
   outline-offset: 2px;
   border-radius: 4px;
 }
+.council-theme .council-stage :focus-visible { outline-color: var(--council-stage-accent); }
 
 /* ── Seats ───────────────────────────────────────────────────────────────── */
 .council-seat {

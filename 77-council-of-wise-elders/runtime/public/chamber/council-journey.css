@@ -102,13 +102,13 @@
 }
 
 .council-theme .council-journey-notice-warn {
-  border-left-color: #b45309;
-  background: #fffbeb;
+  border-left-color: var(--council-state-uncertain);
+  background: var(--council-accent-wash);
 }
 
 .council-theme .council-journey-notice-error {
-  border-left-color: #b91c1c;
-  background: #fef2f2;
+  border-left-color: var(--council-state-oppose);
+  background: var(--council-surface-2);
 }
 
 .council-theme .council-journey-progress {
@@ -171,23 +171,23 @@
 }
 
 .council-theme [data-kind='fact'] .council-journey-kind-tag {
-  background: #e0f2fe;
-  color: #075985;
+  background: var(--council-surface-2);
+  color: var(--council-ink);
 }
 
 .council-theme [data-kind='assumption'] .council-journey-kind-tag {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--council-accent-wash);
+  color: var(--council-state-uncertain);
 }
 
 .council-theme [data-kind='range'] .council-journey-kind-tag {
-  background: #ede9fe;
-  color: #5b21b6;
+  background: var(--council-ink);
+  color: var(--council-canvas);
 }
 
 .council-theme [data-kind='unknown'] .council-journey-kind-tag {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--council-line);
+  color: var(--council-ink-soft);
 }
 
 .council-theme .council-journey-source {
