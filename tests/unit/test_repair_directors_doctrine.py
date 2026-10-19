@@ -97,6 +97,29 @@ class TestRepairDirectorsDoctrine(unittest.TestCase):
         self.assertIn("Chain of Command", text)
         self.assertNotIn("{{", text)
 
+    def test_roleless_stub_dept_gets_director_and_passes_library_gate(self):
+        # CAN007: branding-dept / daily-briefing-dept held only IDENTITY.md + AGENTS.md.
+        # The gate counts them as departments; the repair used to skip them as "empty".
+        self.box.role("crm", "00-director-of-crm", FILLER)
+        for name in ("branding-dept", "daily-briefing-dept"):
+            d = self.box.depts / name
+            d.mkdir()
+            (d / "IDENTITY.md").write_text("# Head of stub\n")
+            (d / "AGENTS.md").write_text("# stub\n")
+        gate = ROOT / "scripts" / "health" / "library-gate-check.sh"
+        gate_cmd = ["bash", str(gate), "--workspace", str(self.box.ws),
+                    "--departments-dir", str(self.box.depts), "--company-config", str(self.box.cfg)]
+        before = subprocess.run(gate_cmd, capture_output=True, text=True).stdout
+        self.assertIn("directors: FAIL - 2 of 3 departments have no director", before)
+        rc, rep, err = self.box.run()
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(sorted(d["department"] for d in rep["directors_created"]),
+                         ["branding-dept", "daily-briefing-dept"])
+        after = subprocess.run(gate_cmd, capture_output=True, text=True).stdout
+        self.assertIn("directors: PASS - all 4 departments have a director", after)  # + ai-ceo, made by the same run
+        self.assertIn("placeholder-files: PASS", after)
+        self.assertTrue((self.box.depts / "branding-dept" / "IDENTITY.md").read_text().startswith("# Head of stub"))
+
     def test_doctrine_appended_once_and_old_bytes_preserved(self):
         original = "# Director of Widgets\n\n" + FILLER
         path = self.box.role("widgets", "00-director-of-widgets", original)

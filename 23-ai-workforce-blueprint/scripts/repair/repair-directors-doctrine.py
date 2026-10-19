@@ -304,7 +304,7 @@ def ensure_ceo_playbook(workspace, depts, company_dir, ceo, dry, rep):
 def run(a):
     rep = {"dry_run": a.dry_run, "departments_scanned": 0, "directors_created": [],
            "directors_existing": 0, "doctrine_appended": [], "doctrine_already_present": 0,
-           "doctrine_skipped": [], "director_howto_missing": [], "skipped_empty": [],
+           "doctrine_skipped": [], "director_howto_missing": [],
            "ceo_playbook": "unknown", "errors": []}
     company_dir = None
     if a.departments_dir:
@@ -345,9 +345,9 @@ def run(a):
             roles = role_folders(dept)
             directors = [r for r in roles if is_director_folder(r.name)]
             if not directors and dept.name.lower() != CEO_DEPT:
-                if not roles:
-                    rep["skipped_empty"].append(dept.name)
-                    continue
+                # A department with no role folders (a Buzz/ZHC stub holding only
+                # IDENTITY.md / AGENTS.md) still counts as a department to
+                # library-gate-check.sh, so it gets a director like any other.
                 new = create_director(dept, workspace, a.dry_run, rep)
                 if new is not None:
                     directors = [new.parent]
@@ -378,7 +378,6 @@ def print_report(rep):
     print(f"  Doctrine already present:       {rep['doctrine_already_present']}")
     print(f"  Skipped (placeholder or thin):  {len(rep['doctrine_skipped'])}")
     print(f"  Director folders lacking how-to: {len(rep['director_howto_missing'])}")
-    print(f"  Empty departments skipped:      {len(rep['skipped_empty'])}")
     print(f"  AI CEO playbook:                {rep['ceo_playbook']}")
     for e in rep["errors"]:
         print(f"  ERROR {e['department']}: {e['error']}")
