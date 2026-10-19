@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 
 ROUTE = "kie-gpt-image"
-MODEL_SOURCES = {"latest-family", "explicit-request", "department-pin", "legacy-ratio-route"}
+MODEL_SOURCES = {"latest-family", "explicit-request", "department-pin", "user-pin", "legacy-ratio-route"}
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:['-][a-z0-9]+)*")
 
 
