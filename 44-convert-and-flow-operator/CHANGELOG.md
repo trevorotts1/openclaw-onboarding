@@ -1,3 +1,9 @@
+## [v2.1.20] - 2026-10-19 - capability-gate breadth suite
+
+- adds tests/test_capability_breadth.py exercising the capability gate across 140 operations
+- rebased onto main; previously cut from the v2.1.16 tree, no behavior changes
+- skill-version lockstep v2.1.18 -> v2.1.20
+
 ## [v2.1.19] - 2026-10-19 - version bump above main-carried v2.1.18
 
 GHL-177. Main now carries v2.1.18, so this branch re-bumps one patch above it
