@@ -62,6 +62,7 @@ import type { CouncilDatabase } from '../persistence/sqlite.js';
 import type { Clock, IdSource } from '../cli/host-ports.js';
 import {
   DurableJobRunner,
+  type DurableJobRunnerDeps,
   type OperationExecutorPort,
   type RunnerTimers,
   systemTimers,
@@ -120,6 +121,8 @@ export interface DeliberationCompositionDeps {
   roundWaitPollMs?: number;
   workerId?: string;
   distributable?: boolean;
+  /** Reported when a paid response is discarded by a fenced settle. */
+  onFencedSettle?: DurableJobRunnerDeps['onFencedSettle'];
 }
 
 export interface CompositionReadiness {
@@ -231,6 +234,7 @@ export class DeliberationService {
       ids,
       executor: composite,
       timers: deps.timers,
+      onFencedSettle: deps.onFencedSettle,
     });
     this.workerId = deps.workerId ?? 'council-composition-worker';
 

@@ -976,6 +976,8 @@ function composeBackend(input: {
       : null,
     loadSeatBriefing: elderKnowledge.loadSeatBriefing,
     workerId: WORKER_ID,
+    // A fenced settle is reported like any worker failure (declared below).
+    onFencedSettle: (error, context) => recordWorkerError(error, context),
   });
 
   // The resolver is always callable, so the protocol's own readiness would
@@ -1010,6 +1012,34 @@ function composeBackend(input: {
     ids: input.ids,
   });
 
+  // A fenced or failed worker settle is never swallowed: it is logged to
+  // stderr and journaled on the session (safe metadata only).
+  const recordWorkerError = (error: unknown, context?: { session_id?: string }): void => {
+    const code = (error as { code?: unknown } | null)?.code;
+    const message = error instanceof Error ? error.message : String(error);
+    const at = input.clock.nowUtc();
+    process.stderr.write(
+      `${JSON.stringify({ at, level: 'error', source: 'council-worker', session_id: context?.session_id ?? null, code: typeof code === 'string' ? code : null, message })}\n`,
+    );
+    if (!context?.session_id) return;
+    try {
+      const state = repositories.getSession(workerEnvelope, context.session_id)?.state.state ?? null;
+      db.write((handle) =>
+        repositories.journal.append(handle, workerEnvelope, context.session_id as string, {
+          event_id: input.ids.newId(),
+          type: 'operation_completed',
+          from_state: state,
+          to_state: state,
+          actor_subject: workerEnvelope.actor_subject,
+          payload: { kind: 'worker_error', outcome: 'worker_error', code: typeof code === 'string' ? code : null, message },
+          created_at: at,
+        }),
+      );
+    } catch {
+      // the stderr line above already surfaced it; a closed handle must not throw here
+    }
+  };
+
   let workers: CouncilWorkerHandle | null = null;
   try {
     workers = input.startWorkers
@@ -1019,6 +1049,7 @@ function composeBackend(input: {
           supervisor_id: `council-service-${installation.installation_id}`,
           poll_interval_ms: input.workerPollIntervalMs,
           timers: input.workerTimers,
+          on_error: recordWorkerError,
         })
       : null;
   } catch (error) {
@@ -1062,6 +1093,14 @@ function composeBackend(input: {
       }
     },
     auditLogPath: join(input.dataDir, 'convening-audit.jsonl'),
+    onSettled: (sessionId, settled) => {
+      if (settled.status === 'error') {
+        recordWorkerError(
+          Object.assign(new Error(`The convened run ended with ${settled.code}.`), { code: settled.code }),
+          { session_id: sessionId },
+        );
+      }
+    },
   });
   const conveningPort: CouncilConveningPort = {
     routes: () => routesResponse(input.route),
