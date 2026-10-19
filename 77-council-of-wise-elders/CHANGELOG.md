@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.22: the real backend is composed (W22-U001) and one composition binds the durable service (W25-U001 Lane E)
+## v1.0.23: the real backend is composed (W22-U001) and one composition binds the durable service (W25-U001 Lane E)
 
 ### One composition binds the durable service (W25-U001 Lane E)
 

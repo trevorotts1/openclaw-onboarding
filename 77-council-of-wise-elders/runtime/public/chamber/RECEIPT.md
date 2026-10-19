@@ -147,9 +147,13 @@ turns the room into the designed two-column grid, `scrollWidth ===
 innerWidth` (no horizontal scroll), and the network log contains only
 same-origin `/chamber/*` requests — no CDN, font or foreign origin.
 
-Known packaging limitation (outside the paths this unit may edit): the runtime
-`package.json` `files` field is `["dist"]` and cannot be changed here, so an
-npm tarball would not include `public/chamber/`. The asset resolver covers the
-source tree, the tsc `dist/service` output and the single-file `dist` bundle;
-shipping through `npm pack` remains a separate release step.
+Packaging: the runtime `package.json` `files` field is
+`["dist", "public/chamber"]`, so an npm tarball carries the chamber. It was
+`["dist"]` when this receipt was first written, which left `npm pack --dry-run`
+returning 2 entries with no chamber files; that defect was fixed in
+`unit/W25-U001-packaging` (runtime/package.json plus a `package-contents` guard
+test), verified by packing, installing into a throwaway prefix and probing the
+path `CHAMBER_ASSET_ROOTS` actually resolves. The asset resolver still covers
+the source tree, the tsc `dist/service` output and the single-file `dist`
+bundle.
 
