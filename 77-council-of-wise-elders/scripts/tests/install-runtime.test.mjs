@@ -256,6 +256,15 @@ test("install stages, verifies and activates an immutable release", () => {
     assert.ok(existsSync(join(prefix, "receipts", `${active.releaseId}.source.json`)));
     assert.ok(existsSync(join(prefix, "receipts", `${active.releaseId}.artifact.json`)));
     assert.ok(existsSync(join(prefix, "ROLLBACK.md")));
+    // The record the installed dispatcher reads ('../../install-record.json'
+    // from releases/<id>/dist/blackceo-council.mjs) names the skill folder.
+    const recordPath = join(prefix, "releases", "install-record.json");
+    assert.deepEqual(JSON.parse(readFileSync(recordPath, "utf8")), { skill_dir: workspace });
+    // A re-run heals a prefix installed without the record.
+    rmSync(recordPath);
+    const again = run(["--runtime-dir", runtimeDir, "--prefix", prefix, "--npm-executable", npm]);
+    assert.equal(again.status, 0, again.output);
+    assert.deepEqual(JSON.parse(readFileSync(recordPath, "utf8")), { skill_dir: workspace });
     assert.ok(existsSync(join(prefix, "data")), "durable data dir must exist outside release trees");
     assert.equal(active.dataDir, join(prefix, "data"));
     assert.equal(active.dataDir.startsWith(join(prefix, "releases")), false);
