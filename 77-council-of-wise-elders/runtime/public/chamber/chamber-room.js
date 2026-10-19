@@ -192,8 +192,7 @@
 
     var pillSlot = el('span', 'ch-seat-pillslot');
     var pill = el('span', 'ch-seat-pill');
-    pill.appendChild(el('span', 'ch-seat-name-full', data.name));
-    pill.appendChild(el('span', 'ch-seat-name-short', data.short || data.name));
+    pill.textContent = data.short || data.name;
     pillSlot.appendChild(pill);
 
     btn.appendChild(bubbleSlot);

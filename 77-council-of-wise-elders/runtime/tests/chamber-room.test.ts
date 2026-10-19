@@ -567,3 +567,43 @@ test('chamber-room.css honours the layout contract and prefers-reduced-motion', 
   const classes = new Set([...roomCss.matchAll(/\.(ch-[a-z0-9-]+)/g)].map((m) => m[1]));
   for (const c of classes) assert.match(c, /^ch-(?:room|seat|bubble|table|round)-?/, `class ${c} is outside the C prefixes`);
 });
+
+/* ---- Framing against the real F portraits (W29 fix round 1) ------------- */
+
+const cssNoComments = roomCss.replace(/\/\*[\s\S]*?\*\//g, '');
+
+test('the dome cuts below the chin: cover is 15 percent of the bust height or less', () => {
+  // F's webps are head crops: the chin sits at 65 to 75 percent of the height.
+  const m = cssNoComments.match(/--ch-room-cover:\s*calc\(var\(--ch-room-bust-h\)\s*\*\s*([0-9.]+)\)/);
+  assert.ok(m, 'desktop cover is a share of the bust height');
+  assert.ok(Number(m[1]) <= 0.15, `cover ${m[1]} would hide chins`);
+  const pillTop = cssNoComments.match(/--ch-room-pill-top:\s*([0-9.]+)/);
+  assert.ok(pillTop && Number(pillTop[1]) >= 0.76, 'the pill hangs from the collar, below the chin');
+  assert.match(cssNoComments, /\.ch-seat-pillslot\s*\{[^}]*top:\s*calc\(var\(--ch-room-bubble\)[^}]*var\(--ch-room-pill-top\)/, 'pill is top-anchored so it grows downward');
+  assert.doesNotMatch(cssNoComments, /\.ch-seat-pillslot\s*\{[^}]*bottom:/, 'a bottom-anchored pill climbs over the face');
+});
+
+test('the phone round card cuts at the collar, not at the nose', () => {
+  const phone = cssNoComments.slice(cssNoComments.indexOf('max-width: 599.98px'));
+  assert.match(phone, /\.ch-table\s*\{[^}]*margin-top:\s*calc\(var\(--ch-room-cover\)\s*\*\s*-1\)/);
+  assert.doesNotMatch(phone, /bust-h\)\s*\*\s*-0\.3/);
+});
+
+test('pills are one line on the arc, shrink with the seat gap, and wrap inside their border on the phone', () => {
+  const pill = cssNoComments.match(/\n\.ch-seat-pill\s*\{([^}]*)\}/);
+  assert.ok(pill, 'base pill rule');
+  assert.match(pill[1], /white-space:\s*nowrap/);
+  assert.match(pill[1], /font-size:\s*clamp\(10px/, 'type shrinks with the seat gap');
+  assert.doesNotMatch(pill[1], /max-width/, 'no max-width squeezing the arc pills to two lines');
+  const phone = cssNoComments.slice(cssNoComments.indexOf('max-width: 599.98px'));
+  assert.match(phone, /\.ch-seat-pill\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere[^}]*max-width:\s*calc\(\(100cqw - var\(--ch-room-w\)\) \* 0\.22 - 4px\)/);
+});
+
+test('the pill shows the short name only (full names are wider than the seat gap)', () => {
+  const b = boot();
+  b.push(liveView({}));
+  const pills = b.q('ch-seat-pill');
+  assert.equal(pills.length, 9);
+  const labels = pills.map((p) => p.textContent);
+  assert.deepEqual(labels, ORDER.map((id) => SEATS[id].short));
+});
