@@ -1,0 +1,65 @@
+{
+  "started_at": "2026-10-18T23:26:20.451Z",
+  "start_outcome": {
+    "outcome": "started",
+    "origin": "http://127.0.0.1:8787",
+    "port": 8787,
+    "identity": {
+      "schema_version": "wise-elders.service-identity/v1",
+      "service": "council-of-wise-elders",
+      "composition": "standalone",
+      "api_version": "v1",
+      "owner": {
+        "tenant_id": "operator-tenant",
+        "company_id": "operator-company",
+        "data_dir_sha256": "f307a75a9043f24b723093656bc6f4695ae303e9b248f0c635e2cabc90fcc9e1"
+      },
+      "started_at": "2026-10-18T23:26:20.437Z"
+    },
+    "blockers": []
+  },
+  "session_probe": {
+    "requested": "http://127.0.0.1:8787/council/sess-w15u001-live",
+    "http_status": 200,
+    "body": {
+      "session_id": "sess-w15u001-live",
+      "authority": "standalone",
+      "url": "http://127.0.0.1:8787/council/sess-w15u001-live",
+      "ui": "not_bundled",
+      "blocker": {
+        "code": "UI_NOT_BUNDLED",
+        "detail": "The shared Council UI build is not packaged by this service slice.",
+        "recovery": "Package the accepted shared Council UI build (WER-021 full packaging), then re-run service-readiness."
+      },
+      "api": {
+        "session": "http://127.0.0.1:8787/council/sess-w15u001-live",
+        "events": "/api/council/sessions/sess-w15u001-live/events"
+      }
+    }
+  },
+  "session_url": "http://127.0.0.1:8787/council/sess-w15u001-live",
+  "health": {
+    "http_status": 200,
+    "body": {
+      "ok": true,
+      "state": "running",
+      "draining": false,
+      "api_version": "v1",
+      "origin": "http://127.0.0.1:8787"
+    }
+  },
+  "shutdown": {
+    "signal": "SIGTERM",
+    "drained": {
+      "drained": true,
+      "fenced": true,
+      "origin": "http://127.0.0.1:8787",
+      "reason": null
+    },
+    "stopped": {
+      "stopped": true,
+      "reason": null
+    },
+    "at": "2026-10-18T23:26:20.706Z"
+  }
+}

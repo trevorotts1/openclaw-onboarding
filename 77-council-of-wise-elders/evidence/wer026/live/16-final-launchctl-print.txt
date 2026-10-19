@@ -1,0 +1,71 @@
+gui/501/ai.blackceo.wise-elders.supervisor = {
+	active count = 0
+	path = <operator-home>/Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /opt/homebrew/opt/node@26/bin/node
+	arguments = {
+		/opt/homebrew/opt/node@26/bin/node
+		<operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders/scripts/supervisor/runner.mjs
+		--data-dir
+		<operator-home>/Library/Application Support/wise-elders/supervisor
+		--once
+		--tick-work-ms
+		45000
+	}
+
+	working directory = <operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders
+
+	stdout path = <operator-home>/Library/Logs/wise-elders-supervisor.out.log
+	stderr path = <operator-home>/Library/Logs/wise-elders-supervisor.err.log
+	inherited environment = {
+		OLLAMA_MODELS => /Volumes/mac mini m4/Ollama-Models
+		OLLAMA_MAX_LOADED_MODELS => 2
+		OLLAMA_KEEP_ALIVE => 3m
+		SSH_AUTH_SOCK => /private/tmp/com.apple.launchd.taVE9UJHlP/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		XPC_SERVICE_NAME => ai.blackceo.wise-elders.supervisor
+	}
+
+	domain = gui/501 [106626]
+	asid = 106626
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 4
+	last exit code = 0
+
+	resource coalition = {
+		ID = 649297
+		type = resource
+		state = active
+		active count = 1
+		name = ai.blackceo.wise-elders.supervisor
+	}
+
+	jetsam coalition = {
+		ID = 649298
+		type = jetsam
+		state = active
+		active count = 1
+		name = ai.blackceo.wise-elders.supervisor
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	run interval = 600 seconds
+
+	properties = runatload | inferred program | system service | tle system
+}

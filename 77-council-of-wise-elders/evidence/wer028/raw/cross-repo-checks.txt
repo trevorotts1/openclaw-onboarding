@@ -1,0 +1,37 @@
+captured_at=2026-10-18T23:33:24Z
+cc_head=800b076907122bd080e774024e6da7b66fb67a73 setup_head=a156e4dfb7db831b32b47416cc751d8e803636a1
+--- CC presence (git rev-parse HEAD:<path>; rc=128=absent) ---
+rc=0 path=src/lib/council/engine.ts id=d669970c7d67b6ddfaf71af05cd5a186349a107f
+rc=0 path=src/lib/council/intents id=7ffbab63d831c8685cc4e63210337899688a6cd8
+rc=0 path=src/lib/council/kanban id=5364d8328c05afe795a6c7b8d69ea0fee393c7e0
+rc=0 path=src/lib/council/contracts/schemas.ts id=731dac07f3041c1cad3909e0c0c2b74a9d64d254
+rc=0 path=src/components/council/council-portrait-manifest.ts id=f549676ee00f50004ac4a2460713211ea23f9eb9
+--- 999-setup presence ---
+rc=0 path=scripts/council-runtime-install.sh id=f29d75d578ceeffa7a9ef70752710f5988152e8e
+rc=0 path=scripts/council-runtime-install.ps1 id=b7eeb4d301f023c2bdb3051dd23e293f096b82f8
+rc=0 path=launchers/macos id=a444f5dab73d4706c4e919430776262fe01bdd20
+rc=0 path=launchers/windows id=0a263f390c7555a521b2ea035e2dc4866d268c44
+--- B-2: launcher entry vs runtime implementation ---
+onb_api_health_grep_rc=1
+onb_cli_dir_api_health_grep_rc=2
+onb_runtime_all_api_health_grep_rc=1
+onb_cli_serve_grep_rc=1
+<operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders/runtime/src/cli/dispatcher.ts:793:        throw usageError(`Unknown command: ${[command, sub, third].filter(Boolean).join(' ')}`);
+control (expected rc=0): grep route-selection in runtime/src/cli
+control_rc=0
+96:  printf '"%s" "%s" serve --host %s --port %s\n' "${NODE_BIN:-node}" "$ENTRY" "$HOST" "$PORT"
+168:  nohup "$NODE_BIN" "$ENTRY" serve --host "$HOST" --port "$PORT" >>"$LOG" 2>&1 &
+6:#   GET http://127.0.0.1:<port>/api/health
+61:HEALTH="$BASE/api/health"
+--- B-3: wrapper signature ---
+207:    'export function createClaudeNineHost(options = {}, nativeResolver) {',
+218:    '      createClaudeNineHost(opts, nativeResolver),',
+233:    'import { createClaudeNineHost, main } from "./dist/claude-nine-host-wrapper.mjs";' \
+240:    '    createHost: (opts) => createClaudeNineHost(bundleNativeResolver, { ...opts, skillRoot }),' \
+--- B-4: vendored bundle identity ---
+{
+  "skill_version": "v1.0.0",
+  "file_count": 310,
+  "aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+  "source_commit": "b25d8419a2abb593262d19ffb513197c04ef843f"
+}

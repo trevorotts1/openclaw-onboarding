@@ -1,0 +1,12 @@
+captured_at=2026-10-18T23:34:23Z
+setup_head=a156e4dfb7db831b32b47416cc751d8e803636a1 (trevorotts1/999-setup main)
+$ git ls-tree -r HEAD -- launchers/windows scripts/council-runtime-install.ps1
+100644 blob e46d83c5ff5e87a2d5f9890433ac761dd2b29bd4	launchers/windows/blackceo-council-desktop.cmd
+100644 blob ffc1eaa635802b770439d05f7c13f7e0a2ec5c31	launchers/windows/blackceo-council-desktop.mjs
+100644 blob bcaec00feb35082ed8962a9c521cdc0fa3b4f9aa	launchers/windows/blackceo-council.cmd
+100644 blob 2bb303f8a99d6cc493fe838ad7b2519726ae9c21	launchers/windows/blackceo-council.ps1
+100644 blob e0d7046b391af7c4bdb35008a17027af7c4d394a	launchers/windows/claude-nine.cmd
+100644 blob ae0fac745920ce60376b25e5a1867c5b74db7643	launchers/windows/claude-nine.ps1
+100644 blob 919be5c6ab4c642de63a7db9554bb2b5c09227a1	launchers/windows/tests/windows-artifacts.test.mjs
+100644 blob b7eeb4d301f023c2bdb3051dd23e293f096b82f8	scripts/council-runtime-install.ps1
+rc=0

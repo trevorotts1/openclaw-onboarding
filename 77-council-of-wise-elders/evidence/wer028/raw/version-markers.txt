@@ -1,0 +1,9 @@
+captured_at=2026-10-18T23:33:53Z
+ref=39e74434810d9c110f2c6ac506386c832f7b6fb5
+
+skill-version.txt: v1.0.15 (rc=0)
+version: 1.0.15 (rc=0)
+SKILL.md frontmatter: version: 1.0.15 (rc=0)
+CHANGELOG top entry: ## v1.0.15: runnable supervisor driver and live crash/restart acceptance (WER-026) (rc=0)
+
+manifest recorded: {"file_count":585,"aggregate_sha256":"e19d41a24881da28d9b317a8fc6bf6f9ad62f49c28a9911b561ad9a0b7ede61f","source_commit":"e0a34cdaf0252737829ede0e9b4f262f9bacd188","archive_sha256":"d70a0da03e7e8b397f84154b274d855cb3570b1cc1e169214f609e6011330db5"}

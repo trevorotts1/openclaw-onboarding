@@ -1,0 +1,4 @@
+{"event":"admitted","instance_id":"runner-89299","pid":89299,"data_dir":"<operator-home>/Library/Application Support/wise-elders/supervisor","ledger_generation":1,"fencing_generation":2,"recovered_dead_owner":false,"native_adapter_binding":"UNKNOWN"}
+{"event":"reconciled_state","state":"HEALTHY","ledger_generation":1,"fencing_generation":2}
+{"event":"tick","tick_seq":1,"executed":true,"reason":"EXECUTED","decision_kind":"SCHEDULED","receipt_id":"RCPT-000001","completed_sweeps":1,"ledger_generation":1,"state":"HEALTHY"}
+{"event":"stopped","reason":"STOPPED","supervisor_state":"STOPPED","admission_state":"STOPPED","ledger_generation":1,"completed_sweeps":1,"interrupted_ticks":0,"pid":89299}
