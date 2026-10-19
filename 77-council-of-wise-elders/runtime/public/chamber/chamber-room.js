@@ -102,6 +102,60 @@
     return { text: String(connection.text), canReconnect: connection.canReconnect === true };
   };
 
+  /*
+   * Click target = the visible bust, not its 150px box. Seats are about 100px
+   * apart, so the transparent sides of one bust sit on top of its neighbour's
+   * face; the browser hit-tests boxes, not alpha. This turns the portrait's
+   * alpha channel (RGBA bytes, w x h) into a clip-path polygon (left edge down,
+   * right edge back up, one band per pixel row). clip-path is honoured by hit
+   * testing, so the pointer sees exactly the painted shape. Returns null when
+   * nothing is opaque.
+   */
+  room.silhouette = function silhouette(rgba, w, h, threshold) {
+    var limit = threshold == null ? 16 : threshold;
+    var left = [];
+    var right = [];
+    var x;
+    var y;
+    for (y = 0; y < h; y += 1) {
+      var lo = -1;
+      var hi = -1;
+      for (x = 0; x < w; x += 1) {
+        if (rgba[(y * w + x) * 4 + 3] > limit) {
+          if (lo < 0) lo = x;
+          hi = x;
+        }
+      }
+      if (lo >= 0) {
+        left.push([lo, y]);
+        right.push([hi + 1, y]);
+      }
+    }
+    if (!left.length) return null;
+    var pts = [];
+    function add(px, py) {
+      var last = pts[pts.length - 1];
+      if (!last || last[0] !== px || last[1] !== py) pts.push([px, py]);
+    }
+    left.forEach(function (p) {
+      add(p[0], p[1]);
+      add(p[0], p[1] + 1);
+    });
+    for (var i = right.length - 1; i >= 0; i -= 1) {
+      add(right[i][0], right[i][1] + 1);
+      add(right[i][0], right[i][1]);
+    }
+    return (
+      'polygon(' +
+      pts
+        .map(function (p) {
+          return r2((p[0] / w) * 100) + '% ' + r2((p[1] / h) * 100) + '%';
+        })
+        .join(',') +
+      ')'
+    );
+  };
+
   if (typeof document === 'undefined') return;
 
   var EMPTY_HEADLINE = 'No council in session.';
@@ -150,6 +204,23 @@
     document.dispatchEvent(new CustomEvent('chamber:open-seat', { detail: { seatId: id, opener: opener } }));
   }
 
+  var shapeCanvas = null;
+  function shapeOf(img) {
+    try {
+      if (!shapeCanvas) {
+        shapeCanvas = document.createElement('canvas');
+        shapeCanvas.width = 160;
+        shapeCanvas.height = 200;
+      }
+      var cx = shapeCanvas.getContext('2d', { willReadFrequently: true });
+      cx.clearRect(0, 0, 160, 200);
+      cx.drawImage(img, 0, 0, 160, 200);
+      return room.silhouette(cx.getImageData(0, 0, 160, 200).data, 160, 200) || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   function buildSeat(id) {
     var data = seatData(id);
     var btn = el('button', 'ch-seat');
@@ -170,7 +241,6 @@
     bubble.appendChild(bubbleCheck);
     bubbleSlot.appendChild(bubble);
 
-    var bust = el('span', 'ch-seat-bust');
     var img = document.createElement('img');
     img.className = 'ch-seat-img';
     img.alt = '';
@@ -178,8 +248,15 @@
     img.decoding = 'async';
     var sources = portraitSources(id);
     var tried = 0;
+    var bust = el('span', 'ch-seat-bust');
+    img.addEventListener('load', function () {
+      // Only the alpha cutout gets a shape; the svg medallion keeps the default
+      // one-step-wide column from the stylesheet.
+      bust.style.clipPath = tried === 0 ? shapeOf(img) : '';
+    });
     img.addEventListener('error', function () {
       tried += 1;
+      bust.style.clipPath = '';
       if (tried < sources.length) {
         img.classList.add('ch-seat-img--medallion');
         img.src = sources[tried];

@@ -596,7 +596,8 @@ test('pills are one line on the arc, shrink with the seat gap, and wrap inside t
   assert.match(pill[1], /font-size:\s*clamp\(10px/, 'type shrinks with the seat gap');
   assert.doesNotMatch(pill[1], /max-width/, 'no max-width squeezing the arc pills to two lines');
   const phone = cssNoComments.slice(cssNoComments.indexOf('max-width: 599.98px'));
-  assert.match(phone, /\.ch-seat-pill\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere[^}]*max-width:\s*calc\(\(100cqw - var\(--ch-room-w\)\) \* 0\.22 - 4px\)/);
+  assert.match(phone, /\.ch-seat-pill\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere[^}]*max-width:\s*calc\(var\(--ch-room-step\) - 4px\)/);
+  assert.match(phone, /\.ch-seat\s*\{[^}]*--ch-room-step:\s*calc\(\(100cqw - var\(--ch-room-w\)\) \* 0\.22\)/);
 });
 
 test('the pill shows the short name only (full names are wider than the seat gap)', () => {
@@ -606,4 +607,62 @@ test('the pill shows the short name only (full names are wider than the seat gap
   assert.equal(pills.length, 9);
   const labels = pills.map((p) => p.textContent);
   assert.deepEqual(labels, ORDER.map((id) => SEATS[id].short));
+});
+
+/* ---- Click targets (W29 fix round 2): a face or pill opens ITS seat ------- */
+
+test('silhouette turns the alpha channel into a polygon that leaves transparent sides out', () => {
+  const room = loadPure();
+  // 10 x 4 image: only columns 3..6 are opaque on every row.
+  const w = 10;
+  const h = 4;
+  const rgba = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y += 1) for (let x = 3; x <= 6; x += 1) rgba[(y * w + x) * 4 + 3] = 255;
+  const poly: string = room.silhouette(rgba, w, h);
+  assert.match(poly, /^polygon\(/);
+  const xs = [...poly.matchAll(/([0-9.]+)% [0-9.]+%/g)].map((m) => Number(m[1]));
+  assert.equal(Math.min(...xs), 30, 'left edge is the first opaque column');
+  assert.equal(Math.max(...xs), 70, 'right edge is just past the last opaque column');
+  assert.equal(room.silhouette(new Uint8Array(w * h * 4), w, h), null, 'fully transparent has no shape');
+});
+
+test('the 150px seat box never takes the pointer: only bust, pill and bubble do', () => {
+  assert.match(cssNoComments, /\.ch-seat\s*\{[^}]*pointer-events:\s*none/, 'the button box is click-through');
+  assert.match(cssNoComments, /\.ch-seat-bust\s*\{[^}]*pointer-events:\s*auto[^}]*clip-path:\s*inset\(/, 'the bust is clickable, cut to a column until the alpha shape is known');
+  assert.match(cssNoComments, /\n\.ch-seat-pill\s*\{[^}]*pointer-events:\s*auto/);
+  assert.match(cssNoComments, /\n\.ch-bubble\s*\{[^}]*pointer-events:\s*auto/);
+  // The slots are full seat width and sit over neighbours: they must inherit none.
+  assert.doesNotMatch(cssNoComments, /\.ch-seat-(pill|bubble)slot\s*\{[^}]*pointer-events:\s*auto/);
+});
+
+test('a loaded portrait gets a clip-path from its alpha; the svg medallion keeps the stylesheet column', () => {
+  const b = boot();
+  const doc = b.ctx.document;
+  const make = doc.createElement;
+  doc.createElement = (tag: string) => {
+    if (tag !== 'canvas') return make(tag);
+    return {
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        clearRect: () => undefined,
+        drawImage: () => undefined,
+        getImageData: (_x: number, _y: number, w: number, h: number) => {
+          const data = new Uint8Array(w * h * 4);
+          for (let y = 0; y < h; y += 1) for (let x = 60; x < 100; x += 1) data[(y * w + x) * 4 + 3] = 255;
+          return { data };
+        },
+      }),
+    };
+  };
+  b.push(liveView({}));
+  const seat = b.q('ch-seat').find((s) => s.getAttribute('data-seat-id') === 'oprah-winfrey') as FakeNode;
+  const img = seat.find((n) => n.tag === 'img')[0] as FakeNode;
+  const bust = seat.find((n) => n.hasClass('ch-seat-bust'))[0] as FakeNode;
+  img.fire('load');
+  assert.match(String(bust.style.clipPath), /^polygon\(/, 'webp load shapes the click target');
+  img.fire('error');
+  assert.equal(bust.style.clipPath, '', 'svg fallback goes back to the stylesheet column');
+  img.fire('load');
+  assert.equal(bust.style.clipPath, '', 'the medallion is never shaped from its alpha');
 });
