@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
-description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.18
+description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
+version: 1.2.19
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -41,6 +41,10 @@ Route elsewhere when the assignment is specifically:
 - **Website-craft** — ordinary multi-page marketing website whose governing copy contract is not this BlackCEO single-page system.
 
 If the owner explicitly asks for this BlackCEO Signature Page skill, use it even when the page ultimately hands delivery to another rail.
+
+For the seven `signature_launch` page roles (`landing`, `product_selection`, `checkout`, `upsell_1`, `downsell_1`, `upsell_2`, `thank_you`), copy and page assembly route as above: landing stays in this skill, product selection to Skill 78, checkout to the native Convert and Flow order form installed by Skill 06, upsell 1 and 2 to Skill 80, downsell to Skill 81, thank-you to Skill 82. All seven roles take their four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) from this skill's shared image service, `scripts/shared_page_service.py`, called once from the owning skill's wrapper.
+
+Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
 
 ## OpenClaw ownership and seams
 

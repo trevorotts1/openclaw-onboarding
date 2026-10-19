@@ -14,6 +14,8 @@ Skill 71 is the OpenClaw-native home of the BlackCEO **single-page** Signature P
 | Animated/cinematic scroll experience | **Skill 62** |
 | Generic multi-page marketing website | Website-craft + Web Development |
 
+Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
+
 A plain request to "build me a landing page" should reach Skill 71 through the Web Development / Landing Page Specialist path. A user does not need to know the skill number or name.
 
 ## Department ownership

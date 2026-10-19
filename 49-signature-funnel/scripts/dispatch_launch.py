@@ -88,12 +88,6 @@ EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
-ROLE_SKILL = {"landing": 71, "product_selection": 78, "checkout": 79,
-              "upsell_1": 80, "downsell_1": 81, "upsell_2": 80, "thank_you": 82}
-ROLE_OFFERS = {"landing": ("main",), "product_selection": ("main",),
-               "checkout": ("main", "bump"), "upsell_1": ("upsell_1",),
-               "downsell_1": ("downsell_1",), "upsell_2": ("upsell_2",),
-               "thank_you": ("main", "bump", "upsell_1", "downsell_1", "upsell_2")}
 WRITE_TARGETS = ("local_only", "approved_test_location", "approved_live_publication")
 
 ADOPTION_SCHEMA = "signature-launch-prompt-policy-adoption/v1"
@@ -112,6 +106,70 @@ _NOT_READY = {"state": "not_ready", "evidence_ref": None}
 
 class DispatchError(ValueError):
     pass
+
+
+# Fix 15 — ONE page-type vocabulary, published once. The matrix/profiles use the
+# funnel slugs (main, upsell, downsell, upsell-2, downsell-2, thank-you, checkout)
+# while the dispatch contract speaks page_roles (landing, ... thank_you). The
+# mapping lives in exactly one place, structure/funnel_structure.json's
+# page_role_map block, and this module READS it instead of re-spelling either
+# vocabulary. Fail closed: a missing or malformed table is a DispatchError (the
+# role vocabulary cannot be guessed); a role set that disagrees with the fixed
+# role -> skill assignment is refused at import so the two can never drift apart.
+PAGE_ROLE_MAP_CONTRACT = "signature-funnel-page-role-map/v1"
+PAGE_ROLE_MAP_FILE = (Path(__file__).resolve().parent.parent
+                      / "structure" / "funnel_structure.json")
+
+
+def _load_page_role_map() -> Dict[str, Any]:
+    """Read the one page_type -> page_role table (funnel_structure.json)."""
+    try:
+        doc = json.loads(PAGE_ROLE_MAP_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise DispatchError(
+            f"cannot read the page-role map {PAGE_ROLE_MAP_FILE}: {exc}"
+        ) from exc
+    table = doc.get("page_role_map") if isinstance(doc, dict) else None
+    if not isinstance(table, dict):
+        raise DispatchError(
+            f"{PAGE_ROLE_MAP_FILE} carries no page_role_map block")
+    if table.get("contract") != PAGE_ROLE_MAP_CONTRACT:
+        raise DispatchError(
+            f"page_role_map contract is {table.get('contract')!r}, expected "
+            f"{PAGE_ROLE_MAP_CONTRACT!r}")
+    roles = table.get("page_roles")
+    types = table.get("page_types")
+    if (not isinstance(roles, list) or not roles
+            or len(set(roles)) != len(roles)
+            or not all(isinstance(r, str) and r for r in roles)):
+        raise DispatchError(
+            "page_role_map.page_roles must be a non-empty list of unique "
+            "page_role strings")
+    if not isinstance(types, dict) or not types:
+        raise DispatchError("page_role_map.page_types must be a non-empty map")
+    for page_type, row in types.items():
+        if not isinstance(row, dict) or row.get("page_role") not in roles:
+            raise DispatchError(
+                f"page_type {page_type!r} does not map onto a declared "
+                "page_role")
+    return table
+
+PAGE_ROLE_MAP = _load_page_role_map()
+PAGE_ROLES = tuple(PAGE_ROLE_MAP["page_roles"])
+PAGE_TYPE_TO_ROLE = {page_type: row["page_role"]
+                     for page_type, row in PAGE_ROLE_MAP["page_types"].items()}
+
+ROLE_SKILL = {"landing": 71, "product_selection": 78, "checkout": 79,
+              "upsell_1": 80, "downsell_1": 81, "upsell_2": 80, "thank_you": 82}
+ROLE_OFFERS = {"landing": ("main",), "product_selection": ("main",),
+               "checkout": ("main", "bump"), "upsell_1": ("upsell_1",),
+               "downsell_1": ("downsell_1",), "upsell_2": ("upsell_2",),
+               "thank_you": ("main", "bump", "upsell_1", "downsell_1", "upsell_2")}
+
+if set(ROLE_SKILL) != set(PAGE_ROLES):
+    raise DispatchError(
+        "dispatch role -> skill map and page_role_map.page_roles disagree: "
+        f"{sorted(set(ROLE_SKILL) ^ set(PAGE_ROLES))}")
 
 
 def _read_adoption() -> Tuple[Dict[str, Dict[str, Any]], str]:
@@ -395,6 +453,11 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path):
     import collect_launch_receipts as receipts
 
     adapters = config.get("adapters") or {}
+    unknown = sorted(str(k) for k in adapters if k not in PAGE_ROLES)
+    if unknown:
+        raise DispatchError(
+            "adapter config names page_role(s) outside the page-role map "
+            f"({PAGE_ROLE_MAP_FILE.name} page_role_map.page_roles): {unknown}")
 
     def run(req: Dict[str, Any]) -> Dict[str, Any]:
         role = req["page_role"]
@@ -451,6 +514,53 @@ def _self_test() -> int:
         nonlocal ok
         ok = ok and good
         print(f"SELF-TEST {'ok' if good else 'FAIL'}: {msg}")
+
+    # Fix 15 — ONE page-type vocabulary. The table is the only authority; these
+    # probes prove a consumer can loop over it and that no copy of the role
+    # vocabulary has drifted from it.
+    say(set(PAGE_ROLE_MAP["page_roles"]) == set(ROLE_SKILL),
+        "page_role_map.page_roles is exactly the dispatch role set")
+    say(set(PAGE_TYPE_TO_ROLE) == {
+            "main", "product_selection", "checkout", "upsell", "downsell",
+            "upsell-2", "downsell-2", "thank-you"},
+        "the map covers the seven page_role values plus matrix-only downsell-2")
+    say(set(PAGE_TYPE_TO_ROLE.values()) == set(PAGE_ROLES),
+        "a loop over the page_role_map reaches every page_role the skill "
+        "understands")
+    say(PAGE_TYPE_TO_ROLE["downsell-2"] == "downsell_1"
+        and PAGE_ROLE_MAP["page_types"]["downsell-2"].get("role_instance")
+        == "downsell_2",
+        "downsell-2 is decided: downsell_1 + role_instance downsell_2")
+    say(PAGE_ROLE_MAP["page_types"]["checkout"].get("adapter")
+        == "absent_by_design",
+        "checkout's adapter absence is a stated design ruling, not a gap")
+    try:
+        executor_from_config({"adapters": {"not_a_page_role": {
+            "command": ["true"]}}}, Path("."))
+        say(False, "an adapter key outside the page-role map must be refused")
+    except DispatchError:
+        say(True, "an adapter key outside the page-role map is refused")
+    _repo_root = Path(__file__).resolve().parent.parent.parent
+    _schema_copies = [
+        _repo_root / "71-blackceo-signature-page" / "references"
+        / "page-request.schema.json",
+        _repo_root / "49-signature-funnel" / "scripts" / "vendor"
+        / "page-request.schema.json",
+        _repo_root / "shared-utils" / "signature_launch" / "domain"
+        / "page-request.schema.json",
+        _repo_root / "shared-utils" / "signature_launch" / "domain"
+        / "page-request.v1.0.schema.json",
+    ]
+    for _schema in _schema_copies:
+        if not _schema.is_file():
+            print(f"SELF-TEST skip: {_schema.name} absent "
+                  f"({_schema.parent} not in this layout)")
+            continue
+        _enum = json.loads(_schema.read_text(encoding="utf-8"))[
+            "properties"]["page_role"]["enum"]
+        say(_enum == list(PAGE_ROLES),
+            f"{_schema.relative_to(_repo_root)} page_role enum equals "
+            "page_role_map.page_roles")
 
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
