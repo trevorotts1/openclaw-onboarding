@@ -2,7 +2,7 @@
  * W21-U001 front-door event-stream and session-reader tests.
  *
  * Runner:
- *   node --import tsx --test src/service/front-door-events.test.ts
+ *   node --import tsx --test tests/front-door-events.test.ts
  *
  * Tier A only: loopback HTTP on ephemeral ports. Every event frame and
  * every session record below is INJECTED TEST DATA — no database, no
@@ -20,10 +20,10 @@ import {
   type CouncilEventFrame,
   type CouncilEventStreamAdapter,
   type CouncilSessionReader,
-} from './events.js';
-import { CouncilFrontDoor, type FrontDoorOptions } from './front-door.js';
-import { buildServiceIdentity } from './identity.js';
-import type { JournalEvent } from '../persistence/journal.js';
+} from '../src/service/events.js';
+import { CouncilFrontDoor, type FrontDoorOptions } from '../src/service/front-door.js';
+import { buildServiceIdentity } from '../src/service/identity.js';
+import type { JournalEvent } from '../src/persistence/journal.js';
 
 const FIXED_NOW = '2026-10-19T12:00:00.000Z';
 
