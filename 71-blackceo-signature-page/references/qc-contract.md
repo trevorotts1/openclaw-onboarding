@@ -82,8 +82,8 @@ scores a wireframe or mockup trait criterion without a
 Wireframe traits (a designed, annotated build spec rendered as an
 image, in the client's brand colors):
 
-- W1: every section is numbered and named against the 12-section
-  standard.
+- W1: every section is numbered and named against the selected
+  version's sections (12 Standard, 15 Long-Form).
 - W2: type specs are printed on the sheet (H1, H2, body, and CTA
   sizes, desktop and mobile).
 - W3: every image slot is a deliberate placeholder (a

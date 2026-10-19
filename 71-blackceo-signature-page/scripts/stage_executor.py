@@ -400,7 +400,11 @@ def copy_contract(section: dict) -> str:
                 f"section {label}: verbatim copy carries style padding "
                 f"({phrase!r}); rebuild the request with the client's full copy "
                 "(no production prose inside the copy block)")
-    if copy.endswith("...") or copy[-1] not in TERMINAL:
+    # A short closing line on its own line (a chip label, a signature) is a
+    # complete unit, not a sentence; unfinished prose is still refused.
+    lines = copy.splitlines()
+    label_end = len(lines) > 1 and len(lines[-1].split()) <= 8
+    if copy.endswith("...") or (copy[-1] not in TERMINAL and not label_end):
         raise ExecutorError(
             f"section {label}: verbatim copy ends mid-sentence "
             f"({copy[-56:]!r}); rebuild the request with the full section copy")
@@ -450,6 +454,104 @@ class ExecutorError(Exception):
     """A named failure; the message is printed and the run stops."""
 
 
+SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
+
+
+def canon_section_id(value) -> str:
+    """Canonical copy-spec section id: "S02A", "02A", "2a" -> "2A"."""
+    text = str(value).strip().upper()
+    text = re.sub(r"^S(?=\d)", "", text)
+    match = re.fullmatch(r"0*(\d+)([A-Z]?)", text)
+    return f"{int(match.group(1))}{match.group(2)}" if match else text
+
+
+def declared_copy_version(run_dir: Path, request: dict):
+    """The selected form: request, then request metadata, then intake.json."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    values = [request.get("copy_version"), metadata.get("copy_version")]
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        values.append(intake.get("copy_version"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    for value in values:
+        if value:
+            return str(value)
+    return None
+
+
+def allowed_section_sequences(spec: dict) -> list:
+    """The spec sequence, plus each optional-children expansion (5 -> 5A,5B,5C)."""
+    base = list(spec["sequence"])
+    out = [base]
+    for parent, child in (spec.get("containment", {}).get("child_sections") or {}).items():
+        if parent in base and child.get("ids"):
+            i = base.index(parent)
+            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
+    return out
+
+
+def check_section_count(run_dir: Path, request: dict, paid: bool = False):
+    """Fail closed unless the request carries one section per canonical copy
+    section of the selected form (Standard 12, Long-Form 15), in order.
+
+    Never band-compressed: a request that merges sections to fit fewer images
+    is refused by name before any prompt is composed or any call is made.
+    """
+    version = declared_copy_version(run_dir, request)
+    if not version:
+        if paid:
+            raise ExecutorError(
+                "the production request does not declare copy_version (request "
+                "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
+                "paid run needs the selected form so the section count can be checked")
+        print("NOTE section_count: no copy_version declared; the section-count "
+              "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
+        return None
+    spec_path = SPEC_DIR / f"{version}-v6.json"
+    if not spec_path.is_file():
+        raise ExecutorError(
+            f"copy_version {version!r} is not one of standard, long-form "
+            f"(no spec at {spec_path.name})")
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
+    allowed = allowed_section_sequences(spec)
+    if ids not in allowed:
+        want = allowed[0]
+        raise ExecutorError(
+            f"section count: the request has {len(ids)} sections {ids} but the "
+            f"{version} copy has {len(want)} canonical sections {want}; missing "
+            f"{[i for i in want if i not in ids]}, unexpected "
+            f"{[i for i in ids if i not in want]}. One request section per canonical "
+            "copy section, in order; never band-compress sections")
+    sources = []
+    for path in _copy_source_candidates(run_dir, request):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        sources.append(("copy source", [canon_section_id(s["id"]) for s in data.get("sections") or []
+                                        if isinstance(s, dict) and s.get("id")]))
+        break
+    manifest = run_dir / "copy" / "copy-manifest.json"
+    if manifest.is_file():
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from validate_wireframe import manifest_section_ids  # the wireframe gate's own reader
+        try:
+            sources.append(("copy manifest", [canon_section_id(i) for i in manifest_section_ids(
+                json.loads(manifest.read_text(encoding="utf-8")))]))
+        except (OSError, ValueError):
+            pass
+    for label, source_ids in sources:
+        if source_ids and source_ids != ids:
+            raise ExecutorError(
+                f"section count: the request has {len(ids)} sections {ids} but its {label} "
+                f"has {len(source_ids)} sections {source_ids}; they must match one to one")
+    return version, ids
+
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -462,7 +564,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def load_request(run_dir: Path, name: str) -> dict:
+def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
     path = run_dir / name
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -475,11 +577,13 @@ def load_request(run_dir: Path, name: str) -> dict:
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         raise ExecutorError("production request needs a non-empty 'sections' array")
-    ctas = copy_source_ctas(run_dir, data)
-    required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
+    data["_section_check"] = check_section_count(run_dir, data, paid)
+    ctas = copy_source_ctas(run_dir, data)
+    required = bool(data.get("cta_required"))
+    for i, s in enumerate(sections):
         s.setdefault("section_name", s["section_id"])
         inline = _cta_label(s.get("cta"))
         source = ctas.get(str(s["section_id"]))
@@ -538,9 +642,11 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     values = {
         "stage": stage,
         "section_number": str(index),
+        "section_total": str(len(request.get("sections") or [])),
         "section_name": section.get("section_name") or section["section_id"],
         "copy": section.get("copy") or "",
         "slots": slot_words,
+        "layout": str(section.get("layout") or ""),
         "width": str(width),
         "ratio": ratio or "",
         "style": request.get("style") or "",
@@ -899,6 +1005,10 @@ def main(argv=None) -> int:
     try:
         if args.preflight:
             request = load_request(run_dir, args.request)
+            check = request.get("_section_check")
+            if check:
+                print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
+                      f"sections={len(check[1])} canonical_ids={','.join(check[1])}")
             refused = 0
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
@@ -926,13 +1036,14 @@ def main(argv=None) -> int:
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:
-            request = load_request(run_dir, args.request) if (run_dir / args.request).is_file() else {}
+            request = (load_request(run_dir, args.request, paid=args.provider == "kie")
+                       if (run_dir / args.request).is_file() else {})
             entry = run_item(run_dir, args.stage or "image-generation-qc",
                              args.item, request, provider, args.overwrite)
             print(f"ITEM {entry['item']} {entry['file']} provider={entry['provider']} "
                   f"mode={entry['mode']}")
             return 0
-        request = load_request(run_dir, args.request)
+        request = load_request(run_dir, args.request, paid=args.provider == "kie")
         for stage in stages:
             record = run_stage(stage, run_dir, request, provider)
             files = len(record["images"])

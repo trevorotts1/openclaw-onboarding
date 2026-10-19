@@ -15,6 +15,7 @@ MODULES = [
     "test_scripts.py",
     "test_stage_executor.py",
     "test_stage_executor_prompt_contract.py",
+    "test_section_count.py",
     "test_validate_visual_direction.py",
     "test_validate_manifest_grade.py",
     "test_stage_gate.py",
