@@ -125,6 +125,14 @@ EOF
 }
 EOF
       ;;
+    propose|bogus)   # clean agents + the CAN014 key: propose is rejected by the NEW build; bogus has no migration
+      sed "s/^  \"channels\"/  \"skills\": {\"workshop\": {\"autonomous\": {\"mode\": \"$2\"}}},\n  \"channels\"/" > "$1" <<'EOF'
+{
+  "agents": {"defaults": {"workspace": "~/defaults-workspace"}},
+  "channels": {"telegram": {"enabled": true}}
+}
+EOF
+      ;;
     entries)
       cat > "$1" <<'EOF'
 {
@@ -175,11 +183,20 @@ if [ "\${1:-}" = "config" ] && [ "\${2:-}" = "schema" ]; then
     echo "schema unavailable" >&2; exit 1
   fi
   if [ "\$V" = "$NEW_V" ]; then
-    echo '{"properties":{"agents":{"additionalProperties":false,"properties":{"defaults":{},"entries":{}}}}}'
+    echo '{"properties":{"agents":{"additionalProperties":false,"properties":{"defaults":{},"entries":{}}},"skills":{"properties":{"workshop":{"additionalProperties":false,"properties":{"autonomous":{"properties":{"mode":{"anyOf":[{"const":"off"},{"const":"auto"}]}}}}}}}}}'
   else
-    echo '{"properties":{"agents":{"additionalProperties":false,"properties":{"defaults":{},"list":{}}}}}'
+    echo '{"properties":{"agents":{"additionalProperties":false,"properties":{"defaults":{},"list":{}}},"skills":{"properties":{"workshop":{"additionalProperties":false,"properties":{"autonomous":{"properties":{"mode":{"anyOf":[{"const":"off"},{"const":"auto"},{"const":"propose"}]}}}}}}}}}'
   fi
   exit 0
+fi
+# CAN014: the NEW build rejects skills.workshop.autonomous.mode "propose" (2026.10.5).
+# config validate --json is its verdict: rc 1 + {"valid":false,"issues":[...]}.
+if [ "\${1:-}" = "config" ] && [ "\${2:-}" = "validate" ]; then
+  if [ -f "\$STATE/validate_fail" ] || { [ "\$V" = "$NEW_V" ] && grep -Eq '"mode": *"(propose|bogus)"' "\$HOME/.openclaw/openclaw.json" 2>/dev/null; }; then
+    echo '{"ok":false,"valid":false,"issues":[{"path":"skills.workshop.autonomous.mode","message":"Invalid input (allowed: off, auto)"}]}'
+    exit 1
+  fi
+  echo '{"ok":true,"valid":true}'; exit 0
 fi
 exit 0
 EOF
@@ -868,6 +885,48 @@ if [ -z "$LEFT12" ]; then
 else
   fail "12b: the upgrade leaked temp file(s): $LEFT12"
 fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (13) CAN014: the NEW binary must accept the config before success is claimed ---"
+# 2026.10.4 -> 2026.10.5 left skills.workshop.autonomous.mode "propose" in place; the
+# new build rejects it, every CLI command exited 1, and this script still printed
+# "ATOMIC UPGRADE COMPLETE". The stub's `config validate` models the new build.
+H13="$(make_box b13 propose)"; S13="$SANDBOX/stubs13"; ST13="$SANDBOX/state13"
+make_stubs "$S13" "$ST13" versioned
+OUT13="$(run_atomic "$H13" "$S13" "$ST13")"; RC13=$?
+CFG13="$H13/.openclaw/openclaw.json"
+if [ "$RC13" -eq 0 ] && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT13" && grep -Eq '"mode": *"off"' "$CFG13" && ! grep -q propose "$CFG13" \
+   && [ "$(event_order "$ST13" "npm install" "openclaw config validate")" = "OK" ]; then
+  pass "13a: propose was mapped to off and the NEW binary validated the config after the install"
+else
+  fail "13a: rc=$RC13 mode=$(grep -o '"mode": *"[a-z]*"' "$CFG13") events=$(tr '\n' '|' < "$ST13/events") out=$OUT13"
+fi
+
+# A box ALREADY on the new build and holding propose (the operator Mac): not "nothing to do".
+H13B="$(make_box b13b propose)"; S13B="$SANDBOX/stubs13b"; ST13B="$SANDBOX/state13b"
+make_stubs "$S13B" "$ST13B" versioned; printf '%s' "$NEW_V" > "$ST13B/version"
+OUT13B="$(run_atomic "$H13B" "$S13B" "$ST13B")"; RC13B=$?
+if [ "$RC13B" -eq 0 ] && grep -Eq '"mode": *"off"' "$H13B/.openclaw/openclaw.json" && [ ! -f "$ST13B/npm_installs" ] && [ -f "$ST13B/loaded_ai.openclaw.gateway" ]; then
+  pass "13b: a box already on the new build holding propose is repaired (no reinstall, gateway back up)"
+else
+  fail "13b: rc=$RC13B installs=$([ -f "$ST13B/npm_installs" ] && echo yes || echo no) out=$OUT13B"
+fi
+
+# A value with NO known migration, and a build that still rejects the config: roll back, never CLEAN.
+for kind in bogus clean; do
+  H13C="$(make_box "b13c-$kind" "$kind")"; S13C="$SANDBOX/stubs13c-$kind"; ST13C="$SANDBOX/state13c-$kind"
+  make_stubs "$S13C" "$ST13C" versioned
+  [ "$kind" = "clean" ] && touch "$ST13C/validate_fail"      # config is fine; the build still rejects it
+  CFG13C="$H13C/.openclaw/openclaw.json"; SHA13C="$(sha_of "$CFG13C")"
+  OUT13C="$(run_atomic "$H13C" "$S13C" "$ST13C")"; RC13C=$?
+  if [ "$RC13C" -eq 78 ] && ! grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT13C" && [ "$(sha_of "$CFG13C")" = "$SHA13C" ] \
+     && [ "$(cat "$ST13C/version")" = "$OLD_V" ] && [ -f "$ST13C/loaded_ai.openclaw.gateway" ]; then
+    pass "13c($kind): config the new build rejects -> rolled back (rc=78), config + binary restored, gateway up, no success banner"
+  else
+    fail "13c($kind): rc=$RC13C version=$(cat "$ST13C/version") out=$OUT13C"
+  fi
+done
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""

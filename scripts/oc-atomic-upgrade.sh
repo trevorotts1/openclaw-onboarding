@@ -324,6 +324,24 @@ _config_sha() {
   fi
 }
 
+# ── Does the INSTALLED binary accept the config on disk? `openclaw config validate`
+# ── is the build's own verdict (rc 1 = rejected). Prints ONLY each issue's path and
+# ── message (never the offending value) so a misplaced secret cannot reach a log.
+# ── 2026.10.4 -> 2026.10.5 shipped a box whose config held skills.workshop.autonomous
+# ── .mode "propose": every CLI command died, and this script had still printed
+# ── "ATOMIC UPGRADE COMPLETE" because nothing here ever asked the new binary.
+_config_valid_for_installed_binary() {
+  local out
+  out="$(openclaw config validate --json 2>/dev/null)" && return 0
+  printf '%s' "$out" | python3 -c 'import json,sys
+try:
+    for i in json.load(sys.stdin).get("issues") or []:
+        print("%s: %s" % (i.get("path"), i.get("message")))
+except Exception:
+    print("(no parseable issue list - the build rejected the config)")' 2>/dev/null | sed 's/^/    | /' >&2
+  return 1
+}
+
 # ── The maintenance lock. remediate.sh / gateway-health-watchdog.sh honour it.
 # ── It exists because the 5-minute self-heal ALSO runs from cron on some boxes,
 # ── where there is no LaunchAgent to boot out — a bootout alone would leave a
@@ -789,8 +807,12 @@ do_upgrade() {
   _say "config    : $OC_CONFIG  [shape: $shape]"
 
   if [ "$OLD_VERSION" = "$TARGET_VERSION" ] && [ "$shape" != "LEGACY_LIST" ]; then
-    _ok "already on $TARGET_VERSION with a non-legacy config — nothing to do."
-    return 0
+    # "Nothing to do" is only true if the installed build actually accepts the config.
+    if [ "$shape" = "NO_CONFIG" ] || _config_valid_for_installed_binary; then
+      _ok "already on $TARGET_VERSION with a non-legacy config the installed build accepts — nothing to do."
+      return 0
+    fi
+    _warn "already on $TARGET_VERSION but the installed build REJECTS the config (above) — running the full procedure to migrate it"
   fi
 
   if [ "$DRY_RUN" = "1" ]; then
@@ -803,6 +825,7 @@ do_upgrade() {
     echo "    5. $NPM_BIN install -g openclaw@$TARGET_VERSION"
     echo "    6. ask the NEW binary: openclaw config schema  -> which keys does \`agents\` accept?"
     echo "    7. if it accepts \`entries\` and not \`list\`: migrate + verify losslessness; else leave the config alone"
+    echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary; rejected = roll back"
     echo "    8. bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s"
     echo "    9. release the lock, re-arm $SELFHEAL_LABEL"
     echo "    Any failure from step 3 onward: restore config AND binary, start the gateway."
@@ -928,6 +951,45 @@ do_upgrade() {
     else
       _ok "no migration needed for shape $shape"
     fi
+  fi
+
+  # ── 7b. THE NEW BINARY MUST ACCEPT THE CONFIG BEFORE ANYTHING IS CALLED DONE ─
+  # Apply the known value map for keys the new build retired (propose -> off, per
+  # the vendor's doctor migration), then ask the build itself. An unmapped or
+  # still-rejected config rolls back loudly: a config the new build rejects must
+  # never be reported as a successful upgrade, and must never reach the gateway.
+  if [ -f "$OC_CONFIG" ]; then
+    schema_file="$(mktemp "${TMPDIR:-/tmp}/oc-schema.XXXXXX")" || {
+      _rollback "could not create a temp file for the workshop-mode probe"; return $?; }
+    if openclaw config schema > "$schema_file" 2>/dev/null; then
+      staged="${OC_CONFIG}.atomic-staged.$$"
+      wm="$(python3 "$MIGRATOR" workshop-migrate "$schema_file" "$OC_CONFIG" "$staged" 2>&1)"; rc=$?
+      rm -f "$schema_file"
+      if [ "$rc" -ne 0 ]; then
+        rm -f "$staged"
+        _rollback "the config holds a value the new build rejects and there is no known migration for it: $wm"
+        return $?
+      fi
+      case "$wm" in
+        migrated:*)
+          STATE_CONFIG_CHANGED=1
+          # QC-ALLOW-NO-CHOWN: redirect through the existing inode — owner/group/mode preserved by construction.
+          if ! cat "$staged" > "$OC_CONFIG" 2>/dev/null; then
+            rm -f "$staged"; _rollback "could not write the workshop-mode migration into place"; return $?
+          fi
+          _ok "$wm" ;;
+      esac
+      rm -f "$staged"
+    else
+      rm -f "$schema_file"
+      _rollback "\`openclaw config schema\` FAILED on the installed binary - the workshop-mode value cannot be checked"
+      return $?
+    fi
+    if ! _config_valid_for_installed_binary; then
+      _rollback "the NEW build ($(_measured_version)) REJECTS the config (issues above) - refusing to report success on a config the installed binary cannot load"
+      return $?
+    fi
+    _ok "the installed binary accepts the config (openclaw config validate)"
   fi
 
   # ── 8. START, AND PROVE IT STAYED UP ───────────────────────────────────────
