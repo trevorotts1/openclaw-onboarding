@@ -118,6 +118,14 @@
 #   OC_ATOMIC_HEALTH_TIMEOUT         seconds a ROLLBACK waits to PROVE the gateway
 #                                    is back: job loaded, pid present, and
 #                                    GET /healthz == 200 (default 60)
+#   OC_ATOMIC_SETTLE_SECONDS         after a ROLLBACK first sees the gateway healthy
+#                                    it keeps watching this long and re-checks
+#                                    (same pid, still loaded, /healthz 200) before
+#                                    claiming success. A bootout that outlived
+#                                    OC_ATOMIC_BOOTOUT_TIMEOUT can still remove the
+#                                    job later; the default (25) outlasts launchd's
+#                                    20s ExitTimeOut. 0 disables (and says so).
+#   Non-numeric values of the three timeouts above fall back to their defaults.
 #
 # ⚠️ INTERPRETER: written for stock /bin/bash 3.2.57, which is what the fleet's
 # Macs run. No associative arrays, no `mapfile`, no `${x^^}`, and never a
@@ -134,11 +142,15 @@ MODE=""
 TARGET_VERSION=""
 DRY_RUN=0
 
+# A non-integer timeout would make `[ "$i" -ge "$t" ]` error forever; fall back.
+_uint() { case "$1" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }
+
 QUIESCE_PROOF_SECONDS="${OC_ATOMIC_QUIESCE_PROOF_SECONDS:-75}"
 STABILITY_SECONDS="${OC_ATOMIC_STABILITY_SECONDS:-25}"
 NPM_BIN="${OC_ATOMIC_NPM:-npm}"
-BOOTOUT_TIMEOUT="${OC_ATOMIC_BOOTOUT_TIMEOUT:-60}"
-HEALTH_TIMEOUT="${OC_ATOMIC_HEALTH_TIMEOUT:-60}"
+BOOTOUT_TIMEOUT="$(_uint "${OC_ATOMIC_BOOTOUT_TIMEOUT:-}" 60)"
+HEALTH_TIMEOUT="$(_uint "${OC_ATOMIC_HEALTH_TIMEOUT:-}" 60)"
+SETTLE_SECONDS="$(_uint "${OC_ATOMIC_SETTLE_SECONDS:-}" 25)"
 
 GATEWAY_LABEL="ai.openclaw.gateway"
 SELFHEAL_LABEL="com.openclaw.service-remediate"
@@ -410,7 +422,9 @@ _start_gateway() {
         _err "no LaunchAgent plist at $plist — cannot bootstrap the gateway back"
         return 1
       fi
-      launchctl bootstrap "gui/$UIDN" "$plist" >/dev/null 2>&1 || return 1
+      # The exit code is a claim, not the result: bootstrap can exit non-zero
+      # (e.g. 5) while the job really did load. _prove_started measures it.
+      launchctl bootstrap "gui/$UIDN" "$plist" >/dev/null 2>&1
       ;;
     docker) docker start openclaw >/dev/null 2>&1 || return 1 ;;
     none)   return 0 ;;
@@ -441,21 +455,42 @@ _restore_gateway_step() {
 }
 
 # Put back the gateway the rollback stopped, and PROVE it. A bootstrap exit code
-# is a claim; loaded + pid + /healthz 200 is the result.
+# is a claim; loaded + pid + /healthz 200 is the result -- and it must still hold
+# after SETTLE_SECONDS. One good moment is not proof: a bootout that outlived
+# BOOTOUT_TIMEOUT is still tearing down, answers healthy until it lands, and then
+# removes the job (the box goes dark after we claimed success). If the job did not
+# hold, loop: the step re-bootstraps it. Bounded at 3 attempts.
 _restore_gateway() {
+  local attempt=0 pid_a pid_b l h p
   if [ "$SUPERVISOR" = "launchd" ] && [ ! -f "$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" ]; then
     _err "no LaunchAgent plist at $HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist — cannot bootstrap the gateway back"
     return 1
   fi
-  if _poll "$HEALTH_TIMEOUT" _restore_gateway_step; then
-    _ok "gateway PROVEN back: $SUPERVISOR state loaded, pid $(_gateway_pid), /healthz 200"
-    return 0
-  fi
-  local l=no h=no p
+  while [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt+1))
+    if _poll "$HEALTH_TIMEOUT" _restore_gateway_step; then
+      pid_a="$(_gateway_pid)"
+      if [ "$SETTLE_SECONDS" -gt 0 ]; then
+        _say "gateway answered (pid ${pid_a:-none}); holding ${SETTLE_SECONDS}s to prove an earlier, slower bootout cannot still remove it..."
+        sleep "$SETTLE_SECONDS"
+      else
+        _warn "rollback settle window disabled (OC_ATOMIC_SETTLE_SECONDS=0) — 'still up' was NOT proven"
+      fi
+      pid_b="$(_gateway_pid)"
+      if _gateway_loaded && [ -n "$pid_b" ] && [ "$pid_a" = "$pid_b" ] && _healthz_ok; then
+        _ok "gateway PROVEN back and HELD ${SETTLE_SECONDS}s: $SUPERVISOR state loaded, pid $pid_b, /healthz 200"
+        return 0
+      fi
+      _warn "gateway did not hold through the settle window (pid ${pid_a:-none} -> ${pid_b:-none}) — re-loading (attempt $attempt of 3)"
+    else
+      break
+    fi
+  done
+  l=no; h=no
   _gateway_loaded && l=yes
   _healthz_ok && h=yes
   p="$(_gateway_pid)"
-  _err "gateway NOT proven back within ${HEALTH_TIMEOUT}s (job loaded: $l; pid: ${p:-none}; /healthz 200: $h)"
+  _err "gateway NOT proven back (job loaded: $l; pid: ${p:-none}; /healthz 200: $h; attempts: $attempt; per-attempt wait ${HEALTH_TIMEOUT}s)"
   return 1
 }
 
@@ -496,20 +531,25 @@ _prove_started() {
   fi
   if [ "$STABILITY_SECONDS" -le 0 ]; then
     _warn "stability window disabled (OC_ATOMIC_STABILITY_SECONDS=$STABILITY_SECONDS) — 'stayed up' was NOT proven"
-    return 0
+  else
+    _say "proving the gateway STAYS up (${STABILITY_SECONDS}s, pid=$pid_a)..."
+    sleep "$STABILITY_SECONDS"
+    pid_b="$(_gateway_pid)"
+    if [ -z "$pid_b" ]; then
+      _err "the gateway DIED during the stability window — it came up and then exited"
+      return 1
+    fi
+    if [ "$pid_a" != "$pid_b" ]; then
+      _err "the gateway pid CHANGED during the stability window ($pid_a -> $pid_b) — that is the crash-loop signature (exit 78 + KeepAlive respawn), not a healthy start"
+      return 1
+    fi
   fi
-  _say "proving the gateway STAYS up (${STABILITY_SECONDS}s, pid=$pid_a)..."
-  sleep "$STABILITY_SECONDS"
-  pid_b="$(_gateway_pid)"
-  if [ -z "$pid_b" ]; then
-    _err "the gateway DIED during the stability window — it came up and then exited"
+  # A stable pid is a process, not a service: require it to ANSWER, same as the rollback.
+  if ! _poll "$HEALTH_TIMEOUT" _healthz_ok; then
+    _err "the gateway is up (pid $(_gateway_pid)) but GET /healthz never answered 200 within ${HEALTH_TIMEOUT}s"
     return 1
   fi
-  if [ "$pid_a" != "$pid_b" ]; then
-    _err "the gateway pid CHANGED during the stability window ($pid_a -> $pid_b) — that is the crash-loop signature (exit 78 + KeepAlive respawn), not a healthy start"
-    return 1
-  fi
-  _ok "gateway up and stable for ${STABILITY_SECONDS}s on pid $pid_a"
+  _ok "gateway up, stable and answering /healthz 200 (pid $(_gateway_pid))"
   return 0
 }
 

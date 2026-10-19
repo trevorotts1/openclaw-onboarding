@@ -242,7 +242,8 @@ case "\${1:-}" in
     _settle "\$LBL"
     [ -f "\$STATE/loaded_\$LBL" ] || exit 1
     P="\$(cat "\$STATE/pid" 2>/dev/null)"
-    if [ -f "\$STATE/pid_flip" ]; then P=\$((P+1)); printf '%s' "\$P" > "\$STATE/pid"; fi
+    # crash-loop is a property of the NEW build; the restored old build is stable
+    if [ -f "\$STATE/pid_flip" ] && [ "\$(cat "\$STATE/version" 2>/dev/null)" != "$OLD_V" ]; then P=\$((P+1)); printf '%s' "\$P" > "\$STATE/pid"; fi
     echo "	pid = \$P"
     exit 0
     ;;
@@ -311,6 +312,7 @@ run_atomic() {
   HOME="$home" PATH="$stubs:/usr/bin:/bin:/usr/sbin:/sbin" \
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
     OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
+    OC_ATOMIC_SETTLE_SECONDS="${T_SETTLE:-1}" \
     bash "$script" --upgrade 2>&1
 }
 
@@ -701,6 +703,57 @@ if [ "$RC11G" -eq 70 ]; then
 else
   fail "11g: expected rc=70 when /healthz never answers, got $RC11G. Output: $OUT11G"
 fi
+
+# 11h. QC round 1 (HIGH): bootout still tearing down AFTER the quiesce timeout.
+# The quiesce gives up (delay 8 > timeout 3), the rollback sees the job loaded
+# with a pid and /healthz 200 -- and the pending bootout then removes it. The
+# rollback must not take that one good moment as proof. Either the job is still
+# loaded once the delay has passed (and nothing false was printed), or the script
+# exited 70 and made no "rollback complete" claim.
+H11H="$(make_box b11h legacy)"; S11H="$SANDBOX/stubs11h"; ST11H="$SANDBOX/state11h"
+make_stubs "$S11H" "$ST11H" versioned
+echo 8 > "$ST11H/bootout_delay"
+OUT11H="$(T_BOOTOUT_TIMEOUT=3 T_SETTLE=10 run_atomic "$H11H" "$S11H" "$ST11H")"; RC11H=$?
+sleep 9      # past the 8s delay: whatever the early bootout was going to do, it has done
+LOADED11H=no; "$S11H/launchctl" print "gui/501/ai.openclaw.gateway" >/dev/null 2>&1 && LOADED11H=yes
+CLAIM11H=no; case "$OUT11H" in *"rollback complete"*|*"exactly as it was found"*) CLAIM11H=yes ;; esac
+if [ "$LOADED11H" = "yes" ] || { [ "$RC11H" -eq 70 ] && [ "$CLAIM11H" = "no" ]; }; then
+  pass "11h: bootout outliving the quiesce timeout -> gateway still loaded afterwards (loaded=$LOADED11H, rc=$RC11H) or a loud rc=70 with no success claim"
+else
+  fail "11h: FALSE CLAIM -- box dark after the pending bootout (rc=$RC11H, loaded=$LOADED11H, claimed-success=$CLAIM11H). Output: $OUT11H"
+fi
+if [ "$LOADED11H" = "yes" ] && [ "$CLAIM11H" = "yes" ] && [ "$RC11H" -ne 78 ]; then
+  fail "11i: success claimed but rc=$RC11H"
+elif [ "$LOADED11H" = "no" ] && [ "$CLAIM11H" = "yes" ]; then
+  fail "11i: 'rollback complete' printed for a box that is dark"
+else
+  pass "11i: output never claims success for a dark box"
+fi
+
+# 11j. a non-numeric timeout must fall back to the default, not hang _poll.
+H11J="$(make_box b11j clean)"; S11J="$SANDBOX/stubs11j"; ST11J="$SANDBOX/state11j"
+make_stubs "$S11J" "$ST11J" versioned
+touch "$ST11J/loaded_ai.openclaw.gateway"
+OUT11J="$(HOME="$H11J" PATH="$S11J:/usr/bin:/bin:/usr/sbin:/sbin" \
+  OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
+  OC_ATOMIC_BOOTOUT_TIMEOUT=abc OC_ATOMIC_HEALTH_TIMEOUT=x1 OC_ATOMIC_SETTLE_SECONDS=zz \
+  perl -e 'alarm 90; exec @ARGV' bash "$ATOMIC" --upgrade 2>&1)"; RC11J=$?
+if [ "$RC11J" -eq 0 ]; then
+  pass "11j: non-numeric timeouts fall back to defaults; the upgrade finishes (rc=0), no hang"
+else
+  fail "11j: non-numeric timeouts broke the run (rc=$RC11J; 142 = hung). Output: $OUT11J"
+fi
+
+# 11k. forward path: gateway up with a stable pid but /healthz never 200 must NOT
+# print ATOMIC UPGRADE COMPLETE.
+H11K="$(make_box b11k clean)"; S11K="$SANDBOX/stubs11k"; ST11K="$SANDBOX/state11k"
+make_stubs "$S11K" "$ST11K" versioned
+touch "$ST11K/healthz_down"
+OUT11K="$(T_HEALTH_TIMEOUT=2 T_SETTLE=1 run_atomic "$H11K" "$S11K" "$ST11K")"; RC11K=$?
+case "$OUT11K" in
+  *"ATOMIC UPGRADE COMPLETE"*) fail "11k: success printed for a gateway that never answered /healthz. Output: $OUT11K" ;;
+  *) pass "11k: a gateway that is up but not answering /healthz is not called a complete upgrade (rc=$RC11K)" ;;
+esac
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
