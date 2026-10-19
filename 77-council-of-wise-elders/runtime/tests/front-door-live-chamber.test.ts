@@ -267,6 +267,7 @@ class FakeNode {
   type = '';
   private text = '';
   textWrites = 0;
+  moves = 0; // times this node was re-inserted while already attached (blurs focus in a browser)
   constructor(public tag: string) {}
   get textContent(): string { return this.text; }
   set textContent(v: string) { this.text = v; this.textWrites += 1; }
@@ -282,6 +283,7 @@ class FakeNode {
   addEventListener(): void {}
   appendChild(n: FakeNode): FakeNode { return this.insertBefore(n, null); }
   insertBefore(n: FakeNode, ref: FakeNode | null): FakeNode {
+    if (n.parentNode) n.moves += 1;
     n.parentNode?.removeChild(n);
     const at = ref ? this.children.indexOf(ref) : this.children.length;
     this.children.splice(at, 0, n);
@@ -329,6 +331,30 @@ test('list refresh updates buttons in place: the focused button survives, keyed 
   live.reconcileList(list, [row('b', 'completed')], 'b', () => {}, doc);
   assert.equal(list.children.length, 1);
   assert.equal(list.children[0], focusedLi);
+});
+
+test('list refresh that only removes sessions moves none of the remaining nodes', () => {
+  const live = loadHelpers();
+  const doc = { createElement: (tag: string) => new FakeNode(tag) };
+  const list = new FakeNode('ul');
+  const row = (id: string) => ({
+    session_id: id, question: 'Q ' + id, state: 'deliberating', mode: 'quick', created_at: '2026-10-19T12:00:00.000Z',
+  });
+  live.reconcileList(list, [row('c'), row('a'), row('b')], 'b', () => {}, doc);
+  const [, , liB] = list.children;
+  const [liC] = list.children;
+  list.children.forEach((n) => { n.moves = 0; });
+  // Archive a (above the focused b): c and b must stay put.
+  live.reconcileList(list, [row('c'), row('b')], 'b', () => {}, doc);
+  assert.equal(list.children.length, 2);
+  assert.equal(list.children[0], liC);
+  assert.equal(list.children[1], liB);
+  assert.equal(liB.moves, 0, 'focused node must not be re-inserted');
+  assert.equal(liC.moves, 0);
+  // Archive the first session too: still no move for the survivor.
+  live.reconcileList(list, [row('b')], 'b', () => {}, doc);
+  assert.equal(list.children[0], liB);
+  assert.equal(liB.moves, 0);
 });
 
 test('only an explicit load announces "Loading"; the timer refresh stays silent', () => {

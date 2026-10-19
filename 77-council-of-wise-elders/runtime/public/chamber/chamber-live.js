@@ -100,13 +100,22 @@
   /**
    * Update the session list in place, keyed by session_id, so a refresh never
    * removes the button that has keyboard focus. Nodes are created only for new
-   * sessions, removed only for sessions that are gone, and moved only when the
-   * order changed.
+   * sessions, removed (before ordering) only for sessions that are gone, and moved only
+   * when the order of the remaining sessions changed.
    */
   function reconcileList(list, sessions, selected, onSelect, doc) {
+    var keep = {};
+    sessions.forEach(function (s) { keep[s.session_id] = true; });
+    // Drop gone sessions first so the ordering pass never stops on a stale node
+    // and never moves a surviving (possibly focused) one.
     var byId = {};
     var node = list.firstChild;
-    while (node) { byId[node.getAttribute('data-session-id')] = node; node = node.nextSibling; }
+    while (node) {
+      var next = node.nextSibling;
+      var id = node.getAttribute('data-session-id');
+      if (keep[id]) byId[id] = node; else list.removeChild(node);
+      node = next;
+    }
     var cursor = list.firstChild;
     sessions.forEach(function (s) {
       var li = byId[s.session_id];
@@ -134,7 +143,6 @@
       if (li === cursor) cursor = cursor.nextSibling;
       else list.insertBefore(li, cursor);
     });
-    Object.keys(byId).forEach(function (id) { list.removeChild(byId[id]); });
   }
 
   /** Assign text only when it differs, so unchanged live regions are not re-announced. */
