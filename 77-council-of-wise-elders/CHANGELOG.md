@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.21: the real backend is composed (W22-U001)
+## v1.0.22: the real backend is composed (W22-U001)
 
 - W20 proved the honest-probe mechanism but left `store`, `route`, `routeCallable` and `worker` unbound on purpose, so the service still reported `usable: no` about a running process. The composition modules were merged and waiting; this entry binds them.
 - `runtime/src/service/composition.ts` now opens one canonical SQLite handle at `<dataDir>/council.db`, applies the additive `council-0001` schema (all 18 Section 16.2 tables), records the standalone installation profile, and builds `CouncilRepositories` — which constructs the `EventJournal` and the `ProjectionOutbox` over that same handle.
