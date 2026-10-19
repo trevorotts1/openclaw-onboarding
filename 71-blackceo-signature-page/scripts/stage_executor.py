@@ -249,6 +249,54 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
     return picks
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wireframe_spec  # noqa: E402  SPF016: wireframe style reference + build-spec prompt
+
+
+def style_refs(stage: str, request: dict, strict: bool = False) -> list:
+    """The one wireframe style reference a desktop or mobile wireframe job
+    attaches (chosen by stage and form), first in attach order; [] for the
+    other stages. A request that still lists the greyscale sheet is refused."""
+    try:
+        return wireframe_spec.reference_urls(stage, request, strict)
+    except wireframe_spec.SpecError as exc:
+        raise ExecutorError(str(exc))
+
+
+def wireframe_body(stage: str, section: dict, index: int, width: int,
+                   request: dict, body: str) -> str:
+    """Prepend the annotated build-spec block to a wireframe stage's prose,
+    after refusing prose that asks for a colourless sheet."""
+    if stage not in wireframe_spec.WIREFRAME_STAGES:
+        return body
+    try:
+        wireframe_spec.refuse_colourless_prose(stage, body)
+        block = wireframe_spec.prompt_block(
+            stage, section, index, len(request.get("sections") or []), width, request)
+    except wireframe_spec.SpecError as exc:
+        raise ExecutorError(str(exc))
+    if not (request.get("stage_prompts") or {}).get(stage):
+        # The generic fallback prose adds nothing to the build spec except the
+        # request's one-line style direction, which may be the only place a
+        # client colour is written.
+        style = sanitize_prompt(str(request.get("style") or "")).strip()
+        return f"{block}\n\nSTYLE DIRECTION - {style}" if style else block
+    return f"{block}\n\n{body}".strip()
+
+
+def require_brand_line(stage: str, prompt: str) -> None:
+    """A paid wireframe job needs the client's palette in its prompt. The build
+    spec says every colour comes from the BRAND COLORS line (scripts/brand_colors.py,
+    sigpage-brand-colors / R69, a required prerequisite of this change); without
+    that line the prompt points at a colour source that is not there."""
+    if stage in wireframe_spec.WIREFRAME_STAGES and not any(
+            line.startswith("BRAND COLORS") for line in prompt.splitlines()):
+        raise ExecutorError(
+            f"{stage}: the composed prompt has no BRAND COLORS line, so the sheet would go "
+            "out with no client palette. Resolve the client's brand colors first "
+            "(scripts/brand_colors.py, R69 sigpage-brand-colors)")
+
+
 def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
                  index: int) -> str:
     """Per-section, per-platform ratio: the pixel-mate's, never one 3:4 for all."""
@@ -664,6 +712,16 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
               "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
     resolve_design_style(run_dir, data)
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    if not (data.get("copy_version") or metadata.get("copy_version")):
+        # The run's form is an intake decision (artifact-contracts.md, Intake);
+        # a request that does not repeat it is read against intake.json.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+            if isinstance(intake, dict) and intake.get("copy_version"):
+                data["copy_version"] = intake["copy_version"]
+        except (OSError, ValueError):
+            pass
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
@@ -781,6 +839,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
         body = body.replace(copy, "", 1)
     body = sanitize_prompt(body)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    body = wireframe_body(stage, section, index, width, request, body)
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage)
@@ -860,8 +919,8 @@ def build_input(job: dict, request: dict) -> dict:
     if exact:  # the design board: exactly the job's attachments (client logo, the page's images)
         refs = [str(r) for r in job["references"]]
     else:
-        refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
-                                  job["references"]))
+        refs = list(dict.fromkeys(str(r) for r in (job.get("style_refs") or []) +
+                                  (request.get("references") or []) + job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
@@ -1064,12 +1123,15 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
         for template, width, height in targets:
             out = run_dir / stage / template.format(n=index)
             ratio = target_ratio(stage, template, section, run_dir, index)
+            style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template)
             typed = section_typed_references(
                 stage, width, resolve_composition(section, index, request), section)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True,
                 strict_floor=provider.name == "kie", typed_refs=typed)
+            if provider.name == "kie":
+                require_brand_line(stage, prompt)
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
@@ -1078,6 +1140,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 "references": [str(p) for p in refs] + [r["url"] for r in typed],
                 "typed_references": [{"id": r.get("id"), "type": r.get("type"), "sha256": r.get("sha256")}
                                      for r in typed],
+                "style_refs": style,
                 "prompt": prompt, "prompt_sizes": prompt_sizes,
             }
             result = provider.generate(job, request)
@@ -1096,7 +1159,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 "provider": result.get("provider"),
                 "mode": result.get("mode"),
                 "task_id": result.get("task_id"),
-                "inputs": job["references"],
+                "inputs": build_input(job, request)["input_urls"],
                 "typed_references": job["typed_references"],
                 "treatments": [e["treatment"] for e in resolve_composition(
                     section, index, request)["slots"]],
@@ -1434,7 +1497,8 @@ def main(argv=None) -> int:
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True, strict_floor=True, typed_refs=typed)
-                            refs = prior_slices(stage, run_dir, index, template)
+                            refs = style_refs(stage, request) + prior_slices(
+                                stage, run_dir, index, template)
                         except ExecutorError as exc:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
@@ -1456,6 +1520,10 @@ def main(argv=None) -> int:
                               f"composition={sizes['composition_chars']} "
                               f"treatments={','.join(e['treatment'] for e in resolved['slots']) or '-'} "
                               f"typed_refs={','.join(r.get('type', '?') for r in typed) or '-'}")
+                        if stage in wireframe_spec.WIREFRAME_STAGES:
+                            print(f"PREFLIGHT_WIREFRAME_REFS {stage} {name} "
+                                  f"form={wireframe_spec.form_of(request)} "
+                                  f"{wireframe_spec.describe_refs(refs)}")
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:

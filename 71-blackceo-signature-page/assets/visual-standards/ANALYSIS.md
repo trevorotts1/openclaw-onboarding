@@ -63,3 +63,13 @@ Tagged `counter-example-composition` in the catalog (structure and labelling onl
 Gaps the catalog does not yet fill (the prompt rules in `references/composition-treatments.json` carry them): a true circle-cropped photo, a hero-scale light field behind type, and a hero with the headline on a flat bright zone of a full-bleed photo. The plan is to build these as HTML renders with CSS masks so a reference shows the exact technique the build uses.
 
 Reference-only text: two mobile slices (12 Part 2 to 4) carry the placeholder copy "Trevor's story"; the catalog flags them `contains_reference_only_text`. The Set for Life brand, palette, people and copy never carry into a client page.
+
+## Update 2026-10-19 (wireframe style reference)
+
+The fix list above has since been built. One decision was added: the wireframe
+stages no longer send the greyscale Set for Life sheet as their style
+reference. They send `chatgpt-wireframe-1` (Standard desktop), `-3` (Long-Form
+desktop) or `-4` (mobile) by stage and form, and the prompt asks for an annotated
+build spec in the client's resolved brand colors. See `README.md` in this
+folder ("Which sheet is the wireframe style reference") and
+`references/wireframe-build-spec.json`.

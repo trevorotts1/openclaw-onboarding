@@ -35,6 +35,7 @@ sibling `74-kie-live-adapter` skill; a missing adapter is a named failure.
   "model": "<id resolved by Skill 66>",
   "copy_version": "standard | long-form",
   "style": "<one-line direction>",
+  "copy_version": "standard | long-form (optional here: read from intake.json when absent)",
   "references": ["/abs/path/reference-1.png"],
   "stage_prompts": {"desktop-wireframe": "... {section_name} ... {copy} ... {slots} ... {width} ..."},
   "input_extra": {"<field the live schema requires>": "<value>"},
@@ -102,6 +103,49 @@ composes and checks them with no provider call and no file write.
    labelled `REFERENCE IMAGE - structure only` block (what to take, what never to take, who owns
    color, logo, imagery and copy), and every delivered image of a paid run is checked for the reference's palette and
    brand text and recorded as `reference_bleed` (recorded, not yet gating; see the reference doc). The contract, the media-library links and the check are `references/reference-image-use.md`.
+
+## Wireframe stages: style reference and build spec
+
+`desktop-wireframe` and `mobile-tablet` jobs are driven by
+`references/wireframe-build-spec.json` through `scripts/wireframe_spec.py`.
+Two things are fixed there, not left to each request:
+
+1. **One style reference, chosen by stage and form.** The form is the
+   request's `copy_version` (else `metadata.copy_version`, else the run's
+   `intake.json` `copy_version`, which the executor reads when the request does
+   not repeat it, else inferred from the section ids; a paid run never guesses). Desktop sends
+   `chatgpt-wireframe-1` (Standard) or `chatgpt-wireframe-3` (Long-Form); mobile
+   sends `chatgpt-wireframe-4`, and for Standard also the rule "true
+   single-column phone stack, never side-by-side rows". The sheet travels as a
+   standing-file link (the bundled file's public repository URL, per
+   `references/kie-generation-route.md`) and is first in attach order. The
+   greyscale Set for Life wireframe is never a wireframe style reference: a
+   request whose `references` list it is refused by name before any prompt is
+   composed. `--preflight` prints `PREFLIGHT_WIREFRAME_REFS` with the form and
+   every reference the job sends; the stage-executor record's `inputs` is the
+   merged list actually sent. Which file is which, and why:
+   `assets/visual-standards/README.md`.
+2. **An annotated build-spec prompt block** (section chip and name tab, inline
+   type specs, image plates labelled with ratio and art direction, filled
+   primary CTA with microcopy, contiguous bands, widths header strip on the
+   first slice, one behaviour note, the pain and solution pair rule for
+   Long-Form, one continuous founder letter, and the example flaws not to
+   copy) is prepended to the stage's prose. It names no hex colour: the
+   client's colours come from the `BRAND COLORS` line of the same prompt,
+   which `scripts/brand_colors.py` supplies (sigpage-brand-colors, R69, is a
+   required prerequisite of this change: merge it first). A request without a
+   stage template still carries `request.style` as a `STYLE DIRECTION` line, and
+   a paid (`--provider kie`) wireframe job whose composed prompt has no
+   `BRAND COLORS` line is refused before any call. A request template that asks
+   for a colourless sheet ("warm grey line work on ivory", "no colour fill" about
+   the sheet) is refused by name; the same words in a negated sentence ("never
+   grey line work") or about image plates ("plates are neutral grey with no
+   colour fill") restate the spec and pass. A section may carry `type_specs` and
+   `behavior_notes`; otherwise the house default scale and a CTA-derived note
+   are printed. A slot `aspect_ratio` outside the one list in
+   `wireframe-build-spec.json` `ratio_labels` (every `RATIO_ENUM` ratio plus the
+   designed and substituted 2:1, 1:2, 3:1, 1:3, 9:21, 4:5 and 5:4, the same list
+   W3 uses) is refused; a label that is not reduced or is invented (3:9) never passes.
 
 Canvas geometry is per-image. `target_ratio()` derives each job's ratio from
 its pixel-mate (or the section's slot), and the record carries

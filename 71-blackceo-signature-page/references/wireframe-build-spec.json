@@ -1,0 +1,70 @@
+{
+  "schema": "skill71-wireframe-build-spec/v1",
+  "purpose": "The wireframe stages' prompt and reference contract. scripts/wireframe_spec.py reads this file; scripts/stage_executor.py composes the build-spec block from it into every desktop-wireframe and mobile-tablet prompt and attaches the style reference it names. Owner reading, 2026-10-19: files 1, 3 and 4 of the Drive wireframes folder are the look to follow; the greyscale Set for Life sheet is not a style target.",
+  "style_references": {
+    "standard": {
+      "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Standard Desktop"},
+      "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile (also the Standard mobile reference)",
+        "extra_rule": "STANDARD MOBILE — the attached phone reference is the long-form phone stack; draw this Standard section the same way: a true single-column phone stack, never side-by-side text-and-image rows. The Standard mobile example in the bundled set is a narrowed desktop with side-by-side rows and is not a phone layout; do not reproduce that."}
+    },
+    "long-form": {
+      "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-3.png", "label": "Long-Form Desktop"},
+      "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile"}
+    }
+  },
+  "reference_base_url": "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/71-blackceo-signature-page/assets/visual-standards/",
+  "never_style_references": {
+    "match": ["set-for-life-desktop-wireframe", "sfl-wireframe-part"],
+    "sha256": ["89053173165d0efc45d134a136fb95212258990bc815fc272d91786bd44552d9"],
+    "why": "A greyscale sheet: no brand colour, outlined CTAs, crossed boxes. It teaches the annotation conventions (widths header strip, per-section behaviour notes), which are written rules in this file, not a look. It is never attached to a wireframe request."
+  },
+  "not_attached": {
+    "wireframes/chatgpt-wireframe-2.png": "Standard Mobile example: a narrowed desktop with side-by-side rows, not a phone stack. Never attached."
+  },
+  "colourless_prose_note": "Each pattern is tested sentence by sentence. A sentence is skipped when the phrase is negated before it (never, not, don't, avoid, without) or when it is about image plates, photos or placeholders, which the build spec itself keeps neutral grey.",
+  "colourless_prose": [
+    "no colou?r fill",
+    "gr[ae]y line ?work",
+    "(strictly|pure|fully|only) gr[ae]y(scale)?( wireframe| sheet| dialect)?",
+    "gr[ae]yscale dialect",
+    "no saturated pixels"
+  ],
+  "ratio_labels_note": "The one list of valid ratio labels: every ratio in stage_executor.RATIO_ENUM, plus the designed and substituted ratios artifact-contracts.md and kie-generation-route.md document (3:1, 1:3, 9:21 go to the legacy route; 2:1, 1:2, 5:4, 4:5 are substituted on the default route). scripts/validate_wireframe.py (W3) reads this same list. Only a label that is not in lowest terms or is invented (3:9) is refused.",
+  "ratio_labels": ["1:1", "4:5", "5:4", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16", "21:9", "9:21", "27:16", "16:27", "9:8", "8:9", "3:1", "1:3", "2:1", "1:2"],
+  "header_strip": {"desktop-wireframe": {"page_px": 1440, "content_px": 1200}, "mobile-tablet": {"page_px": 390, "content_px": 342}},
+  "type_scale_default": {
+    "note": "House default scale, observed in the bundled examples (eyebrow, subhead, H2, microcopy) plus a body and H1 default. A section's own type_specs (the run's font map) replaces it.",
+    "desktop-wireframe": {"Eyebrow": "14-18 px", "H1": "56-72 px", "Subhead": "22-32 px", "H2": "48-64 px", "Body": "18-20 px", "CTA": "18-20 px", "CTA microcopy": "12-14 px"},
+    "mobile-tablet": {"Eyebrow": "12-14 px", "H1": "36-44 px", "Subhead": "20-24 px", "H2": "34-48 px", "Body": "18-20 px", "CTA": "18-20 px", "CTA microcopy": "16-18 px"}
+  },
+  "blocks": {
+    "intro": [
+      "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for a landing page: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
+      "FORM: {form_label}, {platform} page, {width}px wide. This slice is section {tag}, {name}, number {position} of {total}. Draw only this section; do not draw its neighbours."
+    ],
+    "style_reference": "STYLE REFERENCE — the first attached image shows the sheet language for this form: section chips with name tabs, printed type specs, labelled image plates, filled CTA chips and contiguous bands. Copy that grammar only. Never copy its colours, its words, its numbers, its title bar text or any of its mistakes. Where it differs from this prompt, this prompt wins.",
+    "colour": "COLOUR — every colour comes from the BRAND COLORS line in this prompt, the client's own resolved palette. The primary colour fills the section chip, the primary CTA, the plate edge bars and the second line of the headline. The darkest brand colour fills the dark authority bands. The lightest brand colours are the light grounds. The brand text colour sets all type. Image plates stay neutral grey. No other chromatic colour. The sheet is never grey line work on a pale ground, never colourless and never outline-only: a sheet with no brand colour on it is rejected. Do not borrow a colour from the style reference or from any other client.",
+    "grammar_head": "SHEET GRAMMAR — draw every item below on this slice. Items 1 to 7 are required production markings printed on a private build spec. They are the only text on the slice besides the verbatim copy, and they are the one exception to the negative block's ban on production labels.",
+    "chip": "1. SECTION CHIP AND NAME TAB — at the top left of the band, a filled primary-colour chip reading exactly \"SECTION {tag}\", and beside it a neutral-grey name tab reading exactly \"{name_caps}\". Print the chip once. The number is exactly {tag}: never another number, never the previous section's number again, never a skipped number.",
+    "type_specs": "2. INLINE TYPE SPECS — print each element's size beside it in small caps, for the elements this section has: {type_specs}. These captions are markings beside the real copy, never part of it.",
+    "plates_some": "3. IMAGE PLATES — {plates}. Each plate is a neutral-grey placeholder drawn at its true ratio with a white centred label reading IMAGE, the ratio and the short art direction. A plate is never a finished photograph and never a recognisable face. A thin primary-colour edge bar runs down one edge of each plate. Ratio labels read only one of: {ratio_list}. Never 3:9, never an unreduced ratio, never an invented one.",
+    "plates_none": "3. IMAGE PLATES — this section has no image slot. Draw no plate; the band is typography only.",
+    "cta_some": "4. CTA — {cta_shape} reading exactly \"{cta}\" in white capitals, and under it one small grey line reading exactly \"CTA MICROCOPY / {microcopy_size}\". A secondary action, if drawn, is an outlined rectangle.{cta_strip}",
+    "cta_none": "4. CTA — this section has no CTA. Draw no button and no CTA strip.",
+    "bands": "5. BANDS — the band runs edge to edge across the whole frame with no margin gap, no page card, no device frame, no navigation bar, no header links and no footer links. Grounds alternate between the light and the dark brand colours from section to section, so the stitched page reads as contiguous bands.",
+    "strip_first": "6. WIDTHS HEADER STRIP — a thin dark strip across the very top of this slice reading exactly \"{page} PX PAGE / {content} PX CONTENT\". It appears on this first slice only.",
+    "strip_other": "6. WIDTHS HEADER STRIP — none on this slice. The strip belongs to the first slice only.",
+    "behaviour": "7. BEHAVIOUR NOTE — one small line along the bottom of the band reading exactly \"{note}\".",
+    "cta_shape_desktop": "a filled primary-colour rectangular button",
+    "cta_shape_mobile": "a full-width filled primary-colour rectangular button",
+    "cta_strip_long_form": " Where this is a solution band, a full-width CTA strip carries the button across the foot of the band.",
+    "standard_desktop": "STANDARD DESKTOP — two- and three-column bands; the image position rotates left, centre, right across consecutive sections. Each pain section pairs a headline block (A) with a detail block of icon bullet rows (B) and one image plate. Never merge two numbered sections into one band.",
+    "long_form_desktop": "LONG-FORM DESKTOP — each pain band is answered by a lettered solution band on the opposite ground (2 then 2A, 3 then 3A, 4 then 4A) and the pair reads as one unit; a full-width CTA strip follows a solution band only where a CTA label is given. The Why section's reality, opportunity and movement beats read as one family. Never merge two numbered sections into one band.",
+    "pain": "This band is a PAIN band: pain bullets on dark panels, and the matching lettered solution band follows on the opposite ground.",
+    "solution": "This band is the SOLUTION band that answers the pain band before it: the opposite ground and check bullets.",
+    "mobile": "MOBILE — a true single-column phone stack, {width}px wide: every block full width, in reading order: chip and name tab, headline, body, image plate, bullets, then a full-width CTA with its microcopy line. Never side-by-side text and image rows, never a narrowed desktop, never two columns, never a contact sheet of several sections.",
+    "steps": "STEPS — exactly seven step badges, primary-colour circles reading 1, 2, 3, 4, 5, 6, 7 once each in that order, joined by chevrons or a dotted line (never a thin rail of black numbered circles), each beside its own step label from the copy.",
+    "letter": "FOUNDER LETTER — draw the letter as one continuous reading column: a single left-aligned text block with generous line spacing, a script signature, and the founder portrait plate {portrait_position}. Never six cards, six columns, a six-part strip or numbered parts, even though the style reference shows one.",
+    "do_not_copy": "DO NOT COPY THE EXAMPLE'S MISTAKES — the style reference was drawn by a model and carries flaws. Never reproduce: a misspelt label (DESKTOR for DESKTOP, BIGNEFIT for BENEFIT, BTEP for STEP, featofe, thwo); a section number printed twice or skipped; a wrong letter tag (a second 3A where 4A belongs, SC where 5C belongs); garbled badges (44, 52, 05 twice, or 01 02 05 04 05 06); a step sequence that is not 1 2 3 4 5 6 7 once each; an invalid ratio such as 3:9; duplicated bullet text; placeholder words such as lorem ipsum or GOES HERE."
+  }
+}

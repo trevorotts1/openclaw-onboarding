@@ -106,6 +106,40 @@ image, in the client's brand colors):
   and microcopy specs, and copy is the run's real copy where it
   exists.
 
+Wireframe trait extensions (the look of the owner's wireframes 1, 3 and
+4, drawn in the client's own colors). W1 to W7 keep their IDs. These
+checks tighten them and add one negative trait; `scripts/validate_wireframe.py`
+measures what it can, and a reviewer scoring W1 to W7 applies them all:
+
+- W1, sequential numbering: the section chips run in sequence, each
+  exactly once, none skipped, and a lettered tag follows its parent
+  (1, 2, 2A, 3, 3A, and so on). A repeated or skipped number fails by name; the
+  bundled examples print "SECTION 3" twice, skip 4, and read 44 and 52 on
+  module badges, which is why no example is a numeral standard. Any badge
+  sequence (the seven steps) reads 1 to n once each (01 and 1 are the
+  same number), with no icon standing in for a number. The plan carries
+  `section_tag` and `badge_reads`; the validator checks them, and also
+  checks on the pixels that each slice carries a chip: a compact filled
+  block in the client's accent colour in the slice's top-left zone.
+- W3, valid ratios: a printed ratio label is a valid label. "3:9" (printed
+  in two bundled examples; it is 1:3 written unreduced) and any ratio
+  outside the skill's list fail by name.
+- W4, palette share against the resolved client palette: counted on
+  chromatic pixels only, so a grey pixel never counts toward a brand
+  colour. A slice must show a chromatic colour of the client's palette
+  (at least a quarter of one percent of its pixels), and a chromatic
+  pixel that is a blend of that colour with white, black or grey is
+  on-brand.
+- W8, negative trait: a greyscale, no-colour sheet fails. When the client's
+  resolved palette has a chromatic colour, a slice with next to no colour
+  anywhere (the "warm grey line work on ivory, no colour fill" style) fails
+  W8 by name, even if its greys sit close to a cream or a charcoal in the
+  palette. A palette with no chromatic colour has nothing to measure.
+- The founder letter stays one continuous reading block (SOP Stage 5),
+  never six cards, columns or numbered parts, although bundled sheets 3
+  and 4 draw it as six parts; a reviewer scores a six-part letter as a
+  W1 defect.
+
 Mockup traits (the same page with nothing left as a placeholder
 except genuinely unknown data such as an event date or start time):
 
@@ -128,8 +162,11 @@ finished look for a single approval pass):
 
 ### B. Wireframe canon (dialects, confirmed from the bundled set)
 
-Two dialects plus a guide column. Review the artifact against the dialect
-its page type calls for; a dialect mismatch is a named defect.
+One live dialect (B1), one retired dialect (B2) and a guide column. Review
+the artifact against B1; a dialect mismatch is a named defect. The look to
+follow is the owner's bundled sheets `chatgpt-wireframe-1` (Standard
+desktop), `-3` (Long-Form desktop) and `-4` (Long-Form mobile); which sheet
+each wireframe request sends is `references/wireframe-build-spec.json`.
 
 B1, photo wireframe (the standard and long-form teaching sheets):
 
@@ -138,7 +175,10 @@ B1, photo wireframe (the standard and long-form teaching sheets):
 - a black title bar carrying the page name; no device frame, legend or
   swatches;
 - grayscale photography only, darkened, with white ratio labels, plus one
-  red accent family (measured #c8091a to #d90110) for tags and headlines;
+  accent family for tags and headlines (the bundled sheets measure
+  #c8091a to #d90110 because they are drawn in their own brand's red; a
+  client's sheet carries that client's primary colour in this role, never the
+  example's red);
 - two-tone headlines (black then red, or white then red on a black band);
 - alternating white and black full-bleed bands;
 - a thin red edge bar on most photographs, left or right edge;
@@ -160,16 +200,15 @@ B1, photo wireframe (the standard and long-form teaching sheets):
 - absent from the observed set and therefore never invented: testimonials,
   price, order form, FAQ, countdown, logo bar, guarantee block.
 
-B2, grayscale wireframe (the long-form event opt-in):
-
-- strictly grayscale (measured #f6f6f6, #ffffff, #e8e8e8, #242424;
-  saturated-pixel share 0.000%);
-- a dark meta bar carrying page width and content width, alternating
-  content bands, then a light footer;
-- 2 px dark-outline CTA rectangles with a boxed "CTA" tag, an arrow glyph
-  and gray microcopy;
-- hero dashed offset frame with a caption;
-- art-direction briefs printed in the slots.
+B2, grayscale wireframe (the long-form event opt-in): RETIRED as a target
+dialect (owner, 2026-10-19). The Set for Life sheet is strictly grayscale
+(measured #f6f6f6, #ffffff, #e8e8e8, #242424; saturated-pixel share 0.000%),
+with a dark meta bar carrying page width and content width, 2 px outlined CTA
+rectangles, crossed-box slots and art-direction briefs in the slots. It stays
+in the bundled set as an annotation reference only: its widths header strip
+and per-section behavior notes are the written rules W5 and W6, and its look
+is not a style. A grayscale sheet fails W8, and the wireframe stages never
+attach it as a style reference.
 
 B3, section guide column: numbered rows with thumbnails and type specs;
 each row states headline, subheadline, body, CTA and layout with its image
@@ -409,5 +448,7 @@ still provisional:
   to W7 in "Visual standard set traits" above, scored trait by trait
   with the bundled standard set at `assets/visual-standards/` open
   beside the artifact; the criterion note names each trait's verdict,
-  and a missing annotation (W1, W2, W5, W6) or an unlabeled slot
-  (W3) is a named defect, never a general impression)
+  and a missing annotation (W1, W2, W5, W6), an unlabeled slot
+  (W3), a skipped or repeated number (W1), an invalid ratio label
+  (W3), a palette that is not the client's (W4) or a greyscale
+  no-colour sheet (W8) is a named defect, never a general impression)

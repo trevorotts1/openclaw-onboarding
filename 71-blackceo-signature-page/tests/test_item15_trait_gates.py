@@ -50,6 +50,7 @@ STAGES = CONTRACT["stages"]
 
 NAVY = (26, 26, 46)        # brand palette navy  #1A1A2E
 GOLD = (201, 162, 39)      # brand palette gold  #C9A227
+CREAM = (245, 240, 232)    # brand palette cream #F5F0E8
 OFF_BRAND = (123, 47, 255)  # saturated purple, in no palette
 
 
@@ -61,10 +62,17 @@ def write(path, data):
         path.write_text(data, encoding="utf-8")
 
 
-def make_png(path, width, height, color):
-    from PIL import Image
+def make_png(path, width, height, color, chip=None):
+    """A flat slice; with `chip` it also carries a section chip and a CTA-like
+    accent band in that colour (SPF016: a real slice is never colourless)."""
+    from PIL import Image, ImageDraw
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (width, height), color).save(path)
+    img = Image.new("RGB", (width, height), color)
+    if chip:
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([40, 40, 240, 100], fill=chip)
+        draw.rectangle([0, 600, width, 1000], fill=chip)
+    img.save(path)
 
 
 def annotated_section(section_id, number, name, slot_id, ratio, direction,
@@ -99,8 +107,8 @@ def good_wireframe_run(td):
     write(run / "desktop-wireframe" / "section-plan.json", json.dumps(plan))
     # Heights sum to 17,000px, above the 16,736px desktop page floor: the
     # compliant fixture is a real long-scroll page.
-    make_png(run / "desktop-wireframe" / "section-01.png", 1440, 9000, NAVY)
-    make_png(run / "desktop-wireframe" / "section-02.png", 1440, 8000, GOLD)
+    make_png(run / "desktop-wireframe" / "section-01.png", 1440, 9000, NAVY, chip=GOLD)
+    make_png(run / "desktop-wireframe" / "section-02.png", 1440, 8000, CREAM, chip=GOLD)
     write(run / "desktop-wireframe" / "wireframe-full.png", "stub")
     write(run / "desktop-wireframe" / "wireframe.pdf", "stub")
     return run, plan
