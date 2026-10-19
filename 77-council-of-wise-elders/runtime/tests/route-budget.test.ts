@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -362,4 +362,8 @@ test('no approval script ships and no client-facing text asks for an approval', 
     assert.doesNotMatch(text, /budget|spend limit|run grant/i, f);
   }
   assert.doesNotMatch(readFileSync(join(skillRoot, 'INSTALL.md'), 'utf8'), /spend limit|run grant/i);
+  const chamber = join(skillRoot, 'runtime', 'public', 'chamber');
+  for (const f of readdirSync(chamber).filter((n) => n.endsWith('.html'))) {
+    assert.doesNotMatch(readFileSync(join(chamber, f), 'utf8'), /grant-ref|budget|spend limit/i, f);
+  }
 });
