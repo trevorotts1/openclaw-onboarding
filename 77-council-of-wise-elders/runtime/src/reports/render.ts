@@ -136,6 +136,7 @@ export function renderMarkdown(model: Record<string, unknown>): string {
     lines.push('');
     lines.push(`Next step: ${asString(consult.next_step)}`);
     lines.push('');
+    pushWebTodayMd(lines, model);
     pushProvenanceMd(lines, model);
     return `${lines.join('\n')}\n`;
   }
@@ -273,6 +274,7 @@ export function renderMarkdown(model: Record<string, unknown>): string {
   lines.push('');
 
   pushSeatsMd(lines, model);
+  pushWebTodayMd(lines, model);
   pushProvenanceMd(lines, model);
   return `${lines.join('\n')}\n`;
 }
@@ -318,6 +320,45 @@ function pushSeatsMd(lines: string[], model: Record<string, unknown>): void {
     if (stance !== null) lines.push(`Resolution stance: ${stance}`);
     lines.push('');
   }
+}
+
+/**
+ * Web findings gathered for this session (model.web_today: claim, url,
+ * title, retrieved_at). They are rendered apart from the source and
+ * provenance appendix because they are not from the elder's books.
+ * Nothing is rendered when the session has none.
+ */
+function webTodayFacts(model: Record<string, unknown>): Record<string, unknown>[] {
+  return asArray(model.web_today).map(asRecord);
+}
+
+function pushWebTodayMd(lines: string[], model: Record<string, unknown>): void {
+  const facts = webTodayFacts(model);
+  if (facts.length === 0) return;
+  lines.push('## From the web today');
+  lines.push('');
+  lines.push("These findings were gathered from the web for this session. They are not from the elder's books.");
+  lines.push('');
+  for (const fact of facts) {
+    lines.push(`- ${asString(fact.claim)}`);
+    lines.push(`  - URL: ${asString(fact.url)}`);
+    lines.push(`  - Retrieved: ${asString(fact.retrieved_at)}`);
+  }
+  lines.push('');
+}
+
+function pushWebTodayHtml(out: string[], model: Record<string, unknown>): void {
+  const facts = webTodayFacts(model);
+  if (facts.length === 0) return;
+  out.push('<h2>From the web today</h2>');
+  out.push("<p>These findings were gathered from the web for this session. They are not from the elder's books.</p>");
+  out.push('<ul>');
+  for (const fact of facts) {
+    out.push(
+      `<li>${escapeHtml(asString(fact.claim))}<br>URL: ${escapeHtml(asString(fact.url))}<br>Retrieved: ${escapeHtml(asString(fact.retrieved_at))}</li>`,
+    );
+  }
+  out.push('</ul>');
 }
 
 function pushProvenanceMd(lines: string[], model: Record<string, unknown>): void {
@@ -399,6 +440,7 @@ export function renderPrintHtml(model: Record<string, unknown>): string {
     out.push('<h3>Limits</h3>');
     out.push(hList(asArray(consult.limits)));
     out.push(`<p>Next step: ${escapeHtml(asString(consult.next_step))}</p>`);
+    pushWebTodayHtml(out, model);
     pushProvenanceHtml(out, model);
     out.push('</body>');
     out.push('</html>');
@@ -537,6 +579,7 @@ export function renderPrintHtml(model: Record<string, unknown>): string {
     if (stance !== null) out.push(`<p>Resolution stance: ${escapeHtml(stance)}</p>`);
   }
 
+  pushWebTodayHtml(out, model);
   pushProvenanceHtml(out, model);
   out.push('</body>');
   out.push('</html>');

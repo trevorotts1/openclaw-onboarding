@@ -80,6 +80,7 @@ import type {
   TransportResponse,
 } from '../cli/host-ports.js';
 import { OPENING_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
+import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import { parseCardResponseText } from '../cli/card-text.js';
 import {
   SimulatedCrashError,
@@ -97,7 +98,7 @@ import { validateCardSourceUse } from '../sources/packs.js';
  * (the module this file already imports SEAT_FOCUS from); this name is
  * kept as the protocol surface for the same text.
  */
-export const OPENING_ROUND_SYSTEM = OPENING_SYSTEM;
+export const OPENING_ROUND_SYSTEM = `${OPENING_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a Round 1 opening input manifest. */
 export const OPENING_INPUT_KIND = 'wise-elders.opening-input/v1';
@@ -204,6 +205,7 @@ export interface OpeningRoundDeps {
    */
   readonly loadSeatBriefing?: (
     seatId: SeatId,
+    session?: StoredSession,
   ) => Promise<{ briefing_text: string } | null>;
   /**
    * Optional actual-charge pricer for transports that meter money.
@@ -376,7 +378,7 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
     const system =
