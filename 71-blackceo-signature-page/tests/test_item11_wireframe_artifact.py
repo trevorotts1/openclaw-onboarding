@@ -79,8 +79,7 @@ class WireframeArtifactTest(unittest.TestCase):
         self.assertEqual(len(ORDER), 15)
         self.assertLess(ORDER.index("font-action-plan"), ORDER.index("desktop-wireframe"))
         self.assertLess(ORDER.index("desktop-wireframe"), ORDER.index("mobile-tablet"))
-        self.assertEqual(STAGES["desktop-wireframe"]["depends_on"],
-                         ["font-action-plan", "design-board"])
+        self.assertEqual(STAGES["desktop-wireframe"]["depends_on"], ["font-action-plan"])
         self.assertEqual(STAGES["mobile-tablet"]["depends_on"], ["desktop-wireframe"])
         for stage in WIREFRAME_STAGES:
             self.assertEqual(STAGES[stage]["validators"],

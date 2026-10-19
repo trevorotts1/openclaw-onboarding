@@ -52,7 +52,12 @@ class StageExecutorTests(unittest.TestCase):
         self.run_dir = Path(self.tmp.name) / "run"
         self.run_dir.mkdir()
         bf.make_run(self.run_dir, base_request=REQUEST)  # writes production-request.json
-        bf.seed_board(self.run_dir)
+
+    def approve_board(self):
+        """final-mockups needs the page's approved Design Board, made after its images exist."""
+        for i in (1, 2):
+            bf.png(self.run_dir / "image-generation-qc" / f"Image-00{i}.png", (40 * i, 90, 140))
+        bf.seed_real_board(self.run_dir)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -62,7 +67,9 @@ class StageExecutorTests(unittest.TestCase):
                               capture_output=True, text=True, env=bf.subprocess_env())
         return proc
 
+    @bf.needs_ocr
     def test_stub_writes_four_stages_and_no_receipts(self):
+        self.approve_board()
         proc = self.execute("--provider", "stub")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         expected = {
@@ -95,13 +102,13 @@ class StageExecutorTests(unittest.TestCase):
         self.assertEqual(Image.open(self.run_dir / "mobile-tablet/section-01.png").size[0], 390)
 
     def test_paid_route_refuses(self):
-        proc = self.execute("--provider", "kie")
+        proc = self.execute("--provider", "kie", "--stages", "desktop-wireframe")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("--allow-paid", proc.stdout)
         env = bf.subprocess_env()
         env.pop("KIE_API_KEY", None)
         proc = subprocess.run([sys.executable, str(SCRIPT), str(self.run_dir),
-                               "--provider", "kie", "--allow-paid"],
+                               "--provider", "kie", "--allow-paid", "--stages", "desktop-wireframe"],
                               capture_output=True, text=True, env=env)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("KIE_API_KEY", proc.stdout)

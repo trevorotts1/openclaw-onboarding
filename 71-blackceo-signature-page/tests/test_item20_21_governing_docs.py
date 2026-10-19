@@ -125,10 +125,10 @@ class TestItem21VendoredBar(unittest.TestCase):
 class TestBlastRadius(unittest.TestCase):
     def test_stage_order_unchanged(self):
         self.assertEqual(CONTRACT["stage_order"], [
-            "intake", "copy", "font-action-plan", "design-board", "desktop-wireframe",
+            "intake", "copy", "font-action-plan", "desktop-wireframe",
             "mobile-tablet",
             "visual-mockup", "image-inventory-prompts", "image-generation-qc",
-            "image-map-upload", "final-mockups", "responsive-html", "ghl-install-test",
+            "image-map-upload", "design-board", "final-mockups", "responsive-html", "ghl-install-test",
             "publish-verify", "automation-wiring"])
 
 

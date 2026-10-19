@@ -139,9 +139,9 @@ class BlastRadiusPins(unittest.TestCase):
             (ROOT / "references" / "stage-contract.json").read_text(
                 encoding="utf-8"))
         self.assertEqual(contract["stage_order"], [
-            "intake", "copy", "font-action-plan", "design-board", "desktop-wireframe",
+            "intake", "copy", "font-action-plan", "desktop-wireframe",
             "mobile-tablet", "visual-mockup", "image-inventory-prompts",
-            "image-generation-qc", "image-map-upload", "final-mockups",
+            "image-generation-qc", "image-map-upload", "design-board", "final-mockups",
             "responsive-html", "ghl-install-test", "publish-verify",
             "automation-wiring"])
         spec = contract["stages"]["image-generation-qc"]

@@ -246,12 +246,16 @@ generic page fails several of them.
 `scripts/design_board.py validate` is the deterministic floor, run by the stage gate at close
 with `--require-approval`. Contract and block list: `references/design-board.md`.
 
-1. Palette on the board is the run's resolved client palette (roles and hex), and every printed hex
-   is a palette hex and every palette hex is printed.
+1. Palette on the board is the run's resolved client palette (roles and hex), every printed hex
+   is a palette hex, every palette hex is printed, and every palette color is present in the
+   board's pixels.
 2. The client's logo file is present and unchanged since the board was made.
-3. Images are the page's actual section images: every slot of the production request is in the record,
-   none added or removed, each recorded file present with its hash.
-4. Every block required for the page role is legible in the native-resolution read-back.
+3. Images are the page's actual section images, re-derived from the run's own artifacts (wireframe
+   inventory and section plan, image map, generation files, supplied assets) at every check: same
+   slots, files and bytes as recorded; no slot without a real file (no art-direction tile).
+4. Every block on the board (required for the page role, plus any optional one declared) is legible:
+   its text is in the transcript and the board image itself (read by tesseract, not the caller)
+   shows it; the transcript is supported by the image overall.
 5. No foreign client brand text (other clients' names, the example board's words).
 6. Not a stub placeholder; the board file is unchanged since it was recorded; the page role matches the run.
 7. A recorded client approval (`approved`, approver, evidence, time) bound to the current board, image

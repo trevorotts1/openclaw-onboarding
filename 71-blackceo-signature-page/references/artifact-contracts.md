@@ -45,13 +45,13 @@ Use the exact ordered stage IDs defined in `references/stage-contract.json` (enf
     "intake": {"status": "ready", "attempts": 0},
     "copy": {"status": "working", "attempts": 0},
     "font-action-plan": {"status": "blocked", "attempts": 0},
-    "design-board": {"status": "blocked", "attempts": 0},
     "desktop-wireframe": {"status": "blocked", "attempts": 0},
     "mobile-tablet": {"status": "blocked", "attempts": 0},
     "visual-mockup": {"status": "blocked", "attempts": 0},
     "image-inventory-prompts": {"status": "blocked", "attempts": 0},
     "image-generation-qc": {"status": "blocked", "attempts": 0},
     "image-map-upload": {"status": "blocked", "attempts": 0},
+    "design-board": {"status": "blocked", "attempts": 0},
     "final-mockups": {"status": "blocked", "attempts": 0},
     "responsive-html": {"status": "blocked", "attempts": 0},
     "ghl-install-test": {"status": "blocked", "attempts": 0},
@@ -74,8 +74,9 @@ Mockup architecture (Update Plan Item 5, Decision 2 option (i)): two stage IDs c
 render with solid-block image slots, both internal production artifacts, never the client-facing mockup.
 `final-mockups` is the single client-judged mockup stage: it finalizes the layout proof per section with real
 photography in every slot (supplied assets placed as files, never generated) and opens only after the image
-generation chain (`image-inventory-prompts`, `image-generation-qc`, `image-map-upload`) has closed, which the
-gate enforces through the contract's `depends_on`. The stage enumeration above is regenerated from
+generation chain (`image-inventory-prompts`, `image-generation-qc`, `image-map-upload`) has closed and the page's
+Design Board (`design-board`, made from those real images) is approved, which the gate enforces through the
+contract's `depends_on`. The stage enumeration above is regenerated from
 `references/stage-contract.json` whenever the stage list changes; the two files must always enumerate identical
 stage IDs in identical order.
 
@@ -1100,14 +1101,16 @@ role, written by `scripts/stage_executor.py --stages design-board` and completed
 `scripts/design_board.py finalize` and `approve`. The record carries `artifact: "design-board"`,
 `page_role`, `revision`, `brand` (name, positioning line, logo file and sha256), `palette`
 (`role`, `name`, `hex`) with `palette_sha256`, `typography`, `image_set` (slots with
-`section_id`, `slot_id`, `source`, `file`, `sha256`, and the set's `sha256`), `expected`
-(required blocks, per-block text, palette hexes), `board` (file, sha256, ratio), `generation`
-(provider, model, task id, prompt hash, references), `readback` (native resolution text, reader,
-time) and `approval` (`decision`, `party`, `approved_by`, `evidence_ref`, `approved_at`, and the
+`section_id`, `slot_id`, `source`, `origin`, `file`, `sha256`, and the set's `sha256`; re-derived
+from the run's own artifacts, never from a request alone), `expected` (required blocks, per-block
+text, palette hexes), `board` (file, sha256, ratio), `generation` (provider, model, task id, prompt
+hash, references), `readback` (the transcript, the reader, the board hash it was taken from, and
+the machine read of the board image that corroborates it) and `approval` (`decision`, `party`, `approved_by`, `evidence_ref`, `approved_at`, and the
 `board_sha256`, `image_set_sha256`, `palette_sha256`, `page_role` it is bound to). Field rules,
 the block list and the QC floor: `references/design-board.md` and `references/qc-contract.md`.
 The stage contract's `design-board` entry names the board as its `approval_artifact`; the stage
-cannot close without a current approval, and `desktop-wireframe` depends on it.
+cannot close without a current approval, it depends on `image-map-upload` (every image slot has its
+file), and `final-mockups` depends on it.
 
 ## Parity evidence (stage `responsive-html`; Update Plan Item 16)
 

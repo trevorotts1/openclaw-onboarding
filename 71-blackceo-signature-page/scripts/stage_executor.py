@@ -46,11 +46,12 @@ Usage:
   python3 scripts/stage_executor.py <run_dir> --stage image-generation-qc
       --item IMG-001 [--provider stub|kie] [--allow-paid]
 
-  # the page's Design Board (SPF021): runs alone, before any wireframe
+  # the page's Design Board (SPF021): runs alone, after the image chain, before final-mockups
   python3 scripts/stage_executor.py <run_dir> --stages design-board [--preflight]
 
-Every image stage and item mode refuse to start until the page's design board has a current
-recorded client approval (scripts/design_board.py gate; references/design-board.md).
+The final-mockups stage refuses to start until the page's design board has a current recorded
+client approval (scripts/design_board.py gate; references/design-board.md). The board itself
+refuses to start until every image slot of the page has its real file.
 
 Exit codes: 0 every requested stage produced its images; 1 a named
 failure or refusal; 2 usage.
@@ -75,7 +76,7 @@ STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
-BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, before any wireframe
+BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
 
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 # per stage: list of (output template, width, height-hint)
@@ -848,8 +849,8 @@ def design_board_module():
 
 
 def require_board_approval(run_dir: Path, request_name: str) -> None:
-    """Fail closed: no wireframe, mockup or image stage starts for a page whose design
-    board has no current recorded client approval (references/design-board.md)."""
+    """Fail closed: final-mockups does not start for a page whose design board has no current
+    recorded client approval (references/design-board.md)."""
     failures = design_board_module().gate_failures(run_dir, request_name)
     if failures:
         raise ExecutorError("; ".join(failures))
@@ -859,16 +860,16 @@ def board_job(run_dir: Path, request: dict):
     """(plan, job) for the page's design board: one image, the client logo and the page's
     section images as references, the contract and palette in the prompt."""
     board = design_board_module()
-    plan = board.plan(run_dir, request)
     try:
-        prompt, sizes = board.compose_prompt(plan, request)
+        plan = board.plan(run_dir, request)
+        prompt, sizes = board.compose_prompt(plan, request, run_dir)
     except board.BoardError as exc:
         raise ExecutorError(str(exc))
     width, height = board.BOARD_PX
     job = {"stage": BOARD_STAGE, "index": 1, "section": {"section_id": plan["role"]},
            "out": run_dir / board.BOARD_FILE, "width": width, "height": height,
            "label": f"{BOARD_STAGE} {plan['role']}", "ratio": board.BOARD_RATIO,
-           "references": board.references(plan), "prompt": prompt, "prompt_sizes": sizes}
+           "references": board.references(plan, run_dir), "prompt": prompt, "prompt_sizes": sizes}
     return plan, job
 
 
@@ -878,6 +879,7 @@ def run_board(run_dir: Path, request: dict, provider, overwrite: bool) -> dict:
     if job["out"].exists() and not overwrite:
         raise ExecutorError(f"{job['out']} exists; pass --overwrite to remake the board "
                             "(a remade board needs a fresh client approval)")
+    board.build_overflow_sheet(plan, run_dir)  # real images that do not fit the attachments
     result = provider.generate(job, request)
     try:
         revision = int(board.load_record(run_dir).get("revision", 0)) + 1
@@ -969,7 +971,7 @@ def main(argv=None) -> int:
     try:
         if board_requested and (stages or args.item):
             raise ExecutorError("run the design board on its own: the client approves it before "
-                                "any wireframe, mockup or image stage starts")
+                                "the final-mockups stage starts")
         if board_requested:
             request = load_board_request(run_dir, args.request)
             if args.preflight:
@@ -986,7 +988,8 @@ def main(argv=None) -> int:
             print(f"STAGE {BOARD_STAGE} images=1 provider={record['generation']['provider']} "
                   f"mode={record['generation']['mode']} record={design_board_module().RECORD_FILE}")
             return 0
-        require_board_approval(run_dir, args.request)
+        if "final-mockups" in stages and not args.item:  # before any call: a refused run spends nothing
+            require_board_approval(run_dir, args.request)
         if args.preflight:
             request = load_request(run_dir, args.request)
             refused = 0

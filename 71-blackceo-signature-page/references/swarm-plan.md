@@ -42,13 +42,13 @@ specification is written on the item-level side of it.
 | intake | 1 item: intake assembly from the client's answers | Single item; the run's source of truth is never parallel-edited |
 | copy | 1 writer item, then 1 reviewer item | Strictly ordered; the reviewer is a different session |
 | font-action-plan | 1 item | Single |
-| design-board | 1 item: the page's board, then 1 reviewer item; the client approval is recorded after review | Single per page; nothing downstream starts before the approval is recorded |
 | desktop-wireframe | 1 layout-lead item producing `section-plan.json`, then per-part renderer items, then 1 reviewer item | Parts render in parallel once the plan lands; the reviewer waits for all parts |
 | mobile-tablet | Same pattern as desktop-wireframe | Parts in parallel after its section plan |
 | visual-mockup | 1 bible item (`page-visual-bible`), then desktop and mobile renderer items | Renderers in parallel after the bible; prompt items unlock per Item 20 as soon as the bible artifact lands, without waiting for the stage to close |
 | image-inventory-prompts | One pipeline per image: author item, then review item | All images concurrent within profile limits; validate runs between author and review |
 | image-generation-qc | One pipeline per image: generation item, deterministic screen, review item | Starts per image the moment its prompt item closes; generation starts are limiter-bound (below) |
 | image-map-upload | 1 item | Single |
+| design-board | 1 item: the page's board from its real images, then 1 reviewer item; the client approval is recorded after review | Single per page, after `image-map-upload`; `final-mockups` does not start before the approval is recorded |
 | final-mockups | Desktop item and mobile item | In parallel |
 | responsive-html | 1 builder item, then validator, drift, and reviewer items | The three check items run in parallel after the builder |
 | ghl-install-test | 1 item | Single; Item 5's evidence rules govern what counts as proof |

@@ -86,7 +86,7 @@ Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Be
 
 Stage IDs (canonical, from `references/stage-contract.json`):
 
-`intake, copy, font-action-plan, design-board, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, design-board, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
 
 The workflow has FIFTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
 
@@ -107,12 +107,13 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Intake records the handoff (`scripts/write_intake.py --handoff-form-name/--handoff-form-id`, or `--handoff-missing-reason` when no form identity exists): the Convert and Flow form's name and object id, the pop behavior, and the step order (signature page, then product selection page, then order form page). A placeholder destination is never a handoff; it is the recorded missing input or a defect.
 - The copy manifest's CTA entries carry each button's handoff type (`form_pop`, `in_page_anchor`, `external_link`); the primary CTA's type is `form_pop`. `scripts/validate_handoff.py` verifies the built page against the record at the responsive-html stage, and the funnel-completion receipt proves the pop live at install.
 
-### Design Board (before any wireframe)
+### Design Board (after the images, before the mockup)
 
-- Every page the funnel has (landing, order, checkout, upsell, downsell, thank-you) gets one Design Board: the client's brand colors, logo and the page's section images on one sheet, approved by the client first. Contract: `references/design-board.md`.
-- Stage `design-board` follows `font-action-plan` and precedes `desktop-wireframe`. Colors come from the brand-color resolution (`scripts/brand_colors.py`); the board never picks them.
-- No wireframe, mockup or image stage starts for a page without a current recorded client approval of that page's board: `stage_gate.py` refuses `desktop-wireframe` until `design-board` closes, and `stage_executor.py` refuses every image stage on the same record (`scripts/design_board.py gate`).
-- Record the approval with `scripts/design_board.py approve <run_dir> --by <client> --evidence <ref>`; it is bound to the board, image set and palette hashes, so a remade board or changed image needs a fresh approval.
+- Every page the funnel has (landing, order, checkout, upsell, downsell, thank-you) gets one Design Board: the client's brand colors, logo and the page's actual section images on one sheet, approved by the client before the page is built. It is made once the page's images have been created, never from art-direction text. Contract: `references/design-board.md`.
+- Stage `design-board` follows `image-map-upload` (every image slot has its file) and precedes `final-mockups`. Colors come from the brand-color resolution (`scripts/brand_colors.py`); the board never picks them. A slot with no image refuses the board.
+- The mockup and everything after it does not start for a page without a current recorded client approval of that page's board: `stage_gate.py` refuses `final-mockups` until `design-board` closes, and `stage_executor.py` refuses `final-mockups` on the same record (`scripts/design_board.py gate`).
+- Record the approval with `scripts/design_board.py approve <run_dir> --by <client> --evidence <ref>`; it is bound to the board, the image set (re-derived from the run's own artifacts at every check) and the palette, so a remade board, a replaced or edited image or a changed palette needs a fresh approval.
+- The board's read-back is checked against the board image by `tesseract` (`finalize`, `validate`, `gate`); it is never taken on the caller's word, and a box without tesseract cannot validate a board.
 
 ### Design / wireframes / mockups
 

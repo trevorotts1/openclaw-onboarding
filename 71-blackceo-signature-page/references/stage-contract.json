@@ -5,13 +5,13 @@
     "intake",
     "copy",
     "font-action-plan",
-    "design-board",
     "desktop-wireframe",
     "mobile-tablet",
     "visual-mockup",
     "image-inventory-prompts",
     "image-generation-qc",
     "image-map-upload",
+    "design-board",
     "final-mockups",
     "responsive-html",
     "ghl-install-test",
@@ -138,47 +138,10 @@
       ],
       "may_be_not_authorized": false
     },
-    "design-board": {
-      "purpose": "The Design Board (Official Visual Direction): one board per page role the funnel has, in the client's own brand colors, carrying the client's logo and the page's section images. It sits after brand-color resolution and font-action-plan and before every wireframe and mockup stage. The client approves it first; the approval is recorded in design-board/production-record.json bound to the board's hash, the image set and the palette, and no wireframe or mockup stage for the page starts without it (references/design-board.md; scripts/design_board.py gate). A remade or changed board needs a fresh approval.",
-      "depends_on": [
-        "font-action-plan"
-      ],
-      "requires_artifacts": [],
-      "artifacts": [
-        {
-          "glob": "design-board/design-board.png",
-          "min_count": 1
-        },
-        {
-          "glob": "design-board/production-record.json",
-          "min_count": 1
-        }
-      ],
-      "validators": [
-        "python3 scripts/design_board.py validate {run_dir} --require-approval"
-      ],
-      "review_required": true,
-      "review_covers": [
-        "design-board/design-board.png"
-      ],
-      "min_scores": {
-        "each": 8
-      },
-      "reads": [
-        "references/design-board.md",
-        "references/BlackCEO-Page-Brand-Law.md",
-        "references/qc-contract.md",
-        "font-action-plan/font-map.json",
-        "production-request.json (the page's sections and image slots, and its design_board block)"
-      ],
-      "may_be_not_authorized": false,
-      "approval_artifact": "design-board/design-board.png"
-    },
     "desktop-wireframe": {
       "purpose": "Annotated wireframe spec image set for the desktop page (Update Plan Item 11): a designed build spec in the client's brand colors, rendered as images, never an HTML render. One section slice per section, each printed with the section's number and name, its type specs, its image slots labeled with aspect ratio and art direction, the run's real copy, CTA chips with microcopy specs, and behavior notes, under a header strip stating page width and content width; delivered as the section slices, one stitched full-page PNG, and one combined PDF.",
       "depends_on": [
-        "font-action-plan",
-        "design-board"
+        "font-action-plan"
       ],
       "requires_artifacts": [],
       "artifacts": [
@@ -435,11 +398,49 @@
       ],
       "may_be_not_authorized": false
     },
+    "design-board": {
+      "purpose": "The Design Board (Official Visual Direction): one board per page role the funnel has, in the client's own brand colors, carrying the client's logo and the page's ACTUAL section images. It sits after the image chain has closed (image-map-upload: every image slot has its generated or supplied file) and before final-mockups, so it shows the real images and never an art-direction stand-in. The client approves it first; the approval is recorded in design-board/production-record.json bound to the board's hash, the image set (every slot, file and file hash, re-derived from the run's own artifacts at every check) and the palette, and the final-mockups stage and everything after it for the page does not start without it (references/design-board.md; scripts/design_board.py gate). A remade board or any changed image needs a fresh approval.",
+      "depends_on": [
+        "image-map-upload"
+      ],
+      "requires_artifacts": [],
+      "artifacts": [
+        {
+          "glob": "design-board/design-board.png",
+          "min_count": 1
+        },
+        {
+          "glob": "design-board/production-record.json",
+          "min_count": 1
+        }
+      ],
+      "validators": [
+        "python3 scripts/design_board.py validate {run_dir} --require-approval"
+      ],
+      "review_required": true,
+      "review_covers": [
+        "design-board/design-board.png"
+      ],
+      "min_scores": {
+        "each": 8
+      },
+      "reads": [
+        "references/design-board.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "references/qc-contract.md",
+        "font-action-plan/font-map.json",
+        "desktop-wireframe/image-inventory.json, desktop-wireframe/section-plan.json, image-map-upload/image-map.json and image-generation-qc/ (the page's actual images)",
+        "production-request.json (the page's design_board block)"
+      ],
+      "may_be_not_authorized": false,
+      "approval_artifact": "design-board/design-board.png"
+    },
     "final-mockups": {
       "purpose": "The mockup: the single client-judged mockup stage (Update Plan Items 5 and 15): the mockup carries real photography in every slot, and the stage cannot close with a placeholder slot. It opens only after the image generation chain has closed (depends_on image-map-upload) and finalizes the layout proof per section with real photography composited into every slot. Supplied assets are placed as files and never generated; the supplied-asset record is the placement proof. Every image slot must trace, through the stage's section generation record (final-mockups/generation-record.json), to a generated image file or to a placed supplied asset under Item 3's supplied-asset record; any slot tracing to neither fails the close by name (trait M1), enforced by scripts/validate_mockup_slots.py. Mockup traits bind at this stage only; the visual-mockup layout proof's solid-block slots are by design and are never scored here. At close the stage also produces the hybrid board (Update Plan Item 12): one sheet carrying the mockup-fidelity desktop panel, the section guide column, and the mockup-fidelity mobile panel, composed deterministically from the approved artifacts. The board is the artifact the stage's approval is recorded against.",
       "depends_on": [
         "visual-mockup",
-        "image-map-upload"
+        "image-map-upload",
+        "design-board"
       ],
       "requires_artifacts": [],
       "artifacts": [
