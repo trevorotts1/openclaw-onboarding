@@ -573,6 +573,12 @@ run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pe
     eval "_weekly_cron_currency_probe() { if [ \"\${_GATE_CRON_FIRST:-1}\" -eq 1 ]; then _GATE_CRON_FIRST=0; echo stub-cron; return $cron; else echo stub-cron-again; return 0; fi; }"
     eval "_agents_md_hygiene_probe() { if [ \"\${_GATE_AGENTS_FIRST:-1}\" -eq 1 ]; then _GATE_AGENTS_FIRST=0; echo stub-agents; return $agents; else echo stub-agents-again; return 0; fi; }"
     eval "_pending_flag_currency_probe() { if [ \"\${_GATE_PENDING_FIRST:-1}\" -eq 1 ]; then _GATE_PENDING_FIRST=0; echo stub-pending; return $pending; else echo stub-pending-again; return 0; fi; }"
+    # B3: both content-current exits now run the shared retirement check via
+    # _content_current_exit (defined top-level in update-skills.sh, outside this
+    # extracted block). The gate's fast-exit behaviour is what is under test
+    # here, so stub the exit helper; its own contract is proven by
+    # tests/unit/ghl-mcp-retirement-content-current-gate.test.sh.
+    _content_current_exit() { echo stub-content-current-exit; exit 0; }
     # shellcheck source=/dev/null
     source "$WORK/gate-wrapped.sh"
     # shellcheck disable=SC2034  # read by gate_block (dynamically sourced above) for its cleanup rm -rf, not this scope
@@ -598,6 +604,8 @@ run_gate_stubborn() {  # run_gate_stubborn <cc_rc> <sop_rc> <persona_rc> <cron_r
     eval "_weekly_cron_currency_probe() { echo stub-cron; return $cron; }"
     eval "_agents_md_hygiene_probe() { echo stub-agents; return $agents; }"
     eval "_pending_flag_currency_probe() { echo stub-pending; return $pending; }"
+    # B3: see run_gate above — the shared retirement exit helper is stubbed.
+    _content_current_exit() { echo stub-content-current-exit; exit 0; }
     # shellcheck source=/dev/null
     source "$WORK/gate-wrapped.sh"
     # shellcheck disable=SC2034  # read by gate_block (dynamically sourced above) for its cleanup rm -rf, not this scope

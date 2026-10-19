@@ -4227,6 +4227,240 @@ prune_retired_ghl_mcp_surfaces() {
   return 0
 }
 # <<< GHL-MCP-RETIREMENT-PRUNE-END
+
+# >>> GHL-MCP-RETIREMENT-GATE-BEGIN  (B3: same check on every path, once)
+# ---- Helper: RETIRE skill 36's community GHL MCP (Tier 2) — GU-019/020/021 --
+# OPERATOR DECISION: the community MCP is RETIRED. This function used to
+# (re)start it and assert its runtime conformance on EVERY roll — the single
+# strongest re-installation surface in the fleet. It now drives the ordered
+# retirement transaction in ghl-mcp-autostart.sh --retire:
+#
+#   1 INVENTORY / 6 VERIFY / 7 RECEIPT   inside the tool (--status / --retire)
+#   2 STAGE                              HERE, before anything is stopped:
+#                                        the replacement surfaces must exist
+#                                        (skill 44 CLI, skills 06 and 38, and
+#                                        the OFFICIAL ghl-mcp registration).
+#                                        Missing -> MIGRATION_FAILED and the
+#                                        service is left running.
+#   3,4,5                                archive, disable resurrection, stop
+#                                        only the matched service.
+#
+# NON-FATAL to the roll (exactly as the old runtime assert was) but LOUD and
+# LATCHED into the existing exit-2 "content current, infrastructure needs
+# attention" contract. Idempotent: an already-retired box reports
+# RETIRED_VERIFIED_OFF and changes nothing.
+wire_ghl_mcp() {
+  local SKILL_FOLDER="$1"
+  [ "$SKILL_FOLDER" = "36-ghl-mcp-setup" ] || return 0
+
+  # B3: EXACTLY ONCE per process. The content-current early exits call this
+  # directly and then exit, and the full pass reaches it from the wiring loop;
+  # those paths are mutually exclusive today. This latch makes that invariant
+  # explicit so a future call site can never run the retirement transaction (or
+  # its side effects) a second time in one roll.
+  if [ "${_GHL_MCP_RETIREMENT_CHECKED:-0}" = "1" ]; then
+    echo "    ✓ GHL MCP: retirement/convergence already checked in this run — skipping repeat"
+    return 0
+  fi
+  _GHL_MCP_RETIREMENT_CHECKED=1
+
+  # Locate the DELIVERED retirement tool (same resolver order as before).
+  local AUTOSTART="" _as_cand
+  for _as_cand in \
+      "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-autostart.sh" \
+      "$HOME/.openclaw/scripts/ghl-mcp-autostart.sh" \
+      "/data/.openclaw/scripts/ghl-mcp-autostart.sh" \
+      "$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"; do
+    case "$_as_cand" in "/ghl-mcp-autostart.sh"|"") continue ;; esac
+    [ -f "$_as_cand" ] && { AUTOSTART="$_as_cand"; break; }
+  done
+  unset _as_cand
+  if [ -z "$AUTOSTART" ]; then
+    echo "    ⚠ GHL MCP: ghl-mcp-autostart.sh not found (delivered scripts dir or pulled bundle) — the community MCP was NOT retired on this box." >&2
+    GHL_MCP_RUNTIME_FATAL="yes"
+    GHL_MCP_RUNTIME_DETAIL="ghl-mcp-autostart.sh missing — cannot run the retirement transaction"
+    return 0
+  fi
+
+  # --status is the retirement-aware assertion and the inventory.
+  local _ST="" _RET_OUT="" _RET_RC=0 _VER_OUT="" _VER_RC=0
+  _ST="$(bash "$AUTOSTART" --status 2>&1)" || true
+
+  case "$_ST" in
+    *"=RETIRED_VERIFIED_OFF"*)
+      echo "    ✓ GHL MCP: community MCP already RETIRED (VERIFIED_OFF) — nothing changed"
+      ;;
+    *)
+      # ── STAGE 2: replacement surfaces, BEFORE anything is stopped ────────
+      local _MISSING="" _sd _have44=0 _have06=0 _have38=0
+      for _sd in "$SKILLS_DIR"/44-*; do [ -d "$_sd" ] && _have44=1; done
+      for _sd in "$SKILLS_DIR"/06-*; do [ -d "$_sd" ] && _have06=1; done
+      for _sd in "$SKILLS_DIR"/38-*; do [ -d "$_sd" ] && _have38=1; done
+      unset _sd
+      [ "$_have44" = "1" ] || _MISSING="$_MISSING skill-44-convert-and-flow-cli"
+      [ "$_have06" = "1" ] || _MISSING="$_MISSING skill-06-ghl-install-pages"
+      [ "$_have38" = "1" ] || _MISSING="$_MISSING skill-38-conversational-ai"
+      # The official GHL MCP (Tier 1) registration must survive retirement.
+      # "ghl-community-mcp" does NOT contain the token "ghl-mcp", so this
+      # check can never pass on the retired entry alone.
+      local _OCROOT_FOR_MCP="${OC_PERSISTENT_CONFIG_DIR:-${OC_CONFIG:-$HOME/.openclaw}}"
+      if command -v openclaw >/dev/null 2>&1; then
+        openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp' || \
+          _MISSING="$_MISSING official-ghl-mcp-registration"
+      elif [ -f "$_OCROOT_FOR_MCP/openclaw.json" ]; then
+        grep -q '"ghl-mcp"' "$_OCROOT_FOR_MCP/openclaw.json" 2>/dev/null || \
+          _MISSING="$_MISSING official-ghl-mcp-registration"
+      else
+        _MISSING="$_MISSING official-ghl-mcp-registration"
+      fi
+      unset _OCROOT_FOR_MCP
+
+      if [ -n "$_MISSING" ]; then
+        {
+          echo ""
+          echo "  ############################################################"
+          echo "  ## GHL MCP RETIREMENT: MIGRATION_FAILED (replacement-incomplete)"
+          echo "  ## Prerequisite(s) missing:$_MISSING"
+          echo "  ## The community service was NOT stopped — a caller that still"
+          echo "  ## needs Tier 2 must never be retired out from under it."
+          echo "  ## FIX: deliver the missing surface(s), then re-run the updater."
+          echo "  ############################################################"
+          echo ""
+        } >&2
+        printf '%s\n' "STATUS: ghl-mcp-autostart=MIGRATION_FAILED (stage=replacement-incomplete missing=$_MISSING; service left untouched)" > /tmp/ghl-mcp-autostart.log 2>/dev/null || true
+        GHL_MCP_RUNTIME_FATAL="yes"
+        GHL_MCP_RUNTIME_DETAIL="retirement blocked: replacement-incomplete ($_MISSING)"
+        return 0
+      fi
+
+      local _CALLERS="skill-44-convert-and-flow-cli
+skill-06-ghl-install-pages
+skill-38-conversational-ai
+official-ghl-mcp-registration"
+      echo "    GHL MCP: retiring the community MCP (archive -> disable resurrection -> stop -> verify -> receipt)"
+      _RET_RC=0
+      _RET_OUT="$(GHL_MCP_RECEIPT_TO_RELEASE="${ONBOARDING_VERSION:-unknown}" \
+                  GHL_MCP_RECEIPT_CALLERS="$_CALLERS" \
+                  bash "$AUTOSTART" --retire 2>&1)" || _RET_RC=$?
+      printf '%s\n' "$_RET_OUT" >> "$LOG_FILE" 2>/dev/null || true
+      printf '%s\n' "$_RET_OUT" > /tmp/ghl-mcp-autostart.log 2>/dev/null || true
+      case "$_RET_OUT" in
+        *"=RETIRED_VERIFIED_OFF"*)
+          echo "    ✓ GHL MCP: community MCP RETIRED and VERIFIED_OFF (archive + receipt written)"
+          ;;
+        *)
+          {
+            echo ""
+            echo "  ############################################################"
+            echo "  ## GHL MCP RETIREMENT: MIGRATION_FAILED (rc=$_RET_RC)"
+            echo "  ## The community MCP could NOT be proven retired on this box."
+            echo "  ## Residual state is in the receipt under"
+            echo "  ##   ${OC_PERSISTENT_CONFIG_DIR:-$HOME/.openclaw}/.retired/"
+            printf '%s\n' "$_RET_OUT" | grep -E '^(STATUS:|  \[ghl-mcp-autostart\] MIGRATION_FAILED|  \[ghl-mcp-autostart\] residual)' | sed 's/^/  ##   /' || true
+            echo "  ## FIX: read the migration-failed receipt, clear the named"
+            echo "  ##      surface, then re-run: bash $AUTOSTART --retire"
+            echo "  ############################################################"
+            echo ""
+          } >&2
+          GHL_MCP_RUNTIME_FATAL="yes"
+          GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_RET_OUT" | grep -E '^(STATUS:|  \[ghl-mcp-autostart\] MIGRATION_FAILED)' | tr '\n' ' ' || true)"
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+
+  # RETIREMENT-AWARE ASSERTION. This replaces the old gate call, which
+  # treated an absent service as FATAL and therefore could not tell
+  # retirement from breakage. The shipped verifier now reports four states:
+  #   0 RETIRED_OK       absence is a PASS
+  #   1 STILL_RUNNING    a matched identity was FOUND (names it)
+  #   2 NOT_APPLICABLE   fresh box, no history — a SKIP, never a failure
+  #   3 MISCONFIGURED    nothing running, but the retirement state cannot be
+  #                      verified (residual artifacts, bad MIGRATION_FAILED
+  #                      receipt, unreadable archive, unreadable config)
+  # Non-fatal to the roll, but latched into the exit-2 contract.
+  local RUNTIME_ASSERT="" _rt_cand
+  for _rt_cand in \
+      "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-assert-runtime.sh" \
+      "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+      "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+      "$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"; do
+    case "$_rt_cand" in "/ghl-mcp-assert-runtime.sh"|"") continue ;; esac
+    [ -f "$_rt_cand" ] && { RUNTIME_ASSERT="$_rt_cand"; break; }
+  done
+  unset _rt_cand
+
+  if [ -n "$RUNTIME_ASSERT" ]; then
+    _VER_RC=0
+    _VER_OUT="$(bash "$RUNTIME_ASSERT" --quiet 2>&1)" || _VER_RC=$?
+    printf '%s\n' "$_VER_OUT" >> "$LOG_FILE" 2>/dev/null || true
+    case "$_VER_RC" in
+      0) echo "    ✓ GHL MCP runtime conformance: RETIRED_OK (every community surface provably absent)" ;;
+      2) echo "    ✓ GHL MCP runtime conformance: NOT_APPLICABLE (fresh box: the community MCP was never installed)" ;;
+      *)
+        GHL_MCP_RUNTIME_FATAL="yes"
+        GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_VER_OUT" | grep -E '^\[ghl-mcp-runtime\] (FAIL|VERDICT)' | tr '\n' ' ' || true)"
+        {
+          echo ""
+          echo "  ############################################################"
+          echo "  ## GHL MCP RETIREMENT ASSERTION FAILED (verify rc=$_VER_RC)"
+          echo "  ## The community MCP is still observable, or its retirement"
+          echo "  ## state cannot be verified on this box. This run exits 2"
+          echo "  ## (content current, infrastructure needs attention), never 0."
+          printf '%s\n' "$_VER_OUT" | grep -E '^\[ghl-mcp-runtime\] (FAIL|VERDICT)' | sed 's/^/  ##   /' || true
+          echo "  ## FIX: bash $AUTOSTART --retire   (idempotent; prints the residual surface)"
+          echo "  ############################################################"
+          echo ""
+        } >&2
+        ;;
+    esac
+  else
+    # No verifier delivered (fresh box / minimal bundle): the retirement
+    # tool's own read-only status is still a truthful assertion.
+    _VER_RC=0
+    _VER_OUT="$(bash "$AUTOSTART" --status 2>&1)" || _VER_RC=$?
+    printf '%s\n' "$_VER_OUT" >> "$LOG_FILE" 2>/dev/null || true
+    case "$_VER_OUT" in
+      *"=RETIRED_VERIFIED_OFF"*)
+        echo "    ✓ GHL MCP runtime conformance: RETIRED_VERIFIED_OFF (no live surface, none undetermined)" ;;
+      *)
+        GHL_MCP_RUNTIME_FATAL="yes"
+        GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_VER_OUT" | grep -E '^STATUS:' | tr '\n' ' ' || true)"
+        {
+          echo ""
+          echo "  ############################################################"
+          echo "  ## GHL MCP RETIREMENT ASSERTION FAILED (status rc=$_VER_RC)"
+          echo "  ## The community MCP is still observable on this box — retirement"
+          echo "  ## is not complete. This run exits 2 (content current,"
+          echo "  ## infrastructure needs attention), never 0."
+          printf '%s\n' "$_VER_OUT" | grep -E '^STATUS:' | sed 's/^/  ##   /' || true
+          echo "  ## FIX: bash $AUTOSTART --retire   (idempotent; prints the residual surface)"
+          echo "  ############################################################"
+          echo ""
+        } >&2
+        ;;
+    esac
+  fi
+}
+
+# B3: THE single content-current exit. BOTH early-exit paths in the content
+# recheck (plain clean rerun, and the convergence fast path) and the normal
+# full pass reach the SAME retirement/convergence check — wire_ghl_mcp, NOT a
+# copy of it. It must run BEFORE the temp tree is removed: the delivered
+# surfaces are pruned from the scripts dir, so the check resolves the tool
+# from the pulled bundle ($ONBOARDING_DIR) as its last candidate.
+# Exit 2 (loud, non-zero) when the check latches GHL_MCP_RUNTIME_FATAL.
+_content_current_exit() {
+  wire_ghl_mcp "36-ghl-mcp-setup"
+  rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+  if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ]; then
+    echo "  → [CONTENT RECHECK] skills content is current, but the GHL MCP retirement/convergence check FAILED — exiting 2, never 0." >&2
+    exit 2
+  fi
+  exit 0
+}
+# <<< GHL-MCP-RETIREMENT-GATE-END
 # ----------------------------------------------------------
 # U006 — Co-locate the canonical presentation entry script + its guard
 # into the materialized Presentations department scripts/ directory.
@@ -6062,8 +6296,9 @@ print(state + " " + str(len(headers)))
 
       if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
         echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
-        rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-        exit 0
+        # B3: content-current is NOT a licence to exit before the retirement
+        # convergence check — run the SAME check the full pass uses, then exit.
+        _content_current_exit
       fi
       echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
       echo "    Trying the FAST convergence-only sub-pass before committing to a full content sync..."
@@ -6229,8 +6464,8 @@ print(state + " " + str(len(headers)))
         _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
         if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
           echo "  ✓ [CONVERGENCE FAST PATH] all outstanding convergence steps repaired without a content sync — nothing to do."
-          rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-          exit 0
+          # B3: same content-current gate as the plain recheck exit above.
+          _content_current_exit
         fi
         echo "  ✗ [CONVERGENCE FAST PATH] still outstanding after the fast pass: ${_CONVERGENCE_TRIGGERS}"
         echo "    Proceeding with a full pass so they run — the fast path is exhausted, the full pass is the backstop."
@@ -8308,209 +8543,6 @@ PYEOF
     fi
   }
 
-  # ---- Helper: RETIRE skill 36's community GHL MCP (Tier 2) — GU-019/020/021 --
-  # OPERATOR DECISION: the community MCP is RETIRED. This function used to
-  # (re)start it and assert its runtime conformance on EVERY roll — the single
-  # strongest re-installation surface in the fleet. It now drives the ordered
-  # retirement transaction in ghl-mcp-autostart.sh --retire:
-  #
-  #   1 INVENTORY / 6 VERIFY / 7 RECEIPT   inside the tool (--status / --retire)
-  #   2 STAGE                              HERE, before anything is stopped:
-  #                                        the replacement surfaces must exist
-  #                                        (skill 44 CLI, skills 06 and 38, and
-  #                                        the OFFICIAL ghl-mcp registration).
-  #                                        Missing -> MIGRATION_FAILED and the
-  #                                        service is left running.
-  #   3,4,5                                archive, disable resurrection, stop
-  #                                        only the matched service.
-  #
-  # NON-FATAL to the roll (exactly as the old runtime assert was) but LOUD and
-  # LATCHED into the existing exit-2 "content current, infrastructure needs
-  # attention" contract. Idempotent: an already-retired box reports
-  # RETIRED_VERIFIED_OFF and changes nothing.
-  wire_ghl_mcp() {
-    local SKILL_FOLDER="$1"
-    [ "$SKILL_FOLDER" = "36-ghl-mcp-setup" ] || return 0
-
-    # Locate the DELIVERED retirement tool (same resolver order as before).
-    local AUTOSTART="" _as_cand
-    for _as_cand in \
-        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-autostart.sh" \
-        "$HOME/.openclaw/scripts/ghl-mcp-autostart.sh" \
-        "/data/.openclaw/scripts/ghl-mcp-autostart.sh" \
-        "$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"; do
-      case "$_as_cand" in "/ghl-mcp-autostart.sh"|"") continue ;; esac
-      [ -f "$_as_cand" ] && { AUTOSTART="$_as_cand"; break; }
-    done
-    unset _as_cand
-    if [ -z "$AUTOSTART" ]; then
-      echo "    ⚠ GHL MCP: ghl-mcp-autostart.sh not found (delivered scripts dir or pulled bundle) — the community MCP was NOT retired on this box." >&2
-      GHL_MCP_RUNTIME_FATAL="yes"
-      GHL_MCP_RUNTIME_DETAIL="ghl-mcp-autostart.sh missing — cannot run the retirement transaction"
-      return 0
-    fi
-
-    # --status is the retirement-aware assertion and the inventory.
-    local _ST="" _RET_OUT="" _RET_RC=0 _VER_OUT="" _VER_RC=0
-    _ST="$(bash "$AUTOSTART" --status 2>&1)" || true
-
-    case "$_ST" in
-      *"=RETIRED_VERIFIED_OFF"*)
-        echo "    ✓ GHL MCP: community MCP already RETIRED (VERIFIED_OFF) — nothing changed"
-        ;;
-      *)
-        # ── STAGE 2: replacement surfaces, BEFORE anything is stopped ────────
-        local _MISSING="" _sd _have44=0 _have06=0 _have38=0
-        for _sd in "$SKILLS_DIR"/44-*; do [ -d "$_sd" ] && _have44=1; done
-        for _sd in "$SKILLS_DIR"/06-*; do [ -d "$_sd" ] && _have06=1; done
-        for _sd in "$SKILLS_DIR"/38-*; do [ -d "$_sd" ] && _have38=1; done
-        unset _sd
-        [ "$_have44" = "1" ] || _MISSING="$_MISSING skill-44-convert-and-flow-cli"
-        [ "$_have06" = "1" ] || _MISSING="$_MISSING skill-06-ghl-install-pages"
-        [ "$_have38" = "1" ] || _MISSING="$_MISSING skill-38-conversational-ai"
-        # The official GHL MCP (Tier 1) registration must survive retirement.
-        # "ghl-community-mcp" does NOT contain the token "ghl-mcp", so this
-        # check can never pass on the retired entry alone.
-        local _OCROOT_FOR_MCP="${OC_PERSISTENT_CONFIG_DIR:-${OC_CONFIG:-$HOME/.openclaw}}"
-        if command -v openclaw >/dev/null 2>&1; then
-          openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp' || \
-            _MISSING="$_MISSING official-ghl-mcp-registration"
-        elif [ -f "$_OCROOT_FOR_MCP/openclaw.json" ]; then
-          grep -q '"ghl-mcp"' "$_OCROOT_FOR_MCP/openclaw.json" 2>/dev/null || \
-            _MISSING="$_MISSING official-ghl-mcp-registration"
-        else
-          _MISSING="$_MISSING official-ghl-mcp-registration"
-        fi
-        unset _OCROOT_FOR_MCP
-
-        if [ -n "$_MISSING" ]; then
-          {
-            echo ""
-            echo "  ############################################################"
-            echo "  ## GHL MCP RETIREMENT: MIGRATION_FAILED (replacement-incomplete)"
-            echo "  ## Prerequisite(s) missing:$_MISSING"
-            echo "  ## The community service was NOT stopped — a caller that still"
-            echo "  ## needs Tier 2 must never be retired out from under it."
-            echo "  ## FIX: deliver the missing surface(s), then re-run the updater."
-            echo "  ############################################################"
-            echo ""
-          } >&2
-          printf '%s\n' "STATUS: ghl-mcp-autostart=MIGRATION_FAILED (stage=replacement-incomplete missing=$_MISSING; service left untouched)" > /tmp/ghl-mcp-autostart.log 2>/dev/null || true
-          GHL_MCP_RUNTIME_FATAL="yes"
-          GHL_MCP_RUNTIME_DETAIL="retirement blocked: replacement-incomplete ($_MISSING)"
-          return 0
-        fi
-
-        local _CALLERS="skill-44-convert-and-flow-cli
-skill-06-ghl-install-pages
-skill-38-conversational-ai
-official-ghl-mcp-registration"
-        echo "    GHL MCP: retiring the community MCP (archive -> disable resurrection -> stop -> verify -> receipt)"
-        _RET_RC=0
-        _RET_OUT="$(GHL_MCP_RECEIPT_TO_RELEASE="${ONBOARDING_VERSION:-unknown}" \
-                    GHL_MCP_RECEIPT_CALLERS="$_CALLERS" \
-                    bash "$AUTOSTART" --retire 2>&1)" || _RET_RC=$?
-        printf '%s\n' "$_RET_OUT" >> "$LOG_FILE" 2>/dev/null || true
-        printf '%s\n' "$_RET_OUT" > /tmp/ghl-mcp-autostart.log 2>/dev/null || true
-        case "$_RET_OUT" in
-          *"=RETIRED_VERIFIED_OFF"*)
-            echo "    ✓ GHL MCP: community MCP RETIRED and VERIFIED_OFF (archive + receipt written)"
-            ;;
-          *)
-            {
-              echo ""
-              echo "  ############################################################"
-              echo "  ## GHL MCP RETIREMENT: MIGRATION_FAILED (rc=$_RET_RC)"
-              echo "  ## The community MCP could NOT be proven retired on this box."
-              echo "  ## Residual state is in the receipt under"
-              echo "  ##   ${OC_PERSISTENT_CONFIG_DIR:-$HOME/.openclaw}/.retired/"
-              printf '%s\n' "$_RET_OUT" | grep -E '^(STATUS:|  \[ghl-mcp-autostart\] MIGRATION_FAILED|  \[ghl-mcp-autostart\] residual)' | sed 's/^/  ##   /' || true
-              echo "  ## FIX: read the migration-failed receipt, clear the named"
-              echo "  ##      surface, then re-run: bash $AUTOSTART --retire"
-              echo "  ############################################################"
-              echo ""
-            } >&2
-            GHL_MCP_RUNTIME_FATAL="yes"
-            GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_RET_OUT" | grep -E '^(STATUS:|  \[ghl-mcp-autostart\] MIGRATION_FAILED)' | tr '\n' ' ' || true)"
-            return 0
-            ;;
-        esac
-        ;;
-    esac
-
-    # RETIREMENT-AWARE ASSERTION. This replaces the old gate call, which
-    # treated an absent service as FATAL and therefore could not tell
-    # retirement from breakage. The shipped verifier now reports four states:
-    #   0 RETIRED_OK       absence is a PASS
-    #   1 STILL_RUNNING    a matched identity was FOUND (names it)
-    #   2 NOT_APPLICABLE   fresh box, no history — a SKIP, never a failure
-    #   3 MISCONFIGURED    nothing running, but the retirement state cannot be
-    #                      verified (residual artifacts, bad MIGRATION_FAILED
-    #                      receipt, unreadable archive, unreadable config)
-    # Non-fatal to the roll, but latched into the exit-2 contract.
-    local RUNTIME_ASSERT="" _rt_cand
-    for _rt_cand in \
-        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-assert-runtime.sh" \
-        "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
-        "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
-        "$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"; do
-      case "$_rt_cand" in "/ghl-mcp-assert-runtime.sh"|"") continue ;; esac
-      [ -f "$_rt_cand" ] && { RUNTIME_ASSERT="$_rt_cand"; break; }
-    done
-    unset _rt_cand
-
-    if [ -n "$RUNTIME_ASSERT" ]; then
-      _VER_RC=0
-      _VER_OUT="$(bash "$RUNTIME_ASSERT" --quiet 2>&1)" || _VER_RC=$?
-      printf '%s\n' "$_VER_OUT" >> "$LOG_FILE" 2>/dev/null || true
-      case "$_VER_RC" in
-        0) echo "    ✓ GHL MCP runtime conformance: RETIRED_OK (every community surface provably absent)" ;;
-        2) echo "    ✓ GHL MCP runtime conformance: NOT_APPLICABLE (fresh box: the community MCP was never installed)" ;;
-        *)
-          GHL_MCP_RUNTIME_FATAL="yes"
-          GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_VER_OUT" | grep -E '^\[ghl-mcp-runtime\] (FAIL|VERDICT)' | tr '\n' ' ' || true)"
-          {
-            echo ""
-            echo "  ############################################################"
-            echo "  ## GHL MCP RETIREMENT ASSERTION FAILED (verify rc=$_VER_RC)"
-            echo "  ## The community MCP is still observable, or its retirement"
-            echo "  ## state cannot be verified on this box. This run exits 2"
-            echo "  ## (content current, infrastructure needs attention), never 0."
-            printf '%s\n' "$_VER_OUT" | grep -E '^\[ghl-mcp-runtime\] (FAIL|VERDICT)' | sed 's/^/  ##   /' || true
-            echo "  ## FIX: bash $AUTOSTART --retire   (idempotent; prints the residual surface)"
-            echo "  ############################################################"
-            echo ""
-          } >&2
-          ;;
-      esac
-    else
-      # No verifier delivered (fresh box / minimal bundle): the retirement
-      # tool's own read-only status is still a truthful assertion.
-      _VER_RC=0
-      _VER_OUT="$(bash "$AUTOSTART" --status 2>&1)" || _VER_RC=$?
-      printf '%s\n' "$_VER_OUT" >> "$LOG_FILE" 2>/dev/null || true
-      case "$_VER_OUT" in
-        *"=RETIRED_VERIFIED_OFF"*)
-          echo "    ✓ GHL MCP runtime conformance: RETIRED_VERIFIED_OFF (no live surface, none undetermined)" ;;
-        *)
-          GHL_MCP_RUNTIME_FATAL="yes"
-          GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_VER_OUT" | grep -E '^STATUS:' | tr '\n' ' ' || true)"
-          {
-            echo ""
-            echo "  ############################################################"
-            echo "  ## GHL MCP RETIREMENT ASSERTION FAILED (status rc=$_VER_RC)"
-            echo "  ## The community MCP is still observable on this box — retirement"
-            echo "  ## is not complete. This run exits 2 (content current,"
-            echo "  ## infrastructure needs attention), never 0."
-            printf '%s\n' "$_VER_OUT" | grep -E '^STATUS:' | sed 's/^/  ##   /' || true
-            echo "  ## FIX: bash $AUTOSTART --retire   (idempotent; prints the residual surface)"
-            echo "  ############################################################"
-            echo ""
-          } >&2
-          ;;
-      esac
-    fi
-  }
 
   # ---- Main wiring loop ----
   echo ""
