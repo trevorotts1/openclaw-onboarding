@@ -695,15 +695,15 @@ test('store: #demo starts the labelled replay and stopDemo returns to the previo
   assert.equal(v.session.id, 'demo');
   assert.equal(v.session.state, 'DRAFT');
   assert.equal(h.count('/api/council/sessions/demo/events'), 0, 'the demo never opens a real stream');
-  await h.advance(7_000);
+  await h.advance(4_000);
   v = h.ns.live.getView();
   assert.equal(v.session.state, 'ROUND_1');
   assert.equal(v.session.seats[0].latest, null, 'content is not revealed before its card frame');
-  await h.advance(10_000);
+  await h.advance(3_000);
   v = h.ns.live.getView();
   assert.ok(v.session.seats[0].latest && v.session.seats[0].latest.line, 'revealed when its card_accepted frame plays');
   assert.match(v.session.round.timer, /^0:\d\d$/);
-  await h.advance(90_000);
+  await h.advance(100_000);
   v = h.ns.live.getView();
   assert.equal(v.session.state, 'COMPLETED');
   assert.equal(v.session.verdict.labelText, 'Go, with conditions');

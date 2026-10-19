@@ -50,7 +50,8 @@
   },
   "state": {
    "state": "DRAFT"
-  }
+  },
+  "playback_ms": 2000
  },
  "cards": [
   {
@@ -391,7 +392,7 @@
    }
   },
   {
-   "at_ms": 2000,
+   "at_ms": 1000,
    "frame": {
     "sequence": 2,
     "type": "session_state_changed",
@@ -405,11 +406,11 @@
       "state": "READY"
      }
     },
-    "created_at": "2026-01-15T10:00:02.000Z"
+    "created_at": "2026-01-15T10:00:01.000Z"
    }
   },
   {
-   "at_ms": 3500,
+   "at_ms": 1800,
    "frame": {
     "sequence": 3,
     "type": "session_state_changed",
@@ -423,11 +424,11 @@
       "state": "QUEUED"
      }
     },
-    "created_at": "2026-01-15T10:00:03.500Z"
+    "created_at": "2026-01-15T10:00:01.800Z"
    }
   },
   {
-   "at_ms": 4500,
+   "at_ms": 2500,
    "frame": {
     "sequence": 4,
     "type": "session_state_changed",
@@ -441,11 +442,11 @@
       "state": "PREPARING"
      }
     },
-    "created_at": "2026-01-15T10:00:04.500Z"
+    "created_at": "2026-01-15T10:00:02.500Z"
    }
   },
   {
-   "at_ms": 6000,
+   "at_ms": 3500,
    "frame": {
     "sequence": 5,
     "type": "session_state_changed",
@@ -459,11 +460,11 @@
       "state": "ROUND_1"
      }
     },
-    "created_at": "2026-01-15T10:00:06.000Z"
+    "created_at": "2026-01-15T10:00:03.500Z"
    }
   },
   {
-   "at_ms": 6300,
+   "at_ms": 3650,
    "frame": {
     "sequence": 6,
     "type": "operation_reserved",
@@ -475,11 +476,11 @@
      "operation_id": "e74c72dee30e6aac3dcf154a4e34bb73998fb7c8533875677f9193deb3e23ba1",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:06.300Z"
+    "created_at": "2026-01-15T10:00:03.650Z"
    }
   },
   {
-   "at_ms": 8700,
+   "at_ms": 5150,
    "frame": {
     "sequence": 7,
     "type": "card_accepted",
@@ -494,11 +495,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:08.700Z"
+    "created_at": "2026-01-15T10:00:05.150Z"
    }
   },
   {
-   "at_ms": 8710,
+   "at_ms": 5160,
    "frame": {
     "sequence": 8,
     "type": "operation_completed",
@@ -510,11 +511,11 @@
      "operation_id": "e74c72dee30e6aac3dcf154a4e34bb73998fb7c8533875677f9193deb3e23ba1",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:08.710Z"
+    "created_at": "2026-01-15T10:00:05.160Z"
    }
   },
   {
-   "at_ms": 9100,
+   "at_ms": 5450,
    "frame": {
     "sequence": 9,
     "type": "operation_reserved",
@@ -526,11 +527,11 @@
      "operation_id": "18f809647a3c853cedab1363df2a2dd42bd63b26d291280be61c860a0d7d7609",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:09.100Z"
+    "created_at": "2026-01-15T10:00:05.450Z"
    }
   },
   {
-   "at_ms": 11500,
+   "at_ms": 6950,
    "frame": {
     "sequence": 10,
     "type": "card_accepted",
@@ -545,11 +546,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:11.500Z"
+    "created_at": "2026-01-15T10:00:06.950Z"
    }
   },
   {
-   "at_ms": 11510,
+   "at_ms": 6960,
    "frame": {
     "sequence": 11,
     "type": "operation_completed",
@@ -561,11 +562,11 @@
      "operation_id": "18f809647a3c853cedab1363df2a2dd42bd63b26d291280be61c860a0d7d7609",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:11.510Z"
+    "created_at": "2026-01-15T10:00:06.960Z"
    }
   },
   {
-   "at_ms": 11900,
+   "at_ms": 7250,
    "frame": {
     "sequence": 12,
     "type": "operation_reserved",
@@ -577,11 +578,11 @@
      "operation_id": "0a3533afe2c382989c373d014b739cd3d19eda43d0e0250258b0020af1960a9c",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:11.900Z"
+    "created_at": "2026-01-15T10:00:07.250Z"
    }
   },
   {
-   "at_ms": 14300,
+   "at_ms": 8750,
    "frame": {
     "sequence": 13,
     "type": "card_accepted",
@@ -596,11 +597,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:14.300Z"
+    "created_at": "2026-01-15T10:00:08.750Z"
    }
   },
   {
-   "at_ms": 14310,
+   "at_ms": 8760,
    "frame": {
     "sequence": 14,
     "type": "operation_completed",
@@ -612,11 +613,11 @@
      "operation_id": "0a3533afe2c382989c373d014b739cd3d19eda43d0e0250258b0020af1960a9c",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:14.310Z"
+    "created_at": "2026-01-15T10:00:08.760Z"
    }
   },
   {
-   "at_ms": 14700,
+   "at_ms": 9050,
    "frame": {
     "sequence": 15,
     "type": "operation_reserved",
@@ -628,11 +629,11 @@
      "operation_id": "5f757d884cc6e306ef75a68f46726b542dcf8422dad1dcbd50aa5fd18a94a07c",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:14.700Z"
+    "created_at": "2026-01-15T10:00:09.050Z"
    }
   },
   {
-   "at_ms": 17100,
+   "at_ms": 10550,
    "frame": {
     "sequence": 16,
     "type": "card_accepted",
@@ -647,11 +648,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:17.100Z"
+    "created_at": "2026-01-15T10:00:10.550Z"
    }
   },
   {
-   "at_ms": 17110,
+   "at_ms": 10560,
    "frame": {
     "sequence": 17,
     "type": "operation_completed",
@@ -663,11 +664,11 @@
      "operation_id": "5f757d884cc6e306ef75a68f46726b542dcf8422dad1dcbd50aa5fd18a94a07c",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:17.110Z"
+    "created_at": "2026-01-15T10:00:10.560Z"
    }
   },
   {
-   "at_ms": 17500,
+   "at_ms": 10850,
    "frame": {
     "sequence": 18,
     "type": "operation_reserved",
@@ -679,11 +680,11 @@
      "operation_id": "ff95633a930bd69c45a1fe9d5356264e894f0a02f1a31025037fae825c97e195",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:17.500Z"
+    "created_at": "2026-01-15T10:00:10.850Z"
    }
   },
   {
-   "at_ms": 19900,
+   "at_ms": 12350,
    "frame": {
     "sequence": 19,
     "type": "card_accepted",
@@ -698,11 +699,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:19.900Z"
+    "created_at": "2026-01-15T10:00:12.350Z"
    }
   },
   {
-   "at_ms": 19910,
+   "at_ms": 12360,
    "frame": {
     "sequence": 20,
     "type": "operation_completed",
@@ -714,11 +715,11 @@
      "operation_id": "ff95633a930bd69c45a1fe9d5356264e894f0a02f1a31025037fae825c97e195",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:19.910Z"
+    "created_at": "2026-01-15T10:00:12.360Z"
    }
   },
   {
-   "at_ms": 20300,
+   "at_ms": 12650,
    "frame": {
     "sequence": 21,
     "type": "operation_reserved",
@@ -730,11 +731,11 @@
      "operation_id": "d528311793b3905e2044eacc603b6f315c2ae360e0962190f8295709920e1505",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:20.300Z"
+    "created_at": "2026-01-15T10:00:12.650Z"
    }
   },
   {
-   "at_ms": 22700,
+   "at_ms": 14150,
    "frame": {
     "sequence": 22,
     "type": "card_accepted",
@@ -749,11 +750,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:22.700Z"
+    "created_at": "2026-01-15T10:00:14.150Z"
    }
   },
   {
-   "at_ms": 22710,
+   "at_ms": 14160,
    "frame": {
     "sequence": 23,
     "type": "operation_completed",
@@ -765,11 +766,11 @@
      "operation_id": "d528311793b3905e2044eacc603b6f315c2ae360e0962190f8295709920e1505",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:22.710Z"
+    "created_at": "2026-01-15T10:00:14.160Z"
    }
   },
   {
-   "at_ms": 23100,
+   "at_ms": 14450,
    "frame": {
     "sequence": 24,
     "type": "operation_reserved",
@@ -781,11 +782,11 @@
      "operation_id": "236e77760ee611dd28a833fb3dd7ff844f7f1655578bab9f39791779b73af4f3",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:23.100Z"
+    "created_at": "2026-01-15T10:00:14.450Z"
    }
   },
   {
-   "at_ms": 25500,
+   "at_ms": 15950,
    "frame": {
     "sequence": 25,
     "type": "card_accepted",
@@ -800,11 +801,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:25.500Z"
+    "created_at": "2026-01-15T10:00:15.950Z"
    }
   },
   {
-   "at_ms": 25510,
+   "at_ms": 15960,
    "frame": {
     "sequence": 26,
     "type": "operation_completed",
@@ -816,11 +817,11 @@
      "operation_id": "236e77760ee611dd28a833fb3dd7ff844f7f1655578bab9f39791779b73af4f3",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:25.510Z"
+    "created_at": "2026-01-15T10:00:15.960Z"
    }
   },
   {
-   "at_ms": 25900,
+   "at_ms": 16250,
    "frame": {
     "sequence": 27,
     "type": "operation_reserved",
@@ -832,11 +833,11 @@
      "operation_id": "f68ff764209cbeddf9005ffb9d3570920e7168716a926e18af604ddcbc2c5bd5",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:25.900Z"
+    "created_at": "2026-01-15T10:00:16.250Z"
    }
   },
   {
-   "at_ms": 28300,
+   "at_ms": 17750,
    "frame": {
     "sequence": 28,
     "type": "card_accepted",
@@ -851,11 +852,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:28.300Z"
+    "created_at": "2026-01-15T10:00:17.750Z"
    }
   },
   {
-   "at_ms": 28310,
+   "at_ms": 17760,
    "frame": {
     "sequence": 29,
     "type": "operation_completed",
@@ -867,11 +868,11 @@
      "operation_id": "f68ff764209cbeddf9005ffb9d3570920e7168716a926e18af604ddcbc2c5bd5",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:28.310Z"
+    "created_at": "2026-01-15T10:00:17.760Z"
    }
   },
   {
-   "at_ms": 28700,
+   "at_ms": 18050,
    "frame": {
     "sequence": 30,
     "type": "operation_reserved",
@@ -883,11 +884,11 @@
      "operation_id": "14e7863e298c7707cc21169840a0b84e2b21be5baeb21f2db7f323e9e058eba6",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:28.700Z"
+    "created_at": "2026-01-15T10:00:18.050Z"
    }
   },
   {
-   "at_ms": 31100,
+   "at_ms": 19550,
    "frame": {
     "sequence": 31,
     "type": "card_accepted",
@@ -902,11 +903,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:31.100Z"
+    "created_at": "2026-01-15T10:00:19.550Z"
    }
   },
   {
-   "at_ms": 31110,
+   "at_ms": 19560,
    "frame": {
     "sequence": 32,
     "type": "operation_completed",
@@ -918,11 +919,11 @@
      "operation_id": "14e7863e298c7707cc21169840a0b84e2b21be5baeb21f2db7f323e9e058eba6",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:31.110Z"
+    "created_at": "2026-01-15T10:00:19.560Z"
    }
   },
   {
-   "at_ms": 31400,
+   "at_ms": 19850,
    "frame": {
     "sequence": 33,
     "type": "session_state_changed",
@@ -936,11 +937,11 @@
       "state": "CRUX_REVIEW"
      }
     },
-    "created_at": "2026-01-15T10:00:31.400Z"
+    "created_at": "2026-01-15T10:00:19.850Z"
    }
   },
   {
-   "at_ms": 36800,
+   "at_ms": 37750,
    "frame": {
     "sequence": 34,
     "type": "session_state_changed",
@@ -954,11 +955,11 @@
       "state": "ROUND_2"
      }
     },
-    "created_at": "2026-01-15T10:00:36.800Z"
+    "created_at": "2026-01-15T10:00:37.750Z"
    }
   },
   {
-   "at_ms": 37100,
+   "at_ms": 37900,
    "frame": {
     "sequence": 35,
     "type": "operation_reserved",
@@ -970,11 +971,11 @@
      "operation_id": "c8b5d40a871d184c51e1e7c18bbd7d009c829a0b45738a463da66c9cfde88181",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:37.100Z"
+    "created_at": "2026-01-15T10:00:37.900Z"
    }
   },
   {
-   "at_ms": 39500,
+   "at_ms": 39400,
    "frame": {
     "sequence": 36,
     "type": "card_accepted",
@@ -989,11 +990,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:39.500Z"
+    "created_at": "2026-01-15T10:00:39.400Z"
    }
   },
   {
-   "at_ms": 39510,
+   "at_ms": 39410,
    "frame": {
     "sequence": 37,
     "type": "operation_completed",
@@ -1005,11 +1006,11 @@
      "operation_id": "c8b5d40a871d184c51e1e7c18bbd7d009c829a0b45738a463da66c9cfde88181",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:39.510Z"
+    "created_at": "2026-01-15T10:00:39.410Z"
    }
   },
   {
-   "at_ms": 39900,
+   "at_ms": 39700,
    "frame": {
     "sequence": 38,
     "type": "operation_reserved",
@@ -1021,11 +1022,11 @@
      "operation_id": "6dd1631e892362a3c02b6ff9c0e14d2573d757fb9bcd4d2608672f9abc29ed19",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:39.900Z"
+    "created_at": "2026-01-15T10:00:39.700Z"
    }
   },
   {
-   "at_ms": 42300,
+   "at_ms": 41200,
    "frame": {
     "sequence": 39,
     "type": "card_accepted",
@@ -1040,11 +1041,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:42.300Z"
+    "created_at": "2026-01-15T10:00:41.200Z"
    }
   },
   {
-   "at_ms": 42310,
+   "at_ms": 41210,
    "frame": {
     "sequence": 40,
     "type": "operation_completed",
@@ -1056,11 +1057,11 @@
      "operation_id": "6dd1631e892362a3c02b6ff9c0e14d2573d757fb9bcd4d2608672f9abc29ed19",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:42.310Z"
+    "created_at": "2026-01-15T10:00:41.210Z"
    }
   },
   {
-   "at_ms": 42700,
+   "at_ms": 41500,
    "frame": {
     "sequence": 41,
     "type": "operation_reserved",
@@ -1072,11 +1073,11 @@
      "operation_id": "a1e68e754bc5c136209722225c06dac7ef6108601b50d1d33469383ac1ea5e93",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:42.700Z"
+    "created_at": "2026-01-15T10:00:41.500Z"
    }
   },
   {
-   "at_ms": 45100,
+   "at_ms": 43000,
    "frame": {
     "sequence": 42,
     "type": "card_accepted",
@@ -1091,11 +1092,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:45.100Z"
+    "created_at": "2026-01-15T10:00:43.000Z"
    }
   },
   {
-   "at_ms": 45110,
+   "at_ms": 43010,
    "frame": {
     "sequence": 43,
     "type": "operation_completed",
@@ -1107,11 +1108,11 @@
      "operation_id": "a1e68e754bc5c136209722225c06dac7ef6108601b50d1d33469383ac1ea5e93",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:45.110Z"
+    "created_at": "2026-01-15T10:00:43.010Z"
    }
   },
   {
-   "at_ms": 45500,
+   "at_ms": 43300,
    "frame": {
     "sequence": 44,
     "type": "operation_reserved",
@@ -1123,11 +1124,11 @@
      "operation_id": "856a1f87d540d2cde641b0b314114e5b7866b646ad9d7d8def29f0775fafe6cc",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:45.500Z"
+    "created_at": "2026-01-15T10:00:43.300Z"
    }
   },
   {
-   "at_ms": 47900,
+   "at_ms": 44800,
    "frame": {
     "sequence": 45,
     "type": "card_accepted",
@@ -1142,11 +1143,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:47.900Z"
+    "created_at": "2026-01-15T10:00:44.800Z"
    }
   },
   {
-   "at_ms": 47910,
+   "at_ms": 44810,
    "frame": {
     "sequence": 46,
     "type": "operation_completed",
@@ -1158,11 +1159,11 @@
      "operation_id": "856a1f87d540d2cde641b0b314114e5b7866b646ad9d7d8def29f0775fafe6cc",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:47.910Z"
+    "created_at": "2026-01-15T10:00:44.810Z"
    }
   },
   {
-   "at_ms": 48300,
+   "at_ms": 45100,
    "frame": {
     "sequence": 47,
     "type": "operation_reserved",
@@ -1174,11 +1175,11 @@
      "operation_id": "60bac75337f422314d9336f33d7026ab1752e7cba6ba409f43a088be811a1ec9",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:48.300Z"
+    "created_at": "2026-01-15T10:00:45.100Z"
    }
   },
   {
-   "at_ms": 50700,
+   "at_ms": 46600,
    "frame": {
     "sequence": 48,
     "type": "card_accepted",
@@ -1193,11 +1194,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:50.700Z"
+    "created_at": "2026-01-15T10:00:46.600Z"
    }
   },
   {
-   "at_ms": 50710,
+   "at_ms": 46610,
    "frame": {
     "sequence": 49,
     "type": "operation_completed",
@@ -1209,11 +1210,11 @@
      "operation_id": "60bac75337f422314d9336f33d7026ab1752e7cba6ba409f43a088be811a1ec9",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:50.710Z"
+    "created_at": "2026-01-15T10:00:46.610Z"
    }
   },
   {
-   "at_ms": 51100,
+   "at_ms": 46900,
    "frame": {
     "sequence": 50,
     "type": "operation_reserved",
@@ -1225,11 +1226,11 @@
      "operation_id": "c99637e7d44725fb67309a2c60c238bde972b7c13f918ef1f5e380be9687cc48",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:51.100Z"
+    "created_at": "2026-01-15T10:00:46.900Z"
    }
   },
   {
-   "at_ms": 53500,
+   "at_ms": 48400,
    "frame": {
     "sequence": 51,
     "type": "card_accepted",
@@ -1244,11 +1245,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:53.500Z"
+    "created_at": "2026-01-15T10:00:48.400Z"
    }
   },
   {
-   "at_ms": 53510,
+   "at_ms": 48410,
    "frame": {
     "sequence": 52,
     "type": "operation_completed",
@@ -1260,11 +1261,11 @@
      "operation_id": "c99637e7d44725fb67309a2c60c238bde972b7c13f918ef1f5e380be9687cc48",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:53.510Z"
+    "created_at": "2026-01-15T10:00:48.410Z"
    }
   },
   {
-   "at_ms": 53900,
+   "at_ms": 48700,
    "frame": {
     "sequence": 53,
     "type": "operation_reserved",
@@ -1276,11 +1277,11 @@
      "operation_id": "5f9fc4963fd7bd9ea68802f6af6317eb65912df41eed3c4fa32e0f185b80752a",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:53.900Z"
+    "created_at": "2026-01-15T10:00:48.700Z"
    }
   },
   {
-   "at_ms": 56300,
+   "at_ms": 50200,
    "frame": {
     "sequence": 54,
     "type": "card_accepted",
@@ -1295,11 +1296,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:56.300Z"
+    "created_at": "2026-01-15T10:00:50.200Z"
    }
   },
   {
-   "at_ms": 56310,
+   "at_ms": 50210,
    "frame": {
     "sequence": 55,
     "type": "operation_completed",
@@ -1311,11 +1312,11 @@
      "operation_id": "5f9fc4963fd7bd9ea68802f6af6317eb65912df41eed3c4fa32e0f185b80752a",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:56.310Z"
+    "created_at": "2026-01-15T10:00:50.210Z"
    }
   },
   {
-   "at_ms": 56700,
+   "at_ms": 50500,
    "frame": {
     "sequence": 56,
     "type": "operation_reserved",
@@ -1327,11 +1328,11 @@
      "operation_id": "002e5833a795539bf78080c58271104fe571ead713aa44de51f5d87ddb0c10a7",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:56.700Z"
+    "created_at": "2026-01-15T10:00:50.500Z"
    }
   },
   {
-   "at_ms": 59100,
+   "at_ms": 52000,
    "frame": {
     "sequence": 57,
     "type": "card_accepted",
@@ -1346,11 +1347,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:59.100Z"
+    "created_at": "2026-01-15T10:00:52.000Z"
    }
   },
   {
-   "at_ms": 59110,
+   "at_ms": 52010,
    "frame": {
     "sequence": 58,
     "type": "operation_completed",
@@ -1362,11 +1363,11 @@
      "operation_id": "002e5833a795539bf78080c58271104fe571ead713aa44de51f5d87ddb0c10a7",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:59.110Z"
+    "created_at": "2026-01-15T10:00:52.010Z"
    }
   },
   {
-   "at_ms": 59500,
+   "at_ms": 52300,
    "frame": {
     "sequence": 59,
     "type": "operation_reserved",
@@ -1378,11 +1379,11 @@
      "operation_id": "0fb49035d25906f9cfa274fb525acd24abc5635cdcee4584c827af910cf8e3a1",
      "demo": true
     },
-    "created_at": "2026-01-15T10:00:59.500Z"
+    "created_at": "2026-01-15T10:00:52.300Z"
    }
   },
   {
-   "at_ms": 61900,
+   "at_ms": 53800,
    "frame": {
     "sequence": 60,
     "type": "card_accepted",
@@ -1397,11 +1398,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:01.900Z"
+    "created_at": "2026-01-15T10:00:53.800Z"
    }
   },
   {
-   "at_ms": 61910,
+   "at_ms": 53810,
    "frame": {
     "sequence": 61,
     "type": "operation_completed",
@@ -1413,11 +1414,11 @@
      "operation_id": "0fb49035d25906f9cfa274fb525acd24abc5635cdcee4584c827af910cf8e3a1",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:01.910Z"
+    "created_at": "2026-01-15T10:00:53.810Z"
    }
   },
   {
-   "at_ms": 62200,
+   "at_ms": 54100,
    "frame": {
     "sequence": 62,
     "type": "session_state_changed",
@@ -1431,11 +1432,11 @@
       "state": "DRAFT_RESOLUTION"
      }
     },
-    "created_at": "2026-01-15T10:01:02.200Z"
+    "created_at": "2026-01-15T10:00:54.100Z"
    }
   },
   {
-   "at_ms": 67600,
+   "at_ms": 72000,
    "frame": {
     "sequence": 63,
     "type": "session_state_changed",
@@ -1449,11 +1450,11 @@
       "state": "ROUND_3"
      }
     },
-    "created_at": "2026-01-15T10:01:07.600Z"
+    "created_at": "2026-01-15T10:01:12.000Z"
    }
   },
   {
-   "at_ms": 67900,
+   "at_ms": 72150,
    "frame": {
     "sequence": 64,
     "type": "operation_reserved",
@@ -1465,11 +1466,11 @@
      "operation_id": "ff3a70978e28a879a14896ccd8ca0c9340353e68cc3d043f93bfab84286d16f8",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:07.900Z"
+    "created_at": "2026-01-15T10:01:12.150Z"
    }
   },
   {
-   "at_ms": 70300,
+   "at_ms": 73650,
    "frame": {
     "sequence": 65,
     "type": "card_accepted",
@@ -1484,11 +1485,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:10.300Z"
+    "created_at": "2026-01-15T10:01:13.650Z"
    }
   },
   {
-   "at_ms": 70310,
+   "at_ms": 73660,
    "frame": {
     "sequence": 66,
     "type": "operation_completed",
@@ -1500,11 +1501,11 @@
      "operation_id": "ff3a70978e28a879a14896ccd8ca0c9340353e68cc3d043f93bfab84286d16f8",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:10.310Z"
+    "created_at": "2026-01-15T10:01:13.660Z"
    }
   },
   {
-   "at_ms": 70700,
+   "at_ms": 73950,
    "frame": {
     "sequence": 67,
     "type": "operation_reserved",
@@ -1516,11 +1517,11 @@
      "operation_id": "0cfc02ac986f8b9d8a5f8e7edb14378daef40fcedb9f8f3700f089f6d25619e7",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:10.700Z"
+    "created_at": "2026-01-15T10:01:13.950Z"
    }
   },
   {
-   "at_ms": 73100,
+   "at_ms": 75450,
    "frame": {
     "sequence": 68,
     "type": "card_accepted",
@@ -1535,11 +1536,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:13.100Z"
+    "created_at": "2026-01-15T10:01:15.450Z"
    }
   },
   {
-   "at_ms": 73110,
+   "at_ms": 75460,
    "frame": {
     "sequence": 69,
     "type": "operation_completed",
@@ -1551,11 +1552,11 @@
      "operation_id": "0cfc02ac986f8b9d8a5f8e7edb14378daef40fcedb9f8f3700f089f6d25619e7",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:13.110Z"
+    "created_at": "2026-01-15T10:01:15.460Z"
    }
   },
   {
-   "at_ms": 73500,
+   "at_ms": 75750,
    "frame": {
     "sequence": 70,
     "type": "operation_reserved",
@@ -1567,11 +1568,11 @@
      "operation_id": "c6e48c30141d4b308e68d2983a7765d7f41dba30de9a06ad92fa67c7b3474c0c",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:13.500Z"
+    "created_at": "2026-01-15T10:01:15.750Z"
    }
   },
   {
-   "at_ms": 75900,
+   "at_ms": 77250,
    "frame": {
     "sequence": 71,
     "type": "card_accepted",
@@ -1586,11 +1587,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:15.900Z"
+    "created_at": "2026-01-15T10:01:17.250Z"
    }
   },
   {
-   "at_ms": 75910,
+   "at_ms": 77260,
    "frame": {
     "sequence": 72,
     "type": "operation_completed",
@@ -1602,11 +1603,11 @@
      "operation_id": "c6e48c30141d4b308e68d2983a7765d7f41dba30de9a06ad92fa67c7b3474c0c",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:15.910Z"
+    "created_at": "2026-01-15T10:01:17.260Z"
    }
   },
   {
-   "at_ms": 76300,
+   "at_ms": 77550,
    "frame": {
     "sequence": 73,
     "type": "operation_reserved",
@@ -1618,11 +1619,11 @@
      "operation_id": "51c9d42148416f02083a96c472a2d199eded35ace697f59f213b5f583bfd6690",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:16.300Z"
+    "created_at": "2026-01-15T10:01:17.550Z"
    }
   },
   {
-   "at_ms": 78700,
+   "at_ms": 79050,
    "frame": {
     "sequence": 74,
     "type": "card_accepted",
@@ -1637,11 +1638,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:18.700Z"
+    "created_at": "2026-01-15T10:01:19.050Z"
    }
   },
   {
-   "at_ms": 78710,
+   "at_ms": 79060,
    "frame": {
     "sequence": 75,
     "type": "operation_completed",
@@ -1653,11 +1654,11 @@
      "operation_id": "51c9d42148416f02083a96c472a2d199eded35ace697f59f213b5f583bfd6690",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:18.710Z"
+    "created_at": "2026-01-15T10:01:19.060Z"
    }
   },
   {
-   "at_ms": 79100,
+   "at_ms": 79350,
    "frame": {
     "sequence": 76,
     "type": "operation_reserved",
@@ -1669,11 +1670,11 @@
      "operation_id": "570dd1ed2a984d0887375e7a0a4df06f0ba1f6a911b1d9ce96c7c40df1d605a6",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:19.100Z"
+    "created_at": "2026-01-15T10:01:19.350Z"
    }
   },
   {
-   "at_ms": 81500,
+   "at_ms": 80850,
    "frame": {
     "sequence": 77,
     "type": "card_accepted",
@@ -1688,11 +1689,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:21.500Z"
+    "created_at": "2026-01-15T10:01:20.850Z"
    }
   },
   {
-   "at_ms": 81510,
+   "at_ms": 80860,
    "frame": {
     "sequence": 78,
     "type": "operation_completed",
@@ -1704,11 +1705,11 @@
      "operation_id": "570dd1ed2a984d0887375e7a0a4df06f0ba1f6a911b1d9ce96c7c40df1d605a6",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:21.510Z"
+    "created_at": "2026-01-15T10:01:20.860Z"
    }
   },
   {
-   "at_ms": 81900,
+   "at_ms": 81150,
    "frame": {
     "sequence": 79,
     "type": "operation_reserved",
@@ -1720,11 +1721,11 @@
      "operation_id": "5c10d1eb435abbe1f74c95050f618a2b46dff2ce048de454341d444149c7295a",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:21.900Z"
+    "created_at": "2026-01-15T10:01:21.150Z"
    }
   },
   {
-   "at_ms": 84300,
+   "at_ms": 82650,
    "frame": {
     "sequence": 80,
     "type": "card_accepted",
@@ -1739,11 +1740,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:24.300Z"
+    "created_at": "2026-01-15T10:01:22.650Z"
    }
   },
   {
-   "at_ms": 84310,
+   "at_ms": 82660,
    "frame": {
     "sequence": 81,
     "type": "operation_completed",
@@ -1755,11 +1756,11 @@
      "operation_id": "5c10d1eb435abbe1f74c95050f618a2b46dff2ce048de454341d444149c7295a",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:24.310Z"
+    "created_at": "2026-01-15T10:01:22.660Z"
    }
   },
   {
-   "at_ms": 84700,
+   "at_ms": 82950,
    "frame": {
     "sequence": 82,
     "type": "operation_reserved",
@@ -1771,11 +1772,11 @@
      "operation_id": "c9d81824fdadd2c2f218fcb56e674f1b380d0bbb8c559b063f454e2c425e7851",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:24.700Z"
+    "created_at": "2026-01-15T10:01:22.950Z"
    }
   },
   {
-   "at_ms": 87100,
+   "at_ms": 84450,
    "frame": {
     "sequence": 83,
     "type": "card_accepted",
@@ -1790,11 +1791,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:27.100Z"
+    "created_at": "2026-01-15T10:01:24.450Z"
    }
   },
   {
-   "at_ms": 87110,
+   "at_ms": 84460,
    "frame": {
     "sequence": 84,
     "type": "operation_completed",
@@ -1806,11 +1807,11 @@
      "operation_id": "c9d81824fdadd2c2f218fcb56e674f1b380d0bbb8c559b063f454e2c425e7851",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:27.110Z"
+    "created_at": "2026-01-15T10:01:24.460Z"
    }
   },
   {
-   "at_ms": 87500,
+   "at_ms": 84750,
    "frame": {
     "sequence": 85,
     "type": "operation_reserved",
@@ -1822,11 +1823,11 @@
      "operation_id": "61760e448c4bf71aba0fd0083f9818757b930b01225c13603ab91d9bd0ec5b9a",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:27.500Z"
+    "created_at": "2026-01-15T10:01:24.750Z"
    }
   },
   {
-   "at_ms": 89900,
+   "at_ms": 86250,
    "frame": {
     "sequence": 86,
     "type": "card_accepted",
@@ -1841,11 +1842,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:29.900Z"
+    "created_at": "2026-01-15T10:01:26.250Z"
    }
   },
   {
-   "at_ms": 89910,
+   "at_ms": 86260,
    "frame": {
     "sequence": 87,
     "type": "operation_completed",
@@ -1857,11 +1858,11 @@
      "operation_id": "61760e448c4bf71aba0fd0083f9818757b930b01225c13603ab91d9bd0ec5b9a",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:29.910Z"
+    "created_at": "2026-01-15T10:01:26.260Z"
    }
   },
   {
-   "at_ms": 90300,
+   "at_ms": 86550,
    "frame": {
     "sequence": 88,
     "type": "operation_reserved",
@@ -1873,11 +1874,11 @@
      "operation_id": "dfda682ccae2147adcfd139519533e09914182bd056e97dda0aca2d1a1c872e4",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:30.300Z"
+    "created_at": "2026-01-15T10:01:26.550Z"
    }
   },
   {
-   "at_ms": 92700,
+   "at_ms": 88050,
    "frame": {
     "sequence": 89,
     "type": "card_accepted",
@@ -1892,11 +1893,11 @@
      "card_hash": "demo",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:32.700Z"
+    "created_at": "2026-01-15T10:01:28.050Z"
    }
   },
   {
-   "at_ms": 92710,
+   "at_ms": 88060,
    "frame": {
     "sequence": 90,
     "type": "operation_completed",
@@ -1908,11 +1909,11 @@
      "operation_id": "dfda682ccae2147adcfd139519533e09914182bd056e97dda0aca2d1a1c872e4",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:32.710Z"
+    "created_at": "2026-01-15T10:01:28.060Z"
    }
   },
   {
-   "at_ms": 93000,
+   "at_ms": 88350,
    "frame": {
     "sequence": 91,
     "type": "session_state_changed",
@@ -1926,11 +1927,11 @@
       "state": "VERIFYING"
      }
     },
-    "created_at": "2026-01-15T10:01:33.000Z"
+    "created_at": "2026-01-15T10:01:28.350Z"
    }
   },
   {
-   "at_ms": 98000,
+   "at_ms": 105750,
    "frame": {
     "sequence": 92,
     "type": "verdict_validated",
@@ -1943,11 +1944,11 @@
      "result_kind": "scored",
      "demo": true
     },
-    "created_at": "2026-01-15T10:01:38.000Z"
+    "created_at": "2026-01-15T10:01:45.750Z"
    }
   },
   {
-   "at_ms": 98500,
+   "at_ms": 106250,
    "frame": {
     "sequence": 93,
     "type": "session_state_changed",
@@ -1961,7 +1962,7 @@
       "state": "COMPLETED"
      }
     },
-    "created_at": "2026-01-15T10:01:38.500Z"
+    "created_at": "2026-01-15T10:01:46.250Z"
    }
   }
  ]

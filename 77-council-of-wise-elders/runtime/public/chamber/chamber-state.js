@@ -115,7 +115,7 @@
       sessionId: null, question: null, mode: null, options: [], route: { routeId: null, model: null },
       seatIds: [], seats: {}, sample: false, demo: false,
       state: null, since: NaN, startAt: NaN, endedAt: null, step: 0, round: 0, consult: false, reason: null,
-      roundNoted: {}, roundDoneAt: {},
+      roundNoted: {}, roundDoneAt: {}, playMs: PLAYBACK_MS,
       cruxes: [], draft: null, verdict: null, keyPoints: [], maxSeq: 0, frames: 0
     };
   }
@@ -167,6 +167,7 @@
     if (m.seatIds.length === 0) DEFAULT_SEATS.forEach(function (id) { addSeat(m, id); });
     if (rec.sample === true) m.sample = true;
     if (rec.demo === true) m.demo = true;
+    if (typeof rec.playback_ms === 'number' && rec.playback_ms > 0) m.playMs = rec.playback_ms; // demo fits its lines to its own windows
     var snap = obj(rec.state);
     if (m.frames === 0 && text(snap.state)) {
       setState(m, snap.state, Date.parse(snap.updated_at));
@@ -386,7 +387,7 @@
     if (playable.length) {
       var start = m.roundDoneAt[playRound];
       if (!isFinite(start)) start = isFinite(m.since) ? m.since : nowMs;
-      var pick = playable[Math.floor(Math.max(0, nowMs - start) / PLAYBACK_MS) % playable.length];
+      var pick = playable[Math.floor(Math.max(0, nowMs - start) / m.playMs) % playable.length];
       spot = pick.id;
       weighing = { seatId: pick.id, kind: 'said', text: pick.line };
     } else if (writers.length) {

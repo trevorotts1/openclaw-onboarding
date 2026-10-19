@@ -628,3 +628,25 @@ test('during every demo round each unfinished seat types and exactly one is spot
   }
   assert.ok(checked > 100, `checked ${checked} samples`);
 });
+
+test('the demo gives every seat its turn as the speaker in each round, in the real browser pace', () => {
+  const S = loadState();
+  const demo: Any = JSON.parse(readFileSync(join(chamberDir, 'demo-replay.json'), 'utf8'));
+  const m = S.create(demo.record);
+  const said: Record<number, Set<string>> = { 1: new Set(), 2: new Set(), 3: new Set() };
+  const base = Date.parse(demo.timeline[0].frame.created_at) - demo.timeline[0].at_ms;
+  let i = 0;
+  const end = demo.timeline[demo.timeline.length - 1].at_ms;
+  for (let at = 0; at <= end; at += 250) {
+    while (i < demo.timeline.length && demo.timeline[i].at_ms <= at) {
+      const f = demo.timeline[i++].frame;
+      S.apply(m, f);
+      const p = f.payload ?? {};
+      if (f.type === 'card_accepted') S.applyRecord(m, { cards: demo.cards.filter((c: Any) => c.seat_id === p.seat_id && c.round === p.round) });
+    }
+    const v = S.view(m, base + at);
+    const w = v.round.weighing;
+    if (w && w.kind === 'said') said[v.round.complete ? v.round.number : /CRUX/.test(v.state) ? 1 : /DRAFT_RES/.test(v.state) ? 2 : 3].add(w.seatId);
+  }
+  for (const r of [1, 2, 3]) assert.deepEqual([...said[r]].sort(), [...demo.record.spec.seat_ids].sort(), `round ${r}`);
+});
