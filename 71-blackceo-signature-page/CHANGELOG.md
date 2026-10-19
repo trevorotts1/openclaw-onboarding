@@ -4,7 +4,7 @@
 
 - `tests/`: two fixture-dependent modules (browser hygiene, swarm runner) now report SKIPPED with a named reason instead of a false PASS when their fixtures are not shipped; `test_validate_page.py` pins the 18px mobile anchor floor. Suite: 40 passed, 2 skipped. No production behavior changed.
 
-## 1.2.23 - 2026-10-19 - generation wire: placeholders, CTA recovery, cross-client leaks, budget band
+## 1.2.24 - 2026-10-19 - fidelity wire: copy-source CTA, tier strip, prompt budget
 
 - `scripts/stage_executor.py` carries the generation-wire repairs from 757ce86c0 and 770086e57, plus this repair round:
   - Request templates render the double-brace form first (`{{section_number}}`, `{{section_name}}`), so the values substitute instead of becoming literal `{token}` text; any leftover token-shaped placeholder fails closed before a provider call.
@@ -13,8 +13,7 @@
   - `prompt_budget()` reads `references/prompt-budget-policy.json`: below the 80 percent floor warns and names the deficit, above the maximum fails hard, and a per-section prose budget reserves the verbatim copy and contract blocks first so design-rules prose cannot crowd them out. Records carry `prompt_sizes`.
 - `references/generation-execution.md`: states the accurate geometry story. Canvas geometry is per-image via `target_ratio()` with the `geometry_mismatch` warning; `stitch_sections.py` and `build_hybrid_board.py` are unchanged (already content-height), and no assembly-canvas fix is claimed.
 - `tests/test_stage_executor_prompt_contract.py`: contract tests pin the double-brace render, the leftover refusal, CTA from the payload/copy source/required refusal, the two cross-client leak shapes plus dimension pairs, the below-floor warning, the per-section prose budget, the three real copy-source layouts (top-level, `metadata`, `<run_dir>/inputs/`) with the conflict warning and the `cta_required` refusal, and the standalone tier shapes. Registered in `tests/run_tests.py` `MODULES`, so the suite actually runs the repair's own tests.
-- `13b78ba6f` (test honesty): `tests/run_tests.py`, `tests/test_browser_hygiene.py`, `tests/test_swarm_runner.py` and `tests/test_validate_page.py` pin the browser-hygiene button fixture to the 18px mobile text floor so the 56px button-height error is the only failure and both validator checks stay live; the S1 foundation and S6 report fixtures are located portably (env overrides, vendored/sibling trees, shipped references, legacy path) and reported `SKIPPED` with a named reason when absent instead of `PASS`, with the skip surfaced in the `run_tests.py` summary.
-- Version bumped to 1.2.23 (`SKILL.md` frontmatter, `skill-version.txt`, `VERSION`).
+- Version bumped to 1.2.24 (`SKILL.md` frontmatter, `skill-version.txt`, `VERSION`).
 
 ## Unreleased - 2026-10-17 - S71-06-Q1: the band governs in all contexts; two stale doctrine surfaces reconciled (Signature Launch room S71, B-19)
 
