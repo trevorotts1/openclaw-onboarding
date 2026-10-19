@@ -27,7 +27,11 @@
 #     4. No shipped script may start, restart, register, schedule or resurrect
 #        the community MCP (launchctl bootstrap/kickstart, pm2 start/restart/
 #        resurrect, systemctl enable/start, openclaw mcp set
-#        ghl-community-mcp, @reboot cron, setsid loop).
+#        ghl-community-mcp, @reboot cron, setsid loop) — and none may INVOKE its
+#        lifecycle script by path or by the variable holding that path
+#        (`bash scripts/ghl-mcp-autostart.sh`, `bash "$AUTOSTART"`), which puts
+#        no supervisor verb on the line at all. Only the retirement tool's own
+#        `--retire` / `--status` invocation is exempt.
 #     5. The OFFICIAL ghl-mcp (Tier 1) registration must still exist — retirement
 #        removes Tier 2 only.
 #
@@ -92,6 +96,36 @@ RETIRE_MARKER_RE='GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED'
 FORBIDDEN_RE="$(printf '%s|' "${FORBIDDEN_PATTERNS[@]}")"
 FORBIDDEN_RE="${FORBIDDEN_RE%|}"
 
+# ── THE BLIND SPOT: invoking the start path without naming a supervisor verb ──
+# Every pattern above needs the literal `ghl` ON THE SAME LINE as the supervisor
+# verb, so a boot line that simply ran the community lifecycle script matched
+# NOTHING: `bash "$AUTOSTART"` held the path in a variable defined on an earlier
+# line, and `bash scripts/ghl-mcp-autostart.sh` carries no `pm2`/`launchctl`/
+# `systemctl`/`openclaw mcp set` at all. Both shipped straight through CI and
+# both are the same resurrection surface. So: naming the community lifecycle
+# script — by path OR by the variable that holds it — as the target of a shell
+# command is a violation on its own.
+#
+#   prefix  the shell word must sit at a statement/argument boundary
+#           (start of line, ;, &, |, (, {, ", =). Prose that merely MENTIONS
+#           `Run: bash scripts/...` inside a sentence is not an invocation.
+#           `_code_of` prefixes every scanned line with `N:`, so the line-start
+#           alternative is written `N:` — a bare `^` can never be followed by
+#           the shell word there.
+#   target  the path/variable must be within 60 characters of that shell word,
+#           so one long line of unrelated commands cannot bridge into a match.
+#
+# Two exemptions only: the retirement tool itself (RETIRE_MARKER_RE, handled by
+# _scan_forbidden before any pattern runs) and its documented inert verbs
+# `--retire` / `--status`, which inspect or finish a retirement and start
+# nothing. Anything else that runs the autostart/starter/probe script — with or
+# without an argument — is caught.
+INVOKE_PREFIX='(^|[0-9][0-9]*:|[;&|({"=])[[:space:]]*'
+INVOKE_SHELL='(bash|sh|zsh|exec|nohup|setsid|source)[[:space:]]+'
+INVOKE_TARGET='[^|;&]{0,60}(ghl-mcp-(autostart|probe)\.sh|start-ghl-mcp-server\.sh|[$]{1,2}\{?AUTOSTART\}?)'
+INVOKE_RE="${INVOKE_PREFIX}${INVOKE_SHELL}${INVOKE_TARGET}"
+RETIRED_VERB_RE='--retire|--status'
+
 # True when a file carries a retirement refusal/verified marker.
 # NOTE: never `grep -q` a large producer under `pipefail` — grep -q exits at the
 # first match, the writer takes SIGPIPE, and pipefail turns a MATCH into 141.
@@ -104,7 +138,7 @@ _has_retire_marker() {
 # Scan a newline-delimited file list from stdin (paths may contain spaces).
 # Prints every offending file:line and returns 1 on a hit.
 _scan_forbidden() {
-  local f hits rc=0
+  local f hits inv rc=0
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     [ -f "$f" ] || continue
@@ -113,6 +147,23 @@ _scan_forbidden() {
       continue   # retirement tombstone/tool — allowed to contain stop/delete verbs
     fi
     hits="$(_code_of "$f" | grep -E "$FORBIDDEN_RE" 2>/dev/null || true)"
+    # Second pass: the invocation surface the patterns above cannot see (the
+    # blind spot documented with INVOKE_RE). Run separately so the retirement
+    # verbs --retire/--status exempt ONLY this pass — never a supervisor verb.
+    inv="$(_code_of "$f" | grep -E "$INVOKE_RE" 2>/dev/null || true)"
+    if [ -n "$inv" ]; then
+      # grep -v, never grep -q: under pipefail, -q exits at the first match and
+      # the writer takes SIGPIPE, turning a MATCH into 141.
+      inv="$(printf '%s\n' "$inv" | grep -Ev -- "$RETIRED_VERB_RE" 2>/dev/null || true)"
+    fi
+    if [ -n "$inv" ]; then
+      if [ -n "$hits" ]; then
+        hits="$hits
+$inv"
+      else
+        hits="$inv"
+      fi
+    fi
     if [ -n "$hits" ]; then
       rc=1
       printf '%s\n' "$hits" | while IFS= read -r line; do

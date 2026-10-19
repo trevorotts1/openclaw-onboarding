@@ -1804,47 +1804,17 @@ oc_mcp_unset_verb_supported() {
   esac
 }
 
-deregister_tier2() {
-  command -v openclaw >/dev/null 2>&1 || return 0
-  gw_up || { log "gateway not up (no /healthz 200) — skipping openclaw CLI calls in deregister_tier2 (a CLI call now can kill the gateway at bootstrap)"; return 0; }
-  # IDEMPOTENCY GUARD. A single-key `openclaw config set` does NOT rewrite one path:
-  # measured changedPathCount was 10-103 depending on the box. When that rewrite lands
-  # on plugins.allow the gateway logs "config change requires gateway restart
-  # (plugins.allow)" -> SIGUSR1 -> a FULL process restart that kills every in-flight
-  # agent run mid-task. The value written here is normally identical to the value
-  # already stored -- proven by diff: zero keys added, zero removed, exactly one value
-  # changed (meta.lastTouchedAt). So the write was pure churn that restarted gateways.
-  # Only write on a real change. FAIL-OPEN: if the config cannot be read, fall through
-  # to the original write so genuine drift is still repaired.
-  _ghl_want="http://localhost:${GHL_MCP_PORT}"
-  _ghl_cfg="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
-  [ -f "$_ghl_cfg" ] || _ghl_cfg="/data/.openclaw/openclaw.json"
-  _ghl_cur="$(OC_CFG="$_ghl_cfg" python3 -c 'import json,os
-try:
-    d=json.load(open(os.environ["OC_CFG"]))
-    print((((d.get("env") or {}).get("vars")) or {}).get("GHL_COMMUNITY_MCP_URL","") or "")
-except Exception:
-    print("__UNREADABLE__")' 2>/dev/null)"
-  [ -n "$_ghl_cur" ] || _ghl_cur="__UNREADABLE__"
-  if [ "$_ghl_cur" != "$_ghl_want" ]; then
-    openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "$_ghl_want" >/dev/null 2>&1 || true
-  fi
-  unset _ghl_want _ghl_cur _ghl_cfg
-  if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-    log "de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl); installed CLI documents the verb: $(oc_mcp_unset_verb_supported)"
-    if ! oc_mcp_unset ghl-community-mcp; then
-      log "WARN: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted — ghl-community-mcp is STILL registered. Every agent init will keep paying its tool-catalogue/connection cost. Check 'openclaw mcp --help'."
-      return 0
-    fi
-    # RE-READ. The gateway can rewrite openclaw.json from memory, so a command
-    # that exited 0 is not proof the entry is gone.
-    if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-      log "WARN: de-registration command succeeded but ghl-community-mcp is STILL listed — the gateway may have rewritten the config. It will be retried on the next run."
-    else
-      log "ghl-community-mcp de-registered and verified absent from mcp.servers"
-    fi
-  fi
-}
+# deregister_tier2() is GONE (GHL002): it was unreachable — nothing has called
+# it since START was retired — and it still held a live
+# `openclaw config set env.vars.GHL_COMMUNITY_MCP_URL` write, a config mutation
+# behind a service that no longer exists. Zero callers tree-wide was confirmed
+# before the deletion. The two unit tests that EXTRACTED it
+# (tests/unit/ghl-mcp-gateway-guard.test.sh, tests/unit/ghl-mcp-autostart-
+# idempotent-write.test.sh) assert a function that no longer ships and must be
+# re-pointed at whatever still does that job.
+# The oc_mcp_unset / oc_mcp_unset_verb_supported helpers above stay: extracted
+# verbatim by tests/unit/ghl-mcp-unset-verb.test.sh, and they are the
+# correct-verb reference for every other de-registration site in this repo.
 # <<< OC-MCP-UNSET-VERB-END
 
 # ── Main flow ────────────────────────────────────────────────────────────────

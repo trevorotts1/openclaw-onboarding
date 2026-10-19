@@ -5071,24 +5071,21 @@ fi
   # and its version stamp, and every launch surface now refuses fail-closed
   # (STATUS: PIN_UNVERIFIED) rather than silently building an unvetted tree —
   # so the failure is impossible to miss and impossible to act on unsafely.
-  # GU-019: a RETIRED box no longer receives the community MCP pin. The pin is
-  # what a start path needs; leaving it behind is a re-installation surface.
-  # ghl-mcp-autostart.sh --retire archives the delivered copy; this block stops
-  # every later roll from putting it back. No marker file -> unchanged behavior.
-  if [ -f "$OC_CANONICAL_CONFIG_DEST/.retired/ghl-mcp-retirement.json" ]; then
-    rm -f "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" 2>/dev/null || true
-    if [ -e "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
-      echo "  ⚠ retired box: could NOT remove the re-delivered config/ghl-mcp-pin.env — check permissions on $OC_CANONICAL_CONFIG_DEST." >&2
-      export OC_PIN_DELIVERY_FAILED=1
-    else
-      echo "  ✓ retired box: community MCP pin NOT retained (ghl-mcp is RETIRED; no start path needs it)"
-    fi
-  elif [ -r "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
-    echo "  ✓ config/ghl-mcp-pin.env delivered and readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env"
+  # W07 / GU-019: config/ghl-mcp-pin.env belongs to the RETIRED community MCP.
+  # install.sh already never ships it and deletes the copy an earlier release
+  # left behind (install.sh, same CANONICAL-CONFIG-DELIVERY-END marker); this
+  # roll now does exactly the same, on every run and regardless of whether the
+  # box carries a retirement receipt. ABSENCE is the asserted state: a box with
+  # no receipt and no pin is CORRECT, not a delivery failure — the pin is what a
+  # start path needs, and a surviving pin is an active resurrection trigger for
+  # a service that is gone.
+  rm -f "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" 2>/dev/null || true
+  if [ -d "$OC_CANONICAL_CONFIG_DEST" ] && [ ! -e "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
+    echo "  ✓ config/ delivered to $OC_CANONICAL_CONFIG_DEST — ghl-mcp-pin.env deliberately NOT delivered (community MCP RETIRED)"
   else
-    echo "  ✗ config/ghl-mcp-pin.env is NOT readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env after delivery." >&2
-    echo "    CONSEQUENCE: scripts/ghl-mcp-autostart.sh reports START_REFUSED_RETIRED / PIN_UNVERIFIED and will NOT build or start the Tier 2 GHL MCP on this box." >&2
-    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
+    echo "  ⚠ config/ delivery could NOT be verified at $OC_CANONICAL_CONFIG_DEST, or a stale ghl-mcp-pin.env survived the removal." >&2
+    echo "    CONSEQUENCE: a surviving pin is an active resurrection trigger for the RETIRED community MCP." >&2
+    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, delete ghl-mcp-pin.env, and re-run this updater." >&2
     export OC_PIN_DELIVERY_FAILED=1
   fi
   export OC_PERSISTENT_CONFIG_DIR="$OC_CANONICAL_CONFIG_DEST"
@@ -12621,8 +12618,9 @@ BACKUP_BLOCK
       printf '%s\n' "${GHL_MCP_RUNTIME_DETAIL:-  (no detail captured)}" | sed 's/^/    /'
       echo ""
       echo "  autostart on this run: ${GHL_MCP_AUTOSTART_RAN:-unknown}"
-      echo "  Re-run the autostart, then re-assert:"
-      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-autostart.sh"
+      echo "  The community MCP start path is RETIRED — re-run the retirement"
+      echo "  transaction (idempotent), then re-assert:"
+      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-autostart.sh --retire"
       echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-assert-runtime.sh"
       echo "  (\$OC_ROOT is ~/.openclaw on Mac, /data/.openclaw on VPS)"
       echo ""
