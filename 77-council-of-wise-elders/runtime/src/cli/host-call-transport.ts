@@ -95,6 +95,11 @@ export class SubprocessHostCallTransport implements ModelTransport {
     return this.options.executable;
   }
 
+  /** Wire model passed as --model, or null when the harness default applies. */
+  get model(): string | null {
+    return this.options.model ?? null;
+  }
+
   async generate(request: TransportRequest): Promise<TransportResponse> {
     const spawnImpl = this.options.spawnImpl ?? spawn;
     const timeoutMs = this.options.timeoutMs ?? DEFAULT_HOST_CALL_TIMEOUT_MS;

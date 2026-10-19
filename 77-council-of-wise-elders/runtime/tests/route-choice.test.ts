@@ -293,6 +293,10 @@ test('transportForSnapshot builds the transport for the snapshot route, per call
   assert.ok(tDs instanceof CompatibleHttpTransport);
   assert.equal((tNine as SubprocessHostCallTransport).executable, join(home, '.local', 'bin', 'claude-nine'));
 
+  // The pinned model must reach the harness transport (becomes --model).
+  assert.equal((tCode as SubprocessHostCallTransport).model, 'sonnet');
+  assert.equal((tNine as SubprocessHostCallTransport).model, null);
+
   // A route that no longer resolves gives null, never another route.
   assert.equal(
     transportForSnapshot({ ...ds.snapshot, routeId: 'gone-configured' }, { homeDir: home, env }),
