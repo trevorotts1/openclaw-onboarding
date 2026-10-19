@@ -93,11 +93,11 @@ def workflow_operation_id(operation: str) -> Optional[str]:
     return _v4_operation_map().get(str(operation))
 
 
-def workflow_route(v4: Any, operation: str) -> WorkflowRoute:
+def workflow_route(v4: Any, operation: str, *, tenant: Any = None) -> WorkflowRoute:
     """Choose public primary or the named private fallback for one surface.
 
-    Never guesses: an absent adapter, an absent frozen row, and a disabled
-    capability all fall back, and each says exactly why.
+    Never guesses: an absent adapter, an absent frozen row, a disabled
+    capability, or an unbound probe all fall back, each says why (GHL-168 F2).
     """
     key = str(operation)
     if v4 is None:
@@ -118,7 +118,7 @@ def workflow_route(v4: Any, operation: str) -> WorkflowRoute:
             key, None, WORKFLOW_ROUTE_PRIVATE,
             "no frozen public row for %r; using the named Skill 44 private fallback" % key,
         )
-    capability = v4.capability(key)
+    capability = v4.capability(key, tenant=tenant)
     if capability.enabled:
         return WorkflowRoute(
             key, operation_id, WORKFLOW_ROUTE_PUBLIC,
@@ -648,7 +648,7 @@ class CampaignBuilder:
 
     def route_for(self, operation: str) -> WorkflowRoute:
         """Record and return the named route for one workflow surface."""
-        route = workflow_route(self.public_v4, operation)
+        route = workflow_route(self.public_v4, operation, tenant=self.loc)
         self.stats.setdefault("route", {})[operation] = route.as_evidence()
         return route
 

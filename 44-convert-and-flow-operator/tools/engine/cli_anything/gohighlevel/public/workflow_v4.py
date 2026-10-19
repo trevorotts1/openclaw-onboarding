@@ -47,7 +47,7 @@ from urllib.parse import quote
 
 from .adapter import ApprovalRef, PublicGhlAdapter
 from .auth import TenantBinding
-from .capability import Capability
+from .capability import Capability, CapabilityGate
 from .errors import ContractViolation, ReconciliationRequired
 from .idempotency import IdempotencyKey, canonical_intent
 from .operations import OPERATIONS
@@ -148,6 +148,21 @@ def _validate_operation_map() -> None:
 
 
 _validate_operation_map()
+
+
+def _tenant_location(tenant: TenantBinding | str | None) -> str | None:
+    """The location a capability probe is bound to, or None for "unbound".
+
+    Accepts the binding or the bare location id so every caller can pass what
+    it already holds.  Never guesses a tenant: ``None`` stays ``None`` and the
+    caller must answer deny.
+    """
+
+    if tenant is None:
+        return None
+    value = tenant.location_id if isinstance(tenant, TenantBinding) else str(tenant)
+    value = value.strip()
+    return value or None
 
 
 # ---------------------------------------------------------------------------
@@ -282,11 +297,27 @@ class WorkflowV4Adapter:
             )
         return operation_id
 
-    def capability(self, operation: str) -> Capability:
-        return self._public.capability(self._require_operation(operation))
+    def capability(
+        self, operation: str, *, tenant: TenantBinding | str | None = None
+    ) -> Capability:
+        operation_id = self._require_operation(operation)
+        location_id = _tenant_location(tenant)
+        if location_id is None:
+            # GHL-168 F1: a probe with no tenant must never borrow a gate that
+            # some earlier tenant-scoped call happened to load.  Order-dependent
+            # enablement is the defect; the honest unbound answer is deny.
+            return CapabilityGate().get(operation_id)
+        return self._public.capability(operation_id, tenant=location_id)
 
-    def _enabled(self, operation_id: str) -> bool:
-        return bool(self._public.capability(operation_id).enabled)
+    def _enabled(
+        self, operation_id: str, tenant: TenantBinding | str | None
+    ) -> bool:
+        location_id = _tenant_location(tenant)
+        if location_id is None:
+            return False
+        return bool(
+            self._public.capability(operation_id, tenant=location_id).enabled
+        )
 
     # ------------------------------------------------------------------
     # reads
@@ -384,7 +415,7 @@ class WorkflowV4Adapter:
         self._guard()
         key = "create"
         operation_id = self._require_operation(key)
-        if not self._enabled(operation_id):
+        if not self._enabled(operation_id, tenant):
             return self._disabled_result(key, tenant=tenant, attempt=attempt)
         body = _create_body(definition, folder)
 
@@ -515,7 +546,7 @@ class WorkflowV4Adapter:
         key = "update"
         operation_id = self._require_operation(key)
         path_params = {"workflowId": workflow_id}
-        if not self._enabled(operation_id):
+        if not self._enabled(operation_id, tenant):
             return self._disabled_result(
                 key, tenant=tenant, attempt=attempt, path_params=path_params
             )
@@ -789,7 +820,7 @@ class WorkflowV4Adapter:
         key = "status.change"
         operation_id = self._require_operation(key)
         path_params = {"workflowId": workflow_id}
-        if not self._enabled(operation_id):
+        if not self._enabled(operation_id, tenant):
             return self._disabled_result(
                 key,
                 tenant=tenant,
@@ -920,7 +951,7 @@ class WorkflowV4Adapter:
         key = "delete"
         operation_id = self._require_operation(key)
         path_params = {"workflowId": workflow_id}
-        if not self._enabled(operation_id):
+        if not self._enabled(operation_id, tenant):
             return self._disabled_result(
                 key, tenant=tenant, attempt=attempt, path_params=path_params
             )
@@ -1235,7 +1266,9 @@ class WorkflowV4Adapter:
         body: Mapping[str, Any] | None = None,
     ) -> OperationResult:
         operation_id = self._require_operation(operation)
-        capability = self._public.capability(operation_id)
+        capability = self._public.capability(
+            operation_id, tenant=tenant.location_id
+        )
         block = capability.activation_blocked
         return self._refusal(
             operation,
