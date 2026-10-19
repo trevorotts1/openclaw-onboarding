@@ -67,12 +67,14 @@ awk 'f&&/^  }$/{print;exit} /^  _persona_index_currency_probe\(\) \{/{f=1} f' "$
 H="$WORK/home"; mkdir -p "$H/.openclaw/workspace/data" "$WORK/sk/shared-utils/prebuilt-index"
 cp -R "$B1" "$H/.openclaw/workspace/data/coaching-personas"
 cp "$WORK/m1.json" "$WORK/sk/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+# shellcheck disable=SC2034
 ( HOME="$H" SKILLS_DIR="$WORK/sk" EXTRACTED_DIR="$WORK/none"; source "$WORK/probe.inc"; _persona_index_currency_probe ) >"$WORK/probe.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && ok "currency probe: local-mode box with old sentinel is not stale (rc 0)" || bad "probe rc=$rc: $(cat "$WORK/probe.out")"
 # control: a Gemini box with the same old sentinel must STILL read stale (probe discriminates)
 rm -f "$H/.openclaw/workspace/data/coaching-personas/gemini-index.sqlite"
 mk_db "$H/.openclaw/workspace/data/coaching-personas/gemini-index.sqlite" gemini 5
+# shellcheck disable=SC2034
 ( HOME="$H" SKILLS_DIR="$WORK/sk" EXTRACTED_DIR="$WORK/none"; source "$WORK/probe.inc"; _persona_index_currency_probe ) >"$WORK/probe2.out" 2>&1
 [ "$?" -eq 1 ] && ok "control: gemini box with old sentinel still reads stale (rc 1)" || bad "control probe did not flag stale gemini box"
 
