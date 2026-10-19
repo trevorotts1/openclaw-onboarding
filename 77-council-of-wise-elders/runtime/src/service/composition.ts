@@ -102,7 +102,11 @@ import {
   type RouteBudgetState,
 } from '../budgets/route-budget.js';
 import { resolveBookToPersonaRoot } from '../sources/persona-root.js';
-import { createElderKnowledge, freshFactEvidenceRecord } from '../sources/elder-knowledge.js';
+import {
+  createElderKnowledge,
+  freshFactEvidenceRecord,
+  type SeatKnowledgeUse,
+} from '../sources/elder-knowledge.js';
 import { createCouncilDriver } from './driver.js';
 import {
   HARNESS_DEFAULTS,
@@ -951,6 +955,34 @@ function composeBackend(input: {
     scope,
     listSessionEvidence: (session: StoredSession) =>
       repositories.listEvidenceRecords(ownerEnvelope, session.spec.session_id),
+    // Journal which layer each seat's briefing used, once per seat per session
+    // (operation_completed with payload kind, the same convention as follow_up_link
+    // and report_export). Recording is best effort: it must never fail a paid dispatch.
+    onSeatBriefing: (session: StoredSession, use: SeatKnowledgeUse) => {
+      const sessionId = session.spec.session_id;
+      const eventId = `knowledge-layer-${sessionId}-${use.seat_id}`;
+      try {
+        db.write((handle) => {
+          const seen = handle
+            .prepare(
+              `SELECT 1 FROM council_events WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND id = ?`,
+            )
+            .get(workerEnvelope.tenant_id, workerEnvelope.company_id, sessionId, eventId);
+          if (seen) return;
+          repositories.journal.append(handle, workerEnvelope, sessionId, {
+            event_id: eventId,
+            type: 'operation_completed',
+            from_state: session.state.state,
+            to_state: session.state.state,
+            actor_subject: workerEnvelope.actor_subject,
+            payload: { kind: 'seat_knowledge_layer', ...use },
+            created_at: input.clock.nowUtc(),
+          });
+        });
+      } catch {
+        /* ponytail: a journal hiccup loses one knowledge-layer note, never the paid model call */
+      }
+    },
   });
 
   const transportOptions = { homeDir: input.route.routeHomeDir, env: input.route.routeEnv };

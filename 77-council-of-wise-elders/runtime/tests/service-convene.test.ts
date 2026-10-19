@@ -76,7 +76,7 @@ function approvalFor(e: RouteBudgetEntry): Record<string, unknown> {
   };
 }
 
-async function startFixture(): Promise<Fixture> {
+async function startFixture(extraEnv: Record<string, string> = {}): Promise<Fixture> {
   const root = mkdtempSync(join(tmpdir(), 'w28-convene-'));
   const dataDir = join(root, 'data');
   const home = join(root, 'home');
@@ -101,7 +101,7 @@ async function startFixture(): Promise<Fixture> {
     dataDir,
     ports: [0],
     routeHomeDir: home,
-    routeEnv: { PATH: '/usr/bin:/bin' } as NodeJS.ProcessEnv,
+    routeEnv: { PATH: '/usr/bin:/bin', ...extraEnv } as NodeJS.ProcessEnv,
     routeBudgetConfigPath: configPath,
     // The fixture route transport: deterministic, spends nothing.
     resolveTransport: () => new DeterministicFixtureTransport(),
@@ -131,6 +131,7 @@ interface SseFrame {
   type: string;
   from_state: string | null;
   to_state: string | null;
+  payload?: Record<string, unknown>;
 }
 
 /** Read the live SSE stream until the session reaches `untilState`. */
@@ -396,5 +397,47 @@ test('both endpoints sit behind the admission fence: a draining service convenes
     assert.equal(((await admission.json()) as { code: string }).code, 'SERVICE_DRAINING');
   } finally {
     await stopFixture(fixture);
+  }
+});
+
+test('each seat\'s knowledge layer is journaled: live Book-to-Persona where present, shipped brief otherwise', async () => {
+  // A temp Book-to-Persona store holding only Simon Sinek.
+  const store = mkdtempSync(join(tmpdir(), 'w30-personas-'));
+  const key = 'sinek-start-with-why';
+  mkdirSync(join(store, 'personas', key), { recursive: true });
+  writeFileSync(join(store, 'personas', key, 'persona-blueprint.md'), '# Blueprint\n\n## Why\nStart with why.\n');
+  writeFileSync(
+    join(store, 'persona-categories.json'),
+    JSON.stringify({ personas: { [key]: { author: 'Simon Sinek', book: 'Start With Why' } } }),
+  );
+  const fixture = await startFixture({ BOOK_TO_PERSONA_ROOT: store });
+  try {
+    writeFileSync(
+      routeBudgetApprovalsPath(fixture.dataDir),
+      JSON.stringify([approvalFor(ENTRIES[0])]),
+      'utf8',
+    );
+    const accepted = await convene(fixture.origin, {
+      sample: true,
+      route_id: 'claude-nine-configured',
+      requested_by: 'fixture-client',
+    });
+    assert.equal(accepted.status, 202);
+    const body = (await accepted.json()) as { events_path: string };
+    const frames = await readEvents(`${fixture.origin}${body.events_path}`, 'COMPLETED');
+    const layers = frames
+      .filter((f) => f.type === 'operation_completed' && f.payload?.kind === 'seat_knowledge_layer')
+      .map((f) => f.payload as { seat_id: string; layer: string; persona_keys: string[] });
+    assert.equal(layers.length, 9, 'one knowledge-layer entry per seat, not one per round');
+    const bySeat = new Map(layers.map((l) => [l.seat_id, l]));
+    assert.equal(bySeat.size, 9);
+    assert.equal(bySeat.get('simon-sinek')?.layer, 'live_book_to_persona');
+    assert.deepEqual(bySeat.get('simon-sinek')?.persona_keys, [key]);
+    for (const [seat, entry] of bySeat) {
+      if (seat !== 'simon-sinek') assert.equal(entry.layer, 'shipped_brief', seat);
+    }
+  } finally {
+    await stopFixture(fixture);
+    rmSync(store, { recursive: true, force: true });
   }
 });
