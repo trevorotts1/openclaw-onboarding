@@ -64,7 +64,9 @@ import {
   DurableJobRunner,
   type OperationExecutorPort,
   type RunnerTimers,
+  systemTimers,
 } from '../queue/runner.js';
+import { OPERATION_LEASE_TTL_MS } from '../cli/leases.js';
 import { deriveHardConstraintFindings } from '../scoring/decision.js';
 import { OpeningRoundExecutor } from './opening.js';
 import { ChallengeRoundExecutor } from './challenge.js';
@@ -114,6 +116,8 @@ export interface DeliberationCompositionDeps {
   ) => readonly HardConstraintFinding[];
   settings?: CouncilSettings;
   timers?: RunnerTimers;
+  /** Poll interval while waiting for another worker's round jobs; default 250ms. */
+  roundWaitPollMs?: number;
   workerId?: string;
   distributable?: boolean;
 }
@@ -143,6 +147,7 @@ export type RunSessionResult =
     };
 
 const ESTIMATE_MINOR = 100;
+const ROUND_WAIT_POLL_MS = 250;
 
 export class DeliberationService {
   readonly repositories: CouncilRepositories;
@@ -406,10 +411,36 @@ export class DeliberationService {
       // the round's driving: the assembly step then reports the round
       // incomplete instead of the loop spinning on a job that cannot
       // proceed under this grant.
+      //
+      // A null claim is not "round done" when another worker (the
+      // service's background supervisor) holds this round's jobs under
+      // a live lease: wait, bounded, for them to reach a terminal
+      // state (or return to queued, which this loop then claims).
+      // With no competing worker the first null claim ends the round,
+      // exactly as before.
       const maxIterations = plans.size * 4 + 16;
-      for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      const timers = this.deps.timers ?? systemTimers;
+      const pollMs = this.deps.roundWaitPollMs ?? ROUND_WAIT_POLL_MS;
+      const maxWaits = Math.ceil((OPERATION_LEASE_TTL_MS * plans.size) / pollMs);
+      const heldByOthers = (): boolean =>
+        this.runner
+          .listSessionJobs(envelope, sessionId)
+          .some(
+            (job) =>
+              job.phase_job_key.startsWith(`round-${round}:`) &&
+              (job.state === 'leased' || job.state === 'running'),
+          );
+      let claims = 0;
+      let waits = 0;
+      while (claims < maxIterations) {
         const claim = this.runner.claimNextOperation(envelope, sessionId, this.workerId);
-        if (!claim) break;
+        if (!claim) {
+          if (waits >= maxWaits || !heldByOthers()) break;
+          waits += 1;
+          await timers.delay(pollMs);
+          continue;
+        }
+        claims += 1;
         const outcome = await this.runner.executeClaimedOperation(envelope, claim);
         if (outcome.status === 'admission_refused' || outcome.status === 'deferred') {
           break;
