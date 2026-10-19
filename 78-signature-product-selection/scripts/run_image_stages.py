@@ -123,7 +123,7 @@ def main(argv=None):
         intake = [py, s71 / "shared_page_service.py", "--request", a.request, "--run-dir", run_dir,
                   "--page-version", FORM, "--brand-owner", cfg["brand_owner"], "--image-cap", cfg["image_cap"],
                   "--brand-file", cfg["brand_file"], "--launch-record", launch_view,
-                  "--route-graph", cfg["route_graph"]]
+                  "--route-graph", cfg["route_graph"], "--validation-only"]  # admission seam only; the stages below generate
         if style:
             intake += ["--design-style", style]
         if cfg.get("test_run"):

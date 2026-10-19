@@ -84,7 +84,8 @@ def main(argv=None) -> int:
     service = [HERE / "shared_page_service.py", "--request", a.request, "--run-dir", a.run_dir,
                "--page-version", a.copy_version, "--brand-owner", a.brand_owner,
                "--image-cap", a.image_cap, "--brand-file", a.brand_file,
-               "--launch-record", a.launch_record, "--route-graph", a.route_graph]
+               "--launch-record", a.launch_record, "--route-graph", a.route_graph,
+               "--validation-only"]  # admission seam only; the stages below generate
     if a.design_style:
         service += ["--design-style", a.design_style]
     if run(service):
