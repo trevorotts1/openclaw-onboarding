@@ -65,6 +65,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reference_use  # noqa: E402  SPF022: reference images are structure only
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 DEFAULT_REQUEST = "production-request.json"
@@ -559,12 +561,14 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block()
-    blocks = [b for b in (copy_block, frame_block, neg_block) if b]
+    ref_block = reference_use.reference_block(request.get("references"),
+                                              request.get("reference_roles"))
+    blocks = [b for b in (copy_block, ref_block, frame_block, neg_block) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
-        "contract_chars": len(frame_block) + len(neg_block),
+        "contract_chars": len(frame_block) + len(neg_block) + len(ref_block),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
@@ -754,6 +758,26 @@ def compose(stage: str, run_dir: Path, provider) -> dict:
     return {"status": "not_applicable"}
 
 
+def reference_bleed(out: Path, request: dict, provider):
+    """QC leg: did the delivered image reproduce the reference's palette or
+    brand text? None when no reference was attached or the image is a stub
+    placeholder. Recorded, never gating here: the stage gate reads it."""
+    if provider.name == "stub" or not request.get("references"):
+        return None
+    return reference_use.check(out, request["references"], request.get("client_palette") or ())
+
+
+def record_bleed(entry: dict, out: Path, request: dict, provider, stage: str) -> None:
+    """Attach the bleed result to a delivered-image record (run_stage and
+    run_item both route here, so every delivered image gets the same check)."""
+    bleed = reference_bleed(out, request, provider)
+    if bleed:
+        entry["reference_bleed"] = bleed
+        if bleed["status"] != "PASS":
+            print(f"WARN reference_bleed {stage} {out.name}: "
+                  f"{json.dumps(bleed, sort_keys=True)[:400]}")
+
+
 def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
     if stage not in LAYOUT:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
@@ -793,6 +817,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "task_id": result.get("task_id"),
                 "inputs": job["references"],
             }
+            record_bleed(entry, out, request, provider, stage)
             if actual:
                 a, b = ratio.split(":")
                 want = int(a) / int(b)
@@ -829,6 +854,15 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         raise ExecutorError(f"cannot read the item prompt {prompt_path}: {exc}")
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
+    ref_block = reference_use.reference_block(request.get("references"),
+                                              request.get("reference_roles"))
+    if ref_block:
+        prompt = f"{ref_block}\n\n{prompt}"
+        cap = prompt_cap(request.get("model"))
+        if cap and len(prompt) > cap:
+            raise ExecutorError(
+                f"item {item}: prompt with the reference contract is {len(prompt)} chars, "
+                f"over the {cap}-char model maximum; cut item prose, never the contract")
     digits = "".join(ch for ch in item if ch.isdigit())
     if not digits:
         raise ExecutorError(f"item id {item!r} carries no number; cannot derive the delivered name")
@@ -844,6 +878,7 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              "sha256": sha256(out), "provider": result.get("provider"),
              "mode": result.get("mode"), "model": result.get("model"),
              "task_id": result.get("task_id"), "at": now_iso()}
+    record_bleed(entry, out, request, provider, stage)
     record_path = run_dir / stage / RECORD
     record = {"stage": stage, "provider": provider.name, "mode": provider.mode,
               "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
@@ -900,6 +935,11 @@ def main(argv=None) -> int:
         if args.preflight:
             request = load_request(run_dir, args.request)
             refused = 0
+            refs = list(dict.fromkeys(str(r) for r in request.get("references") or []))
+            known = [r for r in refs if reference_use.lookup(r)]
+            print(f"PREFLIGHT_REFERENCES total={len(refs)} library={len(known)} "
+                  f"not_in_library={len(refs) - len(known)} "
+                  f"roles={request.get('reference_roles') or '-'}")
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
                     cta = _cta_label(section.get("cta")) or "-"
