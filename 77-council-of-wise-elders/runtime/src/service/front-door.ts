@@ -21,6 +21,7 @@
  * in tests, and any host mutation.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
@@ -77,6 +78,36 @@ export interface FrontDoorOptions {
 }
 
 const MAX_BODY_BYTES = 1_048_576;
+
+/**
+ * Packaged chamber assets (WER-021 full packaging).
+ *
+ * Both roots are tried so the same files resolve from the TypeScript source
+ * (src/service), the tsc output (dist/service) and the esbuild single-file
+ * bundle (dist). The asset directory is the only file set this route serves;
+ * there is no directory listing and no traversal.
+ */
+const CHAMBER_ASSET_ROOTS: readonly URL[] = [
+  new URL('../../public/chamber/', import.meta.url),
+  new URL('../public/chamber/', import.meta.url),
+];
+
+const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
+  ['index.html', 'text/html; charset=utf-8'],
+  ['advisors.html', 'text/html; charset=utf-8'],
+  ['not-packaged.html', 'text/html; charset=utf-8'],
+  ['council-theme.css', 'text/css; charset=utf-8'],
+  ['council-room.css', 'text/css; charset=utf-8'],
+  ['council-journey.css', 'text/css; charset=utf-8'],
+  ['RECEIPT.md', 'text/markdown; charset=utf-8'],
+]);
+
+function chamberAssetRoot(): URL | null {
+  for (const root of CHAMBER_ASSET_ROOTS) {
+    if (existsSync(root)) return root;
+  }
+  return null;
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -487,10 +518,65 @@ export class CouncilFrontDoor {
       return;
     }
 
+    // Packaged, fully self-contained chamber UI. Additive: a miss falls
+    // through to the unchanged SERVICE_ROUTE_NOT_FOUND catch-all.
+    if (method === 'GET' && (path === '/chamber' || path.startsWith('/chamber/'))) {
+      if (this.serveChamberAsset(path, res)) return;
+    }
+
     sendJson(res, 404, {
       code: 'SERVICE_ROUTE_NOT_FOUND',
       detail: `No service route for ${method} ${path}.`,
     });
+  }
+
+  /**
+   * Serve one packaged chamber asset. Returns false for anything outside the
+   * fixed file set (so the caller falls through to the unchanged catch-all).
+   * No directory listing, no traversal, no external asset.
+   */
+  private serveChamberAsset(path: string, res: ServerResponse): boolean {
+    const root = chamberAssetRoot();
+    if (!root) return false;
+
+    let relative: string;
+    let contentType: string;
+    if (path === '/chamber' || path === '/chamber/') {
+      relative = 'index.html';
+      contentType = 'text/html; charset=utf-8';
+    } else {
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(path.slice('/chamber/'.length));
+      } catch {
+        return false;
+      }
+      const portrait = /^portraits\/[A-Za-z0-9._-]+\.svg$/.exec(decoded);
+      if (portrait) {
+        relative = decoded;
+        contentType = 'image/svg+xml; charset=utf-8';
+      } else if (/^[A-Za-z0-9._-]+$/.test(decoded) && CHAMBER_ROOT_FILES.has(decoded)) {
+        relative = decoded;
+        contentType = CHAMBER_ROOT_FILES.get(decoded) as string;
+      } else {
+        return false;
+      }
+    }
+
+    let body: Buffer;
+    try {
+      body = readFileSync(new URL(relative, root));
+    } catch {
+      return false;
+    }
+    res.writeHead(200, {
+      'content-type': contentType,
+      'content-length': body.length,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    res.end(body);
+    return true;
   }
 
   /**
