@@ -23,7 +23,7 @@
  * something an adapter may invent.
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -291,17 +291,30 @@ function canonicalSubset(raw: Record<string, unknown>): Record<string, unknown> 
   return out;
 }
 
+// The real CWE-011 export package is external data: it is not in this
+// repository, `git rev-list --all --objects` carries no copy of it, and
+// it must never be fabricated. When it is genuinely absent the real-data
+// test SKIPS with this path named instead of erroring or passing on
+// absent data.
+const CWE011_EXPORTS_DIR =
+  process.env.CWE011_EXPORTS_DIR ??
+  fileURLToPath(new URL('../../../../../cwe-011/exports', import.meta.url));
+const BRUNSON_SOURCES = join(CWE011_EXPORTS_DIR, 'russell-brunson', 'sources.json');
+
 function loadBrunsonRecords(): Array<Record<string, unknown>> {
-  const dir =
-    process.env.CWE011_EXPORTS_DIR ??
-    fileURLToPath(new URL('../../../../../cwe-011/exports', import.meta.url));
   const parsed = JSON.parse(
-    readFileSync(join(dir, 'russell-brunson', 'sources.json'), 'utf8'),
+    readFileSync(BRUNSON_SOURCES, 'utf8'),
   ) as { sources: Array<Record<string, unknown>> };
   return parsed.sources;
 }
 
-test('real CWE-011 Brunson package: private-scope record barred from distributable assembly', () => {
+test('real CWE-011 Brunson package: private-scope record barred from distributable assembly', (t) => {
+  if (!existsSync(BRUNSON_SOURCES)) {
+    t.skip(
+      `real CWE-011 export unavailable: ${BRUNSON_SOURCES} (set CWE011_EXPORTS_DIR to a real export package; it is external data and is never fabricated)`,
+    );
+    return;
+  }
   const rawRecords = loadBrunsonRecords();
   assert.equal(rawRecords.length, 7);
   const parsed = rawRecords.map((raw) => ({
