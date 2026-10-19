@@ -12,9 +12,16 @@
   "properties": {
     "brand_id": {"type": "string", "minLength": 1},
     "source": {"type": "string", "minLength": 1},
+    "palette_roles": {
+      "type": "object",
+      "description": "SPF019: the client's colors as given (primary, secondary, accent[], background[], text), written by scripts/brand_colors.py record and printed into every wireframe and mockup prompt. Optional: absent for the bundled BlackCEO file.",
+      "additionalProperties": true
+    },
+    "_palette_note": {"type": "string"},
     "palette": {
       "type": "object",
-      "additionalProperties": false,
+      "description": "Slots gold/navy/cream are accent-CTA, dark, light. Extra hex-valued keys (secondary, accent1, background2) are allowed; every value must be #RRGGBB before any image stage starts (scripts/brand_colors.py).",
+      "additionalProperties": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},
       "required": ["gold", "navy", "cream"],
       "properties": {
         "gold": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},
@@ -146,6 +153,16 @@
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1}
+    },
+    "composition_cues": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional. Which composition treatments (ids in references/composition-treatments.json) the brand favors or forbids; imagery_direction supplies the motifs for light fields. Role defaults in composition-treatments.json apply where this says nothing.",
+      "properties": {
+        "preferred": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "forbidden": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "imagery_direction": {"type": "string"}
+      }
     }
   },
   "definitions": {

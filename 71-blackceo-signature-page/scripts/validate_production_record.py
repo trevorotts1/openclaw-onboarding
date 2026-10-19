@@ -71,6 +71,20 @@ def check_record(data, base_dir=None):
         return ["production record is not a JSON object"]
     if data.get("artifact") not in ("wireframe", "mockup"):
         failures.append("artifact must be 'wireframe' or 'mockup'")
+    # The client's design style (A Block, B Circle, C Hybrid) is recorded at the top of
+    # the record, and must match intake.json's choice when the run folder carries one.
+    style = data.get("design_style")
+    if style is not None and style not in ("A", "B", "C"):
+        failures.append(f"design_style must be A, B or C, got {style!r}")
+    elif style is not None and base_dir is not None:
+        for folder in (Path(base_dir), Path(base_dir).parent):
+            try:
+                chosen = json.loads((folder / "intake.json").read_text(encoding="utf-8")).get("design_style")
+            except (OSError, ValueError, AttributeError):
+                continue
+            if chosen and chosen != style:
+                failures.append(f"design_style {style!r} differs from intake.json's {chosen!r}")
+            break
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         failures.append("sections must be a non-empty ordered array")

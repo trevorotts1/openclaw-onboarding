@@ -14,8 +14,8 @@ Mockups folder (5):
 1. Set for Life Desktop Mockup, long-form (1440 x 16723, the pixel-mate of wireframe 5)
 2. Set for Life Mobile Mockup, long-form (780 x 48894, 2x of 390 CSS px, stitched sections)
 3. Set for Life full-page mockup render (724 x 2172, desktop presentation)
-4. Set for Life full-page mockup render (724 x 2172, mobile presentation)
-5. Hybrid board: "Mockup & Wireframe Mashup" (1536 x 1024)
+4. Set for Life full-page mockup render (724 x 2172; labelled mobile, but its rows are multi-column, so it is a DESKTOP layout; do not use it as a 390 px mobile reference)
+5. Hybrid board: "Mockup & Wireframe Mashup" (1536 x 1024; titled Long-Form, but its structure is the 12-section Standard, with no 2A, 3A or 4A)
 
 ## The difference (the classification rule)
 
@@ -46,3 +46,30 @@ Generated with an image model in the GPT-image family (file names are ChatGPT Im
 7. HTML PARITY: the responsive-html stage builds to MATCH the approved mockup, with a side-by-side parity check (render vs mockup) as its gate evidence, per Trevor's standing rule that the live page must match the approved mockup.
 
 Status: analysis delivered to Trevor 2026-10-15; skill changes NOT yet ordered or built. The current Simulator Room run continues under the old stage design; its final-mockups stage is where a real-image artifact first appears in that run.
+
+## Addendum 2026-10-19 (composition library, unit SPF023)
+
+Trevor supplied more images on 2026-10-19. They are classified, deduplicated and hosted in the BlackCEO media library; the typed list is `reference-catalog.json` in this folder (63 rows, each with the hosted URL and the sha256 of the uploaded bytes). Nothing new is bundled as a PNG: a catalog row names its bundled source where one exists (`source_bundle`) and a crop box where it is a slice or crop.
+
+Added to the library: the Gen 2 long-form image maps and mockups (three each, Parts A to C), the 12-section Standard hybrid board, the annotated desktop pair (07_01_47 and 07_01_49), the mobile wireframe and mobile mockup cut into 24 section slices each (at most 780 x 3000, paired by section number), and three Go Full Page crops that show one composition trait each (a light line-art field behind type, type over a dark full-bleed photo, a shaped photo mask with a brush stroke).
+
+Kept OUT of the library as anti-examples (an anti-example sent as a reference teaches the model the wrong thing):
+- 07_01_50 PM-3: a mood board that leaked into the page. Its "sections" are palette, type and size guidance. It is the anti-example of mood board versus wireframe.
+- 07_01_52 PM-4 (bundled as chatgpt-mockup-4): claims mobile but uses multi-column rows. It is a desktop layout.
+- 04_55_03 AM: titled "Mobile wireframe" but it is a full-colour seven-phone mockup storyboard that adds testimonials, an FAQ and a hard date the Standard forbids. Format reference only, in words.
+
+Tagged `counter-example-composition` in the catalog (structure and labelling only): the Gen 1 desktop pair and the mobile mockup slices. Every image in them is a rectangle beside or above text, which is the AI default; the Gen 2 mockups are the ones that put captions and panels on photos.
+
+Gaps the catalog does not yet fill (the prompt rules in `references/composition-treatments.json` carry them): a true circle-cropped photo, a hero-scale light field behind type, and a hero with the headline on a flat bright zone of a full-bleed photo. The plan is to build these as HTML renders with CSS masks so a reference shows the exact technique the build uses.
+
+Reference-only text: two mobile slices (12 Part 2 to 4) carry the placeholder copy "Trevor's story"; the catalog flags them `contains_reference_only_text`. The Set for Life brand, palette, people and copy never carry into a client page.
+
+## Update 2026-10-19 (wireframe style reference)
+
+The fix list above has since been built. One decision was added: the wireframe
+stages no longer send the greyscale Set for Life sheet as their style
+reference. They send `chatgpt-wireframe-1` (Standard desktop), `-3` (Long-Form
+desktop) or `-4` (mobile) by stage and form, and the prompt asks for an annotated
+build spec in the client's resolved brand colors. See `README.md` in this
+folder ("Which sheet is the wireframe style reference") and
+`references/wireframe-build-spec.json`.

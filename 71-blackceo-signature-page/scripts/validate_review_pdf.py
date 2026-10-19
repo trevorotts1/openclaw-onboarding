@@ -6,6 +6,8 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 
 def sha256(path):
     h = hashlib.sha256()
@@ -24,23 +26,84 @@ def count_pages(pdf_path):
         return len(re.findall(rb"/Type\s*/Page(?!s)\b", data))
 
 
+def page_sizes(pdf_path):
+    """(width, height) in points of every page, in page order."""
+    try:
+        from pypdf import PdfReader
+        return [(float(pg.mediabox.width), float(pg.mediabox.height)) for pg in PdfReader(str(pdf_path)).pages]
+    except Exception:
+        # Pillow writes plain-text page objects, so the MediaBox is greppable.
+        data = pdf_path.read_bytes()
+        return [(float(w), float(h)) for w, h in
+                re.findall(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", data)]
+
+
+def check_geometry(pdf_path, image_paths):
+    """One page width for the whole set, and each page the same shape as its
+    source image: nothing cropped, stretched, padded or overlapped."""
+    from PIL import Image
+    errors = []
+    sizes = page_sizes(pdf_path)
+    if len(sizes) != len(image_paths):
+        return [f"PDF page sizes could not be read for all {len(image_paths)} pages (got {len(sizes)})."]
+    if max(w for w, _ in sizes) - min(w for w, _ in sizes) > 0.5:
+        errors.append(f"Pages have different widths {sorted({round(w, 1) for w, _ in sizes})}; a top-to-bottom set has one page width.")
+    for i, ((w, h), path) in enumerate(zip(sizes, image_paths), start=1):
+        with Image.open(path) as im:
+            iw, ih = im.size
+        if abs(w / h - iw / ih) / (iw / ih) > 0.005:
+            errors.append(f"Page {i} is {w:.0f}x{h:.0f}pt but its source image is {iw}x{ih}px: the page was cropped, stretched or padded.")
+    return errors
+
+
+def check_delivered(sources, delivered):
+    """The client's own copy of the section images (sorted *.png in `delivered`)
+    must be byte-identical, page for page, to what the PDF was built from."""
+    files = sorted(Path(delivered).glob("*.png"))
+    if len(files) != len(sources):
+        return [f"{delivered} holds {len(files)} section images; the PDF was built from {len(sources)}."]
+    return [f"Page {i} was built from {src.name} ({sha256(src)[:16]}) but the delivered {f.name} is {sha256(f)[:16]}: the PDF and the delivered folder show different images."
+            for i, (src, f) in enumerate(zip(sources, files), start=1) if sha256(src) != sha256(f)]
+
+
+def check_delivered_pdf(pdf_path, delivered_pdf):
+    """The client's copy of the PDF must be the very file the receipt
+    describes (byte-identical), not an earlier build of the same name."""
+    delivered_pdf = Path(delivered_pdf)
+    if not delivered_pdf.is_file():
+        return [f"The delivered PDF is missing: {delivered_pdf}"]
+    if sha256(delivered_pdf) != sha256(pdf_path):
+        return [f"The delivered {delivered_pdf.name} ({sha256(delivered_pdf)[:16]}) is not the validated build "
+                f"({sha256(pdf_path)[:16]}): it is a stale or different PDF; copy the validated one over it."]
+    return []
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate a BlackCEO review PDF against its ordered manifest and receipt.")
-    parser.add_argument("manifest", type=Path)
+    parser.add_argument("manifest", type=Path, help="an order manifest, or a run dir with --stage")
     parser.add_argument("pdf", nargs="?", type=Path)
+    parser.add_argument("--delivered", type=Path, help="also require the sections in this delivered folder to be the exact images the PDF was built from")
+    parser.add_argument("--delivered-pdf", type=Path, help="also require this delivered PDF to be byte-identical to the validated build")
+    parser.add_argument("--delivered-pdfs", type=Path, help="with --stage: a delivered folder that must hold each of the stage's PDFs, byte-identical to the validated builds")
+    parser.add_argument("--stage", help="treat the first argument as a run dir and validate that stage's review PDFs")
     args = parser.parse_args()
+    if args.stage:
+        return validate_stage(args.manifest, args.stage, args.delivered_pdfs)
+    return validate(args.manifest, args.pdf, args.delivered, args.delivered_pdf)
 
+
+def validate(manifest_path, pdf_arg=None, delivered=None, delivered_pdf=None):
     try:
-        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"FAIL: could not read manifest: {exc}")
         return 2
 
     output_name = manifest.get("output")
-    if args.pdf:
-        pdf_path = args.pdf.resolve()
+    if pdf_arg:
+        pdf_path = pdf_arg.resolve()
     elif isinstance(output_name, str):
-        pdf_path = (args.manifest.parent / output_name).resolve()
+        pdf_path = (manifest_path.parent / output_name).resolve()
     else:
         print("FAIL: no PDF path supplied and manifest.output is missing.")
         return 1
@@ -77,7 +140,7 @@ def main():
         errors.append("Receipt page list length does not match manifest.")
     else:
         for i, (expected, got) in enumerate(zip(expected_pages, receipt_pages), start=1):
-            expected_path = (args.manifest.parent / expected.get("path", "")).resolve()
+            expected_path = (manifest_path.parent / expected.get("path", "")).resolve()
             if not expected_path.exists():
                 errors.append(f"Source page {i} is missing: {expected_path}")
                 continue
@@ -88,6 +151,17 @@ def main():
             if got.get("order") != i:
                 errors.append(f"Receipt order mismatch at page {i}.")
 
+    sources = [(manifest_path.parent / e["path"]).resolve() for e in expected_pages]
+    if not errors and delivered:
+        errors.extend(check_delivered(sources, delivered))
+    if not errors and delivered_pdf:
+        errors.extend(check_delivered_pdf(pdf_path, delivered_pdf))
+    if not errors:
+        try:
+            errors.extend(check_geometry(pdf_path, sources))
+        except ImportError:
+            errors.append("Pillow is required to check page geometry.")
+
     if errors:
         print("FAIL")
         for error in errors:
@@ -95,6 +169,33 @@ def main():
         return 1
     print(f"PASS: {pdf_path.name} has {actual_count} pages in the declared order.")
     return 0
+
+
+def validate_stage(run_dir, stage, delivered_pdfs=None):
+    """Gate form: every review PDF the stage owes exists, is in section order,
+    and matches the stage's real section images; with `delivered_pdfs`, the
+    client's copy of each PDF is the validated build too."""
+    import combine_review_pdf as crp
+    run_dir = Path(run_dir).resolve()
+    try:
+        sets = crp.discover(run_dir, stage)
+    except ValueError as exc:
+        print(f"FAIL: {exc}")
+        return 1
+    rc = 0
+    for _template, _category, name, images in sets:
+        manifest = run_dir / crp.REVIEW_DIR / (name[:-4] + ".order.json")
+        if not manifest.exists():
+            print(f"FAIL: {stage}: review PDF {name} was never built (no {manifest.name}); run combine_review_pdf.py --stage")
+            rc = 1
+            continue
+        want = [(manifest.parent / p["path"]).resolve() for p in json.loads(manifest.read_text(encoding="utf-8"))["pages"]]
+        if want != [p.resolve() for p in images]:
+            print(f"FAIL: {stage}: {name} was built from a different image list than the stage now holds (rebuild it).")
+            rc = 1
+            continue
+        rc = max(rc, validate(manifest, delivered_pdf=delivered_pdfs / name if delivered_pdfs else None))
+    return rc
 
 
 if __name__ == "__main__":

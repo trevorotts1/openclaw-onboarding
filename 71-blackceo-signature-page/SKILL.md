@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
-version: 1.2.24
+version: 1.3.0
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -62,6 +62,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 
 - **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages). Brand fonts are the one fail-open key: when they are still MUST_SUPPLY, `font_policy` says derive-document — derive the best display/body/accent for the job, document the rationale in the bible (`fonts_source: "derived"` + `font_rationale` + `font_reviewer`), reviewer approves. Never blocked on fonts; every other MUST_SUPPLY value still blocks. At intake, declare the brand's mandated editorial structures (full-width rows separated by rules, ordinary letter prose) in the brand file at `layout_thresholds.card_grid_allowlist`, so the card-grid metric passes them by declaration instead of discovering them by failure.
 - Production order / gates: `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md`
+- Design style (every wireframe, mockup and image stage): `references/design-styles.md`; data and the intake question in `references/design-styles.json`
 - Standard copy: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
 - Long-Form copy: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
 - Image planning / art direction / prompts / visual QC: `references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md`
@@ -70,6 +71,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 - Visual-artist direction: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
 - Visual companion: `assets/BlackCEO-Master-Visual-Reference-Guide.png` — an image-style menu only, never a page-layout or page-color reference
 - Image and video generation route (KIE): `references/kie-generation-route.md` (policy then transport; read it for any generation stage)
+- Design Board (stage `design-board`): `references/design-board.md`
 - Artifact and QC contracts: `references/artifact-contracts.md`, `references/qc-contract.md`, `references/stage-contract.json`, `references/html-qc-rubric.md`
 - Swarm plan: `references/swarm-plan.md`
 
@@ -77,7 +79,7 @@ Do not load all three style libraries at once. Load only the selected family/sty
 
 ### Design / wireframes / mockups
 
-Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens.
+Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
 
 ## Governing production order
 
@@ -85,9 +87,9 @@ Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Be
 
 Stage IDs (canonical, from `references/stage-contract.json`):
 
-`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, design-board, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
 
-The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
+The workflow has FIFTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
 
 Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages. For itemized stages the gate also exposes the item commands `check-item` / `close-item` / `block-item` (see `references/item-gate-spec.md`): an item closes only from its own validators and reviews, and a stage close fans in its items by name. Review scores are Review Receipt v2 records: they live in `private/reviews/<stage>/<item-id>.review.json`, written by `scripts/write_review.py` from the reviewing session, and the gate validates them at close. A browser-using stage cannot close with unaccounted sessions; REPORT.md carries the hygiene line (see `references/browser-hygiene.md`).
 
@@ -106,10 +108,19 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Intake records the handoff (`scripts/write_intake.py --handoff-form-name/--handoff-form-id`, or `--handoff-missing-reason` when no form identity exists): the Convert and Flow form's name and object id, the pop behavior, and the step order (signature page, then product selection page, then order form page). A placeholder destination is never a handoff; it is the recorded missing input or a defect.
 - The copy manifest's CTA entries carry each button's handoff type (`form_pop`, `in_page_anchor`, `external_link`); the primary CTA's type is `form_pop`. `scripts/validate_handoff.py` verifies the built page against the record at the responsive-html stage, and the funnel-completion receipt proves the pop live at install.
 
+### Design Board (after the images, before the mockup)
+
+- Every page the funnel has (landing, order, checkout, upsell, downsell, thank-you) gets one Design Board: the client's brand colors, logo and the page's actual section images on one sheet, approved by the client before the page is built. It is made once the page's images have been created, never from art-direction text. Contract: `references/design-board.md`.
+- Stage `design-board` follows `image-map-upload` (every image slot has its file) and precedes `final-mockups`. Colors come from the brand-color resolution (`scripts/brand_colors.py`); the board never picks them. A slot with no image refuses the board.
+- The mockup and everything after it does not start for a page without a current recorded client approval of that page's board: `stage_gate.py` refuses `final-mockups` until `design-board` closes, and `stage_executor.py` refuses `final-mockups` on the same record (`scripts/design_board.py gate`).
+- Record the approval with `scripts/design_board.py approve <run_dir> --by <client> --evidence <ref>`; it is bound to the board, the image set (re-derived from the run's own artifacts at every check) and the palette, so a remade board, a replaced or edited image or a changed palette needs a fresh approval.
+- The board's read-back is checked against the board image by `tesseract` (`finalize`, `validate`, `gate`); it is never taken on the caller's word, and a box without tesseract cannot validate a board.
+
 ### Design / wireframes / mockups
 
-- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
+- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
 - The `desktop-wireframe` and `mobile-tablet` stages must produce `section-plan.json` as a required output.
+- Every image slot in `section-plan.json` declares a composition `treatment` (`references/composition-treatments.json`; read `references/composition-patterns.md`): words over images, shaped crops (circle, arch, pill, angled cut) and a very light full-width field are first-class, and a photo column beside a text column is only one of the allowed treatments. The wireframe draws the treatment, the prompts ask for it, the mockup keeps it, the HTML builds it in CSS with `data-treatment`, and the per-page budget gates it. Typed hosted reference images are in `assets/visual-standards/reference-catalog.json`.
 - The `visual-mockup` stage produces the page visual bible and an internal layout proof only. The layout proof is never presented to the client as the mockup and is never client-judged.
 - Image generation (prompts, generation/QC, image map) completes before the mockup stage opens. `final-mockups` is the single client-judged mockup: produced per section with real photography in every slot, with supplied assets placed as files and never generated.
 - Build complete desktop first, then intentionally reflow mobile/tablet; do not merely shrink desktop.
@@ -117,7 +128,18 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
 - Keep exact approved copy unless the owner explicitly authorizes copy changes.
 
-For multi-part review exports, keep individual PNGs and use ordered manifests with `scripts/combine_review_pdf.py` and `scripts/validate_review_pdf.py` for separate desktop/mobile wireframe/mockup PDFs.
+The client never receives loose section images: every image stage ends with `scripts/combine_review_pdf.py <run_dir> --stage <stage>` (run automatically by `stage_executor.py`), which combines the sections in order into validator-gated desktop and mobile PDFs under `review-pdfs/` (see references/artifact-contracts.md, Review-PDF manifest). Keep the individual PNGs as internal inputs.
+
+## Design style: A Block, B Circle, C Hybrid
+
+At intake the client chooses one page design style after seeing an example link for each: ask with
+`python3 scripts/design_style.py question`, record with `scripts/write_intake.py ... --design-style A|B|C`.
+A production run cannot close `intake` without the choice (`gate:intake_design_style`). The choice drives the
+wireframe and mockup prompts (`scripts/stage_executor.py` adds the style block), each image slot's `shape`
+(`rect` or `circle`), and the shape QC check. Circle slots are generated SQUARE (subject centered, safe margins),
+then masked by `scripts/circle_image.py` into an RGBA PNG with a transparent outside, so any agent can place
+a round photo as an ordinary square file. Colors always come from the client's brand file, never from the examples.
+Full definitions: `references/design-styles.md`.
 
 ## Page-level Creative Direction
 
@@ -159,6 +181,10 @@ Ask whether the owner/client has an explicit image-engine preference when genera
 - If **Agnes** is explicitly selected/available, use **Skill 63 `agnes-image`**.
 - If another configured provider is explicitly selected, honor it if the current client environment supports it.
 - `stage_gate.py close image-generation-qc` requires the receipt's `transport` block, with a per-provider branch (A23): on the KIE route, Skill 74, mode active, the real KIE task ids, model ids, preflight and budget results, N43 ratios; on the Agnes route (Skill 63, only when intake records `image_engine: "agnes"`), the synchronous shape: `task_id` null or omitted, `request_id` only if Agnes returned one, mode `sync`, no polling artefacts, and never a KIE task ID (Agnes issues none; attaching one fails the gate). A hand-rolled createTask has no such receipt and cannot close the stage.
+
+### Section count: one image per copy section
+
+The selected `copy_version` fixes the canonical section count: Standard 12, Long-Form 15 (`references/copy-specs/standard-v6.json` and `long-form-v6.json`, `sequence`; Long-Form inserts 2A, 3A and 4A, and may expand Section 5 into 5A, 5B and 5C). Every image stage renders one image per canonical section, per platform. A request never merges sections into bands. Operator step, copy stage closed: `python3 scripts/build_production_request.py --copy-version <standard|long-form> --manuscript <run_dir>/copy/internal-manuscript.md --stage <stage> --out <run_dir>/production-request.json` (it refuses a manuscript that lacks a canonical section), then `python3 scripts/stage_executor.py <run_dir> --preflight --stages <stage>` and read its `PREFLIGHT_SECTIONS` and `PREFLIGHT_CTA` lines. `stage_executor.py` fails closed before any prompt or call when the request's section ids differ from the selected form's sequence, the request's copy source, or `copy/copy-manifest.json`; a paid run also refuses a request whose form is not declared. Contract: `references/generation-execution.md`.
 
 ### Generation execution path
 

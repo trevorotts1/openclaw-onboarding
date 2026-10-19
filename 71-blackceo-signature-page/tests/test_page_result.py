@@ -52,7 +52,7 @@ import page_result  # noqa: E402
 
 ORDER = ["intake", "copy", "font-action-plan", "desktop-wireframe",
          "mobile-tablet", "visual-mockup", "image-inventory-prompts",
-         "image-generation-qc", "image-map-upload", "final-mockups",
+         "image-generation-qc", "image-map-upload", "design-board", "final-mockups",
          "responsive-html", "ghl-install-test", "publish-verify",
          "automation-wiring"]
 
