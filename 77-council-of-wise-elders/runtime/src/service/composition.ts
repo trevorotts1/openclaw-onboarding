@@ -1078,8 +1078,9 @@ function composeBackend(input: {
           // Convened sessions deliberate in the background on this handle:
           // give them, and the in-flight worker executions, one bounded
           // chance to settle before it closes. Work still running past the
-          // budget stays durable (running/dispatched rows) and boot
-          // reconciliation settles it on the next start.
+          // budget stays durable (running/dispatched rows); its leases are
+          // expired below so boot reconciliation settles it on the next
+          // start, even a restart inside the lease window.
           let timer: NodeJS.Timeout | undefined;
           try {
             await Promise.race([
@@ -1098,7 +1099,22 @@ function composeBackend(input: {
             if (workers) void stopCouncilWorkers(workers);
           }
         } finally {
-          db.close();
+          // The worker id is constant across restarts, so a lease this
+          // process still holds would block recovery until it lapses on its
+          // own. Release it now: the next boot sees it expired and settles it.
+          try {
+            const now = input.clock.nowUtc();
+            db.write((handle) =>
+              handle
+                .prepare(
+                  `UPDATE council_jobs SET lease_expires_at = ?, updated_at = ?
+                    WHERE state IN ('leased', 'running') AND lease_owner = ?`,
+                )
+                .run(now, now, WORKER_ID),
+            );
+          } finally {
+            db.close();
+          }
         }
       })();
     }

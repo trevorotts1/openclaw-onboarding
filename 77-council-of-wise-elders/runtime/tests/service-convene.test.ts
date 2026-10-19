@@ -34,6 +34,7 @@ import {
   type RouteBudgetEntry,
 } from '../src/budgets/route-budget.js';
 import { DeterministicFixtureTransport } from '../src/cli/fixture-transport.js';
+import type { ModelTransport } from '../src/deliberation/index.js';
 import {
   startCouncilService,
   type StartedCouncilService,
@@ -76,8 +77,14 @@ function approvalFor(e: RouteBudgetEntry): Record<string, unknown> {
   };
 }
 
-async function startFixture(): Promise<Fixture> {
-  const root = mkdtempSync(join(tmpdir(), 'w28-convene-'));
+async function startFixture(
+  opts: {
+    root?: string;
+    transport?: () => ModelTransport;
+    conveneDrainTimeoutMs?: number;
+  } = {},
+): Promise<Fixture> {
+  const root = opts.root ?? mkdtempSync(join(tmpdir(), 'w28-convene-'));
   const dataDir = join(root, 'data');
   const home = join(root, 'home');
   for (const dir of ['.claude-nine', '.claude', '.openclaw', join('.local', 'bin')]) {
@@ -104,7 +111,8 @@ async function startFixture(): Promise<Fixture> {
     routeEnv: { PATH: '/usr/bin:/bin' } as NodeJS.ProcessEnv,
     routeBudgetConfigPath: configPath,
     // The fixture route transport: deterministic, spends nothing.
-    resolveTransport: () => new DeterministicFixtureTransport(),
+    resolveTransport: opts.transport ?? (() => new DeterministicFixtureTransport()),
+    conveneDrainTimeoutMs: opts.conveneDrainTimeoutMs,
     workerPollIntervalMs: 20,
     handleSignals: false,
   });
@@ -396,5 +404,38 @@ test('both endpoints sit behind the admission fence: a draining service convenes
     assert.equal(((await admission.json()) as { code: string }).code, 'SERVICE_DRAINING');
   } finally {
     await stopFixture(fixture);
+  }
+});
+
+test('sigterm-drain: a stop during a dispatch, then an immediate restart, settles the abandoned work at boot', async () => {
+  // A transport that never answers: the dispatch is in flight when stop() runs.
+  const hanging: ModelTransport = { generate: () => new Promise(() => undefined) };
+  const first = await startFixture({ transport: () => hanging, conveneDrainTimeoutMs: 300 });
+  const { root, dataDir } = first;
+  writeFileSync(routeBudgetApprovalsPath(dataDir), JSON.stringify([approvalFor(ENTRIES[0])]), 'utf8');
+  const accepted = await convene(first.origin, { sample: true, route_id: 'claude-nine-configured' });
+  assert.equal(accepted.status, 202);
+  const { session_id } = (await accepted.json()) as { session_id: string };
+  const tally = (f: Fixture) =>
+    f.service.composition.backend.database.read((h) => ({
+      active: (h.prepare(`SELECT COUNT(*) AS n FROM council_jobs WHERE state IN ('leased','running')`).get() as { n: number }).n,
+      dispatched: (h.prepare(`SELECT COUNT(*) AS n FROM council_provider_attempts WHERE status = 'dispatched'`).get() as { n: number }).n,
+      reserved: (h.prepare(`SELECT COUNT(*) AS n FROM council_budget_reservations WHERE state = 'reserved'`).get() as { n: number }).n,
+    }));
+  const deadline = Date.now() + 15_000;
+  while (tally(first).dispatched === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(tally(first).dispatched > 0, 'a dispatch is in flight before the stop');
+  await first.service.stop(); // graceful: budget passes, the dispatch is abandoned
+  // Restart at once, well inside the 60 s operation lease window.
+  const second = await startFixture({ root });
+  try {
+    assert.ok(second.service.composition.backend.repositories.listSessions(
+      second.service.composition.backend.ownerEnvelope).some((s) => s.spec.session_id === session_id));
+    assert.deepEqual(tally(second), { active: 0, dispatched: 0, reserved: 0 },
+      'boot reconciliation settles every abandoned job, attempt and hold');
+  } finally {
+    await stopFixture(second);
   }
 });
