@@ -1,9 +1,14 @@
-"""Load the real Skill 49/71/78/80/81/82 modules by their real file paths.
+"""Load the real funnel/page skill modules by their real file paths.
 
-The numbered skill folders are not importable package names (leading digits,
-hyphens), so the launcher binds them with importlib from the exact tree. No
-substrate module is copied, forked or reimplemented; every import below is a
-real entry point named in the received contracts.
+The skill folders are not importable package names (leading digits, hyphens),
+so the launcher binds them with importlib from the exact tree. No substrate
+module is copied, forked or reimplemented; every import below is a real entry
+point named in the received contracts.
+
+References below are written with the skill SLUG and resolved by
+``launcher_core.constants.resolve_ref``, which accepts ``<number>-<slug>`` and
+``<slug>`` alike, so the same code runs in the onboarding repository and in a
+999 package that renames the trees.
 """
 from __future__ import annotations
 
@@ -16,14 +21,21 @@ ROUTES_DIR = Path(__file__).resolve().parent
 SKILL_DIR = ROUTES_DIR.parent
 REPO_ROOT = SKILL_DIR.parent
 
+if str(SKILL_DIR) not in sys.path:
+    sys.path.insert(0, str(SKILL_DIR))
+
+from launcher_core.constants import resolve_ref  # noqa: E402
+
 
 def source(rel_path: str) -> Path:
-    """Resolve a repository-relative path, refusing escape and placeholders."""
+    """Resolve a repository-relative path, refusing escape and placeholders.
+
+    The first segment names a skill by either convention; an unresolvable skill
+    slug raises SkillResolutionError naming the slug, never a FileNotFoundError.
+    """
     if rel_path.startswith("/") or ".." in Path(rel_path).parts:
         raise ValueError(f"substrate path must be repository-relative: {rel_path!r}")
-    path = (REPO_ROOT / rel_path).resolve()
-    path.relative_to(REPO_ROOT.resolve())
-    return path
+    return resolve_ref(rel_path, REPO_ROOT)
 
 
 @contextmanager

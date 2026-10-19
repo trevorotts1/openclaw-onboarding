@@ -16,6 +16,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .constants import SkillResolutionError, resolve_ref, resolve_skill_dir
+
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 
 
@@ -43,23 +45,35 @@ def load_manifest() -> Dict[str, Any]:
     return manifest
 
 
+def _resolve(ref: str, root: Path) -> tuple[Optional[Path], Optional[str]]:
+    """Resolve a manifest ref by slug. A missing tree is a finding, not a crash."""
+    try:
+        return resolve_ref(ref, root), None
+    except SkillResolutionError as exc:
+        return None, str(exc)
+
+
 def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
     kind = entry["kind"]
     ref = entry["ref"]
     if kind in ("skill_tree", "shared_utils", "department_map_entry",
                 "installer_registration"):
-        target = root / ref
+        target, error = _resolve(ref, root)
+        if target is None:
+            return {"status": "missing", "evidence": error}
         if kind == "installer_registration":
-            name = Path(ref).parent.name
+            name = target.parent.name
             numeric = name.split("-", 1)[0].isdigit()
             ok = target.is_file() and numeric and "ARCHIVED" not in name
             return {"status": "present" if ok else "missing",
-                    "evidence": f"{ref} exists={target.is_file()} "
+                    "evidence": f"{ref} resolved={target} exists={target.is_file()} "
                                 f"numeric_prefix={numeric} archived={'ARCHIVED' in name}"}
         return {"status": "present" if target.exists() else "missing",
-                "evidence": ref}
+                "evidence": f"{ref} resolved={target}"}
     if kind == "registry_line":
-        target = root / ref
+        target, error = _resolve(ref, root)
+        if target is None:
+            return {"status": "missing", "evidence": error}
         if not target.is_file():
             return {"status": "missing", "evidence": f"{ref} is absent"}
         try:
@@ -71,18 +85,23 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
         return {"status": "present" if found else "missing",
                 "evidence": f"'{entry['match']}' in {ref}: {found}"}
     if kind == "skill_number":
-        from .constants import SKILL_NUMBER
+        from .constants import SKILL_NAME, SKILL_NUMBER
 
-        registry = Path(__file__).resolve().parent.parent / "registration.json"
+        try:
+            # The registration record of the tree being checked, found by slug.
+            registry = resolve_skill_dir(SKILL_NAME, root) / "registration.json"
+        except SkillResolutionError:
+            registry = None
         final = False
-        if registry.is_file():
+        if registry is not None and registry.is_file():
             try:
                 final = bool(json.loads(registry.read_text(encoding="utf-8"))
                              ["skill"]["number_final"])
             except (OSError, ValueError, KeyError):
                 final = False
         return {"status": "present" if final else "missing",
-                "evidence": f"SKILL_NUMBER={SKILL_NUMBER!r} number_final={final}"}
+                "evidence": f"SKILL_NUMBER={SKILL_NUMBER!r} number_final={final} "
+                            f"registry={registry}"}
     if kind == "runtime_package":
         try:
             found = importlib.util.find_spec(ref) is not None

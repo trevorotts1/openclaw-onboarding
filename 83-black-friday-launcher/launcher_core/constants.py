@@ -1,8 +1,13 @@
-"""Single source of truth for the working skill number, decisions and seams.
+"""Single source of truth for the skill number, decisions, seams and skill paths.
 
-SKILL_NUMBER is a WORKING PARAMETER. The launcher's number is unassigned today
-(REQUIREMENTS.md section 1). Nothing outside this module may spell the number or
-the directory name, so a rename is one edit.
+SKILL_NUMBER is assigned: LAUNCH-04 recorded the availability evidence in
+registration.json and set number_final true. Nothing outside this module may
+spell the number or the directory name, so a rename is one edit.
+
+Skill trees are named by BOTH conventions in the field: the onboarding repository
+uses ``<number>-<slug>`` (``49-signature-funnel``), a 999 package uses the bare
+slug (``signature-funnel``). ``resolve_skill_dir`` accepts either and fails
+closed by name; nothing here or in any consumer spells a numbered directory.
 
 DECIDED records the owner decisions LAUNCH-02b implements, each with the code
 that carries it. SEAMS records what is still open. One decision is only partly
@@ -12,10 +17,18 @@ so the seam stays open narrowed to the teaching source.
 
 from __future__ import annotations
 
-SKILL_NUMBER = "83"  # WORKING PARAMETER - NOT a final assignment
+import re
+from pathlib import Path
+
+SKILL_NUMBER = "83"
 SKILL_DIR_NAME = SKILL_NUMBER + "-black-friday-launcher"
 SKILL_NAME = "black-friday-launcher"
-SKILL_VERSION = "0.2.0"
+SKILL_VERSION = "0.2.1"
+
+# The Launcher's own tree, derived from this file's location and never from a
+# directory name, so the skill works under either naming convention.
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = SKILL_ROOT.parent
 
 SCHEMA_VERSION = "1.0"
 PENDING_FAILED_PAYMENT_BEHAVIOR = "retain_current_purchase_state_until_resolved_or_explicit_decline"
@@ -59,12 +72,91 @@ ENTITLEMENT_BASES = (
     "zhc_with_brand_management",
 )
 
-COUNCIL_SKILL_DIR = "77-council-of-wise-elders"
+COUNCIL_SKILL_SLUG = "council-of-wise-elders"
 COUNCIL_ENTRY_POINT = "scripts/doctor.mjs"
 
-CHECKOUT_SKILL_DIR = "79-signature-order-form"
-CHECKOUT_CONTRACT = CHECKOUT_SKILL_DIR + "/references/checkout.schema.json"
-CHECKOUT_VALIDATOR = CHECKOUT_SKILL_DIR + "/scripts/validate_checkout.py"
+CHECKOUT_SKILL_SLUG = "signature-order-form"
+CHECKOUT_CONTRACT_REF = "references/checkout.schema.json"
+CHECKOUT_VALIDATOR_REF = "scripts/validate_checkout.py"
+
+FUNNEL_SKILL_SLUG = "signature-funnel"
+RECEIPT_MODULE_REF = "scripts/delegation_receipt.py"
+
+# The skill slugs the Launcher binds. A reference whose first segment has one of
+# these slugs is a skill tree and must resolve; anything else (shared-utils,
+# 23-ai-workforce-blueprint, contracts) is an ordinary repository-relative path.
+SKILL_SLUGS = (
+    "signature-funnel",
+    "blackceo-signature-page",
+    "council-of-wise-elders",
+    "signature-product-selection",
+    "signature-order-form",
+    "signature-upsell",
+    "signature-downsell",
+    "signature-thank-you",
+    "black-friday-launcher",
+)
+
+_NUMERIC_PREFIX = re.compile(r"^(\d+)-(.+)$")
+
+
+class SkillResolutionError(LookupError):
+    """No directory on disk matches a skill slug. Fail closed, named."""
+
+
+def skill_slug(name: str) -> str:
+    """The slug a directory name carries: '49-signature-funnel' -> 'signature-funnel'."""
+    match = _NUMERIC_PREFIX.match(name)
+    return match.group(2) if match else name
+
+
+def resolve_skill_dir(slug: str, root: Path | str | None = None) -> Path:
+    """Resolve a skill slug to its directory under either naming convention.
+
+    A candidate is any directory whose name is ``slug`` or ends with
+    ``-<slug>``. An exact numeric ``<number>-<slug>`` wins when several exist;
+    then the bare slug. No candidate raises SkillResolutionError, so a missing
+    tree is one named error, never a FileNotFoundError deep in a caller.
+    """
+    base = Path(root) if root is not None else REPO_ROOT
+    if not base.is_dir():
+        raise SkillResolutionError(f"skill root {base} is not a directory")
+    candidates = sorted(
+        path for path in base.iterdir()
+        if path.is_dir() and (path.name == slug or path.name.endswith("-" + slug))
+    )
+    if not candidates:
+        raise SkillResolutionError(
+            f"no directory for skill slug {slug!r} under {base} "
+            f"(accepted: {slug} or <number>-{slug})")
+    numeric = [path for path in candidates
+               if (match := _NUMERIC_PREFIX.match(path.name))
+               and match.group(2) == slug]
+    if numeric:
+        return min(numeric, key=lambda path: (int(path.name.split("-", 1)[0]), path.name))
+    bare = [path for path in candidates if path.name == slug]
+    return (bare or candidates)[0]
+
+
+def skill_path(slug: str, *parts: str, root: Path | str | None = None) -> Path:
+    """The path to ``parts`` inside the resolved directory for ``slug``."""
+    return resolve_skill_dir(slug, root).joinpath(*parts)
+
+
+def resolve_ref(rel_path: str, root: Path | str | None = None) -> Path:
+    """Resolve a repository-relative reference whose first segment names a skill.
+
+    The first segment may be either convention. A known skill slug that does not
+    resolve raises SkillResolutionError; a path that names no known skill is
+    returned as a plain repository-relative path.
+    """
+    base = Path(root) if root is not None else REPO_ROOT
+    first, sep, rest = str(rel_path).partition("/")
+    slug = skill_slug(first)
+    if slug in SKILL_SLUGS:
+        directory = resolve_skill_dir(slug, base)
+        return directory / rest if sep else directory
+    return base / rel_path
 
 # Owner decisions implemented in LAUNCH-02b. No seam value lives here.
 DECIDED = (

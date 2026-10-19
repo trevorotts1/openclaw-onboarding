@@ -19,6 +19,9 @@ from launcher_core.constants import (  # noqa: E402
     SEAM_IDS,
     SKILL_DIR_NAME,
     SKILL_NUMBER,
+    SkillResolutionError,
+    resolve_ref,
+    resolve_skill_dir,
 )
 
 
@@ -94,16 +97,39 @@ def make_pieces(run_dir: Path, graph: dict, normalized: dict) -> dict:
 class ConstantsTest(unittest.TestCase):
     def test_directory_name_derives_from_one_constant(self):
         self.assertEqual(SKILL_DIR_NAME, f"{SKILL_NUMBER}-black-friday-launcher")
-        self.assertEqual(SKILL_ROOT.name, SKILL_DIR_NAME)
+        # SKILL_ROOT comes from this file's location, so the Launcher also runs
+        # under a slug-named directory. The on-disk name is one of the two
+        # conventions the resolver accepts, never a second source of truth.
+        self.assertIn(SKILL_ROOT.name, (SKILL_DIR_NAME, "black-friday-launcher"))
+
+    def test_resolver_accepts_either_convention_and_prefers_numeric(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bare = root / "signature-funnel"
+            numeric = root / "49-signature-funnel"
+            bare.mkdir()
+            self.assertEqual(resolve_skill_dir("signature-funnel", root), bare)
+            numeric.mkdir()
+            self.assertEqual(resolve_skill_dir("signature-funnel", root), numeric)
+            self.assertEqual(resolve_ref("49-signature-funnel/scripts/x.py", root),
+                             numeric / "scripts" / "x.py")
+            self.assertEqual(resolve_ref("signature-funnel/scripts/x.py", root),
+                             numeric / "scripts" / "x.py")
+
+    def test_resolver_fails_closed_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SkillResolutionError) as ctx:
+                resolve_skill_dir("no-such-skill", Path(tmp))
+            self.assertIn("no-such-skill", str(ctx.exception))
 
     def test_remaining_named_seams_are_unique(self):
         self.assertEqual(len(SEAM_IDS), 2)
         self.assertEqual(len(set(SEAM_IDS)), 2)
 
-    def test_registration_record_marks_number_as_working(self):
+    def test_registration_record_marks_number_as_assigned(self):
         record = json.loads((SKILL_ROOT / "registration.json").read_text(encoding="utf-8"))
         self.assertEqual(record["skill"]["number"], SKILL_NUMBER)
-        self.assertFalse(record["skill"]["number_final"])
+        self.assertTrue(record["skill"]["number_final"])
         self.assertEqual(sorted(record["open_decisions"]), sorted(SEAM_IDS))
 
 

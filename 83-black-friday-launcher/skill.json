@@ -1,17 +1,17 @@
 {
   "schema": "blackceo.skill.metadata/1",
   "name": "black-friday-launcher",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "entry": "SKILL.md",
   "priority": "HIGH",
   "status": "core-only",
   "description": "Composes the Black Friday launch from separate page skills through the signature launch contracts: fail-closed intake with an entitlement attestation gate, doc 02 route compilation including folded_levels, native Skill 79 checkout mapping, Council advice in planning, package and receipt assembly, executable completeness checks, and a 999 dependency package.",
   "skill_number": {
     "value": "83",
-    "status": "working_parameter",
-    "final": false,
+    "status": "assigned",
+    "final": true,
     "source": "launcher_core/constants.py:SKILL_NUMBER",
-    "note": "The launcher's own number is unassigned in the owner records (REQUIREMENTS.md section 1). The directory name derives from the same constant."
+    "note": "Assigned 2026-10-18 (LAUNCH-04). The availability evidence is recorded in registration.json:number_assignment. The directory name derives from the same constant."
   },
   "entrypoints": {
     "skill": "SKILL.md",
@@ -21,6 +21,7 @@
     "verify": "verify.sh",
     "fixtures": "fixtures/run_fixtures.py"
   },
+  "python_requirements": "requirements.txt",
   "depends_on": [
     "49-signature-funnel",
     "71-blackceo-signature-page",

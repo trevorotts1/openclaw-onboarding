@@ -1,0 +1,37 @@
+{
+ "skill": "83",
+ "slug": "black-friday-launcher",
+ "name": "black-friday-launcher",
+ "client_facing": true,
+ "description": "Composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not qualify; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, and native Convert and Flow checkout bound by contract and never a dispatch adapter. Verified offer facts only: a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with teaching content marked pending. Records itself as number 83 with number_final=false and enabled_in_999=false until its dependency package is satisfied.",
+ "departments": [
+  "web-development",
+  "funnels",
+  "marketing"
+ ],
+ "roles": [
+  {
+   "dept": "web-development",
+   "primary": true,
+   "slug": "funnel-builder-specialist"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "funnel-qa-conversion-verification-specialist"
+  },
+  {
+   "dept": "marketing",
+   "primary": false,
+   "slug": "conversion-copywriter"
+  }
+ ],
+ "intent_triggers": [
+  "build my black friday launch",
+  "run the launcher for my launch",
+  "compose my upsell and downsell pages"
+ ],
+ "execution_sops": [
+  "funnel-craft"
+ ]
+}
