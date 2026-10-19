@@ -159,9 +159,10 @@ CROSS_CLIENT = _cross_client_regex()
 # A full-page dimension pair (WxH with x, X or a multiplication sign) is
 # reference provenance, never a target: every frame is one section slice.
 DIM_PAIR = re.compile(r"\b\d{2,5}\s*[xX\u00d7]\s*\d{2,5}\b")
-# "MD as Tier H", "MD (...) is classified Tier H": a tier verdict on a
-# named reference sheet, which the model must not see.
-TIER_CLASS = re.compile(r"\b[A-Z]{2,3}\b[^.!?]{0,60}\bTier\s+[A-Z]\b")
+# Any sentence that names a tier verdict: "MD as Tier H", "Ref Tier H",
+# "AA Tier H", and the standalone shapes "Tier H (flat, sparse)" and
+# "Tier R (layered, photo-dense)" that carry no preceding token at all.
+TIER_CLASS = re.compile(r"\bTier\s+[A-Z]\b")
 SENTENCE_SPLIT = re.compile(r"((?<=[.!?])\s+)")
 LEFTOVER = re.compile(r"\{[a-z_]+\}")
 DOUBLE_BRACE = re.compile(r"\{\{(\w+)\}\}")
@@ -342,29 +343,50 @@ def _cta_label(value) -> str:
         value = value.get("label")
     return str(value or "").strip().rstrip(".")
 
+def _copy_source_candidates(run_dir: Path, request: dict) -> list[Path]:
+    """Every place a run keeps its copy source, in authority order.
+
+    Real layouts differ: the request may name the file at the top level or
+    only under metadata, and the file itself may sit under <run_dir>/inputs/
+    (the real run-003 layout) rather than the run root.
+    """
+    candidates = []
+    metadata = request.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    for name in (request.get("copy_source"), metadata.get("copy_source")):
+        if not str(name or "").strip():
+            continue
+        path = Path(str(name))
+        candidates.append(path if path.is_absolute() else run_dir / path)
+    candidates.append(run_dir / "inputs" / "copy.json")
+    candidates.append(run_dir / "copy.json")
+    return candidates
+
 def copy_source_ctas(run_dir: Path, request: dict) -> dict:
     """Per-section CTA labels from the run's own copy source.
 
-    The request builder can emit cta: null on every section (the real
-    final-mockups request does), so the copy source next to the request is
-    the authority: <run_dir>/copy.json, or the request's copy_source path.
+    First existing file wins: the request's top-level copy_source, then
+    metadata.copy_source, then <run_dir>/inputs/copy.json, then
+    <run_dir>/copy.json. A section's label is keyed by the canonical
+    copy-source id, never by the request's band label.
     """
-    name = str(request.get("copy_source") or "copy.json")
-    path = Path(name)
-    if not path.is_absolute():
-        path = run_dir / path
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    out = {}
-    for section in data.get("sections") or []:
-        if not isinstance(section, dict) or not section.get("id"):
+    for path in _copy_source_candidates(run_dir, request):
+        if not path.is_file():
             continue
-        label = _cta_label(section.get("cta"))
-        if label:
-            out[str(section["id"])] = label
-    return out
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        out = {}
+        for section in data.get("sections") or []:
+            if not isinstance(section, dict) or not section.get("id"):
+                continue
+            label = _cta_label(section.get("cta"))
+            if label:
+                out[str(section["id"])] = label
+        return out
+    return {}
 
 def copy_contract(section: dict) -> str:
     """The verbatim copy goes FIRST, so attention cannot drift to prose."""
@@ -459,9 +481,14 @@ def load_request(run_dir: Path, name: str) -> dict:
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
         s.setdefault("section_name", s["section_id"])
-        label = ctas.get(str(s["section_id"]))
-        if label:
-            s.setdefault("_copy_source_cta", label)
+        inline = _cta_label(s.get("cta"))
+        source = ctas.get(str(s["section_id"]))
+        if source:
+            if inline and inline != source:
+                print(f"WARN cta_conflict section {s['section_id']}: inline "
+                      f"{inline!r} disagrees with the copy source {source!r}; "
+                      "the copy source wins", file=sys.stderr)
+            s["cta"] = source
         if required:
             s.setdefault("cta_required", True)
     return data

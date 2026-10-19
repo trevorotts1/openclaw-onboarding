@@ -185,5 +185,80 @@ class WireRepairRoundThreeTests(unittest.TestCase):
         self.assertIn("20000", message)
 
 
+class CopySourceAndTierRoundFourTests(unittest.TestCase):
+    """SUPP007R4: real copy-source layouts and standalone tier verdicts."""
+
+    COPY = {"sections": [
+        {"id": "S01", "cta": {"label": "SAVE MY SEAT"}},
+        {"id": "S02", "cta": None},
+        {"id": "S05", "cta": {"label": "SHOW ME THE SYSTEM"}},
+    ]}
+
+    @staticmethod
+    def _request(**extra):
+        request = {"model": "stub", "sections": [
+            {"section_id": f"S{i:02d}", "copy": "Sentence ends here.", "slots": []}
+            for i in range(1, 7)]}
+        request.update(extra)
+        return request
+
+    def test_inputs_copy_json_resolves_when_run_root_has_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "inputs").mkdir()
+            (run / "inputs" / "copy.json").write_text(json.dumps(self.COPY), encoding="utf-8")
+            (run / "r.json").write_text(json.dumps(self._request()), encoding="utf-8")
+            data = exe.load_request(run, "r.json")
+            labels = {s["section_id"]: s.get("cta") for s in data["sections"] if s.get("cta")}
+            self.assertEqual(labels, {"S01": "SAVE MY SEAT", "S05": "SHOW ME THE SYSTEM"})
+
+    def test_metadata_copy_source_resolves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            source = run / "elsewhere.json"
+            source.write_text(json.dumps(self.COPY), encoding="utf-8")
+            request = self._request(metadata={"copy_source": str(source)})
+            self.assertEqual(exe.copy_source_ctas(run, request)["S05"], "SHOW ME THE SYSTEM")
+
+    def test_copy_source_wins_a_conflict_with_a_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "inputs").mkdir()
+            (run / "inputs" / "copy.json").write_text(json.dumps(self.COPY), encoding="utf-8")
+            request = self._request()
+            request["sections"][4]["cta"] = "JOIN THE FREE TRAINING"
+            (run / "r.json").write_text(json.dumps(request), encoding="utf-8")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                data = exe.load_request(run, "r.json")
+            self.assertEqual(data["sections"][4]["cta"], "SHOW ME THE SYSTEM")
+            self.assertIn("WARN cta_conflict section S05", stderr.getvalue())
+
+    def test_no_copy_source_and_cta_required_refuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "r.json").write_text(json.dumps(self._request(cta_required=True)),
+                                        encoding="utf-8")
+            data = exe.load_request(run, "r.json")
+            with self.assertRaises(exe.ExecutorError) as ctx:
+                exe.copy_contract(data["sections"][0])
+            self.assertIn("requires a CTA label", str(ctx.exception))
+
+    def test_standalone_tier_shapes_strip(self):
+        shapes = (
+            "**Mockup — Tier H (flat, sparse).** Cream #f7f2e9.",
+            "**Mockup — Tier R (layered, photo-dense).** Rust #a2362d.",
+            "Tier H sparse, one photo per planned band at most.",
+            "# SPF003 — reference design rules (Tier R rich mockup, M4)",
+            "The sheet is REF Tier H and must read flat.",
+            "AA Tier H is the fallback classification.",
+        )
+        for shape in shapes:
+            self.assertNotIn("Tier", exe.sanitize_prompt(shape), shape)
+        keep = "You’re doing every job. CTA: SAVE MY SEAT."
+        self.assertEqual(exe.sanitize_prompt(keep), keep)
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
