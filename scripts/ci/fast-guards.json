@@ -3394,5 +3394,41 @@
     ]
    }
   }
+ },
+ {
+  "name": "can004-frontdoor-gate-guard",
+  "was": "(new, CAN004)",
+  "script": "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/lib-frontdoor.sh",
+     "shared-utils/oct4_frontdoor.py",
+     "scripts/health/library-gate-check.sh",
+     "23-ai-workforce-blueprint/scripts/repair/repair-directors-doctrine.py",
+     "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
+     "tests/unit/frontdoor-gate-fail-not-module-error.test.sh",
+     "tests/unit/gate-repair-empty-department.test.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/lib-frontdoor.sh",
+     "shared-utils/oct4_frontdoor.py",
+     "scripts/health/library-gate-check.sh",
+     "23-ai-workforce-blueprint/scripts/repair/repair-directors-doctrine.py",
+     "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
+     "tests/unit/frontdoor-gate-fail-not-module-error.test.sh",
+     "tests/unit/gate-repair-empty-department.test.sh"
+    ]
+   }
+  }
  }
 ]

@@ -103,6 +103,8 @@ for name,s in steps.items():
         continue
     print("[front-door]   repair %-22s %s" % (name, s.get("meaning","?")), file=sys.stderr)
 print("[front-door]   health-gate            %s" % (d.get("gate") or {}).get("meaning","absent"), file=sys.stderr)
+if d.get("reason"):  # gate failed/undetermined: name the failing items (they were only in gate.detail)
+    print("[front-door]   health-gate verdicts:\n%s" % d["reason"], file=sys.stderr)
 print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stderr)
 ' >&2
   case "$FRONTDOOR_STATUS" in
