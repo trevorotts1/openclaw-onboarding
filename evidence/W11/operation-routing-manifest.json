@@ -1,0 +1,925 @@
+{
+  "schema": "ghl-operation-routing-matrix/v1",
+  "unit": "GHL-110",
+  "source_commit": "bcd3efbd2372acac891d7d8464958d2f3deaaecc",
+  "registry_module": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
+  "retired_rail_tokens": [
+    "GHL_COMMUNITY_MCP_URL",
+    "ghl-community-mcp",
+    "crm_list_workspaces",
+    "tools/call",
+    "(^|[^0-9A-Za-z])8765([^0-9A-Za-z]|$)"
+  ],
+  "callers": [
+    {
+      "id": "C01",
+      "file": "29-ghl-convert-and-flow/CORE_UPDATES.md",
+      "lines": [
+        26
+      ],
+      "evidence_pattern": "ghl-community-mcp",
+      "former": "Tier 2 escalation rung in the global routing rule",
+      "former_operation": "any community-MCP tool named by the rung",
+      "replacements": [
+        {
+          "kind": "route_policy",
+          "route": "Tier 0 Skill 44 caf -> Tier 1 official MCP -> Tier 3 public REST; Tier 2 removed"
+        }
+      ],
+      "version_header": "per operation; no global default",
+      "fallback": {
+        "skills": [
+          "44",
+          "06"
+        ],
+        "required": true,
+        "reason": "Skill 44 remains the only verified workflow authoring path (internal Build API); Skill 06 remains the only create path for forms, surveys, funnels, communities, courses and channels."
+      }
+    },
+    {
+      "id": "C02",
+      "file": "35-social-media-planner/INSTRUCTIONS.md",
+      "lines": [
+        353
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL|get_social_accounts",
+      "former": "Social Planner connection check",
+      "former_operation": "get_social_accounts over JSON-RPC tools/call",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "social.accounts.list"
+        }
+      ],
+      "version_header": "2021-07-28",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "A single documented public read replaces the smoke test; Skill 44 caf social accounts is the preferred Tier 0 equivalent, not a required fallback, and Skill 06 is not involved."
+      }
+    },
+    {
+      "id": "C03",
+      "file": "35-social-media-planner/INSTALL.md",
+      "lines": [
+        276
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Social Planner install smoke test",
+      "former_operation": "get_social_accounts over JSON-RPC tools/call",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "social.accounts.list"
+        }
+      ],
+      "version_header": "2021-07-28",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "The public read is the scored access check; no orchestration fallback is needed."
+      }
+    },
+    {
+      "id": "C04",
+      "file": "35-social-media-planner/references/playbook.md",
+      "lines": [
+        1751,
+        1757
+      ],
+      "evidence_pattern": "create_social_post|get_social_accounts|tools/call",
+      "former": "Social Planner posting ladder, former Tier 2 rung",
+      "former_operation": "create_social_post and get_social_accounts over JSON-RPC tools/call",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "social.posts.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "social.accounts.list"
+        }
+      ],
+      "version_header": "2021-07-28",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": false,
+        "reason": "Skill 44 caf social create-post stays the preferred Tier 0 path when installed, but the public REST write and official MCP tool cover the operation without it."
+      }
+    },
+    {
+      "id": "C05",
+      "file": "docs/CONTENT-CONVERSATION-LATTICE.md",
+      "lines": [
+        35
+      ],
+      "evidence_pattern": "create_social_post",
+      "former": "Documented 6-tier posting ladder",
+      "former_operation": "create_social_post at Tier 2",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "social.posts.create"
+        }
+      ],
+      "version_header": "2021-07-28",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": false,
+        "reason": "The ladder should skip Tier 2: Tier 0 caf, Tier 1 official MCP social-media-posting_create-post, then the public REST write."
+      }
+    },
+    {
+      "id": "C06",
+      "file": "35-social-media-planner/CORE_UPDATES.md",
+      "lines": [
+        9,
+        27
+      ],
+      "evidence_pattern": "create_social_post",
+      "former": "Social Planner tier statement and posting path",
+      "former_operation": "create_social_post, update_social_post, bulk_delete_social_posts, upload_media_file, bulk_update_media_files, create_email_template, view_email_center, view_campaign_stats",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "social.posts.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "media.upload"
+        },
+        {
+          "kind": "official_mcp",
+          "operation_id": "mcp.search_operations"
+        },
+        {
+          "kind": "capability_gap",
+          "reason": "update_social_post, bulk_delete_social_posts, bulk_update_media_files, view_email_center and view_campaign_stats have no audited public operation row in the frozen registry; settle them with official MCP search_operations/describe_operation and report a gap rather than inventing a route."
+        }
+      ],
+      "version_header": "2021-07-28 for social writes; v3 for media upload; none for official MCP rows",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": false,
+        "reason": "Skill 44 caf social create-post is Tier 0 when present; the residual gaps are capability gaps, not a reason to revive the retired transport."
+      }
+    },
+    {
+      "id": "C07",
+      "file": "36-ghl-mcp-setup/EXAMPLES.md",
+      "lines": [
+        187
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "List products",
+      "former_operation": "ghl_list_products via POST $GHL_COMMUNITY_MCP_URL/execute",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "products.list"
+        }
+      ],
+      "version_header": "v3 (permitted rollback literal 2021-07-28)",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": false,
+        "reason": "Skill 44 caf is the preferred Tier 0 product surface; the public REST read stands alone when caf is absent."
+      }
+    },
+    {
+      "id": "C08",
+      "file": "36-ghl-mcp-setup/EXAMPLES.md",
+      "lines": [
+        196
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "List recurring invoice schedules",
+      "former_operation": "list_invoice_schedules via POST $GHL_COMMUNITY_MCP_URL/execute",
+      "replacements": [
+        {
+          "kind": "official_mcp",
+          "operation_id": "mcp.search_operations"
+        },
+        {
+          "kind": "capability_gap",
+          "reason": "Only invoices.schedules.create is audited; list/get/update invoice schedules have no frozen public operation row."
+        }
+      ],
+      "version_header": "none (official MCP row)",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "No orchestration layer can supply a contract that does not exist; discover the live catalog or report the gap."
+      }
+    },
+    {
+      "id": "C09",
+      "file": "36-ghl-mcp-setup/EXAMPLES.md",
+      "lines": [
+        237
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Create a product with price",
+      "former_operation": "ghl_create_product and ghl_create_price via POST $GHL_COMMUNITY_MCP_URL/execute",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "products.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "products.prices.create"
+        }
+      ],
+      "version_header": "v3 (permitted rollback literal 2021-07-28)",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": false,
+        "reason": "Both writes are approval-gated public operations; Skill 44 caf is preferred when installed but is not required."
+      }
+    },
+    {
+      "id": "C10",
+      "file": "36-ghl-mcp-setup/EXAMPLES.md",
+      "lines": [
+        270
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Create and send an invoice",
+      "former_operation": "create_invoice and send_invoice via POST $GHL_COMMUNITY_MCP_URL/execute",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "invoices.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "invoices.send"
+        }
+      ],
+      "version_header": "v3 (permitted rollback literal 2021-07-28)",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "Both are approval-gated public writes with readback plans; no orchestration fallback is required."
+      }
+    },
+    {
+      "id": "C11",
+      "file": "36-ghl-mcp-setup/EXAMPLES.md",
+      "lines": [
+        278
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Live tool discovery",
+      "former_operation": "GET $GHL_COMMUNITY_MCP_URL/tools",
+      "replacements": [
+        {
+          "kind": "official_mcp",
+          "operation_id": "mcp.search_operations"
+        }
+      ],
+      "version_header": "none (official MCP row)",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "Tool discovery is not an orchestration concern; the documented catalog is four official MCP tools."
+      }
+    },
+    {
+      "id": "C12",
+      "file": "36-ghl-mcp-setup/EXAMPLES.md",
+      "lines": [
+        318
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Webhook delivery logs",
+      "former_operation": "get_webhook_logs via POST $GHL_COMMUNITY_MCP_URL/execute",
+      "replacements": [
+        {
+          "kind": "official_mcp",
+          "operation_id": "mcp.search_operations"
+        },
+        {
+          "kind": "capability_gap",
+          "reason": "The frozen registry has no webhook-log operation row."
+        }
+      ],
+      "version_header": "none (official MCP row)",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "Report the gap; do not call an undocumented endpoint."
+      }
+    },
+    {
+      "id": "C13",
+      "file": "06-ghl-install-pages/tools/ghl_object_router.py",
+      "lines": [
+        104
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Skill 06 object rail router: product and media routes",
+      "former_operation": "community-MCP-first product create/read and media upload fallback",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "products.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "products.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "media.upload"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "media.folders.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "media.files.list"
+        }
+      ],
+      "version_header": "v3",
+      "fallback": {
+        "skills": [
+          "06",
+          "44"
+        ],
+        "required": true,
+        "reason": "Skill 06 remains required for browser-only authoring (forms, surveys, funnels, pages, communities, courses, channels); Skill 44 remains the workflow build rail. Product/media are public REST only."
+      }
+    },
+    {
+      "id": "C14",
+      "file": "config/ghl-mcp-pin.env",
+      "lines": [
+        135,
+        144
+      ],
+      "evidence_pattern": "crm_list_workspaces|GHL_MCP_PORT",
+      "former": "Retired community-MCP supply-chain pin and runtime smoke configuration",
+      "former_operation": "crm_list_workspaces smoke call against loopback port 8765",
+      "replacements": [
+        {
+          "kind": "official_mcp",
+          "operation_id": "mcp.list_locations"
+        }
+      ],
+      "version_header": "none (official MCP row)",
+      "fallback": {
+        "skills": [],
+        "required": false,
+        "reason": "This file describes a service that must be absent; the pin is a rollback reference only and is not a route. Skill 36 retirement checks own its disposition."
+      }
+    },
+    {
+      "id": "C15",
+      "file": "README.md",
+      "lines": [
+        294
+      ],
+      "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
+      "former": "Repository skill index description of the GHL access chain",
+      "former_operation": "5-tier chain including Community MCP (588 tools)",
+      "replacements": [
+        {
+          "kind": "route_policy",
+          "route": "official MCP (four documented tools) -> public REST -> browser; community tier absent"
+        }
+      ],
+      "version_header": "per operation",
+      "fallback": {
+        "skills": [
+          "44",
+          "06"
+        ],
+        "required": true,
+        "reason": "Stale description must match the retired-tier state; Skill 44 and Skill 06 still own the authoring surfaces that public REST cannot serve."
+      }
+    },
+    {
+      "id": "C16",
+      "file": "ONBOARDING-TRIGGERS.md",
+      "lines": [
+        68
+      ],
+      "evidence_pattern": "8765",
+      "former": "Onboarding trigger description of the GHL access chain",
+      "former_operation": "5-tier chain including Community MCP on port 8765",
+      "replacements": [
+        {
+          "kind": "route_policy",
+          "route": "official MCP (four documented tools) -> public REST -> browser; community tier absent"
+        }
+      ],
+      "version_header": "per operation",
+      "fallback": {
+        "skills": [
+          "44",
+          "06"
+        ],
+        "required": true,
+        "reason": "Stale trigger text must match the retired-tier state; the authoring fallbacks are unchanged."
+      }
+    },
+    {
+      "id": "C17",
+      "file": "44-convert-and-flow-operator/tools/siglaunch/provisioning/provisioning.py",
+      "lines": [
+        30,
+        31,
+        32,
+        33,
+        35,
+        36
+      ],
+      "evidence_pattern": "list_(tags|fields|products)|create_(tag|field|product)",
+      "former": "Signature funnel Phase-A provisioning catalog surface",
+      "former_operation": "list/create tags, custom fields and products through the injected Catalog adapter (historically satisfied by the community rail)",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "tags.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "tags.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "custom_fields.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "custom_fields.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "products.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "products.create"
+        },
+        {
+          "kind": "capability_gap",
+          "reason": "No production Catalog implementation is wired in this tree; the protocol is injected and tests use a fake. The public adapter rows exist, so the remaining work is binding, not a new route."
+        }
+      ],
+      "version_header": "v3",
+      "fallback": {
+        "skills": [
+          "44",
+          "06"
+        ],
+        "required": true,
+        "reason": "Skill 44 owns the launch engine and workflow build; Skill 06 owns the downstream form/survey/funnel authoring that consumes this ledger."
+      }
+    },
+    {
+      "id": "C18",
+      "file": "tests/fixtures/ghl_compat/aliases.json",
+      "lines": [
+        110,
+        137,
+        138,
+        139,
+        140
+      ],
+      "evidence_pattern": "ghl_list_products|ghl_list_workflows|ghl_get_workflow|ghl_trigger_workflow|ghl_publish_workflow",
+      "former": "Machine-readable community-tool alias fixture",
+      "former_operation": "community tool -> operation id mapping fixture",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "products.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "workflows.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "workflows.enroll"
+        }
+      ],
+      "version_header": "v3 (workflow definition rows are v4 staging-only and excluded here)",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": true,
+        "reason": "ghl_get_workflow and ghl_publish_workflow map to v4 staging rows; the production fallback is the Skill 44 private workflow read/publish, never the staging row."
+      }
+    }
+  ],
+  "domain_references": [
+    {
+      "id": "D01",
+      "file": "36-ghl-mcp-setup/ghl-mcp-setup-full.md",
+      "lines": [
+        983,
+        986,
+        1025,
+        1026
+      ],
+      "evidence_pattern": "create_opportunity|get_forms|get_form_submissions|ghl_get_surveys|ghl_trigger_workflow|ghl_publish_workflow",
+      "former": "Historical community tool catalog (domain coverage: opportunities, forms, surveys, workflows)",
+      "former_operation": "create_opportunity, get_forms, get_form_submissions, ghl_get_surveys, ghl_trigger_workflow, ghl_publish_workflow",
+      "replacements": [
+        {
+          "kind": "operation",
+          "operation_id": "opportunities.create"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "opportunities.search"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "pipelines.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "forms.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "forms.submissions.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "surveys.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "surveys.submissions.list"
+        },
+        {
+          "kind": "operation",
+          "operation_id": "workflows.enroll"
+        }
+      ],
+      "version_header": "v3",
+      "fallback": {
+        "skills": [
+          "06",
+          "44"
+        ],
+        "required": true,
+        "reason": "Forms, surveys and funnel authoring have no public create API, so Skill 06 browser builders remain required; workflow build/edit remains Skill 44 only."
+      }
+    },
+    {
+      "id": "D02",
+      "file": "36-ghl-mcp-setup/GHL-LOOKUP-SOP.md",
+      "lines": [
+        239,
+        240
+      ],
+      "evidence_pattern": "ghl_create_workflow|ghl_update_workflow_actions",
+      "former": "Historical community workflow authoring tools",
+      "former_operation": "ghl_create_workflow, ghl_update_workflow_actions",
+      "replacements": [
+        {
+          "kind": "capability_gap",
+          "reason": "The public workflows.definition.* rows are v4 staging-only (level S, blocker B-V4-S) and are not production operations. Historical tool names wrapped an undocumented internal endpoint."
+        },
+        {
+          "kind": "operation",
+          "operation_id": "workflows.list"
+        }
+      ],
+      "version_header": "v4 is staging-only; public list is v3",
+      "fallback": {
+        "skills": [
+          "44"
+        ],
+        "required": true,
+        "reason": "Skill 44 internal Build API is the only verified programmatic workflow build path."
+      }
+    }
+  ],
+  "files": {
+    "29-ghl-convert-and-flow/CORE_UPDATES.md": {
+      "class": "caller",
+      "reason": "routing rung named the retired rail",
+      "exempt_lines": []
+    },
+    "35-social-media-planner/INSTRUCTIONS.md": {
+      "class": "caller",
+      "reason": "former Social Planner caller",
+      "exempt_lines": []
+    },
+    "35-social-media-planner/INSTALL.md": {
+      "class": "caller",
+      "reason": "former Social Planner caller",
+      "exempt_lines": []
+    },
+    "35-social-media-planner/references/playbook.md": {
+      "class": "caller",
+      "reason": "former Social Planner rung",
+      "exempt_lines": []
+    },
+    "36-ghl-mcp-setup/EXAMPLES.md": {
+      "class": "caller",
+      "reason": "historical calls with live replacements",
+      "exempt_lines": [
+        {
+          "line": 13,
+          "reason": "retirement statement"
+        },
+        {
+          "line": 18,
+          "reason": "retirement check"
+        },
+        {
+          "line": 19,
+          "reason": "retirement check"
+        },
+        {
+          "line": 156,
+          "reason": "official /mcp/ tools/call, not the retired rail"
+        },
+        {
+          "line": 273,
+          "reason": "retirement statement"
+        },
+        {
+          "line": 373,
+          "reason": "retirement check"
+        },
+        {
+          "line": 374,
+          "reason": "retirement check"
+        }
+      ]
+    },
+    "06-ghl-install-pages/tools/ghl_object_router.py": {
+      "class": "caller",
+      "reason": "former rail policy, now removed",
+      "exempt_lines": []
+    },
+    "config/ghl-mcp-pin.env": {
+      "class": "caller",
+      "reason": "retired service config retained as rollback reference",
+      "exempt_lines": [
+        {
+          "line": 133,
+          "reason": "comment describing the retired smoke tool"
+        },
+        {
+          "line": 143,
+          "reason": "comment describing the retired port"
+        },
+        {
+          "line": 161,
+          "reason": "historical survey note"
+        },
+        {
+          "line": 226,
+          "reason": "rollback mirror URL, not a route"
+        }
+      ]
+    },
+    "README.md": {
+      "class": "caller",
+      "reason": "stale routing description",
+      "exempt_lines": []
+    },
+    "ONBOARDING-TRIGGERS.md": {
+      "class": "caller",
+      "reason": "stale routing description",
+      "exempt_lines": []
+    },
+    "36-ghl-mcp-setup/INSTRUCTIONS.md": {
+      "class": "non_caller",
+      "reason": "historical catalog and retirement check; explicitly states no name is a call path"
+    },
+    "36-ghl-mcp-setup/ghl-mcp-setup-full.md": {
+      "class": "non_caller",
+      "reason": "historical catalog and retirement reference"
+    },
+    "36-ghl-mcp-setup/SKILL.md": {
+      "class": "non_caller",
+      "reason": "retirement policy"
+    },
+    "36-ghl-mcp-setup/INSTALL.md": {
+      "class": "non_caller",
+      "reason": "retirement procedure"
+    },
+    "36-ghl-mcp-setup/CORE_UPDATES.md": {
+      "class": "non_caller",
+      "reason": "retirement procedure and historical catalog"
+    },
+    "36-ghl-mcp-setup/QC.md": {
+      "class": "non_caller",
+      "reason": "retirement QC"
+    },
+    "36-ghl-mcp-setup/CHANGELOG.md": {
+      "class": "non_caller",
+      "reason": "historical changelog"
+    },
+    "36-ghl-mcp-setup/wire.sh": {
+      "class": "non_caller",
+      "reason": "de-registration guard"
+    },
+    "36-ghl-mcp-setup/qc-ghl-mcp-setup.sh": {
+      "class": "non_caller",
+      "reason": "retirement QC script"
+    },
+    "FLEET-STANDARDS.md": {
+      "class": "non_caller",
+      "reason": "historical description"
+    },
+    "INSTALL-CONTRACT.md": {
+      "class": "non_caller",
+      "reason": "name glossary, no route"
+    },
+    "CHANGELOG.md": {
+      "class": "non_caller",
+      "reason": "historical changelog"
+    },
+    "install.sh": {
+      "class": "non_caller",
+      "reason": "retirement machinery and receipt writer"
+    },
+    "update-skills.sh": {
+      "class": "non_caller",
+      "reason": "retirement machinery"
+    },
+    "06-ghl-install-pages/ENV-MATRIX.md": {
+      "class": "non_caller",
+      "reason": "informational matrix"
+    },
+    "hooks/lib-ceo-tool-gate.sh": {
+      "class": "non_caller",
+      "reason": "deny-list guard"
+    },
+    "scripts/apply-routing-fix.sh": {
+      "class": "non_caller",
+      "reason": "deny-list guard"
+    },
+    "scripts/verify-routing.sh": {
+      "class": "non_caller",
+      "reason": "deny-list verification"
+    },
+    "scripts/ghl-mcp-autostart.sh": {
+      "class": "non_caller",
+      "reason": "retirement machinery"
+    },
+    "scripts/qc-assert-ghl-mcp-supervised.sh": {
+      "class": "non_caller",
+      "reason": "retirement guard"
+    },
+    "scripts/apply-fleet-standards.sh": {
+      "class": "non_caller",
+      "reason": "deny-list guard"
+    },
+    "scripts/ghl-mcp-assert-runtime.sh": {
+      "class": "non_caller",
+      "reason": "retirement runtime guard"
+    },
+    "scripts/test-ceo-tool-gate.sh": {
+      "class": "non_caller",
+      "reason": "deny-list test"
+    },
+    "scripts/qc-system-integrity.sh": {
+      "class": "non_caller",
+      "reason": "retirement guard"
+    },
+    "scripts/qc-assert-mcp-unset-verb.sh": {
+      "class": "non_caller",
+      "reason": "de-registration guard test"
+    },
+    "scripts/lib/ghl-mcp-paths.sh": {
+      "class": "non_caller",
+      "reason": "path resolver for retirement"
+    },
+    ".github/workflows/ghl-mcp-supervised-guard.yml": {
+      "class": "non_caller",
+      "reason": "attestation/retirement CI"
+    },
+    "tests/unit/ghl-mcp-paths-lib.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement path test"
+    },
+    "tests/unit/ghl-mcp-env-credential-guard.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement env test"
+    },
+    "tests/unit/qc-scripts-eval-of-echo-quoting.test.sh": {
+      "class": "non_caller",
+      "reason": "static QC-script quoting test; simulates retired bodies, never calls the rail"
+    },
+    "tests/unit/ghl-mcp-assert-runtime.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement runtime test"
+    },
+    "tests/unit/wire-no-match-completes.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement port test"
+    },
+    "tests/unit/ghl-mcp-retirement-transaction.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement transaction test"
+    },
+    "tests/unit/ghl-mcp-supervised.test.sh": {
+      "class": "non_caller",
+      "reason": "resurrection test"
+    },
+    "tests/unit/ghl-mcp-gateway-guard.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement guard test"
+    },
+    "tests/unit/ghl-mcp-bind-determination.test.sh": {
+      "class": "non_caller",
+      "reason": "bind guard test"
+    },
+    "tests/unit/ghl-mcp-bind-guard.test.sh": {
+      "class": "non_caller",
+      "reason": "bind guard test"
+    },
+    "tests/unit/ghl-mcp-runtime-stop-exit-codes.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement runtime test"
+    },
+    "tests/unit/ghl-mcp-autostart-idempotent-write.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement idempotency test"
+    },
+    "tests/unit/ghl-mcp-pin-delivery.test.sh": {
+      "class": "non_caller",
+      "reason": "pin delivery test"
+    },
+    "tests/unit/ghl-mcp-retirement.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement test"
+    },
+    "tests/unit/ghl-mcp-pm2-registration-mismatch.test.sh": {
+      "class": "non_caller",
+      "reason": "retirement test"
+    },
+    "tests/fixtures/qc-assert-config-write-chown/baseline.txt": {
+      "class": "non_caller",
+      "reason": "guard fixture baseline"
+    },
+    "tests/fixtures/ghl_compat/aliases.json": {
+      "class": "caller",
+      "reason": "alias fixture carrying former tool names",
+      "exempt_lines": [
+        {
+          "line": 233,
+          "reason": "service-alias entry for the retired service, not a call"
+        }
+      ]
+    },
+    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/aliases.py": {
+      "class": "non_caller",
+      "reason": "retired-name mapping table; it is the replacement resolver"
+    },
+    "44-convert-and-flow-operator/tools/engine/tests/test_public_aliases.py": {
+      "class": "non_caller",
+      "reason": "mapping test"
+    },
+    "23-ai-workforce-blueprint/scripts/build-workforce.py": {
+      "class": "non_caller",
+      "reason": "deny-list generator"
+    },
+    "23-ai-workforce-blueprint/templates/role-library/openclaw-maintenance/version-and-upgrade-manager-specialist.md": {
+      "class": "non_caller",
+      "reason": "historical port mention in role template"
+    },
+    "23-ai-workforce-blueprint/templates/role-library/openclaw-maintenance/sops/sop-furnace-watch-hourly.md": {
+      "class": "non_caller",
+      "reason": "historical port mention in SOP"
+    },
+    "35-social-media-planner/CHANGELOG.md": {
+      "class": "non_caller",
+      "reason": "historical changelog"
+    },
+    "35-social-media-planner/qc-skill35.sh": {
+      "class": "non_caller",
+      "reason": "removal note"
+    },
+    "tests/unit/ghl-mcp-retirement-tool-retained.test.sh": {
+      "class": "non_caller",
+      "reason": "retention test added with the B2 fix (#2300): it asserts the retirement tool and its dependencies survive the prune; it names the retired rail only to prove the tool is retained and inert",
+      "exempt_lines": []
+    }
+  }
+}
