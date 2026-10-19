@@ -360,16 +360,46 @@ class Receiver:
     # its executor contract. They are named in the receipt's notes on
     # seam dispatches (design 1.2: an omission that is not named is a
     # defect), never invented.
+    # Per-field upstream limitation (2026-10-19 reconciliation; every
+    # claim re-checked against the surfaces named):
+    #   workflows[].trigger — producible ONLY from the envelope's
+    #     declared origin {form_submitted, form_id}. The native caf
+    #     export carries triggers: [] because the trigger lives in a
+    #     separate bucket file; the object carries only the POINTER
+    #     (triggersFilePath + isTriggerBucketMigrated). `caf workflows`
+    #     has no bucket read verb (list/get/export/build/patch-*/
+    #     restore only) and internal/endpoints.py defines no such path,
+    #     so bucket contents cannot be fetched. Absent a declared
+    #     origin the field stays None.
+    #   workflows[].mechanism — producible from the declared mechanism,
+    #     else DERIVED from the plan's tag (the verbatim tag the
+    #     builder sends to POST /workflow/{loc}/trigger). None only
+    #     when no surface carries a tag.
+    #   qc.wf_items — PRODUCED from the QC script's own `items` object
+    #     (PASSed/total, see caf_executor._run_qc).
+    #   qc.checklist_instance — NOT producible here: qc-built-workflow.sh
+    #     emits items + rubric to stdout and appends build-events.jsonl;
+    #     it writes no checklist instance file, and the receiver has no
+    #     run_dir to file the contract's automation-wiring/ artifact in.
+    #   qc.checklist_complete — NOT producible here: the script's
+    #     overall_mechanical covers mechanical items only; the
+    #     REQUIRES_HUMAN_REVIEW items are graded by the Step-9 QC agent.
+    #   conversational / conversational_overrides /
+    #   conversational_not_present — derived by the stage-14 mapper from
+    #     the handoff's form roles; the dispatch envelope carries none.
+    #   ghl_pack_version — no executor or caf surface reports it.
     _UNPRODUCIBLE_STAGE14 = (
-        "conversational (the envelope carries no form roles, so the "
-        "derived opt-in/purchase/booking trigger set cannot be computed "
-        "receiver-side; it is derived by the stage-14 mapper from the "
-        "handoff), conversational_overrides (owner-approved exceptions "
-        "are not on the envelope), conversational_not_present (derived "
-        "with the trigger set), ghl_pack_version (no executor surface "
-        "reports it), qc.checklist_instance path, qc.checklist_complete "
-        "and the WF item count (no checklist instance is created through "
-        "the executor contract)")
+        "conversational, conversational_overrides, "
+        "conversational_not_present (the envelope carries no form "
+        "roles; the stage-14 mapper derives the trigger set from the "
+        "handoff); ghl_pack_version (no executor or caf surface reports "
+        "it); workflows[].trigger when the envelope declares no origin "
+        "(the native export carries only the trigger-bucket POINTER — "
+        "triggersFilePath + isTriggerBucketMigrated — and caf has no "
+        "bucket read verb); qc.checklist_instance (qc-built-workflow.sh "
+        "creates no checklist artifact and the receiver has no run_dir); "
+        "qc.checklist_complete (human-review WF items are graded by the "
+        "Step-9 QC agent, not the executor)")
 
     def _receipt_shell(self, request: dict, probe: dict) -> dict:
         notes = list(request.get("notes", []))
@@ -575,14 +605,46 @@ class Receiver:
         return None
 
     @staticmethod
-    def _trigger_bound(declared: dict, export: dict) -> bool:
+    def _effective_mechanism(declared: dict, builder_plan: dict,
+                             slug: str):
+        """The mechanism recorded on the receipt, from the best
+        upstream surface available:
+          1. the envelope's declared mechanism (seam packet section 3);
+          2. the plan's own `tag` — workflow_builder.py realizes a tag
+             build as a contact_tag trigger (`wf_def["tag"]` is the
+             verbatim tag it sends to POST /workflow/{loc}/trigger);
+          3. a legacy declared trigger {type: "contact_tag", tag}.
+        None when no surface carries one — never an invented value."""
+        mechanism = declared.get("mechanism")
+        if isinstance(mechanism, dict):
+            return mechanism
+        wf_def = builder_plan.get(slug)
+        tag = wf_def.get("tag") if isinstance(wf_def, dict) else None
+        if not (isinstance(tag, str) and tag.strip()):
+            legacy = declared.get("trigger")
+            if isinstance(legacy, dict) \
+                    and legacy.get("type") == "contact_tag":
+                candidate = legacy.get("tag")
+                if isinstance(candidate, str) and candidate.strip():
+                    tag = candidate
+        if isinstance(tag, str) and tag.strip():
+            return {"type": "contact_tag", "tag": tag}
+        return None
+
+    @staticmethod
+    def _trigger_bound(declared: dict, export: dict,
+                       mechanism: Optional[dict] = None) -> bool:
         """Trigger check against the packet contract. The native
         trigger the mechanism must realize in the export: for a
         contact_tag mechanism, a contact_tag trigger (and, where the
         export carries the tag, the VERBATIM Phase-A tag string — a
         drifted tag is a receipt-level defect); for a native
         mechanism, the form_submitted origin trigger itself. Legacy
-        requests keep the declared `trigger` type check."""
+        requests keep the declared `trigger` type check.
+
+        `mechanism` is the EFFECTIVE mechanism: the declared one when
+        present, otherwise the one derived from the plan's tag (see
+        _effective_mechanism)."""
         triggers = export.get("triggers", [])
         observed_types = [t.get("type") for t in triggers]
         if not triggers:
@@ -603,7 +665,8 @@ class Receiver:
                                    str) \
                     and evidence.get("triggers_file_path"):
                 return True
-        mechanism = declared.get("mechanism")
+        mechanism = mechanism if mechanism is not None \
+            else declared.get("mechanism")
         if mechanism:
             mtype = mechanism.get("type")
             if mtype == "contact_tag":
@@ -628,6 +691,7 @@ class Receiver:
                      builder_plan: dict, probe: dict) -> dict:
         declared = next(w for w in request["workflows"]
                         if w.get("slug") == slug)
+        mechanism = self._effective_mechanism(declared, builder_plan, slug)
         op = {"slug": slug, "status_claimed": "failed", "workflow_id": None,
               "expect": [], "readback": None, "errors": [],
               # design 1.4 / packet section 4 per-operation fields the
@@ -638,7 +702,9 @@ class Receiver:
               "trigger": self._trigger_record(declared),
               # artifact-contracts.md:663-664: the mechanism recorded
               # alongside the trigger, not only nested inside it.
-              "mechanism": declared.get("mechanism"),
+              # Declared first; else derived from the plan tag the
+              # builder actually sends (see _effective_mechanism).
+              "mechanism": mechanism,
               "qc": {"script": "qc-built-workflow.sh",
                      "exit_code": None, "rubric": None,
                      "checklist_instance": None,
@@ -681,7 +747,7 @@ class Receiver:
             "ok": bool(result.get("workflow_id") and export)})
         checks.append({
             "name": "trigger_bound",
-            "ok": self._trigger_bound(declared, export)})
+            "ok": self._trigger_bound(declared, export, mechanism)})
         checks.append({
             "name": "steps_match_contract",
             "ok": len(export.get("steps", [])) ==
@@ -828,6 +894,11 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
                 wf["trigger"] = {"type": "form_submitted",
                                  "form_id": origin["form_id"]}
             else:
+                # Upstream limitation, named not invented: the native
+                # export exposes only the trigger-bucket pointer
+                # (triggersFilePath + isTriggerBucketMigrated) and caf
+                # has no verb to read the bucket file. A form_id can
+                # only come from the envelope's declared origin.
                 wf["trigger"] = None
                 unproducible.append(f"workflows[{i}].trigger")
             mechanism = op.get("mechanism")
@@ -841,6 +912,9 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
             qc_in = op.get("qc") or {}
             wf["qc"] = {"script": qc_in.get("script"),
                         "exit_code": qc_in.get("exit_code")}
+            # wf_items is produced by the executor from the QC script's
+            # own `items` object; checklist_instance / checklist_complete
+            # have no producer on this path (see _UNPRODUCIBLE_STAGE14).
             for key in ("checklist_instance", "checklist_complete",
                         "wf_items"):
                 wf["qc"][key] = qc_in.get(key)

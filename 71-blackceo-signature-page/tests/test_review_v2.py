@@ -500,14 +500,18 @@ class PerFileAndCoversTest(unittest.TestCase):
         # and is in its review cover as the approval artifact.
         write(self.run / "final-mockups" / "hybrid-board.png", b"png-b")
         write(self.run / "final-mockups" / "hybrid-board.json", "{}")
+        # Fix 2 (task 3.2): the stitched full-page mockup is a covered item.
+        write(self.run / "final-mockups" / "mockup-full.png", b"png-f")
         failures = self.gate.check_review_scores(
             self.run, "final-mockups", self.receipt())
         joined = "\n".join(failures)
-        for item in ("desktop-part-01", "mobile-part-01", "mockup", "hybrid-board"):
+        for item in ("desktop-part-01", "mobile-part-01", "mockup-full", "mockup",
+                     "hybrid-board"):
             self.assertIn(item, joined)
         self.assertIn("missing review file", joined)
         for item, rel in (("desktop-part-01", "final-mockups/desktop/part-01.png"),
                           ("mobile-part-01", "final-mockups/mobile/part-01.png"),
+                          ("mockup-full", "final-mockups/mockup-full.png"),
                           ("hybrid-board", "final-mockups/hybrid-board.png"),
                           ("mockup", "final-mockups/mockup.html")):
             self.write_review_file("final-mockups", item, rel,
@@ -605,7 +609,9 @@ class WireframeValidatorTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.td, ignore_errors=True)
 
-    def write_png(self, path, width, height=300):
+    def write_png(self, path, width, height=9000):
+        # 9,000px per slice: the desktop page floor is 16,736px summed, so the
+        # compliant two-slice fixture is a real long-scroll page, not a card.
         path.parent.mkdir(parents=True, exist_ok=True)
         self.Image.new("RGB", (width, height), self.NAVY).save(path)
 
@@ -655,6 +661,15 @@ class WireframeValidatorTest(unittest.TestCase):
         proc = self.validate()
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn("width 800px, expected 1440px", proc.stdout)
+
+    def test_short_desktop_page_fails_height_floor(self):
+        # Fix 14: a long-scroll page is delivered at full height, so the
+        # summed section heights must reach the 16,736px standard sheet.
+        self.write_png(self.run / "desktop-wireframe" / "section-01.png", 1440, 4000)
+        self.write_png(self.run / "desktop-wireframe" / "section-02.png", 1440, 4000)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("page height 8000px is under the 16736px floor", proc.stdout)
 
     def test_ratio_mismatch_fails(self):
         plan = json.loads(json.dumps(self.good_plan))

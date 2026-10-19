@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -90,6 +91,47 @@ def changed_files(base: str, head: str) -> list[str]:
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
+def marker_patterns(manifest_path: Path) -> dict[str, str]:
+    """file -> regex pattern for markers that can PROVE a change is ceremony-only.
+
+    A marker file (install.sh, scripts/bump-version.sh, ...) is also ordinary
+    code. Treating the whole file as a release file makes any real fix in it
+    look like a release-ceremony PR. Only a change whose every added/removed
+    line matches the marker's own pattern is ceremony.
+    """
+    out: dict[str, str] = {}
+    if not manifest_path.exists():
+        return out
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for marker in data.get("markers", []):
+        f = marker.get("file")
+        pattern = marker.get("pattern")
+        if f and pattern and marker.get("type") == "regex":
+            out[f] = pattern
+    return out
+
+
+def is_ceremony_only(file: str, pattern: str, base: str, head: str) -> bool:
+    """True when every changed line in `file` matches the marker pattern."""
+    merge_base = git("merge-base", base, head)
+    base_point = merge_base.stdout.strip() if merge_base.returncode == 0 and merge_base.stdout.strip() else base
+    diff = git("diff", "-U0", base_point, head, "--", file)
+    if diff.returncode != 0:
+        return False
+    changed = [
+        line[1:].strip()
+        for line in diff.stdout.splitlines()
+        if (line.startswith("+") or line.startswith("-"))
+        and not line.startswith("+++")
+        and not line.startswith("---")
+        and line[1:].strip()
+    ]
+    if not changed:
+        return True
+    rx = re.compile(pattern)
+    return all(rx.search(line) for line in changed)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True, help="base ref (e.g. origin/main)")
@@ -111,7 +153,14 @@ def main() -> int:
         print("No changed files between base and head -- nothing to check.")
         return 0
 
-    non_release = [f for f in files if f not in release_files]
+    patterns = marker_patterns(Path(args.manifest))
+    non_release = []
+    for f in files:
+        if f not in release_files:
+            non_release.append(f)
+        elif f in patterns and not is_ceremony_only(f, patterns[f], args.base, args.head):
+            # The file IS a marker file, but this PR changed real code inside it.
+            non_release.append(f)
 
     print(f"Changed files ({len(files)}): {', '.join(files)}")
 

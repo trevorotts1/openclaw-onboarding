@@ -326,8 +326,18 @@ else
               "$HOME/.openclaw/skills" "/data/.openclaw/skills"; do
     for sub in scripts onboarding/scripts; do
       for name in ghl-mcp-autostart.sh ghl-mcp-probe.sh ghl-mcp-assert-runtime.sh; do
-        [ -f "$base/$sub/$name" ] && LIVE_HITS="$LIVE_HITS
-$base/$sub/$name"
+        f="$base/$sub/$name"
+        [ -f "$f" ] || continue
+        # GHL-101 (defect B2): the RETIREMENT TOOL must survive on the box after
+        # the updater deletes its source checkout, or --retire can never run
+        # again. A delivered script that carries the retirement marker is an
+        # inert tombstone/tool (same rule as CHECK 3), not a resurrection
+        # surface; one that does not is still a failure.
+        if _has_retire_marker "$f"; then
+          continue
+        fi
+        LIVE_HITS="$LIVE_HITS
+$f"
       done
     done
     for name in start-ghl-mcp-server.sh; do

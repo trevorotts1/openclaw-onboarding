@@ -13,6 +13,23 @@ Skill 71 stage -> policy owner (Skill 66 image, Skill 67 video) -> transport (Sk
 
 - Skill 71 never writes a model id from memory (rule 10). It hands the final prompt, the ratio and the
   reference files to Skill 66 (image) or Skill 67 (video), which select the model from their registry.
+- **Reference images select the task type.** When a section's
+  `generation.reference_urls` is non-empty, Skill 71 requests the `image-to-image`
+  task from Skill 66 (`66-kie-image/scripts/select_image_model.py` returns that
+  model's `routes["i2i"]`); when the list is empty it requests text-to-image. The
+  same URLs travel as the request's `input_urls`, the key Skill 66 validates
+  against the registry's reference caps (`66-kie-image/scripts/validate_payload.py`)
+  and Skill 74 forwards verbatim (`kie_live_adapter.py`). Skill 71 still never
+  selects the model itself.
+- **Slices only, never a full sheet.** Every `reference_urls` entry is a slice; the
+  standard set's full sheets are 1440x16736 and 780x48894 pixels and are never
+  attached. Standing files use
+  `https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/71-blackceo-signature-page/assets/visual-standards/...`
+  URLs (the repository is public). Per-run assets use kie.ai's file upload
+  (`07-kie-setup/INSTRUCTIONS.md:293`), which the documentation says is deleted
+  after 24 hours, so it is usable only inside the same run. Never use a client's
+  Go High Level media library for the standard set: `06-ghl-install-pages/tools/ghl_media.py`
+  writes into the client's own library.
 - Authority order (rule 1): owner rulings, department pins, Skills 66/67/68, Skill 74 (mechanics), static tables.
   An explicit client request for a model or a department pin wins over the default.
 - The GPT Image default is the newest GPT Image generation in KIE's live catalog (rule 13). Skill 66
@@ -87,7 +104,9 @@ the default for the rest. `model_source` is one of `latest-family`, `explicit-re
 `legacy-ratio-route`. The gate checks the N43 ratio rule on every task: a requested 3:1, 1:3 or 9:21 must be
 generated as asked on the legacy route; on the default route 5:4, 4:5, 2:1 and 1:2 must be generated as
 4:3, 3:4, 16:9 and 9:16; every other ratio must be generated as requested. An explicit request or a pin may
-override the substitution.
+override the substitution. A slot designed at 3:1, 1:3 or 9:21 records
+`model_source: explicit-request` with its `evidence` (or records `legacy-ratio-route`), so the
+designed ratio is never rewritten silently before generation.
 Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.json` (a successful active Skill 74 result, recorded with the Skill 49/56 `kie74_receipt.py` pattern or written by the run's own recorder) and be unique across tasks and files. A task whose `model_source` is `explicit-request` or `department-pin` carries `evidence` (the request text or the pin id); without it the N43 substitution cannot be skipped. `evidence` must be at least 12 characters and not a placeholder. The intake stage writes `intake.json` with `scripts/write_intake.py`, whose `--image-engine` is `kie` (default) or `agnes`; the Agnes route is accepted only when `intake.json` has `image_engine: "agnes"`.
 `credits_before` and `credits_after` come from `kie_live_adapter.py credits`, never from an estimate.
 When the client selected Agnes, `skill` and `policy` are both `63-agnes-image` and `cost.provider` is `agnes`.
