@@ -1,3 +1,5 @@
+## [v27.1.37]  -  2026-10-19  -  Council (Skill 77) v1.0.25: first-status pre-warm, upstreamed service launcher, installed-binary skill root, and live chamber view over real sessions
+
 ## [v27.1.36]  -  2026-10-18  -  Register four supplied Oprah and Les Skill22 book personas and integrate their traceable Council evidence; preserve separate teaching gaps.
 
 ## [v27.1.35]  -  2026-10-18  -  Register and index Russell book personas; bind Council anchor evidence
