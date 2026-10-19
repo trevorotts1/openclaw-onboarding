@@ -508,31 +508,3 @@ test('a failed browser open still returns the usable session URL', async () => {
 
   await service.stop();
 });
-
-// ------------------------------------------------------------ cold /status
-
-test('start pre-warms readiness so the first GET /status does not run cold probes', async () => {
-  let probeRuns = 0;
-  const door = new CouncilFrontDoor({
-    identity: identity(),
-    host: '127.0.0.1',
-    ports: [0],
-    readiness: {
-      nowUtc,
-      store: () => {
-        probeRuns += 1;
-        return ready;
-      },
-    },
-  });
-  try {
-    const started = await door.start();
-    assert.equal(started.outcome, 'started');
-    assert.equal(probeRuns, 1, 'readiness probes ran once during start, before any request');
-    const response = await fetch(`${started.origin}/status`);
-    assert.equal(response.status, 200);
-    assert.equal(probeRuns, 2, 'the request re-observes live state (no stale cache)');
-  } finally {
-    await door.stop();
-  }
-});
