@@ -118,6 +118,7 @@ const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
   ['council-theme.css', 'text/css; charset=utf-8'],
   ['council-room.css', 'text/css; charset=utf-8'],
   ['council-journey.css', 'text/css; charset=utf-8'],
+  ['chamber-live.js', 'text/javascript; charset=utf-8'],
   ['RECEIPT.md', 'text/markdown; charset=utf-8'],
 ]);
 
@@ -517,6 +518,24 @@ export class CouncilFrontDoor {
       }
       const decision = await this.admit(body.value as AdmissionRequest);
       sendJson(res, decision.accepted ? 202 : 503, decision);
+      return;
+    }
+
+    // Read-only session list for the chamber. Unbound (or a reader that
+    // cannot list) answers 501: an empty list would read as "no sessions".
+    if (method === 'GET' && path === '/api/council/sessions') {
+      const reader = this.options.sessionReader;
+      if (!reader?.list) {
+        sendJson(res, 501, {
+          code: 'SESSION_LIST_NOT_BOUND',
+          detail:
+            'No durable session reader that can list sessions is bound; this slice never fabricates a session list.',
+          recovery:
+            'Bind a session reader with a list capability in the composition root and re-run service-readiness.',
+        });
+        return;
+      }
+      sendJson(res, 200, { sessions: await reader.list() });
       return;
     }
 
