@@ -187,6 +187,71 @@ class PromptBlockTests(unittest.TestCase):
         self.assertLessEqual(len(w.short_direction("a " * 40).split()), 8)
 
 
+class RepairRound1Tests(unittest.TestCase):
+    """Defects from the round-1 review: ratio list, palette source, form source,
+    negated colourless prose."""
+
+    def test_ratio_list_is_one_list_for_executor_and_w3(self):
+        labels = set(w.spec()["ratio_labels"])
+        self.assertTrue(set(exe.RATIO_ENUM) <= labels)
+        self.assertTrue({"2:1", "3:1", "1:3", "9:21", "1:2"} <= labels)
+        self.assertEqual(labels, set(v.VALID_RATIO_LABELS))
+
+    def test_every_documented_ratio_builds_and_unreduced_is_refused(self):
+        for ratio in sorted(w.spec()["ratio_labels"]):
+            sections = request()["sections"]
+            sections[0]["slots"][0]["aspect_ratio"] = ratio
+            self.assertIn(f"IMAGE {ratio} - ", w.prompt_block(
+                "desktop-wireframe", sections[0], 1, len(sections), 1440, request(sections=sections)))
+        for bad in ("3:9", "6:4", "7:5"):
+            sections = request()["sections"]
+            sections[0]["slots"][0]["aspect_ratio"] = bad
+            with self.assertRaises(w.SpecError):
+                w.prompt_block("desktop-wireframe", sections[0], 1, 5, 1440, request(sections=sections))
+
+    def test_style_direction_reaches_a_wireframe_prompt_without_a_template(self):
+        req = request("standard")
+        req["style"] = "teal #0F7C7A on warm ivory"
+        prompt = exe.stage_prompt("desktop-wireframe", req["sections"][0], 1, 1440, req, "16:9")
+        self.assertIn("#0F7C7A", prompt)
+
+    def test_paid_wireframe_without_a_brand_colors_line_is_refused(self):
+        with self.assertRaises(exe.ExecutorError):
+            exe.require_brand_line("desktop-wireframe", "COLOUR - from the BRAND COLORS line in this prompt")
+        exe.require_brand_line("desktop-wireframe", "x\nBRAND COLORS - primary #C8091A")
+        exe.require_brand_line("visual-mockup", "no colour line needed here")
+
+    def test_form_is_read_from_intake_when_the_request_omits_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "intake.json").write_text(json.dumps({"copy_version": "standard"}))
+            (run / "production-request.json").write_text(json.dumps(
+                {"sections": [{"section_id": "hero", "copy": "x"}]}))
+            req = exe.load_request(run, "production-request.json")
+            self.assertEqual(w.form_of(req, strict=True), "standard")
+            self.assertTrue(w.reference_urls("desktop-wireframe", req, strict=True)[0]
+                            .endswith("chatgpt-wireframe-1.png"))
+            (run / "production-request.json").write_text(json.dumps(
+                {"copy_version": "long-form", "sections": [{"section_id": "hero", "copy": "x"}]}))
+            self.assertEqual(w.form_of(exe.load_request(run, "production-request.json"), strict=True),
+                             "long-form")
+
+    def test_colourless_prose_ignores_negated_and_plate_sentences(self):
+        for ok in ("Plates are neutral grey with no colour fill.",
+                   "Image plates stay neutral grey, never grey line work.",
+                   "The sheet is never grey line work on a pale ground, never colourless.",
+                   "Never use grey line work. Fill chips in the primary colour."):
+            w.refuse_colourless_prose("desktop-wireframe", ok)
+        for blocks in w.spec()["blocks"].values():
+            for text in ([blocks] if isinstance(blocks, str) else blocks):
+                w.refuse_colourless_prose("desktop-wireframe", text)
+        for bad in ("Draw the layout in warm grey line work on ivory, no colour fill.",
+                    "Keep the sheet pure greyscale.",
+                    "Use grey line work. Photos are muted."):
+            with self.assertRaises(w.SpecError):
+                w.refuse_colourless_prose("desktop-wireframe", bad)
+
+
 class ExecutorWiringTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

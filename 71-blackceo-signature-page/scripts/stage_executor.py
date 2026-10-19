@@ -258,8 +258,25 @@ def wireframe_body(stage: str, section: dict, index: int, width: int,
     except wireframe_spec.SpecError as exc:
         raise ExecutorError(str(exc))
     if not (request.get("stage_prompts") or {}).get(stage):
-        return block  # the generic one-line fallback prose adds nothing to the build spec
+        # The generic fallback prose adds nothing to the build spec except the
+        # request's one-line style direction, which may be the only place a
+        # client colour is written.
+        style = sanitize_prompt(str(request.get("style") or "")).strip()
+        return f"{block}\n\nSTYLE DIRECTION - {style}" if style else block
     return f"{block}\n\n{body}".strip()
+
+
+def require_brand_line(stage: str, prompt: str) -> None:
+    """A paid wireframe job needs the client's palette in its prompt. The build
+    spec says every colour comes from the BRAND COLORS line (scripts/brand_colors.py,
+    sigpage-brand-colors / R69, a required prerequisite of this change); without
+    that line the prompt points at a colour source that is not there."""
+    if stage in wireframe_spec.WIREFRAME_STAGES and not any(
+            line.startswith("BRAND COLORS") for line in prompt.splitlines()):
+        raise ExecutorError(
+            f"{stage}: the composed prompt has no BRAND COLORS line, so the sheet would go "
+            "out with no client palette. Resolve the client's brand colors first "
+            "(scripts/brand_colors.py, R69 sigpage-brand-colors)")
 
 
 def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
@@ -506,6 +523,16 @@ def load_request(run_dir: Path, name: str) -> dict:
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         raise ExecutorError("production request needs a non-empty 'sections' array")
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    if not (data.get("copy_version") or metadata.get("copy_version")):
+        # The run's form is an intake decision (artifact-contracts.md, Intake);
+        # a request that does not repeat it is read against intake.json.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+            if isinstance(intake, dict) and intake.get("copy_version"):
+                data["copy_version"] = intake["copy_version"]
+        except (OSError, ValueError):
+            pass
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -800,6 +827,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
             refs = prior_slices(stage, run_dir, index, template)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True)
+            if provider.name == "kie":
+                require_brand_line(stage, prompt)
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,

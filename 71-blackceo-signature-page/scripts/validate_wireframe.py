@@ -123,8 +123,10 @@ OFF_BRAND_MAX_SHARE = 0.25
 NEUTRAL_CHANNEL_SPREAD = 12
 MIN_ART_DIRECTION_CHARS = 8
 # SPF016 style traits.
-VALID_RATIO_LABELS = {"1:1", "4:5", "5:4", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16",
-                      "21:9", "9:21", "27:16", "16:27", "9:8", "8:9", "3:1", "1:3"}
+# One list for the executor and W3: references/wireframe-build-spec.json "ratio_labels".
+VALID_RATIO_LABELS = set(json.loads(
+    (Path(__file__).resolve().parents[1] / "references" / "wireframe-build-spec.json"
+     ).read_text(encoding="utf-8"))["ratio_labels"])
 ACCENT_MIN_SATURATION = 0.45   # a palette entry is an accent colour (not black, white, cream,
 ACCENT_MIN_VALUE = 0.35        # charcoal or a deep navy) at this HSV saturation and value
 HUE_TOLERANCE_DEG = 20      # anti-aliased blends of an accent with white, black or grey keep its hue

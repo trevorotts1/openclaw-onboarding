@@ -21,14 +21,16 @@
   "not_attached": {
     "wireframes/chatgpt-wireframe-2.png": "Standard Mobile example: a narrowed desktop with side-by-side rows, not a phone stack. Never attached."
   },
+  "colourless_prose_note": "Each pattern is tested sentence by sentence. A sentence is skipped when the phrase is negated before it (never, not, don't, avoid, without) or when it is about image plates, photos or placeholders, which the build spec itself keeps neutral grey.",
   "colourless_prose": [
     "no colou?r fill",
-    "gr[ae]y line work",
+    "gr[ae]y line ?work",
     "(strictly|pure|fully|only) gr[ae]y(scale)?( wireframe| sheet| dialect)?",
     "gr[ae]yscale dialect",
     "no saturated pixels"
   ],
-  "ratio_labels": ["1:1", "4:5", "5:4", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16", "21:9"],
+  "ratio_labels_note": "The one list of valid ratio labels: every ratio in stage_executor.RATIO_ENUM, plus the designed and substituted ratios artifact-contracts.md and kie-generation-route.md document (3:1, 1:3, 9:21 go to the legacy route; 2:1, 1:2, 5:4, 4:5 are substituted on the default route). scripts/validate_wireframe.py (W3) reads this same list. Only a label that is not in lowest terms or is invented (3:9) is refused.",
+  "ratio_labels": ["1:1", "4:5", "5:4", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16", "21:9", "9:21", "27:16", "16:27", "9:8", "8:9", "3:1", "1:3", "2:1", "1:2"],
   "header_strip": {"desktop-wireframe": {"page_px": 1440, "content_px": 1200}, "mobile-tablet": {"page_px": 390, "content_px": 342}},
   "type_scale_default": {
     "note": "House default scale, observed in the bundled examples (eyebrow, subhead, H2, microcopy) plus a body and H1 default. A section's own type_specs (the run's font map) replaces it.",

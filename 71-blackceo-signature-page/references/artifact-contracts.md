@@ -818,7 +818,8 @@ A plan entry may also carry `section_tag` (the chip text as printed, for example
 `"2A"`) and `badge_reads` (`{"steps": ["1", "2", "3", "4", "5", "6", "7"]}`, the
 numerals read off a badge sequence). The validator fails a tag sequence that
 repeats, skips or reorders a number, and any badge sequence that is not 1 to n
-once each (W1). A slot label's `aspect_ratio` that is not a valid label, such as
+once each (W1). A slot label's `aspect_ratio` that is not a valid label (the `ratio_labels` list in
+`references/wireframe-build-spec.json`, shared with the executor), such as
 `3:9`, fails W3. On the pixels, each slice must carry a compact filled
 accent-colour chip block in its top-left zone (W1), a chromatic colour of the
 resolved client palette (W4, grey never counts), and enough colour to not be the

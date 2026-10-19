@@ -147,14 +147,25 @@ def reference_urls(stage: str, request: dict, strict: bool = False) -> list:
     return [style_reference(stage, form_of(request, strict))["url"]]
 
 
+_NEGATED = re.compile(r"\b(never|not|no|don'?t|do not|avoid|without|isn'?t|is not)\b", re.I)
+_PLATE_TALK = re.compile(r"\b(plates?|placeholders?|photos?|photography|images?|portraits?)\b", re.I)
+
+
 def refuse_colourless_prose(stage: str, text: str) -> None:
-    for pattern in spec()["colourless_prose"]:
-        match = re.search(pattern, text, re.I)
-        if match:
-            raise SpecError(
-                f"{stage}: the request's prompt asks for a colourless sheet "
-                f"({match.group(0)!r}). A wireframe is an annotated build spec in the "
-                "client's brand colors (SOP Stage 4A); remove that instruction")
+    """Refuse prose that asks for a colourless sheet. Tested sentence by
+    sentence: a phrase negated earlier in its sentence ("never grey line work")
+    or in a sentence about image plates ("plates are neutral grey with no colour
+    fill") restates the build spec and passes."""
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n", text):
+        if _PLATE_TALK.search(sentence):
+            continue
+        for pattern in spec()["colourless_prose"]:
+            match = re.search(pattern, sentence, re.I)
+            if match and not _NEGATED.search(sentence[:match.start()]):
+                raise SpecError(
+                    f"{stage}: the request's prompt asks for a colourless sheet "
+                    f"({match.group(0)!r}). A wireframe is an annotated build spec in the "
+                    "client's brand colors (SOP Stage 4A); remove that instruction")
 
 
 def short_direction(text: str, words: int = 8) -> str:
