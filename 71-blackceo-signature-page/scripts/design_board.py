@@ -36,6 +36,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,9 +52,10 @@ BOARD_RATIO = "4:3"
 BOARD_PX = (1600, 1200)
 MAX_REFERENCES = 14  # the KIE reference transport limit (run-003: 14 references per request)
 ALL = "all"
+READ_SEP = "\f"  # between the machine reads of one board image (ocr_text)
 HEX = re.compile(r"#[0-9A-Fa-f]{6}\b")
 OCR_FLOOR = 0.6        # share of the transcript's words the board image itself must support
-BLOCK_OCR_FLOOR = 0.5  # share of each block's words the board image itself must support
+ANCHOR_OCR_PERCENT = 70  # share of EACH declared text's words the board image itself must show
 PALETTE_MIN_SAMPLES = 12  # pixels (of a 400x300 sample) near each palette color
 # Trevor's approved example board belongs to one client (Set for Life): structure reference only.
 # Its words, color names and lists never appear on another client's board; the request check
@@ -64,6 +66,7 @@ EXAMPLE_TERMS = (
     "a life of possibilities", "same goals higher standards", "more intentional tomorrows",
     "dream bigger build wealth", "intentional money creates a freer you",
     "editorial financial elegance for grown folks", "official visual direction set for life",
+    "soft luxury", "lasting freedom", "fashion forward real people",
     "evergreen #28513f", "champagne #e2c98f", "obsidian #28231f", "terracotta #bc5248")
 EXAMPLE_LISTS = {  # a request list that shares >= EXAMPLE_OVERLAP items with one of these is a copy
     "aesthetic_words": ("chic", "elevated", "editorial", "premium", "grown"),
@@ -116,6 +119,7 @@ PLACEMENT = {  # where each block sits on the 4:3 sheet; blocks that are absent 
     "cues": "right column, lower right: the checklist, one line per cue",
     "banner": "full-width strip below both columns",
     "footer": "thin line at the very bottom, taglines spaced across the width"}
+AESTHETIC_WORDS = (5, 6)  # the chips: "five or six words" (references/design-board.md)
 TYPE_ROLES = (("display", True), ("serif", False), ("body", True), ("accent", True))
 
 
@@ -396,10 +400,11 @@ def plan(run_dir: Path, request: dict) -> dict:
             need(str(spec.get("positioning_line") or "").strip(), "positioning_line")
             need(logo, "logo (an existing file)")
             if spec.get("brand_name") and spec.get("positioning_line"):
-                lines = [f'brand name printed exactly "{spec["brand_name"]}"',
+                lines = [f'title line across the top edge printed exactly "{title_line(spec)}"',
+                         f'brand name printed exactly "{spec["brand_name"]}"',
                          "the supplied logo reference placed as given, never redrawn or restyled",
                          f'positioning line printed exactly "{spec["positioning_line"]}"']
-                anchors = [spec["brand_name"], spec["positioning_line"]]
+                anchors = [title_line(spec), spec["brand_name"], spec["positioning_line"]]
         elif key == "side_taglines":
             tags = [str(t) for t in spec.get("side_taglines") or []]
             if tags:
@@ -408,12 +413,21 @@ def plan(run_dir: Path, request: dict) -> dict:
                 anchors = tags
         elif key == "aesthetic":
             words = [str(w) for w in spec.get("aesthetic_words") or []]
+            phrase = str(spec.get("aesthetic_phrase") or "").strip()
             if required:
                 need(words, "aesthetic_words")
-            if words:
-                lines, anchors = ["large soft rounded chips, one word each: " + ", ".join(words)], words
+            if words or phrase:
+                need(AESTHETIC_WORDS[0] <= len(words) <= AESTHETIC_WORDS[1],
+                     f"aesthetic_words (five or six words, got {len(words)})")
+                need(phrase, "aesthetic_phrase (the phrase line under the chips)")
+            if words and phrase:
+                lines = ["large soft rounded chips, one word each: " + ", ".join(words),
+                         f'beneath the chips one phrase line printed exactly "{phrase}"']
+                anchors = words + [phrase]
         elif key == "palette":
             lines = [f'swatch labeled exactly "{p["name"]} {p["hex"]}"' for p in palette]
+            lines.append("every swatch label in ink chosen for contrast: dark on a light swatch, "
+                         "white on a dark one")
             anchors = [p["hex"] for p in palette] + [p["name"] for p in palette]
         elif key == "gradient":
             caption = str(spec.get("gradient_caption") or "").strip()
@@ -473,11 +487,15 @@ def plan(run_dir: Path, request: dict) -> dict:
                                   + "; ".join(cues)], cues
         elif key == "banner":
             line = str(spec.get("banner_line") or "").strip()
-            if required:
+            sub = str(spec.get("banner_subline") or "").strip()
+            if required or sub:
                 need(line, "banner_line")
             if line:
                 lines, anchors = [f'a wide brand banner strip in the palette carrying the line '
                                   f'"{line}" and the logo'], [line]
+                if sub:
+                    lines.append(f'a second line printed exactly "{sub}" beside the logo')
+                    anchors.append(sub)
         elif key == "footer":
             tags = [str(t) for t in spec.get("footer_taglines") or []]
             need(tags, "footer_taglines")
@@ -550,7 +568,7 @@ def compose_prompt(p: dict, request: dict, run_dir: Path | None = None):
     spec, role = p["spec"], p["role"]
     aesthetic = ", ".join(str(w).lower() for w in spec.get("aesthetic_words") or [])
     out = [f'DESIGN BOARD — one landscape ({BOARD_RATIO}) brand board sheet titled "'
-           f'{spec["brand_name"]} — OFFICIAL VISUAL DIRECTION" for the client\'s '
+           f'{title_line(spec)}" for the client\'s '
            f'{ROLE_LABEL[role]}. It is the approval sheet shown before the page is built, made '
            "from the page's real, finished images: "
            + (f"{aesthetic}; " if aesthetic else "")
@@ -596,6 +614,11 @@ def compose_prompt(p: dict, request: dict, run_dir: Path | None = None):
     if foreign:
         raise BoardError("design board prompt names another client's brand: " + ", ".join(foreign))
     return prompt, sizes
+
+
+def title_line(spec: dict) -> str:
+    """The sheet's own title, printed across the top edge (the prompt's first sentence)."""
+    return f'{spec["brand_name"]} — OFFICIAL VISUAL DIRECTION'
 
 
 def is_example_client(spec: dict) -> bool:
@@ -779,18 +802,87 @@ def support(words, ocr_words) -> float:
     return hit / len(words)
 
 
+def token_list(text) -> list:
+    return [w for w in norm(text).split() if len(w) >= 3]
+
+
+def within_one(a: str, b: str) -> bool:
+    """One misread character: a substitution, a dropped or an added character."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    return a[i + 1:] == b[i + 1:] or a[i:] == b[i + 1:] or a[i + 1:] == b[i:]
+
+
+def image_misses(anchors_by_block: dict, ocr: str) -> dict:
+    """{block: declared texts the board image does not show}, judged per text.
+
+    Every word of every declared text must be a word the machine read of the image has, and a
+    machine-read word is used up by the text it matches (a word printed once cannot show two
+    texts). A word matches exactly, or, when it has five or more characters, within one misread
+    character; a short word never matches a different word that merely looks like it (grow is
+    not growth). A text counts as shown when ANCHOR_OCR_PERCENT of its words are matched, so one
+    missing tagline, caption, tile or cue of a block fails that block by name."""
+    pool = {}  # a word's count is its largest count in any one machine read, never the sum
+    for one_read in ocr.split(READ_SEP):
+        seen = {}
+        for w in token_list(one_read):
+            seen[w] = seen.get(w, 0) + 1
+        for w, n in seen.items():
+            pool[w] = max(pool.get(w, 0), n)
+    need = [(b, i, w) for b, anchors in sorted(anchors_by_block.items())
+            for i, a in enumerate(anchors) for w in token_list(a)]
+    hit = set()
+    for n, (_b, _i, w) in enumerate(need):  # exact matches first, so a near miss never steals one
+        if pool.get(w):
+            pool[w] -= 1
+            hit.add(n)
+    for n, (_b, _i, w) in enumerate(need):
+        if n in hit or len(w) < 5:
+            continue
+        near = next((k for k in sorted(pool) if pool[k] and within_one(w, k)), None)
+        if near:
+            pool[near] -= 1
+            hit.add(n)
+    out = {}
+    for b, anchors in sorted(anchors_by_block.items()):
+        for i, a in enumerate(anchors):
+            ids = [n for n, (nb, ni, _w) in enumerate(need) if (nb, ni) == (b, i)]
+            if ids and sum(n in hit for n in ids) < -(-len(ids) * ANCHOR_OCR_PERCENT // 100):
+                out.setdefault(b, []).append(a)
+    return out
+
+
 def ocr_text(png: Path) -> str:
-    """The board image read by a machine, independent of whatever transcript the caller has."""
+    """The board image read by a machine, independent of whatever transcript the caller has.
+    Two reads, separated by a form feed: the image as is, and its inverted grayscale (light
+    text on a dark or colored ground is read far better inverted)."""
     exe = shutil.which("tesseract")
     if not exe:
         raise BoardError("tesseract, the board's independent text reader, is not installed "
                          "(brew install tesseract / apt install tesseract-ocr); the read-back "
                          "cannot be checked against the image without it")
-    out = subprocess.run([exe, str(png), "stdout", "--psm", "11"], text=True, capture_output=True,
-                         timeout=180)
-    if out.returncode != 0:
-        raise BoardError(f"tesseract failed on {png.name}: {out.stderr.strip()[:200]}")
-    return out.stdout
+
+    def read(path: Path) -> str:
+        out = subprocess.run([exe, str(path), "stdout", "--psm", "11"], text=True,
+                             capture_output=True, timeout=180)
+        if out.returncode != 0:
+            raise BoardError(f"tesseract failed on {png.name}: {out.stderr.strip()[:200]}")
+        return out.stdout
+
+    reads = [read(png)]
+    try:
+        from PIL import Image, ImageOps
+        with tempfile.TemporaryDirectory(prefix="board-ocr-") as td:
+            inverted = Path(td) / "inverted.png"
+            with Image.open(png) as im:
+                ImageOps.invert(ImageOps.grayscale(im.convert("RGB"))).save(inverted)
+            reads.append(read(inverted))
+    except ImportError:
+        pass
+    return READ_SEP.join(reads)
 
 
 def palette_pixel_failures(board: Path, palette: list) -> list:
@@ -847,10 +939,9 @@ def readback_failures(run_dir: Path, rec) -> list:
         if absent:
             fails.append(f"design board: block {block!r} is not legible on the board "
                          f"(read-back lacks {absent[:4]})")
-        seen = support(tokens(" ".join(anchors)), ocr_words)
-        if seen < BLOCK_OCR_FLOOR:
-            fails.append(f"design board: block {block!r} is not on the board image "
-                         f"(the image shows {seen:.0%} of its words, {BLOCK_OCR_FLOOR:.0%} needed)")
+    for block, unseen in image_misses(anchors_by_block, ocr).items():  # the image itself, per text
+        fails.append(f"design board: block {block!r} is not on the board image "
+                     f"(the image does not show {unseen[:4]})")
     want = set(exp.get("hexes") or [])
     found = {h.upper() for h in HEX.findall(rb["text"])}
     on_image = {h.upper() for h in HEX.findall(ocr)}

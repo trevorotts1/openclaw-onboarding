@@ -254,8 +254,9 @@ with `--require-approval`. Contract and block list: `references/design-board.md`
    inventory and section plan, image map, generation files, supplied assets) at every check: same
    slots, files and bytes as recorded; no slot without a real file (no art-direction tile).
 4. Every block on the board (required for the page role, plus any optional one declared) is legible:
-   its text is in the transcript and the board image itself (read by tesseract, not the caller)
-   shows it; the transcript is supported by the image overall.
+   each declared text (tagline, caption, tile, cue, label, title line, phrase line, banner second
+   line) is in the transcript and the board image itself (read by tesseract, not the caller)
+   shows that text, judged per text, not per block; the transcript is supported by the image overall.
 5. No foreign client brand text (other clients' names, the example board's words).
 6. Not a stub placeholder; the board file is unchanged since it was recorded; the page role matches the run.
 7. A recorded client approval (`approved`, approver, evidence, time) bound to the current board, image

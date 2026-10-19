@@ -130,7 +130,7 @@ class ContractTests(Base):
             self.assertIn("example", str(cm.exception), key)
 
     def test_a_few_shared_everyday_words_are_not_a_copy(self):
-        rd = bf.make_run(self.run_dir, "landing", {"aesthetic_words": ["Elevated", "Warm", "Clear"],
+        rd = bf.make_run(self.run_dir, "landing", {"aesthetic_words": ["Elevated", "Warm", "Clear", "Steady", "Calm"],
                                                    "cues": bf.SPEC["cues"][:4] + ["No clutter"]})
         db.plan(rd, self.request())
 
@@ -482,6 +482,21 @@ class RealReaderTests(Base):
         bf.seed_real_board(self.run_dir)
         self.assertEqual(db.gate_failures(self.run_dir), [])
 
+    def test_real_reader_finds_the_one_declared_text_the_image_lacks(self):
+        bf.make_run(self.run_dir, "landing", {"side_taglines": ["BUILD STEADY", "BUILT FOR FOUNDERS"]})
+        request = self.request()
+        plan = db.plan(self.run_dir, request)
+        prompt, _ = db.compose_prompt(plan, request, self.run_dir)
+        lines = bf.board_lines(plan)
+        bf.render_board(self.run_dir / db.BOARD_FILE, plan["palette"],
+                        [x for x in lines if x != "BUILT FOR FOUNDERS"])
+        db.write_record(self.run_dir, plan, prompt, {"provider": "kie", "mode": "a", "model": "m",
+                                                     "task_id": "t"}, 1)
+        db.finalize(self.run_dir, "\n".join(lines), "reader")  # the transcript claims every text
+        fails = db.validate(self.run_dir)
+        self.assertTrue(any("block 'side_taglines' is not on the board image" in f
+                            and "BUILT FOR FOUNDERS" in f for f in fails), fails)
+
     def test_a_blank_board_with_a_contract_transcript_is_refused(self):
         bf.make_run(self.run_dir, "landing")
         request = self.request()
@@ -696,6 +711,175 @@ class StageGateTests(Base):
         out = self.gate("check", self.run_dir, "design-board")
         self.assertEqual(out.returncode, 1)
         self.assertIn("brand colors", out.stdout + out.stderr)
+
+
+class EveryDeclaredTextIsOnTheImageTests(Base):
+    """Round 2: the image is checked per declared text, never by a whole-block share. Each probe
+    is a board whose image lacks one declared text while the transcript still claims it."""
+
+    def seeded(self, extra=None, role="landing"):
+        bf.make_run(self.run_dir, role, extra or {})
+        bf.seed_board(self.run_dir, approved=False)
+        self.assertEqual(db.validate(self.run_dir), [], "control: the full board passes")
+
+    def drop(self, *lines, once=False):
+        shown = bf.BOARD_TEXT[0].split("\n")
+        for line in lines:
+            shown.remove(line) if once else shown.__setitem__(slice(None), [x for x in shown if x != line])
+        bf.BOARD_TEXT[0] = "\n".join(shown)
+
+    def fails_for(self, block, text):
+        fails = [f for f in db.validate(self.run_dir) if f"block {block!r} is not on the board image" in f]
+        self.assertTrue(fails and text in fails[0], (block, text, db.validate(self.run_dir)))
+
+    def test_one_of_two_side_taglines_missing_from_the_image_fails(self):
+        self.seeded({"side_taglines": ["BUILD STEADY", "BUILT FOR FOUNDERS"]})
+        self.drop("BUILT FOR FOUNDERS")
+        self.fails_for("side_taglines", "BUILT FOR FOUNDERS")
+
+    def test_one_of_two_text_tiles_missing_from_the_image_fails(self):
+        self.seeded({"imagery_extras": [{"text": "WORK FIRST. REST AFTER."}, {"text": "SMALL STEPS COMPOUND."}]})
+        self.drop("SMALL STEPS COMPOUND.")
+        self.fails_for("imagery", "SMALL STEPS COMPOUND.")
+
+    def test_two_of_five_cues_missing_from_the_image_fails(self):
+        self.seeded()
+        self.drop("Generous spacing", "No clutter")
+        self.fails_for("cues", "Generous spacing")
+
+    def test_a_gradient_caption_is_not_shown_by_a_longer_look_alike_word(self):
+        # the banner line carries "growth"; the caption "ROOM TO GROW" must not pass on it
+        self.seeded({"gradient": True, "gradient_caption": "ROOM TO GROW"})
+        self.drop("ROOM TO GROW")
+        self.fails_for("gradient", "ROOM TO GROW")
+
+    def test_a_word_printed_once_cannot_show_two_texts(self):
+        self.seeded({"side_taglines": ["BUILT TO LAST."]})  # the footer prints the same words
+        self.drop("BUILT TO LAST.", once=True)
+        self.fails_for("side_taglines", "BUILT TO LAST.")
+
+    def test_one_misread_character_is_tolerated(self):
+        self.seeded()
+        bf.BOARD_TEXT[0] = bf.BOARD_TEXT[0].replace("Practical", "Practlcal").replace("honest", "honeet")
+        self.assertEqual(db.validate(self.run_dir), [])
+
+    def test_matching_rules(self):
+        self.assertTrue(db.within_one("board", "bard") and db.within_one("plan", "plam"))
+        self.assertFalse(db.within_one("grow", "growth") or db.within_one("abcde", "abxyz"))
+        anchors = {"b": ["ROOM TO GROW", "Steady growth"]}
+        self.assertEqual(db.image_misses(anchors, "room\nsteady growth"), {"b": ["ROOM TO GROW"]})
+        self.assertEqual(db.image_misses(anchors, "room grow\nsteady growth"), {})
+        # two machine reads: a word one read lacks may come from the other; counts are never summed
+        self.assertEqual(db.image_misses({"b": ["room grow"]}, "room\fgrow\ngrowth"), {})
+        self.assertEqual(db.image_misses({"b": ["plan plan"]}, "plan\fplan"), {"b": ["plan plan"]})
+
+
+class ContractPartsAreImplementedTests(Base):
+    """Round 2: the example board's aesthetic phrase line, banner second line and title line."""
+
+    def test_aesthetic_is_five_or_six_words_with_a_phrase_line(self):
+        for words in (3, 4, 7):
+            rd = bf.make_run(self.td / f"w{words}", "landing",
+                             {"aesthetic_words": [f"Word{n}x" for n in range(words)]})
+            with self.assertRaises(db.BoardError) as cm:
+                db.plan(rd, json.loads((rd / "production-request.json").read_text()))
+            self.assertIn(f"five or six words, got {words}", str(cm.exception))
+        for words in (5, 6):
+            rd = bf.make_run(self.td / f"ok{words}", "landing",
+                             {"aesthetic_words": [f"Word{n}x" for n in range(words)]})
+            db.plan(rd, json.loads((rd / "production-request.json").read_text()))
+        rd = bf.make_run(self.td / "nophrase", "landing", {"aesthetic_phrase": ""})
+        with self.assertRaises(db.BoardError) as cm:
+            db.plan(rd, json.loads((rd / "production-request.json").read_text()))
+        self.assertIn("aesthetic_phrase", str(cm.exception))
+
+    def test_aesthetic_is_optional_off_landing_but_whole_when_given(self):
+        rd = bf.make_run(self.td / "none", "checkout", {"aesthetic_words": [], "aesthetic_phrase": ""})
+        self.assertNotIn("aesthetic", [b["key"] for b in db.plan(
+            rd, json.loads((rd / "production-request.json").read_text()))["blocks"] if b["present"]])
+        rd = bf.make_run(self.td / "half", "checkout", {"aesthetic_phrase": ""})
+        with self.assertRaises(db.BoardError):
+            db.plan(rd, json.loads((rd / "production-request.json").read_text()))
+
+    def test_phrase_line_and_title_line_reach_the_prompt_and_are_read_back(self):
+        bf.make_run(self.run_dir, "landing", {"banner_subline": "Show up, then keep going."})
+        plan = db.plan(self.run_dir, self.request())
+        prompt, _ = db.compose_prompt(plan, self.request(), self.run_dir)
+        for text in ("Plain steps and honest numbers", "Show up, then keep going.",
+                     "Test Client Co — OFFICIAL VISUAL DIRECTION", "beside the logo"):
+            self.assertIn(text, prompt)
+        bf.seed_board(self.run_dir, approved=False)
+        self.assertEqual(db.validate(self.run_dir), [])
+        for block, text in (("aesthetic", "Plain steps and honest numbers"),
+                            ("banner", "Show up, then keep going."),
+                            ("header", "Test Client Co — OFFICIAL VISUAL DIRECTION")):
+            self.assertIn(text, plan["expected"]["anchors"][block])
+            bf.BOARD_TEXT[0] = "\n".join(bf.board_lines(plan))
+            bf.BOARD_TEXT[0] = "\n".join(x for x in bf.BOARD_TEXT[0].split("\n") if x != text)
+            self.assertTrue(any(f"block {block!r} is not on the board image" in f for f in db.validate(self.run_dir)), block)
+
+    def test_banner_second_line_needs_the_banner_line(self):
+        bf.make_run(self.run_dir, "checkout", {"banner_line": "", "banner_subline": "Second line."})
+        with self.assertRaises(db.BoardError) as cm:
+            db.plan(self.run_dir, self.request())
+        self.assertIn("banner_line", str(cm.exception))
+
+    def test_the_example_boards_phrase_line_is_not_another_clients_content(self):
+        spec = {"brand_name": "Other Co"}
+        self.assertTrue(db.foreign_hits("Soft luxury, modern wealth, lasting freedom", spec))
+
+
+class BoardAttachesExactlyItsOwnPicturesTests(Base):
+    """Round 2: the paid call sends the logo and the page's images and nothing else."""
+
+    def make(self, refs=2):
+        bf.make_run(self.run_dir, "landing", chain=True)
+        for i in range(refs):
+            bf.png(self.run_dir / "inputs" / f"style-ref-{i + 1}.png", (9, 9, 9 + i))
+        self.rewrite_request(lambda r: r.update(
+            {"references": [str(self.run_dir / "inputs" / f"style-ref-{i + 1}.png") for i in range(refs)],
+             "input_extra": {"input_urls": ["/elsewhere/other-client.png"], "quality": "high"}}))
+
+    def test_request_level_references_never_reach_the_board_call(self):
+        import stage_executor as se
+        self.make()
+        plan, job = se.board_job(self.run_dir, self.request())
+        sent = se.build_input(job, self.request())
+        self.assertEqual(sent["input_urls"], job["references"])
+        self.assertEqual(sent["quality"], "high")  # other request fields still pass through
+        self.assertTrue(sent["input_urls"][0].endswith("inputs/logo.png"))
+        self.assertEqual(len(sent["input_urls"]), 1 + len(plan["slots"]))
+        self.assertIn(f"REFERENCES — {len(sent['input_urls'])} attached: the client logo first", job["prompt"])
+        self.assertFalse(any("style-ref" in u or "other-client" in u for u in sent["input_urls"]))
+
+    def test_the_preflight_count_and_the_record_equal_what_is_sent(self):
+        import stage_executor as se
+        self.make()
+        out = run([EXEC, self.run_dir, "--stages", "design-board", "--preflight"])
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        plan, job = se.board_job(self.run_dir, self.request())
+        self.assertIn(f"refs={len(se.build_input(job, self.request())['input_urls'])} ", out.stdout)
+        bf.seed_board(self.run_dir, approved=False)
+        rec = db.load_record(self.run_dir)
+        self.assertEqual(rec["generation"]["references"], se.build_input(job, self.request())["input_urls"])
+
+    def test_the_attachment_limit_holds_with_request_references(self):
+        import stage_executor as se
+        self.make(refs=4)
+        def many(req):
+            for i in range(1, 14):
+                bf.png(self.run_dir / "inputs" / f"m{i}.png", (10 * i, 50, 90), (80, 60))
+            req["sections"] = [{"section_id": "all", "section_name": "All", "copy": "x.",
+                                "slots": [{"slot_id": f"IMG-{i:03d}", "file": f"inputs/m{i}.png"} for i in range(1, 14)]}]
+        self.rewrite_request(many)
+        (self.run_dir / "desktop-wireframe" / "image-inventory.json").unlink()
+        _, job = se.board_job(self.run_dir, self.request())
+        self.assertEqual(len(se.build_input(job, self.request())["input_urls"]), db.MAX_REFERENCES)
+
+    def test_other_stages_still_attach_the_request_references(self):
+        import stage_executor as se
+        sent = se.build_input({"prompt": "p", "references": ["a.png"]}, {"references": ["r.png"]})
+        self.assertEqual(sent["input_urls"], ["r.png", "a.png"])
 
 
 if __name__ == "__main__":

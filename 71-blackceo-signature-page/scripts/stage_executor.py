@@ -611,14 +611,20 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
-    refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
-                              job["references"]))
+    exact = bool(job.get("exact_references"))
+    if exact:  # the design board: exactly the job's attachments (client logo, the page's images)
+        refs = [str(r) for r in job["references"]]
+    else:
+        refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
+                                  job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
     extra = request.get("input_extra")
     if isinstance(extra, dict):
         base.update(extra)
+    if exact:  # a request-level extra can never add a picture to the board either
+        base["input_urls"] = refs
     return base
 
 
@@ -869,7 +875,8 @@ def board_job(run_dir: Path, request: dict):
     job = {"stage": BOARD_STAGE, "index": 1, "section": {"section_id": plan["role"]},
            "out": run_dir / board.BOARD_FILE, "width": width, "height": height,
            "label": f"{BOARD_STAGE} {plan['role']}", "ratio": board.BOARD_RATIO,
-           "references": board.references(plan, run_dir), "prompt": prompt, "prompt_sizes": sizes}
+           "references": board.references(plan, run_dir), "exact_references": True,
+           "prompt": prompt, "prompt_sizes": sizes}
     return plan, job
 
 

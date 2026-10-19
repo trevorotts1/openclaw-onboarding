@@ -46,6 +46,16 @@ closed, so every image slot of the page has its generated or supplied file on di
 no file refuses the board by name (`design_board.py` / `stage_executor.py --stages design-board`
 both stop and list the slots); there is no "planned" tile.
 
+Placement ruling (open for Trevor). Trevor's wording is that the board is made once the section
+images exist and is approved first, before the page is built. This branch builds that reading:
+after the image chain, before `final-mockups`, with the board as the client's first look at the
+page (the wireframes and the layout proof are internal working stages, never sent to the client
+as a design). The other reading, the board before the wireframes of every page role, cannot be
+had together with "after the images": the slot list is `desktop-wireframe/image-inventory.json`,
+a wireframe artifact, and `image-inventory-prompts` depends on `mobile-tablet`. Meeting it
+would mean moving the image chain ahead of the wireframes, a change to the stage order that
+belongs to Trevor, not to this unit. Until he rules, the stage order stays as above.
+
 Gate: `final-mockups` depends on `design-board`. The stage closes only with a recorded client
 approval (`validate --require-approval`). `scripts/stage_executor.py` refuses `final-mockups`
 (preflight included, and before any call in a multi-stage run) while the approval is missing or
@@ -74,7 +84,11 @@ Optional grid extras, for tiles that are not page slots: `imagery_extras` is a l
 `{"text": "..."}` (a text tile, printed exactly) or `{"file": "..."}` (a supplied prop image,
 hashed into the image set). A prop is a supplied picture, never drawn.
 
-The image-transport limit is `MAX_REFERENCES` attachments (logo + images). A page with more
+The image-transport limit is `MAX_REFERENCES` attachments (logo + images). The board call sends
+exactly those attachments and nothing else: the production request's request-level `references`
+(style references for the other stages) and any `input_urls` in `input_extra` are never added to
+it, so the prompt's "REFERENCES - N attached" count, the preflight `refs=` count, the record's
+`generation.references` and the images actually sent are the same list, logo first. A page with more
 images attaches the first ones individually and the rest as one contact sheet built from the real
 files (`design-board/overflow-sheet.png`, written by the executor when it generates, never by
 preflight); the prompt tells the model to place each as its own tile.
@@ -83,9 +97,9 @@ preflight); the prompt tells the model to place each as its own tile.
 
 | Block | Content | landing | other roles |
 |---|---|---|---|
-| Header | brand name, client logo (placed as supplied), positioning line | required | required |
+| Header | title line `<brand name> — OFFICIAL VISUAL DIRECTION` across the top edge, brand name, client logo (placed as supplied), positioning line | required | required |
 | Header side taglines | `side_taglines`: taglines flanking the logo | optional | optional |
-| Brand aesthetic | five or six words, with a phrase line | required | optional |
+| Brand aesthetic | five or six words (`aesthetic_words`, chips), with one phrase line under them (`aesthetic_phrase`) | required | optional, but whole when given |
 | Official palette | one swatch per resolved color, printed `Name #HEX` | required | required |
 | Gradient / accent strip | blends only palette colors; optional `gradient_caption` printed under it | optional | optional |
 | Typography system | display, body, accent (and optional editorial serif): font, sample line, usage note | required | required |
@@ -93,7 +107,7 @@ preflight); the prompt tells the model to place each as its own tile.
 | Icon style row | matching line icons with labels | required | required on `product_selection`, `thank_you`; else optional |
 | Size guidance | label and px size, desktop and mobile | required | optional |
 | Application / design cues | checklist, at least five lines | required | required |
-| Hero / brand banner strip | wide strip with a brand line and the logo | required | optional |
+| Hero / brand banner strip | wide strip with a brand line (`banner_line`) and the logo, plus an optional second line beside the logo (`banner_subline`) | required | optional |
 | Footer taglines | one or more taglines | required | required |
 
 Every block that is on the board is checked in the read-back, required or optional: a declared
@@ -119,13 +133,14 @@ copy and font map; the placeholders below are the shape, never content to copy:
   "logo": "<run-relative path of the client's logo file>",
   "color_names": {"<palette role or palette hex>": "<the client's name for that color>"},
   "aesthetic_words": ["<five or six words from the client's own brand>"],
+  "aesthetic_phrase": "<one phrase line for the client's brand, under the chips>",
   "typography": {"display": {"sample": "<line>", "usage": "<where it is used>"},
                  "body": {"sample": "<line>", "usage": "<...>"},
                  "accent": {"sample": "<line>", "usage": "<...>"}},
   "imagery_line": "<one direction line for this client's imagery>",
   "icons": ["<one label per icon>"], "size_guidance": true,
   "cues": ["<at least five application cues for this client>"],
-  "banner_line": "<the banner strip's line>",
+  "banner_line": "<the banner strip's line>", "banner_subline": "<optional second line beside the logo>",
   "footer_taglines": ["<one or more taglines>"],
   "side_taglines": ["<optional header flank taglines>"],
   "gradient": false, "gradient_caption": "<optional, needs gradient: true>",
@@ -166,9 +181,17 @@ reading, or a vision model's), but it records it only after reading the board im
 `apt install tesseract-ocr`; without it the board cannot validate, it fails closed).
 `finalize` and every `validate` / `gate` re-read the image and require:
 
-- the machine read supports at least 60 percent of the transcript's words, and at least 50
-  percent of each block's words (so a transcript copied from the contract, or one for a blank
-  board, is refused, and one block missing from the image fails even when the rest is there);
+- the machine read supports at least 60 percent of the transcript's words overall, and the image
+  shows every declared text on its own: each side tagline, caption, text tile, cue, icon label,
+  line and the title line needs at least 70 percent of its own words in the machine read, each
+  machine-read word used up by the one text it matches (a word printed once cannot show two
+  texts), a word matching exactly or, from five characters, within one misread character (so
+  `grow` is not shown by `growth`). One text missing from the image fails its block by name,
+  even when the rest of the block is there;
+- the machine read is two reads of the image (as is, and inverted grayscale, so light text on a
+  dark or colored swatch is read), a word counting as many times as it appears in one read;
+  the prompt asks for swatch labels in contrast ink; a label too faint for the machine to read
+  fails the board and is repaired, never waved through;
 - the transcript carries every block's text exactly, every palette hex, and no hex outside the
   palette (a hex the machine read differs from by one character is a misread, not a stray);
 - every palette color is present in the board's pixels;
@@ -203,7 +226,8 @@ Deterministic (`design_board.py validate`):
 3. Images equal the page's actual section images, re-derived from the run's own artifacts now:
    same slots, same files, same bytes as recorded; no slot without a file.
 4. Every block on the board (required ones for this page role, and any optional one declared) is
-   legible: its text is in the transcript and the board image itself shows it.
+   legible, text by text: each declared text is in the transcript and the board image itself
+   shows that text (not just most of its block).
 5. Every hex printed on the board is a palette hex, and every palette hex is printed.
 6. No foreign client brand text: no other client's name (derived from the visual-standards
    manifest) and none of the example board's words, unless the client's own brand uses them.

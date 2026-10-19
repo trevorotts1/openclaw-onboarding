@@ -85,7 +85,9 @@ fix is claimed here or in this change's history.
 `--stages design-board` produces the page's Design Board (`references/design-board.md`): one
 4:3 image, the client logo and all of the page's real section images attached as references (a
 page with more than fit is attached as individual images plus one contact sheet of the real
-files), the resolved palette and the contract blocks in the prompt. It runs alone, after the image
+files), the resolved palette and the contract blocks in the prompt. The request-level
+`references` above are not sent with it: the call carries exactly the logo and the page's images.
+It runs alone, after the image
 chain, and refuses a page with any image slot that has no file yet. `--preflight` composes and
 checks it for free, and the stub board never validates. `final-mockups` refuses to start (preflight
 included, and before any call in a multi-stage run) until `design_board.py gate` passes (a current
