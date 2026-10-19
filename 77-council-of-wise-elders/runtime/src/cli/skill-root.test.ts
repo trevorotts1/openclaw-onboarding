@@ -1,8 +1,8 @@
 /**
  * The skill folder the runtime measures (defects 1 and 2).
  *
- * Runner:
- *   node --import tsx --test src/cli/skill-root.test.ts
+ * Runner (not part of `npm test`, whose glob is tests/**):
+ *   npm run test:skill-root
  *
  * Defect 1: the installed prefix carries neither advisors/ nor a
  * SKILL.md, so the module climb named the prefix and every advisor load
@@ -13,16 +13,18 @@
  * - a source layout resolves to THIS skill folder (advisors/ and
  *   manifest.json beside SKILL.md);
  * - doctor refuses a data dir inside it and accepts one outside it;
- * - an installed prefix (copied dispatcher, no SKILL.md anywhere above,
- *   an install record naming the skill folder) measures the RECORDED
- *   folder: the guard refuses a data dir inside it and accepts the same
- *   path once it is outside;
- * - an installed prefix with no record yields no root, never a guess.
+ * - each shipped layout, as an esbuild bundle (onboarding's
+ *   <prefix>/releases/<id>/dist/blackceo-council.mjs and 999-setup's
+ *   <prefix>/runtime/dist/council-entry.mjs), with no SKILL.md anywhere
+ *   above and an install record naming the skill folder, measures the
+ *   RECORDED folder: the guard refuses a data dir inside it and accepts
+ *   a path outside it;
+ * - the same layouts with no record yield no root, never a guess.
  */
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,57 +85,73 @@ test('doctor accepts a data dir outside the skill folder', async () => {
   assert.match(guardLine(c.all()), /\[ok\]/);
 });
 
-// Copies the dispatcher (with the subtree its top-level imports need)
-// into <prefix>/runtime/dist/cli, the installed bundle layout, and runs
-// `doctor` there in a child process.
-function installedPrefixDoctor(
+// The two shipped layouts, each a single esbuild bundle (the toolchain's
+// own `bundle` step) with no SKILL.md, advisors/ or manifest.json above it:
+//   onboarding: <prefix>/releases/<id>/dist/blackceo-council.mjs, record at
+//               <prefix>/releases/install-record.json (scripts/install-runtime.mjs)
+//   999-setup:  <prefix>/runtime/dist/council-entry.mjs, record at
+//               <prefix>/install-record.json (council-runtime-install.sh)
+const LAYOUTS = {
+  onboarding: { entry: 'releases/rel-0123456789ab/dist/blackceo-council.mjs', record: 'releases/install-record.json' },
+  '999': { entry: 'runtime/dist/council-entry.mjs', record: 'install-record.json' },
+} as const;
+
+let bundleDir: string | null = null;
+function probeBundle(): string {
+  if (bundleDir) return join(bundleDir, 'probe.mjs');
+  bundleDir = mkdtempSync(join(tmpdir(), 'council-bundle-'));
+  const src = join(bundleDir, 'probe.ts');
+  writeFileSync(
+    src,
+    [
+      `import { runCli, skillRootForAssets } from ${JSON.stringify(join(here, 'dispatcher.js'))};`,
+      'process.stdout.write("ROOT " + String(skillRootForAssets()) + "\\n");',
+      'let out = "";',
+      "await runCli(['doctor', '--data-dir', process.argv[2]],",
+      '  { out: (t) => { out += t; }, err: (t) => { out += t; } },',
+      '  { createHost: () => ({ host: { transportRegistry: { listRoutes: () => [] } } }) as never });',
+      'process.stdout.write("OUT " + out.replace(/\\n/g, " | ") + "\\n");',
+      'let sampleOut = "";',
+      "const sampleRc = await runCli(['sample', 'run'],",
+      '  { out: (t) => { sampleOut += t; }, err: (t) => { sampleOut += t; } }, {});',
+      'process.stdout.write("SAMPLE " + sampleRc + " " + sampleOut.replace(/\\n/g, " | ") + "\\n");',
+    ].join('\n'),
+  );
+  const r = spawnSync(
+    join(runtimeRoot, 'node_modules', '.bin', 'esbuild'),
+    [src, '--bundle', '--platform=node', '--format=esm', '--target=node20', `--outfile=${join(bundleDir, 'probe.mjs')}`],
+    { encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, `esbuild failed: ${r.stdout}${r.stderr}`);
+  return join(bundleDir, 'probe.mjs');
+}
+
+test.after(() => {
+  if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
+});
+
+// Places the bundled probe in a shipped layout under a fresh prefix and
+// runs it there in a child process.
+function installedDoctor(
+  layout: keyof typeof LAYOUTS,
   record: string | null,
   dataDir: string,
 ): { root: string; out: string; sample: string; raw: string } {
-  const fixture = mkdtempSync(join(tmpdir(), 'council-prefix-'));
+  const prefix = mkdtempSync(join(tmpdir(), 'council-prefix-'));
   try {
-    const dist = join(fixture, 'runtime', 'dist');
-    // The shipped layout: the CLI is ONE file at runtime/dist/, with no
-    // SKILL.md, advisors/ or manifest.json anywhere above it.
-    // The installed build: the dispatcher at dist/cli (its siblings one
-    // level up at dist/contracts, dist/persistence, ...) and no SKILL.md,
-    // advisors/ or manifest.json anywhere above it.
-    cpSync(join(runtimeRoot, 'src'), dist, { recursive: true });
-    const cliDir = join(dist, 'cli');
-    rmSync(join(cliDir, 'skill-root.test.ts'), { force: true });
-    assert.equal(existsSync(join(cliDir, 'dispatcher.ts')), true, 'fixture entry is in cli/');
-    cpSync(join(runtimeRoot, 'package.json'), join(fixture, 'runtime', 'package.json'));
-    // The child runs under a temp folder where no node_modules lies
-    // above it: give it the runtime's own dev dependencies.
-    symlinkSync(join(runtimeRoot, 'node_modules'), join(fixture, 'runtime', 'node_modules'));
+    const entry = join(prefix, LAYOUTS[layout].entry);
+    mkdirSync(dirname(entry), { recursive: true });
+    copyFileSync(probeBundle(), entry);
+    // The build's copy-runtime-assets step puts the schema beside the entry.
+    cpSync(join(runtimeRoot, 'src', 'persistence', 'migrations'), join(dirname(entry), 'migrations'), { recursive: true });
     if (record !== null) {
       writeFileSync(
-        join(fixture, 'runtime', 'install-record.json'),
+        join(prefix, LAYOUTS[layout].record),
         JSON.stringify({ aggregate: 'fixture-skill-1', skill_dir: record }),
       );
     }
-    writeFileSync(
-      join(cliDir, 'probe.ts'),
-      [
-        "import { runCli, skillRootForAssets } from './dispatcher.js';",
-        'process.stdout.write("ROOT " + String(skillRootForAssets()) + "\\n");',
-        'let out = "";',
-        `await runCli(['doctor', '--data-dir', ${JSON.stringify(dataDir)}],`,
-        '  { out: (t) => { out += t; }, err: (t) => { out += t; } },',
-        '  { createHost: () => ({ host: { transportRegistry: { listRoutes: () => [] } } }) as never });',
-        'process.stdout.write("OUT " + out.replace(/\\n/g, " | ") + "\\n");',
-        'let sampleOut = "";',
-        "const sampleRc = await runCli(['sample', 'run'],",
-        '  { out: (t) => { sampleOut += t; }, err: (t) => { sampleOut += t; } }, {});',
-        'process.stdout.write("SAMPLE " + sampleRc + " " + sampleOut.replace(/\\n/g, " | ") + "\\n");',
-      ].join('\n'),
-    );
-    assert.equal(existsSync(join(cliDir, 'SKILL.md')), false);
-    assert.equal(existsSync(join(fixture, 'SKILL.md')), false);
-    const r = spawnSync(process.execPath, ['--import', 'tsx', 'probe.ts'], {
-      cwd: cliDir,
-      encoding: 'utf8',
-    });
+    assert.equal(existsSync(join(prefix, 'SKILL.md')), false);
+    const r = spawnSync(process.execPath, [entry, dataDir], { cwd: prefix, encoding: 'utf8' });
     const text = `${r.stdout}${r.stderr}`;
     return {
       root: (/^ROOT (.*)$/m.exec(text)?.[1] ?? '').trim(),
@@ -142,35 +160,37 @@ function installedPrefixDoctor(
       raw: text,
     };
   } finally {
-    rmSync(fixture, { recursive: true, force: true });
+    rmSync(prefix, { recursive: true, force: true });
   }
 }
 
-test('installed prefix: measures the recorded skill folder', () => {
-  const inside = installedPrefixDoctor(SKILL_ROOT, join(SKILL_ROOT, 'state'));
-  assert.equal(inside.root, SKILL_ROOT, `the record names the skill folder: ${inside.raw}`);
-  assert.match(
-    guardLine(inside.out),
-    /\[not ready\] data_dir_outside_skill_tree.*inside the skill folder/,
-    'the guard refuses a data dir inside the recorded folder',
-  );
-
-  // A path that really is outside the recorded skill folder.
-  const ok = installedPrefixDoctor(SKILL_ROOT, join(SKILL_ROOT, '..', 'outside-state'));
-  assert.equal(ok.root, SKILL_ROOT);
-  assert.match(guardLine(ok.out), /\[ok\] data_dir_outside_skill_tree/);
-});
-
-test('installed prefix without a record has no root and refuses', () => {
-  for (const dataDir of [join(SKILL_ROOT, 'state'), join(SKILL_ROOT, '..', 'outside-state')]) {
-    const r = installedPrefixDoctor(null, dataDir);
-    assert.equal(r.root, 'null', 'no record, no guessed root');
+for (const layout of Object.keys(LAYOUTS) as (keyof typeof LAYOUTS)[]) {
+  test(`${layout} layout: measures the recorded skill folder`, () => {
+    const inside = installedDoctor(layout, SKILL_ROOT, join(SKILL_ROOT, 'state'));
+    assert.equal(inside.root, SKILL_ROOT, `the record names the skill folder: ${inside.raw}`);
     assert.match(
-      guardLine(r.out),
-      /\[not ready\] data_dir_outside_skill_tree.*skill folder could not be located/,
-      `doctor refuses ${dataDir} when there is no boundary to measure`,
+      guardLine(inside.out),
+      /\[not ready\] data_dir_outside_skill_tree.*inside the skill folder/,
+      'the guard refuses a data dir inside the recorded folder',
     );
-    assert.match(r.sample, /^[1-9]\d* /, 'sample run exits non-zero without a root');
-    assert.match(r.sample, /skill folder could not be located/);
-  }
-});
+
+    // A path that really is outside the recorded skill folder.
+    const ok = installedDoctor(layout, SKILL_ROOT, join(SKILL_ROOT, '..', 'outside-state'));
+    assert.equal(ok.root, SKILL_ROOT);
+    assert.match(guardLine(ok.out), /\[ok\] data_dir_outside_skill_tree/);
+  });
+
+  test(`${layout} layout without a record has no root and refuses`, () => {
+    for (const dataDir of [join(SKILL_ROOT, 'state'), join(SKILL_ROOT, '..', 'outside-state')]) {
+      const r = installedDoctor(layout, null, dataDir);
+      assert.equal(r.root, 'null', 'no record, no guessed root');
+      assert.match(
+        guardLine(r.out),
+        /\[not ready\] data_dir_outside_skill_tree.*skill folder could not be located/,
+        `doctor refuses ${dataDir} when there is no boundary to measure`,
+      );
+      assert.match(r.sample, /^[1-9]\d* /, 'sample run exits non-zero without a root');
+      assert.match(r.sample, /skill folder could not be located/);
+    }
+  });
+}

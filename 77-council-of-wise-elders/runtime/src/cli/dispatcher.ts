@@ -122,13 +122,18 @@ function isSkillFolder(dir: string): boolean {
 /**
  * The ACTUAL skill folder. Two mechanisms, in order:
  *
- * 1. The install record written by scripts/council-runtime-install.sh
- *    (`../../install-record.json`, which from the bundled entry at
- *    runtime/dist/council-entry.mjs is <prefix>/install-record.json,
- *    where the installer writes it). The installed prefix carries no
- *    SKILL.md, advisors/ or manifest.json, so the climb below can never
- *    find the skill folder there; the record is the install's own
- *    statement of which folder it was built from.
+ * 1. The install record, read from `../../install-record.json` beside
+ *    the running module. Neither installed layout has a SKILL.md,
+ *    advisors/ or manifest.json above it, so the record is the
+ *    install's own statement of which folder it was built from. Two
+ *    installers write it, one per layout:
+ *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
+ *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
+ *      writes <prefix>/releases/install-record.json;
+ *    - the 999-setup vendoring's scripts/council-runtime-install.sh
+ *      (that repo only, not this tree) installs
+ *      <prefix>/runtime/dist/council-entry.mjs and writes
+ *      <prefix>/install-record.json.
  * 2. A layout-independent walk to the nearest ancestor carrying the
  *    skill signature (SKILL.md beside advisors/ and manifest.json).
  *
@@ -139,10 +144,10 @@ function isSkillFolder(dir: string): boolean {
  * sample and the host-backed commands throw invalidInput).
  */
 export function skillRootForAssets(): string | null {
-  // Only the bundled entry (runtime/dist/<entry>) resolves this URL to
-  // <prefix>/install-record.json, where the installer writes it. From
-  // runtime/{src,dist}/cli/ it resolves to runtime/install-record.json,
-  // so there the record is found only if placed beside runtime/.
+  // From <prefix>/releases/<id>/dist/<entry> this URL is
+  // <prefix>/releases/install-record.json; from the 999 bundle
+  // <prefix>/runtime/dist/<entry> it is <prefix>/install-record.json;
+  // from runtime/{src,dist}/cli/ it is runtime/install-record.json.
   try {
     const record = JSON.parse(
       readFileSync(new URL('../../install-record.json', import.meta.url), 'utf8'),
