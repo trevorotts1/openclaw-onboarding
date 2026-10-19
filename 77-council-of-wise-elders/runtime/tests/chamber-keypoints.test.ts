@@ -171,7 +171,7 @@ test('renderer: a different session rebuilds, even when the first label is the s
   const list = aside.children[1];
   const empty = aside.children[2];
   const first = pt('CHAIR: READING YOUR QUESTION');
-  push(base('s1', [first, pt('ROUND 1: OPENING POSITIONS')]));
+  push(base('s1', [first]));
   const oldRow = list.children[0];
   push(base('s2', [first]));
   assert.equal(list.children.length, 1);
@@ -181,6 +181,23 @@ test('renderer: a different session rebuilds, even when the first label is the s
   assert.equal(empty.hidden, false);
 });
 
+test('renderer: a detail that arrives after the row is drawn shows up in place', () => {
+  const { aside, push } = boot();
+  const list = aside.children[1];
+  push(base('s1', [pt('CHAIR: FINDING THE FAULT LINES', null)]));
+  const row = list.children[0];
+  assert.equal(row.children.length, 1);
+  push(base('s1', [pt('CHAIR: FINDING THE FAULT LINES', 'x')]));
+  assert.equal(list.children.length, 1);
+  assert.equal(list.children[0], row, 'first row keeps its node identity');
+  assert.equal(row.children[1].className, 'ch-kp-detail');
+  assert.equal(row.children[1].textContent, 'x');
+  const detailNode = row.children[1];
+  push(base('s1', [pt('CHAIR: FINDING THE FAULT LINES', 'y')]));
+  assert.equal(row.children[1], detailNode);
+  assert.equal(detailNode.textContent, 'y');
+});
+
 // --------------------------------------------------------------- static
 
 test('static: no innerHTML, no URLs, no colour literals, token colours only', () => {
@@ -188,6 +205,7 @@ test('static: no innerHTML, no URLs, no colour literals, token colours only', ()
   assert.doesNotMatch(jsSource, /https?:\/\//);
   assert.doesNotMatch(cssSource, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/);
   assert.match(cssSource, /var\(--ch-ink-muted\)/);
+  assert.match(cssSource, /\.ch-kp-title\s*{[^}]*margin:\s*0 calc\(-1 \* var\(--ch-space-4\)\)[^}]*padding-inline:\s*var\(--ch-space-4\)/);
   assert.match(cssSource, /\.ch-kp-rule\s*{[^}]*flex:\s*1 1 1px/);
   assert.match(cssSource, /\.ch-kp-label\s*{[^}]*font-size:\s*11px[^}]*font-weight:\s*700/);
 });

@@ -10,7 +10,9 @@
 }
 
 .ch-kp-title {
-  margin: 0;
+  /* Bleed to the card edges so the divider runs border to border. */
+  margin: 0 calc(-1 * var(--ch-space-4));
+  padding-inline: var(--ch-space-4);
   padding-bottom: var(--ch-space-3);
   border-bottom: 1px solid var(--ch-line);
 }

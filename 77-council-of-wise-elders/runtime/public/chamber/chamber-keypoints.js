@@ -63,6 +63,24 @@
   panel.appendChild(list);
   panel.appendChild(empty);
 
+  function detailOf(point) {
+    return point && typeof point.detail === 'string' ? point.detail : '';
+  }
+
+  // Add, update or remove the detail paragraph inside an existing row.
+  function setDetail(row, detail) {
+    if (!detail) {
+      if (row.detailEl) row.item.removeChild(row.detailEl);
+      row.detailEl = null;
+    } else if (row.detailEl) {
+      row.detailEl.textContent = detail;
+    } else {
+      row.detailEl = el('p', 'ch-kp-detail', detail);
+      row.item.appendChild(row.detailEl);
+    }
+    row.detail = detail;
+  }
+
   function buildRow(point) {
     var item = el('li', 'ch-kp-item');
     var line = el('div', 'ch-kp-row');
@@ -71,32 +89,38 @@
     rule.setAttribute('aria-hidden', 'true');
     line.appendChild(rule);
     item.appendChild(line);
-    if (point && typeof point.detail === 'string' && point.detail) {
-      item.appendChild(el('p', 'ch-kp-detail', point.detail));
-    }
-    return item;
+    var row = { item: item, detailEl: null, detail: '' };
+    setDetail(row, detailOf(point));
+    return row;
   }
 
-  var rendered = [];
+  var rows = [];
   var renderedSession = null;
 
   function render(view) {
     var session = view && view.session ? view.session : null;
     var next = session && Array.isArray(session.keyPoints) ? session.keyPoints : [];
     var sessionId = session ? session.id : null;
-    var change = diff(rendered, next);
+    var change = diff(rows.map(function (r) { return r.point; }), next);
     // Every session starts with the same first label, so a new id also resets.
-    if (sessionId !== renderedSession && rendered.length > 0) change = { append: next.slice(), reset: true };
+    if (sessionId !== renderedSession && rows.length > 0) change = { append: next.slice(), reset: true };
     if (change.reset) {
       while (list.firstChild) list.removeChild(list.firstChild);
-      rendered = [];
+      rows = [];
     }
+    // Details arrive after a row is drawn: update in place, keep node identity.
+    rows.forEach(function (row, i) {
+      var detail = detailOf(next[i]);
+      if (detail !== row.detail) setDetail(row, detail);
+    });
     change.append.forEach(function (point) {
-      list.appendChild(buildRow(point));
-      rendered.push(point);
+      var row = buildRow(point);
+      row.point = point;
+      list.appendChild(row.item);
+      rows.push(row);
     });
     renderedSession = sessionId;
-    empty.hidden = rendered.length > 0;
+    empty.hidden = rows.length > 0;
   }
 
   render(null);
