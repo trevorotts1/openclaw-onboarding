@@ -65,10 +65,19 @@ open beside the artifact under review, and the review record cites
 traits by ID and names the standard file compared. Gates check
 traits, not general impressions: any trait that fails is a named
 defect in the review record, and a mockup failing M1 fails review
-outright. Deterministic gate enforcement of these traits (the
-wireframe annotation, slot-label, and brand-color checks, and the
-mockup placeholder-slot gate check) is Item 15 and is not part of
-this section; until it lands, these traits bind through review.
+outright. Deterministic enforcement landed with Item 15 and runs
+alongside review: `scripts/validate_wireframe.py` measures the
+wireframe annotation traits W1, W2, W5 and W6 against the section plan
+and the measured sheet, the slot-label trait W3 against the inventory,
+and the brand-color trait W4 from the sheet's pixels, then writes all
+six verdicts into the run record `private/wireframe-verdicts.json`,
+one entry per wireframe stage (Fix 9, task 3.6);
+`scripts/validate_mockup_slots.py` enforces the mockup placeholder-slot
+trait M1 at final-mockups. The traits still bind through review, and a
+trait-scored review must now name the standard file it compared the
+artifact against: `scripts/write_review.py` rejects a review that
+scores a wireframe or mockup trait criterion without a
+`--standard-file` that exists under `assets/visual-standards/`.
 
 Wireframe traits (a designed, annotated build spec rendered as an
 image, in the client's brand colors):

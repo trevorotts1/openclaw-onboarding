@@ -59,16 +59,24 @@ traits by their IDs (W1 to W7, M1 to M5, H1 and H2) and names the
 standard file compared. A trait that fails is recorded by name; a
 mockup with any placeholder slot fails trait M1 outright.
 
-## 999-copy parity (tracking note, not part of this change)
+## 999-copy parity
 
 This set is neutral-class material under the FIX-PLAN Item 27 parity
 machinery (`repo-integration/skill71-sync-allowlist.json`: anything
 not otherwise classified is byte-parity). The bundled set, this
 README, `ANALYSIS.md`, `manifest.json`, and the trait text in
-`references/qc-contract.md` must therefore land in the 999 copy
+`references/qc-contract.md` land in the 999 copy
 (`.claude/skills/blackceo-signature-page`) file-for-file through the
 Item 27 sync (or assembly equivalent), and parity is verified with
-`scripts/check-skill71-parity.py` after the sync. That landing rides
-assembly/batch; it is NOT done by this change, and Item 14 does not
-close on the 999 leg until the sync and the parity check are on
-record.
+`scripts/check-skill71-parity.py` after the sync.
+
+The landing has happened. Measured on 2026-10-19 before the Fix 9
+change: the installed copy carries the whole set (47 files: the 44
+images plus this README, `ANALYSIS.md` and `manifest.json`) and matched
+this tree byte-for-byte (`diff -rq`, no differences), so the earlier
+green PASS over a tree missing the 44 images is no longer true. The two
+documents this change rewrites (`this README and
+references/qc-contract.md`) reach the installed copy at the next sync;
+Fix 10 keeps the sync and the parity check in front of every later
+change, and Fix 11 adds the 44 image entries to `verify.sh` so a missing
+image fails verification instead of passing.

@@ -9,7 +9,16 @@ This is the ONLY sanctioned way to create a review file. Usage:
       --next-current-artifact '<artifact this review advances or blocks>' \
       [--artifact <rel-path>] [--author-session <session-id>] \
       [--repair-attempt <0-3>] [--automatic-failures '<json list>'] \
-      [--specific-defects '<json list>']
+      [--specific-defects '<json list>'] \
+      [--standard-file <path-under-assets/visual-standards>]
+
+A review that scores a trait criterion (`wireframe_trait_completeness` or
+`mockup_trait_fidelity`) must name the visual standard file it compared the
+artifact against, and that file must exist under
+`assets/visual-standards/` in this skill. `assets/visual-standards/README.md`
+already requires the reviewer to name the standard file compared; this
+writer now enforces it instead of trusting the note text. A review with no
+trait criterion may cite a standard file or omit it.
 
 --scores is a JSON object mapping criterion name to {"score": number,
 "note": string}. Every note must be at least 40 characters of real evidence
@@ -62,6 +71,8 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 SESSION_ENV_VARS = ("OPENCLAW_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID")
 MIN_NOTE_CHARS = 40
 UNKNOWN_SESSION = "UNKNOWN"
+STANDARD_SET_DIR = "assets/visual-standards"
+TRAIT_CRITERIA = ("wireframe_trait_completeness", "mockup_trait_fidelity")
 FILE_SUFFIXES = ("json", "md", "html", "png", "txt", "pdf", "jpg", "jpeg")
 
 
@@ -257,6 +268,11 @@ def main():
     parser.add_argument("--specific-defects", default="[]",
                         help="JSON list of named defects; required non-empty "
                              "when the verdict is fail (SOP evidentiary field)")
+    parser.add_argument("--standard-file", default=None,
+                        help="the visual standard file this review compared the "
+                             "artifact against, relative to the skill root. "
+                             "Required when a trait criterion is scored; must "
+                             "exist under " + STANDARD_SET_DIR + "/")
     args = parser.parse_args()
 
     run_dir = args.run_dir.resolve()
@@ -318,6 +334,35 @@ def main():
         content_errors.append(
             "a fail verdict requires --specific-defects naming the defects "
             "found (SOP evidentiary field)")
+    # Fix 9 (task 3.6): a trait-scored review names the standard file it
+    # was compared against, and the file must actually exist in the
+    # bundled set. The note text is not trusted to carry the citation.
+    standard_file = None
+    trait_scored = [c for c in sorted(criteria) if c in TRAIT_CRITERIA]
+    cited = (args.standard_file or "").strip()
+    if trait_scored and not cited:
+        content_errors.append(
+            "a trait-scored review (" + ", ".join(trait_scored) + ") must "
+            "name the standard file it was compared against with "
+            "--standard-file <path under " + STANDARD_SET_DIR + "> "
+            "(assets/visual-standards/README.md, 'How reviewers use this set')")
+    elif cited:
+        candidate = (SKILL_ROOT / cited)
+        try:
+            resolved = candidate.resolve()
+            standard_root = (SKILL_ROOT / STANDARD_SET_DIR).resolve()
+            resolved.relative_to(standard_root)
+        except (ValueError, OSError):
+            content_errors.append(
+                "--standard-file " + repr(cited) + " is not a file under "
+                + STANDARD_SET_DIR + "/; a review cites the bundled standard set")
+        else:
+            if not resolved.is_file():
+                content_errors.append(
+                    "--standard-file " + repr(cited) + " does not exist under "
+                    + STANDARD_SET_DIR + "/")
+            else:
+                standard_file = str(resolved.relative_to(SKILL_ROOT.resolve()))
     if content_errors:
         print("FAIL")
         for line in content_errors:
@@ -369,6 +414,11 @@ def main():
         "next_current_artifact": next_current_artifact,
         "independent_review": independent_review,
     }
+    # The citation is recorded only when it was made, so the Review
+    # Receipt v2 field set is unchanged for reviews with no trait
+    # criterion (tests/test_review_v2.py pins that exact set).
+    if standard_file:
+        review["standard_file"] = standard_file
 
     out_dir = run_dir / "private" / "reviews" / args.stage
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -388,6 +438,8 @@ def main():
     print(f"  artifact: {artifact_rel} sha256 {review['artifact_sha256'][:12]}...")
     print(f"  reviewer_session: {reviewer_session}  author_session: {author_session}")
     print(f"  independent_review: {str(independent_review).lower()}")
+    if standard_file:
+        print(f"  standard_file: {standard_file}")
     return 0
 
 
