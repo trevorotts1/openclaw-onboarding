@@ -345,6 +345,35 @@ class PublicGhlAdapter:
                         "idempotency_key": key.value,
                     },
                 )
+            # A fresh key must not walk past an unreconciled write: block on
+            # the canonical request fingerprint too, same operation and tenant.
+            for held in self._pending.values():
+                if (
+                    held.operation_id == operation_id
+                    and held.tenant.location_id == tenant.location_id
+                    and held.request_fingerprint == fingerprint_box["value"]
+                ):
+                    return finish(
+                        Status.denied,
+                        error={
+                            "rule": "unreconciled_intent_exists",
+                            "receipt_id": held.receipt_id,
+                            "pending": len(self._pending),
+                        },
+                        extra={"refused_before_transport": True},
+                    )
+            if len(self._pending) >= _PENDING_LIMIT:
+                # Never evict an unreconciled write to make room: reconciliation
+                # is the only way space is freed, so refuse before transport.
+                return finish(
+                    Status.unavailable,
+                    error={
+                        "rule": "reconciliation_store_full",
+                        "pending": len(self._pending),
+                        "limit": _PENDING_LIMIT,
+                    },
+                    extra={"refused_before_transport": True},
+                )
             seen = self._ledger.lookup(key.value)
             if seen is not None and seen != fingerprint_box["value"]:
                 return finish(
@@ -793,9 +822,16 @@ class PublicGhlAdapter:
         )
 
     def _remember(self, pending: _PendingWrite) -> None:
-        if len(self._pending) >= _PENDING_LIMIT:
-            oldest = next(iter(self._pending))
-            self._forget(self._pending[oldest])
+        # Reconciliation is the only way space is freed: an unreconciled write
+        # is an unknown-outcome write, and forgetting it would let a later call
+        # double-write.  The caller refuses before transport when the bound is
+        # reached, so this is defensive, never a silent eviction.
+        if len(self._pending) >= _PENDING_LIMIT:  # pragma: no cover - guarded
+            raise ContractViolation(
+                "reconciliation_store_full",
+                operation_id=pending.operation_id,
+                detail={"pending": len(self._pending)},
+            )
         self._pending[pending.receipt_id] = pending
         if pending.idempotency_key:
             self._pending_by_key[
