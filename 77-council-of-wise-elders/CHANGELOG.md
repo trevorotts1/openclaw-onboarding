@@ -1,6 +1,19 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.23: the real backend is composed (W22-U001) and one composition binds the durable service (W25-U001 Lane E)
+## v1.0.24: the runtime test collection states the platform it actually runs on
+
+- `runtime/tests/core.test.ts` asserted the XDG data-directory default unconditionally, so it failed on macOS and Windows where `src/cli/paths.ts` documents and implements a per-platform default. The test now asserts the contract for the running platform: `~/Library/Application Support/BlackCEO/WiseElders` on darwin (and that `XDG_DATA_HOME` does not steer it), `%LOCALAPPDATA%\BlackCEO\WiseElders` on win32, XDG elsewhere.
+- `runtime/tests/cli.test.ts` ran a bare `doctor --json` and asserted the not-ready contract, which is false on a machine with configured harness roots. The case now injects `createLocalHost({ ...opts, discoverRoutes: false })`, pinning the not-ready contract instead of per-machine state. Real route composition stays covered by the rp0461 cases in `cli-route-composition.test.ts`.
+- `runtime/tests/context-integration.test.ts` and `runtime/tests/export-adapter.test.ts` read the real CWE-011 export package, which is external data that is not in this repository and must never be fabricated. When it is genuinely absent they now SKIP naming the exact missing path (`CWE011_EXPORTS_DIR` can point at a real package) instead of erroring or passing on absent data. No assertion was weakened or deleted: the real-data assertions still run whenever the package is present.
+- QC: `npx tsc --noEmit -p tsconfig.json` exit 0; `node scripts/doctor.mjs` PASS; `node scripts/verify-cohort-parity.mjs` PASS; manifest and archive regenerated with `scripts/build-bundles.mjs`.
+
+## v1.0.23: the installable tarball carries the chamber assets (W25-U001 packaging)
+
+- `runtime/package.json` limited npm's `files` allowlist to `["dist"]`, so an install from a built tarball carried no `public/chamber` and the front door answered `GET /chamber/` with 404. The allowlist is now `["dist","public/chamber"]`, the only asset tree `front-door.ts` resolves.
+- `runtime/tests/package-contents.test.ts` asserts that allowlist, so dropping `public/chamber` again fails the suite instead of shipping an archive that cannot serve the chamber.
+- `runtime/public/chamber/RECEIPT.md` no longer claims `files` is `["dist"]` or that shipping through `npm pack` remains a separate release step; the receipt now states the measured allowlist and the pack/install/probe proof.
+
+## v1.0.22: the real backend is composed (W22-U001) and one composition binds the durable service (W25-U001 Lane E)
 
 ### One composition binds the durable service (W25-U001 Lane E)
 
@@ -21,6 +34,7 @@
 - Readiness observations now cite real state: `store` = 18/18 canonical tables present with journal and outbox bound; `route` = the selected route configured and its dispatch port bound; `worker` = supervisor running, poll generation observed and the durable budget ledger readable. `ui`, `discovery`, `executable` and `packs` are unchanged from W20. A bare `CouncilFrontDoor` keeps the byte-identical unbound shape.
 - The four deliberation host bindings (material catalog, trusted-principal resolver, transport resolver, verified route budget) stay honestly unbound with their exact file and line recorded in the unit receipt; `DeliberationService.readiness()` therefore reports not-ready and no completed deliberation or live advisor turn is claimed. `GET /api/council/sessions/<id>/events` still answers `EVENT_STREAM_ADAPTER_NOT_BOUND`; the event stream is W21's unit.
 - Advisors and book-persona mappings are byte-identical to the base commit; `front-door.ts`, `readiness.ts`, `sessions.ts`, `landing.test.ts` and `service.test.ts` are untouched.
+
 ## v1.0.21: a real event-stream adapter injection point, and a falsifiable session route
 
 - The merged service answered `GET /api/council/sessions/<id>/events` with an unconditional `501 EVENT_STREAM_ADAPTER_NOT_BOUND`, and `GET /council/<id>` with `200 ui: "not_bundled"` for ANY id including `does-not-exist-123`, which made an earlier "real session URL" proof unfalsifiable.
