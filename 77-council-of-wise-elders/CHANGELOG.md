@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.19: the URL opens the Council chamber, not a status report
+
+- The merged service served `GET /` as the developer status page while the packaged chamber sat unreferenced at `runtime/public/chamber/` — no link on that page reached it, so the URL Trevor opens showed identity hashes, six `READINESS_PROBE_NOT_BOUND` layers and three loopback links that are dead on a phone.
+- `runtime/src/service/front-door.ts`: when the packaged chamber entry page resolves (`public/chamber/index.html`), `GET /` answers `302` with the relative `Location: /chamber/` — never an absolute loopback URL. The chamber itself is untouched; `/chamber/` still serves `index.html` with no `UI_NOT_BUNDLED` text.
+- The previous diagnostics page moves unchanged to `GET /status`: same identity table, same readiness table, same `UI_NOT_BUNDLED` and `EVENT_STREAM_ADAPTER_NOT_BOUND` notices, same routes list. Nothing is lost; the report is simply no longer the front door.
+- Without the packaged assets the root keeps the honest status page, so a build that has not shipped the chamber never breaks: `/` answers 200 diagnostics and `/chamber/` still falls through to the unchanged `SERVICE_ROUTE_NOT_FOUND` 404.
+- Every other route is unchanged: `/api/council/service/identity` 200, `/council/<id>` 200 with `ui: "not_bundled"`, `/api/council/sessions/<id>/events` 501 `EVENT_STREAM_ADAPTER_NOT_BOUND`, unknown paths 404. The event stream remains unbound; that is the next unit's job and is not claimed here.
+- `runtime/src/service/landing.test.ts` asserts the new contract: the 302 and its relative `Location`, `/chamber/` 200 without the diagnostics banner, `/status` 200 carrying the full diagnostics, the no-assets fallback (asset directory temporarily parked and restored inside the test), the byte-identical existing routes, and the unchanged unknown-path 404.
+
 ## v1.0.18: the Council chamber itself — WER-021 full packaging
 
 - The merged service served `GET /` as a status report while the chamber did not exist: `GET /chamber/` returned `404 SERVICE_ROUTE_NOT_FOUND`, so an authenticated phone on the public origin landed on a report page instead of the Council. This entry ships the chamber.
