@@ -103,8 +103,68 @@ COPY_PADDING = (
     "Render the sheet flat",
 )
 ABS_PATH = re.compile(r"(?:/Users|/Volumes)/[^\s`'\"]+")
-REF_NAME = re.compile(
-    r"\b(?:chatgpt-(?:mockup|wireframe)-\d+|set-for-life-[a-z0-9-]+)\.png\b", re.I)
+# Cross-client names come from the bundled visual-standards manifest, never
+# from one hardcoded client: any basename token that is not generic names a
+# project this run must not talk about.
+GENERIC_REF_TOKENS = {
+    "chatgpt", "wireframe", "wireframes", "mockup", "mockups", "desktop",
+    "mobile", "tablet", "hybrid", "board", "mashup", "slice", "part",
+    "full", "page", "sheet", "reference", "png", "jpg", "jpeg",
+}
+MANIFEST = SKILL_ROOT / "assets" / "visual-standards" / "manifest.json"
+
+def _manifest_filenames():
+    try:
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    names = []
+    for entry in data.get("files") or []:
+        name = str((entry or {}).get("file") or "").rsplit("/", 1)[-1].strip()
+        if name:
+            names.append(name)
+    return names
+
+def cross_client_names():
+    """Project names other than the current run's, derived generically from
+    the visual-standards manifest basenames (no hardcoded client)."""
+    found = set()
+    for name in _manifest_filenames():
+        tokens = []
+        for token in re.split(r"[-_.]+", name.rsplit(".", 1)[0].lower()):
+            token = re.sub(r"\d+$", "", token)
+            if not token or token.isdigit() or token in GENERIC_REF_TOKENS:
+                continue
+            tokens.append(token)
+        if tokens:
+            found.add(" ".join(tokens))
+    return sorted(found, key=len, reverse=True)
+
+def _cross_client_regex():
+    names = cross_client_names()
+    if not names:
+        return None
+    parts = [r"\b" + r"[\s-]+".join(re.escape(t) for t in n.split()) + r"\b"
+             for n in names]
+    return re.compile("|".join(parts), re.I)
+
+def _ref_filename_regex():
+    names = _manifest_filenames()
+    if not names:
+        return None
+    return re.compile(r"\b(?:" + "|".join(re.escape(n) for n in names) + r")\b", re.I)
+
+REF_NAME = _ref_filename_regex()
+CROSS_CLIENT = _cross_client_regex()
+# A full-page dimension pair (WxH with x, X or a multiplication sign) is
+# reference provenance, never a target: every frame is one section slice.
+DIM_PAIR = re.compile(r"\b\d{2,5}\s*[xX\u00d7]\s*\d{2,5}\b")
+# "MD as Tier H", "MD (...) is classified Tier H": a tier verdict on a
+# named reference sheet, which the model must not see.
+TIER_CLASS = re.compile(r"\b[A-Z]{2,3}\b[^.!?]{0,60}\bTier\s+[A-Z]\b")
+SENTENCE_SPLIT = re.compile(r"((?<=[.!?])\s+)")
+LEFTOVER = re.compile(r"\{[a-z_]+\}")
+DOUBLE_BRACE = re.compile(r"\{\{(\w+)\}\}")
 LEAK_LINE = re.compile(
     r"(?i)(/Users/|/Volumes/|\bSHA-256\b|\bBundled path\b|\bReviewed download\b|"
     r"\bEvidence copy\b|Drive folder|crops saved in|Measured with PIL|\balias M4\b|"
@@ -194,13 +254,30 @@ def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
     return RATIO_DEFAULT.get(stage, "3:4")
 
 
+def _sentence_leaks(sentence: str) -> bool:
+    if CROSS_CLIENT and CROSS_CLIENT.search(sentence):
+        return True
+    if DIM_PAIR.search(sentence):
+        return True
+    if TIER_CLASS.search(sentence):
+        return True
+    return False
+
+def _line_leaks(line: str) -> bool:
+    if CROSS_CLIENT and CROSS_CLIENT.search(line):
+        return True
+    return bool(DIM_PAIR.search(line))
+
 def sanitize_prompt(text: str) -> str:
     """Strip provenance a model must not see: local paths, reference
-    filenames, hashes, and the reference raster's absolute pixel size.
+    filenames, hashes, the reference raster's absolute pixel size,
+    cross-client project names, tier verdicts on a reference sheet, and
+    full-page dimension pairs.
 
-    The measured 724x2172 raster was being copied verbatim into every
-    prompt; the model reproduced that 1:3 canvas and left blank bands.
-    Design ratios and tokens stay; the provenance disappears.
+    The cross-client names are derived generically from the bundled
+    visual-standards manifest basenames, so no single client is hardcoded
+    and every reference sheet in the manifest is covered. Current-client
+    content (names, tokens, rules) is left untouched.
     """
     kept = []
     for line in text.splitlines():
@@ -209,26 +286,85 @@ def sanitize_prompt(text: str) -> str:
             continue
         if stripped.startswith(("File:", "Selection:", "Unit:", "Builder:", "Date:")):
             continue
+        parts = SENTENCE_SPLIT.split(line)
+        line = "".join(part for part in parts if not _sentence_leaks(part)).strip()
+        if not line or _line_leaks(line):
+            continue
         kept.append(line)
-    cleaned = REF_NAME.sub("the reference sheet", "\n".join(kept))
+    cleaned = "\n".join(kept)
+    if REF_NAME:
+        cleaned = REF_NAME.sub("the reference sheet", cleaned)
     cleaned = ABS_PATH.sub("the reference sheet", cleaned)
     cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
+def prompt_budget(model: str | None):
+    """The model's recorded band: hard maximum, 80% floor, 95% target.
 
-def prompt_cap(model: str | None):
+    The policy file is the authority; a model with no recorded maximum has
+    no band (None), exactly like the skill's validator.
+    """
     try:
         policy = json.loads((SKILL_ROOT / "references" / "prompt-budget-policy.json")
                             .read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    band = policy.get("band") or {}
+    try:
+        floor_pct = int(band.get("floor_pct") or 80)
+    except (TypeError, ValueError):
+        floor_pct = 80
+    target_pct = 95
+    match = re.match(r"\s*(\d+)", str(band.get("target_pct") or ""))
+    if match:
+        target_pct = int(match.group(1))
     for entry in policy.get("models") or []:
         match = entry.get("match")
-        if model and match and str(match) in model and entry.get("unit") == "chars":
-            return entry.get("max_chars")
+        if not (model and match and str(match) in model and entry.get("unit") == "chars"):
+            continue
+        try:
+            cap = int(entry.get("max_chars"))
+        except (TypeError, ValueError):
+            return None
+        return {"max_chars": cap,
+                "floor_chars": cap * floor_pct // 100,
+                "target_chars": cap * target_pct // 100}
     return None
 
+def prompt_cap(model: str | None):
+    """Back-compat alias: the model's hard maximum, or None."""
+    budget = prompt_budget(model)
+    return budget["max_chars"] if budget else None
+
+def _cta_label(value) -> str:
+    if isinstance(value, dict):
+        value = value.get("label")
+    return str(value or "").strip().rstrip(".")
+
+def copy_source_ctas(run_dir: Path, request: dict) -> dict:
+    """Per-section CTA labels from the run's own copy source.
+
+    The request builder can emit cta: null on every section (the real
+    final-mockups request does), so the copy source next to the request is
+    the authority: <run_dir>/copy.json, or the request's copy_source path.
+    """
+    name = str(request.get("copy_source") or "copy.json")
+    path = Path(name)
+    if not path.is_absolute():
+        path = run_dir / path
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for section in data.get("sections") or []:
+        if not isinstance(section, dict) or not section.get("id"):
+            continue
+        label = _cta_label(section.get("cta"))
+        if label:
+            out[str(section["id"])] = label
+    return out
 
 def copy_contract(section: dict) -> str:
     """The verbatim copy goes FIRST, so attention cannot drift to prose."""
@@ -246,11 +382,15 @@ def copy_contract(section: dict) -> str:
         raise ExecutorError(
             f"section {label}: verbatim copy ends mid-sentence "
             f"({copy[-56:]!r}); rebuild the request with the full section copy")
-    cta = str(section.get("cta") or "").strip()
+    cta = _cta_label(section.get("cta")) or _cta_label(section.get("_copy_source_cta"))
     if not cta:
         match = re.search(r"\bCTA:\s*([^\n]+)", copy)
         if match:
             cta = match.group(1).strip().rstrip(".")
+    if not cta and section.get("cta_required"):
+        raise ExecutorError(
+            f"section {label}: the stage contract requires a CTA label and none "
+            "resolved from the section payload or the run's copy source")
     lines = ["VERBATIM COPY — print exactly these strings, character for "
              "character. Do not paraphrase, shorten, reorder, or add text. "
              "Spell every word exactly: do not invent, drop, double, or substitute "
@@ -259,7 +399,6 @@ def copy_contract(section: dict) -> str:
     if cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
-
 
 def negative_block() -> str:
     """The skill's own defect-class negative block, applied at the wire."""
@@ -314,15 +453,52 @@ def load_request(run_dir: Path, name: str) -> dict:
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         raise ExecutorError("production request needs a non-empty 'sections' array")
+    ctas = copy_source_ctas(run_dir, data)
+    required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
         s.setdefault("section_name", s["section_id"])
+        label = ctas.get(str(s["section_id"]))
+        if label:
+            s.setdefault("_copy_source_cta", label)
+        if required:
+            s.setdefault("cta_required", True)
     return data
 
 
+def render_template(template: str, values: dict, stage: str) -> str:
+    """Render one request template, then fail closed on any leftover token.
+
+    build_requests.py escapes literal braces as {{section_number}} so the
+    request stays a JSON-safe format string. str.format() alone turns those
+    into {section_number} and the placeholder reaches the model; substitute
+    the double-brace form first, then refuse if anything token-shaped is
+    still in the rendered body, before any provider call.
+    """
+    missing = sorted({m.group(1) for m in DOUBLE_BRACE.finditer(template)
+                      if m.group(1) not in values})
+    if missing:
+        raise ExecutorError(
+            f"stage_prompts[{stage!r}] has an unknown placeholder: {missing[0]!r}")
+    protected = DOUBLE_BRACE.sub(
+        lambda m: str(values[m.group(1)]).replace("{", "{{").replace("}", "}}"),
+        template)
+    try:
+        body = protected.format(**values)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ExecutorError(
+            f"stage_prompts[{stage!r}] has an unknown placeholder: {exc}")
+    leftover = LEFTOVER.search(body)
+    if leftover:
+        raise ExecutorError(
+            f"stage_prompts[{stage!r}] still carries the placeholder "
+            f"{leftover.group(0)!r} after rendering; refusing before any provider call")
+    return body
+
 def stage_prompt(stage: str, section: dict, index: int, width: int,
-                 request: dict, ratio: str | None = None) -> str:
+                 request: dict, ratio: str | None = None,
+                 with_sizes: bool = False):
     slots = section.get("slots") or []
     slot_words = "; ".join(
         f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
@@ -339,11 +515,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     }
     template = (request.get("stage_prompts") or {}).get(stage)
     if template:
-        try:
-            body = template.format(**values)
-        except (KeyError, IndexError) as exc:
-            raise ExecutorError(
-                f"stage_prompts[{stage!r}] has an unknown placeholder: {exc}")
+        body = render_template(template, values, stage)
     else:
         body = (f"{stage} build spec, section {index} '{values['section_name']}' "
                 f"at {width}px page width. Copy: {values['copy']}. "
@@ -352,17 +524,51 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = sanitize_prompt(body)
     if copy and copy in body:
         body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
-    blocks = [b for b in (copy_contract(section),
-                          frame_contract(width, ratio or ""),
-                          negative_block()) if b]
+    copy_block = copy_contract(section)
+    frame_block = frame_contract(width, ratio or "")
+    neg_block = negative_block()
+    blocks = [b for b in (copy_block, frame_block, neg_block) if b]
+    budget = prompt_budget(request.get("model"))
+    sizes = {
+        "chars": 0,
+        "copy_chars": len(copy_block),
+        "contract_chars": len(frame_block) + len(neg_block),
+        "prose_chars": len(body),
+        "floor_chars": budget["floor_chars"] if budget else None,
+        "target_chars": budget["target_chars"] if budget else None,
+        "max_chars": budget["max_chars"] if budget else None,
+    }
+    if budget:
+        # Per-section budget: copy and the contract blocks are reserved
+        # first; design-rules prose may only use what is left.
+        reserved = len("\n\n".join(blocks))
+        prose_budget = budget["max_chars"] - reserved
+        if prose_budget <= 0:
+            raise ExecutorError(
+                f"{stage} section {index}: the copy and contract blocks alone are "
+                f"{reserved} chars, over the {budget['max_chars']}-char model maximum; "
+                "cut design prose, never the verbatim copy")
+        if len(body) > prose_budget:
+            raise ExecutorError(
+                f"{stage} section {index}: design prose is {len(body)} chars, over its "
+                f"{prose_budget}-char section budget ({budget['max_chars']}-char model "
+                f"maximum minus {reserved} chars reserved for copy and contract); "
+                "cut design prose, never the verbatim copy")
     prompt = "\n\n".join(blocks + [body]).strip()
-    cap = prompt_cap(request.get("model"))
-    if cap and len(prompt) > cap:
-        raise ExecutorError(
-            f"{stage} section {index}: prompt is {len(prompt)} chars, over the "
-            f"{cap}-char model maximum; cut design prose, never the verbatim copy")
-    return prompt
-
+    sizes["chars"] = len(prompt)
+    if budget:
+        deficit = budget["floor_chars"] - len(prompt)
+        if len(prompt) > budget["max_chars"]:
+            raise ExecutorError(
+                f"{stage} section {index}: prompt is {len(prompt)} chars, over the "
+                f"{budget['max_chars']}-char model maximum; cut design prose, never "
+                "the verbatim copy")
+        if deficit > 0:
+            print(f"WARN prompt_budget {stage} section {index}: {len(prompt)} chars, "
+                  f"{deficit} below the {budget['floor_chars']}-char floor "
+                  f"({budget['target_chars']}-char target); add genuine specification",
+                  file=sys.stderr)
+    return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
     refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
@@ -527,13 +733,15 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
             out = run_dir / stage / template.format(n=index)
             ratio = target_ratio(stage, template, section, run_dir, index)
             refs = prior_slices(stage, run_dir, index, template)
+            prompt, prompt_sizes = stage_prompt(
+                stage, section, index, width, request, ratio, with_sizes=True)
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
                 "label": f"{stage} section {index:02d} {width}px",
                 "ratio": ratio,
                 "references": [str(p) for p in refs],
-                "prompt": stage_prompt(stage, section, index, width, request, ratio),
+                "prompt": prompt, "prompt_sizes": prompt_sizes,
             }
             result = provider.generate(job, request)
             actual = png_size(out)
@@ -546,6 +754,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "actual_pixels": list(actual) if actual else None,
                 "sha256": sha256(out),
                 "prompt_sha256": hashlib.sha256(job["prompt"].encode("utf-8")).hexdigest(),
+                "prompt_sizes": job.get("prompt_sizes"),
                 "model": result.get("model"),
                 "provider": result.get("provider"),
                 "mode": result.get("mode"),
@@ -658,16 +867,29 @@ def main(argv=None) -> int:
     try:
         if args.preflight:
             request = load_request(run_dir, args.request)
+            refused = 0
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
                     for template, width, _height in LAYOUT[stage]:
-                        ratio = target_ratio(stage, template, section, run_dir, index)
-                        prompt = stage_prompt(stage, section, index, width,
-                                              request, ratio)
-                        refs = prior_slices(stage, run_dir, index, template)
-                        print(f"PREFLIGHT {stage} {template.format(n=index)} "
-                              f"ratio={ratio} chars={len(prompt)} refs={len(refs)}")
-            return 0
+                        name = template.format(n=index)
+                        try:
+                            ratio = target_ratio(stage, template, section, run_dir, index)
+                            prompt, sizes = stage_prompt(
+                                stage, section, index, width, request, ratio,
+                                with_sizes=True)
+                            refs = prior_slices(stage, run_dir, index, template)
+                        except ExecutorError as exc:
+                            refused += 1
+                            print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
+                            continue
+                        print(f"PREFLIGHT {stage} {name} ratio={ratio} "
+                              f"chars={sizes['chars']} copy={sizes['copy_chars']} "
+                              f"contract={sizes['contract_chars']} "
+                              f"prose={sizes['prose_chars']} "
+                              f"floor={sizes['floor_chars']} "
+                              f"target={sizes['target_chars']} "
+                              f"max={sizes['max_chars']} refs={len(refs)}")
+            return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:
             request = load_request(run_dir, args.request) if (run_dir / args.request).is_file() else {}

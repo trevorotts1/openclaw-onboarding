@@ -10,7 +10,10 @@ Pins the four source-level repairs:
   - each job sees only its own section's earlier slices, and the
     requested ratio is the pixel-mate's, not one 3:4 for every part.
 """
+import contextlib
 import importlib.util
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -84,6 +87,102 @@ class PromptContractTests(unittest.TestCase):
             out = Path(tmp) / "slice.png"
             exe.stub_png(out, 390, 520, "size")
             self.assertEqual(exe.png_size(out), (390, 520))
+
+
+class WireRepairRoundThreeTests(unittest.TestCase):
+    """Attempt-3 contract: placeholders, CTA recovery, leaks, budget band."""
+
+    NO_CTA = {"section_id": "S02", "section_name": "Problem",
+              "copy": "Every hour goes to the business.",
+              "slots": [{"slot_id": "IMG-002", "aspect_ratio": "4:3",
+                         "art_direction": "Desk detail."}]}
+
+    def test_double_brace_template_renders_clean(self):
+        request = {"model": "stub",
+                   "stage_prompts": {"visual-mockup":
+                       "{{section_name}} section {{section_number}} at {width}px. "
+                       "{copy} {slots}"}}
+        prompt = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
+        self.assertIn("Hero section 1 at 1440px", prompt)
+        self.assertNotIn("{section_name}", prompt)
+        self.assertNotIn("{section_number}", prompt)
+
+    def test_genuine_leftover_placeholder_refuses(self):
+        request = {"model": "stub", "style": "warm {layout_tokens}",
+                   "stage_prompts": {"visual-mockup": "{{section_name}} {style}"}}
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
+        self.assertIn("placeholder", str(ctx.exception))
+        self.assertIn("before any provider call", str(ctx.exception))
+
+    def test_cta_accepted_from_section_payload_dict(self):
+        section = dict(self.NO_CTA, cta={"label": "SHOW ME THE SYSTEM",
+                                         "microcopy": "45 minutes"})
+        prompt = exe.stage_prompt("visual-mockup", section, 2, 1440,
+                                  {"model": "stub"}, "4:3")
+        self.assertIn('CTA LABEL — print exactly: "SHOW ME THE SYSTEM"', prompt)
+
+    def test_cta_resolves_from_the_run_copy_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "copy.json").write_text(json.dumps({"sections": [
+                {"id": "S01", "cta": {"label": "SAVE MY SEAT"}},
+                {"id": "S02", "headline": "No button here"}]}), encoding="utf-8")
+            (run / "production-request.json").write_text(json.dumps({
+                "model": "stub", "sections": [
+                    {"section_id": "S01", "section_name": "Hero",
+                     "copy": "You’re doing every job.", "slots": []}]}), encoding="utf-8")
+            request = exe.load_request(run, "production-request.json")
+            prompt = exe.stage_prompt("final-mockups", request["sections"][0], 1,
+                                      1440, request, "3:4")
+            self.assertIn('CTA LABEL — print exactly: "SAVE MY SEAT"', prompt)
+
+    def test_cta_required_without_a_source_refuses_by_section(self):
+        section = {"section_id": "S09", "section_name": "No CTA",
+                   "copy": "Copy with no button.", "slots": [],
+                   "cta_required": True}
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.stage_prompt("final-mockups", section, 9, 1440, {"model": "stub"}, "3:4")
+        self.assertIn("S09", str(ctx.exception))
+        self.assertIn("CTA", str(ctx.exception))
+
+    def test_cross_client_and_dimension_leaks_removed(self):
+        template = (
+            "Design system measured.\n"
+            "- Excluded: the Set for Life desktop mockup (MD, 1440×16723). "
+            "The prior review classifies MD as Tier H (flat, sparse).\n"
+            "MD (Set for Life desktop mockup) is classified Tier H by the prior review.\n"
+            "The page canvas is 1440x16736 and the reference is 724 × 2172.\n"
+            "Keep the BlackCEO gold hairline rules and the 1440px frame.\n"
+            "{copy} {slots}")
+        request = {"model": "stub", "stage_prompts": {"visual-mockup": template}}
+        prompt = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
+        for leak in ("Set for Life", "Tier H", "1440×16723", "1440x16736",
+                     "724 × 2172", "MD ("):
+            self.assertNotIn(leak, prompt)
+        self.assertIn("BlackCEO gold hairline", prompt)
+        self.assertIn("1440px frame", prompt)
+
+    def test_below_floor_warns_and_names_the_deficit(self):
+        request = {"model": "gpt-image-2-5-sunburst",
+                   "stage_prompts": {"visual-mockup": "{copy}"}}
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            prompt = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
+        self.assertIn("below the 16000-char floor", stderr.getvalue())
+        self.assertIn("chars", stderr.getvalue())
+        self.assertTrue(prompt)
+
+    def test_design_prose_section_budget_refuses(self):
+        filler = "Detailed rule. " * 1400
+        request = {"model": "gpt-image-2-5-sunburst",
+                   "stage_prompts": {"visual-mockup": filler + "{copy} {slots}"}}
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
+        message = str(ctx.exception)
+        self.assertIn("design prose", message)
+        self.assertIn("section budget", message)
+        self.assertIn("20000", message)
 
 
 if __name__ == "__main__":

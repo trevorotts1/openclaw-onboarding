@@ -69,13 +69,19 @@ composes and checks them with no provider call and no file write.
    section at once, and its ratio is derived from its pixel-mate and snapped to
    the route's ratio enum (`RATIO_ENUM`), not one fixed 3:4 for all parts.
 
-The record carries `requested_ratio` and `actual_pixels`; a delivered image
-more than 2% off the requested ratio is recorded as `geometry_mismatch` and
-printed as a named warning.
+Canvas geometry is per-image. `target_ratio()` derives each job's ratio from
+its pixel-mate (or the section's slot), and the record carries
+`requested_ratio` and `actual_pixels`; a delivered image more than 2% off the
+requested ratio is recorded as `geometry_mismatch` and printed as a named
+warning.
+
+The assembly scripts `stitch_sections.py` and `build_hybrid_board.py` are
+unchanged by this wire: they were already content-height. No assembly-canvas
+fix is claimed here or in this change's history.
 
 ## Composition
 
 `stitch_sections.py` (wireframe full-page PNG) and `build_hybrid_board.py` (mockup board) are
-the repo's own pinned composers. The executor runs them only in `kie` mode and only when their
-own input records exist; both refuse to compose from inputs that do not pass their validation.
-Stub mode never composes: a placeholder is not an approved input.
+the repo's own pinned composers, unchanged by this wire. The executor runs them only in `kie`
+mode and only when their own input records exist; both refuse to compose from inputs that do
+not pass their validation. Stub mode never composes: a placeholder is not an approved input.
