@@ -1,3 +1,11 @@
+## [v2.1.19] - 2026-10-19 - version bump above main-carried v2.1.18
+
+GHL-177. Main now carries v2.1.18, so this branch re-bumps one patch above it
+to satisfy `G3 — skill content change requires skill-version.txt bump`.
+Markers only; no code change.
+
+- skill-version.txt, SKILL.md frontmatter and this CHANGELOG agree on v2.1.19.
+
 ## [v2.1.18] - 2026-10-19 - safe dotenv loader
 
 - caf wrapper parses dotenv data instead of executing it with `source`
@@ -11,6 +19,29 @@
 - credential precedence and quoted-value behavior unchanged
 
 # Changelog — convert-and-flow-operator (Skill 44)
+
+## [2.1.18] - 2026-10-19 - fix(ghl): bind the V4 route/enable probe to the call tenant
+
+GHL-168. The independent W18 QC found the V4 route/enable probe was
+tenant-unbound: a fresh adapter denied every surface admitted by a capability
+record, then flipped to enabled after ONE tenant-scoped read. Capability
+depended on call order.
+
+- `WorkflowV4Adapter.capability()` and `_enabled()` now take the call tenant and
+  pass it to `PublicGhlAdapter.capability(..., tenant=...)`. An unbound probe
+  answers default-deny; it never borrows a gate an earlier call happened to
+  load. The four write surfaces and the disabled receipt use the call tenant.
+- `workflow_route()` and `CampaignBuilder.route_for()` pass the tenant, and the
+  `workflows get|export|update` CLI verbs pass their location.
+- F6 recorded, not guessed: `workflows.list` declares v3 while the recorded live
+  200 used `2021-07-28` (live ledger line 759). The row is unchanged and the
+  discrepancy is named blocker `B-WORKFLOWS-LIST-VERSION`
+  (`evidence/W23/f6-workflows-list-version.md`); settling it needs one
+  authorized live v3 call.
+- Tests: `tests/test_workflow_v4_tenant_binding.py` (fresh-adapter enablement,
+  foreign-tenant denial, order independence, unbound deny, F6 record).
+- skill-version v2.1.16 -> v2.1.18. Main already carried v2.1.17 from GHL-166
+  (PR #2315), so this change re-bumps above it to satisfy G3.
 
 ## [2.1.6] - 2026-10-14 - docs(skill44): Consumers section states verified handoffs only
 
