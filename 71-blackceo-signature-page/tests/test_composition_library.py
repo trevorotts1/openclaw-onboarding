@@ -662,7 +662,9 @@ class BuiltPageTests(unittest.TestCase):
         beige.putdata([(228 + o, 220 + o, 206 + o) for o in (rng.randint(0, 6) for _ in range(400 * 300))])
         cls.field_beige = _png(cls.tmp / "field-beige.png", beige)
         cls.pw = sync_playwright().start()
-        cls.browser = cls.pw.chromium.launch()
+        # managed pattern the agent-browser guard requires: persistent context, headless
+        cls.browser = cls.pw.chromium.launch_persistent_context(
+            str(cls.tmp / "profile"), headless=True, viewport={"width": 1200, "height": 800})
 
     @classmethod
     def tearDownClass(cls):
@@ -677,7 +679,7 @@ class BuiltPageTests(unittest.TestCase):
                 "section{position:relative}</style>" + body)
         path = self.tmp / f"{name}.html"
         path.write_text(html, encoding="utf-8")
-        page = self.browser.new_page(viewport={"width": 1200, "height": 800})
+        page = self.browser.new_page()
         page.goto(path.as_uri())
         return page
 
