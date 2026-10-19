@@ -1,6 +1,8 @@
 """Legacy alias map and explicit UNMAPPED table.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md section 4.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 section 4). Every
+mapped target is an operation id whose scope and Version are documented at
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Nothing is dropped.  Every alias observed by the audit either resolves to a
 target here, or appears in ``UNMAPPED`` with a reason.  A community MCP tool

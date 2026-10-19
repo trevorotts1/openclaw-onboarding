@@ -1,6 +1,8 @@
 """Capability descriptor and default-deny gate.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 3.1-3.3.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections 3.1-3.3).
+Every capability row covers one operation whose scope and Version are documented at
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Every operation is disabled at the freeze.  ``enabled=True`` together with a
 non-null ``activation_blocked`` is impossible by construction.  Enablement is

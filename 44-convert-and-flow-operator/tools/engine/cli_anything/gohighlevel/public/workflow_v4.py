@@ -1,7 +1,9 @@
 """V4 workflow adapter over the frozen public adapter.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 1.1, 2.4, 3.2 rule 4
-and 5.7, and by evidence/W01/GU-003-workflows-mcp.md (WF-04 .. WF-09).
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections
+1.1, 2.4, 3.2 rule 4 and 5.7, plus the workflows family record WF-04 .. WF-09).
+V4 scope and Version come from the official workflows operation page
+https://marketplace.gohighlevel.com/docs/ghl/workflows/<operation-slug>/.
 
 Every V4 operation is capability-gated and default-deny.  No write can reach
 transport while its capability row is disabled, and a disabled call still

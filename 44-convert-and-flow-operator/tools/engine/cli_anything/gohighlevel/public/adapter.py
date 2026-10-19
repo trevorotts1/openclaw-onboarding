@@ -1,7 +1,8 @@
 """The only public-REST entry point.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 1.2-1.4, 2.3-2.4,
-3.2 rule 7.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections
+1.2-1.4, 2.3-2.4, 3.2 rule 7). Operation scope and the per-operation Version come
+from the official operation page https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Binding order before any network call: operation row, path params, tenant
 binding, auth class, idempotency, approval, readback plan, capability gate.

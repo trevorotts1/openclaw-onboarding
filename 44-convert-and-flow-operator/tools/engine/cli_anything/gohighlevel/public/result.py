@@ -1,6 +1,8 @@
 """The single result envelope, fingerprinting and redaction helpers.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 2.1-2.3.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections 2.1-2.3).
+Every status is derived for an operation whose scope and Version are documented at
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 No secret, token, PIT value, full payload or customer identifier beyond the
 tenant is ever written into an envelope.  ``redaction="ids-only"`` replaces

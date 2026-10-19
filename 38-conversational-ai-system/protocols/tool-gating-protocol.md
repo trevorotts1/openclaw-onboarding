@@ -35,11 +35,17 @@ Additional gateable tools from Skill 38's existing allow-list:
 
 | Tool name | Purpose | Tier 0 (caf) command | Tier 3 REST fallback |
 |---|---|---|---|
-| `send_invoice` | Send an invoice (money) | Tier 2 community MCP invoices | `POST /invoices` per skill 29 |
-| `create_discount_code` | Create a coupon/discount (F26) | Tier 2 community MCP coupons | `POST /coupons` per skill 29 |
+| `send_invoice` | Send an invoice (money) | `caf payments invoices` create + send (public payments API) | `POST /invoices` per skill 29 |
+| `create_discount_code` | Create a coupon/discount (F26) | public payments REST (coupons); `caf` has no documented coupon subcommand | `POST /coupons` per skill 29 |
 | `crm_field_write` | Write a GHL custom field (F46, create-if-missing) | `caf contacts customFields set` | `PUT /contacts/{id}` custom fields |
 | `webhook_chain` | Fire an operator-defined outbound webhook (F18) | n/a (HTTPS POST) | operator-defined URL |
 | `escalate_to_human` | Hand off to a human (ALWAYS granted) | notification-routing-protocol.md | n/a |
+
+> **RETIRED ROUTE — do not restore it.** `send_invoice` and `create_discount_code`
+> used to be routed to "Tier 2 community MCP invoices / coupons". The community GHL
+> MCP transport is retired (GU-019/GU-020/GU-021), so both now route to the public
+> payment operations: `caf` where it has the subcommand, otherwise the Tier 3 REST
+> call. Never add a community-MCP rung back into this table.
 
 `escalate_to_human` is ALWAYS GRANTED and can never be gated off. A phase that
 attempts to disable it FAILS `qc-tool-gating.sh`. Escape hatches to a human are a

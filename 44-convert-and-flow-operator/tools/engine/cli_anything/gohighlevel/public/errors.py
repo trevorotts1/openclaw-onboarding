@@ -1,6 +1,8 @@
 """Pre-transport refusal errors for the public adapter.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md section 1.1.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 section 1.1).
+Every refusal names an operation whose scope and Version are documented at
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Every error carries a machine-readable ``rule`` and a ``detail`` mapping of
 names/keys only.  A secret value, token, PIT, location id or customer payload

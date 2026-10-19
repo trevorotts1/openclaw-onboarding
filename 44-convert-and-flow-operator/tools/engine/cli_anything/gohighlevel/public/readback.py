@@ -1,6 +1,8 @@
 """Mandatory read-back / reconciliation plans.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 1.3 step 8 and 2.4.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections 1.3 step 8
+and 2.4). Operation scope and Version come from the official operation page
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 A write is never fire-and-forget: the API requires a ``ReadbackSpec`` for every
 write.  The registry may be sparse per operation; a caller-supplied spec stands

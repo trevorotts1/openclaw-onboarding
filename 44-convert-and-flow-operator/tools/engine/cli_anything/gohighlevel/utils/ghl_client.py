@@ -47,7 +47,7 @@ DEFAULT_VERSION = "2021-07-28"
 #
 # Family: opportunities + pipelines, all documented ``v3`` at
 # https://marketplace.gohighlevel.com/docs/ghl/opportunities/* (fetched
-# 2026-10-18; evidence/W01/GU-003-opportunities.md). The prefix map sent these
+# 2026-10-18; GHL modernization contract ledger decision record). The prefix map sent these
 # 2021-07-28. ``GET /opportunities/search`` is deliberately absent: its query
 # casing is version-coupled and unverified, so it keeps 2021-07-28 until a live
 # probe settles it. ``GET /opportunities`` (bare list) is undocumented — no row.

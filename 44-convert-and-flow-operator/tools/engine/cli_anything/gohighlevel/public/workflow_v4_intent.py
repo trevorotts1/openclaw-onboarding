@@ -1,7 +1,9 @@
 """Pure full-graph intent helpers for the V4 workflow definition.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 1.1, 2.4 and 5.7 and
-by evidence/W01/GU-003-workflows-mcp.md (WF-04 .. WF-08).
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections
+1.1, 2.4 and 5.7, plus the workflows family record WF-04 .. WF-08). V4 scope and
+Version come from the official workflows operation page
+https://marketplace.gohighlevel.com/docs/ghl/workflows/<operation-slug>/.
 
 Nothing here performs I/O, knows an HTTP endpoint, or invents a node schema.
 The definition is treated as an opaque-but-structured graph:

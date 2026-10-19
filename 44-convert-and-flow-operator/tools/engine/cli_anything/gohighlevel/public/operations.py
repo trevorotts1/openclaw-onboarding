@@ -1,8 +1,10 @@
 """Frozen operation registry: one row per operation id.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md section 5 (5.1-5.7) and the
-family evidence under evidence/W01/GU-003-*.md.  Every field is transcribed
-from those two sources; nothing here is inferred.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 section 5,
+5.1-5.7) and the family freeze records it cites (GU-003 family, 2026-10-18).
+Every field is transcribed from those two sources; nothing here is inferred.
+Each row's Version authority is the operation's official page
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Binding rules encoded by this module:
 

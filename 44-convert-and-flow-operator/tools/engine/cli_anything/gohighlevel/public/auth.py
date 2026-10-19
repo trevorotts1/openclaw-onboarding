@@ -1,6 +1,8 @@
 """Auth context, tenant binding, alias-chain resolution and ``*_FILE`` input.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 1.4 and 4.1.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections 1.4
+and 4.1). Operation scope and Version come from the official operation page
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Four credential classes are kept distinct and are never substituted for one
 another: ``location_pit``, ``oauth``, ``agency_pit`` and ``firebase_internal``.

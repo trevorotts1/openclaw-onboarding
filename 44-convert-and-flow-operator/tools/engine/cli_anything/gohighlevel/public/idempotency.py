@@ -1,6 +1,8 @@
 """Canonical intent fingerprints and write idempotency keys.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md sections 1.3 step 6 and 2.4.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections 1.3 step 6
+and 2.4). Operation scope and Version come from the official operation page
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Key format: ``gxo_<op-short>-<32 hex>``.  The canonical intent is
 ``sha256(canonical_json(operation_id, method, resolved_path, sorted(query),

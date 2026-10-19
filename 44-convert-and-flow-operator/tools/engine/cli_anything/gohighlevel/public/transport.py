@@ -1,6 +1,8 @@
 """HTTP seam for the public adapter.
 
-Frozen by evidence/W01/GU-004-CONTRACT-FREEZE.md section 1.5.
+Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 section 1.5). The
+only Version it can carry comes from the operation's official page
+https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/.
 
 Rules enforced here:
 

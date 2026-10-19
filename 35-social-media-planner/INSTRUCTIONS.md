@@ -334,32 +334,27 @@ caf --json social accounts
 # Preview without sending: caf --dry-run social create-post --account-id <id> --text '...'
 ```
 
-**If Skill 44 is absent but Skill 36 (GHL MCP) is installed (`ROUTING_MODE=mcp-first`):**
+**If Skill 44 is absent — the public Social Planner accounts read (any box):**
 ```bash
-# Query connected Social Planner accounts via the community MCP. The MCP HTTP
-# transport speaks JSON-RPC ("tools/call"), NOT a flat {"name","arguments"} body,
-# and the account tool is get_social_accounts. Confirm the exact tool name and
-# endpoint path against your installed community MCP manifest before relying on it.
-MCP_URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
-curl -sS -m 15 -X POST "$MCP_URL" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' \
+# OP-SM-01 accounts.list — ONE call returns every connected account with its
+# platform, so no per-platform loop is needed. Documented envelope:
+# {"success":true,"results":{"accounts":[...]}} (Version: 2021-07-28, Bearer PIT).
+# This is the same route qc-skill35.sh Section C scores and
+# scripts/run-publishing-cycle.sh uses for its live preflight.
+. "$HOME/.openclaw/secrets/.env"
+curl -sS -m 10 \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "Version: 2021-07-28" \
+  "https://services.leadconnectorhq.com/social-media-posting/$GOHIGHLEVEL_LOCATION_ID/accounts" \
   | python3 -m json.tool
 ```
 
-**If Skill 36 is NOT installed (`ROUTING_MODE=direct-api`):**
-```bash
-# Query each major platform directly against the GHL Social Planner API
-. "$HOME/.openclaw/secrets/.env"
-for PLATFORM in facebook instagram linkedin twitter google_business tiktok; do
-  echo "--- $PLATFORM ---"
-  curl -sS -m 10 \
-    -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-    -H "Version: 2021-07-28" \
-    "https://services.leadconnectorhq.com/social-media-posting/oauth/$GOHIGHLEVEL_LOCATION_ID/$PLATFORM/accounts" \
-    | python3 -m json.tool
-done
-```
+> **RETIRED — the community GHL MCP is NOT a route.** The former MCP-first branch
+> (`openclaw config get env.vars.GHL_COMMUNITY_MCP_URL` + JSON-RPC `tools/call`
+> `get_social_accounts`) and the per-platform
+> `.../social-media-posting/oauth/{locationId}/{platform}/accounts` loop were both
+> removed: the community transport is retired (GU-009/GU-010) and the oauth variant
+> is a get-ONE call needing an `{accountId}` you do not have. Do not re-add either.
 
 Report the exact platforms returned by the live query. If the query returns empty results for a platform, say so — do NOT assume the platform is disconnected without confirming the query succeeded (200 OK with an empty list is different from a 403 scope error).
 
