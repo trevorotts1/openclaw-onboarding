@@ -224,6 +224,10 @@ class PublicGhlAdapter:
 
         query_map: dict[str, Any] = dict(query or {})
         body_map: dict[str, Any] = dict(body or {})
+        # A row that declares a required query parameter is refused here, before
+        # tenant binding, the capability gate and transport: an omission is a
+        # contract break (the service answers 422), never a defaulted value.
+        _validate_query_contract(row, operation_id, query_map)
         receipt_id = "gxo_res_" + secrets.token_hex(6)
         fingerprint_box = {"value": ""}
         request_bytes = (
@@ -987,6 +991,35 @@ def _row_attr(row: Any, name: str, default: Any = None) -> Any:
     if isinstance(row, Mapping):
         return row.get(name, default)
     return getattr(row, name, default)
+
+
+def _validate_query_contract(
+    row: Any, operation_id: str, query: Mapping[str, Any]
+) -> None:
+    """Enforce a row's required query parameters and closed value sets.
+
+    The row is the only source: no default is invented and no value outside the
+    documented set is forwarded.  Both refusals are typed contract violations,
+    raised before transport, never a ``KeyError`` from a later lookup.
+    """
+
+    for name in tuple(_row_attr(row, "required_query", ()) or ()):
+        value = query.get(name)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise ContractViolation(
+                "missing_required_query",
+                operation_id=operation_id,
+                detail={"query": str(name)},
+            )
+    for name, allowed in tuple(_row_attr(row, "query_enums", ()) or ()):
+        if name not in query:
+            continue
+        if str(query[name]) not in tuple(allowed):
+            raise ContractViolation(
+                "invalid_query_value",
+                operation_id=operation_id,
+                detail={"query": str(name), "allowed": list(allowed)},
+            )
 
 
 def _gate_skips(route_class: Any) -> bool:
