@@ -7,7 +7,13 @@
 - `runtime/tests/context-integration.test.ts` and `runtime/tests/export-adapter.test.ts` read the real CWE-011 export package, which is external data that is not in this repository and must never be fabricated. When it is genuinely absent they now SKIP naming the exact missing path (`CWE011_EXPORTS_DIR` can point at a real package) instead of erroring or passing on absent data. No assertion was weakened or deleted: the real-data assertions still run whenever the package is present.
 - QC: `npx tsc --noEmit -p tsconfig.json` exit 0; `node scripts/doctor.mjs` PASS; `node scripts/verify-cohort-parity.mjs` PASS; manifest and archive regenerated with `scripts/build-bundles.mjs`.
 
-## v1.0.23: the real backend is composed (W22-U001) and one composition binds the durable service (W25-U001 Lane E)
+## v1.0.23: the installable tarball carries the chamber assets (W25-U001 packaging)
+
+- `runtime/package.json` limited npm's `files` allowlist to `["dist"]`, so an install from a built tarball carried no `public/chamber` and the front door answered `GET /chamber/` with 404. The allowlist is now `["dist","public/chamber"]`, the only asset tree `front-door.ts` resolves.
+- `runtime/tests/package-contents.test.ts` asserts that allowlist, so dropping `public/chamber` again fails the suite instead of shipping an archive that cannot serve the chamber.
+- `runtime/public/chamber/RECEIPT.md` no longer claims `files` is `["dist"]` or that shipping through `npm pack` remains a separate release step; the receipt now states the measured allowlist and the pack/install/probe proof.
+
+## v1.0.22: the real backend is composed (W22-U001) and one composition binds the durable service (W25-U001 Lane E)
 
 ### One composition binds the durable service (W25-U001 Lane E)
 
