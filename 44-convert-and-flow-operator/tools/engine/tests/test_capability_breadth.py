@@ -1,4 +1,4 @@
-"""Capability-gate breadth suite -- GHL-170 (evidence/W24/breadth-findings.md).
+"""Capability-gate breadth suite -- GHL-170, re-pinned by GHL-182.
 
 Proves, offline, that the capability gate denies every operation that is not
 explicitly enabled for the bound tenant, across the whole ``operations.py``
@@ -6,18 +6,27 @@ registry.  The registry is enumerated dynamically: nothing here hardcodes a
 row list, and the row count is pinned so a registry change fails loudly until
 the suite is updated.
 
+The checked-in record was re-verified by GHL-150 (``920ce3fd4``): it names
+tenant ``Mct54Bwi1KlNouGXQcDX`` and enables exactly six read-verified rows.
+The earlier premises -- "the record admits nothing" and "the record names a
+non-live tenant" -- are therefore stale, and this suite is re-pinned to the
+recorded reality without weakening any assertion.
+
 Four proofs:
 
-1. Checked-in record (whatever tenant it names) admits nothing.  Every row is
-   denied and never reaches transport.  Rows the adapter refuses before the
-   gate (non-``public_direct`` routes) are named and counted, never ignored.
+1. The checked-in record admits exactly its six enabled operations for the
+   tenant it names, and denies every other registry row with zero transport
+   calls.  Rows the adapter refuses before the gate (unapplicable tenant
+   bindings) are named and counted, derived from the registry rather than a
+   stale constant.
 2. A synthetic record enabling exactly one operation for the live tenant
    admits that row and only that row.
 3. A record for another tenant admits nothing when the qualifier is the live
    tenant, including a row that is enabled inside the record, and including a
    row that carries its own mismatched tenant.
-4. Mutation controls: bypassing the gate or the tenant check makes these
-   assertions fail, so the suite has teeth.
+4. Mutation controls: bypassing the gate, returning an enabled capability, or
+   granting another tenant's enablement makes these assertions fail, so the
+   suite has teeth.
 
 No live call is made: ``FakeTransport`` records every request and replays
 scripted responses.  No token, PIT, location id or customer value from a real
@@ -66,19 +75,36 @@ from cli_anything.gohighlevel.public.readback import (  # noqa: E402
 )
 from cli_anything.gohighlevel.public.result import Status  # noqa: E402
 
-#: The tenant the unit names as "live" for the synthetic-record proofs.
+#: The tenant the checked-in record names and the unit treats as "live".
 LIVE_TENANT = "Mct54Bwi1KlNouGXQcDX"
 
+#: A tenant the checked-in record does not name.  Loading the record for this
+#: qualifier must fail closed to an empty gate.
+FOREIGN_TENANT = "XCgFTEA1oDvsPnTqqgoB"
+
+#: The six operations the checked-in record enables for ``LIVE_TENANT``,
+#: read-verified live on 2026-10-19 (GHL-150).  A change here is a record
+#: change the suite must be told about.
+EXPECTED_ENABLED = frozenset(
+    {
+        "locations.get",
+        "contacts.list",
+        "contacts.search",
+        "custom_fields.list",
+        "pipelines.list",
+        "media.files.list",
+    }
+)
+
 #: The gate is default-deny, so the only admissible pre-gate refusals are the
-#: frozen tenant-binding/private-rail refusals.  A new rule appearing here is a
-#: behaviour change the suite must be told about.
+#: frozen tenant-binding rules.  A new rule appearing here is a behaviour
+#: change the suite must be told about.
 PRE_GATE_RULES = frozenset({"unknown_tenant_binding", "tenant_path_missing"})
 
 #: Pinned registry shape.  A change here means operations.py grew or shrank:
-#: update this count, EXPECTED_PRE_GATE_REFUSALS and the breadth expectations
-#: in the same change.  Failing loudly is the point.
+#: update this count and the breadth expectations in the same change.  Failing
+#: loudly is the point.
 EXPECTED_OPERATION_COUNT = 140
-EXPECTED_PRE_GATE_REFUSALS = 24
 
 _COMPLETE = dict(
     contract_verified=True,
@@ -94,8 +120,8 @@ ENABLED_OPERATION = "locations.get"
 
 _ROW_COUNT_MESSAGE = (
     "operations.py registry row count changed to {actual} (suite pins "
-    "{expected}); update EXPECTED_OPERATION_COUNT, EXPECTED_PRE_GATE_REFUSALS "
-    "and the breadth expectations in tests/test_capability_breadth.py"
+    "{expected}); update EXPECTED_OPERATION_COUNT and the breadth expectations "
+    "in tests/test_capability_breadth.py"
 )
 
 
@@ -108,6 +134,21 @@ def _path_params(template: str, tenant: str) -> dict[str, str]:
     return {
         name: tenant if name == "locationId" else "synthetic_" + name
         for name in re.findall(r"\{([^{}]+)\}", template or "")
+    }
+
+
+def _query_for(row) -> dict[str, str]:
+    """Satisfy a row's declared required query so the gate is actually reached.
+
+    A missing required query is a typed contract violation *before* the gate
+    (GHL-150), so the suite must supply a document-valid value or it would
+    never test the gate for that row.
+    """
+
+    enums = dict(getattr(row, "query_enums", ()) or ())
+    return {
+        str(name): str(enums[name][0]) if name in enums else "synthetic_value"
+        for name in tuple(getattr(row, "required_query", ()) or ())
     }
 
 
@@ -140,6 +181,7 @@ def _call_kwargs(row, tenant: str) -> dict:
         "operation_id": row.operation_id,
         "tenant": fake_tenant(tenant),
         "path_params": _path_params(row.path_template, tenant),
+        "query": _query_for(row),
     }
     if row.write:
         kwargs["idempotency_key"] = issue_key(row.operation_id)
@@ -204,38 +246,123 @@ def _assert_gate_reachable_rule(operation_id: str, rule: str, row) -> None:
     )
 
 
+#: Tenant bindings the frozen table can apply without a path value.  A row
+#: declaring anything else is refused before the capability gate.
+_APPLICABLE_BINDINGS = frozenset(
+    {
+        "none",
+        "implicit-pit",
+        "body.locationId",
+        "query.locationId",
+        "body.altId+altType=location",
+        "query.altId+altType",
+        "query.altId+altType=location",
+    }
+)
+
+
+def _pre_gate_operation_ids() -> set[str]:
+    """Registry rows the adapter refuses before the capability gate.
+
+    Recomputed from the registry's own ``tenant_binding`` and
+    ``path_template`` fields, so the suite never carries a stale refusal
+    count; if the adapter stops refusing one of these rows the observed set
+    diverges and the suite fails.
+    """
+
+    pre: set[str] = set()
+    for operation_id, row in OPERATIONS.items():
+        binding = str(getattr(row, "tenant_binding", "none") or "none")
+        params = set(
+            re.findall(r"\{([^{}]+)\}", getattr(row, "path_template", "") or "")
+        )
+        if binding == "path.locationId":
+            if "locationId" not in params:
+                pre.add(operation_id)
+        elif binding.startswith("path."):
+            # The identifier rides its own path parameter; nothing to inject.
+            continue
+        elif binding not in _APPLICABLE_BINDINGS:
+            pre.add(operation_id)
+    return pre
+
+
+def _assert_pre_gate_matches_registry(observed: set[str]) -> None:
+    expected = _pre_gate_operation_ids()
+    assert observed == expected, (
+        "pre-gate refusal set changed; registry says "
+        f"{sorted(expected)} but the adapter refused {sorted(observed)}"
+    )
+
+
 # ---------------------------------------------------------------------------
-# 1. checked-in record: nothing is enabled for the tenant it names
+# 1. checked-in record: exactly its six enabled rows are admitted
 # ---------------------------------------------------------------------------
 
 
 class CheckedInRecordBreadthTest(unittest.TestCase):
-    def test_every_registry_row_is_denied_and_never_reaches_transport(self) -> None:
+    def test_record_enables_exactly_the_pinned_rows(self) -> None:
+        record = _checked_in_record()
+        self.assertEqual(str(record["tenant"]), LIVE_TENANT)
+        self.assertEqual(record["record_version"], 1)
+        self.assertEqual(
+            set(record["capabilities"]),
+            set(EXPECTED_ENABLED),
+            "checked-in record row set changed; update EXPECTED_ENABLED",
+        )
+        for operation_id, row in record["capabilities"].items():
+            with self.subTest(operation_id=operation_id):
+                self.assertIs(row["enabled"], True)
+                self.assertIs(row["read_verified"], True)
+                self.assertEqual(row["activation"], "VERIFIED")
+                self.assertIs(row["provisional"], False)
+
+    def test_every_registry_row_is_classified_by_the_checked_in_record(self) -> None:
         record = _checked_in_record()
         record_tenant = str(record["tenant"])
-        self.assertTrue(record_tenant.strip(), "checked-in record must name a tenant")
-        self.assertEqual(record["record_version"], 1)
 
         gate = load_capability_record(tenant=record_tenant)
+        self.assertEqual(len(gate), len(EXPECTED_ENABLED))
         for operation_id in OPERATIONS:
-            try:
-                gate.require(operation_id)
-            except CapabilityDisabled as caught:
-                self.assertEqual(caught.rule, "capability_disabled")
-            else:  # pragma: no cover - a widening record must fail here
-                self.fail(f"{operation_id} was enabled by the checked-in record")
+            capability = gate.get(operation_id)
+            if operation_id in EXPECTED_ENABLED:
+                self.assertTrue(capability.enabled, operation_id)
+                self.assertEqual(
+                    gate.require(operation_id).operation_id, operation_id
+                )
+            else:
+                self.assertFalse(capability.enabled, operation_id)
+                with self.assertRaises(CapabilityDisabled) as caught:
+                    gate.require(operation_id)
+                self.assertEqual(caught.exception.rule, "capability_disabled")
 
         exercised: list[str] = []
-        gate_denials: list[str] = []
-        pre_gate: list[str] = []
+        admitted: list[str] = []
+        gate_denials: set[str] = set()
+        pre_gate: set[str] = set()
         for operation_id, row in OPERATIONS.items():
             with self.subTest(operation_id=operation_id):
                 result, transport = _invoke(
                     row, record_tenant, record=capability_record_path()
                 )
                 exercised.append(operation_id)
-                rule = (result.error or {}).get("rule")
 
+                if operation_id in EXPECTED_ENABLED:
+                    self.assertIs(result.status, Status.ok, operation_id)
+                    self.assertEqual(transport.call_count, 1, operation_id)
+                    self.assertEqual(
+                        result.evidence["capability"]["operation_id"],
+                        operation_id,
+                    )
+                    self.assertIs(result.evidence["capability"]["enabled"], True)
+                    self.assertEqual(
+                        result.evidence["capability"]["observed_http_status"],
+                        200,
+                    )
+                    admitted.append(operation_id)
+                    continue
+
+                rule = (result.error or {}).get("rule")
                 self.assertIs(result.status, Status.denied)
                 self.assertIs(result.evidence.get("refused_before_transport"), True)
                 self.assertEqual(result.evidence.get("tenant"), record_tenant)
@@ -245,9 +372,9 @@ class CheckedInRecordBreadthTest(unittest.TestCase):
                 _assert_gate_reachable_rule(operation_id, rule, row)
 
                 if rule == "capability_disabled":
-                    gate_denials.append(operation_id)
+                    gate_denials.add(operation_id)
                 else:
-                    pre_gate.append(operation_id)
+                    pre_gate.add(operation_id)
 
         self.assertEqual(
             len(exercised),
@@ -255,20 +382,22 @@ class CheckedInRecordBreadthTest(unittest.TestCase):
             f"exercised {len(exercised)} of {len(OPERATIONS)} rows",
         )
         self.assertEqual(set(exercised), set(OPERATIONS))
+        self.assertEqual(sorted(admitted), sorted(EXPECTED_ENABLED))
+        _assert_pre_gate_matches_registry(pre_gate)
         self.assertEqual(
-            len(pre_gate),
-            EXPECTED_PRE_GATE_REFUSALS,
-            "pre-gate refusal count changed; update the breadth suite",
+            gate_denials,
+            set(OPERATIONS) - set(EXPECTED_ENABLED) - pre_gate,
+            "every other row must be denied by capability_disabled",
         )
-        self.assertEqual(len(gate_denials), len(OPERATIONS) - len(pre_gate))
         public = {
             operation_id
             for operation_id, row in OPERATIONS.items()
             if row.route_class == "public_direct"
         }
-        self.assertTrue(public <= set(gate_denials), (
-            "every public_direct row must be denied by capability_disabled; "
-            f"missing {sorted(public - set(gate_denials))}"
+        self.assertTrue(public <= (gate_denials | set(EXPECTED_ENABLED)), (
+            "every non-enabled public_direct row must be denied by "
+            f"capability_disabled; missing "
+            f"{sorted(public - gate_denials - set(EXPECTED_ENABLED))}"
         ))
 
 
@@ -279,7 +408,7 @@ class CheckedInRecordBreadthTest(unittest.TestCase):
 
 class SingleEnablementBreadthTest(unittest.TestCase):
     def test_only_the_enabled_operation_is_admitted(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-170-") as temp:
+        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-182-") as temp:
             path = _write_record(
                 temp, LIVE_TENANT, {ENABLED_OPERATION: _enabled_row()}
             )
@@ -291,8 +420,8 @@ class SingleEnablementBreadthTest(unittest.TestCase):
             self.assertEqual(len(control), 1)
 
             admitted: list[str] = []
-            gate_denials: list[str] = []
-            pre_gate: list[str] = []
+            gate_denials: set[str] = set()
+            pre_gate: set[str] = set()
             for operation_id, row in OPERATIONS.items():
                 with self.subTest(operation_id=operation_id):
                     result, transport = _invoke(row, LIVE_TENANT, record=path)
@@ -322,21 +451,24 @@ class SingleEnablementBreadthTest(unittest.TestCase):
                     self.assertEqual(transport.call_count, 0, operation_id)
                     _assert_gate_reachable_rule(operation_id, rule, row)
                     if rule == "capability_disabled":
-                        gate_denials.append(operation_id)
+                        gate_denials.add(operation_id)
                     else:
-                        pre_gate.append(operation_id)
+                        pre_gate.add(operation_id)
 
             self.assertEqual(admitted, [ENABLED_OPERATION])
-            self.assertEqual(len(gate_denials) + len(pre_gate), len(OPERATIONS) - 1)
-            self.assertEqual(len(pre_gate), EXPECTED_PRE_GATE_REFUSALS)
+            _assert_pre_gate_matches_registry(pre_gate)
+            self.assertEqual(
+                gate_denials,
+                set(OPERATIONS) - {ENABLED_OPERATION} - pre_gate,
+            )
             public = {
                 operation_id
                 for operation_id, row in OPERATIONS.items()
                 if row.route_class == "public_direct"
             } - {ENABLED_OPERATION}
-            self.assertTrue(public <= set(gate_denials), (
+            self.assertTrue(public <= gate_denials, (
                 "every non-enabled public_direct row must be denied by "
-                f"capability_disabled; missing {sorted(public - set(gate_denials))}"
+                f"capability_disabled; missing {sorted(public - gate_denials)}"
             ))
 
 
@@ -347,17 +479,15 @@ class SingleEnablementBreadthTest(unittest.TestCase):
 
 class TenantMismatchBreadthTest(unittest.TestCase):
     def test_record_for_another_tenant_denies_even_its_enabled_row(self) -> None:
-        record = _checked_in_record()
-        other_tenant = str(record["tenant"])
-        self.assertNotEqual(other_tenant, LIVE_TENANT)
+        self.assertNotEqual(FOREIGN_TENANT, LIVE_TENANT)
 
-        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-170-") as temp:
+        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-182-") as temp:
             path = _write_record(
-                temp, other_tenant, {ENABLED_OPERATION: _enabled_row()}
+                temp, FOREIGN_TENANT, {ENABLED_OPERATION: _enabled_row()}
             )
 
             # Control: the same record does enable the row for its own tenant.
-            own = load_capability_record(tenant=other_tenant, path=path)
+            own = load_capability_record(tenant=FOREIGN_TENANT, path=path)
             self.assertTrue(own.get(ENABLED_OPERATION).enabled)
 
             # The qualifier is the live tenant: the loader fails closed to an
@@ -377,33 +507,30 @@ class TenantMismatchBreadthTest(unittest.TestCase):
                     )
                     _assert_gate_reachable_rule(operation_id, rule, row)
 
-    def test_the_checked_in_record_denies_the_live_tenant(self) -> None:
+    def test_the_checked_in_record_denies_a_foreign_tenant(self) -> None:
         record = _checked_in_record()
-        other_tenant = str(record["tenant"])
-        self.assertNotEqual(other_tenant, LIVE_TENANT)
+        self.assertEqual(str(record["tenant"]), LIVE_TENANT)
+        self.assertNotEqual(FOREIGN_TENANT, LIVE_TENANT)
 
-        live = load_capability_record(tenant=LIVE_TENANT)
-        self.assertEqual(len(live), 0)
+        foreign = load_capability_record(tenant=FOREIGN_TENANT)
+        self.assertEqual(len(foreign), 0)
         for operation_id in OPERATIONS:
             with self.subTest(operation_id=operation_id):
-                self.assertFalse(live.get(operation_id).enabled)
+                self.assertFalse(foreign.get(operation_id).enabled)
 
     def test_a_capability_carrying_another_tenant_is_denied(self) -> None:
-        record = _checked_in_record()
-        other_tenant = str(record["tenant"])
-
-        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-170-") as temp:
+        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-182-") as temp:
             path = _write_record(
                 temp,
                 LIVE_TENANT,
                 {
-                    ENABLED_OPERATION: _enabled_row(tenant=other_tenant),
+                    ENABLED_OPERATION: _enabled_row(tenant=FOREIGN_TENANT),
                 },
             )
             gate = load_capability_record(tenant=LIVE_TENANT, path=path)
             capability = gate.get(ENABLED_OPERATION)
             self.assertTrue(capability.enabled)
-            self.assertEqual(capability.tenant, other_tenant)
+            self.assertEqual(capability.tenant, FOREIGN_TENANT)
 
             row = OPERATIONS[ENABLED_OPERATION]
             result, transport = _invoke(row, LIVE_TENANT, record=path)
@@ -451,28 +578,31 @@ class RegistryEnumerationTest(unittest.TestCase):
             "registry iteration and key enumeration disagree",
         )
 
-    def test_pinned_pre_gate_count_is_still_true(self) -> None:
+    def test_pre_gate_refusals_are_recomputed_from_the_registry(self) -> None:
         # Independent of the call loop in test 1: recompute the classification
         # so a registry change trips one clear message rather than a cascade.
         record = _checked_in_record()
         tenant = str(record["tenant"])
-        pre_gate = 0
+        pre_gate: set[str] = set()
         for operation_id, row in OPERATIONS.items():
             with self.subTest(operation_id=operation_id):
                 result, transport = _invoke(
                     row, tenant, record=capability_record_path()
                 )
+                if operation_id in EXPECTED_ENABLED:
+                    self.assertIs(result.status, Status.ok)
+                    self.assertEqual(transport.call_count, 1)
+                    continue
                 self.assertIs(result.status, Status.denied)
                 self.assertEqual(transport.call_count, 0)
                 rule = (result.error or {}).get("rule")
                 _assert_gate_reachable_rule(operation_id, rule, row)
                 if rule != "capability_disabled":
-                    pre_gate += 1
-        self.assertEqual(
-            pre_gate,
-            EXPECTED_PRE_GATE_REFUSALS,
-            "pre-gate refusal count changed; update the breadth suite",
-        )
+                    pre_gate.add(operation_id)
+        _assert_pre_gate_matches_registry(pre_gate)
+        # The derived set is small enough to name, and every member must be a
+        # frozen pre-gate rule, never a gate widening.
+        self.assertTrue(pre_gate, "the registry must still contain pre-gate rows")
 
 
 # ---------------------------------------------------------------------------
@@ -517,13 +647,11 @@ class MutationControlTest(unittest.TestCase):
                 )
 
     def test_granting_another_tenants_enablement_is_caught(self) -> None:
-        record = _checked_in_record()
-        other_tenant = str(record["tenant"])
-        self.assertNotEqual(other_tenant, LIVE_TENANT)
+        self.assertNotEqual(FOREIGN_TENANT, LIVE_TENANT)
 
-        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-170-") as temp:
+        with tempfile.TemporaryDirectory(prefix="operator-mac-GHL-182-") as temp:
             path = _write_record(
-                temp, other_tenant, {ENABLED_OPERATION: _enabled_row()}
+                temp, FOREIGN_TENANT, {ENABLED_OPERATION: _enabled_row()}
             )
 
             def tenant_blind(*, tenant, path=None, environ=None):  # noqa: ANN001
