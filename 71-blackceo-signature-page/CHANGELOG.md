@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased - 2026-10-19 - test honesty: fixture-dependent modules report SKIPPED, not PASS; mobile anchor floor 18px
+
+- `tests/`: two fixture-dependent modules (browser hygiene, swarm runner) now report SKIPPED with a named reason instead of a false PASS when their fixtures are not shipped; `test_validate_page.py` pins the 18px mobile anchor floor. Suite: 40 passed, 2 skipped. No production behavior changed.
+
 ## Unreleased - 2026-10-17 - S71-06-Q1: the band governs in all contexts; two stale doctrine surfaces reconciled (Signature Launch room S71, B-19)
 
 - Q1 ruled (MAIN, 2026-10-17, under owner Decision 1): the KIE rule 12 band governs in ALL contexts, including Signature Launch runs; packet doc 07 section 6 is reconciled as an erratum wherever it conflicts; there is no prompt_policy_id selector and no context split.

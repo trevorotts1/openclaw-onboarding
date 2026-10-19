@@ -32,18 +32,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
 
-# These two suites assemble a scratch copy of the S1 foundation tree that
-# exists only on the build box (~/workspace/skill-71-build). Without it the
-# patch step cannot run at all, so the suite reports the absence and exits
-# clean rather than failing on a path nobody has. Reported, never silent.
-DEV_TREE = Path.home() / "workspace/skill-71-build/s1-foundation" / "71-blackceo-signature-page"
-
-def _dev_tree_or_skip():
-    if DEV_TREE.is_dir():
-        return True
-    print(f"SKIP {Path(__file__).name}: developer fixture tree absent: {DEV_TREE}")
-    print("      (S1 foundation copy this suite assembles from; present only on the build box)")
-    return False
+# The S1 foundation tree this suite assembles from is not shipped in this
+# repo. Resolve it relative to this test file, never as a hardcoded home
+# path, so the suite runs wherever the fixture is placed and SKIPs (never
+# passes) where it is not.
+DEV_TREE = (Path(__file__).resolve().parent / "fixtures" / "s1-foundation"
+            / "71-blackceo-signature-page")
+DEV_TREE_REASON = (
+    f"S1 foundation fixture absent: {DEV_TREE} "
+    "(place the build-box tree there to run this suite)")
 
 LONG_NOTE = "Checked against the artifact bytes and the stage rubric line by line."
 
@@ -72,7 +69,7 @@ class Assembly:
     """S1 tree + Item 20 patch + S7 deliverables, in a temp dir."""
 
     def __init__(self, base: Path):
-        s1 = Path.home() / "workspace/skill-71-build/s1-foundation/71-blackceo-signature-page"
+        s1 = DEV_TREE
         self.skill = base / "71-blackceo-signature-page"
         shutil.copytree(s1, self.skill, ignore=shutil.ignore_patterns("__pycache__"))
         patch = ROOT / "scripts" / "stage-gate-item-commands.patch"
@@ -198,6 +195,7 @@ def max_overlap(intervals):
     return best
 
 
+@unittest.skipUnless(DEV_TREE.is_dir(), DEV_TREE_REASON)
 class SwarmRunnerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -417,6 +415,6 @@ class SwarmRunnerTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    if not _dev_tree_or_skip():
-        sys.exit(0)
+    if not DEV_TREE.is_dir():
+        print(f"SKIPMOD {Path(__file__).name}: {DEV_TREE_REASON}")
     unittest.main()
