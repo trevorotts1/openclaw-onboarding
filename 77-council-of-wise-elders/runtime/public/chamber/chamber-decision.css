@@ -1,0 +1,156 @@
+/* Decision header panel (W29 unit B). Colours only through var(--ch-*). */
+
+.ch-dec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ch-space-5, 24px);
+  align-items: start;
+  padding: var(--ch-space-5, 24px);
+}
+.ch-dec [hidden] {
+  display: none !important;
+}
+
+@media (min-width: 768px) {
+  .ch-dec {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 46%);
+    gap: var(--ch-space-6, 32px);
+  }
+}
+
+/* ---- title column ---- */
+.ch-dec-titlecol {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ch-space-3, 12px);
+}
+.ch-dec-title {
+  margin: 0;
+  max-width: 100%;
+  font: 600 clamp(22px, 2.4vw, 28px) / 1.2 var(--ch-font);
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+.ch-dec-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2, 8px);
+}
+.ch-dec-badge {
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-pill, 999px);
+  font: 700 11px / 1.4 var(--ch-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+.ch-dec-badge--verdict {
+  border-color: var(--ch-gold);
+  background: var(--ch-gold-soft);
+  color: var(--ch-gold-strong);
+}
+.ch-dec-sub {
+  margin: 0;
+  font: 400 15px / 1.5 var(--ch-font);
+  color: var(--ch-ink-muted);
+}
+.ch-dec-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2, 8px);
+}
+
+/* ---- options column ---- */
+.ch-dec-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3, 12px);
+}
+.ch-dec-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--ch-space-3, 12px);
+  min-width: 0;
+}
+.ch-dec-chip {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ch-radius-chip, 6px);
+  background: var(--ch-surface-3);
+  color: var(--ch-ink);
+  font: 700 12px / 1 var(--ch-font);
+}
+.ch-dec-main {
+  min-width: 0;
+}
+.ch-dec-labelline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--ch-space-2, 8px);
+}
+.ch-dec-label {
+  min-width: 0;
+  font: 400 14px / 24px var(--ch-font);
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+.ch-dec-reco {
+  font: 700 11px / 1.4 var(--ch-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-gold-strong);
+}
+.ch-dec-track {
+  height: 3px;
+  margin-top: 2px;
+  border-radius: var(--ch-radius-pill, 999px);
+  background: var(--ch-line);
+  overflow: hidden;
+}
+.ch-dec-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ch-gold);
+  transition: width 600ms var(--ch-ease);
+}
+.ch-dec-value {
+  min-width: 2ch;
+  text-align: right;
+  font: 400 14px / 24px var(--ch-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--ch-ink-muted);
+}
+
+/* ---- recommended option after the verdict ---- */
+.ch-dec-row--reco .ch-dec-chip {
+  background: var(--ch-gold);
+  color: var(--ch-on-gold);
+}
+.ch-dec-row--reco .ch-dec-fill {
+  background: var(--ch-gold-strong);
+}
+.ch-dec-row--reco .ch-dec-value {
+  color: var(--ch-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ch-dec-fill {
+    transition: none;
+  }
+}
