@@ -23,6 +23,7 @@ import {
   routeBudgetApprovalsPath,
   routeBudgetConfigPath,
   routeBudgetResolver,
+  routeBudgetRecovery,
   routeBudgetStatus,
   type RouteBudgetApproval,
   type RouteBudgetEntry,
@@ -470,4 +471,14 @@ test('owned files contain no em dash', () => {
   ]) {
     assert.ok(!readFileSync(f, 'utf8').includes(dash), f);
   }
+});
+
+test('routeBudgetRecovery: unmeasured says measure then approve; awaiting approval never says measure', () => {
+  const unmeasured = routeBudgetRecovery('r1', 'not_measured');
+  assert.match(unmeasured, /measure-route-bytes-per-token\.mjs --route r1 --write/);
+  assert.match(unmeasured, /approve-route-budget\.mjs --route r1/);
+  assert.match(unmeasured, /replaces that file/);
+  const awaiting = routeBudgetRecovery('r1', 'awaiting_approval');
+  assert.doesNotMatch(awaiting, /measure-route-bytes-per-token\.mjs/);
+  assert.match(awaiting, /approve-route-budget\.mjs --route r1/);
 });

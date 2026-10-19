@@ -342,6 +342,11 @@ test('unbound routeBudget or catalog refuses COMPOSITION_NOT_READY naming them, 
       assert.equal(error.code, 'COMPOSITION_NOT_READY');
       assert.equal(error.http_status, 503);
       assert.deepEqual(error.detail.unbound, ['material_catalog', 'route_budget']);
+      // First-run refusal tells the operator exactly what to run, and that nothing self-approves.
+      assert.match(error.recovery, /measure-route-bytes-per-token\.mjs --route /);
+      assert.match(error.recovery, /approve-route-budget\.mjs --route /);
+      assert.match(error.recovery, /Nothing is approved automatically/);
+      assert.equal(typeof error.detail.summary, 'string');
       return true;
     },
   );

@@ -150,6 +150,18 @@ test('convene: a 503 COMPOSITION_NOT_READY refusal prints code and recovery, exi
   assert.equal(env.error.action, 'Approve the route budget, then retry.');
 });
 
+test('convene: a refusal with a plain-English summary prints the summary, not raw JSON', async () => {
+  const f = fakeFetch(503, {
+    code: 'COMPOSITION_NOT_READY',
+    detail: { unbound: ['route_budget'], summary: 'no route has an approved budget yet' },
+    recovery: 'Ask the operator to approve the route budget.',
+  });
+  const c = capture();
+  await runConvene(['--sample'], { fetchImpl: f.fetchImpl, env: {}, io: c.io });
+  assert.ok(c.err().includes('no route has an approved budget yet'));
+  assert.ok(!c.err().includes('"unbound"'));
+});
+
 test('convene: connection refused is SERVICE_UNREACHABLE naming the origin tried', async () => {
   const fetchImpl = (async () => {
     throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });

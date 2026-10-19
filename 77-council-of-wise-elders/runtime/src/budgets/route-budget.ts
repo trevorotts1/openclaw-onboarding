@@ -78,6 +78,36 @@ export function routeBudgetConfigPath(
     : join(skillRoot, 'config', 'route-budgets.json');
 }
 
+/**
+ * What a refusal for a missing route budget tells the client. One text for
+ * every refusal path, so the first-run message never says less than the
+ * per-route one. Nothing here approves anything.
+ */
+export function routeBudgetRecovery(
+  routeId: string = '<route_id>',
+  state?: 'awaiting_approval' | 'not_measured' | 'no_entry',
+): string {
+  const approve =
+    `run "node scripts/approve-route-budget.mjs --route ${routeId} --approved-by <name> --data-dir <council service data folder>" to record the approval. ` +
+    'No restart is needed: convene again afterwards. A route that already has an approved budget can be used meanwhile.';
+  if (state === 'awaiting_approval') {
+    // Already measured: measuring again would overwrite the numbers under review.
+    return (
+      `This route is measured and waiting for the operator to approve the proposed numbers (shown above). Do not measure it again: that replaces the numbers under review. ` +
+      'Nothing is approved automatically, and a client cannot approve it. ' +
+      `The operator, from the council skill folder: (1) review the proposed numbers; (2) ${approve}`
+    );
+  }
+  return (
+    'This route cannot start a council until its token budget is measured and approved by the operator. ' +
+    'Nothing is approved automatically, and a client cannot approve it. ' +
+    'The operator, from the council skill folder: ' +
+    `(1) run "node scripts/measure-route-bytes-per-token.mjs --route ${routeId} --write" (a few small real model calls; it writes PROPOSED numbers into this skill folder's config/route-budgets.json, or the file named by WISE_ELDERS_ROUTE_BUDGETS, and approves nothing; a fleet skill update replaces that file, so the approved numbers must also be committed to the shipped config); ` +
+    '(2) review the proposed numbers it prints; ' +
+    `(3) ${approve}`
+  );
+}
+
 export function routeBudgetApprovalsPath(serviceDataDir: string): string {
   return join(serviceDataDir, 'route-budget-approvals.json');
 }
