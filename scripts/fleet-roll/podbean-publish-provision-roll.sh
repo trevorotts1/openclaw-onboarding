@@ -779,7 +779,7 @@ box_selected() {
 }
 
 build_payload() { # mode -> 0600 temp payload in $TMP_PAYLOAD
-  TMP_PAYLOAD="$(mktemp "${TMPDIR:-/tmp}/s58u18-payload.XXXXXX.sh")" || die "mktemp failed"
+  TMP_PAYLOAD="$(mktemp "${TMPDIR:-/tmp}/s58u18-payload.XXXXXX")" || die "mktemp failed"
   chmod 600 "$TMP_PAYLOAD"
   {
     if [ "$1" = "inject" ]; then
@@ -825,7 +825,7 @@ run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
   #      then prove a new container, exact inherited values, and gateway health.
   #      Roll in place, force-recreate, NEVER re-init credentials.
   _pb64="$(base64 < "$TMP_PAYLOAD" | tr -d '\n')"
-  _wrap="$(mktemp "${TMPDIR:-/tmp}/s58u18-wrap.XXXXXX.sh")" || die "mktemp failed"
+  _wrap="$(mktemp "${TMPDIR:-/tmp}/s58u18-wrap.XXXXXX")" || die "mktemp failed"
   chmod 600 "$_wrap"
   {
     printf 'set -u\numask 077\n'

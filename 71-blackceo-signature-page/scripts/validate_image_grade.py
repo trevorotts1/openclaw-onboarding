@@ -324,8 +324,20 @@ def measure(path):
     with Image.open(path) as im:
         width, height = im.size
         rgb_full = im.convert("RGB")
+        alpha = im.convert("RGBA").getchannel("A")
     work = rgb_full.resize((WORK, WORK))
     pixels = list(work.getdata())
+    # A circle-slot PNG (design styles B and C) is transparent outside its circle.
+    # Measure only the opaque photo: the transparent corners hold black RGB and would
+    # drag saturation and luma down and add a fake edge at the circle boundary.
+    eroded = None
+    if alpha.getextrema()[0] < 255:
+        small = alpha.resize((WORK, WORK))
+        keep = [a > 127 for a in small.getdata()]
+        if any(keep):
+            pixels = [px for px, k in zip(pixels, keep) if k]
+            eroded = [a > 127 for a in
+                      small.point(lambda a: 255 if a > 127 else 0).filter(ImageFilter.MinFilter(5)).getdata()]
     n = len(pixels)
 
     total_sat = 0.0
@@ -370,8 +382,10 @@ def measure(path):
     gray = work.convert("L")
     edges = gray.filter(ImageFilter.FIND_EDGES)
     edge_pixels = list(edges.getdata())
-    mean_e = sum(edge_pixels) / n
-    sharpness = sum((x - mean_e) ** 2 for x in edge_pixels) / n
+    if eroded is not None:
+        edge_pixels = [e for e, k in zip(edge_pixels, eroded) if k] or edge_pixels
+    mean_e = sum(edge_pixels) / len(edge_pixels)
+    sharpness = sum((x - mean_e) ** 2 for x in edge_pixels) / len(edge_pixels)
 
     return {
         "mean_saturation": mean_sat,

@@ -1,0 +1,2149 @@
+{
+ "schema": "skill71-reference-catalog/v1",
+ "library": "BlackCEO operator GoHighLevel media library, folder sigpage-reference-images",
+ "generated_by": "SPF023 composition library",
+ "rule": "Send these hosted files to KIE as reference images by type. Structure and look only: never copy the brand, palette, people, copy, signatures or dates into a client page.",
+ "types": {
+  "wireframe": "grey structure sheet with real copy and slot labels",
+  "mockup": "full-colour finish",
+  "hybrid-image-map": "sheet that prints each slot id, pixel size and ratio next to the picture",
+  "mood-board": "brand direction board",
+  "mockup-crop": "one band cut from a real page to show one composition trait"
+ },
+ "rows": [
+  {
+   "id": "lf-desktop-imagemap-a",
+   "type": "hybrid-image-map",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [
+    "1",
+    "2",
+    "2A",
+    "3",
+    "3A",
+    "4",
+    "4A"
+   ],
+   "traits": [
+    "split",
+    "slot-labels"
+   ],
+   "pair": "lf-desktop-mockup-a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "1fcc6802a781723fc7982d4dcfc5cd2d94c699983b08814473a56b9af9f04ece",
+   "ghl_file_id": "6ad655759cfc3bf8b380e570",
+   "ghl_name": "reference-library__lf-desktop-imagemap-a.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_34_06 PM-1 (1).png",
+   "notes": "Image map sheet IMG-01..05: slot id, pixel size, ratio. Overlays are not drawn here, which is the gap the composition library closes.",
+   "width_px": 1060,
+   "height_px": 1484,
+   "source_bundle": null,
+   "media_path": "media/bfbdc6e9-b4b3-4d36-abc2-3278c6e4ccd3.png"
+  },
+  {
+   "id": "lf-desktop-imagemap-b",
+   "type": "hybrid-image-map",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [
+    "5",
+    "5A",
+    "5B",
+    "5C",
+    "6",
+    "7"
+   ],
+   "traits": [
+    "split",
+    "slot-labels"
+   ],
+   "pair": "lf-desktop-mockup-b",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "02a9a28386e5f9185c946e3b5cf72134b8c0cfb0b6b5725a1552c39e97b078bd",
+   "ghl_file_id": "6ad6557a989628c77a84f81d",
+   "ghl_name": "reference-library__lf-desktop-imagemap-b.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_34_06 PM-2 (1).png",
+   "notes": "Image map sheet IMG-06..15: slot id, pixel size, ratio. Overlays are not drawn here, which is the gap the composition library closes.",
+   "width_px": 1060,
+   "height_px": 1484,
+   "source_bundle": null,
+   "media_path": "media/f2986b83-8e4f-44ce-8756-0fc33d4fe5fc.png"
+  },
+  {
+   "id": "lf-desktop-imagemap-c",
+   "type": "hybrid-image-map",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [
+    "8",
+    "9",
+    "10",
+    "11",
+    "12"
+   ],
+   "traits": [
+    "split",
+    "slot-labels",
+    "overlay-panel"
+   ],
+   "pair": "lf-desktop-mockup-c",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "7066c87bf9d3ffe9c9f8a9ebd08950ad51654c6a0f5874d8c851bd7054c99817",
+   "ghl_file_id": "6ad6557a3cacdd9117ce5512",
+   "ghl_name": "reference-library__lf-desktop-imagemap-c.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_34_09 PM-3 (1).png",
+   "notes": "Image map sheet IMG-16..22: slot id, pixel size, ratio. Overlays are not drawn here, which is the gap the composition library closes.",
+   "width_px": 1060,
+   "height_px": 1484,
+   "source_bundle": null,
+   "media_path": "media/67798d8e-4bfa-4433-9a09-7eb6b37bfb95.png"
+  },
+  {
+   "id": "lf-desktop-mockup-a",
+   "type": "mockup",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [
+    "1",
+    "2",
+    "2A",
+    "3",
+    "3A",
+    "4",
+    "4A"
+   ],
+   "traits": [
+    "caption-over-photo"
+   ],
+   "pair": "lf-desktop-imagemap-a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "266764857d525f83ff996b527048bcf252ec7773cb8b482172f4f5b241fbf7b5",
+   "ghl_file_id": "6ad6557a9cfc3bf8b380e65c",
+   "ghl_name": "reference-library__lf-desktop-mockup-a.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_28_09 PM-1 (2).png",
+   "notes": "script and short captions on photos in sections 3 and 4; dark panel type over the photo at hero right",
+   "width_px": 1055,
+   "height_px": 1491,
+   "source_bundle": null,
+   "media_path": "media/b551e6e2-1cae-44e1-a60b-b2fefcd8501f.png"
+  },
+  {
+   "id": "lf-desktop-mockup-b",
+   "type": "mockup",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [
+    "5",
+    "5A",
+    "5B",
+    "5C",
+    "6",
+    "7"
+   ],
+   "traits": [
+    "caption-over-photo"
+   ],
+   "pair": "lf-desktop-imagemap-b",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "ef02d810f3681d3271e6770b8173ec22f6b1d029c70d1b6b7589cc3bde3a4d3a",
+   "ghl_file_id": "6ad6557b436f78fefba0314b",
+   "ghl_name": "reference-library__lf-desktop-mockup-b.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_28_09 PM-2 (2).png",
+   "notes": "captions on photos; wash behind the IMG-06 headline",
+   "width_px": 1055,
+   "height_px": 1491,
+   "source_bundle": null,
+   "media_path": "media/600fb6d2-3348-4b1a-b62c-df6abad3177c.png"
+  },
+  {
+   "id": "lf-desktop-mockup-c",
+   "type": "mockup",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [
+    "8",
+    "9",
+    "10",
+    "11",
+    "12"
+   ],
+   "traits": [
+    "caption-over-photo"
+   ],
+   "pair": "lf-desktop-imagemap-c",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "ef288bc3774732444767824771843b1e49210fdaa1e1eb39bb9bb8e3293a03b4",
+   "ghl_file_id": "6ad6557b436f78fefba0315a",
+   "ghl_name": "reference-library__lf-desktop-mockup-c.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_28_11 PM-3 (2).png",
+   "notes": "script and spaced-caps captions over photos in sections 8, 10 and 12; overlay panel in IMG-18",
+   "width_px": 1055,
+   "height_px": 1491,
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[Founder name]' and 'Founder, Set for Life' (section 12 letter)",
+   "media_path": "media/e9f39db6-e515-42c6-8ad0-5130cfd875af.png"
+  },
+  {
+   "id": "std-hybrid-board",
+   "type": "hybrid-image-map",
+   "viewport": "desktop+mobile",
+   "form": "standard",
+   "sections": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12"
+   ],
+   "traits": [
+    "backdrop-disc",
+    "mask-arch",
+    "mask-diagonal",
+    "band-light-field"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "37378f321c79f709ca00b748c9450a737350938dfd0a3ab10e96ce3e913daca3",
+   "ghl_file_id": "6ad6558737e957718833cc5d",
+   "ghl_name": "reference-library__std-hybrid-board.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_20_06 PM (1).png",
+   "notes": "12-section Standard structure; ignore its Long-Form title. Hero sits in front of a large disc or arch shape; curved and angled photo cuts; two light bands with faint imagery at the edges.",
+   "width_px": 1536,
+   "height_px": 1024,
+   "source_bundle": "mockups/hybrid-mockup-wireframe-mashup.png",
+   "reference_only_text": "script signature 'Trevor Otts' with 'Founder, Set for Life' (mobile panel 3/3)",
+   "media_path": "media/0588a001-8227-4218-97a3-e047b9f5bdd8.png"
+  },
+  {
+   "id": "desktop-annotated-wireframe",
+   "type": "wireframe",
+   "viewport": "desktop",
+   "form": "standard",
+   "sections": [
+    "annotation-format"
+   ],
+   "traits": [
+    "type-spec-column"
+   ],
+   "pair": "desktop-annotated-mockup",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "79cf9b21f349e7945d04e1ffc3a58c852231d2380f6bf7dc3badfbae10ca0082",
+   "ghl_file_id": "6ad65579f9a985d42c1cc476",
+   "ghl_name": "reference-library__desktop-annotated-wireframe.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_01_47 PM-1 (1).png",
+   "notes": "Annotation format only: 17 blocks, not the BlackCEO section framework.",
+   "width_px": 724,
+   "height_px": 2172,
+   "source_bundle": null,
+   "media_path": "media/978529a8-2bc3-4446-b4dc-5cfe330d06b7.png"
+  },
+  {
+   "id": "desktop-annotated-mockup",
+   "type": "mockup",
+   "viewport": "desktop",
+   "form": "standard",
+   "sections": [
+    "finish-reference"
+   ],
+   "traits": [
+    "overlay-light",
+    "caption-over-photo"
+   ],
+   "pair": "desktop-annotated-wireframe",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "9bec56505c232c0e44c697450a18e1cd0b46a974f344e7333e5c260d9aa44da2",
+   "ghl_file_id": "6ad65579989628c77a84f7ec",
+   "ghl_name": "reference-library__desktop-annotated-mockup.png",
+   "source": "Trevor's Downloads: ChatGPT Image Sep 29, 2026, 07_01_49 PM-2 (1).png",
+   "notes": "Finish reference: light hero with type on the photo, founder text over photo.",
+   "width_px": 724,
+   "height_px": 2172,
+   "source_bundle": "mockups/chatgpt-mockup-2.png",
+   "reference_only_text": "script signature 'Trevor Otts' and 'TREVOR OTTS / FOUNDER, BLACKCEO' (founder letter)",
+   "media_path": "media/d30b4cee-ede8-43aa-a741-1f40bb78cb1b.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s01",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "1"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s01",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "cb46ce00cdad66e2683e6b91bff022a5f7d446622975411508651532cef4b70a",
+   "ghl_file_id": "6ad6558131abbf1c24fe1295",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s01.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2944,
+   "crop_box_xyxy_in_source": [
+    0,
+    300,
+    780,
+    3244
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholders '[EVENT DATE]' and '[ADMISSION DETAILS]'",
+   "media_path": "media/d979e068-81f5-4fe7-a796-1c28f586a341.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s02",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "2"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s02",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "2e060be68121f719940a6feaa448ac2b7e56776dbb56a907bca0e28177be6b19",
+   "ghl_file_id": "6ad6558231abbf1c24fe12ad",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s02.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2954,
+   "crop_box_xyxy_in_source": [
+    0,
+    3244,
+    780,
+    6198
+   ],
+   "source_bundle": null,
+   "media_path": "media/9ea5f1fe-5226-433e-8cb0-b457ac60125d.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s02a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "2A"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s02a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "d77671bafb20c37c5217488fe16ed80cdbf9265e5983dd20daf31d90cc8037cc",
+   "ghl_file_id": "6ad6558188927761f53be3df",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s02a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2532,
+   "crop_box_xyxy_in_source": [
+    0,
+    6198,
+    780,
+    8730
+   ],
+   "source_bundle": null,
+   "media_path": "media/d44c90d4-8861-49ba-846e-9c0a4225b0fd.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s03",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "3"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s03",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "6966c2ac67d6e02ee0cd1336783b9cd1dc05299dd0da05b57fb7a9b12ede1175",
+   "ghl_file_id": "6ad65582f9a985d42c1cc5c8",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s03.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2712,
+   "crop_box_xyxy_in_source": [
+    0,
+    8730,
+    780,
+    11442
+   ],
+   "source_bundle": null,
+   "media_path": "media/ad6befb3-66a5-4b73-87ac-f66fcc6db95e.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s03a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "3A"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s03a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "4ca2ca475686895a3d1447b51debc5c466e1bcfd0318dcb81a20ec29c62324d9",
+   "ghl_file_id": "6ad65582436f78fefba032db",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s03a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1958,
+   "crop_box_xyxy_in_source": [
+    0,
+    11442,
+    780,
+    13400
+   ],
+   "source_bundle": null,
+   "media_path": "media/9f5256d7-b90c-489a-a236-17d4cf45e602.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s04",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "4"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s04",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "37e0ee2f494503c0817c3c5edba55c43c45f09bd06af4625b2232694f18ebdca",
+   "ghl_file_id": "6ad6558388927761f53be41b",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s04.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2624,
+   "crop_box_xyxy_in_source": [
+    0,
+    13400,
+    780,
+    16024
+   ],
+   "source_bundle": null,
+   "media_path": "media/5e007f04-e7fa-47b3-95ae-dfe69db86f74.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s04a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "4A"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s04a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "23cad9cdfafc387fd1f87dd507086b8afbe9e96982b19b2309371a9b6c271ba1",
+   "ghl_file_id": "6ad655833cacdd9117ce5665",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s04a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2418,
+   "crop_box_xyxy_in_source": [
+    0,
+    16024,
+    780,
+    18442
+   ],
+   "source_bundle": null,
+   "media_path": "media/d72ea34a-559a-4518-9cfc-857f4e999162.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s05",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s05",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "e73296c806b7ec4e1df746f4198924897ba55cbd2d08ef07718d7abf3eb691f3",
+   "ghl_file_id": "6ad655833b8fa9783e6e3ac9",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s05.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 703,
+   "crop_box_xyxy_in_source": [
+    0,
+    18442,
+    780,
+    19145
+   ],
+   "source_bundle": null,
+   "media_path": "media/d0dd6e06-9b7c-454d-84ec-404822a96a76.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s05a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5A"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s05a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "80a815696d30f5da22648c6d4bf1fdb7bae250b295427d4843807f3f61d1a096",
+   "ghl_file_id": "6ad6558331abbf1c24fe1315",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s05a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 960,
+   "crop_box_xyxy_in_source": [
+    0,
+    19145,
+    780,
+    20105
+   ],
+   "source_bundle": null,
+   "media_path": "media/5ec767e7-9652-416a-9fd6-121a6c852bd7.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s05b",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5B"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s05b",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "385dee8051a778654d5a942d4160e303176e4803acd9795a8a54ee75ca499207",
+   "ghl_file_id": "6ad65583f9a985d42c1cc5f8",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s05b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1018,
+   "crop_box_xyxy_in_source": [
+    0,
+    20105,
+    780,
+    21123
+   ],
+   "source_bundle": null,
+   "media_path": "media/4beef2e4-b35e-4302-8d8c-7d7a0a57a94e.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s05c",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5C"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s05c",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "a8820f4a4bed787ebb93ad795e8ba2767f39cf4ab98ff561d9a7d3bb7aec1858",
+   "ghl_file_id": "6ad65583436f78fefba032ff",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s05c.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1869,
+   "crop_box_xyxy_in_source": [
+    0,
+    21123,
+    780,
+    22992
+   ],
+   "source_bundle": null,
+   "media_path": "media/2498f96f-7a12-44bf-9d5b-8ec2065a1517.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s06",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "6"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s06",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "76e50d93fced5ecd0aba99d0f8b51c388f95957bee86f55bf8b054e77c0d8a79",
+   "ghl_file_id": "6ad655839cfc3bf8b380e7f3",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s06.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2758,
+   "crop_box_xyxy_in_source": [
+    0,
+    22992,
+    780,
+    25750
+   ],
+   "source_bundle": null,
+   "media_path": "media/ed49145e-f0a0-4387-a4a4-d5db900f5542.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s07a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s07a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "16a76496cafa2d80bea5b3d6387f5bbcb6437e3578617f59c10886a64994cb2d",
+   "ghl_file_id": "6ad6558437e957718833cbcd",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s07a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2180,
+   "crop_box_xyxy_in_source": [
+    0,
+    25750,
+    780,
+    27930
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/df708807-f82a-4858-9c59-c0a0cb9f73d1.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s07b",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s07b",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "f0e0a34ccdc48d1e2ca2a17dc09b6f7cb4c9456a5014533f8c561effca24a3f4",
+   "ghl_file_id": "6ad65585989628c77a84fa09",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s07b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1940,
+   "crop_box_xyxy_in_source": [
+    0,
+    27930,
+    780,
+    29870
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/b1c3ee83-1227-4196-9428-7d780f8f6358.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s07c",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s07c",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "c17914d9bb9426adba53e2216ce35e94e948ad79f016aaf56de3aeb13484f04d",
+   "ghl_file_id": "6ad655843b8fa9783e6e3b1b",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s07c.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1940,
+   "crop_box_xyxy_in_source": [
+    0,
+    29870,
+    780,
+    31810
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/d0006ee2-dd21-4556-940a-97899bea767d.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s07d",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s07d",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "3bbba43e0f688064738a930d0a8ae22fc627f235ad6e8d69e6a9112bb4537aa3",
+   "ghl_file_id": "6ad6558488927761f53be48b",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s07d.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1422,
+   "crop_box_xyxy_in_source": [
+    0,
+    31810,
+    780,
+    33232
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/5bfc9a1f-4f17-43b3-9a1a-98ac4547bca1.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s08",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "8"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s08",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "09a5a440cc430f311745cab3d7d36d8e5544c72756ab797dc1c96532df648f2f",
+   "ghl_file_id": "6ad6558588927761f53be4c4",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s08.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2640,
+   "crop_box_xyxy_in_source": [
+    0,
+    33232,
+    780,
+    35872
+   ],
+   "source_bundle": null,
+   "media_path": "media/9f22f477-a193-48ab-87c4-1653894ff78f.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s09",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "9"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s09",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "fadf022bdc0eec73d3e375f29f075eb45a51b8fe8d83fddceb747adf751e4626",
+   "ghl_file_id": "6ad655853b8fa9783e6e3b4b",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s09.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2328,
+   "crop_box_xyxy_in_source": [
+    0,
+    35872,
+    780,
+    38200
+   ],
+   "source_bundle": null,
+   "media_path": "media/b81466dc-2dc8-4cda-8f24-aceeb9e84221.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s10",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "10"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s10",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "31046986e8a59d3816619338fbf4a55575be6a3a970ff650d7b824726653c289",
+   "ghl_file_id": "6ad655853b8fa9783e6e3b56",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s10.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2656,
+   "crop_box_xyxy_in_source": [
+    0,
+    38200,
+    780,
+    40856
+   ],
+   "source_bundle": null,
+   "media_path": "media/53e95881-dfd5-4767-acbc-4e64b11b94d4.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s11a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "11"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s11a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "8e6322a2d08a581b2e00c48a5c268140ccf517713684b239d972fe2553fc5148",
+   "ghl_file_id": "6ad65585989628c77a84fa41",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s11a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2147,
+   "crop_box_xyxy_in_source": [
+    0,
+    40856,
+    780,
+    43003
+   ],
+   "source_bundle": null,
+   "media_path": "media/75029abb-5599-4a94-87b2-f279e51b8200.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s11b",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "11"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s11b",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "fcafdafcf13db4a764d6b53fdbe17b062d75ed7f4d9b8b268adcc905eed5834e",
+   "ghl_file_id": "6ad65586cd7225ed37f2927b",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s11b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2453,
+   "crop_box_xyxy_in_source": [
+    0,
+    43003,
+    780,
+    45456
+   ],
+   "source_bundle": null,
+   "media_path": "media/8fac2687-49b8-4f2a-88a6-bbb5f04e5391.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s12a",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "12",
+    "12 Part 1"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s12a",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "bcfbdf43161337918d3e930381ef34856995cf86398283eee26733deb1babd09",
+   "ghl_file_id": "6ad655863b8fa9783e6e3b9e",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s12a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2001,
+   "crop_box_xyxy_in_source": [
+    0,
+    45456,
+    780,
+    47457
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[FOUNDER NAME]'",
+   "media_path": "media/3bd00997-87f8-4752-a9a0-4d2eb9b1f49c.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s12b",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "12 Part 2",
+    "12 Part 3",
+    "12 Part 4"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s12b",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "c27f10a2b471511f1d8aba948a804439027bfd2af4d07b172131cbc87af2b18b",
+   "ghl_file_id": "6ad655863b8fa9783e6e3b94",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s12b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 2218,
+   "crop_box_xyxy_in_source": [
+    0,
+    47457,
+    780,
+    49675
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder narrative copy ('Trevor's story or an invented financial ...')",
+   "media_path": "media/4a6b4752-250c-4556-8881-3bb9413ddcac.png"
+  },
+  {
+   "id": "lf-mobile-wireframe-s12c",
+   "type": "wireframe",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "12 Part 5",
+    "12 Part 6"
+   ],
+   "traits": [
+    "slot-labels",
+    "annotation-format"
+   ],
+   "pair": "lf-mobile-mockup-s12c",
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": true,
+   "sha256": "8bfdea593982e5408d204697b2484450ba56e63f164bc9ff2037c6d3a65477bd",
+   "ghl_file_id": "6ad65586436f78fefba03353",
+   "ghl_name": "reference-library__lf-mobile-wireframe-s12c.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Wireframe (1).png",
+   "notes": "780 px wide = 390 CSS px at 2x. Slice for structure and labelling only.",
+   "width_px": 780,
+   "height_px": 1657,
+   "crop_box_xyxy_in_source": [
+    0,
+    49675,
+    780,
+    51332
+   ],
+   "source_bundle": null,
+   "reference_only_text": "placeholder '[Founder signature]'",
+   "media_path": "media/a4d2ed1e-fb1e-4c9e-b084-ee54c83e40c7.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s01",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "1"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s01",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "34f38c16ad45a40dcf08a7ad1d5285df1ce9fa94bf37c3486d7ea69ef5415f4a",
+   "ghl_file_id": "6ad6557b31abbf1c24fe1151",
+   "ghl_name": "reference-library__lf-mobile-mockup-s01.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2672,
+   "crop_box_xyxy_in_source": [
+    0,
+    300,
+    780,
+    2972
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholders '[EVENT DATE]' and '[ADMISSION DETAILS]'",
+   "media_path": "media/07372e05-5907-43f3-a56f-abca2e78d6e2.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s02",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "2"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s02",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "cc68873a61010abb77e4af79bb583b58dce5a4af04a51ccd13b127a53521b410",
+   "ghl_file_id": "6ad6557b31abbf1c24fe1161",
+   "ghl_name": "reference-library__lf-mobile-mockup-s02.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2798,
+   "crop_box_xyxy_in_source": [
+    0,
+    2972,
+    780,
+    5770
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/43a56ce4-68e0-4f95-a0b9-47a01d5d4dab.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s02a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "2A"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s02a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "f53e60dbc592438b333c493ec343f4ddb0e5214d6894654fc2aeffae7faeb42b",
+   "ghl_file_id": "6ad6557ccd7225ed37f29107",
+   "ghl_name": "reference-library__lf-mobile-mockup-s02a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2332,
+   "crop_box_xyxy_in_source": [
+    0,
+    5770,
+    780,
+    8102
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/7c2af342-f9a1-4f49-823f-0a48a0ca79b1.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s03",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "3"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s03",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "3490500770f24901e5a769aea367d90c1790af07a140c997a9ab075dab211763",
+   "ghl_file_id": "6ad6557c989628c77a84f87d",
+   "ghl_name": "reference-library__lf-mobile-mockup-s03.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2558,
+   "crop_box_xyxy_in_source": [
+    0,
+    8102,
+    780,
+    10660
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/0766fe9f-4b0f-433f-9c3f-3856cbb49933.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s03a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "3A"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s03a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "5e5c1bfb9f6362069e6d9d4d60ffbda64c56d1270efa75f38c0bfc55f7fec9ef",
+   "ghl_file_id": "6ad6557c37e957718833caf1",
+   "ghl_name": "reference-library__lf-mobile-mockup-s03a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1802,
+   "crop_box_xyxy_in_source": [
+    0,
+    10660,
+    780,
+    12462
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/0b6076b0-b851-43c2-bfdd-87271fcd69e1.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s04",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "4"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s04",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "64bfb83f39aeab0d660ede1737c64cd60431175cea323d8492232a768a5a51d7",
+   "ghl_file_id": "6ad6557c88927761f53be327",
+   "ghl_name": "reference-library__lf-mobile-mockup-s04.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2428,
+   "crop_box_xyxy_in_source": [
+    0,
+    12462,
+    780,
+    14890
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/106e36fd-74d4-4b1d-b31a-5471bf608588.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s04a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "4A"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s04a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "678807b8411556c2d958370c093833f62b968cda449997b905eafd629c8d91ec",
+   "ghl_file_id": "6ad6557d436f78fefba03197",
+   "ghl_name": "reference-library__lf-mobile-mockup-s04a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2258,
+   "crop_box_xyxy_in_source": [
+    0,
+    14890,
+    780,
+    17148
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/2634afb1-9a0c-4b21-a9b9-294be953502c.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s05",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s05",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "6004bb59321344f11be050b083eff0765422d0cc04ba7e83711460f9a1f9eda9",
+   "ghl_file_id": "6ad6557df9a985d42c1cc522",
+   "ghl_name": "reference-library__lf-mobile-mockup-s05.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 519,
+   "crop_box_xyxy_in_source": [
+    0,
+    17148,
+    780,
+    17667
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/5182153b-7261-4a58-b961-6a666c5f877b.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s05a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5A"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s05a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "c552398128ef15f60df42aefaf61acbaa674d90d7fd31aed2c85fd9771ae24f8",
+   "ghl_file_id": "6ad6557d88927761f53be367",
+   "ghl_name": "reference-library__lf-mobile-mockup-s05a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 962,
+   "crop_box_xyxy_in_source": [
+    0,
+    17667,
+    780,
+    18629
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/2de5b416-78e5-41d3-b756-4e1899122b89.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s05b",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5B"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s05b",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "6b02d3519edb3d320541aee8ee35304d40a86ed405906b3d1f2979877873627a",
+   "ghl_file_id": "6ad6557d9cfc3bf8b380e6ef",
+   "ghl_name": "reference-library__lf-mobile-mockup-s05b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1018,
+   "crop_box_xyxy_in_source": [
+    0,
+    18629,
+    780,
+    19647
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/000bea76-9caa-4ec6-b141-e49c5e6ee388.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s05c",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "5C"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s05c",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "f3428b5ff4bc0e9e5490047cc7836da7b3293bdc2d7b3e279e4b69651f26f0d6",
+   "ghl_file_id": "6ad6557e3b8fa9783e6e3a3a",
+   "ghl_name": "reference-library__lf-mobile-mockup-s05c.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1989,
+   "crop_box_xyxy_in_source": [
+    0,
+    19647,
+    780,
+    21636
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/077e0a1b-cfda-4062-9fcc-4403bbe250ca.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s06",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "6"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s06",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "de4193c34847f2ee595e234e6ffab8c3864625516d26c8b6f71a426804b24531",
+   "ghl_file_id": "6ad6557e3b8fa9783e6e3a44",
+   "ghl_name": "reference-library__lf-mobile-mockup-s06.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2560,
+   "crop_box_xyxy_in_source": [
+    0,
+    21636,
+    780,
+    24196
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/33550042-8abd-4905-bb2a-02127a8761a4.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s07a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s07a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "48013b78ef47103f7357ca011540f2eb7ed7a9838b230cea27f4427a9b811a61",
+   "ghl_file_id": "6ad6557e989628c77a84f8e5",
+   "ghl_name": "reference-library__lf-mobile-mockup-s07a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1914,
+   "crop_box_xyxy_in_source": [
+    0,
+    24196,
+    780,
+    26110
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/deb7f6f4-ab4a-4ade-885a-25be3b8c816c.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s07b",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s07b",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "a7b8d2887566f9175facd6222cbda5179f2ef923debcd8974bc4bdb0ad512d25",
+   "ghl_file_id": "6ad6557ecd7225ed37f29153",
+   "ghl_name": "reference-library__lf-mobile-mockup-s07b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1940,
+   "crop_box_xyxy_in_source": [
+    0,
+    26110,
+    780,
+    28050
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/24a575dc-21cc-4900-9659-3f3d3735d95a.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s07c",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s07c",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "e838ce1ed219bcca51d06439901c9dc500076f556a251f965ac6cf175b50181a",
+   "ghl_file_id": "6ad6557f31abbf1c24fe11e2",
+   "ghl_name": "reference-library__lf-mobile-mockup-s07c.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1940,
+   "crop_box_xyxy_in_source": [
+    0,
+    28050,
+    780,
+    29990
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/156c6ab1-d9df-435e-8c10-1b88eaac57f7.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s07d",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "7"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s07d",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "d7fe7646241d0569e937a5917371737256aad21dd25e8e2eaa93fa389bd8ea99",
+   "ghl_file_id": "6ad6557ff9a985d42c1cc58e",
+   "ghl_name": "reference-library__lf-mobile-mockup-s07d.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1446,
+   "crop_box_xyxy_in_source": [
+    0,
+    29990,
+    780,
+    31436
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder '[Specific participant takeaway]'",
+   "media_path": "media/c22b6d58-5e8e-48e5-b403-79aa605d8813.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s08",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "8"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s08",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "c304970fbe655365699fa67423331eb27293632910eb291dbff3b46880bb93a2",
+   "ghl_file_id": "6ad6557f3cacdd9117ce55f5",
+   "ghl_name": "reference-library__lf-mobile-mockup-s08.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2484,
+   "crop_box_xyxy_in_source": [
+    0,
+    31436,
+    780,
+    33920
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/c7e24ad6-e50f-47de-a6e3-e381a502da64.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s09",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "9"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s09",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "e7bbbc3bda07876c58310dad6bf22e58676102c7cb36825d13ac5bcbb37e33f9",
+   "ghl_file_id": "6ad6557f436f78fefba03233",
+   "ghl_name": "reference-library__lf-mobile-mockup-s09.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2128,
+   "crop_box_xyxy_in_source": [
+    0,
+    33920,
+    780,
+    36048
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/266807a3-3351-4bd6-a2bd-7028fdb3dc00.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s10",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "10"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s10",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "c1d2ae49d6b3b7253dcdba5b31dfbe7e5c81ba8067c20e349a436448bdd68dc8",
+   "ghl_file_id": "6ad655809cfc3bf8b380e75b",
+   "ghl_name": "reference-library__lf-mobile-mockup-s10.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2500,
+   "crop_box_xyxy_in_source": [
+    0,
+    36048,
+    780,
+    38548
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/58d35c09-2623-4686-ab5a-3be948bdc915.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s11a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "11"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s11a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "af8a927a1203960a2652865ed28f54479df009e001eb2c4272846eba3c3d524d",
+   "ghl_file_id": "6ad6558088927761f53be3bf",
+   "ghl_name": "reference-library__lf-mobile-mockup-s11a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1921,
+   "crop_box_xyxy_in_source": [
+    0,
+    38548,
+    780,
+    40469
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/4777006e-aa1c-49f7-88c4-ae2c4871daa4.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s11b",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "11"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s11b",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "0783d6ea1997b5cf3a079ac28b23a996e4caea9a3e323b74113de38a12a4123a",
+   "ghl_file_id": "6ad6558031abbf1c24fe123d",
+   "ghl_name": "reference-library__lf-mobile-mockup-s11b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2479,
+   "crop_box_xyxy_in_source": [
+    0,
+    40469,
+    780,
+    42948
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "media_path": "media/09a77bb7-f9fd-4911-bead-6ae7396dae51.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s12a",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "12",
+    "12 Part 1"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s12a",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "9738d2332cbf5127a041864ba634c66766f37454ad8f8454e7865df65666a607",
+   "ghl_file_id": "6ad655809cfc3bf8b380e773",
+   "ghl_name": "reference-library__lf-mobile-mockup-s12a.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1777,
+   "crop_box_xyxy_in_source": [
+    0,
+    42948,
+    780,
+    44725
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder '[FOUNDER NAME]'",
+   "media_path": "media/76ca6894-6eba-4630-85d9-46b8246226f7.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s12b",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "12 Part 2",
+    "12 Part 3",
+    "12 Part 4"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s12b",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "46d83f92f5ec1cffc0ebbe75211ffba177c2b96c2fb8febfce2cd891e4f33a31",
+   "ghl_file_id": "6ad65580436f78fefba0326c",
+   "ghl_name": "reference-library__lf-mobile-mockup-s12b.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 2216,
+   "crop_box_xyxy_in_source": [
+    0,
+    44725,
+    780,
+    46941
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder narrative copy ('Trevor's story or an invented financial ...')",
+   "media_path": "media/3f6eaa93-c83c-407b-8bcc-de926d4d649d.png"
+  },
+  {
+   "id": "lf-mobile-mockup-s12c",
+   "type": "mockup",
+   "viewport": "mobile",
+   "form": "long-form",
+   "sections": [
+    "12 Part 5",
+    "12 Part 6"
+   ],
+   "traits": [
+    "split"
+   ],
+   "pair": "lf-mobile-wireframe-s12c",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "2dc076a930dc1fe42f7d67c9a1bb5df495f414f582b2a5451313e66fe0701969",
+   "ghl_file_id": "6ad65581436f78fefba03283",
+   "ghl_name": "reference-library__lf-mobile-mockup-s12c.png",
+   "source": "Trevor's Downloads: Set-for-Life-Mobile-Mockup (1).png",
+   "notes": "Every image is a stacked rectangle with no words on any image: the AI default, even in the approved pair. Use for structure and finish only, never as the composition target.",
+   "width_px": 780,
+   "height_px": 1687,
+   "crop_box_xyxy_in_source": [
+    0,
+    46941,
+    780,
+    48628
+   ],
+   "source_bundle": "mockups/set-for-life-mobile-mockup.png",
+   "reference_only_text": "placeholder '[Founder signature]'",
+   "media_path": "media/0a32d6a3-b73d-4389-9486-f3e1de4c20d0.png"
+  },
+  {
+   "id": "gfp-watermark-field",
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [
+    "band-light-field"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "88d2c99446bb58fad047b5df75d2ddb6061868f983d0c55ecea4103b18e8c879",
+   "ghl_file_id": "6ad6703a3b8fa9783e71a8ec",
+   "ghl_name": "reference-library__gfp-watermark-field-v2.png",
+   "source": "Go Full Page example render (SPF020 render/vb-full.png)",
+   "notes": "One light band with a line-art doodle field behind the type, edge to edge (field luminance 239-255). Re-cropped to 2480 px wide so the browser-extension PDF icon at the right edge of the capture is not in the image.",
+   "width_px": 2480,
+   "height_px": 2400,
+   "crop_box_xyxy_in_source": [
+    0,
+    23280,
+    2480,
+    25680
+   ],
+   "source_bundle": null,
+   "media_path": "media/568d2f6c-5d3b-414e-ac12-9200bae84c6e.png"
+  },
+  {
+   "id": "gfp-text-over-dark-photo",
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [
+    "overlay-dark-scrim"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "03541e454cd4dcb72370f244bc2f8142fb3381e5e87c9243f6b1c8b5c141a857",
+   "ghl_file_id": "6ad67039436f78fefba3a551",
+   "ghl_name": "reference-library__gfp-text-over-dark-photo-v2.png",
+   "source": "Go Full Page example render (SPF020 render/va-full.png)",
+   "notes": "One full-bleed photo band with the headline and body on the dark side of the photo. Re-cropped to 2480 px wide so the browser-extension PDF icon at the right edge of the capture is not in the image.",
+   "width_px": 2480,
+   "height_px": 1390,
+   "crop_box_xyxy_in_source": [
+    0,
+    17990,
+    2480,
+    19380
+   ],
+   "source_bundle": null,
+   "media_path": "media/ce5907e9-fcbd-4abb-bde2-481f1bd1bada.png"
+  },
+  {
+   "id": "gfp-shaped-mask",
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "c60670689213f21236f79726d4576782ede1f08a11bc1ac896027cc3cd1bdfb0",
+   "ghl_file_id": "6ad6703931abbf1c2401912c",
+   "ghl_name": "reference-library__gfp-shaped-mask-v2.png",
+   "source": "Go Full Page example render (SPF020 render/vb-full.png)",
+   "notes": "One band with a photo that has a flat top and a rounded bottom (an inverted arch, not a mask-arch) and a brush stroke shape behind the type. Not a vocabulary treatment: nothing breaks the frame. Look reference for the brush stroke and the rounded cut only. Re-crop to 2480 px wide removed the capture's PDF icon.",
+   "width_px": 2480,
+   "height_px": 1540,
+   "crop_box_xyxy_in_source": [
+    0,
+    25720,
+    2480,
+    27260
+   ],
+   "source_bundle": null,
+   "media_path": "media/02d7329b-1a65-4819-a4f5-e9db200d3842.png"
+  },
+  {
+   "id": "design-board-example",
+   "type": "mood-board",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [],
+   "pair": null,
+   "use": "brand-direction-only",
+   "tags": [],
+   "contains_reference_only_text": false,
+   "sha256": "4b3df24b2c4d1f8fb65446fad251090c04a2f91eca86d1f46cfaefab6fb15f56",
+   "ghl_file_id": "6ad650cf436f78fefb9f9d07",
+   "ghl_name": "reference-use__design-board-example.png",
+   "source": "Trevor's Downloads: Design Board (1).png",
+   "notes": "The design board (mood board) example from Trevor. Brand direction only.",
+   "uploaded_by_unit": "SPF022",
+   "source_bundle": null,
+   "media_path": "media/3831124e-a6c3-4c54-9ea5-1990c00bec14.png"
+  },
+  {
+   "id": "set-for-life-desktop-wireframe",
+   "type": "wireframe",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [],
+   "traits": [
+    "split",
+    "slot-labels"
+   ],
+   "pair": "set-for-life-desktop-mockup",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "89053173165d0efc45d134a136fb95212258990bc815fc272d91786bd44552d9",
+   "ghl_file_id": "6ad650d23cacdd9117cdbccf",
+   "ghl_name": "reference-use__set-for-life-desktop-wireframe.png",
+   "source": "assets/visual-standards/wireframes/set-for-life-desktop-wireframe.png",
+   "notes": "Gen 1 pair: every image is a rectangle beside or above text.",
+   "uploaded_by_unit": "SPF022",
+   "source_bundle": "wireframes/set-for-life-desktop-wireframe.png",
+   "reference_only_text": "placeholders '[EVENT DATE]', '[START TIME & TIME ZONE]', '[ADMISSION DETAILS]', '[SESSION OR EXPERIENCE ..]', '[Specific participant takeaway]'",
+   "media_path": "media/1c75678d-18fa-4fae-9854-a2338ed1b73b.png"
+  },
+  {
+   "id": "set-for-life-desktop-mockup",
+   "type": "mockup",
+   "viewport": "desktop",
+   "form": "long-form",
+   "sections": [],
+   "traits": [
+    "split"
+   ],
+   "pair": "set-for-life-desktop-wireframe",
+   "use": "structure-and-look-only",
+   "tags": [
+    "counter-example-composition"
+   ],
+   "contains_reference_only_text": true,
+   "sha256": "af639085ec400d4b27a57f4455e79718a6ac103a00aae908318248fc14ef8a3a",
+   "ghl_file_id": "6ad650d39cfc3bf8b3804db0",
+   "ghl_name": "reference-use__set-for-life-desktop-mockup.png",
+   "source": "assets/visual-standards/mockups/set-for-life-desktop-mockup.png",
+   "notes": "Gen 1 pair: still has placeholders such as [Founder signature].",
+   "uploaded_by_unit": "SPF022",
+   "source_bundle": "mockups/set-for-life-desktop-mockup.png",
+   "reference_only_text": "placeholders '[FOUNDER NAME]', '[Founder signature]', '[Specific participant takeaway]', '[SESSION OR EXPERIENCE ..]'",
+   "media_path": "media/57997068-c7b6-4df8-886d-e90d3eb9cc42.png"
+  },
+  {
+   "id": "gen-hero-overlay-light",
+   "file": null,
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [
+    "overlay-light"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [
+    "generated-reference"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "bf07f40849397d94bfb5089f69c2d7926e6fdc361fca82d1b1d73f69b7da4aae",
+   "ghl_file_id": "6ad6703988927761f53f5a6f",
+   "ghl_name": "reference-library__gen-hero-overlay-light.png",
+   "source": "Generated by SPF023: an HTML render (CSS masks, scrim, line-art field) of an invented neutral demo brand with a flat illustrated stand-in subject. No image model, no paid call. The render passes the skill's own composition checks.",
+   "notes": "Hero with the headline and one line of copy on the flat, bright left side of a full-bleed photograph, subject on the far right, scrim fading across the copy zone. The subject is an illustration, not a photograph: take the composition, not the rendering style.",
+   "width_px": 1440,
+   "height_px": 720,
+   "crop_box_xyxy_in_source": null,
+   "media_path": "media/e23f23c7-8ce4-4c64-85bc-5811e4ecd4e5.png"
+  },
+  {
+   "id": "gen-hero-light-field",
+   "file": null,
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [
+    "band-light-field"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [
+    "generated-reference"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "12ac1d6631bdafd021ce34d5c0c7ff850ef39d3430650e8cfa336e99da53d834",
+   "ghl_file_id": "6ad670383b8fa9783e71a868",
+   "ghl_name": "reference-library__gen-hero-light-field.png",
+   "source": "Generated by SPF023: an HTML render (CSS masks, scrim, line-art field) of an invented neutral demo brand with a flat illustrated stand-in subject. No image model, no paid call. The render passes the skill's own composition checks.",
+   "notes": "Hero-scale very light line-art field running edge to edge behind centered type and a button; the field is within the 1.15 contrast limit of the page surface. The subject is an illustration, not a photograph: take the composition, not the rendering style.",
+   "width_px": 1440,
+   "height_px": 640,
+   "crop_box_xyxy_in_source": null,
+   "media_path": "media/051945dd-4bb3-4d62-a131-acc4d47caf93.png"
+  },
+  {
+   "id": "gen-circle-persona-band",
+   "file": null,
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [
+    "mask-circle"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [
+    "generated-reference"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "c5767781a11c63783c6d6eecb844ab7faa8a6bc2cb2756415076f888b9ddfaab",
+   "ghl_file_id": "6ad6703837e9577188373810",
+   "ghl_name": "reference-library__gen-circle-persona-band.png",
+   "source": "Generated by SPF023: an HTML render (CSS masks, scrim, line-art field) of an invented neutral demo brand with a flat illustrated stand-in subject. No image model, no paid call. The render passes the skill's own composition checks.",
+   "notes": "Section 6 style band: three head-and-shoulders portraits cropped into perfect circles, visible against the ground, with a caption under each. The subject is an illustration, not a photograph: take the composition, not the rendering style.",
+   "width_px": 1440,
+   "height_px": 664,
+   "crop_box_xyxy_in_source": null,
+   "media_path": "media/bb7d6358-827d-49bd-b4d7-f8c835d4fed4.png"
+  },
+  {
+   "id": "gen-arch-pill-band",
+   "file": null,
+   "type": "mockup-crop",
+   "viewport": "desktop",
+   "form": "n/a",
+   "sections": [],
+   "traits": [
+    "mask-arch",
+    "mask-pill"
+   ],
+   "pair": null,
+   "use": "structure-and-look-only",
+   "tags": [
+    "generated-reference"
+   ],
+   "contains_reference_only_text": false,
+   "sha256": "47354274f7cb14134c1b8dfe5ba907c6ef06fedaaa28debb440a4cab0ce2d5a2",
+   "ghl_file_id": "6ad670383b8fa9783e71a878",
+   "ghl_name": "reference-library__gen-arch-pill-band.png",
+   "source": "Generated by SPF023: an HTML render (CSS masks, scrim, line-art field) of an invented neutral demo brand with a flat illustrated stand-in subject. No image model, no paid call. The render passes the skill's own composition checks.",
+   "notes": "Three benefit photos: arch, pill, arch (rounded top and flat base; fully rounded stadium), each with a caption. The subject is an illustration, not a photograph: take the composition, not the rendering style.",
+   "width_px": 1440,
+   "height_px": 666,
+   "crop_box_xyxy_in_source": null,
+   "media_path": "media/5ce697e5-5cfb-4c09-bd14-10aa0ee9dd4b.png"
+  }
+ ],
+ "how_to_use": [
+  "Pick references by type and section: a wireframe or image-map row for wireframe stages, a mockup row for mockup stages, and one real example (a mockup-crop or mockup row) for each non-split treatment named in references/composition-treatments.json.",
+  "scripts/composition.py typed_references() does this selection; scripts/stage_executor.py attaches the urls as input_urls and the prompt names each reference by type only.",
+  "Rows tagged counter-example-composition show the split default: use them for structure and finish, never as the composition target.",
+  "A row with contains_reference_only_text true holds placeholder tokens, a signature or a person's name (see reference_only_text on the row). typed_references() never picks such a row; do not send one to an image model.",
+  "media_path is the file's path in the library; sha256 is of the uploaded bytes. Re-verify with a HEAD request and a re-download before a paid run."
+ ],
+ "gaps": [
+  "mask-pill is covered only by gen-arch-pill-band; mask-diagonal, card-overlaps-photo, band-over-texture, break-the-frame and section-intersect have no reference row yet (std-hybrid-board, the only diagonal example, carries a signature and is excluded). The prompt rules in composition-treatments.json carry them until a reference is added.",
+  "The gen-* rows are HTML renders with illustrated stand-in subjects, not photographs."
+ ],
+ "url_assembly": "Each row stores media_path only. composition.load_catalog() builds the url as <SKILL71_REFERENCE_MEDIA_BASE>/<media_path>. The operator injects that base (the media library's public base URL up to and including its account segment) into the environment of the run, the way other operator-held values are injected. With no base set, no hosted reference is attached and the prompt text still carries the rules. The library's account identifier is never committed in this file."
+}

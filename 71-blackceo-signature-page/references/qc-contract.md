@@ -82,20 +82,63 @@ scores a wireframe or mockup trait criterion without a
 Wireframe traits (a designed, annotated build spec rendered as an
 image, in the client's brand colors):
 
-- W1: every section is numbered and named against the 12-section
-  standard.
+- W1: every section is numbered and named against the selected
+  version's sections (12 Standard, 15 Long-Form).
 - W2: type specs are printed on the sheet (H1, H2, body, and CTA
   sizes, desktop and mobile).
 - W3: every image slot is a deliberate placeholder (a
   black-and-white photographic plate or a crossed box), labeled with
-  its aspect ratio AND its art direction (what the image must show).
-- W4: the sheet is rendered in the client's brand colors.
+  its aspect ratio AND its art direction (what the image must show),
+  printed with its pixel box (for example `IMG-01 Hero portrait 1600 x
+  1800 8:9`) and its composition treatment (`references/composition-
+  treatments.json`). The wireframe DRAWS the treatment: the text box ON
+  the placeholder for an overlay, a mask drawn as its real shape, a
+  full-width tint for a light field, an overlap drawn as an overlap.
+- W4: the sheet is rendered in the client's brand colors. The palette it
+  is measured against is the one `scripts/brand_colors.py` resolved for
+  this client (never a default or another client's palette), and the same
+  palette is written into the wireframe prompt; with no resolved client
+  palette W4 has nothing to measure against and the stage does not start.
 - W5: a header strip states the page width and the content width.
 - W6: behavior notes are printed per section (for example "CTA
   before portrait on mobile", "No CTA", "Typography-only response").
 - W7: CTAs are shown as designed chips carrying the real button text
   and microcopy specs, and copy is the run's real copy where it
   exists.
+
+Wireframe trait extensions (the look of the owner's wireframes 1, 3 and
+4, drawn in the client's own colors). W1 to W7 keep their IDs. These
+checks tighten them and add one negative trait; `scripts/validate_wireframe.py`
+measures what it can, and a reviewer scoring W1 to W7 applies them all:
+
+- W1, sequential numbering: the section chips run in sequence, each
+  exactly once, none skipped, and a lettered tag follows its parent
+  (1, 2, 2A, 3, 3A, and so on). A repeated or skipped number fails by name; the
+  bundled examples print "SECTION 3" twice, skip 4, and read 44 and 52 on
+  module badges, which is why no example is a numeral standard. Any badge
+  sequence (the seven steps) reads 1 to n once each (01 and 1 are the
+  same number), with no icon standing in for a number. The plan carries
+  `section_tag` and `badge_reads`; the validator checks them, and also
+  checks on the pixels that each slice carries a chip: a compact filled
+  block in the client's accent colour in the slice's top-left zone.
+- W3, valid ratios: a printed ratio label is a valid label. "3:9" (printed
+  in two bundled examples; it is 1:3 written unreduced) and any ratio
+  outside the skill's list fail by name.
+- W4, palette share against the resolved client palette: counted on
+  chromatic pixels only, so a grey pixel never counts toward a brand
+  colour. A slice must show a chromatic colour of the client's palette
+  (at least a quarter of one percent of its pixels), and a chromatic
+  pixel that is a blend of that colour with white, black or grey is
+  on-brand.
+- W8, negative trait: a greyscale, no-colour sheet fails. When the client's
+  resolved palette has a chromatic colour, a slice with next to no colour
+  anywhere (the "warm grey line work on ivory, no colour fill" style) fails
+  W8 by name, even if its greys sit close to a cream or a charcoal in the
+  palette. A palette with no chromatic colour has nothing to measure.
+- The founder letter stays one continuous reading block (SOP Stage 5),
+  never six cards, columns or numbered parts, although bundled sheets 3
+  and 4 draw it as six parts; a reviewer scores a six-part letter as a
+  W1 defect.
 
 Mockup traits (the same page with nothing left as a placeholder
 except genuinely unknown data such as an event date or start time):
@@ -119,8 +162,11 @@ finished look for a single approval pass):
 
 ### B. Wireframe canon (dialects, confirmed from the bundled set)
 
-Two dialects plus a guide column. Review the artifact against the dialect
-its page type calls for; a dialect mismatch is a named defect.
+One live dialect (B1), one retired dialect (B2) and a guide column. Review
+the artifact against B1; a dialect mismatch is a named defect. The look to
+follow is the owner's bundled sheets `chatgpt-wireframe-1` (Standard
+desktop), `-3` (Long-Form desktop) and `-4` (Long-Form mobile); which sheet
+each wireframe request sends is `references/wireframe-build-spec.json`.
 
 B1, photo wireframe (the standard and long-form teaching sheets):
 
@@ -129,11 +175,17 @@ B1, photo wireframe (the standard and long-form teaching sheets):
 - a black title bar carrying the page name; no device frame, legend or
   swatches;
 - grayscale photography only, darkened, with white ratio labels, plus one
-  red accent family (measured #c8091a to #d90110) for tags and headlines;
+  accent family for tags and headlines (the bundled sheets measure
+  #c8091a to #d90110 because they are drawn in their own brand's red; a
+  client's sheet carries that client's primary colour in this role, never the
+  example's red);
 - two-tone headlines (black then red, or white then red on a black band);
 - alternating white and black full-bleed bands;
 - a thin red edge bar on most photographs, left or right edge;
-- asymmetric alternating 2-3 column rows (text, photo, details);
+- asymmetric alternating 2-3 column rows (text, photo, details), one allowed
+  option among the composition treatments, capped by the per-page budget in
+  `references/composition-treatments.json` (split at most 40 percent of
+  photo-bearing sections);
 - pains use "!" bullets or black checkmark circles; benefits use
   checkmarks;
 - the 7-step sequence as red circles joined by chevrons or a dotted line on
@@ -148,16 +200,15 @@ B1, photo wireframe (the standard and long-form teaching sheets):
 - absent from the observed set and therefore never invented: testimonials,
   price, order form, FAQ, countdown, logo bar, guarantee block.
 
-B2, grayscale wireframe (the long-form event opt-in):
-
-- strictly grayscale (measured #f6f6f6, #ffffff, #e8e8e8, #242424;
-  saturated-pixel share 0.000%);
-- a dark meta bar carrying page width and content width, alternating
-  content bands, then a light footer;
-- 2 px dark-outline CTA rectangles with a boxed "CTA" tag, an arrow glyph
-  and gray microcopy;
-- hero dashed offset frame with a caption;
-- art-direction briefs printed in the slots.
+B2, grayscale wireframe (the long-form event opt-in): RETIRED as a target
+dialect (owner, 2026-10-19). The Set for Life sheet is strictly grayscale
+(measured #f6f6f6, #ffffff, #e8e8e8, #242424; saturated-pixel share 0.000%),
+with a dark meta bar carrying page width and content width, 2 px outlined CTA
+rectangles, crossed-box slots and art-direction briefs in the slots. It stays
+in the bundled set as an annotation reference only: its widths header strip
+and per-section behavior notes are the written rules W5 and W6, and its look
+is not a style. A grayscale sheet fails W8, and the wireframe stages never
+attach it as a style reference.
 
 B3, section guide column: numbered rows with thumbnails and type specs;
 each row states headline, subheadline, body, CTA and layout with its image
@@ -176,15 +227,27 @@ fails review outright.
   rules, hairline dividers; rust and green pills with arrow glyphs and
   shadows; script overlays on photos; slogans printed on objects (mugs,
   books).
-- Tier H (flat, sparse, same copy): square plain-rectangle photography
-  (about 7 photos with 7 content bands photo-free), no botanicals and no
+- Tier H (flat, sparse, same copy): plain-rectangle photography is allowed
+  (about 7 photos with 7 content bands photo-free; the composition budget
+  still applies to the photo-bearing sections), no botanicals and no
   script on photos (the script moves to a caption bar), square green or
   cream buttons with an arrow glyph and gray microcopy, six cream icon
   cards, rust or peach number badges, hairline dividers and gold left or top
   rules.
-- Palette, measured: cream #f7f2e9, ivory #fffdf9, deep green #28513f,
+- Palette, measured (the canon example set's own colors, a structure and
+  tonal-weight benchmark only; a client's mockup is judged against that
+  client's resolved brand palette per W4/M2, never against these hexes):
+  cream #f7f2e9, ivory #fffdf9, deep green #28513f,
   blush #f0dedb, rose #93504f, brick #bc5248; gold (#c49a45, #e2c98f) is an
-  accent only; neither tier uses the wireframe red family.
+  accent only; neither tier uses the wireframe red family. These are the
+  canon example set's own colors, a structure benchmark: a client's mockup
+  uses the client's colors under the page color system below.
+- Page color (hypersaturation): hero color as full-bleed grounds, hard dark
+  and light grounds, two-tone heavy headlines, photos graded to the hero
+  color (`references/hypersaturation-framework.md`, R1 to R9). Measured with
+  `scripts/validate_page_color.py` on the stitched page against thresholds
+  derived from the two reference pages; reviewer-judged for ground order,
+  divider bands and accent panels.
 - Type: a two-tone statement-turn headline (the one exception is an upright
   Title-Case red second line); serif body in the layered tier, sans body in
   the flat tier; tracked-uppercase eyebrows; script overlays and a
@@ -226,20 +289,52 @@ generic page fails several of them.
 4. layered-tier photo density (about 9 portraits per frame) against
    flat-tier or generic sparseness;
 5. consistent casting, pose and styling;
-6. gold script on the photo (flat tier: the caption bar);
+6. gold script on the photo (flat tier: the caption bar); measured, not only
+   reviewed, for pages that declare `caption-over-photo` or an overlay: the
+   text sits inside the slot's `copy_zone`, clear of `subject_zone`, with the
+   contrast in `references/composition-treatments.json` (checks Q2 and Q6);
 7. slogans on props (mugs, books);
 8. hue-shifting full-width bands;
 9. arches and diagonal masks, monstera and palm, leaf texture (layered
-   tier);
+   tier); the masks are measured (check Q3: corner patches match the
+   section background, computed radius or clip-path agrees with the declared
+   `mask-*` treatment);
 10. red edge bars plus red offset blocks and bracket frames;
 11. varied image ratios with art direction ("never a defeated stereotype");
 12. a CTA after nearly every block, first-person outcome labels with
     microcopy;
-13. asymmetric alternating rows;
+13. asymmetric alternating rows (one allowed option, capped by the per-page
+    composition budget);
 14. six icon cards in tinted circles plus peach or rust sequence badges;
 15. the four-line brand system reused in header, overlay, props and footer;
 16. founder close: portrait, script signature, capitals name and title,
     final CTA.
+
+## Design Board (stage design-board; SPF021)
+
+`scripts/design_board.py validate` is the deterministic floor, run by the stage gate at close
+with `--require-approval`. Contract and block list: `references/design-board.md`.
+
+1. Palette on the board is the run's resolved client palette (roles and hex), every printed hex
+   is a palette hex, every palette hex is printed, and every palette color is present in the
+   board's pixels.
+2. The client's logo file is present and unchanged since the board was made.
+3. Images are the page's actual section images, re-derived from the run's own artifacts (wireframe
+   inventory and section plan, image map, generation files, supplied assets) at every check: same
+   slots, files and bytes as recorded; no slot without a real file (no art-direction tile).
+4. Every block on the board (required for the page role, plus any optional one declared) is legible:
+   each declared text (tagline, caption, tile, cue, label, title line, phrase line, banner second
+   line) is in the transcript and the board image itself (read by tesseract, not the caller)
+   shows that text, judged per text, not per block; the transcript is supported by the image overall.
+5. No foreign client brand text (other clients' names, the example board's words).
+6. Not a stub placeholder; the board file is unchanged since it was recorded; the page role matches the run.
+7. A recorded client approval (`approved`, approver, evidence, time) bound to the current board, image
+   set, palette and page role.
+
+Reviewer criteria (Review Receipt v2, each applicable criterion at least 8): reads as the client's brand;
+the logo is faithful, not restyled; each image tile is the page's image and undistorted; spacing and
+hierarchy are clean; no garbled or invented text. A palette, logo, image or foreign-brand failure is an
+auto-fail.
 
 ## Failed-only repair loop
 
@@ -353,5 +448,7 @@ still provisional:
   to W7 in "Visual standard set traits" above, scored trait by trait
   with the bundled standard set at `assets/visual-standards/` open
   beside the artifact; the criterion note names each trait's verdict,
-  and a missing annotation (W1, W2, W5, W6) or an unlabeled slot
-  (W3) is a named defect, never a general impression)
+  and a missing annotation (W1, W2, W5, W6), an unlabeled slot
+  (W3), a skipped or repeated number (W1), an invalid ratio label
+  (W3), a palette that is not the client's (W4) or a greyscale
+  no-colour sheet (W8) is a named defect, never a general impression)

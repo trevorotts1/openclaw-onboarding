@@ -131,7 +131,7 @@ class BlastRadiusTest(unittest.TestCase):
     def test_stage_contract_stage_list_unchanged(self):
         stages = list(CONTRACT["stages"].keys()) if isinstance(CONTRACT.get("stages"), dict) else [
             s.get("id") for s in CONTRACT.get("stages", [])]
-        self.assertEqual(len(stages), 14,
+        self.assertEqual(len(stages), 15,
                          f"governing-text items must not change the stage list; got {stages}")
 
 

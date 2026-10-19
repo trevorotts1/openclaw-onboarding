@@ -46,6 +46,13 @@ Usage:
   python3 scripts/stage_executor.py <run_dir> --stage image-generation-qc
       --item IMG-001 [--provider stub|kie] [--allow-paid]
 
+  # the page's Design Board (SPF021): runs alone, after the image chain, before final-mockups
+  python3 scripts/stage_executor.py <run_dir> --stages design-board [--preflight]
+
+The final-mockups stage refuses to start until the page's design board has a current recorded
+client approval (scripts/design_board.py gate; references/design-board.md). The board itself
+refuses to start until every image slot of the page has its real file.
+
 Exit codes: 0 every requested stage produced its images; 1 a named
 failure or refusal; 2 usage.
 """
@@ -64,11 +71,23 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import circle_image  # noqa: E402  design styles B and C: circle slots
+import design_style  # noqa: E402
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reference_use  # noqa: E402  SPF022: reference images are structure only
+import brand_colors  # noqa: E402  SPF019: client brand colors gate
+import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
+import composition  # noqa: E402  the composition library (treatments, typed references)
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
+OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
+COMBINE = SKILL_ROOT / "scripts" / "combine_review_pdf.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
+BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
 
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 # per stage: list of (output template, width, height-hint)
@@ -94,7 +113,6 @@ COPY_PADDING = (
     "Preserve the measured band order",
     "Hold the type scale",
     "Keep the authority band",
-    "Keep the photography square-cornered",
     "Keep the gold hairline rules",
     "Keep the ivory ground warm",
     "Set the eyebrow in rust",
@@ -173,6 +191,7 @@ LEAK_LINE = re.compile(
     r"^\s*[-\s]*Pixels:\s*\d+\s*[x×]\s*\d+|"
     r"^\s*[-\s]*Raster:\s*\d+\s*[x×]\s*\d+|"
     r"(?<!\d)(?:724|2171|2172)(?!\d)|\braster_(?:width|height)\b)")
+MAX_LABEL_WORDS = 8
 TERMINAL = (".", "!", "?", '"', "”", "'", "’", ")", "]", "…")
 
 
@@ -231,6 +250,54 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
     return picks
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wireframe_spec  # noqa: E402  SPF016: wireframe style reference + build-spec prompt
+
+
+def style_refs(stage: str, request: dict, strict: bool = False) -> list:
+    """The one wireframe style reference a desktop or mobile wireframe job
+    attaches (chosen by stage and form), first in attach order; [] for the
+    other stages. A request that still lists the greyscale sheet is refused."""
+    try:
+        return wireframe_spec.reference_urls(stage, request, strict)
+    except wireframe_spec.SpecError as exc:
+        raise ExecutorError(str(exc))
+
+
+def wireframe_body(stage: str, section: dict, index: int, width: int,
+                   request: dict, body: str) -> str:
+    """Prepend the annotated build-spec block to a wireframe stage's prose,
+    after refusing prose that asks for a colourless sheet."""
+    if stage not in wireframe_spec.WIREFRAME_STAGES:
+        return body
+    try:
+        wireframe_spec.refuse_colourless_prose(stage, body)
+        block = wireframe_spec.prompt_block(
+            stage, section, index, len(request.get("sections") or []), width, request)
+    except wireframe_spec.SpecError as exc:
+        raise ExecutorError(str(exc))
+    if not (request.get("stage_prompts") or {}).get(stage):
+        # The generic fallback prose adds nothing to the build spec except the
+        # request's one-line style direction, which may be the only place a
+        # client colour is written.
+        style = sanitize_prompt(str(request.get("style") or "")).strip()
+        return f"{block}\n\nSTYLE DIRECTION - {style}" if style else block
+    return f"{block}\n\n{body}".strip()
+
+
+def require_brand_line(stage: str, prompt: str) -> None:
+    """A paid wireframe job needs the client's palette in its prompt. The build
+    spec says every colour comes from the BRAND COLORS line (scripts/brand_colors.py,
+    sigpage-brand-colors / R69, a required prerequisite of this change); without
+    that line the prompt points at a colour source that is not there."""
+    if stage in wireframe_spec.WIREFRAME_STAGES and not any(
+            line.startswith("BRAND COLORS") for line in prompt.splitlines()):
+        raise ExecutorError(
+            f"{stage}: the composed prompt has no BRAND COLORS line, so the sheet would go "
+            "out with no client palette. Resolve the client's brand colors first "
+            "(scripts/brand_colors.py, R69 sigpage-brand-colors)")
+
+
 def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
                  index: int) -> str:
     """Per-section, per-platform ratio: the pixel-mate's, never one 3:4 for all."""
@@ -242,7 +309,10 @@ def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
         if _platform(stage, template) == "mobile" and width > height:
             continue  # never carry a landscape mobile slice forward
         return nearest_ratio(width, height)
-    slot = (section.get("slots") or [{}])[0]
+    # A circle slot is generated 1:1 for its mask; that is the slot's ratio, never the
+    # section slice's, so the slice ratio comes from the first non-circle slot.
+    flat = [s for s in section.get("slots") or [] if design_style.slot_shape(s) != "circle"]
+    slot = (flat or [{}])[0]
     ratio = slot.get("aspect_ratio")
     if ratio and ratio != "auto":
         try:
@@ -418,12 +488,38 @@ def copy_contract(section: dict) -> str:
              "Spell every word exactly: do not invent, drop, double, or substitute "
              "characters anywhere:",
              copy]
+    # Chip labels and the founder's signature are names, not sentences: the builder
+    # lists them apart so the truncated-prose guard above keeps reading prose only.
+    labels = [str(x).strip() for x in section.get("labels") or [] if str(x).strip()]
+    for text in labels:
+        if len(text.split()) > MAX_LABEL_WORDS:
+            raise ExecutorError(
+                f"section {label}: label {text[:56]!r} is longer than {MAX_LABEL_WORDS} words; "
+                "a label is a chip or a signature, so unfinished prose belongs in the copy block")
+    if labels:
+        lines.append("LABELS — print exactly, one per line, as designed labels: " +
+                     " | ".join(f'"{x}"' for x in labels))
     if cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
 
-def negative_block() -> str:
-    """The skill's own defect-class negative block, applied at the wire."""
+def negative_block(stage: str | None = None) -> str:
+    """The skill's own defect-class negative block, applied at the wire.
+
+    Stage aware: a wireframe stage prints annotations (section number and
+    name, type specs, IMG labels with pixel size, ratio and treatment), so its
+    block permits exactly those and nothing else; every other stage keeps the
+    strict no-extra-text rule.
+    """
+    tail = ("Do not print any text that is not in the verbatim copy above; no "
+            "placeholder tokens, no agent notes, no lorem, no bracketed markers, "
+            "no captions, watermarks, or production labels.")
+    if stage in composition.WIREFRAME_STAGES:
+        tail = ("Do not print any text that is not in the verbatim copy above or in "
+                "the wireframe annotations allowed in the composition contract "
+                "(section number and name, type specs, slot labels with pixel size, "
+                "ratio and treatment, behavior notes); no placeholder tokens, no "
+                "agent notes, no lorem, no bracketed markers, no watermarks.")
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
         "same number twice, do not skip a number. Do not mis-number the 7 steps: "
@@ -431,10 +527,7 @@ def negative_block() -> str:
         "step labels. Do not garble any label, mug slogan, or caption: no "
         "\"BIGNEFIT\", \"BTEP 7\", \"DISCIFIONAL\", \"FREIDOM\", "
         "\"Folow Gnlume Sno Home\", \"widhh\", and no invented, dropped, "
-        "doubled, or substituted characters anywhere. Do not print any text that "
-        "is not in the verbatim copy above; no placeholder tokens, no agent "
-        "notes, no lorem, no bracketed markers, no captions, watermarks, or "
-        "production labels.")
+        "doubled, or substituted characters anywhere. " + tail)
 
 
 def frame_contract(width: int, ratio: str) -> str:
@@ -450,6 +543,117 @@ class ExecutorError(Exception):
     """A named failure; the message is printed and the run stops."""
 
 
+def require_brand_colors(run_dir: Path) -> str:
+    """Fail closed: no image stage starts without the client's resolved brand colors.
+    Returns the color block every wireframe and mockup prompt carries."""
+    res = brand_colors.resolve(run_dir)
+    if not res.ok:
+        raise ExecutorError(brand_colors.failure(run_dir))
+    return res.block()
+
+
+SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
+
+
+def canon_section_id(value) -> str:
+    """Canonical copy-spec section id: "S02A", "02A", "2a" -> "2A"."""
+    text = str(value).strip().upper()
+    text = re.sub(r"^S(?=\d)", "", text)
+    match = re.fullmatch(r"0*(\d+)([A-Z]?)", text)
+    return f"{int(match.group(1))}{match.group(2)}" if match else text
+
+
+def declared_copy_version(run_dir: Path, request: dict):
+    """The selected form: request, then request metadata, then intake.json."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    values = [request.get("copy_version"), metadata.get("copy_version")]
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        values.append(intake.get("copy_version"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    for value in values:
+        if value:
+            return str(value)
+    return None
+
+
+def allowed_section_sequences(spec: dict) -> list:
+    """The spec sequence, plus each optional-children expansion (5 -> 5A,5B,5C)."""
+    base = list(spec["sequence"])
+    out = [base]
+    for parent, child in (spec.get("containment", {}).get("child_sections") or {}).items():
+        if parent in base and child.get("ids"):
+            i = base.index(parent)
+            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
+    return out
+
+
+def check_section_count(run_dir: Path, request: dict, paid: bool = False):
+    """Fail closed unless the request carries one section per canonical copy
+    section of the selected form (Standard 12, Long-Form 15), in order.
+
+    Never band-compressed: a request that merges sections to fit fewer images
+    is refused by name before any prompt is composed or any call is made.
+    """
+    version = declared_copy_version(run_dir, request)
+    if not version:
+        if paid:
+            raise ExecutorError(
+                "the production request does not declare copy_version (request "
+                "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
+                "paid run needs the selected form so the section count can be checked")
+        print("NOTE section_count: no copy_version declared; the section-count "
+              "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
+        return None
+    spec_path = SPEC_DIR / f"{version}-v6.json"
+    if not spec_path.is_file():
+        raise ExecutorError(
+            f"copy_version {version!r} is not one of standard, long-form "
+            f"(no spec at {spec_path.name})")
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
+    allowed = allowed_section_sequences(spec)
+    if ids not in allowed:
+        want = allowed[0]
+        raise ExecutorError(
+            f"section count: the request has {len(ids)} sections {ids} but the "
+            f"{version} copy has {len(want)} canonical sections {want}; missing "
+            f"{[i for i in want if i not in ids]}, unexpected "
+            f"{[i for i in ids if i not in want]}. One request section per canonical "
+            "copy section, in order; never band-compress sections")
+    sources, absent = [], []
+    for path in _copy_source_candidates(run_dir, request):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        sources.append(("copy source", [canon_section_id(s["id"]) for s in data.get("sections") or []
+                                        if isinstance(s, dict) and s.get("id")]))
+        break
+    else:
+        absent.append("copy source file not found")
+    manifest = run_dir / "copy" / "copy-manifest.json"
+    if not manifest.is_file():
+        absent.append(f"copy manifest absent at {manifest}")
+    else:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from validate_wireframe import manifest_section_ids  # the wireframe gate's own reader
+        try:
+            sources.append(("copy manifest", [canon_section_id(i) for i in manifest_section_ids(
+                json.loads(manifest.read_text(encoding="utf-8")))]))
+        except (OSError, ValueError):
+            pass
+    for label, source_ids in sources:
+        if source_ids and source_ids != ids:
+            raise ExecutorError(
+                f"section count: the request has {len(ids)} sections {ids} but its {label} "
+                f"has {len(source_ids)} sections {source_ids}; they must match one to one")
+    return version, ids, [label for label, _ in sources] + absent
+
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -462,7 +666,36 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def load_request(run_dir: Path, name: str) -> dict:
+def style_id_for(run_dir: Path, request: dict):
+    """The run's design style letter: the request's own wins, else intake.json's, else None
+    (older runs and test runs carry none). An unknown letter is refused."""
+    style_id = request.get("design_style")
+    if not style_id:
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            intake = {}
+        style_id = intake.get("design_style") if isinstance(intake, dict) else None
+    if style_id and style_id not in design_style.STYLE_IDS:
+        raise ExecutorError(f"design_style {style_id!r} is not one of {list(design_style.STYLE_IDS)}")
+    return style_id
+
+
+def resolve_design_style(run_dir: Path, request: dict) -> None:
+    """Carry the client's design style (A, B or C) into the request and refuse slot
+    shapes the style does not allow."""
+    style_id = style_id_for(run_dir, request)
+    if not style_id:
+        return
+    request["design_style"] = style_id
+    slots = [slot for sec in request.get("sections") or [] if isinstance(sec, dict)
+             for slot in sec.get("slots") or [] if isinstance(slot, dict)]
+    failures = design_style.slot_failures(style_id, slots)
+    if failures:
+        raise ExecutorError("design style slot shapes refused: " + "; ".join(failures))
+
+
+def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
     path = run_dir / name
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -475,11 +708,28 @@ def load_request(run_dir: Path, name: str) -> dict:
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         raise ExecutorError("production request needs a non-empty 'sections' array")
-    ctas = copy_source_ctas(run_dir, data)
-    required = bool(data.get("cta_required"))
+    data["_hypersat"] = hypersaturation.roles_for_run(run_dir)
+    if data["_hypersat"] is None:
+        print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
+              "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
+    resolve_design_style(run_dir, data)
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    if not (data.get("copy_version") or metadata.get("copy_version")):
+        # The run's form is an intake decision (artifact-contracts.md, Intake);
+        # a request that does not repeat it is read against intake.json.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+            if isinstance(intake, dict) and intake.get("copy_version"):
+                data["copy_version"] = intake["copy_version"]
+        except (OSError, ValueError):
+            pass
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
+    data["_section_check"] = check_section_count(run_dir, data, paid)
+    ctas = copy_source_ctas(run_dir, data)
+    required = bool(data.get("cta_required"))
+    for i, s in enumerate(sections):
         s.setdefault("section_name", s["section_id"])
         inline = _cta_label(s.get("cta"))
         source = ctas.get(str(s["section_id"]))
@@ -496,6 +746,8 @@ def load_request(run_dir: Path, name: str) -> dict:
             s["cta"] = source
         if required:
             s.setdefault("cta_required", True)
+    # the run's brand file, read once: composition cues and light-field colors
+    data["_composition_brand"] = composition.load_brand(run_dir)
     return data
 
 
@@ -528,19 +780,47 @@ def render_template(template: str, values: dict, stage: str) -> str:
             f"{leftover.group(0)!r} after rendering; refusing before any provider call")
     return body
 
+def request_cues(request: dict) -> dict:
+    """The brand's composition cues for this run (empty when it declares none)."""
+    return composition.composition_cues(request.get("_composition_brand") or composition.load_brand())
+
+
+def resolve_composition(section: dict, index: int, request: dict) -> dict:
+    """This section's composition record: declared slot treatments, else the
+    section role's default, rotated against the neighbouring sections."""
+    sections = request.get("sections")
+    if (isinstance(sections, list) and 0 < index <= len(sections)
+            and sections[index - 1].get("section_id") == section.get("section_id")):
+        return composition.assign_treatments(sections, request_cues(request))[index - 1]
+    return composition.assign_treatments([section], request_cues(request))[0]
+
+
+def section_typed_references(stage: str, width: int, resolved: dict, section: dict) -> list:
+    """Hosted reference rows (by type) for one job; [] when the catalog has none."""
+    platform = "mobile" if width <= 768 else "desktop"
+    used = [e["treatment"] for e in resolved.get("slots") or []]
+    return composition.typed_references(stage, platform, section.get("section_id"), used)
+
+
 def stage_prompt(stage: str, section: dict, index: int, width: int,
                  request: dict, ratio: str | None = None,
-                 with_sizes: bool = False):
+                 with_sizes: bool = False, strict_floor: bool = False,
+                 typed_refs: list | None = None):
     slots = section.get("slots") or []
+    resolved = resolve_composition(section, index, request)
+    by_slot = {id(e["slot"]): e["treatment"] for e in resolved["slots"]}
     slot_words = "; ".join(
-        f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
+        (f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
+         + " " + composition.slot_words(s, by_slot.get(id(s), "split")))
         for s in slots) or "no image slots"
     values = {
         "stage": stage,
         "section_number": str(index),
+        "section_total": str(len(request.get("sections") or [])),
         "section_name": section.get("section_name") or section["section_id"],
         "copy": section.get("copy") or "",
         "slots": slot_words,
+        "layout": str(section.get("layout") or ""),
         "width": str(width),
         "ratio": ratio or "",
         "style": request.get("style") or "",
@@ -553,18 +833,49 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"at {width}px page width. Copy: {values['copy']}. "
                 f"Image slots: {slot_words}. {values['style']}").strip()
     copy = str(section.get("copy") or "").strip()
-    body = sanitize_prompt(body)
+    # Lift the verbatim copy out of the template body BEFORE sanitising: the sanitiser
+    # drops blank lines, so a multi-paragraph copy would no longer match and would
+    # print twice (once in the verbatim block, once in the body).
     if copy and copy in body:
-        body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
+        body = body.replace(copy, "", 1)
+    body = sanitize_prompt(body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    body = wireframe_body(stage, section, index, width, request, body)
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block()
-    blocks = [b for b in (copy_block, frame_block, neg_block) if b]
+    neg_block = negative_block(stage)
+    ref_block = reference_use.reference_block(request.get("references"),
+                                              request.get("reference_roles"))
+    color_block = str(request.get("_brand_block") or "")
+    roles = request.get("_hypersat")
+    if stage in hypersaturation.MOCKUP_STAGES:
+        # Hypersaturation is built in, never optional: no palette, or prose that names another
+        # palette, refuses the prompt instead of sending it without (or against) the blocks.
+        if not roles:
+            raise ExecutorError(
+                f"{stage} section {index}: no resolved client palette, so the page color system and "
+                "image color grade cannot be built; resolve the client's brand colors first")
+        foreign = hypersaturation.foreign_hexes(body, roles)
+        if foreign:
+            raise ExecutorError(
+                f"{stage} section {index}: design prose names colors outside the client palette "
+                f"({', '.join(foreign)}); remove them or use the client's own hex values, the "
+                "PAGE COLOR SYSTEM block carries the palette")
+    page_color, image_grade = hypersaturation.stage_blocks(stage, index, section, roles)
+    style_blk = (design_style.style_block(request["design_style"], stage, slots)
+                 if request.get("design_style") else "")
+    comp_block = composition.block(stage, resolved, typed_refs)
+    blocks = [b for b in (copy_block, color_block, page_color, image_grade, ref_block,
+                          frame_block, comp_block, neg_block, style_blk) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
-        "contract_chars": len(frame_block) + len(neg_block),
+        "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
+                           + len(color_block) + len(page_color) + len(image_grade)
+                           + len(style_blk) + len(comp_block)),
+        "hypersaturation_chars": len(page_color) + len(image_grade),
+        "composition_chars": len(comp_block),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
@@ -596,21 +907,29 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"{budget['max_chars']}-char model maximum; cut design prose, never "
                 "the verbatim copy")
         if deficit > 0:
-            print(f"WARN prompt_budget {stage} section {index}: {len(prompt)} chars, "
-                  f"{deficit} below the {budget['floor_chars']}-char floor "
-                  f"({budget['target_chars']}-char target); add genuine specification",
-                  file=sys.stderr)
+            message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
+                       f"{budget['floor_chars']}-char floor ({budget['target_chars']}-char "
+                       "target); add genuine specification")
+            if strict_floor:  # owner Decision 1: under the floor fails the prompt stage
+                raise ExecutorError(f"prompt budget: {message}")
+            print(f"WARN prompt_budget {message}", file=sys.stderr)
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
-    refs = list(dict.fromkeys(str(r) for r in (request.get("references") or []) +
-                              job["references"]))
+    exact = bool(job.get("exact_references"))
+    if exact:  # the design board: exactly the job's attachments (client logo, the page's images)
+        refs = [str(r) for r in job["references"]]
+    else:
+        refs = list(dict.fromkeys(str(r) for r in (job.get("style_refs") or []) +
+                                  (request.get("references") or []) + job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
     extra = request.get("input_extra")
     if isinstance(extra, dict):
         base.update(extra)
+    if exact:  # a request-level extra can never add a picture to the board either
+        base["input_urls"] = refs
     return base
 
 
@@ -722,39 +1041,96 @@ def make_provider(args, run_dir: Path):
     return KieProvider(find_adapter(args.kie_adapter), run_dir)
 
 
-def compose(stage: str, run_dir: Path, provider) -> dict:
+def compose(stage: str, run_dir: Path, provider, expect: int | None = None) -> dict:
     """Run the existing deterministic composers when their inputs exist.
 
-    No composer is invented here: stitch_sections.py and
-    build_hybrid_board.py are the repo's own pinned steps, and both
-    refuse to run from inputs that do not pass their validation. Stub
-    mode never composes: a placeholder is not an approved input.
+    No composer is invented here: stitch_sections.py,
+    build_hybrid_board.py and combine_review_pdf.py are the repo's own
+    pinned steps. The stitcher and board refuse to run from inputs that
+    do not pass their validation; the review-PDF step validates its own
+    output and deletes a PDF that fails. Stub mode never composes: a
+    placeholder is not an approved input.
     """
     if provider.name != "kie":
         return {"status": "skipped", "reason": "stub provider writes placeholders only"}
     stage_dir = run_dir / stage
+    result = {"status": "not_applicable"}
     if stage in ("desktop-wireframe", "mobile-tablet"):
         if not (stage_dir / "production-record.json").is_file():
-            return {"status": "skipped", "reason": "no production-record.json to stitch from"}
-        proc = subprocess.run([sys.executable, str(STITCH), str(stage_dir)],
-                              capture_output=True, text=True, cwd=str(SKILL_ROOT))
-        return {"status": "pass" if proc.returncode == 0 else "fail",
-                "command": f"stitch_sections.py {stage_dir}",
-                "exit": proc.returncode,
-                "output": (proc.stdout + proc.stderr).strip()[:600]}
-    if stage == "final-mockups":
+            result = {"status": "skipped", "reason": "no production-record.json to stitch from"}
+        else:
+            proc = subprocess.run([sys.executable, str(STITCH), str(stage_dir)],
+                                  capture_output=True, text=True, cwd=str(SKILL_ROOT))
+            result = {"status": "pass" if proc.returncode == 0 else "fail",
+                      "command": f"stitch_sections.py {stage_dir}",
+                      "exit": proc.returncode,
+                      "output": (proc.stdout + proc.stderr).strip()[:600]}
+    elif stage == "final-mockups":
         if not (run_dir / "final-mockups" / "hybrid-board.json").is_file():
-            return {"status": "skipped", "reason": "no hybrid-board.json to compose from"}
-        proc = subprocess.run([sys.executable, str(HYBRID_BOARD), str(run_dir)],
-                              capture_output=True, text=True, cwd=str(SKILL_ROOT))
-        return {"status": "pass" if proc.returncode == 0 else "fail",
-                "command": f"build_hybrid_board.py {run_dir}",
-                "exit": proc.returncode,
-                "output": (proc.stdout + proc.stderr).strip()[:600]}
-    return {"status": "not_applicable"}
+            result = {"status": "skipped", "reason": "no hybrid-board.json to compose from"}
+        else:
+            proc = subprocess.run([sys.executable, str(HYBRID_BOARD), str(run_dir)],
+                                  capture_output=True, text=True, cwd=str(SKILL_ROOT))
+            result = {"status": "pass" if proc.returncode == 0 else "fail",
+                      "command": f"build_hybrid_board.py {run_dir}",
+                      "exit": proc.returncode,
+                      "output": (proc.stdout + proc.stderr).strip()[:600]}
+    # The client never receives loose section images: once the stage's
+    # sections exist, they are combined, in section order, into the stage's
+    # desktop and mobile review PDFs (review-pdfs/), validator-gated.
+    cmd = [sys.executable, str(COMBINE), str(run_dir), "--stage", stage]
+    if expect:
+        cmd += ["--expect", str(expect)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(SKILL_ROOT))
+    result["review_pdf"] = {"status": "pass" if proc.returncode == 0 else "fail",
+                            "command": f"combine_review_pdf.py {run_dir} --stage {stage}",
+                            "exit": proc.returncode,
+                            "output": (proc.stdout + proc.stderr).strip()[:600]}
+    return result
 
 
-def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
+def reference_bleed(out: Path, request: dict, provider):
+    """QC leg: did the delivered image reproduce the reference's palette or
+    brand text? None when no reference was attached or the image is a stub
+    placeholder. Recorded, never gating here: the stage gate reads it."""
+    if provider.name == "stub" or not request.get("references"):
+        return None
+    return reference_use.check(out, request["references"], request.get("client_palette") or ())
+
+
+def record_bleed(entry: dict, out: Path, request: dict, provider, stage: str) -> None:
+    """Attach the bleed result to a delivered-image record (run_stage and
+    run_item both route here, so every delivered image gets the same check)."""
+    bleed = reference_bleed(out, request, provider)
+    if bleed:
+        entry["reference_bleed"] = bleed
+        if bleed["status"] != "PASS":
+            print(f"WARN reference_bleed {stage} {out.name}: "
+                  f"{json.dumps(bleed, sort_keys=True)[:400]}")
+
+
+def overview_boards(stage: str, run_dir: Path, provider, request_name: str,
+                    expect: int | None = None) -> dict:
+    """Second client deliverable next to the review PDFs: the combined
+    overview boards (desktop, mobile, and the combined desktop + mobile board),
+    all sections on one image each (references/overview-board.md).
+    Pure Pillow, no provider call; fails closed on a missing section. Stub
+    mode never composes, same as compose()."""
+    if provider.name != "kie":
+        return {"status": "skipped", "reason": "stub provider writes placeholders only"}
+    cmd = [sys.executable, str(OVERVIEW_BOARD), str(run_dir), "--stage", stage,
+           "--request", request_name]
+    if expect:
+        cmd += ["--expect", str(expect)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(SKILL_ROOT))
+    return {"status": "pass" if proc.returncode == 0 else "fail",
+            "command": f"build_overview_board.py {run_dir} --stage {stage}",
+            "exit": proc.returncode,
+            "output": (proc.stdout + proc.stderr).strip()[:600]}
+
+
+def run_stage(stage: str, run_dir: Path, request: dict, provider,
+              request_name: str = DEFAULT_REQUEST) -> dict:
     if stage not in LAYOUT:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
     sections = request["sections"]
@@ -764,15 +1140,24 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
         for template, width, height in targets:
             out = run_dir / stage / template.format(n=index)
             ratio = target_ratio(stage, template, section, run_dir, index)
+            style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template)
+            typed = section_typed_references(
+                stage, width, resolve_composition(section, index, request), section)
             prompt, prompt_sizes = stage_prompt(
-                stage, section, index, width, request, ratio, with_sizes=True)
+                stage, section, index, width, request, ratio, with_sizes=True,
+                strict_floor=provider.name == "kie", typed_refs=typed)
+            if provider.name == "kie":
+                require_brand_line(stage, prompt)
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
                 "label": f"{stage} section {index:02d} {width}px",
                 "ratio": ratio,
-                "references": [str(p) for p in refs],
+                "references": [str(p) for p in refs] + [r["url"] for r in typed],
+                "typed_references": [{"id": r.get("id"), "type": r.get("type"), "sha256": r.get("sha256")}
+                                     for r in typed],
+                "style_refs": style,
                 "prompt": prompt, "prompt_sizes": prompt_sizes,
             }
             result = provider.generate(job, request)
@@ -791,8 +1176,12 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "provider": result.get("provider"),
                 "mode": result.get("mode"),
                 "task_id": result.get("task_id"),
-                "inputs": job["references"],
+                "inputs": build_input(job, request)["input_urls"],
+                "typed_references": job["typed_references"],
+                "treatments": [e["treatment"] for e in resolve_composition(
+                    section, index, request)["slots"]],
             }
+            record_bleed(entry, out, request, provider, stage)
             if actual:
                 a, b = ratio.split(":")
                 want = int(a) / int(b)
@@ -803,7 +1192,9 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                     print(f"WARN geometry_mismatch {stage} {out.name}: "
                           f"{entry['geometry_mismatch']}")
             records.append(entry)
-    composition = compose(stage, run_dir, provider)
+    composition = compose(stage, run_dir, provider, len(sections))
+    composition["overview_boards"] = overview_boards(
+        stage, run_dir, provider, request_name, len(sections))
     record = {
         "stage": stage,
         "provider": provider.name,
@@ -820,6 +1211,136 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
     return record
 
 
+def load_board_request(run_dir: Path, name: str) -> dict:
+    """The production request as the board needs it: sections and slots, no copy rules."""
+    try:
+        data = json.loads((run_dir / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read production request {run_dir / name}: {exc}")
+    if not isinstance(data, dict) or not isinstance(data.get("sections"), list):
+        raise ExecutorError("production request needs a 'sections' array")
+    return data
+
+
+def design_board_module():
+    sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+    try:
+        import design_board
+    finally:
+        sys.path.pop(0)
+    return design_board
+
+
+def require_board_approval(run_dir: Path, request_name: str) -> None:
+    """Fail closed: final-mockups does not start for a page whose design board has no current
+    recorded client approval (references/design-board.md)."""
+    failures = design_board_module().gate_failures(run_dir, request_name)
+    if failures:
+        raise ExecutorError("; ".join(failures))
+
+
+def board_job(run_dir: Path, request: dict):
+    """(plan, job) for the page's design board: one image, the client logo and the page's
+    section images as references, the contract and palette in the prompt."""
+    board = design_board_module()
+    try:
+        plan = board.plan(run_dir, request)
+        prompt, sizes = board.compose_prompt(plan, request, run_dir)
+    except board.BoardError as exc:
+        raise ExecutorError(str(exc))
+    width, height = board.BOARD_PX
+    job = {"stage": BOARD_STAGE, "index": 1, "section": {"section_id": plan["role"]},
+           "out": run_dir / board.BOARD_FILE, "width": width, "height": height,
+           "label": f"{BOARD_STAGE} {plan['role']}", "ratio": board.BOARD_RATIO,
+           "references": board.references(plan, run_dir), "exact_references": True,
+           "prompt": prompt, "prompt_sizes": sizes}
+    return plan, job
+
+
+def run_board(run_dir: Path, request: dict, provider, overwrite: bool) -> dict:
+    board = design_board_module()
+    plan, job = board_job(run_dir, request)
+    if job["out"].exists() and not overwrite:
+        raise ExecutorError(f"{job['out']} exists; pass --overwrite to remake the board "
+                            "(a remade board needs a fresh client approval)")
+    board.build_overflow_sheet(plan, run_dir)  # real images that do not fit the attachments
+    result = provider.generate(job, request)
+    try:
+        revision = int(board.load_record(run_dir).get("revision", 0)) + 1
+    except board.BoardError:
+        revision = 1
+    record = board.write_record(run_dir, plan, job["prompt"], result, revision)
+    print(f"GENERATED {BOARD_STAGE} {board.BOARD_FILE} sha256={record['board']['sha256']}")
+    return record
+
+
+def inventory_slot(run_dir: Path, item: str) -> dict:
+    """The item's entry in desktop-wireframe/image-inventory.json, or {} when absent."""
+    path = run_dir / "desktop-wireframe" / "image-inventory.json"
+    if not path.is_file():
+        return {}
+    try:
+        return circle_image.inventory_entry(path, item)
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {path}: {exc}")
+
+
+def mask_circle_slot(out: Path, run_dir: Path, stage: str, slot: dict) -> dict:
+    """Mask a generated square to a circle PNG in place (RGBA, transparent outside),
+    keep the raw square under <stage>/raw-square/, and fail unless the result passes
+    the shape check. Runs before the delivered file is hashed for the record."""
+    raw = run_dir / stage / "raw-square" / out.name
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(out, raw)
+    try:
+        from PIL import Image
+        with Image.open(raw) as src:
+            masked = circle_image.make_circle(
+                src, None, circle_image.parse_focus(slot.get("crop_focal")), slot.get("ring"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"circle mask failed for {out.name}: {exc}")
+    masked.save(out, format="PNG")
+    stats = circle_image.alpha_stats(out)
+    failures = circle_image.shape_failures(stats)
+    if failures:
+        raise ExecutorError(f"{out.name} failed the circle shape check after masking: "
+                            + "; ".join(failures))
+    return {"raw_file": str(raw.relative_to(run_dir)), "raw_sha256": sha256(raw),
+            "ring": slot.get("ring"), "alpha": stats}
+
+
+def with_photo_rules(prompt: str, item: str, request: dict) -> str:
+    """Append the slot's treatment photo rules (copy space, crop-safe framing,
+    universal negative) to an item prompt when the request carries the slot
+    and the prompt does not already hold them. Refuses rather than overflow."""
+    sections = request.get("sections") if isinstance(request, dict) else None
+    if not isinstance(sections, list):
+        return prompt
+    resolved = composition.assign_treatments(sections, request_cues(request))
+    for entry in resolved:
+        for rec in entry["slots"]:
+            if str(rec["slot"].get("slot_id")) != item:
+                continue
+            if rec["treatment"] == "split":
+                return prompt
+            try:
+                rules = composition.photo_rules(
+                    rec["slot"], rec["treatment"], request.get("_composition_brand") or composition.load_brand())
+            except ValueError as exc:
+                raise ExecutorError(f"{item}: {exc}; refusing before any provider call")
+            if rules in prompt:
+                return prompt
+            merged = prompt + "\n\n" + rules
+            budget = prompt_budget(request.get("model"))
+            if budget and len(merged) > budget["max_chars"]:
+                raise ExecutorError(
+                    f"{item}: the {rec['treatment']} photo rules add {len(rules)} chars and push "
+                    f"the prompt to {len(merged)}, over the {budget['max_chars']}-char model "
+                    "maximum; cut design prose in the item prompt, never the verbatim copy")
+            return merged
+    return prompt
+
+
 def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              overwrite: bool) -> dict:
     prompt_path = run_dir / "image-inventory-prompts" / f"{item}.txt"
@@ -829,21 +1350,66 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         raise ExecutorError(f"cannot read the item prompt {prompt_path}: {exc}")
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
+    prompt = with_photo_rules(prompt, item, request)
+    ref_block = reference_use.reference_block(request.get("references"),
+                                              request.get("reference_roles"))
+    roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
+    if not roles:
+        raise ExecutorError(f"item {item}: no resolved client palette, so the image color grade "
+                            "cannot be added; resolve the client's brand colors first")
+    foreign = hypersaturation.foreign_hexes(prompt, roles)
+    if foreign:
+        raise ExecutorError(f"item {item}: prompt names colors outside the client palette "
+                            f"({', '.join(foreign)}); remove them or use the client's own hex values")
+    graded = hypersaturation.item_prompt(prompt, roles)
+    if ref_block:
+        graded = f"{ref_block}\n\n{graded}"
+    if graded != prompt:
+        cap = prompt_cap(request.get("model"))
+        if cap and len(graded) > cap:
+            raise ExecutorError(
+                f"item {item}: prompt with the reference contract and image color grade is "
+                f"{len(graded)} chars, over the {cap}-char model maximum; cut item prose, "
+                "never the contract or the grade")
+        prompt = graded
     digits = "".join(ch for ch in item if ch.isdigit())
     if not digits:
         raise ExecutorError(f"item id {item!r} carries no number; cannot derive the delivered name")
     out = run_dir / stage / f"Image-{int(digits):02d}.png"
     if out.exists() and not overwrite:
         raise ExecutorError(f"{out} exists; pass --overwrite to replace it")
+    slot = inventory_slot(run_dir, item)
+    circle = circle_image.entry_shape(slot) == "circle"
+    # The inventory, not the request, decides which slots are circles, so the style is
+    # checked against the whole inventory here (the request path never sees these slots).
+    style_id = style_id_for(run_dir, request)
+    inventory = run_dir / "desktop-wireframe" / "image-inventory.json"
+    if style_id and inventory.is_file():
+        try:
+            failures = design_style.slot_failures(style_id, design_style.inventory_slots(inventory))
+        except (OSError, ValueError) as exc:
+            raise ExecutorError(f"cannot read {inventory}: {exc}")
+        if failures:
+            raise ExecutorError(f"design style slot shapes refused for {item}: " + "; ".join(failures))
+    if circle and design_style.circle_clause().split(":")[0].lower() not in prompt.lower():
+        raise ExecutorError(
+            f"{item} is a circle slot but its prompt lacks the circle clause "
+            f"(design_style.circle_clause(): 'CIRCLE CROP SAFE FRAME ...'); author it into the prompt "
+            "within the model's band, never as a silent edit here")
     job = {"stage": stage, "index": int(digits), "section": {"section_id": item},
-           "out": out, "width": 1440, "height": 760, "label": f"{item} {stage}",
-           "ratio": request.get("item_ratio"), "references": [],
+           "out": out, "width": 1024 if circle else 1440, "height": 1024 if circle else 760,
+           "label": f"{item} {stage}",
+           "ratio": "1:1" if circle else request.get("item_ratio"), "references": [],
            "prompt": prompt}
     result = provider.generate(job, request)
+    circle_record = mask_circle_slot(out, run_dir, stage, slot) if circle else None
     entry = {"stage": stage, "item": item, "file": str(out.relative_to(run_dir)),
              "sha256": sha256(out), "provider": result.get("provider"),
              "mode": result.get("mode"), "model": result.get("model"),
              "task_id": result.get("task_id"), "at": now_iso()}
+    record_bleed(entry, out, request, provider, stage)
+    if circle_record:
+        entry["circle"] = circle_record
     record_path = run_dir / stage / RECORD
     record = {"stage": stage, "provider": provider.name, "mode": provider.mode,
               "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
@@ -893,13 +1459,48 @@ def main(argv=None) -> int:
         return 2
     stages = [s.strip() for s in args.stages.split(",") if s.strip()]
     for stage in stages:
-        if stage not in STAGES:
-            print(f"FAIL: unknown stage {stage!r}; expected one of {list(STAGES)}")
+        if stage not in STAGES and stage != BOARD_STAGE:
+            print(f"FAIL: unknown stage {stage!r}; expected one of {[BOARD_STAGE, *STAGES]}")
             return 2
+    board_requested = BOARD_STAGE in stages
+    stages = [s for s in stages if s != BOARD_STAGE]
     try:
+        if board_requested and (stages or args.item):
+            raise ExecutorError("run the design board on its own: the client approves it before "
+                                "the final-mockups stage starts")
+        if board_requested:
+            request = load_board_request(run_dir, args.request)
+            if args.preflight:
+                plan, job = board_job(run_dir, request)
+                sz = job["prompt_sizes"]
+                print(f"PREFLIGHT {BOARD_STAGE} {plan['role']} ratio={job['ratio']} "
+                      f"chars={sz['chars']} floor={sz['floor_chars']} max={sz['max_chars']} "
+                      f"refs={len(job['references'])} slots={len(plan['slots'])} "
+                      f"required_blocks={','.join(plan['expected']['required_blocks'])}")
+                print(f"PREFLIGHT_COLORS {BOARD_STAGE} {plan['role']} "
+                      + " ".join(f"{x['name']}={x['hex']}" for x in plan["palette"]))
+                return 0
+            record = run_board(run_dir, request, make_provider(args, run_dir), args.overwrite)
+            print(f"STAGE {BOARD_STAGE} images=1 provider={record['generation']['provider']} "
+                  f"mode={record['generation']['mode']} record={design_board_module().RECORD_FILE}")
+            return 0
+        brand_block = require_brand_colors(run_dir)
+        if "final-mockups" in stages and not args.item:  # before any call: a refused run spends nothing
+            require_board_approval(run_dir, args.request)
         if args.preflight:
             request = load_request(run_dir, args.request)
+            request["_brand_block"] = brand_block
+            check = request.get("_section_check")
+            if check:
+                print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
+                      f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
+                      f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
+            refs = list(dict.fromkeys(str(r) for r in request.get("references") or []))
+            known = [r for r in refs if reference_use.lookup(r)]
+            print(f"PREFLIGHT_REFERENCES total={len(refs)} library={len(known)} "
+                  f"not_in_library={len(refs) - len(known)} "
+                  f"roles={request.get('reference_roles') or '-'}")
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
                     cta = _cta_label(section.get("cta")) or "-"
@@ -908,33 +1509,52 @@ def main(argv=None) -> int:
                         name = template.format(n=index)
                         try:
                             ratio = target_ratio(stage, template, section, run_dir, index)
+                            resolved = resolve_composition(section, index, request)
+                            typed = section_typed_references(stage, width, resolved, section)
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
-                                with_sizes=True)
-                            refs = prior_slices(stage, run_dir, index, template)
+                                with_sizes=True, strict_floor=True, typed_refs=typed)
+                            refs = style_refs(stage, request) + prior_slices(
+                                stage, run_dir, index, template)
                         except ExecutorError as exc:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
                             continue
+                        for line in prompt.splitlines():
+                            if line.startswith("BRAND COLORS"):
+                                print(f"PREFLIGHT_COLORS {stage} {name} {line}")
+                        if sizes.get("hypersaturation_chars"):
+                            print(f"PREFLIGHT_HYPERSAT {stage} {name} "
+                                  f"ground={hypersaturation.ground_for(index, section)} "
+                                  f"chars={sizes['hypersaturation_chars']}")
                         print(f"PREFLIGHT {stage} {name} ratio={ratio} "
                               f"chars={sizes['chars']} copy={sizes['copy_chars']} "
                               f"contract={sizes['contract_chars']} "
                               f"prose={sizes['prose_chars']} "
                               f"floor={sizes['floor_chars']} "
                               f"target={sizes['target_chars']} "
-                              f"max={sizes['max_chars']} refs={len(refs)}")
+                              f"max={sizes['max_chars']} refs={len(refs)} "
+                              f"composition={sizes['composition_chars']} "
+                              f"treatments={','.join(e['treatment'] for e in resolved['slots']) or '-'} "
+                              f"typed_refs={','.join(r.get('type', '?') for r in typed) or '-'}")
+                        if stage in wireframe_spec.WIREFRAME_STAGES:
+                            print(f"PREFLIGHT_WIREFRAME_REFS {stage} {name} "
+                                  f"form={wireframe_spec.form_of(request)} "
+                                  f"{wireframe_spec.describe_refs(refs)}")
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:
-            request = load_request(run_dir, args.request) if (run_dir / args.request).is_file() else {}
+            request = (load_request(run_dir, args.request, paid=args.provider == "kie")
+                       if (run_dir / args.request).is_file() else {})
             entry = run_item(run_dir, args.stage or "image-generation-qc",
                              args.item, request, provider, args.overwrite)
             print(f"ITEM {entry['item']} {entry['file']} provider={entry['provider']} "
                   f"mode={entry['mode']}")
             return 0
-        request = load_request(run_dir, args.request)
+        request = load_request(run_dir, args.request, paid=args.provider == "kie")
+        request["_brand_block"] = brand_block
         for stage in stages:
-            record = run_stage(stage, run_dir, request, provider)
+            record = run_stage(stage, run_dir, request, provider, args.request)
             files = len(record["images"])
             print(f"STAGE {stage} images={files} provider={record['provider']} "
                   f"mode={record['mode']} record={stage}/{RECORD}")
@@ -943,6 +1563,18 @@ def main(argv=None) -> int:
             comp = record["composition"]
             print(f"COMPOSE {stage} status={comp.get('status')}"
                   + (f" reason={comp.get('reason')}" if comp.get("reason") else ""))
+            board = comp.get("overview_boards")
+            if board:
+                print(f"OVERVIEW_BOARD {stage} status={board['status']}"
+                      + (f"\n{board['output']}" if board.get("output") else ""))
+                if board["status"] == "fail":
+                    print(f"FAIL: {stage} overview boards did not build; the client set is not ready")
+            pdf = comp.get("review_pdf")
+            if pdf:
+                print(f"REVIEW_PDF {stage} status={pdf['status']}\n{pdf['output']}")
+                if pdf["status"] == "fail":
+                    print(f"FAIL: {stage} review PDFs did not pass the validator; the client set is not ready")
+                    return 1
         return 0
     except ExecutorError as exc:
         print(f"FAIL: {exc}")

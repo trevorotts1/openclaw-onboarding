@@ -1,0 +1,136 @@
+{
+  "schema": "skill71-page-color-thresholds/v1",
+  "purpose": "Floors and a ceiling for the page-level color-energy check (scripts/validate_page_color.py), derived from the two owner-supplied Go Full Page reference pages, VA and VB. They are the only calibration inputs; no output of any run was used to set a number.",
+  "calibrated": "2026-10-19",
+  "instrument": {
+    "script": "scripts/validate_page_color.py",
+    "work_width_px": 600,
+    "resample": "box filter",
+    "saturated": "HSV S > 0.5 and V > 0.3",
+    "near_black": "V < 0.20",
+    "near_white": "V > 0.93 and S < 0.10",
+    "black_point": "luma 1st percentile (0-255)",
+    "white_point": "luma 99th percentile (0-255)",
+    "hero_hue_window_deg": 15
+  },
+  "references": {
+    "va": {
+      "source": "gofullpage-blackceochallenge-reg-va-2026-10-14-06_23_28.pdf",
+      "pdf_sha256": "29734811170c212c",
+      "pages": 14,
+      "stitched_px": [
+        2658,
+        45736
+      ],
+      "hero_hex_used": "#BF031C",
+      "measures": {
+        "source_pixels": [
+          2658,
+          45736
+        ],
+        "work_pixels": [
+          600,
+          10324
+        ],
+        "mean_saturation": 0.4092,
+        "saturated_share": 0.3007,
+        "near_black_share": 0.2632,
+        "near_white_share": 0.2772,
+        "black_point": 0,
+        "white_point": 255,
+        "hero_hue_saturated_share": 0.249
+      }
+    },
+    "vb": {
+      "source": "gofullpage-blackceochallenge-reg-vb-2026-10-14-06_25_28.pdf",
+      "pdf_sha256": "2cd6c2ddba268ce7",
+      "pages": 14,
+      "stitched_px": [
+        2648,
+        46598
+      ],
+      "hero_hex_used": "#B80000",
+      "measures": {
+        "source_pixels": [
+          2648,
+          46598
+        ],
+        "work_pixels": [
+          600,
+          10558
+        ],
+        "mean_saturation": 0.3613,
+        "saturated_share": 0.2829,
+        "near_black_share": 0.1878,
+        "near_white_share": 0.2934,
+        "black_point": 0,
+        "white_point": 255,
+        "hero_hue_saturated_share": 0.184
+      }
+    }
+  },
+  "derivation": {
+    "rule": "band = max(|VA - VB|, tolerance). Floor = min(VA, VB) - band. Ceiling = max(VA, VB) + band.",
+    "tolerance": "10 percent of the weaker reference for the 0-1 metrics (resampling and crop noise; the half-scale and quarter-scale scripts of the analysis differed by 0.2 points on a 15 percent figure); 8 levels of 255 for black_point and white_point (JPEG and resampling noise at a clean black or white).",
+    "why_floors_not_targets": "VA and VB are two valid examples of one system, not a spec. Their spread is the measured room between two good pages, so a page is allowed to be as weak as the weaker reference minus that spread, never weaker. A page between the references passes; a page below both fails.",
+    "hero_hue_floor": "Derived the same way from the share of pixels that are saturated and within 15 degrees of each reference's own red (VA #BF031C, VB #B80000). It is evaluated only when the client's hero hex is passed (--hero), and it is the one metric that depends on the client's palette. The analysis measured the same family at 25.6 percent (VA) and 18.3 percent (VB) with a hue-angle test; the 0.5 point difference is the resampling method."
+  },
+  "thresholds": {
+    "mean_saturation": {
+      "kind": "floor",
+      "bound": 0.3134,
+      "va": 0.4092,
+      "vb": 0.3613,
+      "band": 0.0479
+    },
+    "saturated_share": {
+      "kind": "floor",
+      "bound": 0.2546,
+      "va": 0.3007,
+      "vb": 0.2829,
+      "band": 0.0283
+    },
+    "near_black_share": {
+      "kind": "floor",
+      "bound": 0.1124,
+      "va": 0.2632,
+      "vb": 0.1878,
+      "band": 0.0754
+    },
+    "near_white_share": {
+      "kind": "floor",
+      "bound": 0.2495,
+      "va": 0.2772,
+      "vb": 0.2934,
+      "band": 0.0277
+    },
+    "white_point": {
+      "kind": "floor",
+      "bound": 247,
+      "va": 255,
+      "vb": 255,
+      "band": 8
+    },
+    "hero_hue_saturated_share": {
+      "kind": "floor",
+      "bound": 0.119,
+      "va": 0.249,
+      "vb": 0.184,
+      "band": 0.065
+    },
+    "black_point": {
+      "kind": "ceiling",
+      "bound": 8,
+      "va": 0,
+      "vb": 0,
+      "band": 8
+    }
+  },
+  "notes": [
+    "A PAGE check. Run it on a stitched page or a full render. One section slice is mostly one ground and is not meaningful.",
+    "Desktop calibration. VA and VB are desktop captures. A mobile stitch is measured the same way, but no mobile reference exists; treat a mobile result as informational until a mobile reference is supplied.",
+    "near_black_share counts V < 0.20 so a brand dark such as navy or deep green counts. A client whose darkest palette color has V of 0.25 or more has no dark ground to measure and needs an owner ruling, not a lower threshold.",
+    "near_white_share and white_point cannot tell a client's own cream from white: a client light color is on-role by definition. They prove a clean light ground exists, nothing about its hue.",
+    "Not measured here, reviewer-judged traits: ground order and longest same-ground run, off-role light grounds, divider bands, accent panels. Reference implementations are in the SPF020 analysis tools (hue_split.py, ground_pastel.py)."
+  ]
+}

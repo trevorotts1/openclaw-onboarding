@@ -237,6 +237,19 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
+# _pidx_local_mode_rows <db> — echo how many embeddings rows are stamped
+# provider='ollama' (0 when the db is absent/unreadable). >0 = LOCAL-MODE box
+# (embedding_engine.py --reembed-local): its live index is deliberately NOT the
+# Gemini prebuilt asset, so its .prebuilt-index-version sentinel can never equal
+# the manifest release_tag and must not be read as "provisioning incomplete".
+_pidx_local_mode_rows() {
+    python3 -c 'import sqlite3,sys
+try:
+    c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True); print(c.execute("SELECT COUNT(*) FROM embeddings WHERE provider = \"ollama\"").fetchone()[0]); c.close()
+except Exception:
+    print(0)' "$1" 2>/dev/null || echo 0
+}
+
 # provision_persona_index <manifest_path> <coaching_db_dir>
 #
 # CANONICAL IDEMPOTENCY GATE (v14.27.2).
@@ -297,6 +310,9 @@ provision_persona_index() {
     local COACHING_DB="$COACHING_DB_DIR/gemini-index.sqlite"
     local VERSION_SENTINEL="$COACHING_DB_DIR/.prebuilt-index-version"
     local PERSONAS_DIR="$COACHING_DB_DIR/personas"
+    # CAN013: callers (update-skills.sh U6b D3 re-assertion) read this to tell a
+    # deliberate local-mode KEEP from a provisioning that did not finish.
+    _PIDX_LOCAL_MODE=0; export _PIDX_LOCAL_MODE
 
     if [ ! -f "$MANIFEST_PATH" ]; then
         _pidx_skip_warn "manifest not found ($MANIFEST_PATH) — skipping prebuilt index provisioning (additive)"
@@ -354,13 +370,14 @@ except Exception:
     # re-provisions, and re-runs --reembed-local.
     if [ -f "$COACHING_DB" ]; then
         local _PIDX_LOCAL
-        _PIDX_LOCAL="$(python3 -c 'import sqlite3,sys
-try:
-    c=sqlite3.connect(sys.argv[1]); print(c.execute("SELECT COUNT(*) FROM embeddings WHERE provider = \"ollama\"").fetchone()[0]); c.close()
-except Exception:
-    print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
+        _PIDX_LOCAL="$(_pidx_local_mode_rows "$COACHING_DB")"
         if [ "${_PIDX_LOCAL:-0}" -gt 0 ] 2>/dev/null; then
-            _pidx_skip_warn "persona index is in local Ollama mode ($_PIDX_LOCAL provider=ollama rows) — KEEPING it; the Gemini prebuilt asset (release=$_PIDX_TAG) is not installed over it. To take personas from a newer asset: move gemini-index.sqlite aside, re-provision, then run python3 shared-utils/embedding_engine.py --reembed-local"
+            _PIDX_LOCAL_MODE=1; export _PIDX_LOCAL_MODE
+            echo "  ✓ Persona index is in local Ollama mode ($_PIDX_LOCAL provider=ollama rows) — KEEPING it; the Gemini prebuilt asset (release=$_PIDX_TAG) is not installed over it. To take personas from a newer asset: move gemini-index.sqlite aside, re-provision, then run python3 shared-utils/embedding_engine.py --reembed-local"
+            # CAN013: the release tag a local-mode box tracks is its Gemini
+            # fallback copy. Keep an already-provisioned copy on the manifest tag
+            # (additive, never touches the live index, warns and returns 0).
+            [ -f "$COACHING_DB_DIR/.gemini-fallback-index-version" ] && provision_gemini_fallback_index "$MANIFEST_PATH" "$COACHING_DB_DIR"
             return 0
         fi
     fi
@@ -554,7 +571,8 @@ except Exception:
         echo "  Downloading prebuilt persona index ($_PIDX_PERSONA_COUNT personas) from $_PIDX_ASSET_URL"
 
         local _PIDX_GZ="/tmp/gemini-index.sqlite.$$.gz"
-        if curl -L --retry 3 --retry-delay 5 --fail -H "Accept: application/octet-stream" "$_PIDX_ASSET_URL" -o "$_PIDX_GZ" 2>/dev/null; then
+        local _PIDX_CURL_ERR=""
+        if _PIDX_CURL_ERR="$(curl -sSL --retry 3 --retry-delay 5 --fail -H "Accept: application/octet-stream" "$_PIDX_ASSET_URL" -o "$_PIDX_GZ" 2>&1)"; then
             # SHA256 HARD GATE — verify BEFORE decompress
             local _PIDX_ACTUAL
             if command -v sha256sum >/dev/null 2>&1; then
@@ -597,14 +615,16 @@ except Exception:
                     rm -f "$_LOCAL_EXPORT" 2>/dev/null || true
                 else
                     rm -f "$COACHING_DB.tmp"
-                    echo "  warn: Persona index decompress failed — gemini-search keyword-degrades until re-run"
+                    _pidx_skip_warn "persona index decompress failed (gunzip of $_PIDX_ASSET_URL; disk full in $COACHING_DB_DIR?) — gemini-search keyword-degrades until re-run"
                 fi
             else
                 echo "  warn: Persona index sha256 MISMATCH (expected $_PIDX_SHA, got $_PIDX_ACTUAL) — NOT installing corrupt index"
+                _pidx_skip_warn "persona index sha256 MISMATCH for release $_PIDX_TAG (expected $_PIDX_SHA, got $_PIDX_ACTUAL) — manifest sha256 and the published asset disagree; NOT installed"
             fi
             rm -f "$_PIDX_GZ"
         else
             echo "  warn: Persona index download failed — gemini-search keyword-degrades until the index is provisioned (re-run install or run: openclaw update)"
+            _pidx_skip_warn "persona index download of release $_PIDX_TAG failed from $_PIDX_ASSET_URL: ${_PIDX_CURL_ERR:-no curl output} — check github.com reachability (network/proxy/DNS) and that the release asset exists"
         fi
     fi
 }

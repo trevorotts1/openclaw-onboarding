@@ -11,12 +11,14 @@ bash -n scripts/weekly-full-update.sh
 bash -n scripts/fleet-refresh.sh
 bash -n shared-utils/lib-frontdoor.sh
 bash -n tests/unit/one-front-door-full-path.test.sh
+bash -n tests/unit/frontdoor-verdict-after-install.test.sh
 python3 -m py_compile shared-utils/oct4_frontdoor.py
 )
 ( # step: Run the one-front-door full-path suite (includes the stage self-test)
 set -e -o pipefail
 set -euo pipefail
 bash tests/unit/one-front-door-full-path.test.sh
+bash tests/unit/frontdoor-verdict-after-install.test.sh
 python3 shared-utils/oct4_frontdoor.py --selftest
 echo "one-front-door-full-path-guard: PASS"
 )

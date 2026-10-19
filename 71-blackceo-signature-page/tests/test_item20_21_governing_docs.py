@@ -66,7 +66,7 @@ class TestItem20ReadmeRail(unittest.TestCase):
         self.assertIn("state.json, internal-copy.md", README)
 
     def test_stage_list_matches_contract(self):
-        m = re.search(r"through the contract's 14 stages in order:\n(.*?)\n\nStage-list rule:",
+        m = re.search(r"through the contract's 15 stages in order:\n(.*?)\n\nStage-list rule:",
                       README, re.S)
         self.assertIsNotNone(m, "restated stage list block not found")
         listed = [part.strip() for part in m.group(1).replace("\n", " ").split("->")]
@@ -76,7 +76,7 @@ class TestItem20ReadmeRail(unittest.TestCase):
         self.assertIn("conditional", last)
         listed[-1] = "automation-wiring"
         self.assertEqual(listed, CONTRACT["stage_order"])
-        self.assertEqual(len(CONTRACT["stage_order"]), 14)
+        self.assertEqual(len(CONTRACT["stage_order"]), 15)
 
     def test_stage_list_regeneration_rule_stated(self):
         self.assertIn("any stage list this README restates is regenerated from", README)
@@ -125,9 +125,10 @@ class TestItem21VendoredBar(unittest.TestCase):
 class TestBlastRadius(unittest.TestCase):
     def test_stage_order_unchanged(self):
         self.assertEqual(CONTRACT["stage_order"], [
-            "intake", "copy", "font-action-plan", "desktop-wireframe", "mobile-tablet",
+            "intake", "copy", "font-action-plan", "desktop-wireframe",
+            "mobile-tablet",
             "visual-mockup", "image-inventory-prompts", "image-generation-qc",
-            "image-map-upload", "final-mockups", "responsive-html", "ghl-install-test",
+            "image-map-upload", "design-board", "final-mockups", "responsive-html", "ghl-install-test",
             "publish-verify", "automation-wiring"])
 
 

@@ -51,6 +51,7 @@ Use the exact ordered stage IDs defined in `references/stage-contract.json` (enf
     "image-inventory-prompts": {"status": "blocked", "attempts": 0},
     "image-generation-qc": {"status": "blocked", "attempts": 0},
     "image-map-upload": {"status": "blocked", "attempts": 0},
+    "design-board": {"status": "blocked", "attempts": 0},
     "final-mockups": {"status": "blocked", "attempts": 0},
     "responsive-html": {"status": "blocked", "attempts": 0},
     "ghl-install-test": {"status": "blocked", "attempts": 0},
@@ -62,7 +63,7 @@ Use the exact ordered stage IDs defined in `references/stage-contract.json` (enf
 
 `attempts` counts focused repair attempts after failure. Valid range is 0-3.
 
-The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional (Item 31): it is required only
+The workflow has FIFTEEN stage IDs. The last, `automation-wiring`, is conditional (Item 31): it is required only
 when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the
 gate records the stage with status `not_applicable` and a reason citing the intake values (also printed in
 REPORT.md); a `not_applicable` stage is complete for report purposes and is never silently absent. The gate's own
@@ -73,8 +74,9 @@ Mockup architecture (Update Plan Item 5, Decision 2 option (i)): two stage IDs c
 render with solid-block image slots, both internal production artifacts, never the client-facing mockup.
 `final-mockups` is the single client-judged mockup stage: it finalizes the layout proof per section with real
 photography in every slot (supplied assets placed as files, never generated) and opens only after the image
-generation chain (`image-inventory-prompts`, `image-generation-qc`, `image-map-upload`) has closed, which the
-gate enforces through the contract's `depends_on`. The stage enumeration above is regenerated from
+generation chain (`image-inventory-prompts`, `image-generation-qc`, `image-map-upload`) has closed and the page's
+Design Board (`design-board`, made from those real images) is approved, which the gate enforces through the
+contract's `depends_on`. The stage enumeration above is regenerated from
 `references/stage-contract.json` whenever the stage list changes; the two files must always enumerate identical
 stage IDs in identical order.
 
@@ -766,13 +768,47 @@ each:
   "copy_block_ids": ["<copy block ids this section renders>"],
   "image_slot_ids": ["<inventory slot ids placed in this section>"],
   "slot_labels": {"<slot id>": {"aspect_ratio": "<inventory ratio>",
-                                 "art_direction": "<what the image must show>"}},
+                                 "art_direction": "<what the image must show>",
+                                 "treatment": "<id from references/composition-treatments.json>",
+                                 "mask": "rect|circle|arch|pill|diagonal|rounded-N",
+                                 "copy_zone": [0, 0, 55, 100], "subject_zone": [62, 5, 98, 95],
+                                 "scrim": {"type": "gradient|solid|none", "token": "--brand-surface",
+                                           "from_pct": 0, "to_pct": 60, "opacity": 1.0}}},
   "type_specs": {"h1": "<size>", "h2": "<size>", "body": "<size>", "cta": "<size>"},
   "behavior_notes": "<the section's printed behavior note>",
   "header_strip": {"page_width_px": 1440, "content_width_px": 1200},
   "reference_traits": []
 }
 ```
+
+Composition (SPF023, `references/composition-patterns.md`). Every slot
+label also carries its `treatment`, one id from
+`references/composition-treatments.json`: `split`, `overlay-light`,
+`overlay-dark-scrim`, `caption-over-photo`, `card-overlaps-photo`,
+`band-over-texture`, `band-light-field`, `mask-circle`, `mask-arch`,
+`mask-pill`, `mask-diagonal`, `break-the-frame` or `section-intersect`, plus
+`mask`, `copy_zone`, `subject_zone` (percent of the frame, 0 to 100) and
+`scrim` where the treatment needs them. The full slot record is
+`{slot_id, section_id, aspect_ratio, generation_ratio, delivery_px {desktop,
+mobile}, treatment, text_relation (beside|over|overlap-card|behind), mask,
+copy_zone, subject_zone, scrim, overlay_copy [copy block ids],
+max_overlay_words, art_direction, mobile_role}`. It is written at the
+wireframe and carried unchanged through the prompts, generation, mockup,
+image map and HTML; `generation_ratio` must be one of the stage executor's
+offered ratios, and when the delivered ratio is not, a deterministic crop from
+the generation to `delivery_px` is recorded. A typography-led section with no
+photo may carry a section-level `treatment` (`band-light-field`). A slot with
+no treatment counts as `split`. `scripts/validate_wireframe.py` rejects an
+unknown id and, from six photo-bearing sections up, enforces the per-page
+budget (split at most 40 percent, a words-over-image hero, a full-width band,
+two shaped crops with one circle, an intersecting treatment, no adjacent
+repeat of a non-split treatment). The built HTML emits `data-image-slot` and
+`data-treatment` on every slot element so `scripts/validate_page.py` can
+compare the declared treatment with the page it measures. The wireframe
+draws the treatment (text box ON the placeholder for overlays, masks drawn as
+their shape, a full-width tint for a light field) and prints the slot's pixel
+size, ratio and treatment (trait W3); the mockup keeps each slot's declared
+treatment (rule M5).
 
 `header_strip` is carried on the first section only (it heads the
 stitched sheet, on its first slice). The annotation fields
@@ -811,6 +847,20 @@ chromatic pixels measure off-palette. Each trait failure prints one
 named line per section or slot. The plan entry is the annotation
 record; the reviewer verifies the record against the printed sheet by
 eye (the validator does no OCR).
+
+Style extensions to the same validator (the look of the owner's wireframes
+1, 3 and 4, in the client's colors; trait text in `references/qc-contract.md`).
+A plan entry may also carry `section_tag` (the chip text as printed, for example
+`"2A"`) and `badge_reads` (`{"steps": ["1", "2", "3", "4", "5", "6", "7"]}`, the
+numerals read off a badge sequence). The validator fails a tag sequence that
+repeats, skips or reorders a number, and any badge sequence that is not 1 to n
+once each (W1). A slot label's `aspect_ratio` that is not a valid label (the `ratio_labels` list in
+`references/wireframe-build-spec.json`, shared with the executor), such as
+`3:9`, fails W3. On the pixels, each slice must carry a compact filled
+accent-colour chip block in its top-left zone (W1), a chromatic colour of the
+resolved client palette (W4, grey never counts), and enough colour to not be the
+greyscale no-colour style (W8, the negative trait). `--image <png> --brand
+<brand.json> [--sheet]` runs the pixel traits on one image.
 
 ## Mockup section generation record (`final-mockups/generation-record.json`)
 
@@ -955,7 +1005,21 @@ Standing files are raw.githubusercontent.com URLs on the public
 onboarding repository; per-run assets are uploaded with kie.ai's file
 upload (deleted after 24 hours, so usable only inside the same run). Never
 use a client's Go High Level media library for the standard set: it writes
-into the client's own library.
+into the client's own library. The one exception is the operator's own
+BlackCEO media library (folder `sigpage-reference-images`), which hosts the
+typed reference catalog `assets/visual-standards/reference-catalog.json`: one
+row per hosted image with `{id, type (wireframe|mockup|hybrid-image-map|
+mood-board|mockup-crop), viewport, form, sections, traits, pair, use,
+tags, contains_reference_only_text, sha256, media_path, source}`; the url is
+assembled at run time as `<SKILL71_REFERENCE_MEDIA_BASE>/<media_path>` (the
+base is operator-injected; the library's account identifier is never
+committed) and a row with `contains_reference_only_text: true` is never sent as
+a reference. Wireframe and
+mockup rows pair by `pair` (and mobile slices by section number); a row's
+`sha256` is the hash of the uploaded bytes, so a run re-checks a URL with a
+HEAD request and a re-download before a paid call. Rows tagged
+`counter-example-composition` show the split default and are never the target
+for a non-split treatment. Client libraries remain forbidden.
 
 A complete worked example follows. It is the record the Item 13
 test fixture writes (`tests/test_item13_production_method.py`), filled in
@@ -1092,6 +1156,24 @@ board is in the stage's review cover (review item `hybrid-board`),
 and the stage receipt records
 `approval_artifact: "final-mockups/hybrid-board.png"`.
 
+## Design board record (stage `design-board`; SPF021)
+
+`design-board/design-board.png` and `design-board/production-record.json`, one pair per page
+role, written by `scripts/stage_executor.py --stages design-board` and completed by
+`scripts/design_board.py finalize` and `approve`. The record carries `artifact: "design-board"`,
+`page_role`, `revision`, `brand` (name, positioning line, logo file and sha256), `palette`
+(`role`, `name`, `hex`) with `palette_sha256`, `typography`, `image_set` (slots with
+`section_id`, `slot_id`, `source`, `origin`, `file`, `sha256`, and the set's `sha256`; re-derived
+from the run's own artifacts, never from a request alone), `expected` (required blocks, per-block
+text, palette hexes), `board` (file, sha256, ratio), `generation` (provider, model, task id, prompt
+hash, references), `readback` (the transcript, the reader, the board hash it was taken from, and
+the machine read of the board image that corroborates it) and `approval` (`decision`, `party`, `approved_by`, `evidence_ref`, `approved_at`, and the
+`board_sha256`, `image_set_sha256`, `palette_sha256`, `page_role` it is bound to). Field rules,
+the block list and the QC floor: `references/design-board.md` and `references/qc-contract.md`.
+The stage contract's `design-board` entry names the board as its `approval_artifact`; the stage
+cannot close without a current approval, it depends on `image-map-upload` (every image slot has its
+file), and `final-mockups` depends on it.
+
 ## Parity evidence (stage `responsive-html`; Update Plan Item 16)
 
 The approved final mockup is the design source of truth for the
@@ -1193,6 +1275,41 @@ Allowed categories:
 - `mobile-mockups`
 
 `combine_review_pdf.py` writes the PDF plus an adjacent JSON receipt containing page order and SHA-256 hashes. `validate_review_pdf.py` checks the expected page count and receipt.
+
+**The client never receives loose section images.** Each image stage ends by
+combining its sections, top to bottom in section order, into review PDFs, one
+for desktop and one for mobile, with no manual step. The stage executor runs
+`combine_review_pdf.py <run_dir> --stage <stage>` at the end of every image
+stage; a run assembled by hand (for example from per-section shards) runs the
+same command once the stage's sections are all in place. Output is
+`<run_dir>/review-pdfs/`:
+
+| Stage | Files |
+| --- | --- |
+| `desktop-wireframe`, `mobile-tablet` | `wireframes-desktop.pdf`, `wireframes-mobile.pdf` (also copied to `<stage>/wireframe.pdf`, the stage contract's artifact) |
+| `visual-mockup` | `visual-mockups-desktop.pdf`, `visual-mockups-mobile.pdf` |
+| `final-mockups` | `final-mockups-desktop.pdf`, `final-mockups-mobile.pdf` |
+
+The step finds the sections as `section-NN.png` or `desktop|mobile/part-NN.png`,
+writes the ordered manifest `<name>.order.json`, builds the PDF, and runs
+`validate_review_pdf.py` on it; a PDF that fails is deleted. It refuses a set
+with a missing section number or a section count that differs from the run's.
+One section is one page at the section's native size (no scaling, cropping or
+padding), so a page break never cuts a section and nothing sits between two
+sections. The validator also checks one page width for the set and that every
+page has the shape of its source image. `validate_review_pdf.py <manifest> --delivered <folder>`
+also requires the client's delivered section images (sorted `*.png`) to be
+byte-identical, page for page, to what the PDF was built from; run it before a
+PDF and its folder are handed over together. The client's copy of the PDF is
+checked the same way: `--delivered-pdf <file>` (one PDF) or, in the stage form,
+`--delivered-pdfs <folder>` (every PDF the stage owes) require the delivered
+file to be byte-identical to the validated build, so a rebuilt PDF that was
+never copied over an earlier one of the same name fails the gate.
+`combine_review_pdf.py <run_dir> --stage <stage> --deliver <folder>` does the
+copy for you and re-validates the copy, so a rebuild always refreshes the
+client's PDFs. `validate_review_pdf.py <run_dir> --stage <stage>` is the gate
+form; the stage contract runs it at close for `visual-mockup` and
+`final-mockups` and requires those four PDFs.
 
 ## Item state (itemized stages)
 

@@ -6,7 +6,10 @@
 #
 #   step 1  999-setup the 999 installer, cloned from 999 main when absent, with
 #                     NINE_API_DOCS pointing at a box-local mode-600 file and no
-#                     terminal attached
+#                     terminal attached. The checkout is brought to origin/main with
+#                     shared-utils/git_ff_sync.sh and VERIFIED (HEAD == origin/main,
+#                     and the --999-sha pin when given) or the step FAILS; the
+#                     9router step refuses to run from an unverified checkout.
 #   step 2  9router   install-9router-guards.sh --upgrade <pinned target>
 #   step 3  upgrade   OpenClaw to the version the TRIGGER passes in (Mac only;
 #                     skipped on a Docker box — the host side already did it)
@@ -60,6 +63,7 @@ RUN_ID=""
 LAUNCH_EPOCH=""
 TARGET_VERSION=""
 NINE9ROUTER_TARGET="${NINEROUTER_TARGET:-}"
+NINE_SETUP_SHA="${NINE_SETUP_SHA:-}"   # optional pin: the 999 checkout HEAD must equal it (CAN012)
 
 # The 999 installer's own required key names (its parse_api_docs contract) and
 # the aliases a box may store a key under. NEVER printed. Writing canonicalises:
@@ -84,11 +88,12 @@ now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 usage() {
   sed -n '2,42p' "$SELF"
   echo ""
-  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION]"
+  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION] [--999-sha SHA]"
   echo "       self-update.sh --roll-id ID --openclaw-target X.Y.Z --foreground   (no detach; for tests)"
   echo ""
   echo "  --openclaw-target   also accepted as --target-version"
   echo "  --ninerouter-target also accepted as --9router-target"
+  echo "  --999-sha           optional: the 999-setup HEAD must equal this sha (and origin/main)"
   exit "$1"
 }
 
@@ -251,6 +256,9 @@ while [ "$#" -gt 0 ]; do
     --ninerouter-target|--9router-target)
       [ "$#" -ge 2 ] || { echo "self-update.sh: $1 needs a value" >&2; exit "$EX_REFUSE"; }
       NINE9ROUTER_TARGET="$2"; shift 2 ;;
+    --999-sha)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: --999-sha needs a value" >&2; exit "$EX_REFUSE"; }
+      NINE_SETUP_SHA="$2"; shift 2 ;;
     --detached)    MODE_DETACHED=1; shift ;;
     --foreground)  MODE_FOREGROUND=1; shift ;;
     -h|--help)     usage 0 ;;
@@ -263,6 +271,14 @@ done
 case "${ROLL_ID:-}" in
   "") ;;
   *[!A-Za-z0-9._-]*|.*) echo "self-update.sh: REFUSED — --roll-id may contain only A-Z a-z 0-9 . _ - and may not start with '.'" >&2; exit "$EX_REFUSE" ;;
+esac
+
+# A pinned 999 sha is compared as a hex prefix, so it must be hex (7-40 chars).
+NINE_SETUP_SHA="$(printf '%s' "$NINE_SETUP_SHA" | tr 'A-F' 'a-f')"
+case "$NINE_SETUP_SHA" in
+  "") ;;
+  *[!0-9a-f]*) echo "self-update.sh: REFUSED — --999-sha must be 7-40 hex characters" >&2; exit "$EX_REFUSE" ;;
+  *) [ "${#NINE_SETUP_SHA}" -ge 7 ] && [ "${#NINE_SETUP_SHA}" -le 40 ] || { echo "self-update.sh: REFUSED — --999-sha must be 7-40 hex characters" >&2; exit "$EX_REFUSE"; } ;;
 esac
 
 # The launcher's run id. Printed as the FIRST stdout line, below, and passed to
@@ -394,6 +410,7 @@ if [ "$MODE_DETACHED" = 0 ] && [ "$MODE_FOREGROUND" = 0 ]; then
   [ -n "$ROLL_ID" ] && set -- "$@" --roll-id "$ROLL_ID"
   [ -n "$TARGET_VERSION" ] && set -- "$@" --openclaw-target "$TARGET_VERSION"
   [ -n "$NINE9ROUTER_TARGET" ] && set -- "$@" --ninerouter-target "$NINE9ROUTER_TARGET"
+  [ -n "$NINE_SETUP_SHA" ] && set -- "$@" --999-sha "$NINE_SETUP_SHA"
   CHILD="$(python3 -c 'import subprocess,sys
 p = subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL,
                      stdout=open(sys.argv[1], "ab"), stderr=subprocess.STDOUT,
@@ -456,6 +473,61 @@ find_999() {
     printf '%s' "$_cand"; return 0
   done
   return 1
+}
+
+# CAN012: bring a 999 checkout to origin/main with the SAME safe semantics the
+# content-update paths use (shared-utils/git_ff_sync.sh: fetch --prune; a branch
+# whose upstream was deleted + clean tree + 0 unmerged commits -> main + ff;
+# anything else is left untouched and reported; never reset --hard / stash /
+# branch delete), then PROVE the checkout HEAD is origin/main (and the pinned sha
+# when the roll passes one). self-update.sh is delivered as a single file, so the
+# helper is fetched from main like the other update scripts; a sibling copy is
+# only the fallback.
+FFSYNC=""
+get_ffsync() {
+  [ -z "$FFSYNC" ] || return 0
+  if fetch "$REPO_RAW/shared-utils/git_ff_sync.sh" "$WORK/git_ff_sync.sh" && [ -s "$WORK/git_ff_sync.sh" ]; then
+    FFSYNC="$WORK/git_ff_sync.sh"; return 0
+  fi
+  _sib="$(dirname "$SELF")/../shared-utils/git_ff_sync.sh"
+  [ -f "$_sib" ] && { FFSYNC="$_sib"; return 0; }
+  return 1
+}
+
+V999_HEAD=""   # set only when sync_999 verified the checkout; the 9router step requires it
+V999_WHY=""
+
+sync_999() {  # repo -> 0 verified (V999_HEAD set) | 1 failed (V999_WHY says why)
+  _r="$1"; V999_HEAD=""; V999_WHY=""
+  command -v git >/dev/null 2>&1 || { V999_WHY="git missing"; return 1; }
+  [ -e "$_r/.git" ] || { V999_WHY="$_r is not a git checkout; cannot verify it matches origin/main"; return 1; }
+  get_ffsync || { V999_WHY="git_ff_sync.sh unavailable (fetch from main and sibling copy both failed)"; return 1; }
+  _out="$(sh "$FFSYNC" "$_r" 2>&1 </dev/null)"; _rc=$?
+  _def="$(git -C "$_r" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"; _def="${_def#origin/}"
+  [ -n "$_def" ] || for _def in main master; do
+    git -C "$_r" rev-parse -q --verify "refs/remotes/origin/$_def" >/dev/null 2>&1 && break; _def=
+  done
+  _br="$(git -C "$_r" symbolic-ref -q --short HEAD 2>/dev/null || echo 'detached HEAD')"
+  _n="$(git -C "$_r" rev-list --count "origin/${_def:-main}..HEAD" 2>/dev/null || echo '?')"
+  _ctx="branch=$_br unmerged_commits=$_n"
+  if [ "$_rc" -ne 0 ]; then
+    V999_WHY="git_ff_sync.sh rc=$_rc in $_r ($_ctx): $_out"; return 1
+  fi
+  [ -z "$_out" ] || log "999-setup: $_out"
+  _h="$(git -C "$_r" rev-parse HEAD 2>/dev/null)"
+  _om=""
+  [ -z "$_def" ] || _om="$(git -C "$_r" rev-parse -q --verify "refs/remotes/origin/$_def^{commit}" 2>/dev/null)"
+  if [ -z "$_h" ] || [ -z "$_om" ] || [ "$_h" != "$_om" ]; then
+    V999_WHY="$_r HEAD ${_h:-none} is not origin/${_def:-?} ${_om:-none} ($_ctx)"; return 1
+  fi
+  if [ -n "$NINE_SETUP_SHA" ]; then
+    case "$_h" in
+      "$NINE_SETUP_SHA"*) ;;
+      *) V999_WHY="$_r HEAD $_h is not the pinned 999-setup sha $NINE_SETUP_SHA ($_ctx)"; return 1 ;;
+    esac
+  fi
+  V999_HEAD="$_h"
+  return 0
 }
 
 # The installer's requirements, PROVED by executing them — the same probes its
@@ -626,8 +698,11 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
   NINE_RC=0
   NINE_OK=1
 
-  # A fresh Mac has no checkout: clone 999 main FIRST (Trevor L14).
-  if [ ! -e "$HOME/999-setup" ]; then
+  # A fresh Mac has no checkout: clone 999 main FIRST (Trevor L14). Only when NO
+  # checkout exists anywhere find_999 looks (CAN012: cloning ~/999-setup next to
+  # a usable persist-home checkout made a second, divergent copy).
+  NINE_REPO="$(find_999)" || NINE_REPO=""
+  if [ -z "$NINE_REPO" ] && [ ! -e "$HOME/999-setup" ]; then
     if command -v git >/dev/null 2>&1; then
       log "999-setup: no $HOME/999-setup — cloning 999 main"
       GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/trevorotts1/999-setup.git "$HOME/999-setup" >>"$LOG" 2>&1 </dev/null
@@ -637,14 +712,26 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
       log "FAIL 999-setup: git missing — cannot clone 999 main"
       NINE_RC=$EX_999; NINE_OK=0
     fi
+    NINE_REPO="$(find_999)" || NINE_REPO=""
   fi
 
-  NINE_REPO="$(find_999)" || NINE_REPO=""
   if [ "$NINE_OK" = 1 ] && [ -z "$NINE_REPO" ]; then
     log "FAIL 999-setup: no 999 checkout with .claude/skills/nine-router-setup/scripts/setup-macos.sh (searched \$NINE_SETUP_REPO, <root>/persist-home, \$HOME/999-setup, \$HOME/Documents/999-setup, \$HOME/.claude-nine, skill links)"
     NINE_RC=$EX_999; NINE_OK=0
   fi
   [ -n "$NINE_REPO" ] && log "999 checkout: $NINE_REPO"
+
+  # CAN012: the checkout the installer AND the 9router guards run from must be
+  # origin/main (and the pin, when given). A stale branch is a loud failure here,
+  # never a quiet success followed by yesterday's guard code.
+  if [ "$NINE_OK" = 1 ]; then
+    if sync_999 "$NINE_REPO"; then
+      log "999-setup: checkout verified at origin/main ${V999_HEAD}"
+    else
+      log "FAIL 999-setup: checkout is not origin/main: $V999_WHY"
+      NINE_RC=$EX_999; NINE_OK=0; STUCK_NOTE="999 checkout not at origin/main"
+    fi
+  fi
 
   if [ "$NINE_OK" = 1 ] && ! check_999_prereqs; then
     log "FAIL 999-setup: installer requirements not met: $PREREQ_MISSING"
@@ -739,7 +826,12 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
   status_write "9router" "" ""
   R9_RC=0
   GUARDS="$NINE_REPO/.claude/skills/nine-router-setup/scripts/macos/install-9router-guards.sh"
-  if [ ! -f "$GUARDS" ]; then
+  # CAN012: never run guard code from a 999 checkout that step 1 did not verify,
+  # or that moved since: a stale checkout gives a misleading pass or fail.
+  if [ -z "$V999_HEAD" ] || [ "$(git -C "$NINE_REPO" rev-parse HEAD 2>/dev/null)" != "$V999_HEAD" ]; then
+    log "REFUSED 9router: the 999 checkout (${NINE_REPO:-none}) is not at a verified origin/main HEAD (${V999_WHY:-HEAD changed after verification}); not running its guards"
+    R9_RC=$EX_9ROUTER
+  elif [ ! -f "$GUARDS" ]; then
     log "FAIL 9router: install-9router-guards.sh not found at $GUARDS"
     R9_RC=$EX_9ROUTER
   elif [ -z "$NINE9ROUTER_TARGET" ]; then
