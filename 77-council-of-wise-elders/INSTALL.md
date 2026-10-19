@@ -238,6 +238,18 @@ standard-company placeholder is not evidence of actual revenue, cash,
 mission, or customer demand, and council intake must keep unconfirmed
 scaffold data separate from client-confirmed facts.
 
+## Front-door service launcher
+
+A host that serves the Council front door starts it with
+`runtime/scripts/service-launch.mjs`. The launcher calls the composition
+root `startCouncilService(...)`, never a bare `CouncilFrontDoor`: a bare
+door leaves the event, admission and session adapters unbound (events
+answer 501). It binds loopback only, defaults to port 8787, takes the data
+directory from `COUNCIL_SERVICE_DATA_DIR` or the platform default, logs one
+JSON object per stdout line, and stops on SIGTERM or SIGINT. From a source
+checkout without a built `dist/`, run it as
+`node --import tsx runtime/scripts/service-launch.mjs`.
+
 ## Restarts
 
 A worker never restarts the gateway or the Command Center on its own.
