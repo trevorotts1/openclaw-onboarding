@@ -14,7 +14,8 @@ the shared-service marker (references/page-request.schema.json
 scripts/write_intake.py -- the same seam 49-signature-funnel's
 landing_bridge.py uses -- and then runs the caller-supplied production
 pipeline command, which executes the stage contract including the four
-image stages.
+image stages (scripts/stage_executor.py is that command: one Skill 74
+call per image, four stage folders, no gate receipts).
 
 Fail-closed: the page_role must be in the page-request enum, the
 assigned_skill must be one of the sharing skills (71, 78, 79, 80, 81,

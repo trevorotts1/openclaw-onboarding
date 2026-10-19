@@ -66,13 +66,23 @@ frontdoor_run_stage() {
     echo "{\"frontdoor\":{\"status\":\"failed\",\"reason\":\"module missing: $lib\"}}"
     return 1
   }
-  local report
-  report="$(OC_FRONTDOOR_PYTHON="$py" "$py" "$lib" --json 2>/dev/null)" || {
-    echo "[front-door] WARN: shared stage could not run (module errored): $lib" >&2
+  # The module exits 1 for a gate-failed / gate-undetermined VERDICT, so a
+  # non-zero exit is NOT proof the module errored: trust the report it printed
+  # and only call it "module errored" when no parseable report came out. The
+  # real stderr/traceback goes into the reason (it used to be sent to /dev/null).
+  local report rc=0 errf reason
+  errf="$(mktemp "${TMPDIR:-/tmp}/oc-frontdoor-err.XXXXXX" 2>/dev/null || echo /dev/null)"
+  report="$(OC_FRONTDOOR_PYTHON="$py" "$py" "$lib" --json 2>"$errf")" || rc=$?
+  if ! printf '%s' "$report" | "$py" -c 'import json,sys; assert json.load(sys.stdin)["status"]' >/dev/null 2>&1; then
+    reason="module errored (exit $rc): $lib: $(tail -c 400 "$errf" 2>/dev/null | tr '\n' ' ')"
+    [ "$errf" = /dev/null ] || rm -f "$errf"
+    echo "[front-door] WARN: shared stage could not run: $reason" >&2
     FRONTDOOR_STATUS="failed"
-    echo "{\"frontdoor\":{\"status\":\"failed\",\"reason\":\"module errored: $lib\"}}"
+    printf '%s' "$reason" | "$py" -c 'import json,sys; print(json.dumps({"frontdoor":{"status":"failed","reason":sys.stdin.read()}}))' 2>/dev/null \
+      || echo "{\"frontdoor\":{\"status\":\"failed\",\"reason\":\"module errored (exit $rc): interpreter unusable, no JSON encoder: $lib\"}}"
     return 1
-  }
+  fi
+  [ "$errf" = /dev/null ] || { [ ! -s "$errf" ] || cat "$errf" >&2; rm -f "$errf"; }
   FRONTDOOR_JSON="$report"
   FRONTDOOR_STATUS="$(printf '%s' "$report" | OC_FRONTDOOR_PYTHON="$py" "$py" -c '
 import json,sys
@@ -93,6 +103,8 @@ for name,s in steps.items():
         continue
     print("[front-door]   repair %-22s %s" % (name, s.get("meaning","?")), file=sys.stderr)
 print("[front-door]   health-gate            %s" % (d.get("gate") or {}).get("meaning","absent"), file=sys.stderr)
+if d.get("reason"):  # gate failed/undetermined: name the failing items (they were only in gate.detail)
+    print("[front-door]   health-gate verdicts:\n%s" % d["reason"], file=sys.stderr)
 print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stderr)
 ' >&2
   case "$FRONTDOOR_STATUS" in
@@ -117,7 +129,7 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
 #     pointed at an untouched copy are repointed. Symlinks only, nothing deleted.
 frontdoor_update_999() {
   local _home canon cand real repo="" origin before after pull_out
-  local _seen=" " _fail=0 _untouched=""
+  local _seen=" " _fail=0 _untouched="" _ffs _ffrc
   _home="$HOME"
   [ -d /data/.openclaw ] && _home="/data"
   canon="$_home/999-setup"
@@ -168,7 +180,13 @@ $cand"
       _untouched="$_untouched $real (local changes)"; continue
     fi
     before="$(git -C "$real" rev-parse HEAD || true)"
-    if ! pull_out="$(git -C "$real" pull --ff-only --quiet 2>&1)"; then
+    # CAN005: git_ff_sync.sh handles a gone upstream (rc 3 = left untouched, named below).
+    _ffs="$(dirname "${BASH_SOURCE[0]}")/git_ff_sync.sh"
+    if [ -f "$_ffs" ]; then pull_out="$(sh "$_ffs" "$real" 2>&1)"; _ffrc=$?
+    else pull_out="$(git -C "$real" pull --ff-only --quiet 2>&1)"; _ffrc=$?; fi
+    if [ "$_ffrc" = 3 ]; then
+      _untouched="$_untouched $real ($pull_out)"; continue
+    elif [ "$_ffrc" != 0 ]; then
       if [ "$(git -C "$real" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" != 0 ] \
          && [ "$(git -C "$real" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)" != 0 ]; then
         _untouched="$_untouched $real (diverged)"; continue
