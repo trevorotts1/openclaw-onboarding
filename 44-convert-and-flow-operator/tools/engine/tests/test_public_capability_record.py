@@ -242,6 +242,19 @@ class CapabilityEvidenceInvariantTest(unittest.TestCase):
             )
         self.assertEqual(caught.exception.rule, "provisional_with_canary")
 
+    def test_a_verified_read_is_the_only_state_that_claims_the_tenant(self) -> None:
+        capability = Capability(
+            operation_id="contacts.search",
+            **_capability_row(
+                provisional=False,
+                read_verified=True,
+                activation=ACTIVATION_VERIFIED,
+            ),
+        )
+        self.assertTrue(capability.enabled)
+        self.assertTrue(capability.evidence_ok())
+        self.assertTrue(capability.tenant_verified())
+
     def test_a_provisional_row_cannot_be_placed_as_a_write_candidate(self) -> None:
         capability = Capability(
             operation_id="contacts.search", **_capability_row()
@@ -338,6 +351,29 @@ class AdapterReachesTransportTest(_RecordCase):
                 "provisional": True,
                 "observed_http_status": 200,
             },
+        )
+
+    def test_a_verified_record_is_the_only_one_that_reports_the_tenant(self) -> None:
+        path = self.write_record(
+            _record(
+                "contacts.search",
+                provisional=False,
+                read_verified=True,
+                activation=ACTIVATION_VERIFIED,
+            )
+        )
+        transport = FakeTransport([resp(200)])
+        adapter = self.adapter(path, transport)
+
+        result = adapter.call(
+            operation_id="contacts.search",
+            tenant=fake_tenant(),
+            body={"filters": []},
+        )
+
+        self.assertTrue(result.evidence["capability"]["tenant_verified"])
+        self.assertEqual(
+            result.evidence["capability"]["activation"], ACTIVATION_VERIFIED
         )
 
     def test_a_403_is_never_reported_as_success_or_verified(self) -> None:
