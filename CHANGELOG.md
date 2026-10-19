@@ -1,3 +1,22 @@
+## [v27.1.41]  -  2026-10-19  -  Roll-path repair release: atomic upgrade rollback proof, front-door verdict fixes, update-999 deleted-upstream handling, stub-department director repair, BSD-safe temp files
+
+### What Changed
+- Atomic OpenClaw upgrade (#2336): the launchctl bootout is now polled until it settles, and a rollback re-loads the gateway and proves it is serving before it reports success. Fixes the canary false-success claim.
+- Front door (#2332, #2334): a gate-failed verdict is no longer misreported as a module error, and update-skills.sh re-judges the front-door verdict after the install instead of aborting before it.
+- update-999 (#2335) handles a clone whose upstream branch was deleted.
+- Repair runner (#2337): role-less stub departments are given a director.
+- Roll path (#2341): every mktemp template ends in X characters so it is randomized on BSD and macOS (18 calls in 15 files).
+- CI (#2333): fast-guards isolate the global git identity so guards never write the real ~/.gitconfig.
+- Also rolls up everything merged to main since v27.1.36 (about 400 commits: Council front door and supervisor waves, GHL update waves, Signature Page batches, recovery batches). Each carries its own skill version markers.
+
+### Migration Notes
+- This release is v27.1.41, not v27.1.37: Skill 06 had already been bumped to v27.1.40 by the GHL waves (its version pair is repo-locked by bump-version.sh), so a lower number would have rolled that pair backwards. The Skill 06 pair is now v27.1.41 and its pinned test was updated to match.
+- Existing installed clients must follow the normal update process; publishing this release does not update any live installation, and nothing reads GitHub Releases. Client boxes follow main through the Sunday update check.
+- Risk level: MEDIUM. The fixes change the update and rollback path itself.
+
+### Files Changed
+- Roll, upgrade, front-door, repair and update scripts plus their tests; release markers, cc-compat.json, release-cohort.json and this changelog, written by scripts/release.sh.
+
 ## [v27.1.36]  -  2026-10-18  -  Register four supplied Oprah and Les Skill22 book personas and integrate their traceable Council evidence; preserve separate teaching gaps.
 
 ## [v27.1.35]  -  2026-10-18  -  Register and index Russell book personas; bind Council anchor evidence

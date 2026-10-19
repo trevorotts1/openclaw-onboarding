@@ -550,7 +550,7 @@ class TestStaleClaimCorrections:
         version = open(
             os.path.join(_SKILL_ROOT, "skill-version.txt"), encoding="utf-8"
         ).read().strip()
-        assert version == "v27.1.40"
+        assert version == "v27.1.41"
 
     def test_protected_build_claim_untouched(self):
         text = open(os.path.join(_TOOLS, "seed-ghl-auth.py"), encoding="utf-8").read()
