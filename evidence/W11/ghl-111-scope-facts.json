@@ -1,0 +1,104 @@
+{
+  "unit": "GHL-111",
+  "recorded_at": "2026-10-19",
+  "evidence_class": "configuration + documented scope + live read-only probe",
+  "credential_used": {
+    "env_name": "GOHIGHLEVEL_API_KEY",
+    "value_printed": false,
+    "shape": "40 characters, prefix pit- (Private Integration Token format)"
+  },
+  "credential_never_printed": true,
+  "configured_location_ids": [
+    {"location_id": "XCgFTEA1oDvsPnTqqgoB", "source": "~/.openclaw/secrets/.env:GOHIGHLEVEL_LOCATION_ID", "alias_also": "GOHIGHLEVEL_ALLOWED_LOCATION_IDS, CAF_ALLOWED_LOCATION_IDS, ~/.openclaw/secrets/secrets.env", "owner_hint": "operator default pair"},
+    {"location_id": "CjxATjhv9Gt21qSqURIt", "source": "~/.openclaw/secrets/.env:PODCAST_ENGINE_GHL_LOCATION_ID", "owner_hint": "podcast engine"},
+    {"location_id": "w4A5LiurmAjBbvJOXmyz", "source": "~/.openclaw/secrets/.env:OLD_PODCAST_GHL_LOCATION_ID", "owner_hint": "retired podcast"},
+    {"location_id": "mQeLerCLRJzGKzAQoY2Y", "source": "~/.openclaw/secrets/.env:STAR_BOBATOON_GHL_LOCATION_ID", "owner_hint": "Star Bobatoon"},
+    {"location_id": "rvAsxGJTII3XpEKIFQ5T", "source": "~/.openclaw/secrets/.env:DRTOLA_GHL_LOCATION_ID", "owner_hint": "Dr. Tola"},
+    {"location_id": "B47go0z6UyNoPESI9G4L", "source": "~/.openclaw/secrets/donna-izzard.env:GOHIGHLEVEL_LOCATION_ID", "owner_hint": "Donna Izzard"},
+    {"location_id": "tWMezdePuWYFZrrUMw16", "source": "~/.openclaw/secrets/janet-pinkney.env:GOHIGHLEVEL_LOCATION_ID", "owner_hint": "Janet Pinkney"}
+  ],
+  "company_id": {"value": "DAD7unnJpNUFc36952Xp", "source": "~/.openclaw/secrets/.env:GHL_COMPANY_ID"},
+  "documented_scope": {
+    "source_url": "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/locations.json",
+    "source_url_contacts": "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/contacts.json",
+    "scope_table_url": "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/docs/oauth/Scopes.md",
+    "fetched": "2026-10-19",
+    "operations": [
+      {
+        "operation_id": "locations.get",
+        "method": "GET",
+        "path": "/locations/{locationId}",
+        "version": "2021-07-28",
+        "security_schemes": ["Location-Access", "Agency-Access"],
+        "scope": "locations.readonly",
+        "deprecated": false,
+        "documented_responses": ["200", "400", "401", "422"]
+      },
+      {
+        "operation_id": "contacts.list",
+        "method": "GET",
+        "path": "/contacts/",
+        "version": "2021-07-28",
+        "security_schemes": ["bearer"],
+        "scope": "contacts.readonly",
+        "deprecated": true,
+        "documented_responses": ["200", "400", "401", "422"]
+      },
+      {
+        "operation_id": "contacts.search",
+        "method": "POST",
+        "path": "/contacts/search",
+        "version": "v3",
+        "security_schemes": ["bearer"],
+        "scope": "contacts.readonly",
+        "deprecated": false
+      }
+    ],
+    "security_scheme_semantics": "bearer / Location-Access / Agency-Access are documented as 'Access Token generated with user type as Sub-Account (OR) Private Integration Token of Sub-Account'. A PIT is therefore a sub-account (location) credential."
+  },
+  "registry_facts": {
+    "adapter_version": "ghl-public-adapter-0.1",
+    "doc_fetch_date": "2026-10-18",
+    "operation_count": 139,
+    "locations_operations": [],
+    "contacts_list_route_class": "retired",
+    "contacts_list_blocker": "B-DEPRECATED",
+    "contacts_search_path": "/contacts/search",
+    "contacts_search_version": "v3",
+    "contacts_search_blocker": "B-FILTER-SCHEMA",
+    "capability_gate": "default-deny; no on-disk loader for state/ghl-public-capabilities.json exists in the worktree"
+  },
+  "live_probe": {
+    "base_url": "https://services.leadconnectorhq.com",
+    "credential": "GOHIGHLEVEL_API_KEY only; no other credential was used",
+    "results": [
+      {"path": "/locations/{id}", "scope_required": "locations.readonly", "location_id": "XCgFTEA1oDvsPnTqqgoB", "status": 403, "message": "Forbidden resource"},
+      {"path": "/contacts/?locationId=", "scope_required": "contacts.readonly", "location_id": "XCgFTEA1oDvsPnTqqgoB", "status": 403, "message": "The token does not have access to this location."},
+      {"path": "/users/?locationId=", "scope_required": "users.readonly", "location_id": "XCgFTEA1oDvsPnTqqgoB", "status": 401, "message": "This location is not accessible from this token!"},
+      {"path": "/users/?locationId=", "location_id": "CjxATjhv9Gt21qSqURIt", "status": 401, "message": "This location is not accessible from this token!"},
+      {"path": "/users/?locationId=", "location_id": "w4A5LiurmAjBbvJOXmyz", "status": 401, "message": "This location is not accessible from this token!"},
+      {"path": "/users/?locationId=", "location_id": "mQeLerCLRJzGKzAQoY2Y", "status": 401, "message": "This location is not accessible from this token!"},
+      {"path": "/users/?locationId=", "location_id": "rvAsxGJTII3XpEKIFQ5T", "status": 401, "message": "This location is not accessible from this token!"},
+      {"path": "/users/?locationId=", "location_id": "B47go0z6UyNoPESI9G4L", "status": 401, "message": "This location is not accessible from this token!"},
+      {"path": "/users/?locationId=", "location_id": "tWMezdePuWYFZrrUMw16", "status": 401, "message": "This location is not accessible from this token!"}
+    ],
+    "instrument_controls": [
+      {"name": "deliberately invalid token", "status": 401, "message": "Invalid JWT"},
+      {"name": "no Authorization header", "status": 401, "message": "No Authorization header found for authentication!"}
+    ],
+    "client_path": [
+      {"operation_id": "contacts.list", "adapter_status": "denied", "http_status": null, "rule": "capability_disabled", "reached_transport": false},
+      {"operation_id": "contacts.search", "adapter_status": "denied", "http_status": null, "rule": "capability_disabled", "reached_transport": false},
+      {"operation_id": "custom_fields.list", "adapter_status": "denied", "http_status": null, "rule": "capability_disabled", "reached_transport": false}
+    ]
+  },
+  "conclusion": {
+    "token_bound_location": "undetermined from configuration; the credential is rejected for all 7 location ids present in every env store on this box",
+    "scope_failures": ["locations.readonly for GET /locations/{locationId}", "contacts.readonly for contact reads"],
+    "activation_blockers": [
+      "credential-to-location binding mismatch (owner: Trevor, account authority)",
+      "capability gate default-deny; no capability record exists for any (operation_id, tenant) (owner: W04 build item)",
+      "GET /locations/{locationId} is absent from the frozen registry; GET /contacts/ is retired in it, so neither GU-022 probe is a valid client-path operation"
+    ]
+  }
+}

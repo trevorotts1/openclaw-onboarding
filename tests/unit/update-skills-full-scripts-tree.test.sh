@@ -222,15 +222,25 @@ if _prune_out="$(prune_retired_ghl_mcp_surfaces "$PRUNE_S" "$PRUNE_P" 2>&1)"; th
 else
   bad "prune returned non-zero with the retired files present: $_prune_out"
 fi
-printf '%s\n' "$_prune_out" | grep -q 'pruned 6 supervision file(s)' \
-  && ok "prune logs one line naming exactly what it removed (6)" \
+printf '%s\n' "$_prune_out" | grep -q 'pruned 3 resurrection file(s)' \
+  && ok "prune logs one line naming exactly what it removed (3 resurrection surfaces)" \
   || bad "prune log line missing the removed count: $_prune_out"
+# GHL-101 (B2): the retirement tool, its path library and the digest primitive
+# are RETAINED on purpose — the updater deletes its own source checkout, so
+# pruning them would leave the box unable to run --retire ever again.
+printf '%s\n' "$_prune_out" | grep -q 'RETAINED' \
+  && ok "prune states that the retirement tool + path library + digest primitive are retained" \
+  || bad "prune log does not say the retirement tooling was retained: $_prune_out"
 
-for _prune_rel in ghl-mcp-autostart.sh ghl-mcp-probe.sh ghl-mcp-pin-digest.sh \
-                  qc-assert-ghl-mcp-supervised.sh lib/ghl-mcp-paths.sh; do
+for _prune_rel in ghl-mcp-probe.sh qc-assert-ghl-mcp-supervised.sh; do
   [ ! -e "$PRUNE_S/$_prune_rel" ] \
     && ok "retired scripts/$_prune_rel pruned" \
     || bad "retired scripts/$_prune_rel SURVIVED the prune"
+done
+for _keep_rel in ghl-mcp-autostart.sh ghl-mcp-pin-digest.sh lib/ghl-mcp-paths.sh; do
+  [ -e "$PRUNE_S/$_keep_rel" ] \
+    && ok "retirement scripts/$_keep_rel retained (a source-less box must still be able to run --retire)" \
+    || bad "retirement scripts/$_keep_rel was PRUNED — the box can no longer run --retire"
 done
 [ ! -e "$PRUNE_P/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" ] \
   && ok "retired platform start script pruned" \
