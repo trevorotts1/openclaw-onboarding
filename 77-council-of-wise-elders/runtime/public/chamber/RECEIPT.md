@@ -98,3 +98,58 @@ blocking dependency for each is named above and repeated in the served page.
   untouched.
 - Assets are self-contained: no CDN, no external font download, no script,
   no runtime network fetch, and no operator home path.
+
+## Implementation outcome (appended after the investigation above)
+
+Shipped under `77-council-of-wise-elders/runtime/public/chamber/`:
+
+| File | What it is |
+|---|---|
+| `index.html` | Fixture-driven nine-seat chamber room (locked ellipse geometry, `SAMPLE_ROOM_VIEW`, persistent "Fictional sample" badge) plus the full-text reading view |
+| `advisors.html` | Static nine-seat roster built from the skill's portrait manifest and advisor packs; every seat labelled `bibliographic_only` |
+| `not-packaged.html` | Explicit route-by-route list of what this slice does not package and the exact blocking dependency |
+| `RECEIPT.md` | This receipt |
+| `council-theme.css`, `council-room.css`, `council-journey.css` | Verbatim copies of the Command Center council stylesheets (no external reference; checked with `grep -E '@import|url\(|https?://'` → no matches) |
+| `portraits/*.svg` | Verbatim copies of the 18 Command Center medallion SVGs (9 large + 9 small) |
+
+One additive route branch was added to `src/service/front-door.ts`:
+`GET /chamber` and `GET /chamber/` serve `index.html`; a fixed allowlist
+serves the HTML/CSS/`RECEIPT.md` files; `portraits/<name>.svg` is served by a
+strict filename regex. Any miss falls through to the unchanged
+`SERVICE_ROUTE_NOT_FOUND` catch-all. `GET /`, identity, session, events and
+admission behaviour were not edited.
+
+### Pages NOT shipped (named again, with the blocking dependency)
+
+`/council`, `/council/<sessionId>`, `/council/advisors` as served by CC,
+`/council/history`, `/council/new`, `/council/settings`. The exact blocking
+imports/endpoints are in the table in section (b) above and in
+`not-packaged.html`. They are not shipped as blanks or fakes.
+
+### Test evidence
+
+Commands run from `77-council-of-wise-elders/runtime/`:
+
+| Command | Result |
+|---|---|
+| `npx tsc --noEmit -p tsconfig.json` | exit 0 |
+| `node --import tsx --test src/service/landing.test.ts src/service/service.test.ts` | exit 0, 17 tests, 17 pass, 0 fail (run after the commit, so the landing scope proof sees a clean worktree) |
+| `node --import tsx --test tests/*.test.ts tests/scenarios/*.test.ts` | exit 1, 430 tests, 423 pass, 7 fail — byte-for-byte the same 7 pre-existing failures as the base run at `f032bde1c` (export-adapter CWE-011 path/adaptation cases, CLI doctor honesty, XDG paths, Brunson private-scope record) |
+
+Live loopback proof (no external network): started `CouncilFrontDoor` on an
+ephemeral port and fetched `/chamber/`, `/chamber`, `/chamber/advisors.html`,
+`/chamber/not-packaged.html`, the three stylesheets, one portrait SVG and
+`RECEIPT.md` — all 200 with the expected content type; `/chamber/nope.json`,
+`/chamber/../package.json` and a traversal portrait path all returned the
+existing 404 shape; `/`, identity, session and events kept their prior
+status/body. Playwright rendered the page at 1280×900 and 390×844: phone view
+turns the room into the designed two-column grid, `scrollWidth ===
+innerWidth` (no horizontal scroll), and the network log contains only
+same-origin `/chamber/*` requests — no CDN, font or foreign origin.
+
+Known packaging limitation (outside the paths this unit may edit): the runtime
+`package.json` `files` field is `["dist"]` and cannot be changed here, so an
+npm tarball would not include `public/chamber/`. The asset resolver covers the
+source tree, the tsc `dist/service` output and the single-file `dist` bundle;
+shipping through `npm pack` remains a separate release step.
+
