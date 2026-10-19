@@ -57,9 +57,14 @@ function build(seat, src) {
     // Crop to the subject, then place it bottom-anchored, centred, in a 4:5 box.
     // At most 10% of the width (shoulder tips) is trimmed; any other shortfall
     // becomes transparent headroom, so heads are never clipped.
-    const [bw, bh, bx, by] = run('magick', [soft, '-alpha', 'extract', '-threshold', '10%', '-format', '%@', 'info:'])
-      .trim().split(/[x+]/).map(Number);
-    const w = Math.max(Math.round(bw * 0.9), Math.ceil(bh * 0.8));
+    // The subject touches the bottom edge, and %@ trims solid edge rows as
+    // background, which cuts the chest off. A 1px black border keeps them.
+    const [bw, bh, bxb, byb] = run('magick', [soft, '-alpha', 'extract', '-threshold', '10%', '-bordercolor', 'black', '-border', '1',
+      '-format', '%@', 'info:']).trim().split(/[x+]/).map(Number);
+    const bx = bxb - 1;
+    const by = byb - 1;
+    // 4% headroom above the head.
+    const w = Math.max(Math.round(bw * 0.9), Math.ceil(bh * 1.04 * 0.8));
     const h = Math.round(w * 1.25);
     const png = join(tmp, 'bust.png');
     run('magick', [soft, '-crop', `${bw}x${bh}+${bx}+${by}`, '+repage', '-gravity', 'south', '-background', 'none',

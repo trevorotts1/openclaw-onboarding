@@ -114,6 +114,13 @@ test('generated portraits are 480x600 alpha cutouts with clear corners, <=120KB'
     // The figure itself is opaque and the background is not: guards a cream rectangle.
     const mean = Number(magick([file, '-alpha', 'extract', '-format', '%[fx:mean]', 'info:']));
     assert.ok(mean > 0.3 && mean < 0.8, `${f} alpha coverage ${mean}`);
+    // Chest-up framing: the shoulders reach row 590 (clear of the mask edge row) (outside the 70px rounded corners)
+    // and the empty space above the head is at most 10% of the frame.
+    const bottom = Number(magick([file, '-alpha', 'extract', '-crop', '340x1+70+590', '+repage', '-format', '%[fx:mean]', 'info:']));
+    assert.ok(bottom > 0.8, `${f} bottom row not opaque (${bottom}): chest cut off`);
+    const trimmed = magick([file, '-alpha', 'extract', '-threshold', '10%', '-bordercolor', 'black', '-border', '1', '-format', '%@', 'info:']);
+    const top = Number(trimmed.split('+')[2]) - 1;
+    assert.ok(top <= 60, `${f} figure starts ${top}px down, more than 10% headroom`);
   }
 });
 
