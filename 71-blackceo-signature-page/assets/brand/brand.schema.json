@@ -153,6 +153,16 @@
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1}
+    },
+    "composition_cues": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional. Which composition treatments (ids in references/composition-treatments.json) the brand favors or forbids; imagery_direction supplies the motifs for light fields. Role defaults in composition-treatments.json apply where this says nothing.",
+      "properties": {
+        "preferred": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "forbidden": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "imagery_direction": {"type": "string"}
+      }
     }
   },
   "definitions": {

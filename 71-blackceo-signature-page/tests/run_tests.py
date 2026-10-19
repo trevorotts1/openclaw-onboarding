@@ -72,6 +72,8 @@ MODULES = [
     "test_hypersaturation.py",
     # Design styles A Block, B Circle, C Hybrid: circle-image pipeline, style choice, shape QC.
     "test_design_style.py",
+    # SPF023: composition library (words over images, shaped crops, light fields).
+    "test_composition_library.py",
 ]
 
 def skip_reason(stdout):

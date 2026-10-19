@@ -170,7 +170,7 @@ Every section is one spec image (a section slice), and each slice carries, print
 
 A header strip on the sheet states the page width and the content width. The annotations are production markings on a private build spec: they are not page copy, they never carry into the mockups or the HTML, and the layout they annotate shows only real copy and real CTA text.
 
-Create a creative composition through meaningful hierarchy, mixed image proportions, offset frames, varied scale, typography-only panels and spacing. Do not substitute a monotonous stack of identical editor blocks. Creativity does not justify random order or missing content.
+Create a creative composition through meaningful hierarchy, mixed image proportions, offset frames, varied scale, typography-only panels and spacing, and the three families AI designs leave out: words set ON images (headline, caption, short copy), shaped crops (circle, arch, pill, angled cut) and a very light image or pattern behind the words, full width. Each image slot declares one treatment from `references/composition-treatments.json` (read `references/composition-patterns.md`); a page meets the per-page composition budget, and a photo column beside a text column is only one allowed treatment. Do not substitute a monotonous stack of identical editor blocks. Creativity does not justify random order or missing content.
 
 ### B. Start the image inventory
 

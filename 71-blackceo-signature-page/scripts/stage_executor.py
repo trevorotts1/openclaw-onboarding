@@ -80,6 +80,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import reference_use  # noqa: E402  SPF022: reference images are structure only
 import brand_colors  # noqa: E402  SPF019: client brand colors gate
 import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
+import composition  # noqa: E402  the composition library (treatments, typed references)
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -111,7 +112,6 @@ COPY_PADDING = (
     "Preserve the measured band order",
     "Hold the type scale",
     "Keep the authority band",
-    "Keep the photography square-cornered",
     "Keep the gold hairline rules",
     "Keep the ivory ground warm",
     "Set the eyebrow in rust",
@@ -454,8 +454,23 @@ def copy_contract(section: dict) -> str:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
 
-def negative_block() -> str:
-    """The skill's own defect-class negative block, applied at the wire."""
+def negative_block(stage: str | None = None) -> str:
+    """The skill's own defect-class negative block, applied at the wire.
+
+    Stage aware: a wireframe stage prints annotations (section number and
+    name, type specs, IMG labels with pixel size, ratio and treatment), so its
+    block permits exactly those and nothing else; every other stage keeps the
+    strict no-extra-text rule.
+    """
+    tail = ("Do not print any text that is not in the verbatim copy above; no "
+            "placeholder tokens, no agent notes, no lorem, no bracketed markers, "
+            "no captions, watermarks, or production labels.")
+    if stage in composition.WIREFRAME_STAGES:
+        tail = ("Do not print any text that is not in the verbatim copy above or in "
+                "the wireframe annotations allowed in the composition contract "
+                "(section number and name, type specs, slot labels with pixel size, "
+                "ratio and treatment, behavior notes); no placeholder tokens, no "
+                "agent notes, no lorem, no bracketed markers, no watermarks.")
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
         "same number twice, do not skip a number. Do not mis-number the 7 steps: "
@@ -463,10 +478,7 @@ def negative_block() -> str:
         "step labels. Do not garble any label, mug slogan, or caption: no "
         "\"BIGNEFIT\", \"BTEP 7\", \"DISCIFIONAL\", \"FREIDOM\", "
         "\"Folow Gnlume Sno Home\", \"widhh\", and no invented, dropped, "
-        "doubled, or substituted characters anywhere. Do not print any text that "
-        "is not in the verbatim copy above; no placeholder tokens, no agent "
-        "notes, no lorem, no bracketed markers, no captions, watermarks, or "
-        "production labels.")
+        "doubled, or substituted characters anywhere. " + tail)
 
 
 def frame_contract(width: int, ratio: str) -> str:
@@ -675,6 +687,8 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
             s["cta"] = source
         if required:
             s.setdefault("cta_required", True)
+    # the run's brand file, read once: composition cues and light-field colors
+    data["_composition_brand"] = composition.load_brand(run_dir)
     return data
 
 
@@ -707,12 +721,38 @@ def render_template(template: str, values: dict, stage: str) -> str:
             f"{leftover.group(0)!r} after rendering; refusing before any provider call")
     return body
 
+def request_cues(request: dict) -> dict:
+    """The brand's composition cues for this run (empty when it declares none)."""
+    return composition.composition_cues(request.get("_composition_brand") or composition.load_brand())
+
+
+def resolve_composition(section: dict, index: int, request: dict) -> dict:
+    """This section's composition record: declared slot treatments, else the
+    section role's default, rotated against the neighbouring sections."""
+    sections = request.get("sections")
+    if (isinstance(sections, list) and 0 < index <= len(sections)
+            and sections[index - 1].get("section_id") == section.get("section_id")):
+        return composition.assign_treatments(sections, request_cues(request))[index - 1]
+    return composition.assign_treatments([section], request_cues(request))[0]
+
+
+def section_typed_references(stage: str, width: int, resolved: dict, section: dict) -> list:
+    """Hosted reference rows (by type) for one job; [] when the catalog has none."""
+    platform = "mobile" if width <= 768 else "desktop"
+    used = [e["treatment"] for e in resolved.get("slots") or []]
+    return composition.typed_references(stage, platform, section.get("section_id"), used)
+
+
 def stage_prompt(stage: str, section: dict, index: int, width: int,
                  request: dict, ratio: str | None = None,
-                 with_sizes: bool = False, strict_floor: bool = False):
+                 with_sizes: bool = False, strict_floor: bool = False,
+                 typed_refs: list | None = None):
     slots = section.get("slots") or []
+    resolved = resolve_composition(section, index, request)
+    by_slot = {id(e["slot"]): e["treatment"] for e in resolved["slots"]}
     slot_words = "; ".join(
-        f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
+        (f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
+         + " " + composition.slot_words(s, by_slot.get(id(s), "split")))
         for s in slots) or "no image slots"
     values = {
         "stage": stage,
@@ -743,7 +783,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block()
+    neg_block = negative_block(stage)
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
@@ -764,16 +804,18 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     page_color, image_grade = hypersaturation.stage_blocks(stage, index, section, roles)
     style_blk = (design_style.style_block(request["design_style"], stage, slots)
                  if request.get("design_style") else "")
+    comp_block = composition.block(stage, resolved, typed_refs)
     blocks = [b for b in (copy_block, color_block, page_color, image_grade, ref_block,
-                          frame_block, neg_block, style_blk) if b]
+                          frame_block, comp_block, neg_block, style_blk) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
         "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
                            + len(color_block) + len(page_color) + len(image_grade)
-                           + len(style_blk)),
+                           + len(style_blk) + len(comp_block)),
         "hypersaturation_chars": len(page_color) + len(image_grade),
+        "composition_chars": len(comp_block),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
@@ -1023,15 +1065,19 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             out = run_dir / stage / template.format(n=index)
             ratio = target_ratio(stage, template, section, run_dir, index)
             refs = prior_slices(stage, run_dir, index, template)
+            typed = section_typed_references(
+                stage, width, resolve_composition(section, index, request), section)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True,
-                strict_floor=provider.name == "kie")
+                strict_floor=provider.name == "kie", typed_refs=typed)
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
                 "label": f"{stage} section {index:02d} {width}px",
                 "ratio": ratio,
-                "references": [str(p) for p in refs],
+                "references": [str(p) for p in refs] + [r["url"] for r in typed],
+                "typed_references": [{"id": r.get("id"), "type": r.get("type"), "sha256": r.get("sha256")}
+                                     for r in typed],
                 "prompt": prompt, "prompt_sizes": prompt_sizes,
             }
             result = provider.generate(job, request)
@@ -1051,6 +1097,9 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 "mode": result.get("mode"),
                 "task_id": result.get("task_id"),
                 "inputs": job["references"],
+                "typed_references": job["typed_references"],
+                "treatments": [e["treatment"] for e in resolve_composition(
+                    section, index, request)["slots"]],
             }
             record_bleed(entry, out, request, provider, stage)
             if actual:
@@ -1180,6 +1229,38 @@ def mask_circle_slot(out: Path, run_dir: Path, stage: str, slot: dict) -> dict:
             "ring": slot.get("ring"), "alpha": stats}
 
 
+def with_photo_rules(prompt: str, item: str, request: dict) -> str:
+    """Append the slot's treatment photo rules (copy space, crop-safe framing,
+    universal negative) to an item prompt when the request carries the slot
+    and the prompt does not already hold them. Refuses rather than overflow."""
+    sections = request.get("sections") if isinstance(request, dict) else None
+    if not isinstance(sections, list):
+        return prompt
+    resolved = composition.assign_treatments(sections, request_cues(request))
+    for entry in resolved:
+        for rec in entry["slots"]:
+            if str(rec["slot"].get("slot_id")) != item:
+                continue
+            if rec["treatment"] == "split":
+                return prompt
+            try:
+                rules = composition.photo_rules(
+                    rec["slot"], rec["treatment"], request.get("_composition_brand") or composition.load_brand())
+            except ValueError as exc:
+                raise ExecutorError(f"{item}: {exc}; refusing before any provider call")
+            if rules in prompt:
+                return prompt
+            merged = prompt + "\n\n" + rules
+            budget = prompt_budget(request.get("model"))
+            if budget and len(merged) > budget["max_chars"]:
+                raise ExecutorError(
+                    f"{item}: the {rec['treatment']} photo rules add {len(rules)} chars and push "
+                    f"the prompt to {len(merged)}, over the {budget['max_chars']}-char model "
+                    "maximum; cut design prose in the item prompt, never the verbatim copy")
+            return merged
+    return prompt
+
+
 def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              overwrite: bool) -> dict:
     prompt_path = run_dir / "image-inventory-prompts" / f"{item}.txt"
@@ -1189,6 +1270,7 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         raise ExecutorError(f"cannot read the item prompt {prompt_path}: {exc}")
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
+    prompt = with_photo_rules(prompt, item, request)
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
@@ -1347,9 +1429,11 @@ def main(argv=None) -> int:
                         name = template.format(n=index)
                         try:
                             ratio = target_ratio(stage, template, section, run_dir, index)
+                            resolved = resolve_composition(section, index, request)
+                            typed = section_typed_references(stage, width, resolved, section)
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
-                                with_sizes=True, strict_floor=True)
+                                with_sizes=True, strict_floor=True, typed_refs=typed)
                             refs = prior_slices(stage, run_dir, index, template)
                         except ExecutorError as exc:
                             refused += 1
@@ -1368,7 +1452,10 @@ def main(argv=None) -> int:
                               f"prose={sizes['prose_chars']} "
                               f"floor={sizes['floor_chars']} "
                               f"target={sizes['target_chars']} "
-                              f"max={sizes['max_chars']} refs={len(refs)}")
+                              f"max={sizes['max_chars']} refs={len(refs)} "
+                              f"composition={sizes['composition_chars']} "
+                              f"treatments={','.join(e['treatment'] for e in resolved['slots']) or '-'} "
+                              f"typed_refs={','.join(r.get('type', '?') for r in typed) or '-'}")
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:

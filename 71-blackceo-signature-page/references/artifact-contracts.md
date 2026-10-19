@@ -768,13 +768,47 @@ each:
   "copy_block_ids": ["<copy block ids this section renders>"],
   "image_slot_ids": ["<inventory slot ids placed in this section>"],
   "slot_labels": {"<slot id>": {"aspect_ratio": "<inventory ratio>",
-                                 "art_direction": "<what the image must show>"}},
+                                 "art_direction": "<what the image must show>",
+                                 "treatment": "<id from references/composition-treatments.json>",
+                                 "mask": "rect|circle|arch|pill|diagonal|rounded-N",
+                                 "copy_zone": [0, 0, 55, 100], "subject_zone": [62, 5, 98, 95],
+                                 "scrim": {"type": "gradient|solid|none", "token": "--brand-surface",
+                                           "from_pct": 0, "to_pct": 60, "opacity": 1.0}}},
   "type_specs": {"h1": "<size>", "h2": "<size>", "body": "<size>", "cta": "<size>"},
   "behavior_notes": "<the section's printed behavior note>",
   "header_strip": {"page_width_px": 1440, "content_width_px": 1200},
   "reference_traits": []
 }
 ```
+
+Composition (SPF023, `references/composition-patterns.md`). Every slot
+label also carries its `treatment`, one id from
+`references/composition-treatments.json`: `split`, `overlay-light`,
+`overlay-dark-scrim`, `caption-over-photo`, `card-overlaps-photo`,
+`band-over-texture`, `band-light-field`, `mask-circle`, `mask-arch`,
+`mask-pill`, `mask-diagonal`, `break-the-frame` or `section-intersect`, plus
+`mask`, `copy_zone`, `subject_zone` (percent of the frame, 0 to 100) and
+`scrim` where the treatment needs them. The full slot record is
+`{slot_id, section_id, aspect_ratio, generation_ratio, delivery_px {desktop,
+mobile}, treatment, text_relation (beside|over|overlap-card|behind), mask,
+copy_zone, subject_zone, scrim, overlay_copy [copy block ids],
+max_overlay_words, art_direction, mobile_role}`. It is written at the
+wireframe and carried unchanged through the prompts, generation, mockup,
+image map and HTML; `generation_ratio` must be one of the stage executor's
+offered ratios, and when the delivered ratio is not, a deterministic crop from
+the generation to `delivery_px` is recorded. A typography-led section with no
+photo may carry a section-level `treatment` (`band-light-field`). A slot with
+no treatment counts as `split`. `scripts/validate_wireframe.py` rejects an
+unknown id and, from six photo-bearing sections up, enforces the per-page
+budget (split at most 40 percent, a words-over-image hero, a full-width band,
+two shaped crops with one circle, an intersecting treatment, no adjacent
+repeat of a non-split treatment). The built HTML emits `data-image-slot` and
+`data-treatment` on every slot element so `scripts/validate_page.py` can
+compare the declared treatment with the page it measures. The wireframe
+draws the treatment (text box ON the placeholder for overlays, masks drawn as
+their shape, a full-width tint for a light field) and prints the slot's pixel
+size, ratio and treatment (trait W3); the mockup keeps each slot's declared
+treatment (rule M5).
 
 `header_strip` is carried on the first section only (it heads the
 stitched sheet, on its first slice). The annotation fields
@@ -957,7 +991,21 @@ Standing files are raw.githubusercontent.com URLs on the public
 onboarding repository; per-run assets are uploaded with kie.ai's file
 upload (deleted after 24 hours, so usable only inside the same run). Never
 use a client's Go High Level media library for the standard set: it writes
-into the client's own library.
+into the client's own library. The one exception is the operator's own
+BlackCEO media library (folder `sigpage-reference-images`), which hosts the
+typed reference catalog `assets/visual-standards/reference-catalog.json`: one
+row per hosted image with `{id, type (wireframe|mockup|hybrid-image-map|
+mood-board|mockup-crop), viewport, form, sections, traits, pair, use,
+tags, contains_reference_only_text, sha256, media_path, source}`; the url is
+assembled at run time as `<SKILL71_REFERENCE_MEDIA_BASE>/<media_path>` (the
+base is operator-injected; the library's account identifier is never
+committed) and a row with `contains_reference_only_text: true` is never sent as
+a reference. Wireframe and
+mockup rows pair by `pair` (and mobile slices by section number); a row's
+`sha256` is the hash of the uploaded bytes, so a run re-checks a URL with a
+HEAD request and a re-download before a paid call. Rows tagged
+`counter-example-composition` show the split default and are never the target
+for a non-split treatment. Client libraries remain forbidden.
 
 A complete worked example follows. It is the record the Item 13
 test fixture writes (`tests/test_item13_production_method.py`), filled in
