@@ -30,7 +30,7 @@ SECTION = {
                "art_direction": "Founder at a desk."}],
 }
 LEAKY = ("Styled mockup section {section_number} {section_name} at {width}px ratio {ratio}. "
-         "File: /Users/blackceomacmini/ref/chatgpt-mockup-4.png. Pixels: 724 × 2172. "
+         "File: /Users/example/ref/chatgpt-mockup-4.png. Pixels: 724 × 2172. "
          "SHA-256: deadbeef. Raster: 724 × 2172. {copy} {slots}")
 REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image",
            "style": "warm editorial", "stage_prompts": {"visual-mockup": LEAKY}}
