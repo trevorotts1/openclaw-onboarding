@@ -163,10 +163,15 @@
         {
           "glob": "desktop-wireframe/section-plan.json",
           "min_count": 1
+        },
+        {
+          "glob": "desktop-wireframe/production-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
-        "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe"
+        "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json"
       ],
       "review_required": true,
       "min_scores": {
@@ -210,10 +215,15 @@
         {
           "glob": "mobile-tablet/section-plan.json",
           "min_count": 1
+        },
+        {
+          "glob": "mobile-tablet/production-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
-        "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet"
+        "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json"
       ],
       "review_required": true,
       "min_scores": {
@@ -418,11 +428,16 @@
         {
           "glob": "final-mockups/generation-record.json",
           "min_count": 1
+        },
+        {
+          "glob": "final-mockups/production-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
-        "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups"
+        "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
+        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json"
       ],
       "review_required": true,
       "review_covers": [
