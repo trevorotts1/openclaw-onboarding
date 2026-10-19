@@ -67,9 +67,16 @@ free run with no declared form prints a NOTE and skips the check; a paid run
 `copy/internal-manuscript.md`, writes one section per canonical id with the section's public
 copy, its single CTA label, optional image slots (`--slots`) and optional design prose packed
 to the model's 95 percent target (`--design-prose`), and runs the same check on its own
-output before writing. A section's copy may end on a short closing line (a chip label or a
-signature) without terminal punctuation; unfinished prose is still refused. Templates may use
-`{section_total}` and `{layout}` besides the placeholders listed under Production request.
+output before writing; that check reads the run the manuscript belongs to (`--run-dir`, else
+the parent of `copy/`), never the working directory, and prints what it was checked against.
+A section's copy always ends on a finished sentence: a signature or chip label (8 words or
+fewer) is listed apart in the section's `labels` and printed as its own LABELS line, so
+unfinished prose is refused even when the cut lands on its own line. The builder lands every
+section at or above the 16,000-character floor and refuses (naming the section) when the
+supplied `--design-prose` is too thin; it warns when the shortest section is below the
+19,000-character target. `--preflight` and a paid run (`--provider kie`) fail a prompt under
+the floor (owner Decision 1); a stub run only warns. Templates may use `{section_total}` and
+`{layout}` besides the placeholders listed under Production request.
 
 ## Prompt and geometry contract
 

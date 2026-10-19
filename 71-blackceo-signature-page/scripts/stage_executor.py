@@ -173,6 +173,7 @@ LEAK_LINE = re.compile(
     r"^\s*[-\s]*Pixels:\s*\d+\s*[x×]\s*\d+|"
     r"^\s*[-\s]*Raster:\s*\d+\s*[x×]\s*\d+|"
     r"(?<!\d)(?:724|2171|2172)(?!\d)|\braster_(?:width|height)\b)")
+MAX_LABEL_WORDS = 8
 TERMINAL = (".", "!", "?", '"', "”", "'", "’", ")", "]", "…")
 
 
@@ -400,11 +401,7 @@ def copy_contract(section: dict) -> str:
                 f"section {label}: verbatim copy carries style padding "
                 f"({phrase!r}); rebuild the request with the client's full copy "
                 "(no production prose inside the copy block)")
-    # A short closing line on its own line (a chip label, a signature) is a
-    # complete unit, not a sentence; unfinished prose is still refused.
-    lines = copy.splitlines()
-    label_end = len(lines) > 1 and len(lines[-1].split()) <= 8
-    if copy.endswith("...") or (copy[-1] not in TERMINAL and not label_end):
+    if copy.endswith("...") or copy[-1] not in TERMINAL:
         raise ExecutorError(
             f"section {label}: verbatim copy ends mid-sentence "
             f"({copy[-56:]!r}); rebuild the request with the full section copy")
@@ -422,6 +419,17 @@ def copy_contract(section: dict) -> str:
              "Spell every word exactly: do not invent, drop, double, or substitute "
              "characters anywhere:",
              copy]
+    # Chip labels and the founder's signature are names, not sentences: the builder
+    # lists them apart so the truncated-prose guard above keeps reading prose only.
+    labels = [str(x).strip() for x in section.get("labels") or [] if str(x).strip()]
+    for text in labels:
+        if len(text.split()) > MAX_LABEL_WORDS:
+            raise ExecutorError(
+                f"section {label}: label {text[:56]!r} is longer than {MAX_LABEL_WORDS} words; "
+                "a label is a chip or a signature, so unfinished prose belongs in the copy block")
+    if labels:
+        lines.append("LABELS — print exactly, one per line, as designed labels: " +
+                     " | ".join(f'"{x}"' for x in labels))
     if cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
@@ -524,7 +532,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
-    sources = []
+    sources, absent = [], []
     for path in _copy_source_candidates(run_dir, request):
         if not path.is_file():
             continue
@@ -535,8 +543,12 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
         sources.append(("copy source", [canon_section_id(s["id"]) for s in data.get("sections") or []
                                         if isinstance(s, dict) and s.get("id")]))
         break
+    else:
+        absent.append("copy source file not found")
     manifest = run_dir / "copy" / "copy-manifest.json"
-    if manifest.is_file():
+    if not manifest.is_file():
+        absent.append(f"copy manifest absent at {manifest}")
+    else:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from validate_wireframe import manifest_section_ids  # the wireframe gate's own reader
         try:
@@ -549,7 +561,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             raise ExecutorError(
                 f"section count: the request has {len(ids)} sections {ids} but its {label} "
                 f"has {len(source_ids)} sections {source_ids}; they must match one to one")
-    return version, ids
+    return version, ids, [label for label, _ in sources] + absent
 
 
 def sha256(path: Path) -> str:
@@ -634,7 +646,7 @@ def render_template(template: str, values: dict, stage: str) -> str:
 
 def stage_prompt(stage: str, section: dict, index: int, width: int,
                  request: dict, ratio: str | None = None,
-                 with_sizes: bool = False):
+                 with_sizes: bool = False, strict_floor: bool = False):
     slots = section.get("slots") or []
     slot_words = "; ".join(
         f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
@@ -659,9 +671,13 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"at {width}px page width. Copy: {values['copy']}. "
                 f"Image slots: {slot_words}. {values['style']}").strip()
     copy = str(section.get("copy") or "").strip()
-    body = sanitize_prompt(body)
+    # Lift the verbatim copy out of the template body BEFORE sanitising: the sanitiser
+    # drops blank lines, so a multi-paragraph copy would no longer match and would
+    # print twice (once in the verbatim block, once in the body).
     if copy and copy in body:
-        body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
+        body = body.replace(copy, "", 1)
+    body = sanitize_prompt(body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block()
@@ -702,10 +718,12 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"{budget['max_chars']}-char model maximum; cut design prose, never "
                 "the verbatim copy")
         if deficit > 0:
-            print(f"WARN prompt_budget {stage} section {index}: {len(prompt)} chars, "
-                  f"{deficit} below the {budget['floor_chars']}-char floor "
-                  f"({budget['target_chars']}-char target); add genuine specification",
-                  file=sys.stderr)
+            message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
+                       f"{budget['floor_chars']}-char floor ({budget['target_chars']}-char "
+                       "target); add genuine specification")
+            if strict_floor:  # owner Decision 1: under the floor fails the prompt stage
+                raise ExecutorError(f"prompt budget: {message}")
+            print(f"WARN prompt_budget {message}", file=sys.stderr)
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
@@ -872,7 +890,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
             ratio = target_ratio(stage, template, section, run_dir, index)
             refs = prior_slices(stage, run_dir, index, template)
             prompt, prompt_sizes = stage_prompt(
-                stage, section, index, width, request, ratio, with_sizes=True)
+                stage, section, index, width, request, ratio, with_sizes=True,
+                strict_floor=provider.name == "kie")
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
@@ -1008,7 +1027,8 @@ def main(argv=None) -> int:
             check = request.get("_section_check")
             if check:
                 print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
-                      f"sections={len(check[1])} canonical_ids={','.join(check[1])}")
+                      f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
+                      f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
@@ -1020,7 +1040,7 @@ def main(argv=None) -> int:
                             ratio = target_ratio(stage, template, section, run_dir, index)
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
-                                with_sizes=True)
+                                with_sizes=True, strict_floor=True)
                             refs = prior_slices(stage, run_dir, index, template)
                         except ExecutorError as exc:
                             refused += 1
