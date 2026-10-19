@@ -227,8 +227,16 @@ test('convene is refused 503 until the operator approves, then runs with no rest
     assert.deepEqual(refusedBody.detail.unbound, ['route_budget']);
     assert.match(refusedBody.detail.checks[0].detail, /awaiting operator approval/);
     assert.match(refusedBody.detail.checks[0].detail, /3\.1 min bytes per token/);
-    assert.match(refusedBody.recovery, /measure-route-bytes-per-token\.mjs --route claude-nine-configured/);
+    // Measured and awaiting approval: approve only. Measuring again would
+    // overwrite the numbers the operator is about to review.
+    assert.doesNotMatch(refusedBody.recovery, /measure-route-bytes-per-token/);
     assert.match(refusedBody.recovery, /approve-route-budget\.mjs --route claude-nine-configured/);
+    // A route that does not exist is refused as such, never given a command.
+    const unknown = await convene(fixture.origin, { sample: true, route_id: 'no-such-route' });
+    const unknownBody = (await unknown.json()) as { code: string; recovery: string };
+    assert.equal(unknown.status, 409);
+    assert.equal(unknownBody.code, 'ROUTE_NOT_CONFIGURED');
+    assert.doesNotMatch(unknownBody.recovery, /no-such-route --write/);
     assert.equal(
       db.listSessions(fixture.service.composition.backend.ownerEnvelope).length,
       0,
@@ -334,11 +342,14 @@ test('a route whose budget is not approved is refused per session, even when ano
     const body = (await refused.json()) as {
       code: string;
       detail: { route_id: string; route_budget_state: string; summary: string };
+      recovery: string;
     };
     assert.equal(body.code, 'COMPOSITION_NOT_READY');
     assert.equal(body.detail.route_id, 'claude-configured');
     assert.equal(body.detail.route_budget_state, 'awaiting_approval');
     assert.match(body.detail.summary, /awaiting operator approval/);
+    assert.doesNotMatch(body.recovery, /measure-route-bytes-per-token/);
+    assert.match(body.recovery, /approve-route-budget\.mjs --route claude-configured/);
     assert.equal(backend.repositories.listSessions(backend.ownerEnvelope).length, 0);
   } finally {
     await stopFixture(fixture);

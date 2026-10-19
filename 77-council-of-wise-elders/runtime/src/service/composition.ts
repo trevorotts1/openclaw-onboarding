@@ -620,7 +620,7 @@ function assertRouteBudgetApproved(
             ? `not yet measured: ${describeProposed(proposed)}`
             : 'no route budget entry covers this route and model',
     },
-    routeBudgetRecovery(snapshot.routeId),
+    routeBudgetRecovery(snapshot.routeId, state),
   );
 }
 

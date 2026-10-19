@@ -120,10 +120,12 @@ operational reference for a follow-up or an existing-session control.
    unmeasured, on purpose). Read the refusal to the client in plain words:
    the council will not start on that route until the operator measures it
    and approves the numbers, nothing is approved automatically, and you
-   cannot approve it for them. The operator runs
+   cannot approve it for them. If the route is "not measured", the operator runs
    `scripts/measure-route-bytes-per-token.mjs --route ID --write` (a few
-   small real model calls, writes PROPOSED numbers only), reviews them,
-   then runs `scripts/approve-route-budget.mjs --route ID --approved-by
+   small real model calls, writes PROPOSED numbers into the skill folder's
+   `config/route-budgets.json`, which a fleet skill update replaces); if it
+   is already "awaiting approval", the operator must not measure again. The
+   operator reviews the numbers, then runs `scripts/approve-route-budget.mjs --route ID --approved-by
    NAME --data-dir DIR`. No restart is needed. Offer a route that already
    has an approved budget in the meantime; never simulate a session.
 5. Use the exact approved roster and the requested mode. Keep openings

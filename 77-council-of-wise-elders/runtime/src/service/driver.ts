@@ -200,6 +200,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
           e.message,
           e.recovery ?? 'Choose a route from GET /api/council/routes and convene again.',
           ROUTE_STATUS[code],
+          { summary: e.message },
         );
       }
       throw error;
@@ -314,17 +315,30 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     if (!readiness.ready) {
       const unbound = readiness.checks.filter((c) => !c.bound);
       const budget = unbound.find((c) => c.name === 'route_budget');
+      // Resolve the route first: a route that does not exist is refused as such,
+      // and a real route refuses with its own budget state and recovery.
+      let perRoute: { recovery?: string; detail?: Record<string, unknown> } = {};
+      let routeId: string | undefined;
+      if (budget) {
+        try {
+          routeId = (await route(input.route ?? {})).snapshot.routeId;
+        } catch (error) {
+          if (errorCode(error) !== 'COMPOSITION_NOT_READY') throw error;
+          perRoute = error as typeof perRoute;
+        }
+      }
       throw new DriverRefusal(
         'COMPOSITION_NOT_READY',
         `The council is not ready to convene: ${unbound.map((c) => c.name).join(', ')} not bound.`,
         budget
-          ? routeBudgetRecovery(input.route?.route_id ?? undefined)
+          ? (perRoute.recovery ?? routeBudgetRecovery(routeId))
           : 'Bind the missing services (see detail.checks), then convene again.',
         503,
         {
+          ...(budget ? { summary: budget.detail } : {}),
+          ...perRoute.detail,
           unbound: unbound.map((c) => c.name),
           checks: unbound.map((c) => ({ name: c.name, detail: c.detail })),
-          ...(budget ? { summary: budget.detail } : {}),
         },
       );
     }

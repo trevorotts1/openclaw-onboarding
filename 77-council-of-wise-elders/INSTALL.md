@@ -218,10 +218,17 @@ This is deliberate: the budget converts the model's token limits into the
 byte limits the council can count, and a wrong number wastes paid calls.
 Nothing is approved automatically, and the client cannot approve it.
 
-1. Measure (operator, from the skill folder; spends the client's model
-   allowance, so only with their go): `node scripts/measure-route-bytes-per-token.mjs
+1. Measure, only if the refusal says the route is "not measured"
+   (operator, from the skill folder; spends the client's model allowance,
+   so only with their go): `node scripts/measure-route-bytes-per-token.mjs
    --route ID --write`. It sends eight small fixed samples, prints the
-   PROPOSED entry, and writes it to the config. It approves nothing.
+   PROPOSED entry, and writes it to this skill folder's
+   `config/route-budgets.json` (or the file named by
+   `WISE_ELDERS_ROUTE_BUDGETS`). It approves nothing. If the refusal says
+   "awaiting approval", skip this step: measuring again replaces the numbers
+   being reviewed. A fleet `update-skills` sync replaces the skill folder,
+   so a locally measured entry is lost on update until the approved numbers
+   are committed to the shipped `config/route-budgets.json`.
    `--save-measurements FILE` keeps the raw readings; `--measurements FILE`
    recomputes the same entry offline with no model call.
 2. Review the proposed numbers (smallest bytes per token, safety factor,
