@@ -95,6 +95,8 @@ test('arcLayout(9, compact) is two staggered rows: 5 back and 4 front, offset by
   assert.equal(front.length, 4);
   assert.deepEqual(Array.from(back, (p: Any) => p.xPct), [6, 28, 50, 72, 94]);
   assert.deepEqual(Array.from(front, (p: Any) => p.xPct), [17, 39, 61, 83]);
+  // the front row drops 56 percent: room for a two-line full name above its bubbles (CSS --ch-room-drop matches)
+  assert.ok(front.every((p: Any) => p.yPct === 56));
   // roster order: the first five seats fill the back row, the last four the front row
   assert.equal(JSON.stringify(pts.slice(0, 5)), JSON.stringify(back));
   assert.equal(JSON.stringify(pts.slice(5)), JSON.stringify(front));
@@ -556,6 +558,7 @@ test('chamber-room.css honours the layout contract and prefers-reduced-motion', 
   assert.match(roomCss, /clamp\(96px, 10\.5vw, 150px\)/, 'bust width at >=600px');
   assert.match(roomCss, /--ch-room-w: 76px/, 'bust width on phone');
   assert.match(roomCss, /max-width: 599\.98px/, 'phone breakpoint');
+  assert.match(roomCss, /--ch-room-drop: 0\.56;/, 'phone front-row drop matches COMPACT_DROP (56)');
   assert.match(roomCss, /max-width: 660px/, 'round panel width');
   assert.match(roomCss, /blackceo-logo\.png/, 'watermark mask');
   assert.match(roomCss, /opacity: 0\.05/, 'watermark opacity is at most 6 percent');

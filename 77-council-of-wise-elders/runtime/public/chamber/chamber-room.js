@@ -16,10 +16,10 @@
   var room = (ns.room = ns.room || {});
 
   // Phone: the front row sits this many percent of the seat area below the back
-  // row. chamber-room.css uses the same number as --ch-room-drop (.48) so the
+  // row. chamber-room.css uses the same number as --ch-room-drop (.56) so the
   // seat area is exactly tall enough. The arc uses an 18 percent drop (.18).
   var ARC_DROP = 18;
-  var COMPACT_DROP = 48;
+  var COMPACT_DROP = 56;
 
   function r2(v) {
     return Math.round(v * 100) / 100;

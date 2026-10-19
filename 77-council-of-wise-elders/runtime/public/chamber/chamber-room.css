@@ -20,7 +20,7 @@
   --ch-room-bubble: 28px;
   --ch-room-seat-h: calc(var(--ch-room-bust-h) + var(--ch-room-bubble));
   /* Share of the seat area the lowest seat sits below the highest: .18 on the
-     arc, .48 for the phone two-row layout (matches arcLayout in the script). */
+     arc, .56 for the phone two-row layout (matches arcLayout in the script). */
   --ch-room-drop: 0.18;
   --ch-room-area-h: calc(var(--ch-room-seat-h) / (1 - var(--ch-room-drop)));
   /* How far the dome climbs over the centre bust. F's webps are head crops with
@@ -463,9 +463,10 @@
 @media (max-width: 599.98px) {
   .ch-room-stage {
     --ch-room-w: 76px;
-    --ch-room-drop: 0.48;
+    --ch-room-drop: 0.56;
     /* The front row's bubbles sit right under the back row's pills, so the
-       pills hang a little higher here (still below the chin). */
+       pills hang a little higher here (still below the chin), and the front
+       row drops far enough (.56) to clear a two-line full name. */
     --ch-room-pill-top: 0.7;
     padding-top: 44px;
   }
