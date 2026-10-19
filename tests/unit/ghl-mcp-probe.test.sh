@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
-# tests/unit/ghl-mcp-probe.test.sh — v25.1.10
+# tests/unit/ghl-mcp-probe.test.sh — W07 retirement contract (was: 28 liveness cases)
 #
-# Proves that scripts/ghl-mcp-probe.sh can actually DETECT the failure that hid
-# from every other check for two days: a GHL community MCP that is running,
-# listening, and returning {"status":"healthy"} on GET /health while answering
-# NOTHING on the MCP endpoint (a stale compiled dist missing
-# `await server.connect(transport)`).
+# scripts/ghl-mcp-probe.sh used to probe, self-heal, alert and escalate (healthy /
+# deaf / no-listener / profile-drift verdicts, streak escalation, cards, --heal,
+# off-switch). The GHL Community MCP (Tier 2, skill 36) is RETIRED, so the probe
+# is now an INERT TOMBSTONE: it refuses every invocation with exit 69
+# (EX_UNAVAILABLE — outside its historical 0/2/3/4/5 verdict vocabulary) and
+# changes no state on the box.
 #
-# Cases, each against a throwaway local stub server:
-#   (1) HEALTHY + ANSWERING   -> probe exits 0 (OK)
-#   (2) HEALTHY + DEAF        -> probe exits 3 (DEAF)          ← the outage
-#   (3) NOTHING LISTENING     -> probe exits 2 (NO_LISTENER)
-#   (4) WRONG SERVICE (Cognee)-> probe exits 2 (NO_LISTENER)
-#   (5) ANSWERING + 858 tools -> probe exits 4 (PROFILE_DRIFT) with a curated band
+# This suite asserts the RETIREMENT contract INSTEAD of the deleted behaviour:
+#   (F1..F9)  every invocation form the old suite used exits 69 and prints a
+#             refusal naming the retirement (bare call, --once, --once --heal,
+#             the old health/dead-port/heal/escalation shapes, both off-switch
+#             shapes, and the /bin/bash scheduler shape)
+#   (M)       the GHL_MCP_RETIRED marker is present in the probe file
+#   (C)       control: all four supervisor stubs on PATH are reachable and
+#             record their invocation — a "never invoked" claim is worthless
+#             unless the instrument is proven to discriminate first
+#   (S1..S6)  launchctl / pm2 / systemctl / crontab / the old heal cmd / the old
+#             card-route cmd are NEVER invoked by any form above
+#   (L)       no probe log dir or file is created (the tombstone writes nothing)
+#   (P)       the production probe.log is untouched
 #
-# No network, no GHL credentials, no real MCP required. python3 + curl only.
+# Hermetic: supervisor stubs live in a throwaway sandbox under
+# ${GHL_RETIRE_TEST_ROOT:-~/Downloads/GHL updates/tmp}; no real
+# launchctl/pm2/systemctl/crontab on this machine is ever executed.
 # Exit 0 = all cases pass.
 
 set -uo pipefail
@@ -26,464 +36,222 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 
-# ── R12: THIS TEST MUST NOT WRITE THE BOX'S PRODUCTION PROBE LOG ──────────────
-# Every case below drives the probe to a real verdict, and the probe APPENDS each
-# verdict to $LOG_DIR/probe.log. Until the probe honoured GHL_MCP_LOG_DIR there
-# was no way to redirect that, so running this test wrote genuine-looking
-# OK/DEAF/NO_LISTENER/PROFILE_DRIFT lines into the box's own probe.log — the
-# operator box's log was found to be 100% test output, making a real DEAF verdict
-# indistinguishable from a fixture in the probe's only durable record.
-# Export it for the WHOLE run, and assert at the end that the production path was
-# not touched.
-export GHL_MCP_LOG_DIR="$(mktemp -d)"
-# ── v25.1.10: THIS TEST MUST NOT FILE REAL COMMAND CENTER CARDS ──────────────
-# alert_operator() resolves the repo's own signed ingest helper (scripts/
-# mc-route.sh sits right next to the probe), so every failing case below used
-# to POST a genuine "GHL MCP DOWN (no listener)" card onto the box's live board.
-# Route every card into a file instead, for the WHOLE run, and assert on it.
-CARD_STUB_DIR="$(mktemp -d)"
-export CARD_LOG="$CARD_STUB_DIR/cards.log"
-cat > "$CARD_STUB_DIR/route-stub.sh" <<'SH'
-#!/usr/bin/env bash
-printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "${CARD_LOG}"
-SH
-chmod +x "$CARD_STUB_DIR/route-stub.sh"
-export GHL_MCP_PROBE_ROUTE_CMD="$CARD_STUB_DIR/route-stub.sh"
-# The box running this test may carry the operator off-switch marker
-# ($HOME/.openclaw/.ghl-mcp-probe-disabled). Force the probe ON for every case
-# except the two that test the switch itself.
-export GHL_MCP_PROBE_DISABLED=0
-card_count() { if [ -f "$CARD_LOG" ]; then wc -l < "$CARD_LOG" | tr -d ' '; else echo 0; fi; }
-PROD_LOG_DIR="${HOME}/Library/Logs/ghl-mcp"
-[ -d /data/logs ] && PROD_LOG_DIR="/data/logs"
-PROD_LOG="$PROD_LOG_DIR/probe.log"
-# Baseline: size (and existence) of the production log BEFORE any case runs.
-PROD_LOG_BEFORE="absent"
-[ -f "$PROD_LOG" ] && PROD_LOG_BEFORE="$(wc -c < "$PROD_LOG" 2>/dev/null | tr -d ' ')"
-
-echo "=== ghl-mcp-probe.test.sh (v25.1.10) ==="
+echo "=== ghl-mcp-probe.test.sh (retirement contract) ==="
 echo ""
 
 if [ ! -f "$PROBE" ]; then
   echo "  FAIL: probe not found at $PROBE"; exit 1
 fi
-for dep in python3 curl; do
-  command -v "$dep" >/dev/null 2>&1 || { echo "  SKIP: $dep not available — cannot run the stub-server cases"; exit 0; }
-done
 
-STUB="$(mktemp -d)/stub.py"
-mkdir -p "$(dirname "$STUB")"
-cat > "$STUB" <<'PY'
-import json, sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+# ── sandbox ──────────────────────────────────────────────────────────────────
+BASE="${GHL_RETIRE_TEST_ROOT:-${TMPDIR:-/tmp}/ghl-retire-test}"
+mkdir -p "$BASE" || exit 1
+WORK="$(mktemp -d "$BASE/ghl-probe-retire.XXXXXX")" || exit 1
+trap 'rm -rf "$WORK"' EXIT
 
-MODE = sys.argv[1]          # answering | deaf | cognee
-TOOLS = int(sys.argv[2])
-PORT = int(sys.argv[3])
-
-class H(BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
-
-    def do_GET(self):
-        if self.path == '/health':
-            if MODE == 'cognee':
-                body = {"status": "ready", "version": "0.5.3-local"}
-            else:
-                body = {"status": "healthy", "server": "ghl-mcp-server", "tools": TOOLS}
-            # Compact separators so the bytes match the real server's /health
-            # exactly ({"status":"healthy",...,"tools":43,...}).
-            raw = json.dumps(body, separators=(',', ':')).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(raw)))
-            self.end_headers()
-            self.wfile.write(raw)
-        else:
-            self.send_response(404); self.end_headers()
-
-    def do_POST(self):
-        length = int(self.headers.get('Content-Length') or 0)
-        self.rfile.read(length)
-        if self.path != '/mcp':
-            self.send_response(404); self.end_headers(); return
-        if MODE == 'deaf':
-            # Exactly the outage signature: the connection is accepted, headers
-            # are sent, and the MCP layer never writes a response body.
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
-            self.end_headers()
-            import time
-            time.sleep(30)
-            return
-        payload = {"result": {"protocolVersion": "2025-06-18",
-                              "capabilities": {"tools": {"listChanged": True}},
-                              "serverInfo": {"name": "ghl-mcp-server", "version": "2.0.0"}},
-                   "jsonrpc": "2.0", "id": 1}
-        raw = ("event: message\ndata: " + json.dumps(payload) + "\n\n").encode()
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/event-stream')
-        self.send_header('Content-Length', str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-HTTPServer(('127.0.0.1', PORT), H).serve_forever()
-PY
-
-free_port() { python3 -c "import socket;s=socket.socket();s.bind(('127.0.0.1',0));print(s.getsockname()[1]);s.close()"; }
-
-run_case() {
-  # $1 label  $2 mode  $3 tools  $4 expected_rc  $5 extra probe args
-  local label="$1" mode="$2" tools="$3" want="$4" extra="${5:-}"
-  local port pid rc
-  port="$(free_port)"
-  python3 "$STUB" "$mode" "$tools" "$port" >/dev/null 2>&1 &
-  pid=$!
-  # wait for the socket
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -s -m 1 "http://127.0.0.1:${port}/health" >/dev/null 2>&1 && break
-    sleep 0.3
-  done
-  # shellcheck disable=SC2086
-  GHL_MCP_EXPECT_MIN_TOOLS=1 GHL_MCP_EXPECT_MAX_TOOLS=200 \
-    bash "$PROBE" --once --quiet --timeout 3 --url "http://127.0.0.1:${port}" $extra >/dev/null 2>&1
-  rc=$?
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  if [ "$rc" = "$want" ]; then pass "$label (exit $rc)"; else fail "$label — expected exit $want, got $rc"; fi
-}
-
-run_case "(1) healthy + answering -> OK"                     answering 43  0
-run_case "(2) healthy + DEAF (the outage) -> DEAF"           deaf      43  3
-run_case "(4) wrong service on the port (Cognee) -> NO_LISTENER" cognee 0  2
-run_case "(5) answering but 858 tools -> PROFILE_DRIFT"      answering 858 4
-
-# (3) nothing listening at all
-PORT_DEAD="$(free_port)"
-bash "$PROBE" --once --quiet --timeout 3 --url "http://127.0.0.1:${PORT_DEAD}" >/dev/null 2>&1
-RC=$?
-if [ "$RC" = "2" ]; then pass "(3) nothing listening -> NO_LISTENER (exit 2)"; else fail "(3) nothing listening — expected exit 2, got $RC"; fi
-
-# The deaf case must ALSO be invisible to a plain /health check — that is the
-# whole point of the probe. Prove the old-style check would have passed it.
-PORT_DEAF="$(free_port)"
-python3 "$STUB" deaf 43 "$PORT_DEAF" >/dev/null 2>&1 &
-DEAF_PID=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 1 "http://127.0.0.1:${PORT_DEAF}/health" >/dev/null 2>&1 && break; sleep 0.3; done
-if curl -fsS -m 3 "http://127.0.0.1:${PORT_DEAF}/health" 2>/dev/null | grep -q '"status":"healthy"'; then
-  pass "(6) the DEAF server still reports /health healthy — proving a health check alone is not liveness"
-else
-  fail "(6) stub deaf server did not report a healthy /health (fixture broken)"
-fi
-kill "$DEAF_PID" 2>/dev/null || true
-wait "$DEAF_PID" 2>/dev/null || true
-
-# ── R13: alert escalation is STREAK-BASED, and pages a human exactly once ────
-# A single transient must NOT page anyone (the probe already self-heals once), a
-# 45-minute unbroken outage must, and a long outage must not re-page every 15
-# minutes: Rescue Rangers enforces a hard 25-exchange-per-day cap, so a probe
-# that re-escalated each cycle would burn a client's entire daily budget on one
-# incident and lock out genuine escalations.
-ESC_DIR="$(mktemp -d)"
-ESC_PORT="$(free_port)"
-cat > "$ESC_DIR/catcher.py" <<'PY'
-import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
-out, port = sys.argv[1], int(sys.argv[2])
-n = [0]
-class H(BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
-    def do_POST(self):
-        body = self.rfile.read(int(self.headers.get('Content-Length') or 0))
-        n[0] += 1
-        open("%s/esc-%d.json" % (out, n[0]), "wb").write(body)
-        self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
-HTTPServer(('127.0.0.1', port), H).serve_forever()
-PY
-python3 "$ESC_DIR/catcher.py" "$ESC_DIR" "$ESC_PORT" >/dev/null 2>&1 &
-ESC_PID=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  curl -s -m 1 -X POST "http://127.0.0.1:${ESC_PORT}/" >/dev/null 2>&1 && break
-  sleep 0.3
-done
-rm -f "$ESC_DIR"/esc-*.json 2>/dev/null || true   # discard the readiness ping
-
-STREAK_LOG_DIR="$(mktemp -d)"
-DEAD_PORT="$(free_port)"
-esc_count() { ls "$ESC_DIR"/esc-*.json 2>/dev/null | wc -l | tr -d ' '; }
-run_streak_probe() {
-  GHL_MCP_LOG_DIR="$STREAK_LOG_DIR" \
-  RESCUE_RANGERS_WEBHOOK_URL="http://127.0.0.1:${ESC_PORT}" \
-  FLEET_STANDING_BOX_SLUG="unit-test-box" \
-    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-}
-
-run_streak_probe; run_streak_probe          # probes 1 and 2
-if [ "$(esc_count)" = "0" ]; then
-  pass "(9) two consecutive failures do NOT page Rescue Rangers (a transient must not escalate)"
-else
-  fail "(9) escalated after only $(esc_count) — the 3-probe (~45 min) threshold is not being honoured"
-fi
-
-run_streak_probe                            # probe 3 -> the 45-minute threshold
-if [ "$(esc_count)" = "1" ]; then
-  pass "(10) the 3rd consecutive identical failure escalates exactly once (~45 minutes)"
-else
-  fail "(10) expected exactly 1 escalation on the 3rd failure, got $(esc_count)"
-fi
-
-run_streak_probe; run_streak_probe          # probes 4 and 5
-if [ "$(esc_count)" = "1" ]; then
-  pass "(11) a continuing outage does NOT re-page every cycle (protects the 25/day Rangers cap)"
-else
-  fail "(11) re-escalated on a continuing outage — now $(esc_count) escalations"
-fi
-
-# The payload must carry the canonical fleet slug as boxName: an escalation with
-# the wrong boxName cannot be attributed and is not counted against the right
-# account, which is the entire purpose of that field.
-# NOTE: do not assume the filename. The catcher's counter also advanced for the
-# readiness ping, so the first real escalation is not necessarily esc-1.json.
-ESC_FILE="$(ls "$ESC_DIR"/esc-*.json 2>/dev/null | head -1)"
-if [ -n "$ESC_FILE" ] && ESC_FILE="$ESC_FILE" python3 -c "
-import json,os,sys
-d=json.load(open(os.environ['ESC_FILE']))
-need=['action','person','clientName','agentName','boxName','boxType','openclawVersion','problem','alreadyTried','returnTo']
-sys.exit(0 if all(k in d for k in need) and d['boxName']=='unit-test-box' else 1)" 2>/dev/null; then
-  pass "(12) the escalation payload carries all nine required fields with the canonical boxName"
-else
-  fail "(12) the escalation payload is malformed or boxName is not the fleet slug"
-fi
-
-# ── bash 3.2 COMPATIBILITY, on the interpreter the schedulers actually use ───
-# macOS ships /bin/bash 3.2.57, and BOTH periodic callers invoke this script as
-# `/bin/bash <probe>` — the launchd probe plist and the VPS cron line. Constructs
-# that are fine in bash 5 (notably expanding an EMPTY array as "${arr[@]}" under
-# `set -u`) abort outright there. Re-running the escalation path under the real
-# /bin/bash is the only way this class of bug shows up before a client box hits it.
-if [ -x /bin/bash ]; then
-  BASH32_DIR="$(mktemp -d)"
-  ESC_BEFORE_32="$(esc_count)"
-  # No RESCUE_RANGERS_WEBHOOK_SECRET set: the empty-header case that broke.
-  for _ in 1 2 3; do
-    env -u RESCUE_RANGERS_WEBHOOK_SECRET \
-      GHL_MCP_LOG_DIR="$BASH32_DIR" \
-      RESCUE_RANGERS_WEBHOOK_URL="http://127.0.0.1:${ESC_PORT}" \
-      FLEET_STANDING_BOX_SLUG="unit-test-box-32" \
-      /bin/bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-  done
-  if [ "$(esc_count)" = "$((ESC_BEFORE_32 + 1))" ]; then
-    pass "(14) the escalation path runs and escalates under /bin/bash $(/bin/bash --version | head -1 | sed 's/.*version \([0-9.]*\).*/\1/') with no secret set"
-  else
-    fail "(14) escalation under /bin/bash did not fire exactly once ($ESC_BEFORE_32 -> $(esc_count)) — likely a bash 3.2 incompatibility (empty array under set -u?)"
-  fi
-fi
-
-# Identity is FAIL-CLOSED: with no FLEET_STANDING_BOX_SLUG the probe must NOT
-# send an unattributable payload into the shared Rangers queue.
-ESC_BEFORE="$(esc_count)"
-NOSLUG_DIR="$(mktemp -d)"
-for _ in 1 2 3; do
-  GHL_MCP_LOG_DIR="$NOSLUG_DIR" \
-  RESCUE_RANGERS_WEBHOOK_URL="http://127.0.0.1:${ESC_PORT}" \
-  FLEET_STANDING_BOX_SLUG="" \
-    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-done
-if [ "$(esc_count)" = "$ESC_BEFORE" ]; then
-  pass "(13) with no FLEET_STANDING_BOX_SLUG the probe sends NO escalation (identity is fail-closed)"
-else
-  fail "(13) sent an unattributable escalation with no box slug ($ESC_BEFORE -> $(esc_count))"
-fi
-
-# ── v25.1.10: cards are ONE PER OUTAGE, not one per tick ─────────────────────
-# The 2026-09-15 operator incident: 72 identical cards on one board in ten days,
-# each filed by a single failing tick. The card now fires with the Rangers page,
-# on the 3rd consecutive identical failure, exactly once per streak.
-CARD_STREAK_DIR="$(mktemp -d)"
-: > "$CARD_LOG"
-run_card_probe() {
-  GHL_MCP_LOG_DIR="$CARD_STREAK_DIR" FLEET_STANDING_BOX_SLUG="unit-test-box" \
-    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-}
-run_card_probe; run_card_probe
-if [ "$(card_count)" = "0" ]; then
-  pass "(15) two consecutive failures file NO Command Center card"
-else
-  fail "(15) filed $(card_count) card(s) after only two failures — the per-tick card furnace is back"
-fi
-run_card_probe
-if [ "$(card_count)" = "1" ]; then
-  pass "(16) the 3rd consecutive failure files exactly ONE card"
-else
-  fail "(16) expected exactly 1 card on the 3rd failure, got $(card_count)"
-fi
-run_card_probe; run_card_probe
-if [ "$(card_count)" = "1" ]; then
-  pass "(17) a continuing outage does NOT file a card per tick"
-else
-  fail "(17) re-carded on a continuing outage — now $(card_count) cards"
-fi
-if grep -q 'GHL MCP DOWN (no listener)' "$CARD_LOG" 2>/dev/null; then
-  pass "(18) the one card carries the DOWN title and the general-task route"
-else
-  fail "(18) the card that was filed does not carry the DOWN title"
-fi
-
-# ── JEV-118: a failed card route must leave a DURABLE trace ───────────────────
-# say() prints nothing under --quiet and the sole quiet caller
-# (ghl-mcp-autostart.sh) discards both streams, so a WARNING via say() alone
-# used to vanish while the streak file still recorded escalated=1 and
-# suppressed every later attempt. This case runs the exact quiet-tick shape
-# (--quiet, both streams to /dev/null) against a route hook that always fails,
-# then asserts the WARNING is on disk in probe.log anyway.
-JEV118_DIR="$(mktemp -d)"
-cat > "$JEV118_DIR/fail-route.sh" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-chmod +x "$JEV118_DIR/fail-route.sh"
-JEV118_LOG_DIR="$(mktemp -d)"
-for _ in 1 2 3; do
-  GHL_MCP_LOG_DIR="$JEV118_LOG_DIR" GHL_MCP_PROBE_ROUTE_CMD="$JEV118_DIR/fail-route.sh" \
-    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-done
-if grep -q 'WARNING — the operator alert card was NOT created' "$JEV118_LOG_DIR/probe.log" 2>/dev/null; then
-  pass "(18b) a failed card route under --quiet still leaves a WARNING in probe.log"
-else
-  fail "(18b) a failed card route under --quiet left no WARNING in probe.log — the swallow is back"
-fi
-# ── JEV-124: the durable record names the attempted target ──────────────────
-# Spec clause 3: timestamp + title + reason were already on disk; the attempted
-# target was not. The record must carry target= so the next reader knows WHICH
-# route hook failed without guessing.
-if grep 'card-route-failure target=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null | grep -q 'fail-route.sh'; then
-  pass "(18c) the card-route-failure record names the attempted route target"
-else
-  fail "(18c) the card-route-failure record does not name the attempted target — target field missing"
-fi
-# ── JEV-124 (JEV-127 repair): STATUS surfaces the TRUE count ────────────────
-# The old assertion (one STATUS line matching card-route-failures=1) PASSED on
-# the defective code by arithmetic coincidence: the phantom counter counted its
-# own STATUS lines, so tick 2 emitted `=1` with zero real failures on disk.
-# Assert semantics, not the digit: count the genuine failure records first.
-# One more quiet tick (streak now 4, already escalated, so no second warning):
-# report() must surface card-route-failures=N_REAL on its latest STATUS line.
-GHL_MCP_LOG_DIR="$JEV118_LOG_DIR" GHL_MCP_PROBE_ROUTE_CMD="$JEV118_DIR/fail-route.sh" \
-  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-N_REAL="$(grep -c 'card-route-failure target=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null)"
-case "$N_REAL" in ''|*[!0-9]*) N_REAL=0 ;; esac
-LAST_STATUS="$(grep 'STATUS: ghl-mcp-probe=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null | tail -1)"
-if [ "$N_REAL" = "1" ]; then
-  pass "(18d) positive control: exactly one real card-route-failure record on disk"
-else
-  fail "(18d) positive control FAILED — expected 1 real card-route-failure record, found N_REAL=$N_REAL"
-fi
-case "$LAST_STATUS" in
-  *"card-route-failures=${N_REAL}") pass "(18d) latest STATUS surfaces card-route-failures=${N_REAL} (escalated-once)" ;;
-  *"card-route-failures=${N_REAL} "*) pass "(18d) latest STATUS surfaces card-route-failures=${N_REAL} (escalated-once)" ;;
-  *) fail "(18d) latest STATUS does not surface card-route-failures=${N_REAL} — N_REAL=${N_REAL}, last line: ${LAST_STATUS}" ;;
-esac
-# ── JEV-127 (18e): zero failures ⇒ byte-identical STATUS, no count token ────
-# QC evidence: on the defective code three quiet dead-port ticks wrote
-# `card-route-failures=0`, then `=1`, then `=2` with ZERO real failure records
-# on disk. Fresh isolated log; the file-global route stub exits 0, so the card
-# routes SUCCEED and no failure record is ever written.
-JEV127_LOG_DIR="$(mktemp -d)"
-for _ in 1 2 3; do
-  GHL_MCP_LOG_DIR="$JEV127_LOG_DIR" FLEET_STANDING_BOX_SLUG="unit-test-box" \
-    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-done
-JEV127_STATUS_N="$(grep -c 'STATUS: ghl-mcp-probe=NO_LISTENER' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
-JEV127_REAL_N="$(grep -c 'card-route-failure target=' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
-JEV127_TOKEN_N="$(grep -c 'card-route-failures=' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
-case "$JEV127_STATUS_N" in ''|*[!0-9]*) JEV127_STATUS_N=0 ;; esac
-case "$JEV127_REAL_N" in ''|*[!0-9]*) JEV127_REAL_N=0 ;; esac
-case "$JEV127_TOKEN_N" in ''|*[!0-9]*) JEV127_TOKEN_N=0 ;; esac
-if [ "$JEV127_STATUS_N" = "3" ]; then
-  pass "(18e) positive control: 3 NO_LISTENER STATUS lines in the fresh log"
-else
-  fail "(18e) positive control FAILED — expected 3 NO_LISTENER STATUS lines, found $JEV127_STATUS_N"
-fi
-if [ "$JEV127_REAL_N" = "0" ] && [ "$JEV127_TOKEN_N" = "0" ]; then
-  pass "(18e) zero failures ⇒ no card-route-failures= token anywhere (STATUS byte-identical)"
-else
-  fail "(18e) count token leaked with zero real failures — real=$JEV127_REAL_N token_lines=$JEV127_TOKEN_N"
-fi
-rm -rf "$JEV127_LOG_DIR"
-rm -rf "$JEV118_DIR" "$JEV118_LOG_DIR"
-
-# ── v25.1.10: --heal needs a STREAK; one slow check must never restart ────────
-# The restart is stubbed (GHL_MCP_PROBE_HEAL_CMD) so this test can never
-# kickstart the box's real com.clawd.ghl-mcp service.
-HEAL_DIR="$(mktemp -d)"
-export HEAL_LOG="$HEAL_DIR/heals.log"
-cat > "$HEAL_DIR/heal-stub.sh" <<'SH'
-#!/usr/bin/env bash
-printf 'restart\n' >> "${HEAL_LOG}"
-SH
-chmod +x "$HEAL_DIR/heal-stub.sh"
-heal_count() { if [ -f "$HEAL_LOG" ]; then wc -l < "$HEAL_LOG" | tr -d ' '; else echo 0; fi; }
-run_heal_probe() {
-  GHL_MCP_LOG_DIR="$HEAL_DIR/log" GHL_MCP_PROBE_HEAL_CMD="$HEAL_DIR/heal-stub.sh" \
-  GHL_MCP_PROBE_HEAL_WAIT_SECONDS=1 \
-    bash "$PROBE" --once --quiet --heal --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-}
-run_heal_probe
-if [ "$(heal_count)" = "0" ]; then
-  pass "(19) --heal does NOT restart the server on the first failing tick"
-else
-  fail "(19) --heal restarted on the FIRST failing tick ($(heal_count) restart(s)) — the self-inflicted outage loop is back"
-fi
-run_heal_probe
-if [ "$(heal_count)" = "1" ]; then
-  pass "(20) --heal restarts exactly once when the previous tick also failed"
-else
-  fail "(20) expected exactly 1 restart on the 2nd consecutive failure, got $(heal_count)"
-fi
-
-# ── v25.1.10: operator off-switch makes an installed schedule inert ───────────
-DIS_DIR="$(mktemp -d)"
-GHL_MCP_PROBE_DISABLED=1 GHL_MCP_LOG_DIR="$DIS_DIR" \
-  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-RC_DIS=$?
-if [ "$RC_DIS" = "0" ] && grep -q 'ghl-mcp-probe=DISABLED' "$DIS_DIR/probe.log" 2>/dev/null; then
-  pass "(21) GHL_MCP_PROBE_DISABLED=1 turns a dead-port probe into exit 0 + DISABLED"
-else
-  fail "(21) off-switch env ignored (exit $RC_DIS)"
-fi
-DIS_HOME="$(mktemp -d)"
+# The off-switch MARKER FILE the old suite exercised (case 22). It must have
+# no effect any more: a tombstone has no success path to switch off.
+DIS_HOME="$WORK/disabled-home"
 mkdir -p "$DIS_HOME/.openclaw"
 : > "$DIS_HOME/.openclaw/.ghl-mcp-probe-disabled"
-DIS_DIR2="$(mktemp -d)"
-GHL_MCP_PROBE_DISABLED= HOME="$DIS_HOME" GHL_MCP_LOG_DIR="$DIS_DIR2" \
-  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
-RC_DIS2=$?
-if [ "$RC_DIS2" = "0" ] && grep -q 'ghl-mcp-probe=DISABLED' "$DIS_DIR2/probe.log" 2>/dev/null; then
-  pass "(22) the \$HOME/.openclaw/.ghl-mcp-probe-disabled marker file has the same effect"
+
+# Old heal cmd + card-route cmd, each recording its own invocations.
+export HEAL_STUB_LOG="$WORK/heal-invocations.log"
+export ROUTE_STUB_LOG="$WORK/route-invocations.log"
+cat > "$WORK/heal-stub.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'heal %s\n' "$*" >> "${HEAL_STUB_LOG:?}"
+STUB
+cat > "$WORK/route-stub.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'route %s\n' "$*" >> "${ROUTE_STUB_LOG:?}"
+STUB
+chmod +x "$WORK/heal-stub.sh" "$WORK/route-stub.sh"
+
+# ── supervisor stubs: record every invocation, never run the real thing ───────
+STUB_BIN="$WORK/bin"
+mkdir -p "$STUB_BIN"
+export PROBE_STUB_LOG="$WORK/stub-invocations.log"
+for _t in launchctl pm2 systemctl crontab; do
+  cat > "$STUB_BIN/$_t" <<'STUB'
+#!/bin/sh
+printf '%s %s\n' "$(basename "$0")" "$*" >> "${PROBE_STUB_LOG:?}"
+exit 0
+STUB
+  chmod +x "$STUB_BIN/$_t"
+done
+unset _t
+
+# ── (C) KNOWN-GOOD CONTROL: prove the instrument discriminates ────────────────
+# If these stubs are not reachable, every "never invoked" assertion below is a
+# hollow zero. Exercise all four through the same PATH the probe will get.
+for _t in launchctl pm2 systemctl crontab; do
+  PATH="$STUB_BIN:$PATH" "$_t" --selftest-probe-guard >/dev/null 2>&1 || true
+done
+unset _t
+CTL_N="$(wc -l < "$PROBE_STUB_LOG" 2>/dev/null | tr -d ' ')"
+[ -n "$CTL_N" ] || CTL_N=0
+if [ "$CTL_N" = "4" ]; then
+  pass "(C) control: all four supervisor stubs reachable on PATH and recording (4/4)"
 else
-  fail "(22) marker file ignored (exit $RC_DIS2)"
+  fail "(C) control FAILED — stub log has $CTL_N line(s), expected 4; the never-invoked assertions below would prove nothing"
+fi
+: > "$PROBE_STUB_LOG"
+
+DEAD_URL="http://127.0.0.1:9"          # nothing listens there; the tombstone never asks
+BASH_SCHEDULER=/bin/bash                # the launchd plist / VPS cron interpreter
+[ -x /bin/bash ] || BASH_SCHEDULER=bash
+
+# assert_69 <label> <rc> <captured-output-file>
+# The two load-bearing facts per form: exit 69, and a refusal that NAMES the
+# retirement (REFUSED + RETIRED + the --retire entry point of record).
+assert_69() {
+  local label="$1" rc="$2" f="$3"
+  if [ "$rc" = "69" ]; then
+    pass "$label -> exit 69"
+  else
+    fail "$label — expected exit 69, got $rc"
+  fi
+  if grep -q 'REFUSED' "$f" 2>/dev/null \
+     && grep -q 'RETIRED' "$f" 2>/dev/null \
+     && grep -qF 'ghl-mcp-autostart.sh --retire' "$f" 2>/dev/null; then
+    pass "$label -> refusal names the retirement (REFUSED + RETIRED + --retire)"
+  else
+    fail "$label -> output does not name the retirement (got: $(tr '\n' ' ' < "$f" | cut -c1-160))"
+  fi
+}
+
+# Every form runs under the stub PATH with an isolated GHL_MCP_LOG_DIR, so a
+# regression that re-arms logging is caught by (L) instead of poisoning the box.
+LOGDIR="$WORK/probe-log"
+
+# (F1) bare call — no arguments at all
+OUT="$WORK/o.f1"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" bash "$PROBE" >"$OUT" 2>&1
+assert_69 "(F1) bare call" "$?" "$OUT"
+
+# (F2) --once (the periodic scheduler's own flag)
+OUT="$WORK/o.f2"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" bash "$PROBE" --once >"$OUT" 2>&1
+assert_69 "(F2) --once" "$?" "$OUT"
+
+# (F3) --once --heal (the old self-heal shape)
+OUT="$WORK/o.f3"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" bash "$PROBE" --once --heal >"$OUT" 2>&1
+assert_69 "(F3) --once --heal" "$?" "$OUT"
+
+# (F4) old health-check shape (old cases 1-5): quiet + timeout + url + tool band
+OUT="$WORK/o.f4"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" GHL_MCP_EXPECT_MIN_TOOLS=1 GHL_MCP_EXPECT_MAX_TOOLS=200 \
+  bash "$PROBE" --once --quiet --timeout 3 --url "$DEAD_URL" >"$OUT" 2>&1
+assert_69 "(F4) old health shape (--once --quiet --timeout --url + tool band)" "$?" "$OUT"
+
+# (F5) old dead-port escalation shape (old cases 9-13, 18b-e): webhook + slug +
+# card-route stub. No escalation, no card, no log line may come out of it.
+OUT="$WORK/o.f5"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" GHL_MCP_PROBE_ROUTE_CMD="$WORK/route-stub.sh" \
+  RESCUE_RANGERS_WEBHOOK_URL="$DEAD_URL" FLEET_STANDING_BOX_SLUG="unit-test-box" \
+  bash "$PROBE" --once --quiet --timeout 2 --url "$DEAD_URL" >"$OUT" 2>&1
+assert_69 "(F5) old escalation shape (+ webhook, slug, card-route stub)" "$?" "$OUT"
+
+# (F6) old self-heal shape (old cases 19-20): --heal + heal cmd stub
+OUT="$WORK/o.f6"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" GHL_MCP_PROBE_HEAL_CMD="$WORK/heal-stub.sh" \
+  GHL_MCP_PROBE_HEAL_WAIT_SECONDS=1 \
+  bash "$PROBE" --once --quiet --heal --timeout 2 --url "$DEAD_URL" >"$OUT" 2>&1
+assert_69 "(F6) old --heal shape (+ heal-cmd stub)" "$?" "$OUT"
+
+# (F7) old env off-switch (old case 21): GHL_MCP_PROBE_DISABLED=1 used to yield
+# exit 0 + a DISABLED verdict. There is no success path left to switch off.
+OUT="$WORK/o.f7"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" GHL_MCP_PROBE_DISABLED=1 \
+  bash "$PROBE" --once --quiet --timeout 2 --url "$DEAD_URL" >"$OUT" 2>&1
+assert_69 "(F7) old off-switch env GHL_MCP_PROBE_DISABLED=1 (was exit 0)" "$?" "$OUT"
+
+# (F8) old marker-file off-switch (old case 22): $HOME/.openclaw/.ghl-mcp-probe-disabled
+OUT="$WORK/o.f8"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED PATH="$STUB_BIN:$PATH" \
+  GHL_MCP_LOG_DIR="$LOGDIR" HOME="$DIS_HOME" GHL_MCP_PROBE_DISABLED= \
+  bash "$PROBE" --once --quiet --timeout 2 --url "$DEAD_URL" >"$OUT" 2>&1
+assert_69 "(F8) old off-switch marker file in \$HOME (was exit 0)" "$?" "$OUT"
+
+# (F9) scheduler shape (old case 14): invoked as /bin/bash by the launchd plist
+# and the VPS cron line, with the empty-header env that broke bash 3.2.
+OUT="$WORK/o.f9"
+env -u GHL_MCP_TOMBSTONE_EXIT -u GHL_MCP_RETIRED -u RESCUE_RANGERS_WEBHOOK_SECRET \
+  PATH="$STUB_BIN:$PATH" GHL_MCP_LOG_DIR="$LOGDIR" \
+  FLEET_STANDING_BOX_SLUG="unit-test-box-32" RESCUE_RANGERS_WEBHOOK_URL="$DEAD_URL" \
+  "$BASH_SCHEDULER" "$PROBE" --once --quiet --timeout 2 --url "$DEAD_URL" >"$OUT" 2>&1
+assert_69 "(F9) scheduler shape under $BASH_SCHEDULER (no webhook secret set)" "$?" "$OUT"
+
+# ── (M) the gate's contract marker is in the file ─────────────────────────────
+# scripts/qc-assert-ghl-mcp-supervised.sh reads GHL_MCP_RETIRED as THE contract;
+# without it the supervised gate has nothing to assert.
+if grep -q 'GHL_MCP_RETIRED' "$PROBE"; then
+  pass "(M) GHL_MCP_RETIRED marker present in $PROBE"
+else
+  fail "(M) GHL_MCP_RETIRED marker missing from the probe file — the retirement contract is unverifiable"
 fi
 
-kill "$ESC_PID" 2>/dev/null || true
-wait "$ESC_PID" 2>/dev/null || true
+# ── (S1..S6) NO STATE CHANGES across all nine forms ──────────────────────────
+stub_count() {  # stub_count <tool>
+  if [ -f "$PROBE_STUB_LOG" ]; then grep -c "^$1 " "$PROBE_STUB_LOG" 2>/dev/null || echo 0; else echo 0; fi
+}
+for pair in "S1 launchctl" "S2 pm2" "S3 systemctl" "S4 crontab"; do
+  set -- $pair
+  _n="$(stub_count "$2")"
+  case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+  if [ "$_n" = "0" ]; then
+    pass "($1) $2 was never invoked by any invocation form"
+  else
+    fail "($1) $2 was invoked $_n time(s) by the tombstone — it can change state again"
+  fi
+done
+unset pair _n
 
-# ── (7) R12: the test must not have polluted the production probe log ────────
-# This is the regression guard for the defect itself: if someone reverts the
-# probe's GHL_MCP_LOG_DIR support, or drops the export at the top of this file,
-# this case fails instead of silently poisoning a box's diagnostics again.
+if [ -f "$HEAL_STUB_LOG" ]; then
+  fail "(S5) the old heal cmd was invoked ($(wc -l < "$HEAL_STUB_LOG" | tr -d ' ') time(s)) — self-heal is back"
+else
+  pass "(S5) the old heal cmd was never invoked (--heal changes no state)"
+fi
+if [ -f "$ROUTE_STUB_LOG" ]; then
+  fail "(S6) the old card-route cmd was invoked ($(wc -l < "$ROUTE_STUB_LOG" | tr -d ' ') time(s)) — alerting is back"
+else
+  pass "(S6) the old card-route cmd was never invoked (no alert, no escalation)"
+fi
+
+# ── (L) the tombstone opens no log ───────────────────────────────────────────
+if [ ! -e "$LOGDIR" ]; then
+  pass "(L) no log dir/file created under GHL_MCP_LOG_DIR ($LOGDIR)"
+else
+  fail "(L) the tombstone created $LOGDIR — it is writing state again"
+fi
+
+# ── (P) the production probe.log is untouched (kept from old case 7) ─────────
+PROD_LOG_DIR="${HOME}/Library/Logs/ghl-mcp"
+[ -d /data/logs ] && PROD_LOG_DIR="/data/logs"
+PROD_LOG="$PROD_LOG_DIR/probe.log"
 PROD_LOG_AFTER="absent"
 [ -f "$PROD_LOG" ] && PROD_LOG_AFTER="$(wc -c < "$PROD_LOG" 2>/dev/null | tr -d ' ')"
-if [ "$PROD_LOG_BEFORE" = "$PROD_LOG_AFTER" ]; then
-  pass "(7) production probe.log untouched by this test (was: $PROD_LOG_BEFORE, now: $PROD_LOG_AFTER)"
+# Baseline was taken by the absence of any write path: every form above ran with
+# an isolated GHL_MCP_LOG_DIR, and the tombstone must not have touched the
+# default location either. Re-read twice around a final bare invocation:
+OUT="$WORK/o.p"
+env -u GHL_MCP_TOMBSTONE_EXIT PATH="$STUB_BIN:$PATH" GHL_MCP_LOG_DIR="$LOGDIR" \
+  bash "$PROBE" --once >"$OUT" 2>&1
+PROD_LOG_FINAL="absent"
+[ -f "$PROD_LOG" ] && PROD_LOG_FINAL="$(wc -c < "$PROD_LOG" 2>/dev/null | tr -d ' ')"
+if [ ! -e "$LOGDIR" ] && [ "$PROD_LOG_AFTER" = "$PROD_LOG_FINAL" ]; then
+  pass "(P) production probe.log untouched and isolated log still absent (was: $PROD_LOG_AFTER, now: $PROD_LOG_FINAL)"
 else
-  fail "(7) this test WROTE the production probe.log at $PROD_LOG (was: $PROD_LOG_BEFORE, now: $PROD_LOG_AFTER) — the probe is ignoring GHL_MCP_LOG_DIR again"
-fi
-
-# And the redirected log must actually have received the verdicts, proving the
-# isolation is real redirection and not merely a silenced writer.
-if [ -s "$GHL_MCP_LOG_DIR/probe.log" ]; then
-  pass "(8) verdicts were written to the isolated GHL_MCP_LOG_DIR instead"
-else
-  fail "(8) no probe.log in the isolated GHL_MCP_LOG_DIR — the probe wrote its verdicts somewhere unexpected"
+  fail "(P) state was written — prod probe.log $PROD_LOG_AFTER -> $PROD_LOG_FINAL, isolated log exists: $([ -e "$LOGDIR" ] && echo yes || echo no)"
 fi
 
 echo ""

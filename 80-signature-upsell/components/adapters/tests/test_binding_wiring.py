@@ -113,7 +113,7 @@ class NativeBindingRecordTests(unittest.TestCase):
                     bundle["native_binding"],
                     {
                         "kind": "extra_offer_binding",
-                        "interface_ref": "S79 extra_offer_interface.md DRAFT (fixture level)",
+                        "interface_ref": "S79 extra_offer_interface.md CONFIRMED revision 2 (fixture level)",
                         "binding_status": "interface_conformant_pending_s06",
                         "native_action_id": None,
                         "capability_evidence_ref": "native:TEST-CAPABILITY-EVIDENCE",
@@ -264,6 +264,27 @@ class BindingModuleReconciliationTests(unittest.TestCase):
                 self.assertIn("capability_evidence_ref", record)
                 record.pop("capability_evidence_ref")
                 expected.pop("capability_evidence_ref")
+                # Interface vocabulary: the adapter emits the CONFIRMED
+                # revision 2 label; the parallel binding module may still
+                # carry the pre-confirmation label (its owner reconciles).
+                # Same document, same proof level - compare the document
+                # identity, then pin the adapter's own label exactly.
+                bundle_ref = expected.pop("interface_ref")
+                module_ref = record.pop("interface_ref")
+                self.assertIn("CONFIRMED revision 2", bundle_ref)
+                self.assertIn("fixture level", bundle_ref)
+
+                def _doc(ref):
+                    for token in (" CONFIRMED revision 2", " DRAFT", " REVISION 2"):
+                        ref = ref.replace(token, "")
+                    return ref
+
+                self.assertEqual(
+                    _doc(bundle_ref),
+                    _doc(module_ref),
+                    "interface_ref document drift: bundle %r vs binding module %r"
+                    % (bundle_ref, module_ref),
+                )
                 self.assertEqual(record, expected)
 
 

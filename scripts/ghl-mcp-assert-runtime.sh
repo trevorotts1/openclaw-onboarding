@@ -1,112 +1,118 @@
 #!/usr/bin/env bash
-# ghl-mcp-assert-runtime.sh — v21.6.0
+# ghl-mcp-assert-runtime.sh — v22.0.0 (W07 retirement)
 #
-# 2026-09-17 (skill 36 v2.0.2): THIS GATE WAS FAILING HEALTHY BOXES.
-# Measured on two client containers: pm2 app ghl-community-mcp online under a
-# root-persisted PM2_HOME, http://127.0.0.1:8765/health answering with 43 tools,
-# build stamp on the pinned commit, and this gate exited 1, so the updater
-# exited 2 with "GHL MCP Tier 2 MISCONFIGURED". Three causes, all of them in
-# the gate rather than on the box:
-#   * it derived the install path as /data/mcp-servers or $HOME/mcp-servers,
-#     neither of which is where a bind-mounted container keeps Tier 2;
-#   * it knew two platforms where the autostart script knew three, so a Linux
-#     container was judged as a Mac and failed for two absent launchd plists;
-#   * it inspected pm2 with the default PM2_HOME, which reports "app not found"
-#     about an app that is online under another home.
-# Paths and platform now come from scripts/lib/ghl-mcp-paths.sh, the same
-# library ghl-mcp-autostart.sh sources, and PM2_HOME comes from it too.
-#
-# RUNTIME conformance gate for the GHL Community MCP (Tier 2, skill 36).
-# It asserts what is ACTUALLY INSTALLED AND RUNNING ON THIS BOX.
+# THE COMMUNITY MCP IS RETIRED. This gate's job is no longer "prove the
+# installed service matches the pin"; its job is to prove the community MCP is
+# GONE, and — when something is still there — to name the exact identity that
+# refuses to die. A box that never had it is not a failure. A box that had it
+# and now has none of it is a PASS.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# WHY THIS EXISTS — the single biggest guardrail v21.5.0 was missing
+# THE SELF-CONTRADICTION THIS REPLACES (recorded in the live ledger)
 #
-# qc-assert-ghl-mcp-supervised.sh is, by its own header, "a STATIC check of the
-# SHIPPED SCRIPTS (not a live process probe)". It reads ghl-mcp-autostart.sh and
-# asserts that the script WOULD write a crash-only plist with a pinned profile.
-# It never opens the INSTALLED plist, never reads the live pm2 ecosystem or the
-# systemd unit, never reads /health's tool count, and never looks at mcp.servers.
-#
-# The consequence, measured on the operator box on 2026-08-03: the static gate
-# reports PASS while the live service runs `node dist/main.js` directly (not the
-# crash-only launcher), with GHL_TOOL_PROFILE=full, KeepAlive=<true/> (the exact
-# form the static gate calls FATAL), ThrottleInterval=10, no GHL_MCP_LOG_DIR, a
-# 5.4 MB unrotated stderr.log, 859 tools on /health, ghl-community-mcp still
-# registered in mcp.servers, and no build stamp at all. Every one of those is a
-# FATAL invariant in the shipped script — and the static gate cannot see any of
-# them, because a plist is only regenerated when the autostart actually runs,
-# and a hand-edited plist persists indefinitely.
-#
-# A gate that reads the shipped script proves what a fresh install WOULD do.
-# This gate proves what THIS box IS doing.
+# The old gate FAILED on absence at both supervisor branches — the mac branch
+# when the plist was missing, the pm2/systemd branch when no supervisor was
+# alive — while check 10 PASSED only when the service was ABSENT from
+# mcp.servers. On a retired box the two halves contradicted each other, so
+# "retired" and "broken" were indistinguishable. That is fixed here:
+# ABSENT = PASS on every branch.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# WHAT IT ASSERTS (per-check PASS/FAIL with the OBSERVED value, never just a
-# verdict — "FAIL" without the number it saw is not a diagnosis)
+# EXIT CODES (the four states this gate distinguishes)
 #
-#   1  service definition present for this platform
-#      mac        : ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist  (Darwin only)
-#      vps and
-#      linux-home : pm2 app `ghl-community-mcp` (under the derived PM2_HOME),
-#             else /etc/systemd/system/ghl-mcp.service, else a LIVE FALLBACK B
-#             supervise loop AND a green /health (slim containers with neither
-#             pm2 nor systemd: PASS-with-warning). linux-home is a HOME-layout
-#             Linux box: a client container, or one whose /data is a symlink
-#             back into $HOME. It has no launchd, and ghl-mcp-autostart.sh never
-#             writes it a plist, so this gate must never ask for one.
-#   2  it launches the CRASH-ONLY LAUNCHER (.ghl-mcp-launch.sh), not node directly
-#   3  crash-only supervision:
-#      Mac  : KeepAlive is a DICT with SuccessfulExit=false — never <true/>
-#      VPS  : pm2 stop_exit_codes contains 0, or systemd Restart=on-failure
-#   4  Mac: ThrottleInterval >= 300
-#   5  GHL_TOOL_PROFILE in the live definition == the pin file's value
-#   6  PORT and MCP_SERVER_PORT both == the pin file's port
-#   7  GHL_MCP_LOG_DIR present in the live definition (the launcher cannot
-#      rotate what it cannot find)
-#   8  .ghl-mcp-build.json exists and its commit == GHL_MCP_VETTED_COMMIT
-#   9  live /health tool count inside [EXPECT_MIN, EXPECT_MAX] for the profile
-#  10  ghl-community-mcp ABSENT from mcp.servers (skill 36 v1.1.0 doctrine:
-#      Tier 2 is on-demand curl. Verified against three independent sources in
-#      this repo — 36-ghl-mcp-setup/wire.sh migration M2 REMOVES it,
-#      qc-assert-ghl-mcp-supervised.sh CHECK 8 forbids re-registering it, and
-#      ghl-mcp-autostart.sh deregister_tier2() removes it on every run.)
-#  11  the periodic probe is installed AND its path exists (a cron line pointing
-#      at a deleted script is a silently dead probe). Off Darwin, EITHER the OS
-#      crontab or the OpenClaw cron store counts, because autostart uses the store when
-#      the box has no usable crontab, which is the common container shape.
-#  12  no log in $LOG_DIR exceeds GHL_MCP_LOG_MAX_BYTES * 1.5
-#  13  the listener is bound to LOOPBACK, not 0.0.0.0  — WARN by default
-#      ⚠️ WARN, NOT FAIL, and deliberately so: the pinned upstream build binds
-#      0.0.0.0 and nothing in this repo can change that yet (it needs a
-#      server-side patch — R2 in the hardening analysis). A check that fails on
-#      every box for a condition this release does not fix is not a guardrail,
-#      it is noise that gets the whole gate disabled. Set
-#      GHL_MCP_REQUIRE_LOOPBACK=1 to promote it to FATAL the moment R2 lands.
+#   0  RETIRED_OK       every community surface is provably absent and, when a
+#                       retirement receipt exists, it says VERIFIED_OFF with a
+#                       verifiable archive. Absence is a PASS, not a skip.
+#   1  STILL_RUNNING    at least one matched identity was FOUND. The verdict and
+#                       the FAIL lines name it exactly: launchd label, pm2 app,
+#                       systemd unit, process pid, listener address, probe
+#                       schedule, or mcp.servers registration.
+#   2  NOT_APPLICABLE   the documented SKIP: this box has no history of a
+#                       community MCP at all (a fresh install now omits it).
+#                       Callers MUST treat 2 as a skip, never as a failure.
+#   3  MISCONFIGURED    nothing is running, but the retirement state cannot be
+#                       verified: residual inert artifacts (a leftover install
+#                       dir, a `.plist.bak` that could be restored, an archive
+#                       with no receipt), a MIGRATION_FAILED receipt, an
+#                       unreadable/malformed receipt, a missing shared path
+#                       library, or an unreadable registration config.
+#
+# PRECEDENCE: a found identity always wins (1). MISCONFIGURED (3) is only
+# reported when nothing is left to name as a live/resurrection surface.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT IT INVENTORIES (the ordered-transaction inventory, in the same order)
+#
+#   1  install dir <root>/mcp-servers/ghl-community-mcp (and legacy locations)
+#   2  pin file config/ghl-mcp-pin.env
+#   3  supervisor actually present:
+#        mac        : ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist + launchd
+#        pm2        : app `ghl-community-mcp` under the derived PM2_HOME
+#        systemd    : /etc/systemd/system/ghl-mcp.service + is-enabled/is-active
+#        fallback B : <install dir>/.ghl-mcp-supervise.sh + setsid loop
+#        none
+#   4  registration in openclaw.json mcp.servers
+#   5  the 15-minute probe: launchd plist, OS crontab, or OpenClaw cron store
+#   6  live processes and LISTEN sockets on the configured port
+#   7  the retirement receipt <root>/state/ghl-mcp-retirement.json
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THE RECEIPT (written by the retirement transaction; this gate only reads it)
+#
+#   <root>/.retired/ghl-mcp-retirement.json       final_state VERIFIED_OFF
+#   <root>/.retired/ghl-mcp-migration-failed.json final_state MIGRATION_FAILED
+#
+# Schema ghl-mcp-retirement-receipt/v1 (written by scripts/ghl-mcp-autostart.sh
+# --retire). Only the fields this gate reads are shown:
+#
+#   {
+#     "schema": "ghl-mcp-retirement-receipt/v1",
+#     "final_state": "VERIFIED_OFF" | "MIGRATION_FAILED",
+#     "stage": "complete" | "<failed stage>",
+#     "reason": "...", "timestamp_utc": "...",
+#     "box": {"platform": "...", "cohort": "..."},
+#     "release": {"from": "...", "to": "...", "commit": "..."},
+#     "old_service": {"kind": "...", "identity": "...", "install_dir": "..."},
+#     "archive": {"path": "...", "manifest_sha256": "<sha256 of manifest.sha256>"},
+#     "migrated_callers": [...], "disabled_hooks": [...],
+#     "stop_result": [...],
+#     "verification": {"ok": [...], "live": [...], "unknown": [...]},
+#     "remediation": "..."
+#   }
+#
+# A VERIFIED_OFF receipt is only accepted when its archive exists, is NOT inside
+# any active install search path, and (when a manifest hash is recorded) the
+# archive's manifest.sha256 hashes to it. An archive must never be scannable as
+# a live install and must never auto-restore.
+#
+# GHL_MCP_RETIRED
+# This file is the retirement VERIFIER. It never starts, builds, clones,
+# registers, schedules or supervises the community MCP. Every supervisor call
+# here is read-only (`launchctl print`, `pm2 describe/jlist`,
+# `systemctl is-enabled/is-active`, `crontab -l`).
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # SECRET HYGIENE — load-bearing, do not "simplify"
-# `pm2 jlist` DUMPS the full process env, which on this box includes the GHL
+# `pm2 jlist` DUMPS the full process env, which on a live box includes the GHL
 # Private Integration Token. This script therefore NEVER echoes raw pm2/plist
 # output. It extracts individual named keys and prints only those, and the ones
 # it prints are non-secret by construction (profile, ports, log dir, script
-# path). Never add a branch that prints the captured blob on failure.
-#
-# EXIT CODES
-#   0  every FATAL check passed (warnings may still be present)
-#   1  one or more FATAL checks failed — the INSTALLED service is misconfigured
-#   2  nothing to assert on this box (no service definition and no MCP dir) —
-#      INFO, not a failure: this is the state on every box that never installed
-#      Tier 2, and on the repo/CI checkout. Callers must treat 2 as a SKIP.
+# path, status). Never add a branch that prints the captured blob on failure.
+# The receipt is asserted to be secret-free by the retirement transaction; this
+# gate never prints archive contents, only paths and hashes.
 #
 # USAGE
 #   ghl-mcp-assert-runtime.sh            # human-readable report
-#   ghl-mcp-assert-runtime.sh --quiet    # exit code only
+#   ghl-mcp-assert-runtime.sh --quiet    # exit code only (FAIL lines still shown)
 #
-# Wired in:
-#   scripts/qc-system-integrity.sh          CHECK X.13b
-#   update-skills.sh                        post-autostart runtime verdict
-#   config/ghl-mcp-pin.env                  step 6 of the pin-bump runbook
+# TEST/OVERRIDE HOOKS (real boxes set none of these)
+#   GHL_MCP_PLATFORM_OVERRIDE, GHL_MCP_DIR, GHL_MCP_LOG_DIR_OVERRIDE,
+#   GHL_MCP_DATA_ROOT, GHL_MCP_UNAME_S   (see scripts/lib/ghl-mcp-paths.sh)
+#   GHL_MCP_OC_JSON, GHL_MCP_PLIST, GHL_MCP_PROBE_PLIST, GHL_MCP_SYSTEMD_UNIT
+#   GHL_MCP_RETIREMENT_RECEIPT       default <root>/.retired/ghl-mcp-retirement.json
+#   GHL_MCP_RETIREMENT_FAIL_RECEIPT  default <root>/.retired/ghl-mcp-migration-failed.json
+#   GHL_MCP_ARCHIVE_ROOT             default <root>/.retired (archive-* subdirs)
+#   GHL_MCP_PROC_NET_TCP, GHL_MCP_PROC_NET_TCP6 (check 13, see below)
 
 set -u
 
@@ -115,9 +121,23 @@ for _arg in "$@"; do
   [ "$_arg" = "--quiet" ] && QUIET=1
 done
 
+EXIT_RETIRED_OK=0
+EXIT_STILL_RUNNING=1
+EXIT_NOT_APPLICABLE=2
+EXIT_MISCONFIGURED=3
+
 FATAL_FAILURES=0
 WARNINGS=0
 CHECKS=0
+
+# Classifiers. These are STRINGS, not bash arrays: macOS /bin/bash is 3.2 and
+# `"${arr[@]}"` on an empty array is an unbound-variable abort under `set -u`.
+HAS_IDENTITY=0
+HAS_RESIDUAL=0
+HAS_MISCONFIG=0
+IDENTITIES=""
+RESIDUALS=""
+MISCONFIGS=""
 
 _pass() { CHECKS=$((CHECKS+1)); [ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] PASS  %s\n' "$*"; return 0; }
 _fail() { CHECKS=$((CHECKS+1)); FATAL_FAILURES=$((FATAL_FAILURES+1))
@@ -126,17 +146,34 @@ _warn() { CHECKS=$((CHECKS+1)); WARNINGS=$((WARNINGS+1))
           [ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] WARN  %s\n' "$*"; return 0; }
 _info() { [ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] INFO  %s\n' "$*"; return 0; }
 
+# _identity <surface>: a live or self-resurrecting community surface. ALWAYS a
+# failure; always printed (never suppressed by --quiet) because this line is
+# the exact evidence the operator needs. The surface is named verbatim.
+_identity() {
+  CHECKS=$((CHECKS+1)); HAS_IDENTITY=1
+  IDENTITIES="${IDENTITIES}${IDENTITIES:+; }$1"
+  printf '[ghl-mcp-runtime] FAIL  STILL_RUNNING  %s\n' "$1" >&2
+  return 0
+}
+# _residual <surface>: inert leftover that could be restored or re-supervised.
+# Not currently running, so the box is MISCONFIGURED rather than STILL_RUNNING.
+_residual() {
+  CHECKS=$((CHECKS+1)); HAS_RESIDUAL=1
+  RESIDUALS="${RESIDUALS}${RESIDUALS:+; }$1"
+  printf '[ghl-mcp-runtime] FAIL  RESIDUAL  %s\n' "$1" >&2
+  return 0
+}
+# _misconfigured <reason>: the retirement state cannot be verified.
+_misconfigured() {
+  CHECKS=$((CHECKS+1)); HAS_MISCONFIG=1
+  MISCONFIGS="${MISCONFIGS}${MISCONFIGS:+; }$1"
+  printf '[ghl-mcp-runtime] FAIL  MISCONFIGURED  %s\n' "$1" >&2
+  return 0
+}
+
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # ── Platform + canonical paths: THE SAME DERIVATION, not a copy of it ────────
-# This block used to be a hand-maintained duplicate of the one in
-# ghl-mcp-autostart.sh, introduced by a comment that said "identical derivation
-# to ghl-mcp-autostart.sh". It was not identical, and the difference was the
-# whole bug: autostart knew vps | mac | linux-home, this gate knew vps | mac, so
-# a Linux container with no /data was judged as a Mac and failed for not having
-# two launchd plists that nothing on it could ever run. Both scripts now SOURCE
-# scripts/lib/ghl-mcp-paths.sh; a future divergence has to be written into the
-# library, where it applies to both, instead of into one of two copies.
 _GHL_PATHS_LIB=""
 for _c in "${GHL_MCP_PATHS_LIB:-}" \
           "$SELF_DIR/lib/ghl-mcp-paths.sh" \
@@ -149,34 +186,36 @@ for _c in "${GHL_MCP_PATHS_LIB:-}" \
   [ -n "$_c" ] && [ -f "$_c" ] && { _GHL_PATHS_LIB="$_c"; break; }
 done
 if [ -z "$_GHL_PATHS_LIB" ]; then
-  _fail "scripts/lib/ghl-mcp-paths.sh is not on this box, so the Tier 2 install path and the platform CANNOT be derived. This gate refuses to guess them rather than report a confident verdict about a directory it invented. Searched: $SELF_DIR/lib, \$HOME/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib, /data/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib. Re-run update-skills.sh or install.sh; both deliver the whole scripts/ tree recursively."
-  printf '[ghl-mcp-runtime] VERDICT: %s FATAL, %s warning(s), %s check(s)\n' "$FATAL_FAILURES" "$WARNINGS" "$CHECKS" >&2
-  exit 1
+  _misconfigured "scripts/lib/ghl-mcp-paths.sh is not on this box, so the Tier 2 install path and the platform CANNOT be derived. This gate refuses to guess them rather than report a confident verdict about a directory it invented. Searched: $SELF_DIR/lib, \$HOME/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib, /data/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib. Re-run update-skills.sh or install.sh; both deliver the whole scripts/ tree recursively."
+  printf '[ghl-mcp-runtime] VERDICT: MISCONFIGURED — %s\n' "$MISCONFIGS" >&2
+  exit "$EXIT_MISCONFIGURED"
 fi
 # shellcheck disable=SC1090
 . "$_GHL_PATHS_LIB"
 ghl_mcp_resolve_paths
-# The library reads GHL_MCP_PLATFORM_OVERRIDE, GHL_MCP_DIR and
-# GHL_MCP_LOG_DIR_OVERRIDE itself, so the documented test hooks below keep
-# working AND now apply identically to ghl-mcp-autostart.sh.
 PLATFORM="$GHL_MCP_RESOLVED_PLATFORM"
 OC_ROOT="$GHL_MCP_RESOLVED_ROOT"
 MCP_DIR="$GHL_MCP_RESOLVED_DIR"
 LOG_DIR="$GHL_MCP_RESOLVED_LOG_DIR"
-# PM2_HOME IS PART OF THE ADDRESS OF THE APP. pm2 keeps one process list per
-# PM2_HOME; on a client container the Tier 2 app is registered under the
-# root-persisted home (the bind-mounted directory) because $HOME/.pm2 does not
-# survive a recreate. Inspecting with the wrong home reports "app not found"
-# about an app that is online, which is half of the false MISCONFIGURED
-# verdict this release fixes. Exported ONLY when a candidate home actually exists: `pm2
-# describe` under a non-existent PM2_HOME SPAWNS a pm2 daemon, and a read-only
-# gate must never do that.
+# PM2_HOME IS PART OF THE ADDRESS OF THE APP. Export ONLY when a candidate home
+# actually exists: `pm2 describe` under a non-existent PM2_HOME SPAWNS a pm2
+# daemon, and a read-only gate must never do that.
 _GHL_PM2_HOME="$(ghl_mcp_pm2_home_existing "$OC_ROOT")"
 [ -n "$_GHL_PM2_HOME" ] && export PM2_HOME="$_GHL_PM2_HOME"
 OC_JSON="${GHL_MCP_OC_JSON:-$OC_ROOT/openclaw.json}"
 PLIST="${GHL_MCP_PLIST:-$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist}"
 PROBE_PLIST="${GHL_MCP_PROBE_PLIST:-$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist}"
 SYSTEMD_UNIT="${GHL_MCP_SYSTEMD_UNIT:-/etc/systemd/system/ghl-mcp.service}"
+# The producer is scripts/ghl-mcp-autostart.sh --retire. These are ITS paths;
+# do not invent a second receipt location.
+RETIRE_DIR="$OC_ROOT/.retired"
+RECEIPT="${GHL_MCP_RETIREMENT_RECEIPT:-$RETIRE_DIR/ghl-mcp-retirement.json}"
+RECEIPT_FAIL="${GHL_MCP_RETIREMENT_FAIL_RECEIPT:-$RETIRE_DIR/ghl-mcp-migration-failed.json}"
+ARCHIVE_ROOT="${GHL_MCP_ARCHIVE_ROOT:-$RETIRE_DIR}"
+LAUNCHD_LABEL="com.clawd.ghl-mcp"
+PROBE_LABEL="com.clawd.ghl-mcp-probe"
+PM2_APP="ghl-community-mcp"
+SYSTEMD_NAME="ghl-mcp.service"
 # Bind-determination sources (check 13). Overridable ONLY so the "no method
 # available -> FATAL undeterminable" branch is reachable in CI; see the long
 # note at check 13. Real boxes never set these.
@@ -185,8 +224,9 @@ _PROC_NET_TCP6="${GHL_MCP_PROC_NET_TCP6:-/proc/net/tcp6}"
 PM2_ECOSYSTEM="$MCP_DIR/ecosystem.config.js"
 BUILD_STAMP="$MCP_DIR/.ghl-mcp-build.json"
 LAUNCHER_NAME=".ghl-mcp-launch.sh"
+SUPERVISE_NAME=".ghl-mcp-supervise.sh"
 
-# ── The pin is the expectation. Without it there is nothing to compare to. ───
+# ── The pin is the expectation, when there is still a service to compare. ────
 _PIN_FILE=""
 for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
           "$HOME/.openclaw/config/ghl-mcp-pin.env" \
@@ -196,70 +236,347 @@ for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
   [ -f "$_c" ] && { _PIN_FILE="$_c"; break; }
 done
 
-# ── Is there anything installed here at all? ─────────────────────────────────
+_bind_addrs_for_port() {
+  local _p="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$_p" -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print $9}'
+    return 0
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH 2>/dev/null | awk -v p=":$_p" '$4 ~ p"$" {print $4}'
+    return 0
+  fi
+  if { [ -r "$_PROC_NET_TCP" ] || [ -r "$_PROC_NET_TCP6" ]; } \
+     && command -v python3 >/dev/null 2>&1; then
+    PORT_DEC="$_p" PROC_TCP="$_PROC_NET_TCP" PROC_TCP6="$_PROC_NET_TCP6" python3 - <<'PYEOF' 2>/dev/null
+import os, socket, struct
+port = int(os.environ["PORT_DEC"])
+def emit(path, v6):
+    try:
+        lines = open(path).read().splitlines()[1:]
+    except Exception:
+        return
+    for ln in lines:
+        f = ln.split()
+        if len(f) < 4 or f[3] != "0A":
+            continue
+        hexaddr, hexport = f[1].split(":")
+        if int(hexport, 16) != port:
+            continue
+        if v6:
+            raw = bytes.fromhex(hexaddr)
+            raw = b"".join(struct.pack("<I", struct.unpack(">I", raw[i:i+4])[0])
+                           for i in range(0, 16, 4))
+            ip = socket.inet_ntop(socket.AF_INET6, raw)
+        else:
+            ip = socket.inet_ntop(socket.AF_INET, struct.pack("<I", int(hexaddr, 16)))
+        print("%s:%d" % (ip, port))
+emit(os.environ.get("PROC_TCP", "/proc/net/tcp"), False)
+emit(os.environ.get("PROC_TCP6", "/proc/net/tcp6"), True)
+PYEOF
+    return $?
+  fi
+  return 1
+}
+
+_receipt_field() {  # _receipt_field <receipt-file> <key> — dotted path, strings/lists
+  local file="$1" key="$2"
+  if command -v python3 >/dev/null 2>&1; then
+    RECEIPT="$file" KEY="$key" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:
+    cur = json.load(open(os.environ["RECEIPT"]))
+except Exception:
+    raise SystemExit(0)
+for part in os.environ["KEY"].split("."):
+    cur = cur.get(part, "") if isinstance(cur, dict) else ""
+v = cur
+if isinstance(v, (dict, list)):
+    print(json.dumps(v, separators=(",", ":")))
+elif v is None:
+    print("")
+else:
+    print(v)
+PYEOF
+  else
+    key="${key##*.}"
+    sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" 2>/dev/null | head -1
+  fi
+}
+
+_receipt_alias() {  # _receipt_alias <file> <preferred> <fallback>
+  local v
+  v="$(_receipt_field "$1" "$2")"
+  [ -n "$v" ] || v="$(_receipt_field "$1" "$3")"
+  printf '%s' "$v"
+}
+
+_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+# Early read of the terminal state. A VERIFIED_OFF receipt changes how the
+# leftover tree is judged: it is inert archive material, not a live install.
+_OFF_RECEIPT=0
+if [ -f "$RECEIPT" ] && command -v python3 >/dev/null 2>&1; then
+  [ "$(_receipt_field "$RECEIPT" final_state)" = "VERIFIED_OFF" ] && _OFF_RECEIPT=1
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# INVENTORY — read-only. Every probe here answers "is this surface present?"
+# A present surface is recorded exactly once, with its identity.
+# ═════════════════════════════════════════════════════════════════════════════
+
+_HAVE_MCP_DIR=0; [ -d "$MCP_DIR" ] && _HAVE_MCP_DIR=1
 _HAVE_MAC_SVC=0; [ -f "$PLIST" ] && _HAVE_MAC_SVC=1
+_HAVE_PLIST_BAK=0; PLIST_BAKS=""
+for _b in "$PLIST".bak*; do
+  [ -e "$_b" ] && { _HAVE_PLIST_BAK=1; PLIST_BAKS="${PLIST_BAKS}${PLIST_BAKS:+, }$_b"; }
+done
+_HAVE_PROBE_PLIST=0; [ -f "$PROBE_PLIST" ] && _HAVE_PROBE_PLIST=1
+_HAVE_PROBE_BAK=0; PROBE_BAKS=""
+for _b in "$PROBE_PLIST".bak*; do
+  [ -e "$_b" ] && { _HAVE_PROBE_BAK=1; PROBE_BAKS="${PROBE_BAKS}${PROBE_BAKS:+, }$_b"; }
+done
 _HAVE_SYSTEMD=0; [ -f "$SYSTEMD_UNIT" ] && _HAVE_SYSTEMD=1
+_SYSTEMD_ENABLED=0; _SYSTEMD_ACTIVE=0
+if [ "$_HAVE_SYSTEMD" = "1" ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl is-enabled "$SYSTEMD_NAME" >/dev/null 2>&1 && _SYSTEMD_ENABLED=1
+  systemctl is-active "$SYSTEMD_NAME" >/dev/null 2>&1 && _SYSTEMD_ACTIVE=1
+fi
+_HAVE_ECO=0; [ -f "$PM2_ECOSYSTEM" ] && _HAVE_ECO=1
+_HAVE_SUPERVISE_SCRIPT=0; [ -f "$MCP_DIR/$SUPERVISE_NAME" ] && _HAVE_SUPERVISE_SCRIPT=1
+
+# ── pm2 discovery. ONE process list per PM2_HOME, so the alternate-home sweep
+# stays: a gate that asks the wrong home reports "app not found" about an app
+# that is online.
 _HAVE_PM2=0
 if command -v pm2 >/dev/null 2>&1; then
-  if pm2 describe ghl-community-mcp >/dev/null 2>&1; then _HAVE_PM2=1
+  if pm2 describe "$PM2_APP" >/dev/null 2>&1; then _HAVE_PM2=1
   else
-    # UPF002/U5: pm2 keeps one process list per PM2_HOME AND per user. When pm2 was
-    # started as root (/root/.pm2) but this gate runs as node, the default home says
-    # "app not found" about an app that is online. Look for a LIVE pm2 daemon (it
-    # advertises its home in the process title, and keeps pm2.pid) and ask it. A box
-    # where the app is genuinely unsupervised has no daemon registering it, so it
-    # still fails.
     for _h in $(ps -eo args 2>/dev/null | sed -n 's/.*God Daemon (\(.*\))$/\1/p') \
               /root/.pm2 /home/*/.pm2 /data/.pm2 "${OC_ROOT:-}/.pm2"; do
       [ -r "$_h/pm2.pid" ] || continue
       [ "$_h" = "${PM2_HOME:-}" ] && continue
-      if PM2_HOME="$_h" pm2 describe ghl-community-mcp >/dev/null 2>&1; then
+      if PM2_HOME="$_h" pm2 describe "$PM2_APP" >/dev/null 2>&1; then
         export PM2_HOME="$_h"; _HAVE_PM2=1; _info "pm2 app found under PM2_HOME=$_h (not this user's default home)"; break
       fi
     done
   fi
 fi
-_HAVE_ECO=0; [ -f "$PM2_ECOSYSTEM" ] && _HAVE_ECO=1
 
-if [ "$_HAVE_MAC_SVC" = "0" ] && [ "$_HAVE_SYSTEMD" = "0" ] && [ "$_HAVE_PM2" = "0" ] \
-   && [ "$_HAVE_ECO" = "0" ] && [ ! -d "$MCP_DIR" ]; then
-  _info "no GHL community MCP service definition and no $MCP_DIR on this box — Tier 2 is not installed here. Nothing to assert."
-  exit 2
+# ── launchd loaded state. `launchctl print` first (authoritative); `launchctl
+# list` is a fallback, and matched by the LABEL COLUMN so the probe label can
+# never satisfy it.
+_LAUNCHD_LOADED=0
+if command -v launchctl >/dev/null 2>&1; then
+  if launchctl print "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1; then
+    _LAUNCHD_LOADED=1
+  elif launchctl list 2>/dev/null | awk -v l="$LAUNCHD_LABEL" '$3==l{found=1} END{exit !found}'; then
+    _LAUNCHD_LOADED=1
+  fi
+fi
+_PROBE_LOADED=0
+if command -v launchctl >/dev/null 2>&1; then
+  if launchctl print "gui/$(id -u)/$PROBE_LABEL" >/dev/null 2>&1; then
+    _PROBE_LOADED=1
+  elif launchctl list 2>/dev/null | awk -v l="$PROBE_LABEL" '$3==l{found=1} END{exit !found}'; then
+    _PROBE_LOADED=1
+  fi
 fi
 
+# ── Live processes. Matched on the resolved install dir, the crash-only
+# launcher, or the fallback supervise script — never a broad `pkill`-style
+# pattern. The scanner must never match ITSELF: $$ and $PPID are excluded,
+# any ps line carrying this script's own name is excluded (the script and its
+# subshells), and this pipeline's own awk helper is excluded by its argv shape
+# ("awk -v d") — that helper's command line literally contains $LAUNCHER_NAME
+# because it is passed via -v l=, which used to make a retired box report
+# itself STILL_RUNNING. Detection of a real service is untouched: it matches
+# because its command line really runs the launcher/supervise script or lives
+# under $MCP_DIR, neither of which ever appears in a scanner helper line.
+_PROC_LINES=""
+_SELF_NAME="$(basename "${BASH_SOURCE[0]:-$0}")"
+if command -v ps >/dev/null 2>&1; then
+  _PROC_LINES="$(ps -eo pid=,args= 2>/dev/null | awk -v d="$MCP_DIR" -v l="$LAUNCHER_NAME" -v s="$SUPERVISE_NAME" -v self="$$" -v pp="$PPID" -v me="$_SELF_NAME" '
+    { pid=$1; line=$0; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", line)
+      if (pid==self || pid==pp) next
+      if (index(line, "awk -v d") > 0) next
+      if (me != "" && index(line, me) > 0) next
+      if ((d != "" && index(line, d "/") > 0) || index(line, l) > 0 || index(line, s) > 0)
+        print pid " " line }')"
+fi
+
+# ── Registration in mcp.servers: a persistence surface even though it is not a
+# process. Read early because it is part of the inventory.
+_REGISTERED="unknown"
+if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
+  _REGISTERED="$(OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    servers = (cfg.get("mcp", {}) or {}).get("servers", {}) or {}
+    print("yes" if "ghl-community-mcp" in servers else "no")
+except Exception:
+    print("unknown")
+PYEOF
+)"
+fi
+
+# ── Probe schedule: three schedulers, because autostart uses three.
+_CRON_PROBE=""
+if command -v crontab >/dev/null 2>&1; then
+  _CRON="$(crontab -l 2>/dev/null || true)"
+  # A quoted command path is the only correct cron spelling when the path
+  # contains spaces (the operator's own `GHL updates` tree does). Try the
+  # quoted form first, then the historical unquoted one.
+  _CRON_PROBE="$(printf '%s\n' "$_CRON" | sed -n 's|.*"\([^"]*ghl-mcp-probe\.sh\)".*|\1|p' | head -1)"
+  [ -n "$_CRON_PROBE" ] || _CRON_PROBE="$(printf '%s\n' "$_CRON" | sed -n 's|.*[[:space:]]\(/[^[:space:]]*ghl-mcp-probe\.sh\).*|\1|p' | head -1)"
+fi
+_PROBE_IN_STORE=0
+if command -v openclaw >/dev/null 2>&1 \
+   && openclaw cron list --json 2>/dev/null | grep -q '"name": *"ghl-mcp-probe"'; then
+  _PROBE_IN_STORE=1
+fi
+
+_HAVE_RECEIPT=0; [ -f "$RECEIPT" ] && _HAVE_RECEIPT=1
+_HAVE_FAIL_RECEIPT=0; [ -f "$RECEIPT_FAIL" ] && _HAVE_FAIL_RECEIPT=1
+_HAVE_ARCHIVE=0
+for _a in "$ARCHIVE_ROOT"/archive-*; do
+  [ -d "$_a" ] && [ -n "$(ls -A "$_a" 2>/dev/null)" ] && { _HAVE_ARCHIVE=1; break; }
+done
+if [ "$_HAVE_ARCHIVE" = "0" ]; then
+  case "$ARCHIVE_ROOT" in
+    */.retired) : ;;   # receipts live here; only archive-* subdirs count
+    *) [ -d "$ARCHIVE_ROOT" ] && [ -n "$(ls -A "$ARCHIVE_ROOT" 2>/dev/null)" ] && _HAVE_ARCHIVE=1 ;;
+  esac
+fi
+
+# ── HISTORY: has this box ever known about the community MCP? If not, the
+# documented rc=2 SKIP is preserved (a fresh install now omits it entirely).
+_HISTORY=0
+[ "$_HAVE_MCP_DIR" = "1" ] && _HISTORY=1
+[ "$_HAVE_MAC_SVC" = "1" ] && _HISTORY=1
+[ "$_LAUNCHD_LOADED" = "1" ] && _HISTORY=1
+[ "$_PROBE_LOADED" = "1" ] && _HISTORY=1
+[ "$_HAVE_PLIST_BAK" = "1" ] && _HISTORY=1
+[ "$_HAVE_PM2" = "1" ] && _HISTORY=1
+[ "$_HAVE_ECO" = "1" ] && _HISTORY=1
+[ "$_HAVE_SYSTEMD" = "1" ] && _HISTORY=1
+[ "$_HAVE_SUPERVISE_SCRIPT" = "1" ] && _HISTORY=1
+[ -n "$_PROC_LINES" ] && _HISTORY=1
+[ "$_HAVE_PROBE_PLIST" = "1" ] && _HISTORY=1
+[ "$_HAVE_PROBE_BAK" = "1" ] && _HISTORY=1
+[ -n "$_CRON_PROBE" ] && _HISTORY=1
+[ "$_PROBE_IN_STORE" = "1" ] && _HISTORY=1
+[ "$_REGISTERED" = "yes" ] && _HISTORY=1
+[ "$_HAVE_RECEIPT" = "1" ] && _HISTORY=1
+[ "$_HAVE_FAIL_RECEIPT" = "1" ] && _HISTORY=1
+[ "$_HAVE_ARCHIVE" = "1" ] && _HISTORY=1
+
+# A listener ALONE can be a community service that was started by hand after
+# its files were removed. Probe the configured port (from the pin, if one is
+# delivered) before declaring NOT_APPLICABLE. A box with nothing on that port
+# still exits 2, so this cannot turn a fresh install into a failure.
+if [ "$_HISTORY" = "0" ] && [ -n "$_PIN_FILE" ]; then
+  _EARLY_PORT="$(sed -n 's/^GHL_MCP_PORT=//p' "$_PIN_FILE" 2>/dev/null | tr -d '"' | head -1)"
+  [ -n "$_EARLY_PORT" ] || _EARLY_PORT=8765
+  if _EARLY_ADDRS="$(_bind_addrs_for_port "$_EARLY_PORT")" && [ -n "$_EARLY_ADDRS" ]; then
+    _HISTORY=1
+  fi
+fi
+
+if [ "$_HISTORY" = "0" ]; then
+  _info "no GHL community MCP install dir, supervisor definition, probe schedule, registration, archive or receipt on this box — the community MCP is not part of this install. Nothing to assert."
+  [ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] VERDICT: NOT_APPLICABLE — no community MCP history on this box (fresh installs omit it).\n'
+  exit "$EXIT_NOT_APPLICABLE"
+fi
+
+# ── Record every found identity. The exact identity is the evidence.
+if [ "$_HAVE_MAC_SVC" = "1" ]; then
+  _L="launchd:$LAUNCHD_LABEL at $PLIST (plist present"
+  [ "$_LAUNCHD_LOADED" = "1" ] && _L="$_L, LOADED in launchd" || _L="$_L, not currently loaded — RunAtLoad resurrects it at login"
+  _identity "$_L)"
+elif [ "$_LAUNCHD_LOADED" = "1" ]; then
+  _identity "launchd:$LAUNCHD_LABEL (LOADED in launchd with no plist on disk — bootout/disable did not take effect)"
+fi
+if [ "$_HAVE_PLIST_BAK" = "1" ]; then
+  _residual "launchd backups that must never be auto-restored: $PLIST_BAKS"
+fi
+if [ "$_HAVE_PM2" = "1" ]; then
+  _identity "pm2:$PM2_APP (registered under PM2_HOME=${PM2_HOME:-default} — pm2 resurrect brings it back)"
+fi
+if [ "$_HAVE_SYSTEMD" = "1" ]; then
+  _S="systemd:$SYSTEMD_NAME at $SYSTEMD_UNIT (unit file present"
+  [ "$_SYSTEMD_ENABLED" = "1" ] && _S="$_S, ENABLED" || _S="$_S, not enabled"
+  [ "$_SYSTEMD_ACTIVE" = "1" ] && _S="$_S, ACTIVE" || _S="$_S, inactive"
+  _identity "$_S)"
+fi
+if [ -n "$_PROC_LINES" ]; then
+  while IFS= read -r _pl; do
+    [ -n "$_pl" ] && _identity "process:$_pl"
+  done <<EOF
+$_PROC_LINES
+EOF
+fi
+if [ "$_HAVE_PROBE_PLIST" = "1" ]; then
+  _P="probe:launchd:$PROBE_LABEL at $PROBE_PLIST"
+  [ "$_PROBE_LOADED" = "1" ] && _P="$_P (loaded)"
+  _identity "$_P"
+elif [ "$_PROBE_LOADED" = "1" ]; then
+  _identity "probe:launchd:$PROBE_LABEL (LOADED with no plist on disk — the probe can still heal/restart)"
+fi
+if [ "$_HAVE_PROBE_BAK" = "1" ]; then
+  _residual "probe plist backups that must never be auto-restored: $PROBE_BAKS"
+fi
+if [ -n "$_CRON_PROBE" ]; then
+  _identity "probe:crontab:$_CRON_PROBE (15-minute heal schedule)"
+fi
+if [ "$_PROBE_IN_STORE" = "1" ]; then
+  _identity "probe:openclaw-cron-store:ghl-mcp-probe (the gateway runs the heal probe)"
+fi
+if [ "$_REGISTERED" = "yes" ]; then
+  _identity "registration:mcp.servers.$PM2_APP — remove with: openclaw mcp unset $PM2_APP (NOT 'mcp remove'); then RE-READ openclaw.json, the gateway rewrites it from memory"
+fi
+# The install tree, its ecosystem file and its fallback supervise script are
+# classified AFTER the receipt is read: a VERIFIED_OFF retirement deliberately
+# leaves the source tree in place as the source the archive was copied from,
+# so those files are inert remnants of a completed transaction — not surfaces.
+# Without a valid VERIFIED_OFF receipt they are residual state.
+
+# ── The pin. Needed only to judge a service that IS still present.
 if [ -z "$_PIN_FILE" ]; then
-  _fail "config/ghl-mcp-pin.env is not on this box, so there is NO expectation to compare the running service against. Re-run update-skills.sh / install.sh (they deliver config/ to \$OC_CONFIG/config/)."
-  printf '[ghl-mcp-runtime] VERDICT: %s FATAL, %s warning(s), %s check(s)\n' "$FATAL_FAILURES" "$WARNINGS" "$CHECKS" >&2
-  exit 1
+  if [ "$HAS_IDENTITY" = "1" ] || [ "$HAS_RESIDUAL" = "1" ]; then
+    _misconfigured "config/ghl-mcp-pin.env is not on this box, so there is NO expectation to compare a surviving service against. Re-run update-skills.sh / install.sh (they deliver config/ to \$OC_CONFIG/config/)."
+  else
+    _info "no pin file on this box — nothing to compare (no service present)."
+  fi
+  EXPECT_COMMIT=""; EXPECT_PROFILE=""; EXPECT_PORT="8765"; EXPECT_MIN="1"; EXPECT_MAX="200"; EXPECT_LOG_MAX="10485760"
+else
+  # shellcheck disable=SC1090
+  . "$_PIN_FILE"
+  EXPECT_COMMIT="${GHL_MCP_VETTED_COMMIT:-}"
+  EXPECT_PROFILE="${GHL_MCP_TOOL_PROFILE:-}"
+  EXPECT_PORT="${GHL_MCP_PORT:-8765}"
+  EXPECT_MIN="${GHL_MCP_EXPECT_MIN_TOOLS:-1}"
+  EXPECT_MAX="${GHL_MCP_EXPECT_MAX_TOOLS:-200}"
+  EXPECT_LOG_MAX="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
+  _info "platform=$PLATFORM  pin=$_PIN_FILE  expect: commit=${EXPECT_COMMIT:0:12} profile=$EXPECT_PROFILE port=$EXPECT_PORT tools=${EXPECT_MIN}..${EXPECT_MAX}"
 fi
-# shellcheck disable=SC1090
-. "$_PIN_FILE"
-EXPECT_COMMIT="${GHL_MCP_VETTED_COMMIT:-}"
-EXPECT_PROFILE="${GHL_MCP_TOOL_PROFILE:-}"
-EXPECT_PORT="${GHL_MCP_PORT:-8765}"
-EXPECT_MIN="${GHL_MCP_EXPECT_MIN_TOOLS:-1}"
-EXPECT_MAX="${GHL_MCP_EXPECT_MAX_TOOLS:-200}"
-EXPECT_LOG_MAX="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
-_info "platform=$PLATFORM  pin=$_PIN_FILE  expect: commit=${EXPECT_COMMIT:0:12} profile=$EXPECT_PROFILE port=$EXPECT_PORT tools=${EXPECT_MIN}..${EXPECT_MAX}"
 
-# ── plist helpers ────────────────────────────────────────────────────────────
-# Prefer PlistBuddy/plutil where present; fall back to a line-oriented read so
-# this gate still works on a box without the developer tools. Only NAMED keys
-# are ever extracted — never the whole dict (secret hygiene, see the header).
-# NOTE ON THE sed FALLBACK: this repo writes `<key>K</key><string>V</string>`
-# on ONE line, but a hand-edited or Xcode-formatted plist puts the value on the
-# NEXT line. Both shapes are real on the fleet, so both are handled — a helper
-# that only understood one of them would silently report <unset> and produce a
-# confident, wrong FAIL.
+# ── plist helpers. Only NAMED keys are ever extracted — never the whole dict
+# (secret hygiene, see the header). Both the same-line and next-line shapes are
+# real on the fleet, so both are handled.
 _plist_value() {  # _plist_value <plist> <key>  — string or integer, any nesting
   local f="$1" k="$2" v=""
-  # same-line form
   v="$(sed -n "s|.*<key>${k}</key>[[:space:]]*<string>\([^<]*\)</string>.*|\1|p" "$f" 2>/dev/null | head -1)"
   [ -n "$v" ] || v="$(sed -n "s|.*<key>${k}</key>[[:space:]]*<integer>\([^<]*\)</integer>.*|\1|p" "$f" 2>/dev/null | head -1)"
-  # next-line form
   [ -n "$v" ] || v="$(sed -n "\|<key>${k}</key>|{n;s|.*<string>\([^<]*\)</string>.*|\1|p;}" "$f" 2>/dev/null | head -1)"
   [ -n "$v" ] || v="$(sed -n "\|<key>${k}</key>|{n;s|.*<integer>\([^<]*\)</integer>.*|\1|p;}" "$f" 2>/dev/null | head -1)"
-  # PlistBuddy last (authoritative but absent on non-Mac and in CI containers)
   if [ -z "$v" ] && [ -x /usr/libexec/PlistBuddy ]; then
     v="$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:${k}" "$f" 2>/dev/null || true)"
     [ -n "$v" ] || v="$(/usr/libexec/PlistBuddy -c "Print :${k}" "$f" 2>/dev/null || true)"
@@ -269,12 +586,8 @@ _plist_value() {  # _plist_value <plist> <key>  — string or integer, any nesti
 _plist_env() { _plist_value "$1" "$2"; }
 _plist_top() { _plist_value "$1" "$2"; }
 
-# ── The pm2 field filter (see the SECRET HYGIENE note at the VPS branch) ─────
-# Reduces a raw pm2 record to the SIX non-secret fields this gate reads, and
-# emits nothing else. Everything in pm2_env other than these six — every
-# credential value, the GHL PIT included — is dropped here and never leaves
-# this program. Modelled on filter_pm2_record in
-# 61-loop-protection-system/scripts/loop_common.py:164-172.
+# ── The pm2 field filter (see the SECRET HYGIENE note). Reduces a raw pm2
+# record to the non-secret fields this gate reads and emits nothing else.
 _GHL_FILTER_PM2_RECORD='
 import json, sys
 ALLOWED = ("GHL_TOOL_PROFILE", "PORT", "MCP_SERVER_PORT", "GHL_MCP_LOG_DIR")
@@ -287,22 +600,7 @@ for a in apps:
         continue
     env = a.get("pm2_env") if isinstance(a.get("pm2_env"), dict) else {}
     print("__script__=%s" % (env.get("pm_exec_path") or a.get("pm_exec_path") or ""))
-    # DEFECT 3 (proven live 2026-08-04): pm2 v7.0.1 stores a single-element
-    # stop_exit_codes as the BARE SCALAR 0, not the list [0]. The old
-    # (env.get("stop_exit_codes") or []) treated the falsy int 0 as ABSENT and
-    # silently dropped it, so a CORRECTLY configured box (stop_exit_codes=0)
-    # produced an empty __stop_exit_codes__ field and a false FATAL downstream
-    # (the runtime gate reported stop_exit_codes as unset). Verified live: an
-    # isolated disposable pm2 app (exits 0, autorestart:true) was NOT
-    # restarted -- restart_time stayed 0 for 14+ seconds -- so crash-only
-    # semantics genuinely worked; only this parser was wrong. None (the dict
-    # key truly absent) is the only shape that means "nothing declared"; a
-    # real value -- scalar 0, "0", or a list -- must survive even when it is
-    # falsy. NOTE: this Python body is wrapped in a bash SINGLE-quoted string
-    # below, so these comments must never contain a literal apostrophe or
-    # single-quote mark -- one did once, and it silently closed the bash
-    # string early, splicing the rest of the Python source out onto the
-    # command line as literal bash commands.
+    print("__status__=%s" % (env.get("status") or ""))
     _sec = env.get("stop_exit_codes")
     if _sec is None or _sec == "":
         _sec_list = []
@@ -317,19 +615,14 @@ for a in apps:
 '
 
 # ═════════════════════════════════════════════════════════════════════════════
-# A. Mac / launchd: DARWIN ONLY
-#
-# launchd exists only on Darwin. Section B covers every other shape, including
-# the HOME-layout Linux container that this section used to capture and then
-# fail for the absence of two plists that nothing on it could load.
+# A. Mac / launchd: DARWIN ONLY. ABSENT = PASS: no plist means retired.
 # ═════════════════════════════════════════════════════════════════════════════
 if [ "$PLATFORM" = "mac" ]; then
   if [ "$_HAVE_MAC_SVC" = "0" ]; then
-    _fail "no installed launchd service at $PLIST — the MCP dir exists but nothing supervises it. Run scripts/ghl-mcp-autostart.sh on this box."
+    _pass "no launchd service definition at $PLIST — the community MCP is not installed here (retired)"
   else
     _PLIST_RAW="$(cat "$PLIST" 2>/dev/null || true)"
 
-    # 2. launcher, not node directly
     case "$_PLIST_RAW" in
       *"$LAUNCHER_NAME"*)
         _pass "launchd ProgramArguments run the crash-only launcher ($LAUNCHER_NAME)" ;;
@@ -339,10 +632,8 @@ if [ "$PLATFORM" = "mac" ]; then
         _fail "launchd ProgramArguments reference neither $LAUNCHER_NAME nor dist/main.js — the installed plist is not the one this repo writes." ;;
     esac
 
-    # 3. crash-only KeepAlive
     case "$_PLIST_RAW" in
       *"<key>KeepAlive</key>"*"<true/>"*)
-        # Distinguish the boolean form from the dict form containing <true/>.
         if printf '%s' "$_PLIST_RAW" | tr -d ' \t\n' | grep -q '<key>KeepAlive</key><true/>'; then
           _fail "launchd KeepAlive is the UNCONDITIONAL boolean <true/> — it restarts even a deliberate clean exit, which turns a bad/rotated PIT into an endless relaunch loop. The crash-only dict (SuccessfulExit=false / Crashed=true) is mandatory."
         elif printf '%s' "$_PLIST_RAW" | tr -d ' \t\n' | grep -q '<key>SuccessfulExit</key><false/>'; then
@@ -358,7 +649,6 @@ if [ "$PLATFORM" = "mac" ]; then
         fi ;;
     esac
 
-    # 4. ThrottleInterval
     _TI="$(_plist_top "$PLIST" ThrottleInterval)"
     if [ -z "$_TI" ]; then
       _fail "launchd ThrottleInterval is absent — observed: <unset>; required: >= 300 (the canonical fleet shape). Without it launchd relaunches on its 10s default."
@@ -368,7 +658,6 @@ if [ "$PLATFORM" = "mac" ]; then
       _fail "launchd ThrottleInterval=$_TI — required >= 300. A low throttle is what turns a mis-detected crash into a hot relaunch loop."
     fi
 
-    # 5/6/7. env pins
     _P="$(_plist_env "$PLIST" GHL_TOOL_PROFILE)"
     if [ -z "$_P" ]; then
       _fail "launchd EnvironmentVariables has NO GHL_TOOL_PROFILE — observed: <unset>; expected: $EXPECT_PROFILE. Upstream's default is 'full' = the entire 858-tool catalogue."
@@ -393,46 +682,28 @@ if [ "$PLATFORM" = "mac" ]; then
     fi
   fi
 
-  # 11. periodic probe
-  if [ -f "$PROBE_PLIST" ]; then
-    if command -v launchctl >/dev/null 2>&1 && launchctl list 2>/dev/null | grep -q 'com.clawd.ghl-mcp-probe'; then
-      _pass "periodic liveness probe installed AND loaded (com.clawd.ghl-mcp-probe)"
-    else
-      _warn "com.clawd.ghl-mcp-probe.plist exists but is not listed as loaded — the 15-minute deaf-server detector is not running. launchctl bootstrap it, or re-run scripts/ghl-mcp-autostart.sh."
+  # Probe: ABSENT = PASS (retired). A present probe is already named as an
+  # identity above; here we only judge its target, because a probe pointing at a
+  # deleted script is a silently dead probe that still expects the service.
+  if [ "$_HAVE_PROBE_PLIST" = "1" ]; then
+    if [ "$_PROBE_LOADED" = "1" ]; then
+      _warn "periodic liveness probe ($PROBE_LABEL) is LOADED — it is a resurrection surface and must be removed by retirement, not merely stopped."
     fi
     _PP="$(sed -n 's|.*<string>\(.*ghl-mcp-probe\.sh\)</string>.*|\1|p' "$PROBE_PLIST" 2>/dev/null | head -1)"
     if [ -n "$_PP" ] && [ ! -f "$_PP" ]; then
       _fail "the probe plist points at $_PP, which DOES NOT EXIST — a probe that cannot be found is a silently dead probe."
     fi
   else
-    _fail "no periodic liveness probe installed ($PROBE_PLIST absent) — nothing on this box would detect an alive-but-deaf MCP, which is exactly the two-day outage signature."
+    _pass "no periodic liveness probe installed ($PROBE_PLIST absent) — nothing can heal or restart a retired service"
   fi
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# B. VPS and linux-home / pm2, else systemd, else the supervised relaunch loop
-#
-# linux-home (a HOME-layout Linux box: a client container, or one whose /data is
-# a symlink back into $HOME) is here, NOT in section A, because that is where
-# ghl-mcp-autostart.sh actually puts it: start_service_vps is the supervisor
-# chain for both platforms (pm2 first, then systemd, then the setsid relaunch
-# loop), and neither ever writes a launchd plist off Darwin. The gate asserting
-# the wrong supervisor produced two FATALs on a container whose pm2 app was
-# online, its /health green with 43 tools, and its build stamp on the pin.
+# B. VPS and linux-home / pm2, else systemd, else the supervised relaunch loop.
+# ABSENT = PASS: no supervisor at all means retired.
 # ═════════════════════════════════════════════════════════════════════════════
 if [ "$PLATFORM" = "vps" ] || [ "$PLATFORM" = "linux-home" ]; then
   if [ "$_HAVE_PM2" = "1" ]; then
-    # ── SECRET HYGIENE — the single choke point. Do not "simplify" this. ─────
-    # A raw `pm2 jlist` record carries pm2_env, which is the process
-    # ENVIRONMENT — live credential VALUES, including the GHL Private
-    # Integration Token. A fleet review leaked secrets exactly that way.
-    #
-    # So the blob NEVER lands anywhere: it is piped STRAIGHT into the filter
-    # below, which emits ONLY six non-secret fields as KEY=VALUE lines. No temp
-    # file, no unfiltered shell variable, nothing to leak under `set -x` or an
-    # error trace. Same discipline as filter_pm2_record in
-    # 61-loop-protection-system/scripts/loop_common.py:164-172, which is the
-    # canonical implementation of this rule.
     _PM2_SAFE=""
     if command -v python3 >/dev/null 2>&1; then
       _PM2_SAFE="$(pm2 jlist 2>/dev/null | python3 -c "$_GHL_FILTER_PM2_RECORD" 2>/dev/null || true)"
@@ -442,8 +713,9 @@ if [ "$PLATFORM" = "vps" ] || [ "$PLATFORM" = "linux-home" ]; then
     }
     if ! command -v python3 >/dev/null 2>&1; then
       _warn "python3 not on PATH — cannot parse the live pm2 definition; falling back to the on-disk ecosystem.config.js, which is what pm2 WOULD load, not necessarily what it IS running."
-      _HAVE_PM2=0
     else
+      _STATUS="$(_pm2_field __status__)"
+      [ -n "$_STATUS" ] && _info "pm2 app $PM2_APP status=$_STATUS"
       _SCRIPT="$(_pm2_field __script__)"
       case "$_SCRIPT" in
         *"$LAUNCHER_NAME"*) _pass "pm2 runs the crash-only launcher ($_SCRIPT)" ;;
@@ -496,69 +768,27 @@ if [ "$PLATFORM" = "vps" ] || [ "$PLATFORM" = "linux-home" ]; then
   fi
 
   if [ "$_HAVE_PM2" = "0" ] && [ "$_HAVE_SYSTEMD" = "0" ]; then
-    # Neither pm2 nor systemd. Before FAILING, recognise the autostart script's
-    # own FALLBACK B supervisor: a live supervise loop PLUS a green /health.
-    # Slim containers have no pm2 and no systemd; the supervise loop is the
-    # legitimate supervisor there (proven live on beverly's box: healthy
-    # 127.0.0.1:8765, tools=43, 'bash /data/mcp-servers/ghl-community-mcp/
-    # .ghl-mcp-supervise.sh' running — yet this gate exited 1 and the v22.0.66
-    # update exited 2). Policy is checked, not just liveness — a hand-started
-    # restart-on-any-exit loop is the D3 endless-relaunch shape this gate exists
-    # to catch, so the script must ALSO carry the launcher invocation and the
-    # crash-only exit-0 break from the FALLBACK B template. Anything else stays
-    # FAIL.
-    _HAVE_SUPERVISOR=0
-    _SUP="$MCP_DIR/.ghl-mcp-supervise.sh"
-    if pgrep -f 'ghl-mcp-supervise\.sh' >/dev/null 2>&1 \
-       && [ -f "$_SUP" ] \
-       && grep -qF 'ghl-mcp-launch.sh' "$_SUP" 2>/dev/null \
-       && grep -qF '[ "$rc" = "0" ] && break' "$_SUP" 2>/dev/null; then
-      _HAVE_SUPERVISOR=1
-    fi
-    _HEALTH_GREEN=0
-    if command -v curl >/dev/null 2>&1 \
-       && curl -fsS --max-time 5 "http://127.0.0.1:${EXPECT_PORT}/health" >/dev/null 2>&1; then
-      _HEALTH_GREEN=1
-    fi
-    if [ "$_HAVE_SUPERVISOR" = "1" ] && [ "$_HEALTH_GREEN" = "1" ]; then
-      _warn "fallback supervise loop (no pm2/systemd on this box) — .ghl-mcp-supervise.sh is running with the crash-only policy and http://127.0.0.1:${EXPECT_PORT}/health is green, so the FALLBACK B supervisor from scripts/ghl-mcp-autostart.sh is the live supervisor."
+    # No pm2 and no systemd. If a fallback-B supervise loop is RUNNING the
+    # process check above already named it as an identity; if only the script
+    # is on disk it was named as a supervisor identity. ABSENT = PASS.
+    if [ "$_HAVE_SUPERVISE_SCRIPT" = "0" ]; then
+      _pass "no live pm2 app '$PM2_APP', no $SYSTEMD_UNIT, and no fallback-B supervise loop — the community service is not supervised (retired)"
     else
-      _fail "no live pm2 app 'ghl-community-mcp' and no $SYSTEMD_UNIT (and no running FALLBACK B supervise loop with the crash-only policy and a green /health on :${EXPECT_PORT}) — the MCP dir exists but nothing supervises it. Run scripts/ghl-mcp-autostart.sh on this box."
+      _info "fallback-B supervisor definition present at $MCP_DIR/$SUPERVISE_NAME (no loop is running; its status is judged below against the retirement receipt)"
     fi
   fi
 
-  # 11. periodic probe, and its target must EXIST
-  #
-  # TWO SCHEDULERS, because ghl-mcp-autostart.sh uses two. Its first choice is
-  # the OS crontab; a HOME-layout container frequently has no crontab at all, so
-  # it falls back to the OpenClaw cron STORE, which the gateway runs with no OS
-  # cron involved. A gate that only ever looked at crontab reported "nothing
-  # would detect an alive-but-deaf MCP" on boxes whose probe was registered and
-  # running. Same class of confident-and-wrong verdict as the platform bug.
-  _PROBE_SCHEDULED=0
-  _CRON_PROBE=""
-  if command -v crontab >/dev/null 2>&1; then
-    _CRON="$(crontab -l 2>/dev/null || true)"
-    _CRON_PROBE="$(printf '%s\n' "$_CRON" | sed -n 's|.*[[:space:]]\(/[^[:space:]]*ghl-mcp-probe\.sh\).*|\1|p' | head -1)"
-    if [ -n "$_CRON_PROBE" ]; then
-      if [ ! -f "$_CRON_PROBE" ]; then
-        _fail "the probe cron line points at $_CRON_PROBE, which DOES NOT EXIST. A stale path means a silently dead 15-minute probe."
-        _PROBE_SCHEDULED=1   # answered: it IS scheduled, at a dead path
-      else
-        _pass "periodic liveness probe cron installed and its target exists ($_CRON_PROBE)"
-        _PROBE_SCHEDULED=1
-      fi
-    fi
-  fi
-  if [ "$_PROBE_SCHEDULED" = "0" ]; then
-    if command -v openclaw >/dev/null 2>&1 \
-       && openclaw cron list --json 2>/dev/null | grep -q '"name": *"ghl-mcp-probe"'; then
-      _pass "periodic liveness probe registered in the OpenClaw cron store (the gateway runs it; this box has no usable crontab entry)"
-    elif command -v crontab >/dev/null 2>&1 || command -v openclaw >/dev/null 2>&1; then
-      _fail "no ghl-mcp-probe.sh line in this box's crontab and no 'ghl-mcp-probe' entry in the OpenClaw cron store. Nothing would detect an alive-but-deaf MCP. Re-run scripts/ghl-mcp-autostart.sh, which installs whichever of the two this box can use."
+  # Probe: ABSENT = PASS. Present is an identity; here judge its target.
+  if [ -n "$_CRON_PROBE" ]; then
+    if [ ! -f "$_CRON_PROBE" ]; then
+      _fail "the probe cron line points at $_CRON_PROBE, which DOES NOT EXIST. A stale path means a silently dead 15-minute probe."
     else
-      _warn "neither crontab nor the openclaw CLI is available here, so the periodic-probe schedule could NOT be determined (this is an undetermined answer, not a pass)."
+      _pass "periodic liveness probe cron target exists ($_CRON_PROBE)"
     fi
+  elif [ "$_PROBE_IN_STORE" = "1" ]; then
+    _pass "periodic liveness probe is registered in the OpenClaw cron store (this box has no crontab probe line)"
+  else
+    _pass "no ghl-mcp-probe.sh line in this box's crontab and no 'ghl-mcp-probe' entry in the OpenClaw cron store — no probe can heal or restart a retired service"
   fi
 fi
 
@@ -566,23 +796,34 @@ fi
 # C. Platform-independent: build stamp, live tool count, registration, logs, bind
 # ═════════════════════════════════════════════════════════════════════════════
 
-# 8. build stamp bound to the pin
-if [ ! -f "$BUILD_STAMP" ]; then
+# 8. build stamp — only meaningful when an install dir still exists.
+if [ "$_OFF_RECEIPT" = "1" ]; then
+  _pass "the retirement receipt records VERIFIED_OFF — the leftover tree is inert archive material, so no build-stamp conformance is asserted"
+elif [ "$_HAVE_MCP_DIR" = "0" ]; then
+  _pass "no Tier 2 install dir at $MCP_DIR — nothing to build-check (retired)"
+elif [ ! -f "$BUILD_STAMP" ]; then
   _fail "no build stamp at $BUILD_STAMP — this box has never run the pinned build path, so whatever is in dist/ is of unknown provenance."
 else
   _BC="$(sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' "$BUILD_STAMP" 2>/dev/null | head -1)"
   if [ "$_BC" = "$EXPECT_COMMIT" ]; then
     _pass "build stamp commit=${_BC:0:12} matches the pin"
   else
-    _fail "build stamp commit='${_BC:0:12}' but the pin says '${EXPECT_COMMIT:0:12}' — the running build is NOT the vetted commit. Re-run scripts/ghl-mcp-autostart.sh."
+    _fail "build stamp commit='${_BC:0:12}' but the pin says '${EXPECT_COMMIT:0:12}' — the running build is NOT the vetted commit."
   fi
 fi
 
-# 9. live tool count inside the profile's band
-if command -v curl >/dev/null 2>&1; then
+# 9. live tool count — only meaningful when some service definition exists.
+_HAVE_SERVICE_ANY=0
+[ "$_HAVE_MAC_SVC" = "1" ] && _HAVE_SERVICE_ANY=1
+[ "$_HAVE_PM2" = "1" ] && _HAVE_SERVICE_ANY=1
+[ "$_HAVE_SYSTEMD" = "1" ] && _HAVE_SERVICE_ANY=1
+[ -n "$_PROC_LINES" ] && _HAVE_SERVICE_ANY=1
+if [ "$_HAVE_SERVICE_ANY" = "0" ]; then
+  _pass "no community service definition on this box — /health is not asserted (retired)"
+elif command -v curl >/dev/null 2>&1; then
   _HEALTH="$(curl -fsS --max-time 5 "http://127.0.0.1:${EXPECT_PORT}/health" 2>/dev/null || true)"
   if [ -z "$_HEALTH" ]; then
-    _warn "nothing answered http://127.0.0.1:${EXPECT_PORT}/health — the tool-count assertion could not run (the server may be legitimately stopped after a clean credential-blocked exit; scripts/ghl-mcp-probe.sh is the liveness authority)."
+    _warn "nothing answered http://127.0.0.1:${EXPECT_PORT}/health — the tool-count assertion could not run for the still-installed service."
   else
     case "$_HEALTH" in
       *0.5.3-local*|*cognee*|*Cognee*)
@@ -602,27 +843,16 @@ else
   _warn "curl not on PATH — the live tool-count assertion could not run."
 fi
 
-# 10. Tier 2 must be ABSENT from mcp.servers (skill 36 v1.1.0 doctrine)
-_REGISTERED="unknown"
-if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
-  _REGISTERED="$(OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
-import json, os
-try:
-    cfg = json.load(open(os.environ["OC_JSON"]))
-    servers = (cfg.get("mcp", {}) or {}).get("servers", {}) or {}
-    print("yes" if "ghl-community-mcp" in servers else "no")
-except Exception:
-    print("unknown")
-PYEOF
-)"
-fi
+# 10. Tier 2 must be ABSENT from mcp.servers. The identity (when present) was
+# already recorded verbatim in the inventory; this branch adds the PASS and the
+# undeterminable case.
 case "$_REGISTERED" in
   no)  _pass "ghl-community-mcp is ABSENT from mcp.servers (Tier 2 stays on-demand curl — no per-init tool-catalogue tax)" ;;
-  yes) _fail "ghl-community-mcp IS REGISTERED in mcp.servers — skill 36 v1.1.0 doctrine (wire.sh migration M2, qc-ghl-mcp-setup.sh Section D, qc-assert CHECK 8) requires it ABSENT: its tool schemas otherwise ride in EVERY agent init, and a down/deaf server makes every init pay the full connectionTimeoutMs. Run: openclaw mcp unset ghl-community-mcp  (NOT 'mcp remove' — that is not a command on OpenClaw 2026.7.1-2 and exits 1 with 'Too many arguments for this command'; every call site in this repo used it, swallowed by '|| true', which is why this check never passed on any box). Then RE-READ the config: the gateway rewrites openclaw.json from memory and can undo a file-level removal." ;;
-  *)   _warn "could not read mcp.servers from $OC_JSON — the Tier 2 registration assertion did not run." ;;
+  yes) : ;;  # recorded as an identity in the inventory, with the exact remediation
+  *)   _misconfigured "could not read mcp.servers from $OC_JSON — the Tier 2 registration assertion did not run. A retirement receipt cannot be accepted while this is undetermined." ;;
 esac
 
-# 12. log size ceiling
+# 12. log size ceiling — a retired box may have no log dir at all.
 _LIMIT=$(( EXPECT_LOG_MAX * 3 / 2 ))
 if [ -d "$LOG_DIR" ]; then
   _OVER=0
@@ -636,105 +866,14 @@ if [ -d "$LOG_DIR" ]; then
       _OVER=1
     fi
   done
-  [ "$_OVER" = "0" ] && _pass "no MCP log exceeds the ${_LIMIT}-byte ceiling (rotation is working)"
+  [ "$_OVER" = "0" ] && _pass "no MCP log exceeds the ${_LIMIT}-byte ceiling (rotation is working, or no logs remain)"
 else
-  _warn "$LOG_DIR does not exist — the log-size assertion did not run."
+  _pass "$LOG_DIR does not exist — no MCP logs to bound (retired)"
 fi
 
-# ── 13. LOOPBACK BIND ────────────────────────────────────────────────────────
-#
-# DEFECT 3 (proven on the VPS pilot box). The old form was `if command -v lsof`
-# with NO else branch, so in a slim container — where lsof simply is not
-# installed — `_BIND_VERDICT` stayed "unknown" and fell into an `_info` line
-# reading "no listener observed (or lsof unavailable)". That single sentence
-# conflated two completely different states:
-#
-#     the port is FREE                     (nothing to expose — genuinely fine)
-#     we have NO WAY TO TELL what is bound (a security check that did not run)
-#
-# The second was reported as INFO, which is indistinguishable from a pass. It
-# masked a real, independently-confirmed `0.0.0.0:8765` exposure on that box
-# (LISTEN state `0A` in /proc/net/tcp). A security check that cannot determine
-# its answer has FAILED; it has not passed.
-#
-# TWO CHANGES:
-#   1. lsof is no longer the only way to ask. Fall back to `ss`, then to
-#      /proc/net/tcp + /proc/net/tcp6 parsed directly (the container case — no
-#      tools needed at all, state 0A = LISTEN, the local address is hex
-#      ADDR:PORT). Determination now succeeds almost everywhere it previously
-#      silently gave up.
-#   2. UNDETERMINABLE IS FATAL. If no method could answer, that is a FATAL
-#      "cannot determine", never an INFO. "Port proven free" stays INFO, because
-#      that is a real answer, not an absence of one.
-#
-# The all-interfaces verdict is now FATAL BY DEFAULT. The old WARN existed
-# because "fixing it needs a server-side change (R2)" — R2 has since landed: the
-# generated .ghl-mcp-bind-guard.cjs moves the bind, proven differentially on a
-# live box (*:8791 -> 127.0.0.1:8791) and by tests/unit/ghl-mcp-bind-guard.test.sh.
-# The reason for the exemption is gone, so the exemption is gone.
-# GHL_MCP_REQUIRE_LOOPBACK=0 downgrades it for a deliberate, per-box operator
-# decision — it is no longer the default posture.
-
-# _bind_addrs_for_port <port> — print one local address per LISTEN socket on the
-# port, one per line. Exit 0 = the question was ANSWERED (zero lines = the port
-# is genuinely free). Exit 1 = no method available; the answer is UNKNOWN.
-_bind_addrs_for_port() {
-  local _p="$1"
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP:"$_p" -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print $9}'
-    return 0
-  fi
-  if command -v ss >/dev/null 2>&1; then
-    ss -ltnH 2>/dev/null | awk -v p=":$_p" '$4 ~ p"$" {print $4}'
-    return 0
-  fi
-  # No tools at all — the slim-container case. /proc/net/tcp{,6} is always there
-  # on Linux. Columns: sl local_address rem_address st … ; st 0A = TCP_LISTEN.
-  # local_address is HEX addr:HEX port, little-endian for IPv4.
-  #
-  # The two paths are overridable for the SAME reason GHL_MCP_DIR / GHL_MCP_PLIST /
-  # GHL_MCP_OC_JSON above are: this gate must be exercisable against a simulated
-  # box. Specifically, the "no method available" branch below is otherwise
-  # unreachable on Linux (where /proc always exists) and therefore untestable in
-  # CI — and an untested fail-path is exactly what let the silent INFO downgrade
-  # survive. Defaults are the real paths; nothing on a box sets these.
-  # python3 is required to decode the hex addresses. Without it this branch would
-  # `return 127` from a missing interpreter, which the caller would read as
-  # "answered, zero listeners" — a FALSE INFO, i.e. the same silent downgrade in
-  # a new costume. Fall through to the undeterminable FATAL instead.
-  if { [ -r "$_PROC_NET_TCP" ] || [ -r "$_PROC_NET_TCP6" ]; } \
-     && command -v python3 >/dev/null 2>&1; then
-    PORT_DEC="$_p" PROC_TCP="$_PROC_NET_TCP" PROC_TCP6="$_PROC_NET_TCP6" python3 - <<'PYEOF' 2>/dev/null
-import os, socket, struct
-port = int(os.environ["PORT_DEC"])
-def emit(path, v6):
-    try:
-        lines = open(path).read().splitlines()[1:]
-    except Exception:
-        return
-    for ln in lines:
-        f = ln.split()
-        if len(f) < 4 or f[3] != "0A":
-            continue
-        hexaddr, hexport = f[1].split(":")
-        if int(hexport, 16) != port:
-            continue
-        if v6:
-            raw = bytes.fromhex(hexaddr)
-            raw = b"".join(struct.pack("<I", struct.unpack(">I", raw[i:i+4])[0])
-                           for i in range(0, 16, 4))
-            ip = socket.inet_ntop(socket.AF_INET6, raw)
-        else:
-            ip = socket.inet_ntop(socket.AF_INET, struct.pack("<I", int(hexaddr, 16)))
-        print("%s:%d" % (ip, port))
-emit(os.environ.get("PROC_TCP", "/proc/net/tcp"), False)
-emit(os.environ.get("PROC_TCP6", "/proc/net/tcp6"), True)
-PYEOF
-    return $?
-  fi
-  return 1
-}
-
+# ── 13. LOOPBACK BIND / LISTENER DETECTION ───────────────────────────────────
+# The messages in this section are load-bearing for
+# tests/unit/ghl-mcp-bind-determination.test.sh; do not reword them.
 _BIND_ADDRS=""
 _BIND_DETERMINED=1
 if _BIND_ADDRS="$(_bind_addrs_for_port "$EXPECT_PORT")"; then
@@ -742,10 +881,15 @@ if _BIND_ADDRS="$(_bind_addrs_for_port "$EXPECT_PORT")"; then
 fi
 
 if [ "$_BIND_DETERMINED" != "0" ]; then
-  _fail "the bind address on :${EXPECT_PORT} is UNDETERMINABLE on this box — lsof, ss and /proc/net/tcp are all unavailable, so this security check could not run. This is a FATAL 'cannot determine', NOT a pass: the identical situation on a VPS box silently degraded to INFO and masked a real 0.0.0.0:${EXPECT_PORT} exposure. Install lsof or iproute2, or run this gate where /proc is readable."
+  _misconfigured "the bind address on :${EXPECT_PORT} is UNDETERMINABLE on this box — lsof, ss and /proc/net/tcp are all unavailable, so this check could not run. This is a FAILED check, NOT a pass. Install lsof or iproute2, or run this gate where /proc is readable."
 elif [ -z "$_BIND_ADDRS" ]; then
-  _info "nothing is LISTENING on :${EXPECT_PORT} (determined, not assumed) — there is no bind to expose. The server may be legitimately stopped after a clean credential-blocked exit."
+  _info "nothing is LISTENING on :${EXPECT_PORT} (determined, not assumed) — there is no bind to expose. The community service is stopped."
 else
+  while IFS= read -r _addr; do
+    [ -n "$_addr" ] && _identity "listener:tcp:$_addr on the configured port ${EXPECT_PORT}"
+  done <<EOF
+$_BIND_ADDRS
+EOF
   _BIND_VERDICT="loopback"
   while IFS= read -r _addr; do
     [ -n "$_addr" ] || continue
@@ -765,18 +909,129 @@ EOF
       if [ "${GHL_MCP_REQUIRE_LOOPBACK:-1}" = "0" ]; then
         _warn "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')). Demoted to WARN only because GHL_MCP_REQUIRE_LOOPBACK=0 was set explicitly on this box."
       else
-        _fail "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')) — an UNAUTHENTICATED, CRM-credentialed endpoint reachable by any local process and any LAN host. The bind guard (.ghl-mcp-bind-guard.cjs) either is not installed or was not loaded by the running process. FIX: re-run scripts/ghl-mcp-autostart.sh, which regenerates the guard and restarts the service through the launcher that preloads it."
+        _fail "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')) — an UNAUTHENTICATED, CRM-credentialed endpoint reachable by any local process and any LAN host."
       fi ;;
     *)
       _fail "listener on :${EXPECT_PORT} is bound to an address this gate does not recognise as loopback (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')). An unrecognised bind on a CRM-credentialed, unauthenticated port is treated as exposed, never as fine — inspect it by hand." ;;
   esac
 fi
 
-# ── Verdict ──────────────────────────────────────────────────────────────────
-if [ "$FATAL_FAILURES" -gt 0 ]; then
-  printf '[ghl-mcp-runtime] VERDICT: %s FATAL, %s warning(s), %s check(s) — the INSTALLED service does not match the shipped standard. The static gate cannot see any of this.\n' \
-    "$FATAL_FAILURES" "$WARNINGS" "$CHECKS" >&2
-  exit 1
+# ═════════════════════════════════════════════════════════════════════════════
+# D. THE RETIREMENT RECEIPT
+# ═════════════════════════════════════════════════════════════════════════════
+
+RECEIPT_STATE=""
+_RECEIPT_FILE=""
+if [ "$_HAVE_RECEIPT" = "1" ]; then
+  _RECEIPT_FILE="$RECEIPT"
+elif [ "$_HAVE_FAIL_RECEIPT" = "1" ]; then
+  _RECEIPT_FILE="$RECEIPT_FAIL"
 fi
-[ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] VERDICT: OK — %s check(s) passed, %s warning(s). The RUNNING service matches the pin.\n' "$CHECKS" "$WARNINGS"
-exit 0
+
+if [ -n "$_RECEIPT_FILE" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$_RECEIPT_FILE" >/dev/null 2>&1; then
+      _misconfigured "the retirement receipt at $_RECEIPT_FILE is not valid JSON — the transaction's final state cannot be trusted."
+      RECEIPT_STATE="invalid"
+    fi
+  fi
+  if [ "$RECEIPT_STATE" != "invalid" ]; then
+    RECEIPT_STATE="$(_receipt_field "$_RECEIPT_FILE" final_state)"
+    _R_ARCHIVE="$(_receipt_alias "$_RECEIPT_FILE" archive.path archive_path)"
+    _R_MANIFEST_SHA="$(_receipt_alias "$_RECEIPT_FILE" archive.manifest_sha256 archive_manifest_sha256)"
+    _R_STAGE="$(_receipt_alias "$_RECEIPT_FILE" stage failed_stage)"
+    _R_RESIDUAL="$(_receipt_alias "$_RECEIPT_FILE" verification.live residual_state)"
+    _R_REMEDIATION="$(_receipt_field "$_RECEIPT_FILE" remediation)"
+    case "$RECEIPT_STATE" in
+      VERIFIED_OFF)
+        _pass "retirement receipt at $_RECEIPT_FILE records final_state=VERIFIED_OFF"
+        if [ -n "$_R_ARCHIVE" ]; then
+          if [ ! -d "$_R_ARCHIVE" ]; then
+            _misconfigured "the receipt names archive.path=$_R_ARCHIVE, which does not exist — the archive cannot be verified."
+          else
+            case "$_R_ARCHIVE" in
+              "$MCP_DIR"|"$OC_ROOT"/mcp-servers/*|"$(ghl_mcp_data_parent)"/mcp-servers/*|"${HOME:-}"/mcp-servers/*)
+                _misconfigured "archive.path=$_R_ARCHIVE is inside an ACTIVE install search path — an archive must never be scannable as a live install."
+                ;;
+            esac
+            if [ -n "$_R_MANIFEST_SHA" ] && [ "$_R_MANIFEST_SHA" != "none" ]; then
+              _MANIFEST=""
+              for _mf in "$_R_ARCHIVE/manifest.sha256" "$_R_ARCHIVE/MANIFEST.sha256"; do
+                [ -f "$_mf" ] && { _MANIFEST="$_mf"; break; }
+              done
+              if [ -z "$_MANIFEST" ]; then
+                _misconfigured "the receipt records archive.manifest_sha256 but $_R_ARCHIVE carries no manifest.sha256 — the archived file list cannot be verified."
+              else
+                _GOT_SHA="$(_sha256 "$_MANIFEST")"
+                if [ -z "$_GOT_SHA" ]; then
+                  _warn "no shasum/sha256sum on this box — the archive manifest hash could not be recomputed."
+                elif [ "$_GOT_SHA" = "$_R_MANIFEST_SHA" ]; then
+                  _pass "archive manifest hash matches the receipt (${_GOT_SHA:0:12})"
+                else
+                  _misconfigured "archive manifest hash MISMATCH: receipt=${_R_MANIFEST_SHA:0:12} actual=${_GOT_SHA:0:12} at $_MANIFEST."
+                fi
+              fi
+            fi
+          fi
+        else
+          _misconfigured "the receipt records VERIFIED_OFF with no archive.path — a secret-free archive is part of the contract and must be named."
+        fi
+        ;;
+      MIGRATION_FAILED)
+        _misconfigured "retirement receipt final_state=MIGRATION_FAILED stage='${_R_STAGE:-<unset>}' residual='${_R_RESIDUAL:-<unset>}' remediation='${_R_REMEDIATION:-<unset>}'"
+        ;;
+      "")
+        _misconfigured "the retirement receipt at $_RECEIPT_FILE has no final_state — malformed receipt."
+        ;;
+      *)
+        _misconfigured "the retirement receipt at $_RECEIPT_FILE has an unrecognised final_state='$RECEIPT_STATE' (expected VERIFIED_OFF or MIGRATION_FAILED)."
+        ;;
+    esac
+  fi
+else
+  if [ "$_HAVE_ARCHIVE" = "1" ]; then
+    _misconfigured "an archive exists at $ARCHIVE_ROOT but there is no retirement receipt at $RETIRE_DIR — the transaction did not complete (or the receipt was lost)."
+  fi
+fi
+
+# ── Inert tree remnants. A VERIFIED_OFF transaction archives the source tree
+# and leaves it in place; that is expected and not a surface. Anything else is
+# residual state an updater could rebuild and re-supervise.
+if [ "$RECEIPT_STATE" = "VERIFIED_OFF" ]; then
+  [ "$_HAVE_MCP_DIR" = "1" ] && _info "the retired source tree remains at $MCP_DIR (inert; the transaction archived it and nothing supervises it)"
+  [ "$_HAVE_ECO" = "1" ] && _info "an inert $PM2_ECOSYSTEM remains in the retired tree (no app is registered)"
+  [ "$_HAVE_SUPERVISE_SCRIPT" = "1" ] && _info "an inert $SUPERVISE_NAME remains in the retired tree (no loop is running)"
+else
+  [ "$_HAVE_MCP_DIR" = "1" ] && _residual "residual:install-dir:$MCP_DIR (an updater can rebuild and re-supervise it; archive it and finish the retirement transaction)"
+  [ "$_HAVE_ECO" = "1" ] && _residual "residual:$PM2_ECOSYSTEM (a pm2 ecosystem definition with no app registered — an updater can start it again)"
+  [ "$_HAVE_SUPERVISE_SCRIPT" = "1" ] && _residual "residual:$MCP_DIR/$SUPERVISE_NAME (fallback-B relaunch loop definition with no completed retirement)"
+fi
+
+# ── Verdict. Identity wins; then misconfiguration; then, with a VERIFIED_OFF
+# receipt, RETIRED_OK. A history-bearing box with nothing left and a valid
+# receipt is a PASS, which is the entire point of this rewrite.
+if [ "$FATAL_FAILURES" -gt 0 ] && [ "$HAS_IDENTITY" = "0" ] && [ "$HAS_RESIDUAL" = "0" ]; then
+  HAS_MISCONFIG=1
+  MISCONFIGS="${MISCONFIGS}${MISCONFIGS:+; }$FATAL_FAILURES conformance check(s) failed without a matched service identity"
+fi
+
+if [ "$HAS_IDENTITY" = "1" ]; then
+  printf '[ghl-mcp-runtime] VERDICT: STILL_RUNNING — %s FOUND: %s\n' "$CHECKS" "$IDENTITIES" >&2
+  exit "$EXIT_STILL_RUNNING"
+fi
+
+if [ "$HAS_RESIDUAL" = "1" ] || [ "$HAS_MISCONFIG" = "1" ]; then
+  printf '[ghl-mcp-runtime] VERDICT: MISCONFIGURED — %s check(s), %s warning(s). Residual/undetermined: %s%s%s\n' \
+    "$CHECKS" "$WARNINGS" "$RESIDUALS" "${RESIDUALS:+; }" "$MISCONFIGS" >&2
+  exit "$EXIT_MISCONFIGURED"
+fi
+
+if [ "$RECEIPT_STATE" = "VERIFIED_OFF" ]; then
+  [ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] VERDICT: RETIRED_OK — every community MCP surface is absent; the receipt records VERIFIED_OFF. %s check(s) passed, %s warning(s).\n' "$CHECKS" "$WARNINGS"
+  exit "$EXIT_RETIRED_OK"
+fi
+
+# A history-bearing box with nothing left but no receipt: we cannot claim the
+# transaction completed, so this is not a silent pass.
+printf '[ghl-mcp-runtime] VERDICT: MISCONFIGURED — every community surface is absent but no retirement receipt proves the transaction completed at %s.\n' "$RECEIPT" >&2
+exit "$EXIT_MISCONFIGURED"

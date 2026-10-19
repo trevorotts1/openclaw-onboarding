@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: v2.0.2
+version: 2.0.3
 ---
 
 # Email Engine (Skill 50)
@@ -115,6 +115,25 @@ P4 emits a Skill-44 (Convert & Flow / GoHighLevel) build plan as a **draft workf
 Nothing sends. A human approves before any send, and the Skill-44 built-workflow QC gate
 (`>= 8.5`) runs on the draft. Scope is workflow email steps only.
 
+The deploy handoff follows the V4 workflow contract, so these are binding:
+
+- **Create is draft.** A new workflow is created with status `draft` only.
+- **Exact revision.** Every update carries the exact opaque `expected_revision` read back
+  from the current definition. It is never synthesised or coerced; a missing, invalid, or
+  mismatched revision is refused (`revision_missing` / `revision_invalid` /
+  `stale_revision`, 422) with nothing written.
+- **A published workflow is not updatable.** Editing a `published` workflow is refused as
+  `conflict` (`workflow_published`, 409). There is no automatic unpublish; leaving the
+  published state is itself a separate, approved status change followed by a fresh read.
+- **No auto-publish.** Building, approving, or passing QC never publishes. Publishing or
+  unpublishing is a separate observed `workflows.status.publish` operation with its own
+  `draft_transition_approval`, and a status change advances the revision, so a fresh read
+  follows it. P4, `emit_build_plan.py`, the Skill-44 handoff, and the QC gate never publish.
+- **Send authorization is separate.** Approval to build, approve, publish, or QC a workflow
+  is NOT authorization to send email. A recipient send requires its own explicit human
+  approval, and this skill never sends. Hand-rolled senders stay FORBIDDEN
+  (`AF-EMAIL-SEND-BYPASS`).
+
 ## Presentations department integration (election-gated delivery option)
 
 The presentations department offers this skill's sequences as an ELECTION-GATED delivery
@@ -142,7 +161,9 @@ posture, and the human approval step are stated identically on both sides:
   before this skill runs. On approval this skill executes P1 to P4 through
   `email-engine-entry.sh`, and P4 emits the DRAFT-ONLY `build-plan.json` for Skill 44;
   every workflow stays a draft until Skill 44's approval and built-workflow QC gate
-  (>= 8.5) complete. The approval and the resulting workflow id are recorded back into
+  (>= 8.5) complete. Publication is a separate explicit `workflows.status.publish`
+  operation and is never automatic; neither the build approval nor publication is send
+  authorization. The approval and the resulting workflow id are recorded back into
   the run record (`working/checkpoints/email.json`). Nothing in this integration sends
   an email or arms a sequence; hand-rolled senders stay FORBIDDEN
   (AF-EMAIL-SEND-BYPASS).

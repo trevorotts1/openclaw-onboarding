@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # wire.sh — skill 36 live-client migration runner
 # Runs as part of the WIRING PHASE (update-skills.sh wire_core_updates call).
-# Idempotent. Prints STATUS: lines matching the ghl-mcp-autostart convention.
+# Idempotent. Prints STATUS: lines.
+#
+# v22.0.0 — COMMUNITY MCP RETIRED. Community wiring REMOVED from this script:
+#   1. the "service still responds on $URL/tools" liveness expectation (now a
+#      live endpoint is a retirement FAILURE, not an OK);
+#   2. any implication that wire.sh starts, heals or supervises Tier 2 — it never
+#      did, and it must not; the ordered update transaction owns stop/verify.
+# PRESERVED: the official `ghl-mcp` (Tier 1) registration. This script never
+# unsets or rewrites it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -41,6 +49,20 @@ SKILL_VERSION="unknown"
 if [ -f "$SCRIPT_DIR/skill-version.txt" ]; then
   SKILL_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/skill-version.txt" 2>/dev/null || echo unknown)"
   [ -z "$SKILL_VERSION" ] && SKILL_VERSION="unknown"
+fi
+
+# ── Official MCP (Tier 1) is PRESERVED ───────────────────────────────────────
+# Retirement removes ONLY the community MCP (Tier 2). Nothing in this script
+# ever unsets or rewrites `ghl-mcp`; the installer/wiring phase owns Tier 1
+# registration (`openclaw mcp set ghl-mcp …`). We verify, we never remove.
+if command -v openclaw >/dev/null 2>&1; then
+  if openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp$'; then
+    echo "STATUS: official ghl-mcp registration preserved (Tier 1 untouched)"
+  else
+    echo "STATUS: official ghl-mcp NOT registered — Tier 1 registration is owned by the installer (openclaw mcp set ghl-mcp …); wire.sh never removes it"
+  fi
+else
+  echo "STATUS: openclaw CLI not on PATH — official ghl-mcp registration state not observed (never removed by wire.sh)"
 fi
 
 # ---- migration-marker schema tag — FROZEN, do NOT track the live version -----
@@ -118,7 +140,11 @@ PYEOF
   fi
 fi
 
-# ── Migration M2: Tier 2 de-register ──────────────────────────────────────────
+# ── Migration M2: Tier 2 retired — de-register ───────────────────────────────
+# v22.0.0: the community MCP is RETIRED, not merely on-demand. This migration
+# keeps removing its mcp.servers registration (a persistence surface that
+# survives process death). Starting/stopping/supervising the service belongs to
+# the update transaction, never to wire.sh.
 
 M2_MARKER="convertandflow-migration:tier2-deregister:$MIGRATION_TAG"
 
@@ -171,13 +197,11 @@ elif _m2_still_registered; then
     echo "STATUS: M2 WARNING — ghl-community-mcp is STILL registered after the de-registration attempt. Two causes are possible and they are NOT the same: (a) the CLI rejected the verb (check 'openclaw mcp --help' — 'remove' does not exist on 2026.7.1-2, 'unset' does), or (b) the gateway rewrote openclaw.json from memory and clobbered the config write. Marker NOT written; the next wiring pass will retry."
   else
     echo "STATUS: M2 tier2-deregister applied — ghl-community-mcp removed from mcp.servers (verified by re-reading 'openclaw mcp list')"
-    # Verify service still responds
-    URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' || echo "")
-    if [ -n "$URL" ] && curl -sS -m 5 "$URL/tools" >/dev/null 2>&1; then
-      echo "STATUS: M2 service still responding on $URL/tools — OK"
-    else
-      echo "STATUS: M2 WARNING — service /tools not responding; check launchd/systemd"
-    fi
+    # RETIRED (v22.0.0): do NOT probe /tools. A live community endpoint is now a
+    # FAILURE, not an OK. De-registration is the only MCP state wire.sh owns; the
+    # ordered stop/verify/receipt transaction owns the runtime (VERIFIED_OFF or
+    # MIGRATION_FAILED) and this script must never restart or heal the service.
+    echo "STATUS: M2 community MCP retired — service stop/verify/receipt is owned by the update transaction"
     echo "" >> "$AGENTS_MD"
     echo "<!-- $M2_MARKER -->" >> "$AGENTS_MD"
   fi

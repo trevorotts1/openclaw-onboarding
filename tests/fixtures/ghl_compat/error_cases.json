@@ -1,0 +1,287 @@
+{
+  "_meta": {
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_public_result_envelope.py",
+    "contract_revision": "GU-004-2026-10-18",
+    "purpose": "Synthetic HTTP and transport failures with the frozen status derivation and reconciliation rule."
+  },
+  "status_enum": [
+    "ok",
+    "unknown_outcome",
+    "denied",
+    "not_found",
+    "conflict",
+    "validation_error",
+    "rate_limited",
+    "unavailable"
+  ],
+  "assertions": {
+    "required_mapping_complete": {
+      "400": "validation_error",
+      "401": "denied",
+      "403": "denied",
+      "404": "not_found",
+      "409": "conflict",
+      "422": "validation_error",
+      "429": "rate_limited",
+      "5xx": "unavailable",
+      "timeout": "unknown_outcome"
+    },
+    "reconciliation_required_iff_status_is_unknown_outcome": true,
+    "unknown_outcome_blocks_retry_until_reconciled": true,
+    "route_switch_after_unknown_write_is_prohibited": true,
+    "no_retry_on_denied": true,
+    "no_agency_token_substitution": true
+  },
+  "cases": [
+    {
+      "id": "err-400-duplicate-contact",
+      "operation_id": "contacts.create",
+      "call_kind": "write",
+      "http_status": 400,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 400,
+        "message": "duplicate contact (synthetic)",
+        "error": "SYNTHETIC",
+        "meta": {
+          "contactId": "CONTACT_ID_EXAMPLE"
+        }
+      },
+      "expected_status": "validation_error",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "validation_error",
+      "retry_policy": "no automatic retry; caller may change the payload",
+      "source": "GU-004 \u00a72.3 (write, 400)"
+    },
+    {
+      "id": "err-401-denied-read",
+      "operation_id": "contacts.get",
+      "call_kind": "read",
+      "http_status": 401,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 401,
+        "message": "unauthorized (synthetic)",
+        "error": "SYNTHETIC"
+      },
+      "expected_status": "denied",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "permission_denied",
+      "retry_policy": "never retry, never switch transport, never substitute an agency token",
+      "source": "GU-004 \u00a72.3 (read, 401)"
+    },
+    {
+      "id": "err-403-denied-write",
+      "operation_id": "invoices.create",
+      "call_kind": "write",
+      "http_status": 403,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 403,
+        "message": "forbidden (synthetic)",
+        "error": "SYNTHETIC"
+      },
+      "expected_status": "denied",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "permission_denied",
+      "retry_policy": "never retry; record scopes_candidate as a candidate only",
+      "source": "GU-004 \u00a72.3 (write, 403)"
+    },
+    {
+      "id": "err-404-not-found-read",
+      "operation_id": "invoices.get",
+      "call_kind": "read",
+      "http_status": 404,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 404,
+        "message": "invoice not found (synthetic)",
+        "error": "SYNTHETIC",
+        "meta": {
+          "invoiceId": "INVOICE_ID_EXAMPLE"
+        }
+      },
+      "expected_status": "not_found",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "not_found",
+      "retry_policy": "no retry",
+      "source": "GU-004 \u00a72.3 (read, 404)"
+    },
+    {
+      "id": "err-409-conflict-write",
+      "operation_id": "opportunities.update",
+      "call_kind": "write",
+      "http_status": 409,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 409,
+        "message": "revision conflict (synthetic)",
+        "error": "SYNTHETIC",
+        "meta": {
+          "opportunityId": "OPPORTUNITY_ID_EXAMPLE"
+        }
+      },
+      "expected_status": "conflict",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "conflict",
+      "retry_policy": "no automatic retry",
+      "source": "GU-004 \u00a72.3 (write, 409)"
+    },
+    {
+      "id": "err-422-validation-write",
+      "operation_id": "invoices.create",
+      "call_kind": "write",
+      "http_status": 422,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 422,
+        "message": "unprocessable entity (synthetic)",
+        "error": "SYNTHETIC",
+        "meta": {
+          "field": "altId"
+        }
+      },
+      "expected_status": "validation_error",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "validation_error",
+      "retry_policy": "no automatic retry; fix the body",
+      "source": "GU-004 \u00a72.3 (write, 422)"
+    },
+    {
+      "id": "err-429-rate-limited-read",
+      "operation_id": "contacts.search",
+      "call_kind": "read",
+      "http_status": 429,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 429,
+        "message": "too many requests (synthetic)",
+        "error": "SYNTHETIC",
+        "meta": {
+          "retryAfterSeconds": 30
+        }
+      },
+      "expected_status": "rate_limited",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "rate_limited",
+      "retry_policy": "surface rate_limited; adapter performs no internal retry loop",
+      "source": "GU-004 \u00a72.3 (read, 429)"
+    },
+    {
+      "id": "err-500-unavailable-read",
+      "operation_id": "products.list",
+      "call_kind": "read",
+      "http_status": 500,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 500,
+        "message": "internal server error (synthetic)",
+        "error": "SYNTHETIC"
+      },
+      "expected_status": "unavailable",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "unavailable",
+      "retry_policy": "safe to retry a read later",
+      "source": "GU-004 \u00a72.3 (read, 5xx)"
+    },
+    {
+      "id": "err-502-unknown-write",
+      "operation_id": "media.upload",
+      "call_kind": "write",
+      "http_status": 502,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 502,
+        "message": "bad gateway (synthetic)",
+        "error": "SYNTHETIC"
+      },
+      "expected_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_error_rule": "unknown_outcome",
+      "retry_policy": "reconcile before any retry; no route switch",
+      "source": "GU-004 \u00a72.3+\u00a72.4 (write, 5xx)"
+    },
+    {
+      "id": "err-503-unavailable-read",
+      "operation_id": "workflows.list",
+      "call_kind": "read",
+      "http_status": 503,
+      "transport_error": null,
+      "synthetic_response": {
+        "statusCode": 503,
+        "message": "service unavailable (synthetic)",
+        "error": "SYNTHETIC"
+      },
+      "expected_status": "unavailable",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "unavailable",
+      "retry_policy": "safe to retry a read later",
+      "source": "GU-004 \u00a72.3 (read, 5xx)"
+    },
+    {
+      "id": "err-timeout-unknown-write",
+      "operation_id": "contacts.upsert",
+      "call_kind": "write",
+      "http_status": null,
+      "transport_error": "timeout",
+      "synthetic_response": null,
+      "expected_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_error_rule": "unknown_outcome",
+      "retry_policy": "reconcile through contacts.get or contacts.search before any retry",
+      "source": "GU-004 \u00a72.3+\u00a72.4 (write, timeout)"
+    },
+    {
+      "id": "err-timeout-unavailable-read",
+      "operation_id": "contacts.get",
+      "call_kind": "read",
+      "http_status": null,
+      "transport_error": "timeout",
+      "synthetic_response": null,
+      "expected_status": "unavailable",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "unavailable",
+      "retry_policy": "a read that timed out cannot have written anything",
+      "source": "GU-004 \u00a72.3 (read, timeout)"
+    },
+    {
+      "id": "err-connection-reset-unknown-write",
+      "operation_id": "invoices.create",
+      "call_kind": "write",
+      "http_status": null,
+      "transport_error": "connection_reset",
+      "synthetic_response": null,
+      "expected_status": "unknown_outcome",
+      "expected_reconciliation_required": true,
+      "expected_error_rule": "unknown_outcome",
+      "retry_policy": "reconcile through invoices.get before any retry",
+      "source": "GU-004 \u00a72.3+\u00a72.4 (write, connection)"
+    },
+    {
+      "id": "err-capability-disabled",
+      "operation_id": "workflows.definition.create",
+      "call_kind": "write",
+      "http_status": null,
+      "transport_error": null,
+      "synthetic_response": null,
+      "expected_status": "denied",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "capability_disabled",
+      "retry_policy": "no transport is attempted; a receipt is still produced",
+      "source": "GU-004 \u00a73.2 rule 7 (default enabled=False)"
+    },
+    {
+      "id": "err-pre-transport-validation",
+      "operation_id": "contacts.create",
+      "call_kind": "write",
+      "http_status": null,
+      "transport_error": null,
+      "synthetic_response": null,
+      "expected_status": "validation_error",
+      "expected_reconciliation_required": false,
+      "expected_error_rule": "pre_transport_contract_violation",
+      "retry_policy": "no transport is attempted",
+      "source": "GU-004 \u00a72.3 (pre-transport contract violation)"
+    }
+  ]
+}
