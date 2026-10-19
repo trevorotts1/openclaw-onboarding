@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Council of Wise Elders — pages not packaged</title>
+<link rel="stylesheet" href="./council-theme.css">
+<link rel="stylesheet" href="./council-journey.css">
+<style>
+  .chamber-nav { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; font-size:.875rem; margin:0 0 1rem; padding:0; list-style:none; }
+  .chamber-nav a { color: var(--council-accent-ink); }
+  .policy-table { width:100%; border-collapse:collapse; margin-top:1rem; }
+  .policy-table th, .policy-table td { border-bottom:1px solid var(--council-line); padding:.6rem .5rem; text-align:left; vertical-align:top; }
+  .policy-table th { white-space:nowrap; }
+  .policy-table code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+</style>
+</head>
+<body>
+<div class="council-theme">
+  <div class="council-journey-wrap">
+    <nav aria-label="Chamber pages">
+      <ul class="chamber-nav">
+        <li><a href="./">Chamber</a></li>
+        <li><a href="./advisors.html">The nine advisors</a></li>
+        <li><a href="./not-packaged.html">Not packaged</a></li>
+        <li><a href="/">Service status</a></li>
+      </ul>
+    </nav>
+
+    <header class="council-journey-head">
+      <p class="council-eyebrow">Council of Wise Elders</p>
+      <h1 class="council-display">Pages this standalone slice does not package</h1>
+      <p class="council-lede">These journeys exist in the Command Center council UI. They are thin clients over authenticated, database-backed council APIs, so shipping them here would mean shipping a blank or a fake. Each blocker is named exactly.</p>
+    </header>
+
+    <table class="policy-table">
+      <thead>
+        <tr><th>Route</th><th>Exact blocking dependency</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>/council</code> (home session list)</td>
+          <td><code>GET /api/council/sessions</code> and <code>GET /api/council/capabilities</code>. Requires a verified tenant identity (<code>resolveTenantContext</code>) plus the Command Center database via <code>src/lib/council/store.ts</code>.</td>
+        </tr>
+        <tr>
+          <td><code>/council/&lt;sessionId&gt;</code></td>
+          <td><code>GET /api/council/sessions/&lt;id&gt;</code>, <code>/verdict</code>, <code>/events?snapshot=1</code> and a live <code>EventSource</code> stream. Requires a real persisted session, the durable event journal/outbox, and a verified tenant.</td>
+        </tr>
+        <tr>
+          <td><code>/council/advisors</code> as served by Command Center</td>
+          <td><code>GET /api/council/advisors</code> requires a verified tenant. A static roster built from the skill's own advisor packs is shipped instead at <a href="./advisors.html">advisors.html</a>.</td>
+        </tr>
+        <tr>
+          <td><code>/council/history</code></td>
+          <td><code>GET /api/council/capabilities</code>, <code>/sessions</code>, two <code>/sessions/&lt;id&gt;</code> reads and two <code>/verdict</code> reads. Requires real sessions and the Command Center database.</td>
+        </tr>
+        <tr>
+          <td><code>/council/new</code> (guided intake)</td>
+          <td><code>getModels()</code> (<code>GET /api/council/models</code>) and <code>createSession()</code> (<code>POST /api/council/sessions</code>). Requires provider route discovery, a verified tenant, and a durable write.</td>
+        </tr>
+        <tr>
+          <td><code>/council/settings</code></td>
+          <td><code>GET /api/council/settings</code>. The endpoint is typed <code>FEATURE_NOT_READY</code> in Command Center and still requires the authenticated council API.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="council-journey-notice" role="note" style="margin-top:1.5rem">
+      <strong>Why the whole UI cannot be a static export.</strong> Every page above is a
+      client over the Command Center council API. That API resolves a verified tenant
+      through <code>src/lib/auth/tenant-context.ts</code> and reads the Command Center
+      database through <code>src/lib/council/store.ts</code>. A request from the
+      <code>council.zerohumanworkforce.com</code> origin without a Command Center session
+      or a verified Cloudflare Access JWT is refused by
+      <code>src/middleware.ts</code> with HTTP 403 <code>tenant_access_required</code>
+      before any council page renders.
+    </div>
+
+    <footer class="council-journey-foot">
+      <p class="council-meta">This is an explicit not-packaged record, not a working substitute. The fixture-driven chamber and the static advisor roster are the only surfaces this slice ships.</p>
+    </footer>
+  </div>
+</div>
+</body>
+</html>

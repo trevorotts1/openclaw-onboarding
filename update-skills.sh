@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.36"
+ONBOARDING_VERSION="v27.1.41"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2051,7 +2051,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.36 - safe_json_edit
+# v27.1.41 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4188,6 +4188,301 @@ deliver_canonical_scripts_tree() {
   echo "  ✓ Full canonical $label tree delivered and verified ($files files; additive, local-only files retained)"
 }
 # <<< CANONICAL-SCRIPTS-DELIVERY-END
+# >>> GHL-MCP-RETIREMENT-PRUNE-BEGIN
+# W07 / GU-019 + GHL-101 (defect B2): mirror of install.sh's post-copy prune
+# (:GHL-MCP-RETIREMENT-SCRIPTS). The GHL community MCP is RETIRED.
+# deliver_canonical_scripts_tree and the platform copy above are ADDITIVE
+# ("remove after, not exclude" — cp cannot delete a stale file), so every roll
+# re-delivers the RESURRECTION surfaces that the retirement transaction just took
+# off the box. This prunes those from the DESTINATION immediately after each
+# delivery.
+#
+# RETAINED — the retirement tool and every dependency it sources or executes:
+#   ghl-mcp-autostart.sh             --status / --retire (the transaction itself)
+#   lib/ghl-mcp-paths.sh             sourced by the tool (hard dependency)
+#   ghl-mcp-pin-digest.sh            executed by the tool's pin gate
+# This updater deletes its source checkout ($TEMP_EXTRACT) at the end of the
+# roll. Pruning these left the box with no `--retire` afterwards, which is
+# exactly GHL-101 / B2. They are NOT resurrection surfaces: the tool refuses to
+# start, and the library and digest primitive only compute paths and hashes.
+#
+# The pruned set is EXPLICIT, not a glob. A glob over ghl-mcp-*.sh cannot express
+# "keep the retirement tool" without naming it in updater CODE, and a content
+# test would make the prune depend on the very file it is pruning. A NEW
+# resurrection surface must be added to _retired below (and to install.sh's
+# _OC_GHL_MCP_RETIRED_SCRIPTS, which Step 14a scans from).
+#
+# Idempotent: already-absent files count as nothing, rc is always 0 — a prune
+# can never fail the roll. One log line names what was removed.
+# Do not re-add a caller for a retired service.
+prune_retired_ghl_mcp_surfaces() {
+  local scripts_root="$1" platform_root="$2" removed=0 _rel _names=""
+  local _retired="ghl-mcp-probe.sh ghl-mcp-assert-runtime.sh ghl-mcp-check-pin-digest.sh ghl-mcp-vet-pin.sh qc-assert-ghl-mcp-supervised.sh"
+  local _name
+  for _name in $_retired; do
+    _rel="$scripts_root/$_name"
+    [ -e "$_rel" ] || [ -L "$_rel" ] || continue
+    rm -f "$_rel" 2>/dev/null || true
+    if [ -e "$_rel" ] || [ -L "$_rel" ]; then
+      echo "  ⚠ retired box: could NOT remove re-delivered $_rel — check permissions." >&2
+      continue
+    fi
+    removed=$((removed + 1))
+    _names="$_names $_name"
+  done
+  for _rel in "$platform_root"/vps/36-ghl-mcp-setup-scripts/*ghl-mcp*.sh; do
+    [ -e "$_rel" ] || [ -L "$_rel" ] || continue
+    rm -f "$_rel" 2>/dev/null || true
+    if [ -e "$_rel" ] || [ -L "$_rel" ]; then
+      echo "  ⚠ retired box: could NOT remove re-delivered $_rel — check permissions." >&2
+      continue
+    fi
+    removed=$((removed + 1))
+    _names="$_names $_rel"
+  done
+  if [ "$removed" -gt 0 ]; then
+    echo "  ✓ Community GHL MCP retired — pruned $removed resurrection file(s):$_names (retirement tool + path library + digest primitive RETAINED)"
+  else
+    echo "  ✓ Community GHL MCP retired — nothing to prune in $scripts_root (already absent; retirement tool retained)"
+  fi
+  return 0
+}
+# <<< GHL-MCP-RETIREMENT-PRUNE-END
+
+# >>> GHL-MCP-RETIREMENT-GATE-BEGIN  (B3: same check on every path, once)
+# ---- Helper: RETIRE skill 36's community GHL MCP (Tier 2) — GU-019/020/021 --
+# OPERATOR DECISION: the community MCP is RETIRED. This function used to
+# (re)start it and assert its runtime conformance on EVERY roll — the single
+# strongest re-installation surface in the fleet. It now drives the ordered
+# retirement transaction in ghl-mcp-autostart.sh --retire:
+#
+#   1 INVENTORY / 6 VERIFY / 7 RECEIPT   inside the tool (--status / --retire)
+#   2 STAGE                              HERE, before anything is stopped:
+#                                        the replacement surfaces must exist
+#                                        (skill 44 CLI, skills 06 and 38, and
+#                                        the OFFICIAL ghl-mcp registration).
+#                                        Missing -> MIGRATION_FAILED and the
+#                                        service is left running.
+#   3,4,5                                archive, disable resurrection, stop
+#                                        only the matched service.
+#
+# NON-FATAL to the roll (exactly as the old runtime assert was) but LOUD and
+# LATCHED into the existing exit-2 "content current, infrastructure needs
+# attention" contract. Idempotent: an already-retired box reports
+# RETIRED_VERIFIED_OFF and changes nothing.
+wire_ghl_mcp() {
+  local SKILL_FOLDER="$1"
+  [ "$SKILL_FOLDER" = "36-ghl-mcp-setup" ] || return 0
+
+  # B3: EXACTLY ONCE per process. The content-current early exits call this
+  # directly and then exit, and the full pass reaches it from the wiring loop;
+  # those paths are mutually exclusive today. This latch makes that invariant
+  # explicit so a future call site can never run the retirement transaction (or
+  # its side effects) a second time in one roll.
+  if [ "${_GHL_MCP_RETIREMENT_CHECKED:-0}" = "1" ]; then
+    echo "    ✓ GHL MCP: retirement/convergence already checked in this run — skipping repeat"
+    return 0
+  fi
+  _GHL_MCP_RETIREMENT_CHECKED=1
+
+  # Locate the DELIVERED retirement tool (same resolver order as before).
+  local AUTOSTART="" _as_cand
+  for _as_cand in \
+      "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-autostart.sh" \
+      "$HOME/.openclaw/scripts/ghl-mcp-autostart.sh" \
+      "/data/.openclaw/scripts/ghl-mcp-autostart.sh" \
+      "$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"; do
+    case "$_as_cand" in "/ghl-mcp-autostart.sh"|"") continue ;; esac
+    [ -f "$_as_cand" ] && { AUTOSTART="$_as_cand"; break; }
+  done
+  unset _as_cand
+  if [ -z "$AUTOSTART" ]; then
+    echo "    ⚠ GHL MCP: ghl-mcp-autostart.sh not found (delivered scripts dir or pulled bundle) — the community MCP was NOT retired on this box." >&2
+    GHL_MCP_RUNTIME_FATAL="yes"
+    GHL_MCP_RUNTIME_DETAIL="ghl-mcp-autostart.sh missing — cannot run the retirement transaction"
+    return 0
+  fi
+
+  # --status is the retirement-aware assertion and the inventory.
+  local _ST="" _RET_OUT="" _RET_RC=0 _VER_OUT="" _VER_RC=0
+  _ST="$(bash "$AUTOSTART" --status 2>&1)" || true
+
+  case "$_ST" in
+    *"=RETIRED_VERIFIED_OFF"*)
+      echo "    ✓ GHL MCP: community MCP already RETIRED (VERIFIED_OFF) — nothing changed"
+      ;;
+    *)
+      # ── STAGE 2: replacement surfaces, BEFORE anything is stopped ────────
+      local _MISSING="" _sd _have44=0 _have06=0 _have38=0
+      for _sd in "$SKILLS_DIR"/44-*; do [ -d "$_sd" ] && _have44=1; done
+      for _sd in "$SKILLS_DIR"/06-*; do [ -d "$_sd" ] && _have06=1; done
+      for _sd in "$SKILLS_DIR"/38-*; do [ -d "$_sd" ] && _have38=1; done
+      unset _sd
+      [ "$_have44" = "1" ] || _MISSING="$_MISSING skill-44-convert-and-flow-cli"
+      [ "$_have06" = "1" ] || _MISSING="$_MISSING skill-06-ghl-install-pages"
+      [ "$_have38" = "1" ] || _MISSING="$_MISSING skill-38-conversational-ai"
+      # The official GHL MCP (Tier 1) registration must survive retirement.
+      # "ghl-community-mcp" does NOT contain the token "ghl-mcp", so this
+      # check can never pass on the retired entry alone.
+      local _OCROOT_FOR_MCP="${OC_PERSISTENT_CONFIG_DIR:-${OC_CONFIG:-$HOME/.openclaw}}"
+      if command -v openclaw >/dev/null 2>&1; then
+        openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp' || \
+          _MISSING="$_MISSING official-ghl-mcp-registration"
+      elif [ -f "$_OCROOT_FOR_MCP/openclaw.json" ]; then
+        grep -q '"ghl-mcp"' "$_OCROOT_FOR_MCP/openclaw.json" 2>/dev/null || \
+          _MISSING="$_MISSING official-ghl-mcp-registration"
+      else
+        _MISSING="$_MISSING official-ghl-mcp-registration"
+      fi
+      unset _OCROOT_FOR_MCP
+
+      if [ -n "$_MISSING" ]; then
+        {
+          echo ""
+          echo "  ############################################################"
+          echo "  ## GHL MCP RETIREMENT: MIGRATION_FAILED (replacement-incomplete)"
+          echo "  ## Prerequisite(s) missing:$_MISSING"
+          echo "  ## The community service was NOT stopped — a caller that still"
+          echo "  ## needs Tier 2 must never be retired out from under it."
+          echo "  ## FIX: deliver the missing surface(s), then re-run the updater."
+          echo "  ############################################################"
+          echo ""
+        } >&2
+        printf '%s\n' "STATUS: ghl-mcp-autostart=MIGRATION_FAILED (stage=replacement-incomplete missing=$_MISSING; service left untouched)" > /tmp/ghl-mcp-autostart.log 2>/dev/null || true
+        GHL_MCP_RUNTIME_FATAL="yes"
+        GHL_MCP_RUNTIME_DETAIL="retirement blocked: replacement-incomplete ($_MISSING)"
+        return 0
+      fi
+
+      local _CALLERS="skill-44-convert-and-flow-cli
+skill-06-ghl-install-pages
+skill-38-conversational-ai
+official-ghl-mcp-registration"
+      echo "    GHL MCP: retiring the community MCP (archive -> disable resurrection -> stop -> verify -> receipt)"
+      _RET_RC=0
+      _RET_OUT="$(GHL_MCP_RECEIPT_TO_RELEASE="${ONBOARDING_VERSION:-unknown}" \
+                  GHL_MCP_RECEIPT_CALLERS="$_CALLERS" \
+                  bash "$AUTOSTART" --retire 2>&1)" || _RET_RC=$?
+      printf '%s\n' "$_RET_OUT" >> "$LOG_FILE" 2>/dev/null || true
+      printf '%s\n' "$_RET_OUT" > /tmp/ghl-mcp-autostart.log 2>/dev/null || true
+      case "$_RET_OUT" in
+        *"=RETIRED_VERIFIED_OFF"*)
+          echo "    ✓ GHL MCP: community MCP RETIRED and VERIFIED_OFF (archive + receipt written)"
+          ;;
+        *)
+          {
+            echo ""
+            echo "  ############################################################"
+            echo "  ## GHL MCP RETIREMENT: MIGRATION_FAILED (rc=$_RET_RC)"
+            echo "  ## The community MCP could NOT be proven retired on this box."
+            echo "  ## Residual state is in the receipt under"
+            echo "  ##   ${OC_PERSISTENT_CONFIG_DIR:-$HOME/.openclaw}/.retired/"
+            printf '%s\n' "$_RET_OUT" | grep -E '^(STATUS:|  \[ghl-mcp-autostart\] MIGRATION_FAILED|  \[ghl-mcp-autostart\] residual)' | sed 's/^/  ##   /' || true
+            echo "  ## FIX: read the migration-failed receipt, clear the named"
+            echo "  ##      surface, then re-run: bash $AUTOSTART --retire"
+            echo "  ############################################################"
+            echo ""
+          } >&2
+          GHL_MCP_RUNTIME_FATAL="yes"
+          GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_RET_OUT" | grep -E '^(STATUS:|  \[ghl-mcp-autostart\] MIGRATION_FAILED)' | tr '\n' ' ' || true)"
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+
+  # RETIREMENT-AWARE ASSERTION. This replaces the old gate call, which
+  # treated an absent service as FATAL and therefore could not tell
+  # retirement from breakage. The shipped verifier now reports four states:
+  #   0 RETIRED_OK       absence is a PASS
+  #   1 STILL_RUNNING    a matched identity was FOUND (names it)
+  #   2 NOT_APPLICABLE   fresh box, no history — a SKIP, never a failure
+  #   3 MISCONFIGURED    nothing running, but the retirement state cannot be
+  #                      verified (residual artifacts, bad MIGRATION_FAILED
+  #                      receipt, unreadable archive, unreadable config)
+  # Non-fatal to the roll, but latched into the exit-2 contract.
+  local RUNTIME_ASSERT="" _rt_cand
+  for _rt_cand in \
+      "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-assert-runtime.sh" \
+      "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+      "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+      "$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"; do
+    case "$_rt_cand" in "/ghl-mcp-assert-runtime.sh"|"") continue ;; esac
+    [ -f "$_rt_cand" ] && { RUNTIME_ASSERT="$_rt_cand"; break; }
+  done
+  unset _rt_cand
+
+  if [ -n "$RUNTIME_ASSERT" ]; then
+    _VER_RC=0
+    _VER_OUT="$(bash "$RUNTIME_ASSERT" --quiet 2>&1)" || _VER_RC=$?
+    printf '%s\n' "$_VER_OUT" >> "$LOG_FILE" 2>/dev/null || true
+    case "$_VER_RC" in
+      0) echo "    ✓ GHL MCP runtime conformance: RETIRED_OK (every community surface provably absent)" ;;
+      2) echo "    ✓ GHL MCP runtime conformance: NOT_APPLICABLE (fresh box: the community MCP was never installed)" ;;
+      *)
+        GHL_MCP_RUNTIME_FATAL="yes"
+        GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_VER_OUT" | grep -E '^\[ghl-mcp-runtime\] (FAIL|VERDICT)' | tr '\n' ' ' || true)"
+        {
+          echo ""
+          echo "  ############################################################"
+          echo "  ## GHL MCP RETIREMENT ASSERTION FAILED (verify rc=$_VER_RC)"
+          echo "  ## The community MCP is still observable, or its retirement"
+          echo "  ## state cannot be verified on this box. This run exits 2"
+          echo "  ## (content current, infrastructure needs attention), never 0."
+          printf '%s\n' "$_VER_OUT" | grep -E '^\[ghl-mcp-runtime\] (FAIL|VERDICT)' | sed 's/^/  ##   /' || true
+          echo "  ## FIX: bash $AUTOSTART --retire   (idempotent; prints the residual surface)"
+          echo "  ############################################################"
+          echo ""
+        } >&2
+        ;;
+    esac
+  else
+    # No verifier delivered (fresh box / minimal bundle): the retirement
+    # tool's own read-only status is still a truthful assertion.
+    _VER_RC=0
+    _VER_OUT="$(bash "$AUTOSTART" --status 2>&1)" || _VER_RC=$?
+    printf '%s\n' "$_VER_OUT" >> "$LOG_FILE" 2>/dev/null || true
+    case "$_VER_OUT" in
+      *"=RETIRED_VERIFIED_OFF"*)
+        echo "    ✓ GHL MCP runtime conformance: RETIRED_VERIFIED_OFF (no live surface, none undetermined)" ;;
+      *)
+        GHL_MCP_RUNTIME_FATAL="yes"
+        GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_VER_OUT" | grep -E '^STATUS:' | tr '\n' ' ' || true)"
+        {
+          echo ""
+          echo "  ############################################################"
+          echo "  ## GHL MCP RETIREMENT ASSERTION FAILED (status rc=$_VER_RC)"
+          echo "  ## The community MCP is still observable on this box — retirement"
+          echo "  ## is not complete. This run exits 2 (content current,"
+          echo "  ## infrastructure needs attention), never 0."
+          printf '%s\n' "$_VER_OUT" | grep -E '^STATUS:' | sed 's/^/  ##   /' || true
+          echo "  ## FIX: bash $AUTOSTART --retire   (idempotent; prints the residual surface)"
+          echo "  ############################################################"
+          echo ""
+        } >&2
+        ;;
+    esac
+  fi
+}
+
+# B3: THE single content-current exit. BOTH early-exit paths in the content
+# recheck (plain clean rerun, and the convergence fast path) and the normal
+# full pass reach the SAME retirement/convergence check — wire_ghl_mcp, NOT a
+# copy of it. It must run BEFORE the temp tree is removed: the delivered
+# surfaces are pruned from the scripts dir, so the check resolves the tool
+# from the pulled bundle ($ONBOARDING_DIR) as its last candidate.
+# Exit 2 (loud, non-zero) when the check latches GHL_MCP_RUNTIME_FATAL.
+_content_current_exit() {
+  wire_ghl_mcp "36-ghl-mcp-setup"
+  rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+  if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ]; then
+    echo "  → [CONTENT RECHECK] skills content is current, but the GHL MCP retirement/convergence check FAILED — exiting 2, never 0." >&2
+    exit 2
+  fi
+  if declare -F frontdoor_final_verdict >/dev/null 2>&1; then frontdoor_final_verdict || exit $?; fi
+  exit 0
+}
+# <<< GHL-MCP-RETIREMENT-GATE-END
 # ----------------------------------------------------------
 # U006 — Co-locate the canonical presentation entry script + its guard
 # into the materialized Presentations department scripts/ directory.
@@ -4351,6 +4646,27 @@ retire_legacy_sunday_crontab() {
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
+# CAN006: the front-door verdict that decides this run's exit code. The early
+# tail in main() only latches (_FD_EARLY_RC); once the install + manifest/stamp
+# are done, a failed early verdict is re-judged against the freshly installed
+# tree. Returns 0 (clean now) or the early rc (still failing: 2 gate, 1 no stage).
+# Callers: _content_current_exit and the end of main(), before registry-parity.
+frontdoor_final_verdict() {
+  [ "${_FD_EARLY_RC:-0}" -ne 0 ] || return 0
+  if [ -n "${_FRONTDOOR_STAGE_PY:-}" ] && declare -F frontdoor_run_stage >/dev/null 2>&1; then
+    echo "  ℹ [FRONT DOOR] re-running the shared stage against the freshly installed tree..."
+    if frontdoor_run_stage "${_FRONTDOOR_STAGE_PY}"; then
+      echo "  ✓ [FRONT DOOR] repairs + health gate clean after the install ($FRONTDOOR_STATUS)"
+      echo "${FRONTDOOR_JSON:-{\"frontdoor\":{\"status\":\"$FRONTDOOR_STATUS\"}}}" \
+        > "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+      return 0
+    fi
+    rm -f "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+  fi
+  echo "  ✗ [FRONT DOOR] still failing after the install -- content is current (stamp written); exiting ${_FD_EARLY_RC} = infrastructure needs attention" >&2
+  return "$_FD_EARLY_RC"
+}
+
 main() {
   # ----------------------------------------------------------
   # U001 — MUTEX (MUST stay the first action in main): take the global
@@ -4639,7 +4955,17 @@ main() {
       fi
     fi
   fi
-  if [ "$fd_rc" -ne 0 ]; then exit "$fd_rc"; fi
+  # CAN006 (fleet roll 20261019): this tail runs BEFORE the content install and
+  # the manifest/stamp write below, so it judges the box's PREVIOUS tree. It used
+  # to `exit` here -- a gate failure on the old tree (e.g. a department without a
+  # director) aborted the update that ships the repair, leaving the stamp and
+  # .onboarding-content-manifest.json at the old version (the roll then failed
+  # role-library: "content manifest is for v27.1.29, not v27.1.36"). Latch the
+  # verdict instead and re-run the stage after the install: frontdoor_final_verdict.
+  _FD_EARLY_RC="$fd_rc"
+  if [ "$fd_rc" -ne 0 ]; then
+    echo "  ℹ [FRONT DOOR] verdict on the PRE-update tree was rc=$fd_rc -- continuing the install, the stage re-runs against the new tree before exit" >&2
+  fi
 
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
@@ -4908,6 +5234,13 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+  # Retire-by-prune: the canonical delivery above is additive and re-delivers
+  # the retired community-MCP resurrection scripts on EVERY roll (including
+  # content-current re-rolls, which exit 0 before the wiring loop's retirement
+  # transaction). Prune them from the destination NOW, after the copy. The
+  # retirement tool and its path library/digest primitive stay (GHL-101 / B2):
+  # the source checkout is deleted below, so --retire must survive without it.
+  prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST" "$SKILLS_DIR/../platform"
 
   # UPF002/U1: stage extensions/ BEFORE the "# Cleanup" rm -rf "$TEMP_EXTRACT"
   # (the clone is gone by the time the plugin installers run near the end).
@@ -4971,10 +5304,28 @@ main() {
     echo "  ⚠ lib-onboarding-state.sh absent from the pulled bundle ($ONBOARDING_DIR) -- onboarding gate oc_* functions will be unavailable box-side unless an older copy is still present." >&2
   fi
 
+# The prune helper must exist before any delivery that can re-ship a retired
+# surface. This assert sits OUTSIDE the block the portable-bootstrap test
+# extracts, so deleting the helper fails a real roll loudly instead of being
+# swallowed by the slice guard below.
+if ! declare -F prune_retired_ghl_mcp_surfaces >/dev/null 2>&1; then
+    echo "FATAL: community-MCP retirement prune helper is missing; refusing to deliver scripts that could resurrect it" >&2
+    exit 9
+fi
+
 # Platform helpers are runtime dependencies of the delivered Skill32 resume command.
 if [ -d "$ONBOARDING_DIR/platform" ]; then
     mkdir -p "$SKILLS_DIR/../platform"
     cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+    # Retire-by-prune: the platform copy re-delivers the retired VPS start
+    # script above. Prune it from the destination immediately after the copy.
+    # Guarded for callers that source only this delivery slice (tests extract
+    # the block between the platform-helpers marker and the config-delivery
+    # marker, where the helper is not defined). In a real roll the function is
+    # always present; retire_prune_helper_asserted() below proves that.
+    if declare -F prune_retired_ghl_mcp_surfaces >/dev/null 2>&1; then
+        prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST" "$SKILLS_DIR/../platform"
+    fi
 fi
 if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
     echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
@@ -5024,12 +5375,21 @@ fi
   # and its version stamp, and every launch surface now refuses fail-closed
   # (STATUS: PIN_UNVERIFIED) rather than silently building an unvetted tree —
   # so the failure is impossible to miss and impossible to act on unsafely.
-  if [ -r "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
-    echo "  ✓ config/ghl-mcp-pin.env delivered and readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env"
+  # W07 / GU-019: config/ghl-mcp-pin.env belongs to the RETIRED community MCP.
+  # install.sh already never ships it and deletes the copy an earlier release
+  # left behind (install.sh, same CANONICAL-CONFIG-DELIVERY-END marker); this
+  # roll now does exactly the same, on every run and regardless of whether the
+  # box carries a retirement receipt. ABSENCE is the asserted state: a box with
+  # no receipt and no pin is CORRECT, not a delivery failure — the pin is what a
+  # start path needs, and a surviving pin is an active resurrection trigger for
+  # a service that is gone.
+  rm -f "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" 2>/dev/null || true
+  if [ -d "$OC_CANONICAL_CONFIG_DEST" ] && [ ! -e "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
+    echo "  ✓ config/ delivered to $OC_CANONICAL_CONFIG_DEST — ghl-mcp-pin.env deliberately NOT delivered (community MCP RETIRED)"
   else
-    echo "  ✗ config/ghl-mcp-pin.env is NOT readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env after delivery." >&2
-    echo "    CONSEQUENCE: scripts/ghl-mcp-autostart.sh will report STATUS: ghl-mcp-autostart=PIN_UNVERIFIED and will NOT build or start the Tier 2 GHL MCP on this box." >&2
-    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
+    echo "  ⚠ config/ delivery could NOT be verified at $OC_CANONICAL_CONFIG_DEST, or a stale ghl-mcp-pin.env survived the removal." >&2
+    echo "    CONSEQUENCE: a surviving pin is an active resurrection trigger for the RETIRED community MCP." >&2
+    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, delete ghl-mcp-pin.env, and re-run this updater." >&2
     export OC_PIN_DELIVERY_FAILED=1
   fi
   export OC_PERSISTENT_CONFIG_DIR="$OC_CANONICAL_CONFIG_DEST"
@@ -5991,8 +6351,9 @@ print(state + " " + str(len(headers)))
 
       if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
         echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
-        rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-        exit 0
+        # B3: content-current is NOT a licence to exit before the retirement
+        # convergence check — run the SAME check the full pass uses, then exit.
+        _content_current_exit
       fi
       echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
       echo "    Trying the FAST convergence-only sub-pass before committing to a full content sync..."
@@ -6158,8 +6519,8 @@ print(state + " " + str(len(headers)))
         _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
         if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
           echo "  ✓ [CONVERGENCE FAST PATH] all outstanding convergence steps repaired without a content sync — nothing to do."
-          rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-          exit 0
+          # B3: same content-current gate as the plain recheck exit above.
+          _content_current_exit
         fi
         echo "  ✗ [CONVERGENCE FAST PATH] still outstanding after the fast pass: ${_CONVERGENCE_TRIGGERS}"
         echo "    Proceeding with a full pass so they run — the fast path is exhausted, the full pass is the backstop."
@@ -6427,6 +6788,16 @@ PYEOF
        && [ -f "$SKILLS_DIR/$SKILL_NAME/ENGINE-PIN.sha256" ]; then
       if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" stamp-pin >>"${LOG_FILE:-/dev/null}" 2>&1; then
         echo "    [stamp-pin] WARN: $SKILL_NAME ENGINE-PIN.sha256 re-stamp FAILED -- continuing (the pin may be stale; run '$SKILLS_DIR/$SKILL_NAME/verify.sh stamp-pin' by hand)"
+      fi
+    fi
+
+    # VERIFY AFTER COPY (Fix 11.3). Sits AFTER the stamp-pin block on purpose:
+    # a skill whose pin was just restamped must be verified against the new
+    # pin, not the stale one. FAIL-SAFE: warn and continue, matching the
+    # stamp-pin rule above — one skill's check never takes down the roll.
+    if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
+      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >>"${LOG_FILE:-/dev/null}" 2>&1; then
+        echo "    [verify] WARN: $SKILL_NAME post-copy verify.sh FAILED -- continuing (run 'bash $SKILLS_DIR/$SKILL_NAME/verify.sh' by hand)"
       fi
     fi
 
@@ -8237,201 +8608,6 @@ PYEOF
     fi
   }
 
-  # ---- Helper: wire skill 36 GHL MCP under nested mcp.servers (idempotent) ----
-  wire_ghl_mcp() {
-    local SKILL_FOLDER="$1"
-    [ "$SKILL_FOLDER" = "36-ghl-mcp-setup" ] || return 0
-
-    if ! command -v openclaw >/dev/null 2>&1; then
-      echo "    (openclaw CLI not found -- skipping GHL MCP registration)"
-      return 0
-    fi
-
-    # v21.5.0: the old "already registered -> return 0" short-circuit keyed on
-    # ghl-mcp OR ghl-community-mcp being present in mcp.servers. Tier 1 (ghl-mcp)
-    # is registered on virtually every box, so this function returned BEFORE
-    # running the autostart -- meaning an update pass never started, rebuilt or
-    # repaired a down/deaf Tier 2 server. The registration state is now irrelevant
-    # to whether the server gets wired, so the short-circuit is gone.
-    local OCJSON="$HOME/.openclaw/openclaw.json"
-
-    # Read GHL MCP URL from skill's INSTALL.md or default to the community server
-    local GHL_MCP_PORT=8765
-    local GHL_MCP_INSTALL_MD="$SKILLS_DIR/36-ghl-mcp-setup/INSTALL.md"
-    if [ -f "$GHL_MCP_INSTALL_MD" ]; then
-      local DETECTED_PORT
-      DETECTED_PORT=$(grep -oE 'localhost:[0-9]+' "$GHL_MCP_INSTALL_MD" 2>/dev/null | head -1 | cut -d: -f2 || true)
-      [ -n "$DETECTED_PORT" ] && GHL_MCP_PORT="$DETECTED_PORT"
-    fi
-
-    # v21.5.0: DO NOT register ghl-community-mcp under mcp.servers.
-    # Skill 36 v1.1.0 made Tier 2 ON-DEMAND CURL: its tool schemas would otherwise
-    # ride in EVERY session's init whether or not GHL is touched, and a down/deaf
-    # server makes every agent init pay the full connectionTimeoutMs (that is the
-    # 30s-per-init stall seen fleet-wide on 2026-08-01/02). The skill's own QC
-    # (qc-ghl-mcp-setup.sh Section D) ASSERTS it is NOT registered and 36/wire.sh
-    # migration M2 REMOVES it -- while this function put it straight back. The
-    # flip-flop is over: we only publish the canonical URL that the on-demand curl
-    # path reads, and remove a legacy registration if one is present.
-    openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >> "$LOG_FILE" 2>&1 || true
-    if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-      # B2: `openclaw mcp remove` IS NOT A COMMAND on OpenClaw 2026.7.1-2 — it
-      # exits 1 with "Too many arguments for this command." The verb is `unset`.
-      # This line used `remove`, swallowed by `|| true`, so a roll NEVER
-      # de-registered Tier 2 on any box and ghl-mcp-assert-runtime.sh check 10
-      # could never pass. Try the real verb, keep `remove` for an older CLI, and
-      # re-read rather than assuming the write stuck.
-      echo "    GHL MCP: de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl)"
-      if openclaw mcp unset ghl-community-mcp >> "$LOG_FILE" 2>&1 \
-         || openclaw mcp remove ghl-community-mcp >> "$LOG_FILE" 2>&1; then
-        if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-          echo "    ⚠ GHL MCP: de-registration ran but ghl-community-mcp is STILL listed — the gateway may have rewritten openclaw.json from memory. Will retry next roll."
-        else
-          echo "    ✓ GHL MCP: Tier 2 de-registered and verified absent from mcp.servers"
-        fi
-      else
-        echo "    ⚠ GHL MCP: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted by this CLI — Tier 2 is STILL registered and every agent init keeps paying its connection cost. Check 'openclaw mcp --help'." >&2
-      fi
-    else
-      echo "    GHL MCP: Tier 2 correctly unregistered (on-demand curl at localhost:${GHL_MCP_PORT})"
-    fi
-
-    # FIX 3 (v10.15.48): registration alone NEVER starts the local server, so
-    # the GHL tools don't resolve. Run the EXECUTED autostart (launchd KeepAlive
-    # on :8765 + healthcheck + auto-restart). Idempotent -- no-op if already
-    # healthy + registered; honest SKIP line if GHL creds are absent.
-    # BUG FIX (v10.15.49): run NON-BLOCKING so the wiring loop + .onboarding-version
-    # stamp always complete. macOS has no `timeout`, so backgrounding is the safe
-    # cross-platform fix. The MCP still starts; the updater no longer waits on it.
-    # ── WHICH COPY OF THE AUTOSTART RUNS, AND FROM WHERE ────────────────────
-    # DEFECT 2 (3-box pilot): a roll ran cleanly everywhere and converged NO box
-    # to the hardened state. Two reasons, both here.
-    #
-    # (a) WRONG COPY. $ONBOARDING_DIR is the TEMP CLONE (/tmp/openclaw-onboarding-
-    #     update). ghl-mcp-autostart.sh's FIRST pin-resolver candidate is
-    #     "$SELF_DIR/../config/ghl-mcp-pin.env" — from the temp clone that
-    #     resolves inside the clone, which the updater `rm -rf`s at its Cleanup
-    #     step. The DELIVERED copy at $OC_ROOT/scripts/ is the one whose
-    #     ../config sibling is the delivered $OC_ROOT/config/. Prefer it, so the
-    #     pin the roll just delivered is the pin the autostart reads.
-    # (b) BACKGROUNDED, THEN ASSERTED IMMEDIATELY. `( … & )` returned in
-    #     milliseconds and the runtime assert below ran against the PRE-autostart
-    #     state — it could only ever measure the defect it was meant to verify was
-    #     fixed. Worse, the temp clone was deleted out from under the still-running
-    #     child.
-    #
-    # FIX: run the DELIVERED copy, and WAIT for it, bounded. macOS has no
-    # `timeout(1)`, which is why this was backgrounded in the first place
-    # (v10.15.49) — so we background it and poll its PID with a hard ceiling,
-    # which keeps the "a hung autostart can never stall a roll" property AND
-    # makes the assert below measure the post-autostart state. The ceiling is
-    # generous because a cold box does a real `npm ci` + build.
-    local AUTOSTART=""
-    local _AS_SRC=""
-    for _as_cand in \
-        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-autostart.sh" \
-        "$HOME/.openclaw/scripts/ghl-mcp-autostart.sh" \
-        "/data/.openclaw/scripts/ghl-mcp-autostart.sh" \
-        "$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"; do
-      case "$_as_cand" in "/ghl-mcp-autostart.sh"|"") continue ;; esac
-      if [ -f "$_as_cand" ]; then
-        AUTOSTART="$_as_cand"
-        case "$_as_cand" in
-          "$ONBOARDING_DIR"/*) _AS_SRC="TEMP CLONE (delivered copy not found — its ../config sibling will not resolve; expect PIN_UNVERIFIED)" ;;
-          *)                   _AS_SRC="delivered copy (its ../config sibling is the delivered pin)" ;;
-        esac
-        break
-      fi
-    done
-    unset _as_cand
-
-    GHL_MCP_AUTOSTART_RAN="no"
-    if [ -n "$AUTOSTART" ]; then
-      local _AS_MAX="${OPENCLAW_GHL_MCP_AUTOSTART_TIMEOUT:-900}"
-      echo "    Running GHL MCP autostart and WAITING for it (max ${_AS_MAX}s) -- $_AS_SRC"
-      echo "      $AUTOSTART  -- log: /tmp/ghl-mcp-autostart.log"
-      ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 ) &
-      local _AS_PID=$! _AS_WAITED=0
-      while kill -0 "$_AS_PID" 2>/dev/null; do
-        [ "$_AS_WAITED" -ge "$_AS_MAX" ] && break
-        sleep 2
-        _AS_WAITED=$(( _AS_WAITED + 2 ))
-      done
-      if kill -0 "$_AS_PID" 2>/dev/null; then
-        echo "    ⚠ GHL MCP autostart still running after ${_AS_MAX}s -- leaving it to finish in the background and NOT waiting further (a slow build must never stall a fleet roll)." >&2
-        echo "    ⚠ The runtime conformance verdict below is therefore measured MID-INSTALL and may report FATALs that resolve once the build completes. Re-run scripts/ghl-mcp-assert-runtime.sh afterwards." >&2
-        GHL_MCP_AUTOSTART_RAN="timeout"
-      else
-        wait "$_AS_PID" 2>/dev/null || true
-        echo "    ✓ GHL MCP autostart completed in ~${_AS_WAITED}s"
-        GHL_MCP_AUTOSTART_RAN="yes"
-      fi
-    else
-      echo "    ⚠ ghl-mcp-autostart.sh not found in the delivered scripts dir OR the pulled bundle -- server NOT started; GHL tools will not resolve until it is run." >&2
-    fi
-
-    # v21.6.0 / R4: RUNTIME conformance verdict on the update path.
-    # qc-assert-ghl-mcp-supervised.sh is STATIC — it reads the shipped script
-    # and proves what a FRESH install WOULD do. It cannot see a hand-edited
-    # plist, a live 859-tool /health, or a still-registered Tier 2, and on
-    # 2026-08-03 all three were true on a box that gate would have called PASS.
-    # This asserts what the box IS running. Non-fatal by design (the update must
-    # not abort on a pre-existing runtime defect) but LOUD, and it names the one
-    # command that fixes it.
-    local RUNTIME_ASSERT=""
-    for _rt_cand in \
-        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-assert-runtime.sh" \
-        "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
-        "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
-        "$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"; do
-      case "$_rt_cand" in "/ghl-mcp-assert-runtime.sh"|"") continue ;; esac
-      [ -f "$_rt_cand" ] && { RUNTIME_ASSERT="$_rt_cand"; break; }
-    done
-    unset _rt_cand
-    if [ -n "$RUNTIME_ASSERT" ]; then
-      local _RT_OUT _RT_RC=0
-      _RT_OUT="$(bash "$RUNTIME_ASSERT" 2>&1)" || _RT_RC=$?
-      printf '%s\n' "$_RT_OUT" >> "$LOG_FILE" 2>/dev/null || true
-      case "$_RT_RC" in
-        0) echo "    ✓ GHL MCP runtime conformance: OK (the INSTALLED service matches the pin)" ;;
-        2) echo "    GHL MCP runtime conformance: not installed on this box -- nothing to assert" ;;
-        *)
-           # DEFECT 2, second half: this verdict used to be a bare warning that
-           # nothing read, so a roll printed the FATALs and then exited 0 — a
-           # HOLLOW UPDATE reported as a success. The verdict now LATCHES and is
-           # surfaced in the end-of-run summary and in this run's EXIT CODE.
-           #
-           # WHY exit 2 AND NOT exit 1. The stamp gates in this script are
-           # deliberately split (see the CONTENT-COMPLETENESS GATE): exit 1 means
-           # "skills CONTENT is not verifiably current, stamp WITHHELD", and
-           # wire_ghl_mcp runs BEFORE the stamp. Failing this to 1 would withhold
-           # the content stamp on every box carrying a PRE-EXISTING Tier 2 defect
-           # — bricking fleet rolls over an infrastructure fault that has nothing
-           # to do with skills content. exit 2 is this script's existing,
-           # documented "content current, infrastructure needs attention" code,
-           # which fleet drivers already distinguish. That is exactly this state,
-           # and it is emphatically NOT exit 0.
-           GHL_MCP_RUNTIME_FATAL="yes"
-           GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_RT_OUT" | grep -F '[ghl-mcp-runtime] FAIL' || true)"
-           {
-             echo ""
-             echo "  ############################################################"
-             echo "  ## GHL MCP RUNTIME CONFORMANCE FAILED (rc=$_RT_RC)"
-             echo "  ## The INSTALLED service on this box does NOT match the shipped standard."
-             echo "  ## This run will exit 2 (content current, infrastructure needs attention)"
-             echo "  ## rather than 0 — a roll that leaves the MCP misconfigured is not a success."
-             printf '%s\n' "$GHL_MCP_RUNTIME_DETAIL" | sed 's/^/  ##   /'
-             echo "  ## FIX: bash ${AUTOSTART:-<autostart not found on this box>}"
-             echo "  ##      (it regenerates the service definition from the delivered pin)"
-             echo "  ############################################################"
-             echo ""
-           } >&2
-           ;;
-      esac
-    else
-      echo "    ⚠ ghl-mcp-assert-runtime.sh not found on this box -- the RUNTIME conformance verdict did NOT run. The static gate cannot see a hand-edited plist, a 859-tool /health, or a still-registered Tier 2." >&2
-    fi
-  }
 
   # ---- Main wiring loop ----
   echo ""
@@ -12253,18 +12429,11 @@ PY
   # ----------------------------------------------------------
   # R14: REAP THE GHL MCP STATUS LINE.
   #
-  # wire_ghl_mcp backgrounds ghl-mcp-autostart.sh to /tmp/ghl-mcp-autostart.log
-  # and nothing ever read it. The backgrounding is deliberate and stays (v10.15.49:
-  # a blocking autostart stalled the whole wiring loop, and macOS has no `timeout`)
-  # -- but it meant the ENTIRE STATUS contract was invisible on the path the fleet
-  # actually uses. PIN_INVALID, PIN_MISMATCH, BUILD_FAILED, TOKEN_REJECTED, DEAF,
-  # STARTED_UNHEALTHY: install.sh Step 14a parses every one of them, and a fleet
-  # roll saw none, so a roll could report success having refused to start an
-  # unpinned server on every box.
-  #
-  # Reading it here -- late, after the wiring loop has had time to finish -- costs
-  # nothing and closes the blind spot. The severity mapping mirrors install.sh
-  # Step 14a exactly, so the two paths describe the same state the same way.
+  # wire_ghl_mcp used to background ghl-mcp-autostart.sh to /tmp/ghl-mcp-autostart.log
+  # and nothing ever read it. Since GU-019 the update path runs the script
+  # SYNCHRONOUSLY in retirement mode (no build, so no long hang) and writes its
+  # STATUS line to the same file. install.sh Step 14a parses the same states, so
+  # both paths describe the state the same way.
   # ----------------------------------------------------------
   GHL_MCP_STATUS_LINE=""
   if [ -f /tmp/ghl-mcp-autostart.log ]; then
@@ -12276,7 +12445,7 @@ PY
     *HEALTHY_ALREADY*|*"=HEALTHY "*) echo "  ✓ GHL MCP running + ANSWERING JSON-RPC. ${GHL_MCP_STATUS_LINE}" ;;
     *SKIPPED_NO_CREDS*)             echo "  ℹ GHL MCP not started -- GHL token absent (honest gap, not a failure). ${GHL_MCP_STATUS_LINE}" ;;
     *"=DEAF"*)                      echo "  ⚠ GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) -- every agent init will burn the full connectionTimeoutMs until fixed. ${GHL_MCP_STATUS_LINE}" ;;
-    *TOKEN_REJECTED*)               echo "  ⚠ GHL rejected the PIT -- the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${GHL_MCP_STATUS_LINE}" ;;
+    *TOKEN_REJECTED*)               echo "  ⚠ OLD STARTER LOG: GHL rejected the PIT. The community MCP is RETIRED — do NOT re-run the starter (it refuses) and do not restart the service. Rotate/repair GOHIGHLEVEL_API_KEY, then run: bash scripts/ghl-mcp-autostart.sh --retire. ${GHL_MCP_STATUS_LINE}" ;;
     *PIN_MISMATCH*|*PIN_INVALID*)   echo "  ⚠ GHL MCP refused to start: the vetted commit pin could not be honoured -- an UNPINNED third-party MCP is never started. ${GHL_MCP_STATUS_LINE}" ;;
     # DEFECT 1 (proven live 2026-08-04): before this STATUS existed, running
     # ghl-mcp-autostart.sh as root against a checkout owned by a different uid
@@ -12287,6 +12456,13 @@ PY
     *ROOT_OWNERSHIP_MISMATCH*)      echo "  ⚠ GHL MCP refused to start: this roll invoked ghl-mcp-autostart.sh as ROOT against a checkout owned by a different uid -- every git command was refused by git's dubious-ownership guard. FIX: never invoke it as root (VPS/Docker: docker exec -u node <ctr> bash ...; see scripts/activate-loop-protection.sh for the convention). ${GHL_MCP_STATUS_LINE}" ;;
     *STARTED_UNHEALTHY*)            echo "  ⚠ GHL MCP service installed but /health not green yet -- crash-only restart will retry. ${GHL_MCP_STATUS_LINE}" ;;
     *BUILD_FAILED*)                 echo "  ⚠ GHL MCP build failed -- the PREVIOUS dist was left intact. ${GHL_MCP_STATUS_LINE}" ;;
+    # GU-019: retirement states. HEALTHY*/DEAF/PIN_* are now unreachable on a
+    # current box (the starter fails closed); they stay mapped so an OLD log is
+    # still explained correctly.
+    *RETIRED_VERIFIED_OFF*)         echo "  ✓ GHL MCP: community MCP RETIRED and VERIFIED_OFF (no process, no listener, no supervisor, no mcp.servers entry). ${GHL_MCP_STATUS_LINE}" ;;
+    *RETIRE_DRY_RUN*)               echo "  ℹ GHL MCP retirement DRY RUN -- nothing was touched. ${GHL_MCP_STATUS_LINE}" ;;
+    *MIGRATION_FAILED*)             echo "  ⚠ GHL MCP retirement MIGRATION_FAILED -- the community MCP is NOT proven off. Residual state is in the receipt under \$OC_ROOT/.retired/. ${GHL_MCP_STATUS_LINE}" ;;
+    *START_REFUSED_RETIRED*)        echo "  ✓ GHL MCP: the community MCP is RETIRED and the old starter refused -- nothing was started. ${GHL_MCP_STATUS_LINE}" ;;
     *)                              echo "  GHL MCP autostart ran. ${GHL_MCP_STATUS_LINE}" ;;
   esac
 
@@ -12512,6 +12688,10 @@ BACKUP_BLOCK
   # whatever exit code the rest of this run would otherwise report and exits
   # 78 (EX_CONFIG) directly, the moment it is detected, rather than folding
   # into the normal return-code decision tree.
+  # CAN006: re-judge a failed pre-install front-door verdict now that the new
+  # tree and stamp are in place; folded into the final return code below.
+  _FD_FINAL_RC=0
+  frontdoor_final_verdict || _FD_FINAL_RC=$?
   _REGISTRY_PARITY_POST_RC=0
   registry_parity_gate post || _REGISTRY_PARITY_POST_RC=$?
   if [ "$_REGISTRY_PARITY_POST_RC" -ne 0 ]; then
@@ -12554,8 +12734,9 @@ BACKUP_BLOCK
       printf '%s\n' "${GHL_MCP_RUNTIME_DETAIL:-  (no detail captured)}" | sed 's/^/    /'
       echo ""
       echo "  autostart on this run: ${GHL_MCP_AUTOSTART_RAN:-unknown}"
-      echo "  Re-run the autostart, then re-assert:"
-      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-autostart.sh"
+      echo "  The community MCP start path is RETIRED — re-run the retirement"
+      echo "  transaction (idempotent), then re-assert:"
+      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-autostart.sh --retire"
       echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-assert-runtime.sh"
       echo "  (\$OC_ROOT is ~/.openclaw on Mac, /data/.openclaw on VPS)"
       echo ""
@@ -12576,7 +12757,7 @@ BACKUP_BLOCK
   if [ "${_PRES_DEPS_CONVERGE_RC:-0}" -ne 0 ]; then
     return 2
   fi
-  return 0
+  return "${_FD_FINAL_RC:-0}"
 }
 
 main "$@"

@@ -1,0 +1,12 @@
+tests_exit_code=0
+ℹ tests 112
+ℹ suites 0
+ℹ pass 112
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 267.534417
+ℹ tests 99
+ℹ pass 99
+ℹ fail 0

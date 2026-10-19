@@ -6,14 +6,17 @@
 # the compose `command:` to run it.
 #
 # Why: `docker compose up -d --force-recreate` starts the container with an
-# empty pm2. Without a resurrect the Command Center and the GHL MCP server stay
-# down (seen 2026-09-28), and nothing inside the container brings them back.
+# empty pm2. Without a resurrect the Command Center stays down (seen
+# 2026-09-28), and nothing inside the container brings it back. The community
+# GHL MCP is RETIRED (GHL_MCP_RETIRED) and is deliberately NOT one of the
+# things a boot restores: its entry is stripped out of the saved list first.
 # Contabo parity: platform/vps/contabo/container-startup.sh.
 #
 #   0. the boot patcher hostinger-wrapper-patch.py (if present in
 #      $DATA/.openclaw/scripts) neutralises the wrapper's harmful boot writes, including the
 #      re-created legacy agents/main/agent/auth-profiles.json (fail-soft);
-#   1. once the gateway answers /healthz 200, `pm2 resurrect` restores the saved list
+#   1. once the gateway answers /healthz 200, `pm2 resurrect` restores the saved
+#      list WITH the RETIRED community GHL MCP entry stripped out of it first
 #      (nothing that may call the openclaw CLI runs before that);
 #   2. if the Command Center is still not in pm2 (no saved list, or a list that
 #      lacks it), it is started from its own ecosystem file and the list saved;
@@ -41,6 +44,17 @@ export NODE_PATH="$DATA/.npm-global/lib/node_modules"
 LOGS="$DATA/.openclaw/logs"
 CC_DIR="$DATA/projects/command-center"
 mkdir -p "$LOGS" 2>/dev/null || true
+
+# MODERN GHL CLIENT (Skill 44, Tier 0) — GHL-163. caf/convertandflow/ghl live
+# under the PERSISTENT /data mount at $DATA/.openclaw/tools/convert-and-flow-cli.
+# Boot only REPORTS readiness: it never executes the credentials-bearing CLI and
+# never starts the RETIRED community MCP.
+CAF_DIR="${CAF_DIR:-$DATA/.openclaw/tools/convert-and-flow-cli}"
+if [ -x "$CAF_DIR/caf" ]; then
+  echo "[ghl] modern client present: $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+else
+  echo "[ghl] modern client not installed yet (the update path builds it): $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+fi
 
 # Headquarters persistent roots (SPEC S10: "Outbox and bridge identity use
 # existing persistent workspace locations. Verify container replacement retains
@@ -108,10 +122,39 @@ HWP="$DATA/.openclaw/scripts/hostinger-wrapper-patch.py"
 WAIT_SCRIPT="${GW_WAIT_SCRIPT:-$DATA/.openclaw/scripts/wait-gateway-owner-stale.sh}"
 [ -f "$WAIT_SCRIPT" ] && { OPENCLAW_DATA="$DATA" bash "$WAIT_SCRIPT" >> "$LOGS/wait-gateway-owner-stale.boot.log" 2>&1 || true; }
 
+# The community GHL MCP (Tier 2) is RETIRED — GHL_MCP_RETIRED. pm2 LAUNCHES
+# every app named in dump.pm2, so deleting the retired app after a resurrect
+# would still have started it once: the dump is stripped FIRST, and a dump that
+# cannot be proven clean is left alone (resurrect skipped, fail closed — the
+# Command Center fallback below then starts the Command Center anyway).
+pm2_dump_excludes_retired() {
+  local dump="$PM2_HOME/dump.pm2"
+  [ -f "$dump" ] || return 0                       # nothing saved -> nothing to resurrect
+  command -v node >/dev/null 2>&1 || return 1      # cannot prove it -> caller must not resurrect
+  # node, not python/jq: this container is guaranteed node (it execs server.mjs
+  # below). Exit 0 = clean (dump rewritten if anything was removed), 1 = unknown.
+  node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let list;
+try { list = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { process.exit(1); }
+if (!Array.isArray(list)) { process.exit(1); }
+const hit = (s) => /ghl[-_]community[-_]mcp/.test(String(s || ""));
+const keep = list.filter((x) => x && !hit(x.name) && !hit(x.pm_exec_path) && !hit(x.script) && !hit(x.pm_exec_path_args));
+if (keep.length === list.length) { process.exit(0); }
+try { fs.writeFileSync(p, JSON.stringify(keep, null, 2)); } catch (e) { process.exit(1); }
+process.exit(0);
+' "$dump"
+}
+
 if command -v pm2 >/dev/null 2>&1; then
   (
     gw_wait_ready || true   # cap passed: pm2 needs no CLI, so the Command Center still comes up
-    pm2 resurrect >> "$LOGS/pm2-resurrect.log" 2>&1 || true
+    if pm2_dump_excludes_retired; then
+      pm2 resurrect >> "$LOGS/pm2-resurrect.log" 2>&1 || true
+    else
+      echo "[$(date -u +%FT%TZ)] dump.pm2 could not be proven free of the RETIRED community MCP — pm2 resurrect skipped (fail closed)" >> "$LOGS/pm2-resurrect.log" 2>/dev/null || true
+    fi
     if ! pm2 describe blackceo-command-center >/dev/null 2>&1 && [ -f "$CC_DIR/ecosystem.config.cjs" ]; then
       { cd "$CC_DIR" && pm2 start ecosystem.config.cjs && pm2 save; } >> "$LOGS/pm2-resurrect.log" 2>&1 || true
     fi

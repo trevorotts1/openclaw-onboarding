@@ -94,6 +94,84 @@ from ghl_receipts import (  # noqa: E402,F401
 
 ROUTER_VERSION = "v1.0.0"
 
+# ── Public-adapter operation routing (GHL-169) ──────────────────────────────
+# The router stays dependency-injected (it performs no I/O), but the operation
+# IDs it may hand to a public-adapter runner are named here instead of being
+# implied by a free-text rail label. Every ID is a frozen registry row
+# (44-convert-and-flow-operator/.../public/operations.py); the guard test fails
+# on an unknown ID.
+#
+# ``routed``    — a Skill 06 client calls it through ghl_public_client today.
+# ``declared``  — a registry row exists but no adapter-capable client path does
+#                 (multipart/readback/internal shape); the reason lives in
+#                 ghl_route_gaps.py. Never a live route by declaration alone.
+PUBLIC_OPERATION_ROUTES = {
+    "media": {
+        "routed": ("media.files.list",),
+        "declared": ("media.upload", "media.folders.create"),
+    },
+    "survey": {
+        "routed": ("surveys.list",),
+        "declared": ("surveys.get", "surveys.write"),
+    },
+    "funnel": {
+        "routed": (),
+        "declared": (
+            "funnels.list", "funnels.pages.list", "funnels.create",
+            "funnels.steps.create", "funnels.get", "funnels.delete",
+            "funnels.pages.get", "funnels.pages.autosave",
+            "funnels.pages.list_internal",
+        ),
+    },
+    "website": {
+        "routed": (),
+        "declared": ("funnels.list", "funnels.pages.list"),
+    },
+    "page": {
+        "routed": (),
+        "declared": ("funnels.pages.list", "funnels.pages.get",
+                     "funnels.pages.autosave"),
+    },
+    "product": {
+        "routed": (),
+        "declared": (
+            "products.list", "products.get", "products.create",
+            "products.update", "products.delete", "products.prices.create",
+            "products.prices.list",
+        ),
+    },
+    "custom_field": {
+        "routed": (),
+        "declared": ("custom_fields.list", "custom_fields.get",
+                     "custom_fields.create"),
+    },
+    "tag": {
+        "routed": (),
+        "declared": ("tags.list", "tags.create"),
+    },
+    "contact": {
+        "routed": (),
+        "declared": ("contacts.get", "contacts.create", "contacts.upsert",
+                     "contacts.update", "contacts.search", "contacts.delete"),
+    },
+    # Authoring-only object types: no public operation row exists at all.
+    "community": {"routed": (), "declared": ()},
+    "course": {"routed": (), "declared": ()},
+    "channel": {"routed": (), "declared": ()},
+}
+
+
+def public_operation_route(object_type: str) -> Dict[str, tuple]:
+    """The public-adapter operation IDs for one router object type.
+
+    Returns ``{"routed": (...), "declared": (...)}``. An unknown object type
+    returns two empty tuples — never an invented operation.
+    """
+    entry = PUBLIC_OPERATION_ROUTES.get(str(object_type))
+    if entry is None:
+        return {"routed": (), "declared": ()}
+    return {"routed": tuple(entry["routed"]), "declared": tuple(entry["declared"])}
+
 
 # ---------------------------------------------------------------------------
 # Tiers (Skill 36) — the disclosure number N in [GHL tier used: N — tool]
@@ -101,7 +179,11 @@ ROUTER_VERSION = "v1.0.0"
 class Tier:
     CAF = 0          # Skill 44 caf CLI / Skill 44 internal Build API (Firebase)
     MCP_OFFICIAL = 1  # orchestrator-only official MCP
-    MCP_COMMUNITY = 2  # community MCP ($GHL_COMMUNITY_MCP_URL, port 8765)
+    # 2 was the community MCP rail ($GHL_COMMUNITY_MCP_URL, port 8765). Removed
+    # by GU-009/GU-010: the service is retired and is never a route. The number
+    # stays unassigned so a historical receipt's "tier used: 2" can only ever
+    # mean that retired rail, and REST/BROWSER keep the values other code and
+    # stored receipts already carry.
     REST = 3          # raw HTTPS services.* (dual Accept + Version, browser UA)
     BROWSER = 4       # agent-browser / Playwright / REST-in-browser eval
 
@@ -124,7 +206,8 @@ class Rail:
     SKILL44_CAF = "skill44_caf"
     SKILL44_BUILD = "skill44_build_api"     # Firebase-token internal workflow build
     MCP_OFFICIAL = "mcp_official"
-    MCP_COMMUNITY = "mcp_community"
+    # "mcp_community" removed with Tier 2 (GU-009/GU-010): the community MCP is a
+    # retired transport, not a rail. Do not re-add it as a fallback.
     REST_SERVICES = "rest_services"          # raw HTTPS services.leadconnectorhq.com
     REST_IN_BROWSER = "rest_in_browser"      # builder-origin autosave via seeded eval
     BROWSER = "browser"                      # agent-browser click-path (builders)
@@ -365,27 +448,36 @@ def _matrix() -> Dict[str, ObjectRoute]:
         "media",
         [
             R(Rail.REST_SERVICES, Tier.REST, Token.LOCATION_PIT,
-              "POST /medias/upload-file + ghl_media.py (LOCATION PIT)", True,
-              "NEVER browser-routed; AGENCY PIT 401s for media"),
-            R(Rail.MCP_COMMUNITY, Tier.MCP_COMMUNITY, Token.LOCATION_PIT,
-              "community MCP media tools", True),
+              "POST /medias/upload-file + POST /medias/folder via ghl_media.py "
+              "(LOCATION PIT)", True,
+              "NEVER browser-routed; AGENCY PIT 401s for media. Sole route: the "
+              "community MCP media fallback was removed (GU-009/GU-010)"),
         ],
         idempotency_key="folder_per_funnel_name",
         create_api_exists=True,
         verify="CDN URL fetch 200",
+        note="Media LIST is routed through the frozen public adapter as "
+        "media.files.list (ghl_media.list_media; required `type`, refused before "
+        "transport when omitted). Upload and folder create have registry rows "
+        "but no adapter-capable route (JSON-only transport; no readback plan) "
+        "and are declared named gaps in ghl_route_gaps.py. No community route.",
     )
 
     m["product"] = ObjectRoute(
         "product",
         [
-            R(Rail.MCP_COMMUNITY, Tier.MCP_COMMUNITY, Token.LOCATION_PIT,
-              "community MCP ($GHL_COMMUNITY_MCP_URL, port 8765)", True),
             R(Rail.REST_SERVICES, Tier.REST, Token.LOCATION_PIT,
-              "raw HTTPS services.* /products", True),
+              "raw HTTPS services.* /products", True,
+              "sole route: the community MCP product rail was primary before "
+              "GU-009/GU-010 and is removed; never a blind community-first "
+              "attempt"),
         ],
         idempotency_key="product_sku",
         create_api_exists=True,
         verify="re-GET",
+        note="Public REST only. Product collection / inventory / bulk-edit "
+        "operations have no audited public operation row and are UNSUPPORTED — "
+        "they are not routed to a retired transport.",
     )
 
     m["community"] = ObjectRoute(
@@ -395,9 +487,11 @@ def _matrix() -> Dict[str, ObjectRoute]:
               "ghl_community_builder.py (Memberships area)", True),
         ],
         idempotency_key="zhc_name_search",
-        create_api_exists=False,  # ASSUMED — builder confirms Tier 1/2 tool lists first hour
+        create_api_exists=False,  # ASSUMED — no public create API; builder confirms first hour
         verify="list-page row + client-portal URL 200 (render_check)",
-        note="if a create tool is found on Tier 1/2, router flips primary to it",
+        note="GHL Communities/Memberships AUTHORING target (browser builder), "
+        "NOT the retired community MCP service — it has no MCP rail and must "
+        "never be read as one.",
     )
 
     m["course"] = ObjectRoute(
@@ -1001,16 +1095,17 @@ def _selftest() -> int:
             errors.append("exhausted 429 should honest-fail with RATE-LIMIT note")
 
         # 11. 403 with same-token next rail → STOP (token-context, no guessing).
+        # tag rails are caf + REST, both LOCATION_PIT, so a 403 on the primary
+        # must STOP rather than hop to the same token context.
         res = execute_write(
-            "media", "logo.png", evidence_root=tmp,
+            "tag", "zhc_403", evidence_root=tmp,
             idempotency_probe=lambda: None,
             rail_runners={
-                Rail.REST_SERVICES: lambda s: RunResult(ok=False, status=403),
-                Rail.MCP_COMMUNITY: lambda s: RunResult(ok=True, response_id="m1"),
+                Rail.SKILL44_CAF: lambda s: RunResult(ok=False, status=403),
+                Rail.REST_SERVICES: lambda s: RunResult(ok=True, response_id="t1"),
             },
             verifier=lambda rid: {"ok": True},
         )
-        # media REST + community MCP are both LOCATION_PIT → same context → STOP.
         if res["action"] != "failed" or res["board_note"] != "TOKEN-CONTEXT":
             errors.append("403 with same-token next rail should STOP as TOKEN-CONTEXT")
 
@@ -1049,6 +1144,15 @@ def _selftest() -> int:
     if rail_requires_browser_context(Rail.REST_SERVICES):
         errors.append("rail_requires_browser_context(REST_SERVICES) should be False")
 
+    # 16. The community MCP is retired (GU-009/GU-010): no route may name it,
+    # and the product/media object types must lead with the public REST rail.
+    for name, r in _MATRIX.items():
+        for s in list(r.rails) + list(r.read_rails):
+            if s.rail == "mcp_community" or s.tier == 2:
+                errors.append(f"{name}: retired community MCP rail is still routed")
+    for rest_led in ("product", "media"):
+        if route(rest_led).rails[0].rail != Rail.REST_SERVICES:
+            errors.append(f"{rest_led}: primary rail must be the public REST route")
 
     if errors:
         for e in errors:

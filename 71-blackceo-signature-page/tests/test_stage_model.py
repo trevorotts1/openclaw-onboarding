@@ -5,7 +5,7 @@ The stage model lives in ONE place: references/stage-contract.json (the
 manifest). Every surface that enumerates, validates, or reports stages
 must state the same model:
 
-- FOURTEEN stage IDs, in the manifest's stage_order;
+- FIFTEEN stage IDs, in the manifest's stage_order;
 - the last, automation-wiring, is conditional: required only when the
   intake records publish_target "ghl" and automation_scope "workflows";
   when it does not apply, the gate records it not_applicable in state
@@ -35,6 +35,7 @@ EXPECTED_ORDER = [
     "image-inventory-prompts",
     "image-generation-qc",
     "image-map-upload",
+    "design-board",
     "final-mockups",
     "responsive-html",
     "ghl-install-test",
@@ -69,7 +70,7 @@ def test_manifest_model():
             assert "conditional" not in entry, f"{sid} unexpectedly conditional"
     for sid in BROWSER_STAGES:
         assert contract["stages"][sid].get("uses_browser") is True, sid
-    print("PASS manifest: 14 stages in order; automation-wiring conditional "
+    print("PASS manifest: 15 stages in order; automation-wiring conditional "
           "on ghl + workflows; browser stages flagged")
 
 
@@ -81,7 +82,7 @@ def test_skill_md():
     assert m, "SKILL.md stage-ID enumeration not found"
     ids = [s.strip() for s in m.group(1).split(",")]
     assert ids == manifest()["stage_order"], ids
-    assert "FOURTEEN stage IDs" in text
+    assert "FIFTEEN stage IDs" in text
     assert 'publish_target: "ghl"' in text
     assert 'automation_scope: "workflows"' in text
     assert "not_applicable" in text
@@ -90,12 +91,12 @@ def test_skill_md():
 
 def test_artifact_contracts():
     text = (REFERENCES / "artifact-contracts.md").read_text(encoding="utf-8")
-    assert "The workflow has FOURTEEN stage IDs" in text
+    assert "The workflow has FIFTEEN stage IDs" in text
     section = text.split("## Workflow-state JSON", 1)[1]
     block = section.split("```json", 1)[1].split("```", 1)[0]
     state = json.loads(block)
     assert list(state["stages"].keys()) == manifest()["stage_order"]
-    print("PASS artifact-contracts.md: FOURTEEN stated; workflow-state "
+    print("PASS artifact-contracts.md: FIFTEEN stated; workflow-state "
           "example carries every stage in order")
 
 
@@ -112,7 +113,7 @@ def test_validate_state():
                        for sid in ids},
         }
 
-    # Behavioral pin: a complete 14-stage state validates; the same state
+    # Behavioral pin: a complete 15-stage state validates; the same state
     # minus automation-wiring is rejected as missing the stage (the old
     # hardcoded 13-stage list accepted it and rejected the 14-stage one).
     assert vs.validate(full_state(order)) == []
@@ -129,7 +130,7 @@ def test_fixtures():
             (ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
         assert set(data["stages"].keys()) == order, name
     print("PASS fixtures: state-valid.json and state-invalid.json carry "
-          "all 14 stages")
+          "all 15 stages")
 
 
 def stage_enums(node, out):

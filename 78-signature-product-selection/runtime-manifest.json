@@ -1,1 +1,24 @@
-{"actions":["invocation","plan","preview","select","validate_binding","reject_query_authority","binding_plan","page_result","session_create","session_resume","session_confirm"],"entry_module":"scripts/selection_runtime.py","error_envelope":{"error":{"code":"S78-*","message":"..."},"ok":false},"exit_codes":{"0":"ok / pass","2":"violation (S78-* code in envelope)","3":"fail-closed error"},"interface":"Runtime.handle(request_envelope) -> result_envelope","notes":"Descriptor supplied by S78 for INTEGRATION's registry wiring; registry discoverability itself is INTEGRATION-owned. The adapter adds no behavior of its own: every action dispatches to the shipped, independently reviewed modules, and session storage kind is fixed at construction so a request cannot redirect it.","request_envelope":{"action":"one of actions","args":"action-specific fields, see references/runtime-adapter-contract.md"},"result_envelope":{"action":"...","ok":true,"result":"..."},"schemas":["schema/selection.schema.json","schema/selection-request.schema.json","schema/selection-result.schema.json","schema/page-result.schema.json"],"session_stores":{"durable":"scripts/selection_session_store.py DurableSessionStore (production, tenant-scoped SQLite, chosen at Runtime construction via store={'kind': 'durable', 'base_dir': ...})","memory":"scripts/selection_session.py SessionStore (deterministic core, tests)"},"skill":"78-signature-product-selection","skill_version":"0.2.0","status":"build checkpoint, not installed"}
+{
+  "actions": ["invocation", "plan", "preview", "select", "validate_binding", "reject_query_authority", "binding_plan", "page_result", "session_create", "session_resume", "session_confirm"],
+  "entry_module": "scripts/selection_runtime.py",
+  "error_envelope": {"error": {"code": "S78-*", "message": "..."}, "ok": false},
+  "exit_codes": {"0": "ok / pass", "2": "violation (S78-* code in envelope)", "3": "fail-closed error"},
+  "interface": "Runtime.handle(request_envelope) -> result_envelope",
+  "notes": "Descriptor supplied by S78 for INTEGRATION's registry wiring; registry discoverability itself is INTEGRATION-owned. The adapter adds no behavior of its own: every action dispatches to the shipped, independently reviewed modules, and session storage kind is fixed at construction so a request cannot redirect it.",
+  "descriptor_only": true,
+  "proof_level": "descriptor_only",
+  "installation": {
+    "state": "not_installed",
+    "proof_class": null,
+    "installed_at": null,
+    "installation_evidence": null,
+    "note": "A runtime descriptor is NOT an installation. This file advertises an entry module and action set; it proves no native page, route, or price is installed in any tenant. Installation evidence comes only from an authorized install run that emits installed_test_verified or later, never from this descriptor."
+  },
+  "request_envelope": {"action": "one of actions", "args": "action-specific fields, see references/runtime-adapter-contract.md"},
+  "result_envelope": {"action": "...", "ok": true, "result": "..."},
+  "schemas": ["schema/selection.schema.json", "schema/selection-request.schema.json", "schema/selection-result.schema.json", "schema/page-result.schema.json"],
+  "session_stores": {"durable": "scripts/selection_session_store.py DurableSessionStore (production, tenant-scoped SQLite, chosen at Runtime construction via store={'kind': 'durable', 'base_dir': ...})", "memory": "scripts/selection_session.py SessionStore (deterministic core, tests)"},
+  "skill": "78-signature-product-selection",
+  "skill_version": "0.2.0",
+  "status": "build checkpoint, not installed"
+}

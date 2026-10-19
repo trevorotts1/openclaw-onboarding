@@ -630,6 +630,10 @@ def _valid_request():
     return json.loads(
         (FIXTURES / "valid-downsell-request.json").read_text())
 
+def _valid_request_policy():
+    return json.loads(
+        (FIXTURES / "valid-downsell-request-policy.json").read_text())
+
 
 def _valid_binding():
     return {"native_product_id": "TEST-NATIVE-PRODUCT",
@@ -724,6 +728,88 @@ class InstallPlanTests(unittest.TestCase):
         snapshot = copy.deepcopy(request)
         build_install_plan(request, _valid_binding(), _valid_bundle())
         self.assertEqual(request, snapshot)
+
+
+class InstallRequestVersionPairTests(unittest.TestCase):
+    """Adoption map 1.5 pair matrix at the plan layer: request 1.0
+    with no prompt_policy_id, or 1.1 with a non-empty one. Every
+    other combination fails closed by name. The plan output is
+    unchanged: no citation, plan_kind s06-install-plan,
+    schema_version provisional-1."""
+
+    def test_1_0_without_policy_builds(self):
+        plan = build_install_plan(_valid_request(), _valid_binding(),
+                                  _valid_bundle())
+        self.assertEqual(plan["plan_kind"], "s06-install-plan")
+        self.assertEqual(plan["schema_version"], "provisional-1")
+        self.assertTrue(plan["provisional"])
+
+    def test_1_0_with_policy_is_refused(self):
+        request = _valid_request()
+        request["prompt_policy_id"] = "kie-rule-12-band"
+        with self.assertRaises(InstallPlanError) as cm:
+            build_install_plan(request, _valid_binding(), _valid_bundle())
+        self.assertEqual(
+            cm.exception.code,
+            "D1-INSTALL-REQUEST-UNEXPECTED-PROMPT_POLICY_ID")
+
+    def test_1_1_with_nonempty_policy_builds_identical_plan(self):
+        plan_1_0 = build_install_plan(_valid_request(), _valid_binding(),
+                                      _valid_bundle())
+        plan_1_1 = build_install_plan(_valid_request_policy(),
+                                      _valid_binding(), _valid_bundle())
+        # The citation is read at the receipt and registry layer; the
+        # plan never carries it, so the two plans are identical.
+        self.assertEqual(plan_1_1, plan_1_0)
+        self.assertNotIn("prompt_policy_id", json.dumps(plan_1_1))
+        self.assertEqual(plan_1_1["schema_version"], "provisional-1")
+
+    def test_1_1_with_empty_policy_is_refused(self):
+        for blank in ("", "   "):
+            with self.subTest(prompt_policy_id=blank):
+                request = _valid_request_policy()
+                request["prompt_policy_id"] = blank
+                with self.assertRaises(InstallPlanError) as cm:
+                    build_install_plan(request, _valid_binding(),
+                                       _valid_bundle())
+                self.assertEqual(
+                    cm.exception.code,
+                    "D1-INSTALL-REQUEST-PROMPT_POLICY_ID-TOO-SHORT")
+
+    def test_1_1_with_non_string_policy_is_refused(self):
+        for value in (None, 7, ["kie-rule-12-band"]):
+            with self.subTest(prompt_policy_id=value):
+                request = _valid_request_policy()
+                request["prompt_policy_id"] = value
+                with self.assertRaises(InstallPlanError) as cm:
+                    build_install_plan(request, _valid_binding(),
+                                       _valid_bundle())
+                self.assertEqual(
+                    cm.exception.code,
+                    "D1-INSTALL-REQUEST-PROMPT_POLICY_ID-WRONG-TYPE")
+
+    def test_1_1_without_policy_is_refused(self):
+        request = _valid_request_policy()
+        del request["prompt_policy_id"]
+        with self.assertRaises(InstallPlanError) as cm:
+            build_install_plan(request, _valid_binding(), _valid_bundle())
+        self.assertEqual(
+            cm.exception.code,
+            "D1-INSTALL-REQUEST-MISSING-PROMPT_POLICY_ID")
+
+    def test_unknown_versions_are_refused(self):
+        # 1.2 is explicitly NOT accepted: the request version is not
+        # widened because another schema is 1.2.
+        for version in ("1.2", "2.0", "1", 1.0):
+            with self.subTest(schema_version=version):
+                request = _valid_request()
+                request["schema_version"] = version
+                with self.assertRaises(InstallPlanError) as cm:
+                    build_install_plan(request, _valid_binding(),
+                                       _valid_bundle())
+                self.assertEqual(
+                    cm.exception.code,
+                    "D1-INSTALL-REQUEST-SCHEMA-VERSION")
 
 
 class FailClosedBranchPinTests(unittest.TestCase):

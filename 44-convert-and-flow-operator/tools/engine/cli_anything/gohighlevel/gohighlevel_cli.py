@@ -796,6 +796,23 @@ def _get_internal_client(ctx: click.Context, location_id: str | None = None):
     return InternalGHLClient(token_mgr, loc)
 
 
+def _get_public_v4(ctx: click.Context, location_id: str | None = None):
+    """Return ``(WorkflowV4Adapter | None, reason)`` for this location.
+
+    The adapter is default-deny: building it can never send a request by
+    itself.  When it is None, the caller keeps the named Skill 44 private
+    fallback exactly as before.
+    """
+    from cli_anything.gohighlevel.utils.workflow_builder import load_public_v4
+    loc = location_id if location_id is not None else _loc(ctx)
+    return load_public_v4(loc)
+
+
+def _v4_tenant(location_id: str):
+    from cli_anything.gohighlevel.public.auth import TenantBinding
+    return TenantBinding(location_id=location_id, source="request")
+
+
 @cli.group()
 @click.pass_context
 def workflows(ctx):
@@ -860,7 +877,8 @@ def workflows_create(ctx, name, folder, json_file):
             campaign = json.load(f)
 
         client = _get_internal_client(ctx)
-        builder = CampaignBuilder(client)
+        v4, _route_reason = _get_public_v4(ctx)
+        builder = CampaignBuilder(client, v4=v4)
         stats = builder.build(campaign, folder or name)
 
         _emit_build_result(ctx, builder, stats)
@@ -988,7 +1006,8 @@ def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
 
         from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
         client = _get_internal_client(ctx)
-        builder = CampaignBuilder(client)
+        v4, _route_reason = _get_public_v4(ctx)
+        builder = CampaignBuilder(client, v4=v4)
         stats = builder.build(campaign, folder or f"n8n-{name}")
 
         _emit_build_result(ctx, builder, stats)
@@ -1006,9 +1025,29 @@ def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
 def workflows_get(ctx, workflow_id):
     """Get a workflow by ID (internal API, read-only).
 
-    Returns the full workflow JSON.
+    Returns the full workflow JSON.  When the public V4 definition-read
+    capability is enabled, the public adapter is primary; otherwise the
+    existing Skill 44 private read is the named fallback, unchanged.
     """
     try:
+        from cli_anything.gohighlevel.utils.workflow_builder import workflow_route
+        v4, _route_reason = _get_public_v4(ctx)
+        route = workflow_route(v4, "definition.read", tenant=_loc(ctx))
+        if route.public:
+            doc_result, payload = v4.read_definition_document(
+                tenant=_v4_tenant(_loc(ctx)), workflow_id=workflow_id
+            )
+            if doc_result.status.value != "ok" or payload is None:
+                click.echo(
+                    f"Error: public V4 read {doc_result.status.value} or no "
+                    f"readable definition (receipt {doc_result.receipt_id}): "
+                    f"{doc_result.error}",
+                    err=True,
+                )
+                sys.exit(1)
+            _output(ctx, payload, f"Workflow {workflow_id}")
+            return
+        # Named private fallback (unchanged).
         client = _get_internal_client(ctx)
         result = client.get_workflow(workflow_id)
         if not result.ok:
@@ -1024,15 +1063,37 @@ def workflows_get(ctx, workflow_id):
 @click.option("--out", "out_file", required=True, type=click.Path(), help="Output JSON file path")
 @click.pass_context
 def workflows_export(ctx, workflow_id, out_file):
-    """Export a workflow to a JSON file (internal API, read-only)."""
+    """Export a workflow to a JSON file (internal API, read-only).
+
+    Public V4 definition-read is primary when its capability is enabled; the
+    private GET is the named fallback, unchanged.
+    """
     try:
-        client = _get_internal_client(ctx)
-        result = client.get_workflow(workflow_id)
-        if not result.ok:
-            click.echo(f"Error: {result.error}", err=True)
-            sys.exit(1)
-        with open(out_file, "w") as f:
-            json.dump(result.data, f, indent=2)
+        from cli_anything.gohighlevel.utils.workflow_builder import workflow_route
+        v4, _route_reason = _get_public_v4(ctx)
+        route = workflow_route(v4, "definition.read", tenant=_loc(ctx))
+        if route.public:
+            doc_result, payload = v4.read_definition_document(
+                tenant=_v4_tenant(_loc(ctx)), workflow_id=workflow_id
+            )
+            if doc_result.status.value != "ok" or payload is None:
+                click.echo(
+                    f"Error: public V4 read {doc_result.status.value} or no "
+                    f"readable definition (receipt {doc_result.receipt_id}).",
+                    err=True,
+                )
+                sys.exit(1)
+            with open(out_file, "w") as f:
+                json.dump(payload, f, indent=2)
+        else:
+            # Named private fallback (unchanged).
+            client = _get_internal_client(ctx)
+            result = client.get_workflow(workflow_id)
+            if not result.ok:
+                click.echo(f"Error: {result.error}", err=True)
+                sys.exit(1)
+            with open(out_file, "w") as f:
+                json.dump(result.data, f, indent=2)
         if ctx.obj["json"]:
             click.echo(json.dumps({"exported": out_file, "workflow_id": workflow_id}))
         else:
@@ -1045,16 +1106,116 @@ def workflows_export(ctx, workflow_id, out_file):
 @click.option("--workflow-id", required=True, help="Workflow ID to update")
 @click.option("--from-json", "json_file", required=True, type=click.Path(exists=True),
               help="JSON file with updated workflow body")
+@click.option("--allow-deletions", "allow_deletions", is_flag=True, default=False,
+              help="Approve removals: nodes present in the live workflow but "
+                   "absent from --from-json are deleted instead of refused.")
 @click.pass_context
-def workflows_update(ctx, workflow_id, json_file):
-    """Update a workflow from a JSON file (internal API, write-gated).
+def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
+    """Update a workflow from a JSON file (write-gated).
 
     Requires --experimental. A pre-write snapshot is captured automatically
     before the PUT — use 'workflows restore' to revert.
+
+    An omitted node is a DELETE request: without --allow-deletions the update
+    is refused before transport (rule ``deletion_requires_approval``) rather
+    than silently removing live steps.
+
+    When the public V4 definition-update capability is enabled the public
+    adapter is primary and an ``unknown_outcome`` is SURFACED for
+    reconciliation — it is never retried through the private rail.  Otherwise
+    the existing private update is the named fallback, unchanged.
     """
     _require_experimental(ctx)
     try:
-        from cli_anything.gohighlevel.utils.snapshot_manager import capture, restore as sm_restore
+        from cli_anything.gohighlevel.utils.workflow_builder import (
+            intent_from_definition,
+            public_approval,
+            workflow_route,
+        )
+        v4, _route_reason = _get_public_v4(ctx)
+        location_id = _loc(ctx)
+        route = workflow_route(v4, "update", tenant=location_id)
+        if route.public:
+            from cli_anything.gohighlevel.public.result import Status
+            from cli_anything.gohighlevel.public.workflow_v4_intent import (
+                extract_definition,
+                extract_revision,
+            )
+            from cli_anything.gohighlevel.utils.snapshot_manager import capture_payload
+
+            tenant = _v4_tenant(location_id)
+            with open(json_file) as f:
+                desired_raw = json.load(f)
+            # An export writes {status, definition}; an unwrapped document would
+            # make every current node look removed.  Unwrap the envelope.
+            desired = extract_definition(desired_raw)
+            if desired is None:
+                if not isinstance(desired_raw, dict):
+                    click.echo(
+                        "Error: --from-json must be a definition object or an "
+                        "{status, definition} envelope — nothing was written.",
+                        err=True,
+                    )
+                    sys.exit(1)
+                desired = desired_raw
+            read_result, payload = v4.read_definition_document(
+                tenant=tenant, workflow_id=workflow_id
+            )
+            definition = extract_definition(payload) if read_result.status is Status.ok else None
+            if definition is None:
+                click.echo(
+                    f"Error: public V4 read {read_result.status.value} or no "
+                    f"readable definition (receipt {read_result.receipt_id}) — "
+                    "nothing was written.",
+                    err=True,
+                )
+                sys.exit(1)
+            snap_path = capture_payload(
+                location_id, workflow_id, dict(payload), "pre-update-v4"
+            )
+            if not ctx.obj["json"]:
+                click.echo(f"[snapshot] {snap_path}")
+            # Echo the revision of the payload just read, so the adapter's
+            # stale-revision refusal is reachable from this verb.
+            expected_revision = extract_revision(definition)
+            intent = intent_from_definition(definition, desired)
+            result = v4.update_definition(
+                tenant=tenant,
+                workflow_id=workflow_id,
+                intent=intent,
+                approval=public_approval(),
+                expected_revision=expected_revision,
+                allow_deletions=allow_deletions,
+            )
+            if result.status is Status.unknown_outcome:
+                click.echo(
+                    f"OUTCOME UNKNOWN: public V4 update may have landed "
+                    f"(receipt {result.receipt_id}). Reconcile with "
+                    f"'workflows get --workflow-id {workflow_id}' before any "
+                    "retry. The private rail was NOT used.",
+                    err=True,
+                )
+                sys.exit(3)
+            if result.status is not Status.ok:
+                click.echo(
+                    f"Error: public V4 update {result.status.value} "
+                    f"(receipt {result.receipt_id}): {result.error}",
+                    err=True,
+                )
+                sys.exit(1)
+            _output(
+                ctx,
+                {
+                    "ok": True,
+                    "workflow_id": workflow_id,
+                    "receipt_id": result.receipt_id,
+                    "status": result.status.value,
+                },
+                "Workflow Updated",
+            )
+            return
+        # Named private fallback (unchanged).
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture
         from cli_anything.gohighlevel.utils.write_lock import WriteLock
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
@@ -1135,7 +1296,8 @@ def workflows_build(ctx, plan_file, folder):
             sys.exit(1)
 
         with WriteLock(location_id):
-            builder = CampaignBuilder(client)
+            v4, _route_reason = _get_public_v4(ctx)
+            builder = CampaignBuilder(client, v4=v4)
             stats = builder.build(campaign, folder_name)
         _emit_build_result(ctx, builder, stats)
     except Exception as e:
@@ -1303,8 +1465,9 @@ def workflows_patch_trigger(ctx, workflow_id, trigger_file):
 def workflows_restore(ctx, workflow_id, snapshot_file):
     """Restore a workflow to a captured pre-write snapshot.
 
-    Requires --experimental. Replays the snapshot via PUT — the workflow
-    is returned to its state at snapshot capture time.
+    Requires --experimental. Restores the snapshot's CONTENT; the current
+    revision is read fresh first, so a stale snapshot revision is never
+    replayed. There is no public V4 restore operation (B-RESTORE-NONE).
     """
     _require_experimental(ctx)
     try:

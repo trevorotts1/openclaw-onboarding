@@ -1,0 +1,15 @@
+{
+  "schema": "wise-elders.council-runtime-active/v1",
+  "releaseId": "rel-7bdc0b6e3565",
+  "releasePath": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/releases/rel-7bdc0b6e3565",
+  "receiptPath": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/receipts/rel-7bdc0b6e3565.release.json",
+  "sourceManifestDigest": "7bdc0b6e356588056b0a36102f0743bc0d9ff88499f6d201235be07f3c45e9a7",
+  "artifactDigest": "32ee825c36716c74e90ba51e3bd69e6d19f35de279323846e6e943a63601e0f4",
+  "nodeExecutable": "<operator-home>/.nvm/versions/node/v24.21.0/bin/node",
+  "nodeVersion": "v24.21.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "dataDir": "<operator-home>/.claude/state/council-elders/lanes/W11-U001-lane/prefix/data",
+  "activatedAt": "2026-10-18T20:06:44.671Z",
+  "previousReleaseId": null
+}

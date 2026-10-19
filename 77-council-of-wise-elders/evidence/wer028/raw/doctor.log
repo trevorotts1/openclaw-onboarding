@@ -1,0 +1,25 @@
+# command: node scripts/doctor.mjs
+# cwd: git-archive extraction of 39e74434810d9c110f2c6ac506386c832f7b6fb5:77-council-of-wise-elders
+# captured_at=2026-10-18T23:34:20Z
+# exit code: 1
+Council doctor: root = <operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders
+PASS layout inventory complete
+PASS SKILL.md frontmatter name is council-of-wise-elders
+PASS versions agree: version=1.0.15 skill-version.txt=v1.0.15 frontmatter=1.0.15
+PASS roster is the fixed nine seats in order
+INFO seat simon-sinek: pack_status=built_bibliographic_only owner=CWE-013
+INFO seat td-jakes: pack_status=built_bibliographic_only owner=CWE-014
+INFO seat oprah-winfrey: pack_status=built_partial owner=CWE-015
+INFO seat tiffany-aliche: pack_status=built_bibliographic_only owner=CWE-016
+INFO seat russell-brunson: pack_status=built_primary_teaching_based owner=CWE-017
+INFO seat michelle-obama: pack_status=built_bibliographic_only owner=CWE-018
+INFO seat brene-brown: pack_status=built_bibliographic_only owner=CWE-019
+INFO seat dennis-kimbro: pack_status=built_bibliographic_only owner=CWE-020
+INFO seat les-brown: pack_status=built_partial owner=CWE-021
+PASS all nine profile labels exact, config and profiles agree
+PASS JSON files parsed: 183
+PASS no council state files inside the skill folder
+PASS source archive SHA-256 matches the source manifest
+FAIL manifest drift: computed 06d8b2107cd1cfcd5eaee23d278be46b1beb363fa0cc1ec7091bdcd8a278bbf0 over 569 files, manifest says e19d41a24881da28d9b317a8fc6bf6f9ad62f49c28a9911b561ad9a0b7ede61f over 585. Rebuild with scripts/build-bundles.mjs
+INFO not inside a git checkout: Skill 76 check skipped (source-tree check)
+DOCTOR: FAIL (1 failing check(s))

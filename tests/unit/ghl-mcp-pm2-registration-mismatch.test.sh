@@ -42,6 +42,90 @@ echo "=== ghl-mcp-pm2-registration-mismatch.test.sh ==="
 echo ""
 
 [ -f "$SRC" ] || { echo "FATAL: $SRC not found"; exit 1; }
+
+# ---------------------------------------------------------------------------
+# PRESENCE CHECK: the GHL-MCP-PM2-REGISTRATION-MISMATCH block was deleted with
+# the community MCP retirement (there is no service left whose pm2 registration
+# could mismatch). The legacy lock below stays reachable behind
+# LEGACY_PRESENT, so restoring the block re-arms the original five cases instead
+# of bypassing them. While the block is gone, what is locked is the contract
+# that replaced it: no live line in the tree may start, restart, re-register or
+# resurrect the community MCP (the mismatch decision had no consumer because
+# nothing starts it), the refusal markers stay live, and the retirement stop
+# verb must still be visible to the comment-stripper (control — otherwise every
+# "no start verb" claim below could pass on an empty strip).
+# ---------------------------------------------------------------------------
+LEGACY_PRESENT=0
+if grep -qF '# >>> GHL-MCP-PM2-REGISTRATION-MISMATCH-BEGIN' "$SRC"; then
+  LEGACY_PRESENT=1
+fi
+
+if [ "$LEGACY_PRESENT" -eq 0 ]; then
+  echo "--- RETIRED: GHL-MCP-PM2-REGISTRATION-MISMATCH block absent; locking the retirement contract instead ---"
+  echo ""
+
+  _code_of() { awk '{ sub(/#.*/, ""); print }' "$1"; }   # live code only
+  C_AUTO="$(mktemp "${TMPDIR:-/tmp}/ghl-pm2-code-auto.XXXXXX")"
+  C_INSTALL="$(mktemp "${TMPDIR:-/tmp}/ghl-pm2-code-install.XXXXXX")"
+  C_UPDATE="$(mktemp "${TMPDIR:-/tmp}/ghl-pm2-code-update.XXXXXX")"
+  _code_of "$SRC" > "$C_AUTO"
+  _code_of "$REPO_ROOT/install.sh" > "$C_INSTALL"
+  _code_of "$REPO_ROOT/update-skills.sh" > "$C_UPDATE"
+
+  # Supervisor verbs that would put a retired service back under supervision.
+  START_VERB_RE='pm2[[:space:]]+(start|restart|startOrReload)[^|;&]*ghl-community-mcp'
+  START_VERB_RE="${START_VERB_RE}|ghl-community-mcp[^|;&]*pm2[[:space:]]+(start|restart|startOrReload)"
+  START_VERB_RE="${START_VERB_RE}|pm2[[:space:]]+resurrect[^|;&]*ghl"
+  START_VERB_RE="${START_VERB_RE}|launchctl[[:space:]]+(bootstrap|kickstart)[^|;&]*com\.clawd\.ghl-mcp"
+  START_VERB_RE="${START_VERB_RE}|systemctl[[:space:]]+(enable|start|restart)[^|;&]*ghl-mcp"
+
+  # P1: the decision function itself must be gone, not merely uncalled.
+  if grep -qE '_pm2_registration_mismatch[[:space:]]*\(\)[[:space:]]*\{' "$C_AUTO"; then
+    fail "P1: _pm2_registration_mismatch() is defined as live code in scripts/ghl-mcp-autostart.sh — the deleted pm2-registration fix was reintroduced without its start path"
+  else
+    pass "P1: _pm2_registration_mismatch() is not defined anywhere in the shipped autostart (comment-stripped)"
+  fi
+
+  # P2: no live code path clones/builds/starts/supervises the community MCP.
+  if grep -qE "$START_VERB_RE" "$C_AUTO" "$C_INSTALL" "$C_UPDATE"; then
+    fail "P2: a live start/restart/startOrReload/resurrect/bootstrap/enable line for the community MCP still ships (comment-stripped)"
+    grep -nE "$START_VERB_RE" "$C_AUTO" "$C_INSTALL" "$C_UPDATE" | sed 's/^/        /'
+  else
+    pass "P2: no live pm2/launchctl/systemctl start verb for ghl-community-mcp in autostart.sh, install.sh or update-skills.sh (comment-stripped)"
+  fi
+
+  # P3: the CALLER this test used to prove is gone with the fix — restoring the
+  #     helper without its caller is exactly the drift this check existed to stop.
+  if grep -qE 'start_service_vps[[:space:]]*\(\)[[:space:]]*\{' "$C_AUTO"; then
+    fail "P3: start_service_vps() is defined as live code but the registration-mismatch lock is not restored — the pm2 start strategy is unwitnessed again"
+  else
+    pass "P3: start_service_vps() (the caller that chose delete+start vs startOrReload) is not defined — no live caller starts the service at all"
+  fi
+
+  # P4: the refusal markers are why the tree may be empty of start verbs.
+  if grep -qF 'report "START_REFUSED_RETIRED"' "$C_AUTO" \
+     && grep -qE '^[[:space:]]*GHL_MCP_RETIRED=1' "$C_INSTALL"; then
+    pass "P4: retirement markers hold — autostart reports START_REFUSED_RETIRED and install.sh declares GHL_MCP_RETIRED=1"
+  else
+    fail "P4: a retirement refusal marker is missing (START_REFUSED_RETIRED in autostart.sh, GHL_MCP_RETIRED=1 in install.sh)"
+  fi
+
+  # P5 (control): the retirement transaction's STOP verb must still be visible
+  #     as live code, proving the comment-stripper leaves supervisor verbs
+  #     readable — so P2's pass is "no start verb", not "no verbs at all".
+  if grep -qF 'pm2 delete' "$C_AUTO"; then
+    pass "P5: control — comment-stripped autostart still shows the retirement STOP verb (pm2 delete); P2 passed because no START verb ships, not because the strip is empty"
+  else
+    fail "P5: control failed — comment-stripped scripts/ghl-mcp-autostart.sh contains no 'pm2 delete' stop verb, so the absence checks above prove nothing"
+  fi
+
+  rm -f "$C_AUTO" "$C_INSTALL" "$C_UPDATE"
+
+  echo ""
+  echo "=== Result: $FAILURES failure(s) ==="
+  [ "$FAILURES" -eq 0 ] && exit 0 || exit 1
+fi
+
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required"; exit 1; }
 
 BLOCK="$(mktemp "${TMPDIR:-/tmp}/ghl-pm2-mismatch-block.XXXXXX")"

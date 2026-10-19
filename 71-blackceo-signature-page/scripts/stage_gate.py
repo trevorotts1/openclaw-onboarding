@@ -48,7 +48,7 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop",
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:noop",
                  "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
 
 
@@ -88,26 +88,46 @@ def save_state(run_dir, state):
     return state_path
 
 
+def design_board_start_failures(run_dir, stage):
+    """SPF021: the design-board stage starts only on the client's resolved brand colors
+    (resolution consumed from scripts/brand_colors.py through design_board.py)."""
+    if stage != "design-board":
+        return []
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import design_board
+        design_board.brand_resolution(run_dir)
+    except design_board.BoardError as exc:
+        return [f"stage design-board cannot start: {exc}"]
+    finally:
+        sys.path.pop(0)
+    return []
+
+
 def brand_path_for(run_dir):
-    """Resolve the run's brand file. intake.json names it; fallback is the skill's own BlackCEO file."""
-    intake = run_dir / "intake.json"
-    if intake.exists():
-        try:
-            data = json.loads(intake.read_text(encoding="utf-8"))
-            bf = data.get("brand_file")
-            if bf:
-                p = Path(bf)
-                return p if p.is_absolute() else (run_dir / bf)
-        except Exception:
-            pass
-    return SKILL_ROOT / "assets" / "brand" / "blackceo-brand.json"
+    """The run's brand file: the one scripts/brand_colors.py resolved (see brand_colors.brand_path)."""
+    return _brand_colors().brand_path(run_dir)
 
 
-# Test hook: a run folder may pin its own brand file for gate builtins.
+def _brand_colors():
+    """scripts/brand_colors.py (SPF019): the brand-color resolution every image stage passes."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import brand_colors
+    finally:
+        sys.path.pop(0)
+    return brand_colors
+
+
+def brand_color_failures(run_dir, stage):
+    """Refusal lines when `stage` makes images and the client's brand colors are unresolved."""
+    line = _brand_colors().failure(run_dir, stage)
+    return [f"stage {stage}: {line}"] if line else []
+
+
 def brand_path_for_checked(run_dir):
-    pinned = run_dir / "private" / "brand.json"
-    if pinned.exists():
-        return pinned
+    """Gate builtins read the same resolved file as every other check (a run's private/brand.json
+    pin counts only when brand_colors.resolve accepts it)."""
     return brand_path_for(run_dir)
 
 
@@ -162,15 +182,23 @@ def fonts_derivable(brand_file):
             and policy.get("when_brand_fonts_missing") == "derive-document")
 
 
-def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
+def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     """Substitute {run_dir}/{brand}/{file}/{sauce} in a validator command.
 
-    Per-file validators ({file} in the template) return ("__per_file__", cmd, files)
-    with every OTHER placeholder already substituted, so run_validators only has to
-    swap {file} once per file.
+    Per-file validators ({file} in the template) return a 4-tuple
+    ("__per_file__", raw_template, files, substitutions): the template is left
+    unsubstituted so the caller can tokenize once and substitute inside tokens,
+    keeping a path that contains spaces in one argv entry.
+
+    as_argv=True returns an already-tokenized argv list for the non-per-file
+    case instead of a string, for the same reason (the gate runs it directly).
     """
     brand = brand_path_for(run_dir)
     spec = STAGES[stage]
+    # S44-05: the substituted values are shell tokens, not raw text. A run
+    # directory containing a space (or non-ASCII) must survive the
+    # shlex.split in run_one_validator as ONE argv entry, so quote each
+    # value before it enters the command string.
     substitutions = {
         "{run_dir}": str(run_dir),
         "{brand}": str(brand),
@@ -218,18 +246,21 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
             sauce = ""
     # Always substitute {sauce}, even when empty: an unsubstituted token would be
     # shipped to the validator as a literal argument.
+    # An empty {sauce} must stay empty (quoting "" would add a spurious
+    # empty argv entry); a set flag is a single safe token.
     substitutions["{sauce}"] = sauce
     if "{file}" in cmd:
         if not files:
             return None, [f"per-file validator has no files to validate "
                           f"(glob {per_file!r} matched none and the receipt lists none)"]
-        # Per-file validators run per file; {file} is replaced once per file -> expand to N commands.
-        per_file_cmd = cmd
-        for k, v in substitutions.items():
-            per_file_cmd = per_file_cmd.replace(k, v)
-        return ("__per_file__", per_file_cmd, files), []
+        # Per-file validators run once per file. Return the template UNSUBSTITUTED
+        # with the substitution map, so the caller tokenizes once and substitutes
+        # inside tokens ({file} included) instead of re-tokenizing a path.
+        return ("__per_file__", cmd, files, substitutions), []
     if files:
         substitutions["{file}"] = files[0]
+    if as_argv:
+        return substitute_argv(cmd, substitutions), []
     for k, v in substitutions.items():
         cmd = cmd.replace(k, v)
     return cmd, []
@@ -386,35 +417,67 @@ def run_validators(run_dir, stage, receipt):
     spec = STAGES[stage]
     failures = []
     for raw in spec.get("validators", []):
-        resolved, rlines = resolve_brand_placeholder(raw, run_dir, stage, receipt)
+        # The launch profile flag is appended to the template before tokenizing:
+        # the flag is its own argv entry either way.
+        raw, profile_line = apply_launch_profile(raw, run_dir)
+        if profile_line:
+            failures.append(profile_line)
+            continue
+        resolved, rlines = resolve_brand_placeholder(raw, run_dir, stage, receipt,
+                                                     as_argv=True)
         failures.extend(rlines)
         if resolved is None:
             continue
         if isinstance(resolved, tuple) and resolved[0] == "__per_file__":
-            _, cmd_tpl, files = resolved
-            cmd_tpl, profile_line = apply_launch_profile(cmd_tpl, run_dir)
-            if profile_line:
-                failures.append(profile_line)
-                continue
+            _, cmd_tpl, files, substitutions = resolved
+            # Split the template ONCE, then substitute {file} inside the matching
+            # argv entries: a file path that contains spaces must stay ONE
+            # argument instead of being re-tokenized by shlex.split.
+            argv_tpl = substitute_argv(cmd_tpl, substitutions)
             for fpath in files:
-                cmd = cmd_tpl.replace("{file}", fpath)
-                line = run_one_validator(cmd, run_dir)
+                argv = [tok.replace("{file}", fpath) for tok in argv_tpl]
+                line = run_one_validator(argv, run_dir)
                 if line:
                     failures.append(line)
         else:
-            resolved, profile_line = apply_launch_profile(resolved, run_dir)
-            if profile_line:
-                failures.append(profile_line)
-                continue
             line = run_one_validator(resolved, run_dir)
             if line:
                 failures.append(line)
     return failures
 
 
+def substitute_argv(template, substitutions):
+    """Tokenize a validator template ONCE, then substitute inside each token.
+
+    Substituting into the string first and splitting afterwards tears a path
+    that contains a space into several arguments. A token that substitutes to
+    nothing (an unengaged {sauce}) is dropped, as the old string form dropped it.
+    """
+    argv = []
+    for tok in shlex.split(template):
+        substituted = tok
+        had_placeholder = False
+        for k, v in substitutions.items():
+            if k in substituted:
+                had_placeholder = True
+            substituted = substituted.replace(k, v)
+        if substituted or not had_placeholder:
+            argv.append(substituted)
+    return argv
+
 def run_one_validator(cmd, run_dir):
-    """Run one validator command; return None on exit 0 else a failure line."""
-    parts = shlex.split(cmd)
+    """Run one validator command; return None on exit 0 else a failure line.
+
+    `cmd` is either a shell-style string (split here) or an already-split argv
+    list. Callers that substitute a path into a template pass argv, so a path
+    containing spaces is never re-tokenized.
+    """
+    if isinstance(cmd, str):
+        parts = shlex.split(cmd)
+        label = cmd
+    else:
+        parts = list(cmd)
+        label = shlex.join(parts)
     if not parts:
         return "validator failed: empty command (nothing to run)"
     if parts[0] in GATE_BUILTINS:
@@ -427,12 +490,12 @@ def run_one_validator(cmd, run_dir):
         proc = subprocess.run(parts, capture_output=True, text=True, timeout=600,
                               cwd=str(SKILL_ROOT))
     except subprocess.TimeoutExpired:
-        return f"validator timed out: {cmd}"
+        return f"validator timed out: {label}"
     if proc.returncode != 0:
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
         detail = (out or err or "(no output)")[:600]
-        return f"validator exit {proc.returncode}: {cmd}\n    {detail}"
+        return f"validator exit {proc.returncode}: {label}\n    {detail}"
     return None
 
 
@@ -531,6 +594,9 @@ def run_builtin(name, args, run_dir):
     """Built-in gate validators."""
     if name == "gate:must_supply":
         brand = brand_path_for_checked(run_dir)
+        if brand.name == _brand_colors().UNRESOLVED:
+            # no owned, colored brand file: say so (and ask) instead of "file unreadable"
+            return "gate:must_supply: " + _brand_colors().failure(run_dir)
         problems = brand_must_supply(brand)
         if problems:
             return "gate:must_supply: " + "; ".join(problems)
@@ -543,6 +609,25 @@ def run_builtin(name, args, run_dir):
         if not isinstance(intake, dict) or intake.get("image_engine") not in ("kie", "agnes"):
             return ("gate:intake_engine: intake.json must carry image_engine \"kie\" or \"agnes\" "
                     "(write it with scripts/write_intake.py)")
+        return None
+    if name == "gate:intake_design_style":
+        # The client chooses A Block, B Circle or C Hybrid before any wireframe
+        # (references/design-styles.md). A production run cannot close intake
+        # without a recorded choice; test runs are exempt and carry no style.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"gate:intake_design_style: intake.json unreadable ({exc})"
+        if not isinstance(intake, dict):
+            return "gate:intake_design_style: intake.json is not an object"
+        if intake.get("test_run") is True and not intake.get("design_style"):
+            return None
+        if intake.get("design_style") not in ("A", "B", "C") or intake.get(
+                "design_style_source") not in ("client_choice", "recommended_accepted"):
+            return ("gate:intake_design_style: intake.json must carry design_style A, B or C and "
+                    "design_style_source client_choice or recommended_accepted; ask the client with "
+                    "`python3 scripts/design_style.py question`, then record it with "
+                    "scripts/write_intake.py --design-style (references/design-styles.md)")
         return None
     if name == "gate:noop":
         # Test-only builtin: always passes.
@@ -1908,11 +1993,18 @@ def run_item_validators(run_dir, stage, artifact_rel):
         except Exception:
             sauce = ""
     for raw in spec.get("validators", []):
-        cmd = (raw.replace("{run_dir}", str(run_dir))
-                  .replace("{brand}", str(brand))
-                  .replace("{file}", str(run_dir / artifact_rel))
-                  .replace("{sauce}", sauce))
-        line = run_one_validator(cmd, run_dir)
+        # Split the template ONCE, then substitute inside each argv entry, so a
+        # run folder path containing spaces is never re-tokenized. A placeholder
+        # that substitutes to nothing (an unengaged {sauce}) drops its token
+        # exactly as it did when the command was a substituted string.
+        substitutions = {
+            "{run_dir}": str(run_dir),
+            "{brand}": str(brand),
+            "{file}": str(run_dir / artifact_rel),
+            "{sauce}": sauce,
+        }
+        argv = substitute_argv(raw, substitutions)
+        line = run_one_validator(argv, run_dir)
         if line:
             failures.append(line)
     return failures
@@ -2168,7 +2260,7 @@ def cmd_check_item(run_dir, stage, item_id):
     if entry.get("status") == "blocked":
         return fail_exit([f"item {item_id} of stage {stage} is blocked: "
                           f"{entry.get('blocked_reason', 'no reason recorded')}"])
-    failures = item_dependency_failures(run_dir, stage, item_id)
+    failures = item_dependency_failures(run_dir, stage, item_id) + brand_color_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: item {item_id} of stage {stage} may start (its own "
@@ -2885,7 +2977,8 @@ def cmd_check(run_dir, stage):
         hygiene_failures = browser_hygiene_pass(run_dir, stage)
         if hygiene_failures:
             return fail_exit(hygiene_failures)
-    failures = check_requires(run_dir, stage)
+    failures = check_requires(run_dir, stage) + brand_color_failures(run_dir, stage)
+    failures += design_board_start_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: stage {stage} may start (all dependencies closed with matching receipts and artifacts)")
@@ -2910,7 +3003,7 @@ def cmd_close(run_dir, stage):
             record_not_applicable(run_dir, stage, reason)
             print(f"NOT APPLICABLE: stage {stage} recorded in state.json ({reason})")
             return 0
-    failures = []
+    failures = brand_color_failures(run_dir, stage)
     # Item 33: the reaper pass runs before anything else is evaluated,
     # so a run whose runner died still gets its sessions accounted, and
     # the receipt it writes satisfies the stage's artifact contract.
@@ -3305,6 +3398,43 @@ def compute_review_mode(run_dir):
             f"{len(author_sessions)} author sessions, no overlap)")
 
 
+# Fix 12.4 (task 4.3): the four-image rule, enforced at report time.
+# The per-stage artifacts prove presence per glob; this proves the SET
+# exists for every page role the run declares. A run missing any of the
+# four can never report complete.
+FOUR_IMAGE_GLOBS = (
+    "desktop-wireframe/section-*.png",
+    "mobile-tablet/section-*.png",
+    "final-mockups/desktop/part-*.png",
+    "final-mockups/mobile/part-*.png",
+)
+
+def declared_page_roles(run_dir):
+    """The page roles this run declares (references/page-request.schema.json
+    enum). A launch-context run records intake.json's launch.page_role and
+    places the same request at run_dir/page-request.json; a classic run with
+    neither builds the signature landing page, the skill's one page role."""
+    intake = intake_data(run_dir)
+    launch = intake.get("launch")
+    if isinstance(launch, dict) and isinstance(launch.get("page_role"), str) \
+            and launch["page_role"]:
+        return [launch["page_role"]]
+    try:
+        request = json.loads((run_dir / "page-request.json").read_text(encoding="utf-8"))
+    except Exception:
+        request = None
+    if isinstance(request, dict) and isinstance(request.get("page_role"), str) \
+            and request["page_role"]:
+        return [request["page_role"]]
+    return ["landing"]
+
+def four_image_gaps(run_dir):
+    """(page_role, glob) pairs whose glob resolves to no file in the run."""
+    return [(role, pattern)
+            for role in declared_page_roles(run_dir)
+            for pattern in FOUR_IMAGE_GLOBS
+            if not any(run_dir.glob(pattern))]
+
 def cmd_report(run_dir):
     state, _ = load_state(run_dir)
     now = datetime.now(timezone.utc)
@@ -3426,6 +3556,11 @@ def cmd_report(run_dir):
         lines.append("Browser hygiene: not recorded.")
     lines.append("")
 
+    # Fix 12.4: the four-image rule forces incomplete; it never refuses the
+    # report, because the report is where the absence must be visible.
+    image_gaps = four_image_gaps(run_dir)
+    if image_gaps:
+        required_closed = False
     overall = "RUN COMPLETE" if required_closed else "RUN INCOMPLETE"
     # Item 6, rule 1: a test run's report never reads as a production
     # delivery, even when every stage closed (a test run cannot close
@@ -3449,7 +3584,14 @@ def cmd_report(run_dir):
     if not required_closed:
         missing = [s for s in ORDER
                    if stage_line(run_dir, s, state) in ("FAIL", "BLOCKED", NOT_RUN)]
-        lines.append(f"**{overall}** — not closed: {', '.join(missing)}")
+        reasons = []
+        if missing:
+            reasons.append(f"not closed: {', '.join(missing)}")
+        if image_gaps:
+            reasons.append("four-image rule not satisfied: "
+                           + ", ".join(f"{role} missing {pattern}"
+                                       for role, pattern in image_gaps))
+        lines.append(f"**{overall}** — " + "; ".join(reasons))
     else:
         lines.append(f"**{overall}**")
     rm_line = compute_review_mode(run_dir)

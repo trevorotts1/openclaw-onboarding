@@ -61,9 +61,9 @@
    - Duplicate of another cron entry (exact same command, two entries).
 2. Does the cron target match any of these KNOWN feature crons (NEVER auto-disable)?
    - Skill 44 CAF workflow build cron (per memory `skill44-caf-workflow-build.md`).
-   - GHL MCP autostart / health cron (per memory `ghl-mcp-autostart-session-kill-loop.md` -- this is a KNOWN loop but the FIX is host-level watchdog + notify-on-change, NOT cron deletion).
    - ZHC closeout cron.
    - Any cron referencing a business workflow by name.
+   > **RETIRED -- the GHL community MCP autostart / health cron is NOT a feature cron.** That service was retired (GU-019/GU-020/GU-021); the older advice to protect it with a host-level watchdog no longer applies. A surviving `ghl-mcp-autostart` / `ghl-mcp-probe` cron is a RESURRECTION RESIDUAL, not protected workflow: run the retirement verifier (`scripts/ghl-mcp-assert-runtime.sh`) and follow its `--retire` path. Never re-enable it, never re-add it, and never route it to `needs_owner_decision` as feature work.
 3. If KNOWN maintenance (step 1): classify as Tier 1 or 2 disable (comment out).
 4. If KNOWN feature (step 2): mark as `needs_owner_decision`; escalate to Rescue Rangers (S5). Do NOT touch it.
 5. If UNKNOWN: mark as `needs_owner_decision`; escalate. Default is feature-bearing until proven otherwise.

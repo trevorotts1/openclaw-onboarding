@@ -182,7 +182,7 @@ if [[ "$SELF_TEST_MODE" == "1" ]]; then
   # T1: key in .env store, no models.providers block -> NEEDS_BLOCK (exit 3)
   echo "[T1] Key present in .env store, no models.providers block -> NEEDS_BLOCK (exit 3)"
   T1_ENV=$(mktemp /tmp/cc-st1env-XXXXXX)
-  T1_CFG=$(mktemp /tmp/cc-st1cfg-XXXXXX.json)
+  T1_CFG=$(mktemp /tmp/cc-st1cfg-XXXXXX)
   echo "OPENROUTER_API_KEY=sk-test-selftest-t1" >> "$T1_ENV"
   echo '{"models":{"providers":{}}}' > "$T1_CFG"
 
@@ -204,7 +204,7 @@ if [[ "$SELF_TEST_MODE" == "1" ]]; then
   echo ""
   echo "[T2] Block 'openrouter-grok' referencing \$OPENROUTER_API_KEY counts as openrouter -> PRESENT_WITH_BLOCK (exit 0)"
   T2_ENV=$(mktemp /tmp/cc-st2env-XXXXXX)
-  T2_CFG=$(mktemp /tmp/cc-st2cfg-XXXXXX.json)
+  T2_CFG=$(mktemp /tmp/cc-st2cfg-XXXXXX)
   echo "OPENROUTER_API_KEY=sk-test-selftest-t2" >> "$T2_ENV"
   python3 -c "
 import json
@@ -227,7 +227,7 @@ open('${T2_CFG}','w').write(json.dumps(d))
   # T3: no key anywhere, live_env_checked=true -> GENUINELY-ABSENT (exit 1)
   echo ""
   echo "[T3] No key anywhere (live_env_checked=true + empty where_found) -> GENUINELY-ABSENT (exit 1)"
-  T3_CFG=$(mktemp /tmp/cc-st3cfg-XXXXXX.json)
+  T3_CFG=$(mktemp /tmp/cc-st3cfg-XXXXXX)
   echo '{"models":{"providers":{}}}' > "$T3_CFG"
 
   OC_CONFIG_FILE="$T3_CFG" _SELFTEST_INJECT_EMPTY=1 \

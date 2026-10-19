@@ -1,39 +1,48 @@
-#!/usr/bin/env bash
-# self-update.sh — v1.0.0
+#!/bin/sh
+# self-update.sh — v1.1.0
 #
-# The box's own self-update runner. Starts itself in a detached session, then:
+# The box's own self-update runner. Starts itself in a detached session, then
+# runs these steps IN THIS ORDER (Trevor, transcript L14):
 #
-#   step 1  upgrade   OpenClaw to the version the TRIGGER passes in (Mac only;
+#   step 1  999-setup the 999 installer, cloned from 999 main when absent, with
+#                     NINE_API_DOCS pointing at a box-local mode-600 file and no
+#                     terminal attached
+#   step 2  9router   install-9router-guards.sh --upgrade <pinned target>
+#   step 3  upgrade   OpenClaw to the version the TRIGGER passes in (Mac only;
 #                     skipped on a Docker box — the host side already did it)
-#   step 2  update    scripts/weekly-full-update.sh (the FULL path, no terminal)
-#   step 3  999-setup the 999 installer, with NINE_API_DOCS pointing at a
-#                     box-local mode-600 file and no terminal attached
-#   step 4  9router   install-9router-guards.sh --upgrade <pinned target>
+#   step 4  update    scripts/weekly-full-update.sh (the FULL path, no terminal)
 #
-# It writes ONE status file in the persistent OpenClaw root and never messages
-# the client or calls a messaging tool.
+# Every step's RAW exit code is recorded in the JSON status file and the job
+# CONTINUES after a failed step. The single exception is OpenClaw rc 70 (rollback
+# failed): the status is written and the job exits 20 at once, because a human is
+# needed. The final exit code is the code of the FIRST failed step.
+#
+# The job writes ONE status file the operator watch reads:
+#   <openclaw root>/fleet-refresh/agent-pull-status.json
+# with the fields in references/agent-pull.md section 10.9 and SKILL.md:362.
+# The per-roll log file is kept.
+#
+# The launcher prints, as its FIRST stdout line:
+#   RUN_ID=ap-<ROLL_ID>-<epoch>-<pid>
+# and passes that id to the detached child. A second launch on the same box
+# prints the existing RUN_ID and exits 0: never two updaters at once.
 #
 # Exit codes (the detached child's; the launcher returns 0 once it has started):
 #   0   success
-#   20  upgrade failure          (oc-atomic-upgrade.sh non-zero — 78 refused,
-#                                 70 rollback failed, 3 undetermined)
-#   21  update failure           (weekly-full-update.sh non-zero)
-#   22  refusal                  (no root, no target version, no pin, missing tools)
-#   23  999 setup failure        (prereqs, no checkout, api-docs, installer rc)
-#   24  9Router upgrade failure
+#   20  OpenClaw rc 70 — rollback failed, human needed
+#   *   otherwise the RAW exit code of the first failed step
+#   22  refusal (no root, no target version, missing tools)
 #
-# Every step is recorded, so a failure names the step that failed and the last
-# line of its output. No key value is ever printed, echoed, or written to the
-# status file or the log.
+# No key value is ever printed, echoed, or written to the status file or the log.
 #
 # agent-pull-fix: R5
 # agent-pull-fix: R10
 #
-# INTERPRETER: macOS bash 3.2. No associative arrays, no mapfile, no ${x^^},
-# no heredoc nested inside $( ).
-set -uo pipefail
+# INTERPRETER: /bin/sh, POSIX-safe, macOS bash 3.2 safe. No arrays, no
+# associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
+set -u
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
 
 EX_OK=0
@@ -45,23 +54,35 @@ EX_9ROUTER=24
 
 SELF="$0"
 MODE_DETACHED=0
+MODE_FOREGROUND=0
 ROLL_ID=""
+RUN_ID=""
+LAUNCH_EPOCH=""
 TARGET_VERSION=""
 NINE9ROUTER_TARGET="${NINEROUTER_TARGET:-}"
-PASSTHRU=()
 
 # The 999 installer's own required key names (its parse_api_docs contract) and
-# the plan names it validates. Aliases are included so a box that stores a key
-# under its family alias is still found. NEVER printed.
+# the aliases a box may store a key under. NEVER printed. Writing canonicalises:
+# OLLAMA_CLOUD_API_KEY -> OLLAMA_API_KEY, AGNES_AI_API_KEY -> AGNES_API_KEY.
 KEY_NAMES="OLLAMA_API_KEY OLLAMA_CLOUD_API_KEY DEEPSEEK_API_KEY AGNES_API_KEY AGNES_AI_API_KEY OPENROUTER_API_KEY"
+CANON_KEYS="OLLAMA_API_KEY DEEPSEEK_API_KEY AGNES_API_KEY OPENROUTER_API_KEY"
 PLAN_NAMES="OLLAMA_PLAN AGNES_PLAN"
 API_DOCS_DIR="$HOME/.config/blackceo-999"
 API_DOCS_FILE="$API_DOCS_DIR/api-docs.md"
 
-GH_AUTH="PENDING"
+ROLLED_BACK=0
+NEEDS_RESTART=0
+STEP_CODES=""
+FIRST_FAIL=""
+STUCK_NOTE=""
+LOCK_OWNED=0
+LOCK_DIR=""
+WORK=""
+
+now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 
 usage() {
-  sed -n '2,30p' "$SELF"
+  sed -n '2,42p' "$SELF"
   echo ""
   echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION]"
   echo "       self-update.sh --roll-id ID --openclaw-target X.Y.Z --foreground   (no detach; for tests)"
@@ -72,8 +93,9 @@ usage() {
 }
 
 # ── status ───────────────────────────────────────────────────────────────────
-# One file, rewritten atomically. Only these fields, and last_line is redacted:
-# a child that misbehaves must not be able to put a key in here.
+# One JSON file, rewritten atomically (temp file + os.replace, mode 600). The
+# error_tail is the last 20 log lines through _redact: a child that misbehaves
+# must not be able to put a key in here.
 
 _redact() {
   sed -E \
@@ -82,30 +104,131 @@ _redact() {
     -e 's/[A-Fa-f0-9]{32,}/<redacted>/g' 2>/dev/null | cut -c1-400
 }
 
-write_status() {  # step exit_code last_line
-  local t
-  t="$STATUS.tmp.$$"
-  {
-    printf 'step=%s\n' "$1"
-    printf 'roll_id=%s\n' "${ROLL_ID:-}"
-    printf 'pid=%s\n' "$$"
-    printf 'started_utc=%s\n' "$STARTED"
-    printf 'updated_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-    printf 'exit_code=%s\n' "$2"
-    printf 'last_line=%s\n' "$3"
-    printf 'gh_auth=%s\n' "$GH_AUTH"
-    printf 'runner_version=%s\n' "$VERSION"
-  } > "$t" 2>/dev/null && chmod 600 "$t" 2>/dev/null && mv -f "$t" "$STATUS" 2>/dev/null
+log() { printf '[self-update %s] %s\n' "$(now_utc)" "$*"; }
+
+record_step() {  # name raw_rc
+  STEP_CODES="${STEP_CODES}$1=$2;"
+}
+
+record_fail() {  # raw_rc note
+  [ -n "$FIRST_FAIL" ] || FIRST_FAIL="$1"
+  [ -n "$STUCK_NOTE" ] || STUCK_NOTE="$2"
+}
+
+read_stamp() {
+  head -n1 "$ROOT/skills/.onboarding-version" 2>/dev/null | tr -d '[:space:]'
+}
+
+json_version() {  # package.json -> version
+  [ -n "$1" ] && [ -f "$1" ] || { printf ''; return 0; }
+  python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("version",""))
+except Exception: print("")' "$1" 2>/dev/null | head -n1
+}
+
+oc_pkg() {
+  for _p in "$ROOT/npm-global/lib/node_modules/openclaw/package.json" \
+            "$HOME/.openclaw/npm-global/lib/node_modules/openclaw/package.json" \
+            /data/.npm-global/lib/node_modules/openclaw/package.json \
+            /home/node/.openclaw/npm-global/lib/node_modules/openclaw/package.json \
+            "$HOME/.npm-global/lib/node_modules/openclaw/package.json" \
+            "${NPM_CONFIG_PREFIX:-/nonexistent}/lib/node_modules/openclaw/package.json"; do
+    case "$_p" in /nonexistent/*) continue ;; esac
+    if [ -f "$_p" ]; then printf '%s' "$_p"; return 0; fi
+  done
+  if command -v npm >/dev/null 2>&1; then
+    _p="$(npm root -g 2>/dev/null)/openclaw/package.json"
+    [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
+  fi
+  printf ''
+}
+
+oc_version() { json_version "$(oc_pkg)"; }
+
+nr_pkg() {
+  for _p in "$HOME/.local/share/999/npm/lib/node_modules/9router/package.json" \
+            "${NPM_CONFIG_PREFIX:-/nonexistent}/lib/node_modules/9router/package.json"; do
+    case "$_p" in /nonexistent/*) continue ;; esac
+    if [ -f "$_p" ]; then printf '%s' "$_p"; return 0; fi
+  done
+  if command -v npm >/dev/null 2>&1; then
+    _nr="$(npm root -g --prefix "$HOME/.local/share/999/npm" 2>/dev/null)"
+    if [ -n "$_nr" ] && [ -f "$_nr/9router/package.json" ]; then
+      printf '%s' "$_nr/9router/package.json"; return 0
+    fi
+  fi
+  printf ''
+}
+
+# File-based only: running the 9router CLI can trigger a download, and the
+# status file must never cause a side effect.
+nr_version() { json_version "$(nr_pkg)"; }
+
+status_write() {  # phase finished stuck
+  mkdir -p "$ROOT/fleet-refresh" 2>/dev/null || return 0
+  _tail="${TMPDIR:-/tmp}/self-update-tail.$$"
+  tail -n 20 "$LOG" 2>/dev/null | _redact > "$_tail" 2>/dev/null || : > "$_tail"
+  [ -f "$ROOT/fleet-refresh/needs_host_restart" ] && NEEDS_RESTART=1 || NEEDS_RESTART=0
+  python3 - "$STATUS_JSON" "$RUN_ID" "$ROLL_ID" "$1" "$STARTED" "$(now_utc)" "$2" \
+    "$STEP_CODES" "$STAMP_BEFORE" "$(read_stamp)" "$OC_BEFORE" "$(oc_version)" \
+    "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$3" "$_tail" <<'PY'
+import json, os, sys
+(dest, run_id, roll_id, phase, started, updated, finished, codes,
+ stamp_b, stamp_a, oc_b, oc_a, nr_b, nr_a, rolled_back, needs_restart,
+ stuck, tailf) = sys.argv[1:19]
+slow = {}
+for part in (codes or "").split(";"):
+    if "=" not in part:
+        continue
+    k, v = part.split("=", 1)
+    try:
+        slow[k] = int(v)
+    except ValueError:
+        pass
+try:
+    with open(tailf, "r", errors="replace") as f:
+        tail = f.read()[-8000:]
+except Exception:
+    tail = ""
+d = {
+    "run_id": run_id,
+    "roll_id": roll_id,
+    "phase": phase,
+    "started_utc": started,
+    "updated_utc": updated,
+    "finished_utc": finished or "",
+    "step_exit_codes": slow,
+    "stamp_before": stamp_b,
+    "stamp_after": stamp_a,
+    "openclaw_before": oc_b,
+    "openclaw_after": oc_a,
+    "ninerouter_before": nr_b,
+    "ninerouter_after": nr_a,
+    "rolled_back": rolled_back == "1",
+    "needs_host_restart": needs_restart == "1",
+    "stuck_reason": stuck,
+    "error_tail": tail,
+}
+d = {k: (v.replace("\r", " ") if isinstance(v, str) else v) for k, v in d.items()}
+os.makedirs(os.path.dirname(dest), exist_ok=True)
+tmp = dest + ".tmp.%d" % os.getpid()
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(d, f, separators=(",", ":"))
+    f.write("\n")
+os.replace(tmp, dest)
+try:
+    os.chmod(dest, 0o600)
+except OSError:
+    pass
+PY
+  rm -f "$_tail" 2>/dev/null
   return 0
 }
 
-log() { printf '[self-update %s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
-
-last_line() { tail -n 1 "$LOG" 2>/dev/null | _redact; }
-
-finish() {  # exit_code step
-  write_status "$2" "$1" "$(last_line)"
-  log "END step=$2 exit=$1"
+finish() {  # exit_code phase [stuck]
+  status_write "$2" "$(now_utc)" "${3:-$STUCK_NOTE}"
+  log "END phase=$2 exit=$1"
   exit "$1"
 }
 
@@ -116,6 +239,12 @@ while [ "$#" -gt 0 ]; do
     --roll-id)
       [ "$#" -ge 2 ] || { echo "self-update.sh: --roll-id needs a value" >&2; exit "$EX_REFUSE"; }
       ROLL_ID="$2"; shift 2 ;;
+    --run-id)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: --run-id needs a value" >&2; exit "$EX_REFUSE"; }
+      RUN_ID="$2"; shift 2 ;;
+    --launch-epoch)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: --launch-epoch needs a value" >&2; exit "$EX_REFUSE"; }
+      LAUNCH_EPOCH="$2"; shift 2 ;;
     --openclaw-target|--target-version)
       [ "$#" -ge 2 ] || { echo "self-update.sh: $1 needs a value" >&2; exit "$EX_REFUSE"; }
       TARGET_VERSION="$2"; shift 2 ;;
@@ -123,7 +252,7 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { echo "self-update.sh: $1 needs a value" >&2; exit "$EX_REFUSE"; }
       NINE9ROUTER_TARGET="$2"; shift 2 ;;
     --detached)    MODE_DETACHED=1; shift ;;
-    --foreground)  MODE_DETACHED=1; shift ;;
+    --foreground)  MODE_FOREGROUND=1; shift ;;
     -h|--help)     usage 0 ;;
     *) echo "self-update.sh: unknown argument: $1 (try --help)" >&2; exit "$EX_REFUSE" ;;
   esac
@@ -135,6 +264,12 @@ case "${ROLL_ID:-}" in
   "") ;;
   *[!A-Za-z0-9._-]*|.*) echo "self-update.sh: REFUSED — --roll-id may contain only A-Z a-z 0-9 . _ - and may not start with '.'" >&2; exit "$EX_REFUSE" ;;
 esac
+
+# The launcher's run id. Printed as the FIRST stdout line, below, and passed to
+# the detached child. Kept when the child receives it with --run-id.
+if [ -z "$RUN_ID" ]; then
+  RUN_ID="ap-${ROLL_ID}-$(date -u +%s)-$$"
+fi
 
 # ── root, log, status ────────────────────────────────────────────────────────
 
@@ -149,231 +284,165 @@ else
   exit "$EX_REFUSE"
 fi
 
-# One status file and one log per ROLL, so two rolls on one box can never
-# overwrite each other's run. Without a roll id the legacy single-file names
-# are kept.
+REFRESH_DIR="$ROOT/fleet-refresh"
+mkdir -p "$REFRESH_DIR" 2>/dev/null || {
+  echo "self-update.sh: REFUSED — cannot create $REFRESH_DIR" >&2; exit "$EX_REFUSE"; }
+LOCK_DIR="$REFRESH_DIR/agent-pull.lock"
+STATUS_JSON="$REFRESH_DIR/agent-pull-status.json"
+
+# One log per ROLL, so two rolls on one box can never overwrite each other's
+# run. Without a roll id the legacy single-file name is kept.
 if [ -n "$ROLL_ID" ]; then
   STATUS_DIR="$ROOT/self-update"
   ( umask 077; mkdir -p "$STATUS_DIR" ) 2>/dev/null || {
     echo "self-update.sh: REFUSED — cannot create $STATUS_DIR" >&2; exit "$EX_REFUSE"; }
   chmod 700 "$STATUS_DIR" 2>/dev/null || true
   LOG="$STATUS_DIR/$ROLL_ID.log"
-  STATUS="$STATUS_DIR/$ROLL_ID.status"
 else
   mkdir -p "$ROOT/logs" 2>/dev/null || true
   LOG="$ROOT/logs/self-update.log"
-  STATUS="$ROOT/self-update.status"
 fi
 ( umask 077; : >> "$LOG" ) 2>/dev/null || {
   echo "self-update.sh: REFUSED — cannot write $LOG" >&2; exit "$EX_REFUSE"; }
 chmod 600 "$LOG" 2>/dev/null || true
-STARTED="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+STARTED="$(now_utc)"
 
 IS_DOCKER=0
 [ -f /.dockerenv ] && IS_DOCKER=1
 IS_MAC=0
 [ "$(uname -s)" = "Darwin" ] && IS_MAC=1
 
-# Validate BEFORE detaching: a refusal must be visible to the trigger as a
-# non-zero exit, not swallowed by a 0 from a launcher that already backgrounded
-# a child destined to refuse.
-if [ -z "$TARGET_VERSION" ] && [ "$IS_DOCKER" = 0 ]; then
-  log "REFUSED: no --openclaw-target (the trigger must pass the version; it is never discovered)"
-  write_status "preflight" "$EX_REFUSE" "no --openclaw-target"
+# ── single-instance lock ─────────────────────────────────────────────────────
+# mkdir is atomic. The lock holds the pid and the run id. A live pid means the
+# launch is a duplicate: print the EXISTING run id as the first stdout line and
+# exit 0. A dead pid is a crashed run: remove the directory and continue.
+
+lock_take() {
+  _lt_i=0
+  while [ "$_lt_i" -lt 20 ]; do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null
+      printf '%s\n' "$RUN_ID" > "$LOCK_DIR/run_id" 2>/dev/null
+      return 0
+    fi
+    if [ -f "$LOCK_DIR/pid" ]; then
+      _lt_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
+      case "$_lt_pid" in
+        ''|*[!0-9]*) : ;;
+        *)
+          if kill -0 "$_lt_pid" 2>/dev/null; then
+            _lt_run="$(cat "$LOCK_DIR/run_id" 2>/dev/null)"
+            printf 'RUN_ID=%s\n' "${_lt_run:-}"
+            return 2
+          fi ;;
+      esac
+      rm -rf "$LOCK_DIR" 2>/dev/null
+      continue
+    fi
+    sleep 0.1 2>/dev/null || sleep 1
+    _lt_i=$((_lt_i + 1))
+  done
+  return 1
+}
+
+cleanup() {
+  [ -n "${WORK:-}" ] && rm -rf "$WORK" 2>/dev/null
+  [ "${LOCK_OWNED:-0}" = 1 ] && rm -rf "$LOCK_DIR" 2>/dev/null
+  :
+}
+trap cleanup EXIT HUP INT TERM
+
+if [ "$MODE_DETACHED" = 0 ]; then
+  lock_take
+  _lockrc=$?
+  if [ "$_lockrc" = 2 ]; then
+    exit "$EX_OK"
+  elif [ "$_lockrc" != 0 ]; then
+    echo "self-update.sh: REFUSED — cannot create lock $LOCK_DIR" >&2
+    exit "$EX_REFUSE"
+  fi
+  LOCK_OWNED=1
+  printf 'RUN_ID=%s\n' "$RUN_ID"
+else
+  # The launcher owns the lock for this child; release it here when the job ends.
+  LOCK_OWNED=1
+fi
+
+# ── preflight ────────────────────────────────────────────────────────────────
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "self-update.sh: REFUSED — python3 missing (needed for the status contract)" >&2
   exit "$EX_REFUSE"
 fi
-if ! command -v curl >/dev/null 2>&1; then
-  log "REFUSED: curl missing — cannot fetch the update scripts from main"
-  write_status "preflight" "$EX_REFUSE" "curl missing"
+if command -v curl >/dev/null 2>&1; then :; else
+  echo "self-update.sh: REFUSED — curl missing — cannot fetch the update scripts from main" >&2
+  exit "$EX_REFUSE"
+fi
+if [ -z "$TARGET_VERSION" ] && [ "$IS_DOCKER" = 0 ]; then
+  printf '[self-update %s] REFUSED: no --openclaw-target (the trigger must pass the version; it is never discovered)\n' "$(now_utc)"
   exit "$EX_REFUSE"
 fi
 
 # ── detach ───────────────────────────────────────────────────────────────────
-# A gateway restart must never kill this. `setsid` gives a fresh session where
-# the platform has it; macOS has no setsid, so the fallback is `nohup` +
-# background, which already ignores SIGHUP from a dying parent shell.
-# ponytail: on a Mac without setsid the child shares the session but survives
-# the parent; upgrade path is a launchd job if a true new session is ever needed.
+# A gateway restart must never kill this: the child is put in its OWN SESSION
+# with Python start_new_session=True (spec 4.2 item 2). stdio is attached to the
+# per-roll log, so the child never writes to the trigger's terminal.
 
-if [ "$MODE_DETACHED" = 0 ]; then
-  PASSTHRU=(--detached)
-  [ -n "$ROLL_ID" ] && PASSTHRU=(--roll-id "$ROLL_ID" "${PASSTHRU[@]}")
-  [ -n "$TARGET_VERSION" ] && PASSTHRU=(--openclaw-target "$TARGET_VERSION" "${PASSTHRU[@]}")
-  [ -n "$NINE9ROUTER_TARGET" ] && PASSTHRU=(--ninerouter-target "$NINE9ROUTER_TARGET" "${PASSTHRU[@]}")
-
-  if command -v setsid >/dev/null 2>&1; then
-    setsid nohup bash "$SELF" "${PASSTHRU[@]}" </dev/null >>"$LOG" 2>&1 &
-  else
-    nohup bash "$SELF" "${PASSTHRU[@]}" </dev/null >>"$LOG" 2>&1 &
+if [ "$MODE_DETACHED" = 0 ] && [ "$MODE_FOREGROUND" = 0 ]; then
+  [ -n "$LAUNCH_EPOCH" ] || LAUNCH_EPOCH="$(date +%s)"
+  set -- --detached --run-id "$RUN_ID" --launch-epoch "$LAUNCH_EPOCH"
+  [ -n "$ROLL_ID" ] && set -- "$@" --roll-id "$ROLL_ID"
+  [ -n "$TARGET_VERSION" ] && set -- "$@" --openclaw-target "$TARGET_VERSION"
+  [ -n "$NINE9ROUTER_TARGET" ] && set -- "$@" --ninerouter-target "$NINE9ROUTER_TARGET"
+  CHILD="$(python3 -c 'import subprocess,sys
+p = subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL,
+                     stdout=open(sys.argv[1], "ab"), stderr=subprocess.STDOUT,
+                     start_new_session=True)
+print(p.pid)' "$LOG" bash "$SELF" "$@" 2>>"$LOG" </dev/null)"
+  if [ -z "$CHILD" ]; then
+    echo "self-update.sh: REFUSED — could not start the detached child" >&2
+    rm -rf "$LOCK_DIR" 2>/dev/null
+    exit "$EX_REFUSE"
   fi
-  CHILD=$!
-  GH_AUTH="PENDING"
-  write_status "launched" 0 "detached pid=$CHILD"
-  log "START detached pid=$CHILD target=${TARGET_VERSION:-none}"
+  # The lock must name the CHILD's pid: the launcher exits at once, so its own
+  # pid would look like a dead run on the very next launch.
+  printf '%s\n' "$CHILD" > "$LOCK_DIR/pid" 2>/dev/null
+  # The watch must see the new run before the child reaches its first step.
+  STAMP_BEFORE="$(read_stamp)"
+  OC_BEFORE="$(oc_version)"
+  NR_BEFORE="$(nr_version)"
+  status_write "launched" "" ""
+  LOCK_OWNED=0   # the child releases it in finish()
+  log "START detached pid=$CHILD run_id=$RUN_ID target=${TARGET_VERSION:-none}"
   exit "$EX_OK"
 fi
 
-# ── preflight (detached child) ───────────────────────────────────────────────
+# ── the job (detached child, or --foreground) ────────────────────────────────
 
-log "START runner v$VERSION pid=$$ root=$ROOT roll=${ROLL_ID:-none} openclaw=${TARGET_VERSION:-none} ninerouter=${NINE9ROUTER_TARGET:-none}"
-
-if [ ! -d "$ROOT" ]; then
-  log "REFUSED: OpenClaw root vanished ($ROOT)"
-  finish "$EX_REFUSE" "preflight"
+# The lock's pid is this process now; the launcher's own pid is already gone.
+if [ "$MODE_DETACHED" = 1 ] && [ -d "$LOCK_DIR" ]; then
+  printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null
 fi
+
+log "START runner v$VERSION pid=$$ root=$ROOT roll=${ROLL_ID:-none} run_id=$RUN_ID openclaw=${TARGET_VERSION:-none} ninerouter=${NINE9ROUTER_TARGET:-none}"
+
+# Pre-update values, kept for every subsequent status write.
+STAMP_BEFORE="$(read_stamp)"
+OC_BEFORE="$(oc_version)"
+NR_BEFORE="$(nr_version)"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/self-update.XXXXXX")" || {
   log "REFUSED: could not create a temp dir"
   finish "$EX_REFUSE" "preflight"
 }
-trap 'rm -rf "$WORK"' EXIT
 
 fetch() {  # url dest
   curl -fsSL --max-time 60 "$1" -o "$2" >>"$LOG" 2>&1
 }
 
-# ── step 1: OpenClaw upgrade (Mac only) ──────────────────────────────────────
-# The target version is the one the trigger passed. Nothing here discovers a
-# version — a self-update that guesses its own destination is the defect the
-# atomic upgrade exists to prevent.
-
-if [ "$IS_DOCKER" = 1 ]; then
-  log "STEP upgrade: skipped (/.dockerenv — the host side performed it)"
-  write_status "upgrade-skipped" 0 "docker box: host performed the upgrade"
-else
-  log "STEP upgrade: OpenClaw -> $TARGET_VERSION"
-  write_status "upgrade" "" "running"
-  if ! fetch "$REPO_RAW/scripts/oc-atomic-upgrade.sh" "$WORK/oc-atomic-upgrade.sh" \
-     || ! fetch "$REPO_RAW/scripts/oc-schema-migrate.py" "$WORK/oc-schema-migrate.py"; then
-    log "FAIL upgrade: could not fetch oc-atomic-upgrade.sh / oc-schema-migrate.py from main"
-    finish "$EX_UPGRADE" "upgrade"
-  fi
-  chmod 700 "$WORK/oc-atomic-upgrade.sh" 2>/dev/null || true
-  bash "$WORK/oc-atomic-upgrade.sh" --upgrade --target-version "$TARGET_VERSION" >>"$LOG" 2>&1 </dev/null
-  RC=$?
-  if [ "$RC" -ne 0 ]; then
-    log "FAIL upgrade: oc-atomic-upgrade.sh exited $RC"
-    finish "$EX_UPGRADE" "upgrade"
-  fi
-  log "OK upgrade: $TARGET_VERSION"
-fi
-
-# ── step 2: weekly full update ───────────────────────────────────────────────
-# The same entry point the Sunday cron uses: fetched from main, so the box
-# always runs the newest version of it. It never restarts the gateway and never
-# messages a client.
-
-log "STEP update: weekly-full-update.sh"
-write_status "update" "" "running"
-if ! fetch "$REPO_RAW/scripts/weekly-full-update.sh" "$WORK/weekly-full-update.sh"; then
-  log "FAIL update: could not fetch scripts/weekly-full-update.sh from main"
-  finish "$EX_UPDATE" "update"
-fi
-bash "$WORK/weekly-full-update.sh" >>"$LOG" 2>&1 </dev/null
-RC=$?
-if [ "$RC" -ne 0 ]; then
-  log "FAIL update: weekly-full-update.sh exited $RC"
-  finish "$EX_UPDATE" "update"
-fi
-log "OK update"
-
-# ── the Mac steps: 999 + 9Router ─────────────────────────────────────────────
-# Both are macOS-only and meaningless inside a container.
-
-if [ "$IS_MAC" = 0 ] || [ "$IS_DOCKER" = 1 ]; then
-  log "STEP 999-setup: skipped (not a macOS host)"
-  log "STEP 9router: skipped (not a macOS host)"
-  write_status "done" 0 "non-Mac: 999 and 9Router steps skipped"
-  finish "$EX_OK" "done"
-fi
-
-# ── env stores: find the box's OWN keys and plan names BY NAME ───────────────
-# Presence only. Values are read exactly once, and only when the api-docs file
-# has to be built — never printed, never echoed, never logged.
-
-ENV_STORES=""
-_add_store() {
-  [ -n "$1" ] && [ -f "$1" ] && [ -r "$1" ] || return 0
-  case "$ENV_STORES" in *"
-$1"*) return 0 ;; esac
-  ENV_STORES="$ENV_STORES
-$1"
-}
-_add_store "$ROOT/secrets/.env"
-_add_store "$ROOT/.env"
-_add_store "$HOME/.openclaw/secrets/.env"
-_add_store "$HOME/.openclaw/.env"
-_add_store "/data/.openclaw/secrets/.env"
-_add_store "/data/.openclaw/.env"
-for _f in "$ROOT"/secrets/*.env "$HOME/.openclaw"/secrets/*.env; do
-  _add_store "$_f"
-done
-
-ENV_STORE_COUNT=0
-while IFS= read -r _f; do [ -n "$_f" ] && ENV_STORE_COUNT=$((ENV_STORE_COUNT + 1)); done <<EOF
-$ENV_STORES
-EOF
-log "env stores searched: $ENV_STORE_COUNT (names only; no value is printed)"
-
-_name_in() {  # name -> 0 when present in any store; never prints the value
-  local _n _s
-  _n="$1"
-  while IFS= read -r _s; do
-    [ -n "$_s" ] || continue
-    if grep -Eq "^[[:space:]]*(export[[:space:]]+)?$_n=" "$_s" 2>/dev/null; then return 0; fi
-  done <<EOF
-$ENV_STORES
-EOF
-  return 1
-}
-
-# key_value NAME — prints the value on stdout. Caller captures it into a local
-# and hands it straight to the 600 file. Callers must never log the result.
-key_value() {
-  local _n _s _line
-  _n="$1"
-  while IFS= read -r _s; do
-    [ -n "$_s" ] || continue
-    _line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$_n=" "$_s" 2>/dev/null | head -1)"
-    [ -n "$_line" ] || continue
-    _line="${_line#*=}"
-    _line="${_line%"${_line##*[! ]}"}"
-    case "$_line" in
-      \"*\") _line="${_line#\"}"; _line="${_line%\"}" ;;
-      \'*\') _line="${_line#\'}"; _line="${_line%\'}" ;;
-    esac
-    printf '%s' "$_line"
-    return 0
-  done <<EOF
-$ENV_STORES
-EOF
-  return 1
-}
-
-FOUND_KEYS=""
-for _n in $KEY_NAMES; do
-  _name_in "$_n" && FOUND_KEYS="$FOUND_KEYS $_n"
-done
-FOUND_KEYS="${FOUND_KEYS# }"
-FOUND_KEY_COUNT=0
-for _n in $FOUND_KEYS; do FOUND_KEY_COUNT=$((FOUND_KEY_COUNT + 1)); done
-
-FOUND_PLANS=""
-for _n in $PLAN_NAMES; do
-  _name_in "$_n" && FOUND_PLANS="$FOUND_PLANS $_n"
-done
-FOUND_PLANS="${FOUND_PLANS# }"
-
-log "keys found by name: ${FOUND_KEYS:-none}"
-log "plan names found: ${FOUND_PLANS:-none}"
-
-# ── step 3: 999 setup ────────────────────────────────────────────────────────
-
-log "STEP 999-setup"
-write_status "999-setup" "" "running"
+# ══ step 1: 999 setup (FIRST — Trevor L14) ═══════════════════════════════════
 
 find_999() {
-  local _cand _link
   for _cand in "${NINE_SETUP_REPO:-}" "$ROOT/persist-home/999-setup" "$HOME/999-setup" \
                "$ROOT/persist-home/999-setup-clean" "$HOME/Documents/999-setup" "$HOME/.claude-nine"; do
     [ -n "$_cand" ] && [ -d "$_cand" ] || continue
@@ -393,7 +462,7 @@ find_999() {
 # own preflight runs, so a failure is named here instead of halfway through
 # provisioning.
 check_999_prereqs() {
-  local _bad=""
+  _bad=""
   [ "$(uname -s)" = "Darwin" ] || _bad="$_bad os"
   [ "$(uname -m)" = "arm64" ] || _bad="$_bad arch"
   { command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; } || _bad="$_bad claude"
@@ -409,115 +478,368 @@ check_999_prereqs() {
   [ -z "$PREREQ_MISSING" ]
 }
 
-NINE_REPO="$(find_999)" || NINE_REPO=""
-if [ -z "$NINE_REPO" ]; then
-  log "FAIL 999-setup: no 999 checkout with .claude/skills/nine-router-setup/scripts/setup-macos.sh (searched \$NINE_SETUP_REPO, <root>/persist-home, \$HOME/999-setup, \$HOME/Documents/999-setup, \$HOME/.claude-nine, skill links)"
-  finish "$EX_999" "999-setup"
-fi
-log "999 checkout: $NINE_REPO"
+# ── env stores: find the box's OWN keys and plan names BY NAME ───────────────
+# Presence only. Values are read exactly once, and only when the api-docs file
+# has to be built — never printed, never echoed, never logged.
 
-if ! check_999_prereqs; then
-  log "FAIL 999-setup: installer requirements not met: $PREREQ_MISSING"
-  finish "$EX_999" "999-setup"
-fi
+ENV_STORES=""
+_add_store() {
+  [ -n "$1" ] && [ -f "$1" ] && [ -r "$1" ] || return 0
+  case "$ENV_STORES" in *"
+$1"*) return 0 ;; esac
+  ENV_STORES="$ENV_STORES
+$1"
+}
+_add_store "$ROOT/secrets/.env"
+_add_store "$ROOT/.env"
+_add_store "$HOME/.openclaw/secrets/.env"
+_add_store "$HOME/.openclaw/.env"
+_add_store "/data/.openclaw/secrets/.env"
+_add_store "/data/.openclaw/.env"
+_add_store "$HOME/.openclaw/workspace/.env"
+_add_store "$HOME/clawd/secrets/.env"
+_add_store "$HOME/.openclaw/secrets.env"
+for _f in "$ROOT"/secrets/*.env "$HOME/.openclaw"/secrets/*.env \
+          "$HOME"/.openclaw/agents/*/agent/auth-profiles.json; do
+  _add_store "$_f"
+done
+_add_store "$ROOT/openclaw.json"
 
-NINE_SCRIPT="$NINE_REPO/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+ENV_STORE_COUNT=0
+while IFS= read -r _f; do [ -n "$_f" ] && ENV_STORE_COUNT=$((ENV_STORE_COUNT + 1)); done <<EOF
+$ENV_STORES
+EOF
+log "env stores searched: $ENV_STORE_COUNT (names only; no value is printed)"
 
-# A box that already runs 9Router never takes the installer's full path — that
-# replaces the skill link and can rewire the router (shared-utils/lib-frontdoor.sh
-# and nine_router_guard.py both enforce this). Such a box gets --skills-only.
-NINE_MODE="full"
-if [ -d "$HOME/.9router" ] || [ -f "$HOME/.local/bin/claude-nine" ]; then
-  NINE_MODE="skills-only"
-  log "999-setup: 9Router detected — using --skills-only (never the full installer)"
-fi
+# JSON stores are read by key name, recursively, with python3. Value never printed.
+json_get() {  # file name mode(print|exists)
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+path, name, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+def walk(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == name and v not in (None, ""):
+                return v
+            r = walk(v)
+            if r is not None:
+                return r
+    elif isinstance(o, list):
+        for v in o:
+            r = walk(v)
+            if r is not None:
+                return r
+    return None
+try:
+    with open(path) as f:
+        v = walk(json.load(f))
+except Exception:
+    sys.exit(1)
+if v is None:
+    sys.exit(1)
+if mode == "exists":
+    sys.exit(0)
+if isinstance(v, (dict, list)):
+    sys.exit(1)
+sys.stdout.write(str(v))
+PY
+}
 
-if [ "$NINE_MODE" = "full" ]; then
-  if [ "$FOUND_KEY_COUNT" -eq 0 ]; then
-    log "FAIL 999-setup: no known key name found in any of the $ENV_STORE_COUNT env stores"
-    finish "$EX_999" "999-setup"
+_name_in() {  # name -> 0 when present in any store; never prints the value
+  while IFS= read -r _s; do
+    [ -n "$_s" ] || continue
+    case "$_s" in
+      *.json) json_get "$_s" "$1" exists && return 0 ;;
+      *) grep -Eq "^[[:space:]]*(export[[:space:]]+)?$1=" "$_s" 2>/dev/null && return 0 ;;
+    esac
+  done <<EOF
+$ENV_STORES
+EOF
+  return 1
+}
+
+# name_present canonical-or-alias, presence only.
+name_present() {
+  _name_in "$1" && return 0
+  case "$1" in
+    OLLAMA_API_KEY) _name_in OLLAMA_CLOUD_API_KEY ;;
+    AGNES_API_KEY)  _name_in AGNES_AI_API_KEY ;;
+    *) return 1 ;;
+  esac
+}
+
+# key_value NAME — prints the value on stdout. Caller captures it into a local
+# and hands it straight to the 600 file. Callers must never log the result.
+key_value() {
+  while IFS= read -r _s; do
+    [ -n "$_s" ] || continue
+    case "$_s" in
+      *.json) json_get "$_s" "$1" print && return 0 ;;
+      *)
+        _line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$_s" 2>/dev/null | head -1)"
+        [ -n "$_line" ] || continue
+        _line="${_line#*=}"
+        _line="${_line%"${_line##*[! ]}"}"
+        case "$_line" in
+          \"*\") _line="${_line#\"}"; _line="${_line%\"}" ;;
+          \'*\') _line="${_line#\'}"; _line="${_line%\'}" ;;
+        esac
+        printf '%s' "$_line"
+        return 0 ;;
+    esac
+  done <<EOF
+$ENV_STORES
+EOF
+  return 1
+}
+
+# canon_value canonical_name — canonical first, then its family alias.
+canon_value() {
+  _cv="$(key_value "$1")" || _cv=""
+  if [ -n "$_cv" ]; then printf '%s' "$_cv"; return 0; fi
+  case "$1" in
+    OLLAMA_API_KEY) key_value OLLAMA_CLOUD_API_KEY ;;
+    AGNES_API_KEY)  key_value AGNES_AI_API_KEY ;;
+    *) return 1 ;;
+  esac
+}
+
+FOUND_KEYS=""
+for _n in $KEY_NAMES; do
+  _name_in "$_n" && FOUND_KEYS="$FOUND_KEYS $_n"
+done
+FOUND_KEYS="${FOUND_KEYS# }"
+
+FOUND_PLANS=""
+for _n in $PLAN_NAMES; do
+  _name_in "$_n" && FOUND_PLANS="$FOUND_PLANS $_n"
+done
+FOUND_PLANS="${FOUND_PLANS# }"
+
+log "keys found by name: ${FOUND_KEYS:-none}"
+log "plan names found: ${FOUND_PLANS:-none}"
+
+if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
+
+  log "STEP 999-setup"
+  status_write "999-setup" "" ""
+  NINE_RC=0
+  NINE_OK=1
+
+  # A fresh Mac has no checkout: clone 999 main FIRST (Trevor L14).
+  if [ ! -e "$HOME/999-setup" ]; then
+    if command -v git >/dev/null 2>&1; then
+      log "999-setup: no $HOME/999-setup — cloning 999 main"
+      GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/trevorotts1/999-setup.git "$HOME/999-setup" >>"$LOG" 2>&1 </dev/null
+      _crc=$?
+      [ "$_crc" -eq 0 ] || { log "FAIL 999-setup: git clone exited $_crc"; NINE_RC=$EX_999; NINE_OK=0; }
+    else
+      log "FAIL 999-setup: git missing — cannot clone 999 main"
+      NINE_RC=$EX_999; NINE_OK=0
+    fi
   fi
 
-  # Build the installer's credential file OUTSIDE the client's Documents, mode
-  # 600, from the box's own stores. Values go into this one file and nowhere
-  # else: not stdout, not the log, not the status file.
-  umask 077
-  mkdir -p "$API_DOCS_DIR" 2>/dev/null || { log "FAIL 999-setup: cannot create $API_DOCS_DIR"; finish "$EX_999" "999-setup"; }
-  chmod 700 "$API_DOCS_DIR" 2>/dev/null || true
-  API_TMP="$API_DOCS_FILE.tmp.$$"
-  : > "$API_TMP" 2>/dev/null || { log "FAIL 999-setup: cannot write $API_TMP"; finish "$EX_999" "999-setup"; }
-  WROTE=0
-  for _n in $KEY_NAMES; do
-    _v="$(key_value "$_n")" || continue
-    [ -n "$_v" ] || continue
-    printf '%s=%s\n' "$_n" "$_v" >> "$API_TMP" 2>/dev/null || { log "FAIL 999-setup: write to $API_TMP failed"; finish "$EX_999" "999-setup"; }
-    WROTE=$((WROTE + 1))
-  done
-  unset _v
-  # Plan names are only written when they are one of the values the installer
-  # validates; anything else would fail its own check later.
-  _v="$(key_value OLLAMA_PLAN)"
-  case "$_v" in
-    free|pro|max) printf 'OLLAMA_PLAN=%s\n' "$_v" >> "$API_TMP" ;;
-  esac
-  _v="$(key_value AGNES_PLAN)"
-  case "$_v" in
-    starter|plus|pro) printf 'AGNES_PLAN=%s\n' "$_v" >> "$API_TMP" ;;
-  esac
-  unset _v
-
-  if [ "$WROTE" -eq 0 ]; then
-    rm -f "$API_TMP" 2>/dev/null
-    log "FAIL 999-setup: no readable key values in the env stores"
-    finish "$EX_999" "999-setup"
+  NINE_REPO="$(find_999)" || NINE_REPO=""
+  if [ "$NINE_OK" = 1 ] && [ -z "$NINE_REPO" ]; then
+    log "FAIL 999-setup: no 999 checkout with .claude/skills/nine-router-setup/scripts/setup-macos.sh (searched \$NINE_SETUP_REPO, <root>/persist-home, \$HOME/999-setup, \$HOME/Documents/999-setup, \$HOME/.claude-nine, skill links)"
+    NINE_RC=$EX_999; NINE_OK=0
   fi
-  chmod 600 "$API_TMP" 2>/dev/null && mv -f "$API_TMP" "$API_DOCS_FILE" 2>/dev/null || {
-    rm -f "$API_TMP" 2>/dev/null
-    log "FAIL 999-setup: could not install $API_DOCS_FILE mode 600"
-    finish "$EX_999" "999-setup"
-  }
-  log "999-setup: wrote $API_DOCS_FILE (mode 600, $WROTE credential name(s); the client's Documents file was not touched)"
-fi
+  [ -n "$NINE_REPO" ] && log "999 checkout: $NINE_REPO"
 
-# No terminal attached: </dev/null, and the GitHub sign-in prompts disabled.
-# gh auth stays PENDING — an interactive login is never attempted from here.
-GH_AUTH="PENDING"
-if [ "$NINE_MODE" = "full" ]; then
-  NINE_API_DOCS="$API_DOCS_FILE" GIT_TERMINAL_PROMPT=0 GH_PROMPT_DISABLED=1 \
-    bash "$NINE_SCRIPT" >>"$LOG" 2>&1 </dev/null
+  if [ "$NINE_OK" = 1 ] && ! check_999_prereqs; then
+    log "FAIL 999-setup: installer requirements not met: $PREREQ_MISSING"
+    NINE_RC=$EX_999; NINE_OK=0
+  fi
+
+  # A box that already runs 9Router never takes the installer's full path — that
+  # replaces the skill link and can rewire the router (shared-utils/lib-frontdoor.sh
+  # and nine_router_guard.py both enforce this). Such a box gets --skills-only.
+  NINE_MODE="full"
+  if [ -d "$HOME/.9router" ] || [ -f "$HOME/.local/bin/claude-nine" ]; then
+    NINE_MODE="skills-only"
+    log "999-setup: 9Router detected — using --skills-only (never the full installer)"
+  fi
+
+  if [ "$NINE_OK" = 1 ] && [ "$NINE_MODE" = "full" ]; then
+    # spec 4B.2 item 3: the installer needs one model key and one second key.
+    if ! { { name_present OLLAMA_API_KEY || name_present OPENROUTER_API_KEY; } && \
+           { name_present DEEPSEEK_API_KEY || name_present OPENROUTER_API_KEY; }; }; then
+      log "FAIL 999-setup: no own keys for 999 (need OLLAMA or OPENROUTER, and DEEPSEEK or OPENROUTER)"
+      NINE_RC=$EX_999; NINE_OK=0; STUCK_NOTE="no own keys for 999"
+    fi
+  fi
+
+  if [ "$NINE_OK" = 1 ] && [ "$NINE_MODE" = "full" ]; then
+    # Build the installer's credential file OUTSIDE the client's Documents, mode
+    # 600, from the box's own stores, under CANONICAL names only (the installer's
+    # parse_api_docs accepts OLLAMA_API_KEY / DEEPSEEK_API_KEY / AGNES_API_KEY /
+    # OPENROUTER_API_KEY). Values go into this one file and nowhere else.
+    umask 077
+    mkdir -p "$API_DOCS_DIR" 2>/dev/null || { log "FAIL 999-setup: cannot create $API_DOCS_DIR"; NINE_RC=$EX_999; NINE_OK=0; }
+    if [ "$NINE_OK" = 1 ]; then
+      chmod 700 "$API_DOCS_DIR" 2>/dev/null || true
+      API_TMP="$API_DOCS_FILE.tmp.$$"
+      : > "$API_TMP" 2>/dev/null || { log "FAIL 999-setup: cannot write $API_TMP"; NINE_RC=$EX_999; NINE_OK=0; }
+    fi
+    if [ "$NINE_OK" = 1 ]; then
+      WROTE=0
+      for _n in $CANON_KEYS; do
+        _v="$(canon_value "$_n")" || continue
+        [ -n "$_v" ] || continue
+        printf '%s=%s\n' "$_n" "$_v" >> "$API_TMP" 2>/dev/null || { log "FAIL 999-setup: write to $API_TMP failed"; NINE_RC=$EX_999; NINE_OK=0; break; }
+        WROTE=$((WROTE + 1))
+      done
+      unset _v
+      # Plan names are only written when they are one of the values the installer
+      # validates; anything else would fail its own check later.
+      _v="$(key_value OLLAMA_PLAN)"
+      case "$_v" in
+        free|pro|max) printf 'OLLAMA_PLAN=%s\n' "$_v" >> "$API_TMP" ;;
+      esac
+      _v="$(key_value AGNES_PLAN)"
+      case "$_v" in
+        starter|plus|pro) printf 'AGNES_PLAN=%s\n' "$_v" >> "$API_TMP" ;;
+      esac
+      unset _v
+      if [ "$NINE_OK" = 1 ] && [ "$WROTE" -eq 0 ]; then
+        rm -f "$API_TMP" 2>/dev/null
+        log "FAIL 999-setup: no readable key values in the env stores"
+        NINE_RC=$EX_999; NINE_OK=0; STUCK_NOTE="no own keys for 999"
+      fi
+      if [ "$NINE_OK" = 1 ]; then
+        chmod 600 "$API_TMP" 2>/dev/null && mv -f "$API_TMP" "$API_DOCS_FILE" 2>/dev/null || {
+          rm -f "$API_TMP" 2>/dev/null
+          log "FAIL 999-setup: could not install $API_DOCS_FILE mode 600"
+          NINE_RC=$EX_999; NINE_OK=0
+        }
+        [ "$NINE_OK" = 1 ] && log "999-setup: wrote $API_DOCS_FILE (mode 600, $WROTE credential name(s); the client's Documents file was not touched)"
+      fi
+    fi
+  fi
+
+  if [ "$NINE_OK" = 1 ]; then
+    NINE_SCRIPT="$NINE_REPO/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+    if [ "$NINE_MODE" = "full" ]; then
+      NINE_API_DOCS="$API_DOCS_FILE" GIT_TERMINAL_PROMPT=0 GH_PROMPT_DISABLED=1 \
+        bash "$NINE_SCRIPT" >>"$LOG" 2>&1 </dev/null
+    else
+      NINE_API_DOCS="$API_DOCS_FILE" GIT_TERMINAL_PROMPT=0 GH_PROMPT_DISABLED=1 \
+        bash "$NINE_SCRIPT" --skills-only >>"$LOG" 2>&1 </dev/null
+    fi
+    NINE_RC=$?
+    [ "$NINE_RC" -eq 0 ] || log "FAIL 999-setup: setup-macos.sh ($NINE_MODE) exited $NINE_RC"
+  fi
+  [ "$NINE_RC" -eq 0 ] && log "OK 999-setup ($NINE_MODE); gh_auth=PENDING"
+  record_step "999-setup" "$NINE_RC"
+  [ "$NINE_RC" -eq 0 ] || record_fail "$NINE_RC" "${STUCK_NOTE:-999-setup exited $NINE_RC}"
+
+  # ══ step 2: 9Router upgrade to the pinned target ═══════════════════════════
+
+  log "STEP 9router"
+  status_write "9router" "" ""
+  R9_RC=0
+  GUARDS="$NINE_REPO/.claude/skills/nine-router-setup/scripts/macos/install-9router-guards.sh"
+  if [ ! -f "$GUARDS" ]; then
+    log "FAIL 9router: install-9router-guards.sh not found at $GUARDS"
+    R9_RC=$EX_9ROUTER
+  elif [ -z "$NINE9ROUTER_TARGET" ]; then
+    log "REFUSED 9router: no pinned target (pass --9router-target VERSION or set NINEROUTER_TARGET); never upgrading to an unpinned latest"
+    R9_RC=$EX_REFUSE
+  else
+    bash "$GUARDS" --upgrade "$NINE9ROUTER_TARGET" >>"$LOG" 2>&1 </dev/null
+    R9_RC=$?
+    [ "$R9_RC" -eq 0 ] || log "FAIL 9router: install-9router-guards.sh --upgrade $NINE9ROUTER_TARGET exited $R9_RC"
+  fi
+  [ "$R9_RC" -eq 0 ] && log "OK 9router: $NINE9ROUTER_TARGET"
+  record_step "9router" "$R9_RC"
+  [ "$R9_RC" -eq 0 ] || record_fail "$R9_RC" "9router exited $R9_RC"
+
 else
-  NINE_API_DOCS="$API_DOCS_FILE" GIT_TERMINAL_PROMPT=0 GH_PROMPT_DISABLED=1 \
-    bash "$NINE_SCRIPT" --skills-only >>"$LOG" 2>&1 </dev/null
-fi
-RC=$?
-if [ "$RC" -ne 0 ]; then
-  log "FAIL 999-setup: setup-macos.sh ($NINE_MODE) exited $RC"
-  finish "$EX_999" "999-setup"
-fi
-log "OK 999-setup ($NINE_MODE); gh_auth=PENDING"
-
-# ── step 4: 9Router upgrade to the pinned target ─────────────────────────────
-
-log "STEP 9router"
-write_status "9router" "" "running"
-
-GUARDS="$NINE_REPO/.claude/skills/nine-router-setup/scripts/macos/install-9router-guards.sh"
-if [ ! -f "$GUARDS" ]; then
-  log "FAIL 9router: install-9router-guards.sh not found at $GUARDS"
-  finish "$EX_9ROUTER" "9router"
-fi
-if [ -z "$NINE9ROUTER_TARGET" ]; then
-  log "REFUSED 9router: no pinned target (pass --9router-target VERSION or set NINEROUTER_TARGET); never upgrading to an unpinned latest"
-  finish "$EX_REFUSE" "9router"
+  log "STEP 999-setup: skipped (not a macOS host)"
+  record_step "999-setup" 0
+  log "STEP 9router: skipped (not a macOS host)"
+  record_step "9router" 0
 fi
 
-bash "$GUARDS" --upgrade "$NINE9ROUTER_TARGET" >>"$LOG" 2>&1 </dev/null
-RC=$?
-if [ "$RC" -ne 0 ]; then
-  log "FAIL 9router: install-9router-guards.sh --upgrade $NINE9ROUTER_TARGET exited $RC"
-  finish "$EX_9ROUTER" "9router"
-fi
-log "OK 9router: $NINE9ROUTER_TARGET"
+# ══ step 3: OpenClaw upgrade (Mac only) ══════════════════════════════════════
+# The target version is the one the trigger passed. Nothing here discovers a
+# version — a self-update that guesses its own destination is the defect the
+# atomic upgrade exists to prevent.
 
-write_status "done" 0 "all steps complete"
-finish "$EX_OK" "done"
+if [ "$IS_DOCKER" = 1 ]; then
+  log "STEP upgrade: skipped (/.dockerenv — the host side performed it)"
+  record_step "upgrade" 0
+else
+  # spec 4A.2 item 1: let the trigger turn return before the gateway goes down.
+  # ponytail: fixed 120 s wait for the trigger turn to return; upgrade path = poll the gateway session API
+  if [ "$MODE_DETACHED" = 1 ] && [ -n "$LAUNCH_EPOCH" ]; then
+    while [ $(( $(date +%s) - LAUNCH_EPOCH )) -lt 120 ]; do sleep 5; done
+  fi
+  log "STEP upgrade: OpenClaw -> $TARGET_VERSION"
+  status_write "upgrade" "" ""
+  UPG_RC=0
+  if ! fetch "$REPO_RAW/scripts/oc-atomic-upgrade.sh" "$WORK/oc-atomic-upgrade.sh" \
+     || ! fetch "$REPO_RAW/scripts/oc-schema-migrate.py" "$WORK/oc-schema-migrate.py"; then
+    log "FAIL upgrade: could not fetch oc-atomic-upgrade.sh / oc-schema-migrate.py from main"
+    UPG_RC=$EX_UPGRADE
+  else
+    chmod 700 "$WORK/oc-atomic-upgrade.sh" 2>/dev/null || true
+    bash "$WORK/oc-atomic-upgrade.sh" --upgrade --target-version "$TARGET_VERSION" >>"$LOG" 2>&1 </dev/null
+    UPG_RC=$?
+  fi
+  record_step "upgrade" "$UPG_RC"
+  if [ "$UPG_RC" -eq 70 ]; then
+    log "FAIL upgrade: oc-atomic-upgrade.sh exited 70 — rollback failed, a human is needed"
+    status_write "upgrade" "$(now_utc)" "upgrade exited 70 (rollback failed)"
+    finish 20 "upgrade" "upgrade exited 70 (rollback failed)"
+  fi
+  if [ "$UPG_RC" -ne 0 ]; then
+    log "FAIL upgrade: oc-atomic-upgrade.sh exited $UPG_RC"
+    record_fail "$UPG_RC" "upgrade exited $UPG_RC"
+  else
+    log "OK upgrade: $TARGET_VERSION"
+  fi
+fi
+
+# ══ step 4: content update ═══════════════════════════════════════════════════
+# The same entry point the Sunday cron uses: fetched from main, so the box
+# always runs the newest version of it. It never restarts the gateway and never
+# messages a client.
+
+log "STEP update: weekly-full-update.sh"
+status_write "update" "" ""
+
+# F17: keep the config the content update may rewrite, so a rollback restores it.
+CFG_BACKUP="$REFRESH_DIR/openclaw.json.pre-$RUN_ID"
+if [ -f "$ROOT/openclaw.json" ]; then
+  ( umask 077; cp "$ROOT/openclaw.json" "$CFG_BACKUP" ) 2>/dev/null && chmod 600 "$CFG_BACKUP" 2>/dev/null || CFG_BACKUP=""
+fi
+
+UPD_RC=0
+if ! fetch "$REPO_RAW/scripts/weekly-full-update.sh" "$WORK/weekly-full-update.sh"; then
+  log "FAIL update: could not fetch scripts/weekly-full-update.sh from main"
+  UPD_RC=$EX_UPDATE
+else
+  bash "$WORK/weekly-full-update.sh" >>"$LOG" 2>&1 </dev/null
+  UPD_RC=$?
+fi
+if [ "$UPD_RC" -eq 2 ]; then
+  ROLLED_BACK=1
+  if [ -n "$CFG_BACKUP" ] && [ -f "$CFG_BACKUP" ]; then
+    cp "$CFG_BACKUP" "$ROOT/openclaw.json" 2>/dev/null && log "update: rolled back — restored $ROOT/openclaw.json from $CFG_BACKUP"
+  fi
+fi
+record_step "update" "$UPD_RC"
+if [ "$UPD_RC" -ne 0 ]; then
+  log "FAIL update: weekly-full-update.sh exited $UPD_RC"
+  record_fail "$UPD_RC" "update exited $UPD_RC"
+else
+  log "OK update"
+fi
+
+# ══ done ═════════════════════════════════════════════════════════════════════
+
+if [ -n "$FIRST_FAIL" ]; then
+  finish "$FIRST_FAIL" "done" "$STUCK_NOTE"
+fi
+finish "$EX_OK" "done" ""

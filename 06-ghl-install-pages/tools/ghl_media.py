@@ -815,6 +815,11 @@ def upload_media(
     NOT Cloudflare-WAF-gated). FAIL-LOUD: a non-2xx response, or a 2xx with no
     ``fileId``/``url``, raises (we never fabricate a CDN URL).
 
+    NAMED GAP (GHL-169): ``media.upload`` is a registered row, but the public
+    adapter carries JSON bodies only and the row declares no readback plan, so
+    no supported adapter route can send this multipart write. See
+    ``ghl_route_gaps.py`` entry ``ghl_media.py:860``.
+
     Args:
         png_path: Local PNG to upload (must be a real PNG — re-verified).
         location_id: The GHL sub-account location id (fixture ``Mct54...``).
@@ -901,6 +906,98 @@ def upload_media(
     }
 
 
+# ── 3a) list_media — REQUIRED-type media list, routed through the adapter ────
+#
+# GHL-169: media LIST is the one media operation moved onto the frozen public
+# adapter. `type` is a REQUIRED GET /medias/files query parameter (a bare call
+# answers 422 "type must be a string / type should not be empty"); the type gate
+# runs BEFORE the adapter is built, so a missing/out-of-set value never reaches
+# a transport. `media.upload` and `media.folders.create` stay on the raw path
+# and are declared named gaps in ghl_route_gaps.py.
+
+MEDIA_LIST_TYPES = ("file", "image", "video", "audio", "document")
+
+
+class MediaListTypeError(ValueError):
+    """Media LIST refused before any HTTP: ``type`` missing or outside the set."""
+
+
+class MediaListError(RuntimeError):
+    """The media LIST call itself failed (non-2xx, non-JSON, or no ``files``)."""
+
+
+def list_media(
+    location_id: str,
+    pit: str,
+    *,
+    media_type: str | None = None,
+    timeout: int = 60,
+    opener: Callable[[urllib.request.Request, int], Any] | None = None,
+    capability: Any = None,
+    capability_record: str | None = None,
+) -> dict:
+    """List one media category through the frozen public adapter.
+
+    ``GET /medias/files`` REQUIRES a ``type`` query parameter. Without it the API
+    answers 422; with ``type=file`` it answers 200 ``{files, count, traceId}``.
+    The operation row supplies the Version (``v3``); this module carries no
+    media-list version literal and no origin/path literal for the call.
+
+    FAIL-LOUD: a missing/invalid ``media_type`` raises ``MediaListTypeError``
+    BEFORE any adapter/transport construction. A capability refusal (the
+    default-deny record) or a non-2xx/malformed response raises
+    ``MediaListError`` — never a fabricated empty listing.
+
+    Args:
+        location_id: The GHL sub-account location id.
+        pit: The LOCATION Private Integration Token (Bearer).
+        media_type: REQUIRED category — one of ``MEDIA_LIST_TYPES``; case and
+            surrounding whitespace are ignored.
+        timeout: HTTP timeout seconds.
+        opener: Optional ``(Request, timeout) -> response-like`` for tests.
+        capability: Optional ``CapabilityGate``; omitted = checked-in record
+            (default-deny).
+        capability_record: Optional explicit capability-record path.
+
+    Returns:
+        ``{files, count, traceId, http}``.
+    """
+    import ghl_public_client as client
+
+    normalized = str(media_type).strip().lower() if media_type is not None else ""
+    if not normalized:
+        raise MediaListTypeError(
+            "media LIST requires an explicit type: pass media_type= one of "
+            f"{', '.join(MEDIA_LIST_TYPES)}. `type` is a REQUIRED "
+            "GET /medias/files query parameter — omitting it yields HTTP 422 "
+            "'type must be a string / type should not be empty'."
+        )
+    if normalized not in MEDIA_LIST_TYPES:
+        raise MediaListTypeError(
+            f"media LIST type {media_type!r} is not supported; use one of "
+            f"{', '.join(MEDIA_LIST_TYPES)}."
+        )
+    _require(location_id, "location_id")
+    _require(pit, "pit")
+    try:
+        response = client.list_media_files(
+            location_id,
+            pit,
+            normalized,
+            opener=opener,
+            capability=capability,
+            capability_record=capability_record,
+            timeout=float(timeout),
+        )
+    except client.MediaTypeRequired as exc:  # defensive: same gate, one owner
+        raise MediaListTypeError(str(exc)) from exc
+    except client.PublicRouteError as exc:
+        raise MediaListError(
+            f"media list failed for type={normalized!r}: {exc}"
+        ) from exc
+    return response
+
+
 # ── 3b) create_media_folder — per-run named folder (Skill 48 addition) ────────
 
 def media_folder_name_prefix(folder_name: str) -> str:
@@ -942,6 +1039,10 @@ def create_media_folder(
 
     Sits on the bare-Python side of the auth split (``services.*`` + Bearer PIT is NOT
     Cloudflare-WAF-gated), exactly like ``upload_media``.
+
+    NAMED GAP (GHL-169): ``media.folders.create`` is a registered row, but no
+    non-vacuous readback plan exists for it, so no supported adapter route can
+    send this write. See ``ghl_route_gaps.py`` entry ``ghl_media.py:1082``.
 
     FAIL-LOUD: a non-2xx response, or a 2xx with no recognizable folder id, raises (we
     never fabricate a folder id). When the deployment's GHL plan does not expose a folder

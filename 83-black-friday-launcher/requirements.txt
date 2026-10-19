@@ -1,0 +1,6 @@
+# Runtime requirement of the Launcher, not of the repository.
+# launcher_core/checkout.py imports the Skill 79 validator
+# (signature-order-form/scripts/validate_checkout.py), which does `import
+# jsonschema` at module load. Nothing else the Launcher imports needs a
+# third-party package: everything else is stdlib.
+jsonschema>=4.0

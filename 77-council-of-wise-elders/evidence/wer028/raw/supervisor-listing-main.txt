@@ -1,0 +1,75 @@
+captured_at=2026-10-18T23:34:01Z
+ref=39e74434810d9c110f2c6ac506386c832f7b6fb5
+$ git ls-tree -r --name-only <ref>:77-council-of-wise-elders/scripts/supervisor
+100644 blob 09a5fd8a961c0be5c8dc12cf619d5c69cadba046    6182	health-collector.mjs
+100644 blob bc2eef9fe06568465a3c2569fc8be4ee969a96de    4175	health-observer.mjs
+100644 blob 765672a43f83a09851f3bd17d15e274b8a585931    5824	incident-journal.mjs
+100644 blob f22a0fbea008750fe4dd9eef013221ccc144af2f    5981	launchd.mjs
+100644 blob b41d47828ac9d0c33ed9235104e9f90f3cbd5725    6466	leader-state.mjs
+100644 blob 1f31c529474cbcf5f3a53da8787cad823f76a833    1648	overdue-detector.mjs
+100644 blob 359febca4848c9f05e2818e45b285b601b2bd437    2863	planner-hook.mjs
+100644 blob 1f4cd7d02a1bea06d02583b3b805942fd240a40b    3392	policy.mjs
+100644 blob c8c941e9db399d1a3f6f6b532cb59f991811ff30    2793	policy/wise-elders.hybrid-supervisor-policy.v2.schema.json
+100644 blob 194f06745dd4b48306f9acbc3b7da93da61bf53e    2743	qc-backlog.mjs
+100644 blob de2eed36b29f2c46ea3c177740f5e23e52f5f71b    4628	restart-reconciler.mjs
+100755 blob 592a618f1861177cd4c4f46e876bb7e8ee149f08   38541	runner.mjs
+100644 blob 888d4cf7ae886a97ed89602e6fb22f0115d85b8d   18155	runner.test.mjs
+100644 blob 9cb0e3e86f4a2e318e08b6c83575c4308843c63c    4566	singleton.mjs
+100644 blob 42b8a7615f06c3b966c45c9aff6dfa6155290199    2616	staffing.mjs
+100644 blob 8626b55922c35a4903941d284713a7ebeb7fd46b    9791	supervisor.mjs
+100644 blob d6c68ef2bbfa62ee27b8682b2b66d4f28183a8b9    3168	sweep-executor.mjs
+100644 blob a23965f6e459e6965108d4f00eee9caa25960ddf    6091	sweep-planner.mjs
+100644 blob 00c6d4263e088d67509a57d0343164950fd0f6c4    1982	sweep-runner.mjs
+100644 blob 3b414f0e725f50f35db150507ab9954514657a16    4242	tests/health-collector.test.mjs
+100644 blob c2c9a649a431fc3d62ce2faa9d5c9344dc7f5e97    3610	tests/health-observer.test.mjs
+100644 blob 1e5917013989f94c523e85155cbef73c5661317d    4228	tests/incident-journal.test.mjs
+100644 blob 3214ce333dc3c0a34547e585d8f6ef1cb2914f7c    3376	tests/launchd.test.mjs
+100644 blob 5152d90523fa07f0996d4d0e2cbbf54fe81798a2    6076	tests/leader-state.test.mjs
+100644 blob 04c20c304b3cd12557ab2a066aa566757447a2fc    2087	tests/overdue-detector.test.mjs
+100644 blob 31902ef7435e0ed91b4f8696e70ae45a36461ee3    3367	tests/planner-hook.test.mjs
+100644 blob 0a8612b5166b3719cdbce6d7f6f37c6772e17e0b    3115	tests/policy.test.mjs
+100644 blob 572d4b9761ad8ad852785fa5b29d41b0ebd0183b    2926	tests/qc-backlog.test.mjs
+100644 blob a7db619670c1c2eb0f5d5cd53aa4424fbdee70d7    3821	tests/restart-reconciler.test.mjs
+100644 blob d0be54d6878abcdaf39539e9167fdcc54595450f    4227	tests/singleton.test.mjs
+100644 blob 4f741489768be5f427c890fd91644d1be4f88c44    2579	tests/staffing.test.mjs
+100644 blob 51d436745e8c8a589ee979a36b7a0454b6bd1ce1    7152	tests/supervisor.test.mjs
+100644 blob d0f80348d33d52deac55dfc0ca819c6ecbb190e6    3914	tests/sweep-executor.test.mjs
+100644 blob c2b5413cc3cbd0914e03dcbd9b454631c3f6ba67    6389	tests/sweep-planner.test.mjs
+100644 blob 2528179e76241b8b11c51f9b00bc1654a941f6a9    4276	tests/sweep-runner.test.mjs
+rc=0
+
+$ git ls-tree -r --name-only <ref>:77-council-of-wise-elders/evidence/wer026/host
+100644 blob bcbb07ba5c912bc51d3ed40d0d11ef035fb964b1     295	00-base.txt
+100644 blob 38babede2f8038ef84824463b2de9b1bb7e28e2c     282	00-git-status-before.txt
+100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391       0	01-temp-root-before.txt
+100644 blob 8c6848e391814098352c2ab66ca84a3f479368f0     675	02-run-a-loop.log
+100644 blob 3f15e351a4e920783490e01db97ff480eec28a25    7096	03-pre-kill-state.json
+100644 blob a7a82e095fa48d6a6e7d529e02d705e25ab4c2a4      26	04-run-a-exit.txt
+100644 blob 4babb10a8f0554737ce541a6d65e2e604fb88936     871	05-run-b-restart.log
+100644 blob 1b126ce48372075d36644ccf5c0caedf35f76caf      18	06-run-b-exit.txt
+100644 blob 77f9a8f007eede8396fe5715ca2a9968cf0012e5   10559	07-post-restart-state.json
+100644 blob 647aca18479cbd8410c7a8fa63fd5de16f8453ad     505	08-restart-summary.txt
+100644 blob af46a7392633ac0bc46fed4ba4352f27dd29f890     666	09-run-c-primary.log
+100644 blob 1e6c1e60f885e6de268ed3d5c50dc879c739c658     229	10-run-c-second-instance.log
+100644 blob 80482101ca6de9e1ffa11e4d7919d0bcaddce876      34	11-second-instance-exit.txt
+100644 blob 51e4a84d1b20c58effdca50dc7d3a0bdf113d1f1      34	12-sigterm-exit.txt
+100644 blob 94a8b1ae191e7e71943c4a807853de57856e59e9    6581	13-post-sigterm-state.json
+100644 blob 037d493c79539b7bca55ca8311f91a94367715f4     246	14-singleton-and-stop-summary.txt
+100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391       0	15-temp-root-after.txt
+100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391       0	16-temp-root-diff.txt
+100644 blob 5ae8a5fd52a9751d1b6c64fb0f14dbf292a2a88c      56	17-isolation-result.txt
+100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391       0	18-forbidden-api-grep.txt
+100644 blob 43ed9a4399a6ec4ace55926553f8876e62f09a53    1025	19-forbidden-api-result.txt
+100644 blob a6ed3f53a329c3a1870862e020e5ca2a50c05ac4      46	20-ps-started-pids.txt
+100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391       0	21-ps-runner-leftovers.txt
+100644 blob e68ae0252e464b251975c8791e7e58432f9350d5      49	22-ps-result.txt
+100644 blob aea7c08a4c1f0066cee229a086f3701c04f3092c    8495	23-tests.log
+100644 blob ef85b017b882c685f1f36e8c260b8428d2e0b6e0     173	24-tests-result.txt
+100644 blob 15a6c45d025a55bc2926194aba13c59608295766    1193	25-git-status-after.txt
+100644 blob 6c2de3f012cd437e9b6bd8133478afba8165d938    7442	26-existing-tests-only.txt
+100644 blob d137daf017f8163e666ca3c26eab55deb0a8d480    5105	README.md
+100755 blob 58837787fddf69141807fa75182344d437a9b200   11605	run-acceptance.sh
+rc=0
+
+runner.mjs blob=592a618f1861177cd4c4f46e876bb7e8ee149f08
+host tree=e50fc6a8eac5cdd93c50207a65b559efc110b229

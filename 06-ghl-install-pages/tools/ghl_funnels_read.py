@@ -20,6 +20,13 @@ none is claimed or extrapolated here: funnel/page CREATE stays on the
 internal canvas / browser rails (see `ghl_rest_canvas.py`, labeled internal
 there and everywhere).
 
+GHL-169 ROUTE DISPOSITION: both reads are NAMED GAPS against the frozen public
+registry. The called paths (`/funnels/funnel/list`, `/funnels/page`) have no
+registry row; the registered alternatives (`funnels.list` GET /funnels/,
+`funnels.pages.list` GET /funnels/{funnelId}/pages) are different routes whose
+envelopes were never captured, so they are recorded — not substituted. See
+`ghl_route_gaps.py` entries for lines 145/146/258.
+
 CONTRACT PROVENANCE (step-1 capture, S06-07)
 --------------------------------------------
 The contract below comes from the public documentation capture recorded at

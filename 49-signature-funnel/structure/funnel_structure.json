@@ -204,6 +204,22 @@
     }
   },
 
+  "page_role_map": {
+    "contract": "signature-funnel-page-role-map/v1",
+    "rule": "ONE page_type -> page_role table, and the only place the two vocabularies meet (Fix 15). Consumers read THIS block: dispatch_launch.py derives its page-role vocabulary (PAGE_ROLES / PAGE_TYPE_TO_ROLE) from it and refuses an adapter key that is not a page_role; launch-adapters.example.json is keyed by page_role, not by page_type; and every page-request schema copy's page_role enum is asserted equal to page_roles by dispatch_launch.py --self-test. Every four-image / image-coverage check iterates page_roles, NEVER these funnel_matrix slugs.",
+    "page_roles": ["landing", "product_selection", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"],
+    "page_types": {
+      "main": {"page_role": "landing", "in_funnel_matrix": true},
+      "product_selection": {"page_role": "product_selection", "in_funnel_matrix": false, "rule": "No funnel_matrix slug: the selection page is emitted between landing and checkout by Skill 78's native emitter chain and carries no copy profile."},
+      "checkout": {"page_role": "checkout", "in_funnel_matrix": true, "adapter": "absent_by_design", "rule": "CR-S49-003: the order form is the native Convert and Flow form installed by Skill 06, never a dispatch adapter. Its absence from launch-adapters.example.json is a DESIGN RULING, not a gap, and dispatch must never synthesize an entry."},
+      "upsell": {"page_role": "upsell_1", "in_funnel_matrix": true},
+      "downsell": {"page_role": "downsell_1", "in_funnel_matrix": true},
+      "upsell-2": {"page_role": "upsell_2", "in_funnel_matrix": true},
+      "downsell-2": {"page_role": "downsell_1", "role_instance": "downsell_2", "in_funnel_matrix": true, "rule": "DECISION (Fix 15 step 2): maps to downsell_1 with the role_instance discriminator. The page-role enum carries no downsell_2, and adding one would also touch the three routing authorities Fix 3 reconciles; the matrix slug plus role_instance is the instance identity while the page_role stays one of the seven."},
+      "thank-you": {"page_role": "thank_you", "in_funnel_matrix": true}
+    }
+  },
+
   "funnel_matrix": {
     "3": ["main", "upsell", "thank-you"],
     "5": ["main", "upsell", "downsell", "upsell-2", "thank-you"],

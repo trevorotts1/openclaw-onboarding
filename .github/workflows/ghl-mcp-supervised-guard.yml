@@ -308,6 +308,17 @@ jobs:
           chmod +x tests/unit/ghl-mcp-pin-delivery.test.sh
           bash tests/unit/ghl-mcp-pin-delivery.test.sh
 
+      # GHL-120 (W12 distribution). Proves every packaged copy — install.sh,
+      # update-skills.sh, the 999 front door, the Contabo/Hostinger boot
+      # templates and the Hostinger host installer — carries the retirement.
+      # The negative controls (a reintroduced pm2 dump entry, a planted launchd
+      # plist, an injected container autostart call) must each flip the
+      # intended check, so the detectors cannot be vacuous.
+      - name: Run deployment-parity test (packaged copies + negative controls)
+        run: |
+          chmod +x tests/unit/ghl-mcp-deployment-parity.test.sh
+          bash tests/unit/ghl-mcp-deployment-parity.test.sh
+
       # skill 36 v2.0.2. The autostart script and the runtime gate carried two
       # copies of one path/platform derivation, under a comment claiming they
       # were identical. They were not: the gate knew two platforms to the

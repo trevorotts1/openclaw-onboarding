@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Unreleased - 2026-10-19 - test honesty: fixture-dependent modules report SKIPPED, not PASS; mobile anchor floor 18px
+
+- `tests/`: two fixture-dependent modules (browser hygiene, swarm runner) now report SKIPPED with a named reason instead of a false PASS when their fixtures are not shipped; `test_validate_page.py` pins the 18px mobile anchor floor. Suite: 40 passed, 2 skipped. No production behavior changed.
+
+## 1.3.0 - 2026-10-19 - signature page fidelity batch: design board, brand colors, reference use, review PDFs
+
+One batch of the signature page fixes from the SPF020, SPF025 and SPF026 test runs, plain-English summary:
+
+- Reference images are structure only. Pictures a client likes are used to copy layout and composition, never their content, and a bleed check fails the run when reference content shows up in a delivered image. A typed reference catalog with media-library links backs this.
+- Brand colors are resolved first. The client's palette is looked up (exact owner match) and read from one place before any wireframe, mockup or image stage starts, and every later check reads that same palette.
+- Go Full Page framework. A page color system, an image grade and a page pixel check are required; the hypersaturation step is never optional, a missing palette is refused, and colors outside the palette are refused in prose.
+- Section count. One request section per canonical copy section; a mismatch fails closed, and prompts no longer carry "Pain N" framework names or slot canon text for slots that are not planned.
+- Design Board. One client-approved board per page is made from the page's real images, after the image chain and before any wireframe; it sends only its own pictures and checks each declared text on the image.
+- Design style choice. The client picks A Block, B Circle or C Hybrid, and the chosen style is checked against the image inventory (a circle check needs a real PNG).
+- Composition library. Words over images, shaped crops and light fields, with flags, a light-field check and catalog URLs.
+- Wireframe standard. Wireframe stages send the owner's liked sheets and an annotated build-spec prompt in the client's colors; a prompt that names no color is refused only when the plates are its subject; a half-delivered wireframe sibling skips the combined board instead of failing the stage.
+- Combined overview boards. Every image stage also produces one all-in-one board (desktop page, guide and mobile parts), with the mobile head sized from the subtitle.
+- Client PDF. Each image stage combines into validator-gated desktop and mobile review PDFs automatically; `validate_review_pdf.py --delivered` proves the client's section images and the delivered PDF are the exact validated build, and `--deliver` copies and re-validates it.
+- Prompt budget. Composed prompts reach the 16,000 character floor, truncated copy is always refused, and with every new block added the composed prompts still fit the 20,000 maximum by dropping superseded palette and style prose.
+- Tests: new modules for each unit are registered in `tests/run_tests.py`, and older tests follow the merged gates.
+- Version bumped to 1.3.0 (`SKILL.md` frontmatter, `skill-version.txt`, `VERSION`).
+
+## 1.2.24 - 2026-10-19 - fidelity wire: copy-source CTA, tier strip, prompt budget
+
+- `scripts/stage_executor.py` carries the generation-wire repairs from 757ce86c0 and 770086e57, plus this repair round:
+  - Request templates render the double-brace form first (`{{section_number}}`, `{{section_name}}`), so the values substitute instead of becoming literal `{token}` text; any leftover token-shaped placeholder fails closed before a provider call.
+  - CTA recovery accepts the section payload (a label string or `{label, microcopy}`) and resolves the copy source through every real layout in authority order: the request's top-level `copy_source`, then `metadata.copy_source`, then `<run_dir>/inputs/copy.json`, then `<run_dir>/copy.json`; the first existing file wins. Labels are keyed by the canonical copy-source section id, never the request's band label. When an inline CTA and the copy source both carry a label and disagree, the copy source wins and a `WARN cta_conflict` names both; an inline label with no copy-source counterpart is used as before. A section marked `cta_required` with no resolvable label fails closed by section name.
+  - `sanitize_prompt` strips cross-client project names derived generically from the visual-standards manifest basenames (no hardcoded client), every sentence carrying a tier verdict regardless of preceding tokens (named-sheet forms such as `Ref Tier H` and `AA Tier H`, and standalone forms such as `Tier H (flat, sparse)`, `Tier R (layered, photo-dense)` and the template heading `Tier R rich mockup, M4`), and every full-page WxH dimension pair; current-client content is untouched.
+  - `prompt_budget()` reads `references/prompt-budget-policy.json`: below the 80 percent floor warns and names the deficit, above the maximum fails hard, and a per-section prose budget reserves the verbatim copy and contract blocks first so design-rules prose cannot crowd them out. Records carry `prompt_sizes`.
+- `references/generation-execution.md`: states the accurate geometry story. Canvas geometry is per-image via `target_ratio()` with the `geometry_mismatch` warning; `stitch_sections.py` and `build_hybrid_board.py` are unchanged (already content-height), and no assembly-canvas fix is claimed.
+- `tests/test_stage_executor_prompt_contract.py`: contract tests pin the double-brace render, the leftover refusal, CTA from the payload/copy source/required refusal, the two cross-client leak shapes plus dimension pairs, the below-floor warning, the per-section prose budget, the three real copy-source layouts (top-level, `metadata`, `<run_dir>/inputs/`) with the conflict warning and the `cta_required` refusal, and the standalone tier shapes. Registered in `tests/run_tests.py` `MODULES`, so the suite actually runs the repair's own tests.
+- Version bumped to 1.2.24 (`SKILL.md` frontmatter, `skill-version.txt`, `VERSION`).
+
 ## Unreleased - 2026-10-17 - S71-06-Q1: the band governs in all contexts; two stale doctrine surfaces reconciled (Signature Launch room S71, B-19)
 
 - Q1 ruled (MAIN, 2026-10-17, under owner Decision 1): the KIE rule 12 band governs in ALL contexts, including Signature Launch runs; packet doc 07 section 6 is reconciled as an erratum wherever it conflicts; there is no prompt_policy_id selector and no context split.

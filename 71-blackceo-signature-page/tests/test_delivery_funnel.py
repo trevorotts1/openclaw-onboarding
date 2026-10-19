@@ -53,6 +53,7 @@ def make_run(td: Path, intake_extra=None, grade=None):
     run = td / "run"
     run.mkdir(parents=True, exist_ok=True)
     brand = {
+        "brand_id": "fixture", "palette": {"gold": "#C0392B", "navy": "#1B2A41", "cream": "#FAF3E0"},
         "grade": grade if grade is not None else
                  {"min_mean_saturation": None, "min_luma_std": None},
         "founder_photos": [f"sha256:{FOUNDER_SHA}"],
@@ -84,6 +85,15 @@ def make_run(td: Path, intake_extra=None, grade=None):
                 "drift": {"status": "pass",
                           "widths": {"1440": {"failures": [], "table": []},
                                      "390": {"failures": [], "table": []}}}})
+    # Fix 12.4 (task 4.3) four-image rule: cmd_report refuses RUN COMPLETE
+    # unless all four globs resolve in the run folder. A fixture run that
+    # closes every stage carries them, as a real run whose image stages ran
+    # would -- same rule the parity sheets above are there for.
+    for rel in ("desktop-wireframe/section-01.png",
+                "mobile-tablet/section-01.png",
+                "final-mockups/desktop/part-01.png",
+                "final-mockups/mobile/part-01.png"):
+        write(run / rel, PNG_BYTES)
     return run
 
 
@@ -1085,6 +1095,18 @@ class GateReportDeliverablesTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         report = (run / "REPORT.md").read_text()
         self.assertIn("**TEST RUN, NOT A PRODUCTION DELIVERY**", report)
+
+    def test_four_image_rule_forces_incomplete(self):
+        # Fix 12.4: one missing glob makes the report incomplete, written
+        # and non-zero -- the absence is shown in the report, never hidden.
+        run = self.complete_run()
+        build_deliverables(run)
+        (run / "final-mockups" / "mobile" / "part-01.png").unlink()
+        proc = gate(self.contract, "report", run)
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        report = (run / "REPORT.md").read_text()
+        self.assertIn("four-image rule not satisfied", report)
+        self.assertIn("**RUN INCOMPLETE**", report)
 
 
 if __name__ == "__main__":

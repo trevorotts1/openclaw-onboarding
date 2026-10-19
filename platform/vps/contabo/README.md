@@ -32,9 +32,12 @@ three things.
    `$HOME/999-setup`, `$HOME/.claude` and `$HOME/.local` into `<volume>/persist-home/` (so a
    recreate keeps them), waits for a dead gateway's owner heartbeat to go stale, then exec's the
    gateway. In the background, only after the gateway answers `/healthz` 200 (cap
-   `GW_READY_CAP`, default 180 s), it resurrects the saved pm2 list and runs
-   `ghl-mcp-autostart.sh`: on openclaw 2026.10.1 an `openclaw` CLI call made while no gateway is
-   running takes the offline maintenance lock and the gateway dies at bootstrap.
+   `GW_READY_CAP`, default 180 s), it strips the RETIRED community GHL MCP
+   (`ghl-community-mcp`) out of the saved pm2 dump and then resurrects the rest. It never runs
+   `ghl-mcp-autostart.sh`: that file is an inert retirement tombstone, and a dump that cannot be
+   proven clean skips the resurrect (fail closed). The gateway-first order matters because on
+   openclaw 2026.10.1 an `openclaw` CLI call made while no gateway is running takes the offline
+   maintenance lock and the gateway dies at bootstrap.
 
 3. **`pm2 save` after the Command Center is started**, so `dump.pm2` in `PM2_HOME` lists
    `blackceo-command-center`. The Skill 32 installer does this. On an existing box, check

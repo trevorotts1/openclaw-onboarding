@@ -1,0 +1,7 @@
+second_instance_reason=LEASE_HELD
+second_instance_duplicate_start=true
+second_instance_read_only=true
+post_sigterm_supervisor_state=STOPPED
+post_sigterm_admission_state=STOPPED
+post_sigterm_stopped_at_ms=1792360227607
+post_sigterm_json_valid=YES

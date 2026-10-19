@@ -3,7 +3,7 @@
 > **Scope of this file:** All endpoints under the `ad-publishing` module — Facebook, Google and LinkedIn campaigns, adsets, ads, custom audiences, pixels, lead forms, reporting, targeting search and keyword ideas.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-07-28` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — this file records no verified literal for these operations. Read it from the operation page at `https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/<operation-slug>/` before the call. Never send one value for every call.
 >
 > **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
 > (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
@@ -30,6 +30,7 @@
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ad-accounts
@@ -55,6 +56,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: adAccountId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ad-accounts/{adAccountId}
@@ -80,6 +82,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: adAccountId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ad-accounts/{adAccountId}
@@ -105,6 +108,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ads-v2
@@ -130,6 +134,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: adId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ads/{adId}
@@ -155,6 +160,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: adId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ads/{adId}/duplicate
@@ -180,6 +186,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: adId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ads/{adId}/pause
@@ -205,6 +212,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: adId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/ads/{adId}/resume
@@ -230,6 +238,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/adsets
@@ -255,6 +264,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: adsetId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/adsets/{adsetId}
@@ -280,6 +290,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: adsetId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/adsets/{adsetId}/duplicate
@@ -305,6 +316,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: adsetId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/adsets/{adsetId}/pause
@@ -330,6 +342,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: adsetId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/adsets/{adsetId}/resume
@@ -355,6 +368,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: campaignId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaign/{campaignId}
@@ -380,6 +394,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaigns
@@ -405,6 +420,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: campaignId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaigns/{campaignId}
@@ -430,6 +446,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: campaignId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaigns/{campaignId}/duplicate
@@ -455,6 +472,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: campaignId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaigns/{campaignId}/pause
@@ -480,6 +498,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: campaignId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaigns/{campaignId}/publish
@@ -505,6 +524,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: campaignId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/campaigns/{campaignId}/resume
@@ -530,6 +550,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/conversation-forms
@@ -555,6 +576,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/conversation-forms
@@ -580,6 +602,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: None
 - Required query params: locationId, type, adAccountId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience
@@ -605,6 +628,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: audienceId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience/{audienceId}
@@ -630,6 +654,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: audienceId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience/{audienceId}
@@ -655,6 +680,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: audienceId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience/{audienceId}
@@ -680,6 +706,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: audienceId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience/{audienceId}/member
@@ -705,6 +732,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: audienceId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience/{audienceId}/member
@@ -730,6 +758,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: audienceId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/custom-audience/{audienceId}/member/batch
@@ -755,6 +784,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId, type, entityType
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/entity
@@ -780,6 +810,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/integration
@@ -805,6 +836,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/integration
@@ -830,6 +862,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/integration
@@ -855,6 +888,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: leadFormId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/lead-form/{leadFormId}
@@ -880,6 +914,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/me
@@ -905,6 +940,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId, pageId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/page
@@ -930,6 +966,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/facebo
 - Required path params: None
 - Required query params: locationId
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/page/default
@@ -955,6 +992,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: pageId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/page/{pageId}/forms
@@ -980,6 +1018,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: pageId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/page/{pageId}/forms
@@ -1005,6 +1044,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/facebook
 - Required path params: pageId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/page/{pageId}/instagram
@@ -1030,6 +1070,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/pages
@@ -1055,6 +1096,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/pixels
@@ -1080,6 +1122,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/pixels
@@ -1105,6 +1148,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId, groupBy, startDate, endDate, type, fields
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/reporting
@@ -1130,6 +1174,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: campaignId
 - Required query params: locationId, startDate, endDate
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/reporting/campaign/{campaignId}
@@ -1155,6 +1200,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId, listType, startDate, endDate, campaignId, type
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/reporting/list
@@ -1180,6 +1226,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: type, query
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/facebook/targeting/search
@@ -1205,6 +1252,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/facebook/
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/ad-accounts
@@ -1230,6 +1278,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/ad
 - Required path params: adAccountId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/ad-accounts/{adAccountId}
@@ -1255,6 +1304,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/ad
 - Required path params: adAccountId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/ad-accounts/{adAccountId}
@@ -1280,6 +1330,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/google
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/ads
@@ -1305,6 +1356,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/google/ad
 - Required path params: adId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/ads/{adId}
@@ -1330,6 +1382,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/ad
 - Required path params: adId
 - Required query params: None
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/ads/{adId}/publish
@@ -1355,6 +1408,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/google/a
 - Required path params: None
 - Required query params: locationId, type
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/assets
@@ -1380,6 +1434,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/as
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/assets
@@ -1405,6 +1460,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/google/a
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/audiences
@@ -1430,6 +1486,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/au
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/audiences
@@ -1455,6 +1512,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/google/au
 - Required path params: audienceId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/audiences/{audienceId}
@@ -1480,6 +1538,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/au
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/conversion-goals
@@ -1505,6 +1564,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/co
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/conversions
@@ -1530,6 +1590,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/co
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/conversions
@@ -1555,6 +1616,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/google/co
 - Required path params: conversionId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/conversions/{conversionId}
@@ -1580,6 +1642,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/co
 - Required path params: conversionId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/conversions/{conversionId}
@@ -1605,6 +1668,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/google
 - Required path params: None
 - Required query params: locationId, type, entityType
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/entity
@@ -1630,6 +1694,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/en
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/integration
@@ -1655,6 +1720,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/in
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/integration
@@ -1680,6 +1746,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/google/i
 - Required path params: None
 - Required query params: locationId
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/keyword-ideas
@@ -1705,6 +1772,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/google/k
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/me
@@ -1730,6 +1798,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/me
 - Required path params: None
 - Required query params: locationId, startDate, endDate, type, fields
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/reporting
@@ -1755,6 +1824,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/re
 - Required path params: campaignId
 - Required query params: locationId, startDate, endDate
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/reporting/campaign/{campaignId}
@@ -1780,6 +1850,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/re
 - Required path params: None
 - Required query params: locationId, listType, startDate, endDate, type
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/reporting/list
@@ -1805,6 +1876,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/re
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/segments
@@ -1830,6 +1902,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/se
 - Required path params: None
 - Required query params: locationId, type
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/segments
@@ -1855,6 +1928,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/google/se
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/segments/offline-user-list-job
@@ -1880,6 +1954,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/google/s
 - Required path params: segmentId
 - Required query params: locationId, type
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/segments/{segmentId}
@@ -1905,6 +1980,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/se
 - Required path params: segmentId
 - Required query params: locationId, type
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/segments/{segmentId}
@@ -1930,6 +2006,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/google
 - Required path params: None
 - Required query params: locationId, type, advertisingChannelType
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/target-interests
@@ -1955,6 +2032,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/ta
 - Required path params: None
 - Required query params: type, locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/google/targeting/search
@@ -1980,6 +2058,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/google/ta
 - Required path params: None
 - Required query params: locationId, adAccountId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/ad-account
@@ -2005,6 +2084,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: locationId, adAccountId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/ad-account
@@ -2030,6 +2110,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/ad-publishing/linked
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/ad-accounts
@@ -2055,6 +2136,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/ads
@@ -2080,6 +2162,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: adId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/ads/{adId}
@@ -2105,6 +2188,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: adId
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/ads/{adId}/publish
@@ -2130,6 +2214,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/linkedin
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/integration
@@ -2155,6 +2240,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: None
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/integration
@@ -2180,6 +2266,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/linkedin
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/me
@@ -2205,6 +2292,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: locationId, startDate, endDate
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/reporting
@@ -2230,6 +2318,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: campaignGroupId
 - Required query params: locationId, startDate, endDate
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/reporting/campaign-group/{campaignGroupId}
@@ -2255,6 +2344,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: locationId, listType, campaignId, campaignGroupId, startDate, endDate
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/reporting/list
@@ -2280,6 +2370,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: locationId, facet
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/targeting/search
@@ -2305,6 +2396,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: None
 - Required query params: locationId
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/{accountId}/form
@@ -2330,6 +2422,7 @@ curl --request POST 'https://services.leadconnectorhq.com/ad-publishing/linkedin
 - Required path params: accountId
 - Required query params: locationId
 - Required body fields: None
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/{accountId}/forms
@@ -2355,6 +2448,7 @@ curl --request GET 'https://services.leadconnectorhq.com/ad-publishing/linkedin/
 - Required path params: adId
 - Required query params: locationId
 - Required body fields: see request schema in the spec
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/ad-publishing/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/ad-publishing/linkedin/{adId}/status

@@ -11,8 +11,10 @@
 #   2. PM2_HOME is the persistent <volume>/.pm2;
 #   3. $HOME/.pm2 is a symlink to it, so a shell WITHOUT PM2_HOME set never
 #      spawns an empty second daemon and restarts nothing (seen on two boxes);
-#   4. the saved process list (Command Center, GHL MCP) is resurrected at boot,
-#      and the GHL MCP autostart runs, only once the gateway answers /healthz 200;
+#   4. the saved process list is resurrected at boot ONLY after the RETIRED
+#      community GHL MCP has been stripped out of it — this script no longer
+#      invokes the GHL MCP autostart at all (GHL_MCP_RETIRED), and nothing it
+#      runs may bring that service back;
 #   5. $HOME/{999-setup,.claude,.local} live in <volume>/persist-home (symlinked
 #      back on every boot), so a recreate keeps the 999 repo, the ~/.claude skill
 #      links and pip --user packages;
@@ -34,6 +36,17 @@ export PM2_HOME="${PM2_HOME:-$OC/.pm2}"
 export MASTER_FILES_DIR="${MASTER_FILES_DIR:-$OC/openclaw-master-files}"
 LOGS="$OC/logs"
 mkdir -p "$LOGS" "$PM2_HOME" 2>/dev/null || true
+
+# MODERN GHL CLIENT (Skill 44, Tier 0) — GHL-163. caf/convertandflow/ghl live
+# under the PERSISTENT volume at $OC/tools/convert-and-flow-cli, so a recreate
+# keeps the installed CLI. Boot only REPORTS readiness: it never executes the
+# credentials-bearing CLI and never starts the RETIRED community MCP.
+CAF_DIR="${CAF_DIR:-$OC/tools/convert-and-flow-cli}"
+if [ -x "$CAF_DIR/caf" ]; then
+  echo "[ghl] modern client present: $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+else
+  echo "[ghl] modern client not installed yet (the update path builds it): $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+fi
 
 # A login shell (the fleet roll's `docker exec ... bash -l`) takes PATH from
 # /etc/profile, which drops the npm-global bin, so pm2 is "not found" unless
@@ -92,16 +105,44 @@ gw_wait_ready() {
 WAIT_SCRIPT="${GW_WAIT_SCRIPT:-$OC/scripts/wait-gateway-owner-stale.sh}"
 [ -f "$WAIT_SCRIPT" ] && { OPENCLAW_ROOT="$OC" bash "$WAIT_SCRIPT" >> "$LOGS/wait-gateway-owner-stale.boot.log" 2>&1 || true; }
 
-# pm2 resurrect needs no CLI, so it also runs if the cap passes; the autostart calls the CLI,
-# so it runs only on a real 200.
-AUTOSTART="$OC/scripts/ghl-mcp-autostart.sh"
+# The community GHL MCP (Tier 2) is RETIRED — GHL_MCP_RETIRED. This boot path
+# used to invoke its autostart script here, gated on a real /healthz 200; that
+# invocation is gone entirely, so there is no start command left in this file.
+#
+# `pm2 resurrect` needs no CLI, so it still runs once the gateway-first wait
+# returns — but pm2 LAUNCHES every app named in dump.pm2, and deleting the
+# retired app after the resurrect would still have started it once. The dump is
+# therefore stripped FIRST, and when it cannot be proven clean the resurrect is
+# skipped rather than run blind (fail closed: a box whose dump is unreadable
+# starts no pm2 process at all, which is safe; it is never a retired service).
+pm2_dump_excludes_retired() {
+  local dump="$PM2_HOME/dump.pm2"
+  [ -f "$dump" ] || return 0                       # nothing saved -> nothing to resurrect
+  command -v node >/dev/null 2>&1 || return 1      # cannot prove it -> caller must not resurrect
+  # node, not python/jq: this container is guaranteed node (it execs the gateway
+  # below). Exit 0 = clean (dump rewritten if anything was removed), 1 = unknown.
+  node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let list;
+try { list = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { process.exit(1); }
+if (!Array.isArray(list)) { process.exit(1); }
+const hit = (s) => /ghl[-_]community[-_]mcp/.test(String(s || ""));
+const keep = list.filter((x) => x && !hit(x.name) && !hit(x.pm_exec_path) && !hit(x.script) && !hit(x.pm_exec_path_args));
+if (keep.length === list.length) { process.exit(0); }
+try { fs.writeFileSync(p, JSON.stringify(keep, null, 2)); } catch (e) { process.exit(1); }
+process.exit(0);
+' "$dump"
+}
+
 (
-  if gw_wait_ready; then _up=1; else _up=0; fi
-  command -v pm2 >/dev/null 2>&1 && { pm2 resurrect >> "$LOGS/pm2-resurrect.log" 2>&1 || true; }
-  if [ "$_up" = 1 ]; then
-    [ -f "$AUTOSTART" ] && { bash "$AUTOSTART" >> "$LOGS/ghl-mcp-startup.log" 2>&1 || true; }
-  else
-    echo "[$(date -u +%FT%TZ)] gateway did not answer /healthz 200 within ${GW_READY_CAP:-180}s; GHL MCP autostart skipped" >> "$LOGS/ghl-mcp-startup.log" 2>/dev/null || true
+  gw_wait_ready || true
+  if command -v pm2 >/dev/null 2>&1; then
+    if pm2_dump_excludes_retired; then
+      pm2 resurrect >> "$LOGS/pm2-resurrect.log" 2>&1 || true
+    else
+      echo "[$(date -u +%FT%TZ)] dump.pm2 could not be proven free of the RETIRED community MCP — pm2 resurrect skipped (fail closed)" >> "$LOGS/pm2-resurrect.log" 2>/dev/null || true
+    fi
   fi
 ) &
 

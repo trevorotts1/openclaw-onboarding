@@ -52,6 +52,8 @@ def validate(instance, schema_name):
 
 def fixture_brand(run, grade=None):
     write(run / "private" / "brand.json", json.dumps({
+        "brand_id": "blackceo",  # SPF019: the pin counts only when owned and colored
+        "palette": {"gold": "#C9A227", "navy": "#1A1A2E", "cream": "#F5F0E8"},
         "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
         "logo": {"files": "test.png", "masthead_files": "test.png"},
         "founder_photos": "test.png",
@@ -302,7 +304,7 @@ def test_events_and_report_twin():
         validate(twin, "report-json.schema.json")
         assert twin["run_id"] == state["run_id"]
         assert twin["overall"] == "test-run"  # fixture intake is a test run
-        assert len(twin["stages"]) == 14
+        assert len(twin["stages"]) == 15
         intake_row = [s for s in twin["stages"] if s["stage"] == "intake"][0]
         assert intake_row["status"] == "PASS"
         assert intake_row["duration_s"] == 1800

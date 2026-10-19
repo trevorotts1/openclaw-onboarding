@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="t d">
+  <title id="t">Simon Sinek medallion</title>
+  <desc id="d">Illustrative identity medallion for the Simon Sinek council seat (purpose and strategic alignment): the initials SS and three concentric circles inside a colored ring on a tinted disc. A designed symbol, not a photograph or likeness.</desc>
+  <circle cx="120" cy="120" r="114" fill="#FBF1DA"/>
+  <circle cx="120" cy="120" r="114" fill="none" stroke="#B57E0E" stroke-width="6"/>
+  <circle cx="120" cy="120" r="102" fill="none" stroke="#B57E0E" stroke-width="1.5" opacity="0.45"/>
+  
+  <g fill="none" stroke="#7A5200" stroke-width="5">
+    <circle cx="120" cy="72" r="24"/>
+    <circle cx="120" cy="72" r="15"/>
+    <circle cx="120" cy="72" r="6" fill="#7A5200" stroke="none"/>
+  </g>
+  <text x="120" y="172" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-size="56" font-weight="600" letter-spacing="1" fill="#7A5200">SS</text>
+  <g fill="#B57E0E">
+    <circle cx="104" cy="196" r="3.5"/>
+    <circle cx="120" cy="196" r="3.5"/>
+    <circle cx="136" cy="196" r="3.5"/>
+  </g>
+</svg>

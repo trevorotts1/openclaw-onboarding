@@ -11,7 +11,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.36"
+  version: "v27.1.41"
   priority: HIGH
 ---
 
@@ -561,8 +561,8 @@ preflight script. Capability-class mapping and lane detail live in
   `create_media_folder` on the `services.*` + Bearer **LOCATION**-PIT path), then
   **upload → GHL returns a CDN link → reference THAT media-storage link in the
   HTML.** **NO browser control for media storage** — folders/uploads go via the
-  GHL API / official MCP / community MCP / Skill 44, NEVER by driving the page
-  builder UI. Fail-soft: if the plan has no folder endpoint, the wrapper groups
+  GHL API / official MCP / Skill 44, NEVER by driving the page
+  builder UI. (The community MCP route is RETIRED and is not a lane.) Fail-soft: if the plan has no folder endpoint, the wrapper groups
   by `media_folder_name_prefix` instead (still findable). "Grocery-shopping"
   rule: pre-build forms/calendars/tags/workflows (Skill 44) BEFORE the page.
 - **FORMS = same ONE rail.** Forms are built by `tools/ghl_form_builder.py` under

@@ -1,0 +1,156 @@
+{
+ "schema_version": "wise-elders.card/v1",
+ "session_id": "sess-canary-demo-2",
+ "brief_revision": 1,
+ "seat_id": "dennis-kimbro",
+ "input_manifest_sha256": "43abf7d183c73ea53d24411d1d1614fc0b53631d31a268c573b425e14def3700",
+ "pack_version": "v1.0.0",
+ "card_kind": "advisor",
+ "round": 1,
+ "stance": "conditional",
+ "preferred_option_id": "B",
+ "option_scores": [
+  {
+   "option_id": "A",
+   "score": 4,
+   "rationale": "Status quo preserves the existing 12-seat workshop but adds no new capability, no second revenue line, and no ownership asset; it is safe activity without wealth-building motion, so it cannot be endorsed as the answer to the question asked.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "B",
+   "score": 8.5,
+   "rationale": "A single bounded paid pilot cohort is the only option that converts an unmeasured want into paid evidence while keeping spend inside the hard constraint and leaving the workshop intact; payment in advance is the ownership test, not a survey of interest.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  },
+  {
+   "option_id": "C",
+   "score": 3,
+   "rationale": "Broad launch now builds fixed delivery load before any paid demand signal exists, and the affordability question inside the critical domain is unresolved; scale applied to an unproven offer multiplies exposure rather than capability.",
+   "evidence_ids": [
+    "ev-1"
+   ]
+  }
+ ],
+ "framework_applications": [
+  {
+   "framework_id": "kimbro-capability-ownership-wealth",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "Test the decision against three questions the seat asks of any new activity: does it build a durable capability the practice owns, does it create an asset that outlives the founder's hours, and does it convert effort into wealth rather than into more calendar? The workshop is a delivered service bound to founder time. A group program, if it earns paid commitment, becomes a repeatable product asset with a curriculum, a cohort rhythm, and a waitlist - property rather than labor. The pilot is the smallest test of whether that asset actually forms.",
+   "attribution_kind": "blackceo_adaptation"
+  },
+  {
+   "framework_id": "kimbro-earned-demand-discipline",
+   "source_evidence_ids": [],
+   "case_evidence_ids": [
+    "ev-1"
+   ],
+   "application": "Interest is not demand. The brief records that desire for a group program is unmeasured; the seat's discipline is to make the market speak with money before the practice commits structure. A single pilot cohort priced and collected in advance produces a paid signal that either authorizes the broader build or closes the question cheaply.",
+   "attribution_kind": "blackceo_adaptation"
+  }
+ ],
+ "decisive_arguments": [
+  "The question is not whether a group program is a good idea but whether the practice should buy the right to scale it. One pilot cohort buys that right at the lowest possible cost; a broad launch buys it at full cost with no evidence.",
+  "Paid enrollment is the only measurement that distinguishes a real asset from more activity. The brief lists wanting a group program as unknown, and no amount of internal enthusiasm resolves an unknown that only the market can settle.",
+  "Constraint con-1 forbids displacing the existing workshop. A bounded pilot satisfies this by construction; a broad launch puts the proven 12-seat product at risk against an unproven one.",
+  "Enduring wealth in a coaching practice comes from owned repeatable products, not from adding hours. The pilot is a test of whether an owned product can exist, and it fails informatively if it cannot."
+ ],
+ "strongest_objection": "A pilot cohort can become the activity trap it is meant to avoid: a one-off event that consumes founder hours, produces no reusable curriculum asset, and leaves the practice with a new delivery obligation and still no owned product. If the pilot is run as a bespoke favor to known graduates rather than as a priced, repeatable, documented offer, it teaches nothing about scalability and simply adds a second founder-dependent service line. The seat's own standard therefore cuts against a pilot that is not deliberately designed as an asset-formation test with a written curriculum, a fixed price, and a documented delivery cost.",
+ "conditions": [
+  {
+   "id": "cond-1",
+   "description": "Advance paid commitment must be collected before delivery begins, with a minimum enrollment floor set in advance; enrollment below the floor closes the pilot rather than triggering a discounted extension.",
+   "kind": "evidence_required",
+   "blocking": true,
+   "verification_method": "Count completed payments against the pre-declared floor and confirm the floor was fixed before enrollment opened.",
+   "required_evidence": [
+    "Documented price and enrollment floor",
+    "Record of completed payments before first session"
+   ],
+   "responsible_role": "Practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": []
+  },
+  {
+   "id": "cond-2",
+   "description": "Pilot delivery must be documented as a reusable asset during the run: written curriculum, session plan, and a recorded per-cohort delivery cost in founder hours.",
+   "kind": "prerequisite",
+   "blocking": true,
+   "verification_method": "Inspect the curriculum artifact and the logged founder-hour cost for the cohort before any broader-launch decision.",
+   "required_evidence": [
+    "Written curriculum and session plan",
+    "Founder-hour and direct-cost log for the cohort"
+   ],
+   "responsible_role": "Practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": []
+  },
+  {
+   "id": "cond-3",
+   "description": "Pilot spend must remain inside the invented budget cap and must not reduce workshop capacity or cancel any scheduled workshop cohort.",
+   "kind": "safeguard",
+   "blocking": true,
+   "verification_method": "Compare recorded pilot spend against the cap and confirm the workshop schedule is unchanged for the pilot window.",
+   "required_evidence": [
+    "Pilot spend record against the cap",
+    "Workshop schedule before and during the pilot"
+   ],
+   "responsible_role": "Practice owner",
+   "due_at": null,
+   "status": "open",
+   "depends_on": [
+    "cond-1"
+   ]
+  },
+  {
+   "id": "cond-4",
+   "description": "Financial feasibility of the pilot at committed cash levels must be resolved by the designated critical-domain seat before any pilot spend is committed.",
+   "kind": "external_action",
+   "blocking": true,
+   "verification_method": "Obtain the designated critical-domain seat's completed feasibility determination and attach it to the decision record.",
+   "required_evidence": [
+    "Completed financial-feasibility determination for the pilot"
+   ],
+   "responsible_role": "Designated critical-domain checking seat",
+   "due_at": null,
+   "status": "unresolved",
+   "depends_on": []
+  }
+ ],
+ "critical_unknowns": [
+  "Whether workshop graduates want a group program at all is unmeasured in this invented case, so the demand side of every option is currently an assumption rather than a finding.",
+  "Whether the fictional pilot is affordable at committed cash levels is unresolved by the designated critical-domain seat, which caps confidence in the spending case for options B and C.",
+  "The founder's available hours for a pilot cohort alongside the existing workshop are not quantified, so the claim that one pilot can be staffed by the founder alone remains an assumption."
+ ],
+ "change_my_mind": "Evidence that a paid pilot cannot be run inside the hard budget cap, or that founder hours are already fully committed by the existing workshop, would move me off B toward A. Conversely, a completed financial-feasibility determination plus pre-collected paid enrollment at or above the declared floor would move me toward endorsing a broader launch, because at that point the asset has been paid for by the market rather than assumed by the practice.",
+ "challenges_answered": [
+  "ch-1",
+  "ch-2",
+  "ch-3",
+  "ch-4"
+ ],
+ "quotes": [],
+ "evidence_strength": "low",
+ "minority_position": "Within this seat's own reading, the least comfortable conclusion is that a successful pilot may still be the wrong next step if it produces a founder-dependent cohort model rather than a transferable one; the seat would rather see the pilot structured to expose that failure early than see it judged only on revenue.",
+ "host": {
+  "scope": {
+   "tenant_id": "local-tenant",
+   "company_id": "local-company",
+   "installation_id": "e24c1559-5303-4370-82da-577856a32955",
+   "owner_subject": "local-owner"
+  },
+  "operation_id": "op:e24c1559-5303-4370-82da-577856a32955:local-tenant:sess-canary-demo-2:a1:round-1:dennis-kimbro:43abf7d183c73ea5",
+  "route_id": "claude-nine-configured",
+  "session_id": "sess-canary-demo-2",
+  "stamped_at": "2026-10-16T13:27:40.371Z",
+  "source_status": "not_applicable"
+ }
+}

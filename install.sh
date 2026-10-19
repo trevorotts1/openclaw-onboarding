@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.36"
+ONBOARDING_VERSION="v27.1.41"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -875,7 +875,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/82-... (77 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/83-... (78 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -3987,6 +3987,15 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
         esac
     done
     
+    # FIX 11.3: verify what was copied. Every post-copy verify.sh call in this
+    # file used to sit inside `|| true`, so a skill that landed incomplete was
+    # silent. Warn (never fail) on the same "continuing" rule update-skills.sh
+    # uses — an install must not stop over one skill's own check.
+    if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
+        bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >/dev/null 2>&1 \
+            || warn "Skill $SKILL_NAME failed its post-copy verify.sh — review $SKILLS_DIR/$SKILL_NAME"
+    fi
+
     add_to_list "installed" "$SKILL_NAME"
     SKILL_COUNT=$((SKILL_COUNT + 1))
 done
@@ -4060,6 +4069,59 @@ if [ -d "$ONBOARDING_DIR/scripts" ]; then
     cp -r "$ONBOARDING_DIR/scripts" "$SKILLS_DIR/../"
 fi
 
+# >>> GHL-MCP-RETIREMENT-SCRIPTS-BEGIN
+# W07 / GU-019 + GHL-101 (defect B2): the GHL community MCP is RETIRED. Its
+# RESURRECTION surfaces must not reach a box — fresh or upgraded:
+#   ghl-mcp-probe.sh                 --heal RESTARTS it through the supervisor
+#   ghl-mcp-assert-runtime.sh        asserts it IS installed and running
+#   qc-assert-ghl-mcp-supervised.sh  static gate that keeps the above "correct"
+#   ghl-mcp-check-pin-digest.sh      policy layer over the retired service's pin
+#   ghl-mcp-vet-pin.sh               pin-vetting tooling for the retired service
+# RETAINED — the RETIREMENT TOOL and every dependency it sources or executes.
+# update-skills.sh deletes its source checkout at the end of a roll, so pruning
+# these left a box with no way to run `--retire` afterwards (GHL-101 / B2):
+#   ghl-mcp-autostart.sh             --status / --retire (the transaction itself)
+#   lib/ghl-mcp-paths.sh             sourced by the tool (hard dependency)
+#   ghl-mcp-pin-digest.sh            executed by the tool's pin gate
+# The whole-tree copy above is how these land. Retired files are REMOVED
+# immediately after the copy rather than excluded from it, so a box that still
+# carries them from an earlier release loses them on the same pass. The decision
+# is "remove after", not "exclude": cp cannot delete a stale file, and an
+# upgrade over an armed box is exactly the case that matters.
+# Do not re-add a caller for a retired service. A NEW resurrection surface added
+# under scripts/ must be named in _OC_GHL_MCP_RETIRED_SCRIPTS — Step 14a's scan
+# reads the same list. The retained tool must never be named in CODE here: the
+# retirement gate forbids it, because "the installer mentions it" is one rename
+# away from "the installer runs it".
+_OC_RETIRED_SCRIPTS_ROOT="$SKILLS_DIR/../scripts"
+_OC_GHL_MCP_RETIRED_SCRIPTS="ghl-mcp-probe.sh ghl-mcp-assert-runtime.sh ghl-mcp-check-pin-digest.sh ghl-mcp-vet-pin.sh qc-assert-ghl-mcp-supervised.sh"
+_OC_RETIRED_REMOVED=0
+for _OC_RETIRED_NAME in $_OC_GHL_MCP_RETIRED_SCRIPTS; do
+    _OC_RETIRED_REL="$_OC_RETIRED_SCRIPTS_ROOT/$_OC_RETIRED_NAME"
+    [ -f "$_OC_RETIRED_REL" ] || continue
+    rm -f "$_OC_RETIRED_REL" 2>/dev/null || true
+    _OC_RETIRED_REMOVED=$((_OC_RETIRED_REMOVED + 1))
+done
+unset _OC_RETIRED_REL _OC_RETIRED_NAME
+# The retained tool is the whole point of the fix: if the copy above did not
+# deliver it, this run is broken and the reason must be loud, not silent.
+for _OC_RETAINED_REL in "$_OC_RETIRED_SCRIPTS_ROOT"/*.sh \
+                        "$_OC_RETIRED_SCRIPTS_ROOT"/lib/ghl-mcp-paths.sh; do
+    [ -f "$_OC_RETAINED_REL" ] || continue
+    grep -q 'START_REFUSED_RETIRED' "$_OC_RETAINED_REL" 2>/dev/null || continue
+    _OC_RETAINED_TOOL="${_OC_RETAINED_REL##*/}"
+    break
+done
+if [ -z "${_OC_RETAINED_TOOL:-}" ]; then
+    warn "GHL MCP retirement tool was NOT delivered to $_OC_RETIRED_SCRIPTS_ROOT — --retire cannot run on this box after the source checkout is removed."
+fi
+if [ ! -f "$_OC_RETIRED_SCRIPTS_ROOT/lib/ghl-mcp-paths.sh" ]; then
+    warn "GHL MCP path library was NOT delivered to $_OC_RETIRED_SCRIPTS_ROOT/lib/ — the retirement tool will refuse to derive paths."
+fi
+unset _OC_RETAINED_REL _OC_RETAINED_TOOL
+note "Community GHL MCP retired — removed $_OC_RETIRED_REMOVED resurrection script(s) from $_OC_RETIRED_SCRIPTS_ROOT (retirement tool, its path library and digest primitive RETAINED)"
+# <<< GHL-MCP-RETIREMENT-SCRIPTS-END
+
 # Platform helpers are runtime dependencies of the delivered Skill32 resume command.
 if [ -d "$ONBOARDING_DIR/platform" ]; then
     mkdir -p "$SKILLS_DIR/../platform"
@@ -4082,21 +4144,29 @@ fi
 # resolver tries (they resolve "$SELF_DIR/../config" from $OC_CONFIG/scripts).
 #
 # So: deliver it by name, to the sibling of scripts/, and ASSERT it landed.
-# Since v21.6.0 the launch surfaces are FAIL-CLOSED — no pin file means
-# STATUS: PIN_UNVERIFIED and no build and no start — so a silent miss here is
-# a Tier 2 outage, not a cosmetic gap.
+#
+# W07 / GU-019: config/ghl-mcp-pin.env is the RETIRED community MCP's commit
+# pin. The config/ DELIVERY CONTRACT stays — config/cron.d, the bootstrap
+# pointer/compact examples and plugins-sovereignty-denylist.json still ship and
+# are still read from this destination — but the community pin is removed after
+# the copy on every run. That removal is load-bearing twice over: the launch
+# surfaces were FAIL-CLOSED on this file (a pin present = build and start), and
+# a stale pin left on an upgraded box is a resurrection trigger.
 # ----------------------------------------------------------
 OC_CANONICAL_CONFIG_DEST="$SKILLS_DIR/../config"
 if [ -d "$ONBOARDING_DIR/config" ]; then
     mkdir -p "$OC_CANONICAL_CONFIG_DEST" 2>/dev/null || true
     cp -Rp "$ONBOARDING_DIR/config/." "$OC_CANONICAL_CONFIG_DEST/" 2>/dev/null || true
 fi
-if [ -r "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
-    success "config/ delivered — ghl-mcp-pin.env readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env"
+# RETIRED (W07): never deliver config/ghl-mcp-pin.env, and delete a copy an
+# earlier release left behind. The pin is not shipped by this installer at all.
+rm -f "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" 2>/dev/null || true
+if [ -d "$OC_CANONICAL_CONFIG_DEST" ] && [ ! -e "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
+    success "config/ delivered to $OC_CANONICAL_CONFIG_DEST — ghl-mcp-pin.env deliberately NOT delivered (community MCP RETIRED)"
 else
-    warn "config/ghl-mcp-pin.env is NOT readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env after delivery."
-    warn "  CONSEQUENCE: Step 14a will report STATUS: ghl-mcp-autostart=PIN_UNVERIFIED and the Tier 2 GHL MCP will NOT be built or started on this box."
-    warn "  ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run scripts/ghl-mcp-autostart.sh."
+    warn "config/ delivery could NOT be verified at $OC_CANONICAL_CONFIG_DEST, or a stale ghl-mcp-pin.env survived the removal."
+    warn "  CONSEQUENCE: a surviving pin is an active resurrection trigger for the RETIRED community MCP."
+    warn "  ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, delete ghl-mcp-pin.env, and re-run this installer."
 fi
 # <<< CANONICAL-CONFIG-DELIVERY-END
 
@@ -6346,7 +6416,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 77 active skills install in 6 dependency-aware waves, not by number order.
+The 78 active skills install in 6 dependency-aware waves, not by number order.
 The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
 gating 51 of the 72 active skills; the remaining 21 are copied to every box by the installer's
 [0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units
@@ -7734,66 +7804,388 @@ install_skill_37_zhc_closeout() {
 install_skill_37_zhc_closeout
 
 # ----------------------------------------------------------
-# Step 14a: Start the GHL MCP server (FIX 3, v10.15.48)
+# Step 14a: GHL community MCP — RETIRED (W07 / GU-019)
 # ----------------------------------------------------------
-# Why: Skill 36 registers the GHL community MCP in mcp.servers but nothing ever
-# STARTS the local server on :8765 — so the GHL tools never resolve at runtime.
-# The launchd plist lived only as PROSE in 36-ghl-mcp-setup/INSTALL.md §5.5
-# (downloaded, never executed). This step runs the EXECUTED autostart: build if
-# needed, install the canonical launchd KeepAlive plist (com.clawd.ghl-mcp) on
-# :8765, health-check, and register. Idempotent; honest SKIP if GHL creds absent.
+# Pre-W07 behaviour (this step, v10.15.48 → W06): it ran
+# scripts/ghl-mcp-autostart.sh, which pinned and built a third-party GHL
+# community MCP and installed the whole Tier-2 lifecycle — launchd
+# (com.clawd.ghl-mcp), pm2 (ghl-community-mcp) or systemd (ghl-mcp.service),
+# plus a 15-minute liveness probe whose --heal path RESTARTS the service.
+# install.sh never supervised the service itself; it delegated all of it.
 #
-# v21.5.0: the autostart now also (a) pins the third-party checkout to the vetted
-# commit in config/ghl-mcp-pin.env, (b) pins GHL_TOOL_PROFILE so the server never
-# serves the full 858-tool surface, (c) uses crash-only restart semantics so a bad
-# PIT cannot become a 10s relaunch loop, (d) builds a `git archive` of the pinned
-# commit in a temp dir and swaps dist/ only on success, and (e) verifies LIVENESS
-# with a JSON-RPC round trip and installs the periodic ghl-mcp-probe. Tier 2 is
-# NOT registered in mcp.servers (on-demand curl).
-step "Step 14a: Starting GHL MCP server (pinned build, crash-only launchd :8765 + JSON-RPC liveness probe)"
+# RETIRED. This step must never create the service, and it must not run the
+# autostart even when an older bundle still ships one: a stale launcher is a
+# resurrection path, not a fallback. What it does instead:
+#   1. scans every supervision surface READ-ONLY (a bootout/disable/delete is
+#      the update path's ordered transaction, not a fresh install's job);
+#   2. reports the Tier-2 state in the same place the old STATUS block did, as
+#      STATUS: ghl-mcp-retirement=<STATE>;
+#   3. writes a secret-free JSON retirement receipt;
+#   4. fails CLOSED in the receipt: a surface that cannot be read is UNVERIFIED,
+#      never "off", so RETIRED_VERIFIED is only ever written on evidence.
+#
+# Preserved, untouched: official MCP registration, the custom courier, shared
+# credentials (GOHIGHLEVEL_API_KEY et al.), Skill 38, Skill 44 env wiring.
+step "Step 14a: GHL community MCP — RETIRED (asserting the service is absent)"
 
-start_ghl_mcp_autostart() {
-    local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
-    if [ ! -x "$AUTOSTART" ]; then
-        [ -f "$AUTOSTART" ] && chmod +x "$AUTOSTART" 2>/dev/null || true
+# W07 retirement marker — read by scripts/qc-assert-pin-delivery-paths.sh and
+# scripts/qc-assert-ghl-mcp-supervised.sh. This release retires the service;
+# there is no live code path that installs, starts or supervises it.
+GHL_MCP_RETIRED=1
+
+# >>> GHL-MCP-RETIREMENT-BEGIN
+# Self-contained on purpose: everything between these markers is read-only and
+# depends on NO install.sh helper, so tests extract this block verbatim and run
+# it under stubbed launchctl/pm2/systemctl/crontab.
+oc_ghl_mcp_json_str() {
+    local _s="${1:-}"
+    _s="${_s//\\/\\\\}"
+    _s="${_s//\"/\\\"}"
+    _s="${_s//$'\n'/ }"
+    _s="${_s//$'\r'/ }"
+    _s="${_s//$'\t'/ }"
+    printf '"%s"' "$_s"
+}
+
+oc_ghl_mcp_state_from() {
+    # present beats unknown beats absent. PORT_UNKNOWN is the "cannot tell"
+    # shape the launch surfaces already refuse to call a verdict.
+    local _v _present=0 _unknown=0
+    for _v in "$@"; do
+        case "$_v" in
+            present) _present=1 ;;
+            unknown) _unknown=1 ;;
+        esac
+    done
+    if [ "$_present" = 1 ]; then printf 'MIGRATION_FAILED'
+    elif [ "$_unknown" = 1 ]; then printf 'UNVERIFIED'
+    else printf 'RETIRED_VERIFIED'; fi
+}
+
+oc_ghl_mcp_scan() {
+    # $1 openclaw root  $2 platform (mac|vps)  $3 delivered scripts/ dir
+    # Sets OC_GHL_MCP_V_* and OC_GHL_MCP_STATE. Never mutates a supervisor.
+    local _root="${1:-}" _plat="${2:-}" _launcher_dir="${3:-}"
+    local _out="" _uid="" _pm2h="" _seen=" " _any=0 _hit=0 _unk=0 _rc=0 _lf=""
+
+    OC_GHL_MCP_V_INSTALLDIR=absent
+    OC_GHL_MCP_V_LAUNCHER=absent
+    OC_GHL_MCP_V_PROCESS=unknown
+    OC_GHL_MCP_V_LAUNCHD=n/a
+    OC_GHL_MCP_V_PM2=n/a
+    OC_GHL_MCP_V_SYSTEMD=n/a
+    OC_GHL_MCP_V_CRON=n/a
+    OC_GHL_MCP_V_PORT=unknown
+    OC_GHL_MCP_V_MCPSERVERS=unknown
+    OC_GHL_MCP_V_URLVAR=unknown
+
+    # 1. Install tree on disk. A dormant checkout is still startable.
+    if [ -n "$_root" ] && [ -d "$_root/mcp-servers/ghl-community-mcp" ]; then
+        OC_GHL_MCP_V_INSTALLDIR=present
+    elif [ -n "${HOME:-}" ] && [ -d "$HOME/mcp-servers/ghl-community-mcp" ]; then
+        OC_GHL_MCP_V_INSTALLDIR=present
     fi
-    if [ ! -f "$AUTOSTART" ]; then
-        warn "ghl-mcp-autostart.sh not found at $AUTOSTART — GHL MCP server NOT started (older bundle?). GHL tools will not resolve until it is run."
-        return 0
+
+    # 2. A retired RESURRECTION surface back in the delivered tree. install.sh
+    #    removes _OC_GHL_MCP_RETIRED_SCRIPTS earlier in the run; if one is back,
+    #    something re-delivered it. The RETIREMENT TOOL, its path library and its
+    #    digest primitive are RETAINED on purpose (GHL-101 / B2: --retire must
+    #    still run after the source checkout is deleted), so their presence is
+    #    expected and is NOT a resurrection signal.
+    if [ -n "$_launcher_dir" ] && [ -d "$_launcher_dir" ]; then
+        # GLOB, not the named list: the named list only covers the five files we
+        # know about, so a NEWLY added ghl-mcp-*.sh resurrection surface would be
+        # invisible here. The retained retirement tooling is exempted by its
+        # retirement marker (same rule the delivery gate uses), so any OTHER
+        # ghl-mcp-*.sh that reappears is still caught.
+        for _lf in "$_launcher_dir"/ghl-mcp-*.sh; do
+            [ -f "$_lf" ] || continue
+            grep -qE 'GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED' "$_lf" 2>/dev/null && continue
+            OC_GHL_MCP_V_LAUNCHER=present
+            break
+        done
+        unset _lf
     fi
-    local OUT RC=0
-    OUT="$(bash "$AUTOSTART" 2>&1)" || RC=$?
-    printf '%s\n' "$OUT" >> "$LOG_FILE"
-    local STATUS_LINE
-    STATUS_LINE="$(printf '%s\n' "$OUT" | grep -E '^STATUS:' | tail -1 || true)"
-    case "$STATUS_LINE" in
-        *HEALTHY_ALREADY*|*"=HEALTHY "*) success "GHL MCP server running + ANSWERING JSON-RPC (${STATUS_LINE:-healthy})" ;;
-        *SKIPPED_NO_CREDS*)             note "GHL MCP server not started — GHL token absent (honest gap). ${STATUS_LINE}" ;;
-        # v21.5.0 states — each one is a REAL failure mode that used to be invisible.
-        *"=DEAF"*)                      warn "GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) — every agent init will burn the full connectionTimeoutMs until fixed. ${STATUS_LINE}" ;;
-        *TOKEN_REJECTED*)               warn "GHL rejected the PIT — the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${STATUS_LINE}" ;;
-        *PIN_MISMATCH*|*PIN_INVALID*)   warn "GHL MCP refused to start: the vetted commit pin could not be honoured — an UNPINNED third-party MCP is never started. Re-vet upstream and update config/ghl-mcp-pin.env. ${STATUS_LINE}" ;;
-        # DEFECT 1 (proven live 2026-08-04): this refusal used to be
-        # INDISTINGUISHABLE from PIN_MISMATCH above — the ownership guard did
-        # not exist, so every git command silently failed and the ONLY signal
-        # that ever reached this installer was the innocent-looking
-        # PIN_MISMATCH. The dedicated STATUS below fires BEFORE that generic
-        # one and names the real remedy directly, instead of sending the
-        # operator to re-vet a pin that was never the problem.
-        *ROOT_OWNERSHIP_MISMATCH*)      warn "GHL MCP refused to start: this installer is running as ROOT against a checkout owned by a different uid — every git command inside ghl-mcp-autostart.sh would be silently refused by git's dubious-ownership guard. FIX: re-run as the box user, never root (VPS/Docker: docker exec -u node <ctr> bash ...; see scripts/activate-loop-protection.sh for the convention). ${STATUS_LINE}" ;;
-        # v21.6.0 / R9 fail-closed states. These are REFUSALS, not errors: the
-        # box deliberately did not build or start third-party code it could not
-        # verify. Both are actionable in one step, so say which step.
-        *PIN_UNVERIFIED*)               warn "GHL MCP refused to start: config/ghl-mcp-pin.env did not reach this box, so there is no verified pin to build. FIX: re-run this installer (it delivers config/ next to scripts/) — see the config/ delivery warning earlier in this log. ${STATUS_LINE}" ;;
-        *PIN_UNVETTED*)                 warn "GHL MCP refused to start: the pin is present but NOT VETTED (verdict is not CLEAN, or the vetting digest does not recompute — i.e. the SHA was hand-edited without re-running the vetting tool). FIX: re-vet the commit and rewrite config/ghl-mcp-pin.env via scripts/ghl-mcp-vet-pin.sh; never hand-edit the digest. ${STATUS_LINE}" ;;
-        *STARTED_UNHEALTHY*)            warn "GHL MCP service installed but /health not green yet — crash-only restart will retry. ${STATUS_LINE}" ;;
-        *BUILD_FAILED*)                 warn "GHL MCP server build failed — the PREVIOUS dist was left intact; GHL tools may still resolve. ${STATUS_LINE}" ;;
-        *)                              note "GHL MCP autostart ran. ${STATUS_LINE:-(no STATUS line captured — see $LOG_FILE)}" ;;
-    esac
+
+    # 3. A live process, matched on the exact install-dir path. Never a broad
+    #    name match (that is how "pkill -f ghl" takes out unrelated work).
+    if command -v ps >/dev/null 2>&1; then
+        _out="$(ps -A -o pid=,command= 2>/dev/null)" || _out=""
+        if [ -n "$_out" ]; then
+            case "$_out" in
+                *"mcp-servers/ghl-community-mcp"*) OC_GHL_MCP_V_PROCESS=present ;;
+                *) OC_GHL_MCP_V_PROCESS=absent ;;
+            esac
+        fi
+    fi
+
+    # 4. launchd (mac): loaded label, plist on disk, or an ENABLED override.
+    #    "not running" is not "off" — RunAtLoad starts it at next login, and the
+    #    override database is the live resurrection bit.
+    if [ "$_plat" = "mac" ]; then
+        if command -v launchctl >/dev/null 2>&1; then
+            if _out="$(launchctl list 2>/dev/null)"; then
+                if awk '($NF=="com.clawd.ghl-mcp" || $NF=="com.clawd.ghl-mcp-probe"){f=1} END{exit(f?0:1)}' <<< "$_out"; then
+                    OC_GHL_MCP_V_LAUNCHD=present
+                elif { [ -n "${HOME:-}" ] && [ -e "$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist" ]; } \
+                  || { [ -n "${HOME:-}" ] && [ -e "$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist" ]; }; then
+                    OC_GHL_MCP_V_LAUNCHD=present
+                else
+                    _uid="$(id -u 2>/dev/null || printf '')"
+                    _out="$(launchctl print-disabled "gui/$_uid" 2>/dev/null || true)"
+                    case "$_out" in
+                        *'"com.clawd.ghl-mcp" => enabled'*|*'"com.clawd.ghl-mcp-probe" => enabled'*)
+                            OC_GHL_MCP_V_LAUNCHD=present ;;
+                        *) OC_GHL_MCP_V_LAUNCHD=absent ;;
+                    esac
+                fi
+            else
+                OC_GHL_MCP_V_LAUNCHD=unknown
+            fi
+        else
+            OC_GHL_MCP_V_LAUNCHD=unknown
+        fi
+    fi
+
+    # 5. pm2: READ THE DUMP, never `pm2 list`. Pointing pm2 at a fresh PM2_HOME
+    #    SPAWNS a daemon — a read-only check must not mutate the box. The dump is
+    #    what `pm2 resurrect` replays, so it is the resurrection surface.
+    while IFS= read -r _pm2h; do
+        [ -n "$_pm2h" ] || continue
+        case "$_seen" in *" $_pm2h "*) continue ;; esac
+        _seen="$_seen$_pm2h "
+        [ -d "$_pm2h" ] || continue
+        _any=1
+        if [ -r "$_pm2h/dump.pm2" ]; then
+            if grep -aqE '"name"[[:space:]]*:[[:space:]]*"ghl-community-mcp"' "$_pm2h/dump.pm2" 2>/dev/null; then
+                _hit=1
+            fi
+        elif [ -e "$_pm2h/dump.pm2" ]; then
+            _unk=1
+        fi
+    done <<EOF
+${PM2_HOME:-}
+${HOME:+$HOME/.pm2}
+${_root:+"$_root"/.pm2}
+EOF
+    if [ "$_hit" = 1 ]; then
+        OC_GHL_MCP_V_PM2=present
+    elif [ "$_unk" = 1 ]; then
+        OC_GHL_MCP_V_PM2=unknown
+    elif [ "$_any" = 1 ]; then
+        OC_GHL_MCP_V_PM2=absent
+    elif command -v pm2 >/dev/null 2>&1; then
+        OC_GHL_MCP_V_PM2=absent
+    fi
+
+    # 6. systemd (Linux only; a container has no systemd and pm2 is the
+    #    supervisor there, which is NOT_APPLICABLE — never UNKNOWN).
+    if [ "$_plat" = "vps" ]; then
+        if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+            _out="$(systemctl is-enabled ghl-mcp.service 2>/dev/null || true)"
+            case "$_out" in
+                enabled|enabled-runtime|static|indirect|generated|disabled|masked|masked-runtime)
+                    # Disabled/masked still means the unit FILE exists — an
+                    # enable-able resurrection surface.
+                    OC_GHL_MCP_V_SYSTEMD=present ;;
+                "")
+                    if [ -e /etc/systemd/system/ghl-mcp.service ]; then
+                        OC_GHL_MCP_V_SYSTEMD=present
+                    else
+                        OC_GHL_MCP_V_SYSTEMD=absent
+                    fi ;;
+                *"No such file"*) OC_GHL_MCP_V_SYSTEMD=absent ;;
+                *) OC_GHL_MCP_V_SYSTEMD=unknown ;;
+            esac
+        else
+            OC_GHL_MCP_V_SYSTEMD=n/a
+        fi
+    fi
+
+    # 7. crontab tags that bring it back. Match the sentinel comments only.
+    if command -v crontab >/dev/null 2>&1; then
+        if _out="$(crontab -l 2>&1)"; then
+            case "$_out" in
+                *"# managed:ghl-mcp-probe"*|*"# managed:ghl-mcp-pm2-resurrect"*)
+                    OC_GHL_MCP_V_CRON=present ;;
+                *) OC_GHL_MCP_V_CRON=absent ;;
+            esac
+        else
+            case "$_out" in
+                *"no crontab"*) OC_GHL_MCP_V_CRON=absent ;;
+                *) OC_GHL_MCP_V_CRON=unknown ;;
+            esac
+        fi
+    fi
+
+    # 8. The configured port. rc 1 + empty output is a real "no listener";
+    #    missing lsof is UNKNOWN, never "off".
+    if command -v lsof >/dev/null 2>&1; then
+        # NOT `_out="$(lsof ...)"` bare: under `set -e` a failing assignment
+        # aborts the installer, and "no listener" is a non-zero rc by design.
+        _rc=0
+        _out="$(lsof -nP -iTCP:8765 -sTCP:LISTEN 2>/dev/null)" || _rc=$?
+        if [ "$_rc" -eq 0 ] && [ -n "$_out" ]; then
+            OC_GHL_MCP_V_PORT=present
+        elif [ "$_rc" -eq 1 ] && [ -z "$_out" ]; then
+            OC_GHL_MCP_V_PORT=absent
+        else
+            OC_GHL_MCP_V_PORT=unknown
+        fi
+    fi
+
+    # 9. Registration in mcp.servers and the URL var. Both are persistence
+    #    surfaces even with no process running.
+    if [ -n "$_root" ] && [ -r "$_root/openclaw.json" ] && command -v python3 >/dev/null 2>&1; then
+        _out="$(OC_JSON="$_root/openclaw.json" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    with open(os.environ["OC_JSON"]) as fh:
+        cfg = json.load(fh)
+except Exception:
+    print("unknown unknown")
+else:
+    servers = (cfg.get("mcp") or {}).get("servers") or {}
+    env = (cfg.get("env") or {}).get("vars") or {}
+    print(("present" if "ghl-community-mcp" in servers else "absent") + " " +
+          ("present" if env.get("GHL_COMMUNITY_MCP_URL") else "absent"))
+PYEOF
+)"
+        set -- $_out
+        case "${1:-unknown}" in
+            present|absent) OC_GHL_MCP_V_MCPSERVERS="$1" ;;
+            *) OC_GHL_MCP_V_MCPSERVERS=unknown ;;
+        esac
+        case "${2:-unknown}" in
+            present|absent) OC_GHL_MCP_V_URLVAR="$2" ;;
+            *) OC_GHL_MCP_V_URLVAR=unknown ;;
+        esac
+    fi
+
+    OC_GHL_MCP_STATE="$(oc_ghl_mcp_state_from \
+        "$OC_GHL_MCP_V_INSTALLDIR" "$OC_GHL_MCP_V_LAUNCHER" "$OC_GHL_MCP_V_PROCESS" \
+        "$OC_GHL_MCP_V_LAUNCHD" "$OC_GHL_MCP_V_PM2" "$OC_GHL_MCP_V_SYSTEMD" \
+        "$OC_GHL_MCP_V_CRON" "$OC_GHL_MCP_V_PORT" \
+        "$OC_GHL_MCP_V_MCPSERVERS" "$OC_GHL_MCP_V_URLVAR")"
     return 0
 }
 
-start_ghl_mcp_autostart
+oc_ghl_mcp_write_receipt() {
+    # $1 receipt path  $2 phase. Reads OC_GHL_MCP_V_*, OC_GHL_MCP_STATE and the
+    # OC_GHL_MCP_*_RELEASE / OC_GHL_MCP_COMMIT globals. No secrets, ever.
+    local _path="${1:-}" _phase="${2:-unknown}"
+    local _dir="" _tmp="" _ts="" _host="" _from="" _to="" _commit="" _root=""
+    local _rem="" _pair="" _name="" _val=""
+    [ -n "$_path" ] || return 0
+    _dir="$(dirname "$_path" 2>/dev/null || printf '.')"
+    mkdir -p "$_dir" 2>/dev/null || return 0
+    _ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf 'unknown')"
+    _host="$(hostname 2>/dev/null || uname -n 2>/dev/null || printf 'unknown')"
+    _root="${OC_CONFIG:-}"
+    _from="${OC_GHL_MCP_FROM_RELEASE:-unknown}"
+    _to="${OC_GHL_MCP_TO_RELEASE:-unknown}"
+    _commit="${OC_GHL_MCP_COMMIT:-unknown}"
+
+    for _pair in \
+        "install_dir=$OC_GHL_MCP_V_INSTALLDIR" \
+        "launcher_script=$OC_GHL_MCP_V_LAUNCHER" \
+        "process=$OC_GHL_MCP_V_PROCESS" \
+        "launchd=$OC_GHL_MCP_V_LAUNCHD" \
+        "pm2=$OC_GHL_MCP_V_PM2" \
+        "systemd=$OC_GHL_MCP_V_SYSTEMD" \
+        "cron=$OC_GHL_MCP_V_CRON" \
+        "port_8765=$OC_GHL_MCP_V_PORT" \
+        "mcp.servers=$OC_GHL_MCP_V_MCPSERVERS" \
+        "env.vars.GHL_COMMUNITY_MCP_URL=$OC_GHL_MCP_V_URLVAR"; do
+        _name="${_pair%%=*}"
+        _val="${_pair#*=}"
+        case "$_val" in
+            present) _rem="${_rem}${_rem:+, }$(oc_ghl_mcp_json_str "residual surface PRESENT: $_name — run the W07 retirement transaction (inventory, archive, disable resurrection, stop the matched service, verify off); do not kill by process name")" ;;
+            unknown) _rem="${_rem}${_rem:+, }$(oc_ghl_mcp_json_str "surface UNREADABLE: $_name — cannot prove the service is off; fix the instrument (installer/lsof/launchctl) and re-run")" ;;
+        esac
+    done
+
+    _tmp="$_path.tmp.$$"
+    {
+        printf '{\n'
+        printf '  "schema": "openclaw-ghl-community-mcp-retirement/v1",\n'
+        printf '  "mode": %s,\n' "$(oc_ghl_mcp_json_str "${OC_GHL_MCP_RECEIPT_MODE:-fresh-install}")"
+        printf '  "phase": %s,\n' "$(oc_ghl_mcp_json_str "$_phase")"
+        printf '  "timestamp": %s,\n' "$(oc_ghl_mcp_json_str "$_ts")"
+        printf '  "box": {"hostname": %s, "platform": %s, "openclaw_root": %s},\n' \
+            "$(oc_ghl_mcp_json_str "$_host")" \
+            "$(oc_ghl_mcp_json_str "${OPENCLAW_PLATFORM:-unknown}")" \
+            "$(oc_ghl_mcp_json_str "$_root")"
+        printf '  "cohort": %s,\n' "$(oc_ghl_mcp_json_str "${OPENCLAW_PLATFORM:-unknown}")"
+        printf '  "from_release": %s,\n' "$(oc_ghl_mcp_json_str "$_from")"
+        printf '  "to_release": %s,\n' "$(oc_ghl_mcp_json_str "$_to")"
+        printf '  "commit": %s,\n' "$(oc_ghl_mcp_json_str "$_commit")"
+        printf '  "old_service_identity": {"launchd_labels": ["com.clawd.ghl-mcp", "com.clawd.ghl-mcp-probe"], "pm2_app": "ghl-community-mcp", "systemd_unit": "ghl-mcp.service", "install_dir_suffix": "mcp-servers/ghl-community-mcp", "port": 8765},\n'
+        printf '  "archive_path": null,\n'
+        printf '  "archive_manifest_sha256": null,\n'
+        printf '  "migrated_callers": [],\n'
+        printf '  "disabled_hooks": [],\n'
+        printf '  "preserved_assets": ["official MCP registration (untouched by this installer)", "custom courier (~/.openclaw/tools/courier-ghl-delivery/)", "shared credentials, by name only: GOHIGHLEVEL_API_KEY, GOHIGHLEVEL_LOCATION_ID"],\n'
+        printf '  "prevented_hooks": ["install.sh no longer invokes the retired community MCP launcher", "install.sh removes the community supervision scripts from the delivered scripts/ tree", "install.sh does not deliver config/ghl-mcp-pin.env"],\n'
+        printf '  "stop_result": {"attempted": false, "reason": "fresh install: this installer never starts the community MCP"},\n'
+        printf '  "verification": {\n'
+        printf '    "install_dir": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_INSTALLDIR")"
+        printf '    "launcher_script": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_LAUNCHER")"
+        printf '    "process": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_PROCESS")"
+        printf '    "launchd": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_LAUNCHD")"
+        printf '    "pm2": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_PM2")"
+        printf '    "systemd": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_SYSTEMD")"
+        printf '    "cron": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_CRON")"
+        printf '    "port_8765": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_PORT")"
+        printf '    "mcp.servers": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_MCPSERVERS")"
+        printf '    "env.vars.GHL_COMMUNITY_MCP_URL": %s\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_V_URLVAR")"
+        printf '  },\n'
+        printf '  "final_state": %s,\n' "$(oc_ghl_mcp_json_str "$OC_GHL_MCP_STATE")"
+        printf '  "remediation": [%s]\n' "$_rem"
+        printf '}\n'
+    } > "$_tmp" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 0; }
+    mv -f "$_tmp" "$_path" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 0; }
+    chmod 0644 "$_path" 2>/dev/null || true
+    return 0
+}
+# <<< GHL-MCP-RETIREMENT-END
+
+OC_GHL_MCP_RETIREMENT_DIR="$OC_CONFIG/retirement"
+OC_GHL_MCP_RETIREMENT_RECEIPT="$OC_GHL_MCP_RETIREMENT_DIR/ghl-community-mcp.json"
+OC_GHL_MCP_FROM_RELEASE="${PRIOR_VERSION:-none}"
+OC_GHL_MCP_TO_RELEASE="${ONBOARDING_VERSION:-unknown}"
+OC_GHL_MCP_COMMIT=unknown
+if command -v git >/dev/null 2>&1 && [ -d "$_SCRIPT_DIR/.git" ]; then
+    OC_GHL_MCP_COMMIT="$(git -C "$_SCRIPT_DIR" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+fi
+if [ -n "${PRIOR_VERSION:-}" ]; then
+    OC_GHL_MCP_RECEIPT_MODE="reinstall"
+else
+    OC_GHL_MCP_RECEIPT_MODE="fresh-install"
+fi
+
+oc_ghl_mcp_scan "$OC_CONFIG" "$OPENCLAW_PLATFORM" "$SKILLS_DIR/../scripts"
+printf 'STATUS: ghl-mcp-retirement=%s\n' "$OC_GHL_MCP_STATE" | tee -a "${LOG_FILE:-/dev/null}"
+if [ "$OC_GHL_MCP_V_LAUNCHER" = "present" ]; then
+    warn "an older bundle still re-delivers a community-MCP launcher script — it was deliberately NOT executed (the community MCP is retired)"
+fi
+case "$OC_GHL_MCP_STATE" in
+    RETIRED_VERIFIED)
+        success "GHL community MCP RETIRED — no install tree, launcher, process, launchd/pm2/systemd unit, cron, port listener or mcp.servers entry"
+        ;;
+    MIGRATION_FAILED)
+        warn "GHL community MCP retired in this release, but RESIDUAL STATE is present on this box (see the surface list below)."
+        warn "  install_dir=$OC_GHL_MCP_V_INSTALLDIR launcher=$OC_GHL_MCP_V_LAUNCHER process=$OC_GHL_MCP_V_PROCESS launchd=$OC_GHL_MCP_V_LAUNCHD pm2=$OC_GHL_MCP_V_PM2 systemd=$OC_GHL_MCP_V_SYSTEMD cron=$OC_GHL_MCP_V_CRON port=$OC_GHL_MCP_V_PORT mcp.servers=$OC_GHL_MCP_V_MCPSERVERS url_var=$OC_GHL_MCP_V_URLVAR"
+        warn "  DO NOT kill by process name. Run the ordered retirement transaction (W07 update path): inventory, stage, archive, disable resurrection, stop the matched identity, verify, receipt."
+        ;;
+    *)
+        warn "GHL community MCP retirement could NOT be verified on this box — at least one surface was unreadable, and an unreadable surface is never 'off'."
+        warn "  install_dir=$OC_GHL_MCP_V_INSTALLDIR launcher=$OC_GHL_MCP_V_LAUNCHER process=$OC_GHL_MCP_V_PROCESS launchd=$OC_GHL_MCP_V_LAUNCHD pm2=$OC_GHL_MCP_V_PM2 systemd=$OC_GHL_MCP_V_SYSTEMD cron=$OC_GHL_MCP_V_CRON port=$OC_GHL_MCP_V_PORT mcp.servers=$OC_GHL_MCP_V_MCPSERVERS url_var=$OC_GHL_MCP_V_URLVAR"
+        warn "  The receipt records UNVERIFIED, not success. Fix the instrument (lsof/launchctl/pm2 dump/openclaw.json) and re-run."
+        ;;
+esac
+oc_ghl_mcp_write_receipt "$OC_GHL_MCP_RETIREMENT_RECEIPT" "step-14a"
+note "Retirement receipt: $OC_GHL_MCP_RETIREMENT_RECEIPT (final_state=$OC_GHL_MCP_STATE)"
 
 # ----------------------------------------------------------
 # Step 14b: Installing Skill 38 (Conversational AI System v5.14)
@@ -7970,6 +8362,35 @@ install_skill_44_convert_and_flow_operator_env() {
     local SKILL_DEST="$SKILLS_DIR/44-convert-and-flow-operator"
     local WIRE="$SKILL_DEST/tools/engine/wire-ghl-env.sh"
     local VERIFY="$SKILL_DEST/tools/engine/verify-ghl-live.sh"
+    local CLI_WIRE="$SKILL_DEST/wire.sh"
+
+    # GHL-163: the MODERNIZED GHL client (caf/convertandflow/ghl) must be
+    # installed on a FRESH install, not only by the weekly update path. Skill
+    # 44's root wire.sh is the canonical builder (copy engine -> pip install -e
+    # -> wrappers + drift stamp); it is fail-soft and always exits 0. Without
+    # this, a new box shipped the engine SOURCE but no working CLI, and every
+    # caf call fell back to a source-path import that is not on PATH.
+    local CAF_DIR
+    if [ -d "/data/.openclaw" ]; then
+        CAF_DIR="/data/.openclaw/tools/convert-and-flow-cli"
+    else
+        CAF_DIR="$HOME/.openclaw/tools/convert-and-flow-cli"
+    fi
+    if [ -f "$CLI_WIRE" ]; then
+        note "Installing the modernized GHL client (Skill 44 caf CLI)…"
+        set +e
+        CAF_DIR="$CAF_DIR" bash "$CLI_WIRE" --idempotent
+        local CLI_RC=$?
+        set -e
+        [ "$CLI_RC" -eq 0 ] || warn "Skill 44 wire.sh returned rc=$CLI_RC — caf may be incomplete; see output above."
+        if [ -x "$CAF_DIR/caf" ] && [ -x "$CAF_DIR/convertandflow" ] && [ -x "$CAF_DIR/ghl" ]; then
+            success "Modernized GHL client installed: $CAF_DIR/caf (caf / convertandflow / ghl)"
+        else
+            warn "Modernized GHL client entrypoints missing under $CAF_DIR — caf is NOT startable. Re-run: bash $CLI_WIRE --idempotent"
+        fi
+    else
+        warn "Skill 44 wire.sh not found at $CLI_WIRE — the modernized GHL client was NOT installed (older onboarding bundle?)"
+    fi
 
     if [ ! -f "$WIRE" ]; then
         warn "Skill 44 wire-ghl-env.sh not found at $WIRE — skipping env-wiring (older onboarding bundle?)"
@@ -10050,6 +10471,21 @@ if [ -f "$_MEM_MAINT" ]; then
 else
     note "Skill 31 install.sh not in bundle — memory maintenance crons skipped (older bundle)."
 fi
+
+# ----------------------------------------------------------
+# POST-INSTALL ASSERTION — GHL community MCP must not exist (W07 / GU-019)
+# ----------------------------------------------------------
+# Step 14a proves the box as it was BEFORE the rest of the install ran. This
+# re-proves it at the END — after every skill installer, cron registration and
+# config write — and rewrites the same receipt with the final state. If any
+# later step re-created a supervision surface, this is where it surfaces.
+oc_ghl_mcp_scan "$OC_CONFIG" "$OPENCLAW_PLATFORM" "$SKILLS_DIR/../scripts"
+printf 'STATUS: ghl-mcp-retirement-post-install=%s\n' "$OC_GHL_MCP_STATE" | tee -a "${LOG_FILE:-/dev/null}"
+if [ "$OC_GHL_MCP_STATE" != "RETIRED_VERIFIED" ]; then
+    warn "POST-INSTALL: the GHL community MCP is NOT proven retired (state=$OC_GHL_MCP_STATE)."
+    warn "  Receipt: $OC_GHL_MCP_RETIREMENT_RECEIPT — this box needs the W07 retirement transaction before it is considered migrated."
+fi
+oc_ghl_mcp_write_receipt "$OC_GHL_MCP_RETIREMENT_RECEIPT" "post-install"
 
 fire_install_kickoff_triplet
 

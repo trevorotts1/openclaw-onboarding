@@ -11,6 +11,7 @@
     "image-inventory-prompts",
     "image-generation-qc",
     "image-map-upload",
+    "design-board",
     "final-mockups",
     "responsive-html",
     "ghl-install-test",
@@ -29,7 +30,8 @@
       ],
       "validators": [
         "gate:must_supply --brand {brand}",
-        "gate:intake_engine"
+        "gate:intake_engine",
+        "gate:intake_design_style"
       ],
       "handoff": {
         "intake_field": "funnel_handoff",
@@ -163,10 +165,16 @@
         {
           "glob": "desktop-wireframe/section-plan.json",
           "min_count": 1
+        },
+        {
+          "glob": "desktop-wireframe/production-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
-        "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe"
+        "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
+        "python3 scripts/design_style.py validate-inventory {run_dir}",
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json"
       ],
       "review_required": true,
       "min_scores": {
@@ -178,7 +186,12 @@
         "font-action-plan/font-map.json",
         "assets/page-references/README.md (the layout reference index: how each reference resolves, original file or registered house default, is recorded there per Item 13 as amended by Item 17)",
         "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
-        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)"
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false
     },
@@ -208,10 +221,15 @@
         {
           "glob": "mobile-tablet/section-plan.json",
           "min_count": 1
+        },
+        {
+          "glob": "mobile-tablet/production-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
-        "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet"
+        "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json"
       ],
       "review_required": true,
       "min_scores": {
@@ -223,7 +241,12 @@
         "font-action-plan/font-map.json",
         "assets/page-references/README.md (the layout reference index: how each reference resolves, original file or registered house default, is recorded there per Item 13 as amended by Item 17)",
         "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
-        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)"
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false
     },
@@ -249,11 +272,20 @@
         {
           "glob": "visual-mockup/mobile/part-*.png",
           "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/visual-mockups-desktop.pdf",
+          "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/visual-mockups-mobile.pdf",
+          "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_visual_direction.py {run_dir}",
-        "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
+        "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage visual-mockup"
       ],
       "review_required": true,
       "review_covers": [
@@ -271,7 +303,14 @@
         "assets/brand/signature-grade-block.txt",
         "desktop-wireframe/",
         "mobile-tablet/",
-        "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)"
+        "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)",
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md",
+        "references/hypersaturation-framework.md (SPF020: the page color system and image grade; the executor adds both blocks in the client's colors, scripts/validate_page_color.py measures the stitched page)",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false
     },
@@ -309,7 +348,10 @@
         "references/kie-generation-route.md",
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
-        "assets/brand/signature-grade-block.txt"
+        "assets/brand/signature-grade-block.txt",
+        "references/qc-contract.md",
+        "desktop-wireframe/section-plan.json (each slot's treatment, mask, copy_zone and subject_zone: the photo prompt gets its copy-space or crop-safe sentence from the slot's treatment)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)"
       ],
       "may_be_not_authorized": false
     },
@@ -336,6 +378,8 @@
       "transport_required": true,
       "validators": [
         "python3 scripts/validate_image_grade.py {file} --brand {brand}",
+        "python3 scripts/circle_image.py check {file} --inventory {run_dir}/desktop-wireframe/image-inventory.json",
+        "python3 scripts/design_style.py validate-inventory {run_dir}",
         "gate:image_grade_full_set image-generation-qc",
         "gate:grade_calibrated"
       ],
@@ -348,7 +392,8 @@
         "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md",
         "references/kie-generation-route.md",
         "references/BlackCEO-Page-Brand-Law.md",
-        "assets/brand/blackceo-brand.json"
+        "assets/brand/blackceo-brand.json",
+        "references/qc-contract.md"
       ],
       "may_be_not_authorized": false
     },
@@ -378,11 +423,49 @@
       ],
       "may_be_not_authorized": false
     },
+    "design-board": {
+      "purpose": "The Design Board (Official Visual Direction): one board per page role the funnel has, in the client's own brand colors, carrying the client's logo and the page's ACTUAL section images. It sits after the image chain has closed (image-map-upload: every image slot has its generated or supplied file) and before final-mockups, so it shows the real images and never an art-direction stand-in. The client approves it first; the approval is recorded in design-board/production-record.json bound to the board's hash, the image set (every slot, file and file hash, re-derived from the run's own artifacts at every check) and the palette, and the final-mockups stage and everything after it for the page does not start without it (references/design-board.md; scripts/design_board.py gate). A remade board or any changed image needs a fresh approval.",
+      "depends_on": [
+        "image-map-upload"
+      ],
+      "requires_artifacts": [],
+      "artifacts": [
+        {
+          "glob": "design-board/design-board.png",
+          "min_count": 1
+        },
+        {
+          "glob": "design-board/production-record.json",
+          "min_count": 1
+        }
+      ],
+      "validators": [
+        "python3 scripts/design_board.py validate {run_dir} --require-approval"
+      ],
+      "review_required": true,
+      "review_covers": [
+        "design-board/design-board.png"
+      ],
+      "min_scores": {
+        "each": 8
+      },
+      "reads": [
+        "references/design-board.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "references/qc-contract.md",
+        "font-action-plan/font-map.json",
+        "desktop-wireframe/image-inventory.json, desktop-wireframe/section-plan.json, image-map-upload/image-map.json and image-generation-qc/ (the page's actual images)",
+        "production-request.json (the page's design_board block)"
+      ],
+      "may_be_not_authorized": false,
+      "approval_artifact": "design-board/design-board.png"
+    },
     "final-mockups": {
       "purpose": "The mockup: the single client-judged mockup stage (Update Plan Items 5 and 15): the mockup carries real photography in every slot, and the stage cannot close with a placeholder slot. It opens only after the image generation chain has closed (depends_on image-map-upload) and finalizes the layout proof per section with real photography composited into every slot. Supplied assets are placed as files and never generated; the supplied-asset record is the placement proof. Every image slot must trace, through the stage's section generation record (final-mockups/generation-record.json), to a generated image file or to a placed supplied asset under Item 3's supplied-asset record; any slot tracing to neither fails the close by name (trait M1), enforced by scripts/validate_mockup_slots.py. Mockup traits bind at this stage only; the visual-mockup layout proof's solid-block slots are by design and are never scored here. At close the stage also produces the hybrid board (Update Plan Item 12): one sheet carrying the mockup-fidelity desktop panel, the section guide column, and the mockup-fidelity mobile panel, composed deterministically from the approved artifacts. The board is the artifact the stage's approval is recorded against.",
       "depends_on": [
         "visual-mockup",
-        "image-map-upload"
+        "image-map-upload",
+        "design-board"
       ],
       "requires_artifacts": [],
       "artifacts": [
@@ -409,16 +492,35 @@
         {
           "glob": "final-mockups/generation-record.json",
           "min_count": 1
+        },
+        {
+          "glob": "final-mockups/production-record.json",
+          "min_count": 1
+        },
+        {
+          "glob": "final-mockups/mockup-full.png",
+          "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/final-mockups-desktop.pdf",
+          "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/final-mockups-mobile.pdf",
+          "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
-        "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups"
+        "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
+        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups"
       ],
       "review_required": true,
       "review_covers": [
         "final-mockups/desktop/part-*.png",
         "final-mockups/mobile/part-*.png",
+        "final-mockups/mockup-full.png",
         "final-mockups/mockup.html",
         "final-mockups/hybrid-board.png"
       ],
@@ -433,7 +535,13 @@
         "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
         "desktop-wireframe/section-plan.json (the section guide's section order; the guide's thumbnails are the desktop wireframe slices)",
         "font-action-plan/font-map.json (the typography spec record the section guide's specs are drawn from)",
-        "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)"
+        "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md",
+        "references/hypersaturation-framework.md (SPF020: the page color system and image grade; the executor adds both blocks in the client's colors, scripts/validate_page_color.py measures the stitched page)",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false,
       "approval_artifact": "final-mockups/hybrid-board.png"
@@ -485,7 +593,8 @@
         "copy/copy-manifest.json (the CTA entries and their handoff types; the primary CTA)",
         "intake.json (funnel_handoff: the named form the primary CTA pops, or the recorded missing input)",
         "font-action-plan/font-map.json",
-        "references/html-qc-rubric.md"
+        "references/html-qc-rubric.md",
+        "references/composition-treatments.json (build each slot's treatment in CSS and emit data-image-slot and data-treatment on every slot element)"
       ],
       "may_be_not_authorized": false
     },

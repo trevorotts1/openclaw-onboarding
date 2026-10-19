@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v27.1.36 - Supplied Oprah and Les book personas.** Register four Skill22 book personas and integrate twenty traceable concept/case paraphrases into the existing Council packs. Separate teaching-source gaps remain explicit. The published index contains 105 personas and 1,499 rows; existing vectors are preserved. Existing compatibility pin: **v7.6.112**.
+> **v27.1.41 - Council (Skill 77) v1.0.25: W27 hardening.** First-status pre-warm so the first Council status call answers from a warm cache, the service launcher upstreamed into the skill, the skill root resolved from the installed binary, and a live chamber view over real sessions. Existing compatibility pin: **v7.6.112**.
 >
 > **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
 >
@@ -21,13 +21,13 @@
 > **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v27.1.36.
+> **Version:** see `/version` - this repo at v27.1.41.
 
 
 
 Private interview invitation validity follows the issuing Command Center. With paired v7.6.123, links remain reusable until completion, then expire **24 hours after the first completion**; older issuers retain their declared expiry and reuse rules. Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v27.1.36
+## Current release: v27.1.41
 
 ### Standard company placeholder (v26.4.9)
 If a client's AI Workforce interview is still incomplete 14 days after onboarding started
@@ -199,14 +199,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v27.1.36** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v27.1.41** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **82 numbered skill folders (01–82)**: 77 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **83 numbered skill folders (01–83)**: 78 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -338,8 +338,9 @@ That file is the master instruction file. It contains:
 | 80-signature-upsell | **Signature Upsell 1 + Upsell 2 (v0.2.0)** — the Signature Launch upsell skill: builds both upsell page instances (Upsell 1 after a verified original purchase; Upsell 2, one canonical page with its own offer mapping, after a verified accepted Upsell 1 or Downsell 1 purchase) from one reusable skill, each instance separately built and separately tested. Uses the derived eight-section owner copy profile (sections 8–11 excluded, section 12 replaced by the "7 Reasons To Commit" section, a CTA in every section), the deterministic copy validator and substantive review rubric, the route state machine (a failed or pending payment is neither acceptance nor decline; U2 never shows after both are declined), and the local page renderer. Every CTA invokes the same guarded native product-bound one-click action with the exact amount (integer minor units) and one-time/recurring terms disclosed adjacent; eligibility is proven purchase only (a bump alone never qualifies for Upsell 2, and a client-side claim such as acceptedU1=true is never proof); already-owned offers are suppressed, never double-charged. |
 | 81-signature-downsell | **Signature Downsell (v0.1.0)** — the Signature Launch downsell skill: builds the Downsell 1 page, the reshaped alternative offer shown only after an explicit Upsell 1 decline (a failed or pending payment is never a decline), derived from the 12-section landing format cut to eight sections (sections 8–11 removed, section 12 replaced by the renumbered "When Time Runs Out" section listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, every CTA invoking the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent. Downsell 1 paid routes to the same Upsell 2 when enabled, else the final thank-you; Downsell 1 declined routes to the final thank-you with the original order valid and untouched. |
 | 82-signature-thank-you | **Signature Thank-You (v0.1.0)** — the terminal Signature Launch thank-you / confirmation page skill: builds the post-purchase confirmation and access experience showing exactly what the customer actually purchased (verified against the normalized purchase snapshot and Skill 44 entitlement state), its actual charges and terms, and what happens next. No new pitch, no new offer, no new-charge CTA; fulfillment authority is Skill 44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching the page. |
+| 83-black-friday-launcher | **Black Friday Launcher (v0.2.0)** — the launcher that composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, native Convert and Flow checkout bound by contract and never a dispatch adapter, and package/receipt assembly with completeness checks. Verified offer facts only; a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with the teaching content marked pending. Records itself as number 83 with number_final=false and enabled_in_999=false until its dependency package is satisfied. |
 
-**Total: 82 numbered skill folders** (01–82): **77 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 83 numbered skill folders** (01–83): **78 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

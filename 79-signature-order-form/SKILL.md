@@ -1,14 +1,15 @@
 ---
 name: signature-order-form
-description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. DRAFT: assembled in the S79 room checkpoint, not yet installed or merged."
-version: 0.1.2
+description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
+version: 0.1.5
 ---
 
-# Skill 79: Signature Order Form, Checkout and Signature Bump Sale (DRAFT)
+# Skill 79: Signature Order Form, Checkout and Signature Bump Sale
 
-Status: draft candidate assembled from the S79 room work products. Fixture-level
-(L1) proof only. Not installed, not merged, not live. Versions are minted at
-merge time by the repository process; this draft claims no version number.
+Status: landed in this repository, with the extra-offer interface contract
+carried at revision 2. Fixture-level (L1) proof lives in the skill's own tests.
+This record makes no installation, distribution-discovery or live-payment
+claim; installed-location native facts stay separate and are not asserted here.
 
 ## Purpose
 
@@ -55,7 +56,7 @@ offered on that original checkout.
 - Guarantee, terms and consent copy come from approved references in the
   checkout request, never invented per launch. Consent starts unchecked.
 
-## Contents of this candidate
+## Contents of this skill
 
 - `references/checkout.schema.json`: the checkout request/result contract.
 - `references/extra_offer_interface.md`: the extra-offer (post-purchase)
@@ -68,16 +69,16 @@ offered on that original checkout.
   capability matrix, and the purchase-attempt recovery model.
 - `tests/`: the deterministic fixture suite for the models and components.
 
-## Proof levels and what is still owed
+## Proof levels
 
-- L1 (done, independently reviewed in the S79 room): fixture models, schema,
-  state machine, static component checks.
+- L1 (fixture level): fixture models, schema, state machine and static
+  component checks, exercised by the skill's own tests.
 - L2: rendered browser proof of the components in an authorized location,
   including a parser-based no-payment-fields assertion and visual QC.
 - L3: installed-location proof with Skill 06 native binding (real native
   product and price IDs, capability matrix, coupon/tax/shipping behavior).
 - L4: sandbox payment proof including native line-item read-backs and the
   S44 entitlement handoff against durable records.
-L3 and L4 require owner-authorized test locations and sandbox permission,
-which are outside this draft's authority. Nothing in this skill activates a
-live page or a live payment.
+L2, L3 and L4 require owner-authorized test locations and sandbox permission.
+They are named facts, not completion gates for this skill. Nothing in this
+skill activates a live page or a live payment.

@@ -56,6 +56,20 @@ QC_OK = (0, json.dumps({
     "rubric": {"weighted_floor": 9.35, "weighted_ceiling": 9.9,
                "ship_threshold": 8.5}}), "")
 
+# The QC script's real --json shape includes the per-item status map
+# (qc-built-workflow.sh `items`). wf_items is derived from it.
+QC_WITH_ITEMS = (0, json.dumps({
+    "workflow_id": "wf-123",
+    "overall_mechanical": "PASS",
+    "mechanical_pass": 2, "mechanical_fail": 0,
+    "items": {
+        "WF-3": {"status": "PASS"},
+        "WF-7": {"status": "PASS"},
+        "WF-18": {"status": "N/A"},
+        "WF-19": {"status": "REQUIRES_HUMAN_REVIEW"},
+    },
+    "rubric": {"weighted_floor": 7.1}}), "")
+
 
 def _classify(argv):
     """Key a fake-runner call on the subcommand actually invoked,
@@ -157,6 +171,20 @@ class CafExecutorTests(unittest.TestCase):
         self.assertIn("qc-built-workflow.sh", qc_call[2])
         self.assertIn("wf-123", qc_call[2])
         self.assertIn("--json", qc_call[2])
+
+    def test_qc_wf_items_derived_from_items_object(self):
+        """R71H reconciliation: qc.wf_items IS producible — from the QC
+        script's own `items` object (PASSed over the item count). N/A and
+        REQUIRES_HUMAN_REVIEW items count in the denominator only."""
+        script = {
+            "build": BUILD_OK,
+            "export": export_writes(NATIVE_EXPORT),
+            "qc": QC_WITH_ITEMS,
+        }
+        ex = CafExecutor(runner=scripted_runner(script),
+                         qc_script=str(self.qc_path))
+        res = ex.build({"folder": "F", "welcome": {"name": "W"}})
+        self.assertEqual(res["wf_items"], "2/4")
 
     def test_build_unparseable_is_failure(self):
         script = {"build": (1, "", "boom: traceback")}

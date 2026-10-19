@@ -50,9 +50,9 @@ def test_alias_resolves_from_store(monkeypatch, tmp_path):
 
 def test_placeholder_is_rejected_and_fails_honestly(no_stores):
     with pytest.raises(st.ImagePipelineError) as ei:
-        st._resolve_kie_api_key({"KIE_API_KEY": "PASTE_REAL_TOKEN_HERE"})
+        st._resolve_kie_api_key({"KIE_API_KEY": "<OLLAMA_API_KEY-REDACTED-ROTATE>"})
     assert ei.value.honest_fail is True
-    assert "PASTE_REAL_TOKEN_HERE" not in str(ei.value)  # never echo a value
+    assert "<OLLAMA_API_KEY-REDACTED-ROTATE>" not in str(ei.value)  # never echo a value
 
 
 def test_absent_error_names_aliases_and_says_client_own_key(no_stores):

@@ -29,7 +29,7 @@ The three-attempt rule applies only after failure. Passing work advances immedia
 
 Complete and QC the copy before full wireframes. Establish Google Fonts, or selected Google Fonts equivalents, and the font map before the full wireframes; check actual font use during rendering and later HTML font loading in the browser. Do not build a separate GHL website just to choose fonts. Actual client brand artwork remains artwork, not recreated text.
 
-The layout must fit the full copy and can continue into multiple PNG parts. Private Part-A/Part-B filenames do not become page headings. One selected page normally needs desktop and mobile wireframes; four wireframes apply only when producing both standard and long-form template sets. The image inventory determines image count. Each individual image prompt is 5,000-20,000 characters, governed by the linked image guide and its explicit current-runtime compatibility notes. No Midjourney workflow is used.
+The layout must fit the full copy and can continue into multiple PNG parts. Private Part-A/Part-B filenames do not become page headings. Every selected page gets four images: desktop wireframe, mobile wireframe, desktop mockup, and mobile mockup. The mobile wireframe and the mobile mockup are each produced at the mobile width, never a desktop image resized to mobile. The image inventory determines image count. Each individual image prompt is governed by the linked image guide and its explicit current-runtime compatibility notes. No Midjourney workflow is used.
 
 ### D. Only the corrected, QC-passed version advances
 
@@ -1922,7 +1922,7 @@ CTA placement: Opening standalone CTA required.
 One dominant claim, a secondary offer connection, and an opening CTA group. Mark a few meaningful phrases for emphasis. Keep the photograph in support of the promise, not above it at the expense of the first view.
 -->
 <!-- MOBILE COMPOSITION NOTE - NOT FOR PUBLICATION:
-Phone order: claim, named-offer support, first CTA, then hero image. Use complete phrase groups in the headline; H1 40/44 plus selected 28/36 emphasis. Keep long copy out of image overlays.
+Phone order: claim, named-offer support, first CTA, then hero image. Use complete phrase groups in the headline; H1 40/44 plus selected 28/36 emphasis. Keep long body copy (more than 60 words) off photos: it goes on a card, the scrim side or a plain band. Headlines, captions and short CTA reasons may sit on a photo, inside the slot's copy zone and clear of its subject zone (references/composition-treatments.json).
 -->
 
 

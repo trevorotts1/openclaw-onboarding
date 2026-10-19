@@ -4,7 +4,7 @@
 
 Use Skill 71 when a client asks for a focused BlackCEO landing-page-type experience: landing page, opt-in/squeeze page, registration/event page, challenge page, booking page, lead-generation page, or comparable single-page conversion page.
 
-Do not use Skill 71 when the request clearly names the specialized multi-step/direct-response/cinematic families owned by Skills 49, 56, or 62. See `MASTERDOC.md`.
+Do not use Skill 71 when the request clearly names the specialized multi-step/direct-response/cinematic families owned by Skills 49, 56, or 62. See `MASTERDOC.md`. Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
 
 ## Execution
 
@@ -21,7 +21,7 @@ Do not use Skill 71 when the request clearly names the specialized multi-step/di
 
 "Landing page" by itself belongs here.
 "Signature Funnel" / 3-5-7 / upsell/downsell belongs to Skill 49.
-"Direct-response sales page" / VSL / order bump / high-ticket belongs to Skill 56.
+Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
 "Cinematic/scroll/animated website" belongs to Skill 62.
 
 ## Maintenance check

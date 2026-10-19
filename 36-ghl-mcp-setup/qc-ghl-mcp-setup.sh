@@ -9,9 +9,9 @@
 #   - Master files folder located (fuzzy match)
 #   - GHL credentials (PIT canonical name + format + chmod 600)
 #   - Tier 1 (Official MCP) registered + tools/list returns >=36
-#   - Tier 2 (Community MCP) NOT registered (on-demand curl) + service supervised
-#     (launchd on Mac / pm2 on VPS, systemd fallback) +
-#     /health returns >=500 tools + real-data tool call works
+#   - Tier 2 (Community MCP) RETIRED: no process, no listener, no supervisor
+#     registration (launchd / pm2 / systemd), no probe, no mcp.servers entry,
+#     no @reboot resurrect entry, no lifecycle script that can restart it
 #   - Core .md files wired (SOUL/AGENTS/TOOLS/MEMORY)
 #   - Master-files reference doc archived
 #   - Security: PIT not leaked into workspace .md files
@@ -115,64 +115,58 @@ assert "INSTALL.md carries the placeholder-credential refusal guard (SK1-72)" \
 # not hex) never match, so example text is not flagged.
 assert "no real PIT literal committed in skill files" \
   "! grep -rIqE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' \"$SKILL_DIR\""
-# SK1-69 regression lock: the community-MCP start script pins a git SHA before
-# start (supply-chain). Check whichever co-located copy is shipped; if none is
-# present next to this skill (fleet layout varies), warn rather than false-FAIL.
-_S36_START=""
-for c in "$SKILL_DIR/../platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" \
-         "$SKILL_DIR/platform/vps/start-ghl-mcp-server.sh" \
-         "$SKILL_DIR/scripts/start-ghl-mcp-server.sh"; do
-  [ -f "$c" ] && _S36_START="$c" && break
-done
-if [ -n "$_S36_START" ]; then
-  assert "community-MCP start script pins a git SHA before start (SK1-69)" \
-    "grep -qE 'git -C .* checkout .*GHL_MCP_VETTED_COMMIT' \"$_S36_START\""
-else
-  warn_only "community-MCP start script co-located for SHA-pin check (SK1-69)" "false"
-fi
-
-# v21.5.0 regression locks — the five installer diseases behind the 2026-08-02/03
-# outage (2 days of 30s agent-init stalls against a server that was UP the whole
-# time). Each lock is offline/static: it checks the SHIPPED wiring, not the box.
+# v22.0.0 RETIREMENT LOCKS — the community MCP (Tier 2) is RETIRED. The old
+# checks here asserted that the start script, the pin and the liveness probe
+# SHIPPED and were hardened. In the retired world every one of those is a
+# resurrection surface. Retirement is asserted explicitly: a lifecycle script is
+# acceptable ONLY when it is absent, or when it carries the GHL_MCP_RETIRED
+# refusal marker so it cannot start the service.
 _S36_PIN=""
 for c in "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
          "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" \
          "$SKILL_DIR/../config/ghl-mcp-pin.env"; do
   [ -f "$c" ] && _S36_PIN="$c" && break
 done
-_S36_AUTOSTART=""
+
+_S36_LIFECYCLE=""
 for c in "$HOME/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh" \
          "/data/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh" \
-         "$SKILL_DIR/../scripts/ghl-mcp-autostart.sh"; do
-  [ -f "$c" ] && _S36_AUTOSTART="$c" && break
-done
-_S36_PROBE=""
-for c in "$HOME/.openclaw/onboarding/scripts/ghl-mcp-probe.sh" \
+         "$SKILL_DIR/../scripts/ghl-mcp-autostart.sh" \
+         "$HOME/.openclaw/onboarding/scripts/ghl-mcp-probe.sh" \
          "/data/.openclaw/onboarding/scripts/ghl-mcp-probe.sh" \
-         "$SKILL_DIR/../scripts/ghl-mcp-probe.sh"; do
-  [ -f "$c" ] && _S36_PROBE="$c" && break
+         "$SKILL_DIR/../scripts/ghl-mcp-probe.sh" \
+         "$HOME/.openclaw/onboarding/scripts/ghl-mcp-assert-runtime.sh" \
+         "/data/.openclaw/onboarding/scripts/ghl-mcp-assert-runtime.sh" \
+         "$SKILL_DIR/../scripts/ghl-mcp-assert-runtime.sh" \
+         "$SKILL_DIR/../platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh"; do
+  [ -f "$c" ] && _S36_LIFECYCLE="$_S36_LIFECYCLE
+$c"
 done
-if [ -n "$_S36_PIN" ]; then
-  assert "pin config declares a FULL 40-char vetted commit (never a branch/short SHA)" \
-    "grep -qE '^GHL_MCP_VETTED_COMMIT=\"[0-9a-f]{40}\"' \"$_S36_PIN\""
-  assert "pin config declares an explicit GHL_TOOL_PROFILE (never the 858-tool default)" \
-    "grep -qE '^GHL_MCP_TOOL_PROFILE=' \"$_S36_PIN\""
+if [ -z "$_S36_LIFECYCLE" ]; then
+  assert "community MCP lifecycle scripts are retired (no start/probe/assert script ships)" "true"
 else
-  warn_only "config/ghl-mcp-pin.env co-located for the pin/profile check" "false"
+  _S36_ALL_INERT=0
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    grep -q 'GHL_MCP_RETIRED' "$c" 2>/dev/null || _S36_ALL_INERT=1
+  done <<EOF
+$_S36_LIFECYCLE
+EOF
+  assert "every shipped community MCP lifecycle script is inert (carries GHL_MCP_RETIRED)" "[ \"$_S36_ALL_INERT\" -eq 0 ]"
+  if [ "$_S36_ALL_INERT" -ne 0 ]; then
+    while IFS= read -r c; do
+      [ -n "$c" ] || continue
+      grep -q 'GHL_MCP_RETIRED' "$c" 2>/dev/null || echo "    live lifecycle surface: $c"
+    done <<EOF
+$_S36_LIFECYCLE
+EOF
+  fi
 fi
-if [ -n "$_S36_AUTOSTART" ]; then
-  assert "autostart never 'git pull's the third-party MCP (floating checkout)" \
-    "! sed 's/#.*$//' \"$_S36_AUTOSTART\" | grep -qE 'git .*pull'"
-  assert "autostart sets GHL_TOOL_PROFILE in the launchd plist it writes" \
-    "grep -qF '<key>GHL_TOOL_PROFILE</key>' \"$_S36_AUTOSTART\""
-  assert "autostart writes a CRASH-ONLY KeepAlive (no unconditional KeepAlive=true)" \
-    "! grep -qF '<key>KeepAlive</key><true/>' \"$_S36_AUTOSTART\" && grep -qF '<key>SuccessfulExit</key><false/>' \"$_S36_AUTOSTART\""
-  assert "autostart verifies the built dist contains the MCP transport wiring" \
-    "grep -qF 'connect(transport)' \"$_S36_AUTOSTART\""
+if [ -f "$_S36_PIN" ] && ! grep -qiE '^GHL_MCP_(RETIRED|STATUS)=.*(1|true|yes|retired)' "$_S36_PIN"; then
+  warn_only "retired community MCP pin file is gone or marked retired (stale pin still ships: $_S36_PIN)" "false"
 else
-  warn_only "scripts/ghl-mcp-autostart.sh co-located for the install-hygiene checks" "false"
+  assert "community MCP pin config is retired or absent" "true"
 fi
-assert "liveness probe ships (scripts/ghl-mcp-probe.sh)" "[ -n \"$_S36_PROBE\" ]"
 echo ""
 
 # ----------------------------------------------------------
@@ -213,7 +207,8 @@ SEC_MODE=$(stat -c %a "$SECRETS_ENV" 2>/dev/null || stat -f %A "$SECRETS_ENV" 2>
 assert "Secrets file is chmod 600"                 "[ \"$SEC_MODE\" = '600' ]"
 warn_only "PIT mirrored in openclaw.json env.vars" "command -v openclaw && openclaw config get env.vars.GOHIGHLEVEL_API_KEY 2>/dev/null | grep -q 'pit-'"
 warn_only "Location ID in openclaw.json env.vars"  "command -v openclaw && openclaw config get env.vars.GOHIGHLEVEL_LOCATION_ID 2>/dev/null | grep -q ."
-assert "GHL_COMMUNITY_MCP_URL env var set"         "command -v openclaw && openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | grep -qE 'http://localhost:[0-9]+'"
+assert "GHL_COMMUNITY_MCP_URL env var RETIRED (must not be set)" \
+  "! { command -v openclaw >/dev/null 2>&1 && openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | grep -qE 'http://localhost:[0-9]+'; }"
 
 echo ""
 echo "── Section B2: GHL rate-limit budget check (NEW: 2026-05-13 incident response) ──"
@@ -259,93 +254,86 @@ T1_TOOLS=$(curl -sS -m 10 -X POST "https://services.leadconnectorhq.com/mcp/" \
 assert "Tier 1 tools/list returns >= 36 tools" "[ \"${T1_TOOLS:-0}\" -ge 36 ]"
 
 echo ""
-echo "── Section D: Tier 2 (Community MCP) ──"
-# BUG-1 fix: resolve the on-demand Tier 2 URL BEFORE any assert that uses it. It was
-# previously used by the /tools assert one line ABOVE its own assignment, so under
-# `set -u` the first reference threw "URL: unbound variable" → spurious FAIL every run.
-# BUG-2 fix: guard `openclaw` presence with a SEPARATE test. The old capture was
-# URL=$(command -v openclaw && openclaw config get ...), which prepended the binary
-# path (stdout of `command -v`) onto the URL → "/opt/.../openclaw\nhttp://localhost:8765"
-# → the /tools, /health and /execute probes all hit a broken URL → spurious FAIL.
-URL=""
-if command -v openclaw >/dev/null 2>&1; then
-  URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
+echo "── Section D: Tier 2 (Community MCP) — RETIRED ──"
+# v22.0.0: community MCP is RETIRED (operator decision). Section D no longer
+# asserts a live service. It asserts the retired end state: no process, no
+# listener, no supervisor registration, no mcp.servers entry, no probe, no
+# resurrection hook. Every probe below is read-only.
+S36_PORT=8765
+if [ -n "${_S36_PIN:-}" ] && [ -f "${_S36_PIN:-}" ]; then
+  _S36_PORT_FROM_PIN=$(sed -n 's/^GHL_MCP_PORT="\{0,1\}\([0-9][0-9]*\)"\{0,1\}.*/\1/p' "$_S36_PIN" | head -1)
+  [ -n "$_S36_PORT_FROM_PIN" ] && S36_PORT="$_S36_PORT_FROM_PIN"
 fi
-# BUG-4 fix (repo): the resolution above has a single source. `openclaw config get`
-# returns EMPTY while the gateway is restarting/maintenance or has not yet loaded
-# openclaw.json, which turned the whole of Section D (5 asserts) into spurious
-# FAILs on a healthy box. When the CLI gave us nothing, read the SAME key straight
-# from the config file — the file the gateway itself reads.
-if [ -z "$URL" ] && [ -n "${CONFIG_JSON:-}" ] && [ -f "$CONFIG_JSON" ] \
-   && command -v python3 >/dev/null 2>&1; then
-  URL=$(OC_JSON="$CONFIG_JSON" python3 - <<'PYEOF' 2>/dev/null || true
-import json, os
-try:
-    with open(os.environ['OC_JSON'], encoding='utf-8') as fh:
-        cfg = json.load(fh)
-    val = ((cfg.get('env') or {}).get('vars') or {}).get('GHL_COMMUNITY_MCP_URL') or ''
-    print(str(val).strip().rstrip('/'))
-except Exception:
-    pass
-PYEOF
-)
-fi
-assert "ghl-community-mcp NOT registered in mcp.servers (Tier 2 is on-demand curl)" "! { command -v openclaw >/dev/null 2>&1 && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; }"
-assert "Tier 2 /tools curl returns the tool surface on-demand" "[ -n \"$URL\" ] && curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -qE 'ghl_list_products|\"tools\"'"
-# BUG-3 / D5-ii fix: the VPS canonical supervisor is pm2 (Hostinger Docker has NO
-# systemd), so a systemctl-only check FAILED on a healthy Docker VPS. Check pm2 first,
-# fall back to systemd for non-container Linux.
-if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
-  assert "launchd service is running" "launchctl print gui/$(id -u)/com.clawd.ghl-mcp 2>/dev/null | grep -q 'state = running'"
-  # CRASH-ONLY: main.js exits 1 when GHL rejects the PIT at boot, so an
-  # unconditional KeepAlive turns a rotated token into a relaunch loop every
-  # ThrottleInterval seconds. The installed plist must use the KeepAlive dict.
-  assert "launchd plist is CRASH-ONLY (KeepAlive dict, not an unconditional true)" \
-    "! grep -A1 '<key>KeepAlive</key>' \"$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist\" 2>/dev/null | grep -q '<true/>'"
-  warn_only "periodic liveness probe installed (com.clawd.ghl-mcp-probe)" \
-    "launchctl print gui/$(id -u)/com.clawd.ghl-mcp-probe >/dev/null 2>&1"
+
+# Retired process identity: the install dir, the launch wrapper, or the dist main.
+_s36_process_running() {
+  ps -A -o command= 2>/dev/null | grep -E '[g]hl-community-mcp'
+}
+
+# Listener on the configured port. rc 2 = cannot tell (no lsof and no ss).
+_s36_port_listening() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$S36_PORT" -sTCP:LISTEN 2>/dev/null | grep -q .
+  elif command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | grep -qE "[:.]${S36_PORT}[[:space:]]"
+  else
+    return 2
+  fi
+}
+
+# pm2 persistence: the dump is what `pm2 resurrect` restores. Its dump file is
+# readable without spawning a daemon.
+_s36_pm2_dump_registers() {
+  local pm2home="${PM2_HOME:-$HOME/.pm2}"
+  [ -f "$pm2home/dump.pm2" ] && grep -q 'ghl-community-mcp' "$pm2home/dump.pm2"
+}
+
+assert "ghl-community-mcp NOT registered in mcp.servers (RETIRED)" \
+  "! { command -v openclaw >/dev/null 2>&1 && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; }"
+assert "no ghl-community-mcp process is running (RETIRED)" "! _s36_process_running >/dev/null 2>&1"
+if command -v lsof >/dev/null 2>&1 || command -v ss >/dev/null 2>&1; then
+  assert "no listener on the retired community MCP port ($S36_PORT)" "! _s36_port_listening"
 else
-  assert "Tier 2 server supervised (pm2 ghl-community-mcp, or systemd ghl-mcp fallback)" "{ command -v pm2 >/dev/null 2>&1 && pm2 jlist 2>/dev/null | grep -q 'ghl-community-mcp'; } || systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
+  warn_only "no listener on the retired community MCP port ($S36_PORT) — UNDETERMINED (neither lsof nor ss on PATH)" "false"
 fi
-T2_HEALTH=$(curl -sS -m 5 "$URL/health" 2>/dev/null)
-assert "Tier 2 /health responds healthy" "echo \"\$T2_HEALTH\" | grep -q '\"status\":\"healthy\"'"
 
-# ── LIVENESS (v21.5.0) — /health is served by express BEFORE the MCP transport
-# is wired, so a stale/deaf dist returns {"status":"healthy"} while every agent
-# init burns the full 30s connectionTimeoutMs. That is exactly what happened on
-# 2026-08-01/02. The only real liveness test is a JSON-RPC round trip.
-assert "Tier 2 ANSWERS JSON-RPC (alive, not merely listening)" \
-  "curl -sS -m 10 -X POST \"$URL/mcp\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"qc\",\"version\":\"1\"}}}' 2>/dev/null | grep -q serverInfo"
+if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
+  assert "launchd job com.clawd.ghl-mcp is not loaded (RETIRED)" \
+    "! launchctl print gui/$(id -u)/com.clawd.ghl-mcp >/dev/null 2>&1"
+  assert "launchd plist com.clawd.ghl-mcp is removed (no RunAtLoad resurrection)" \
+    "[ ! -f \"$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist\" ]"
+  assert "launchd probe com.clawd.ghl-mcp-probe is removed and not loaded (RETIRED)" \
+    "[ ! -f \"$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist\" ] && ! launchctl print gui/$(id -u)/com.clawd.ghl-mcp-probe >/dev/null 2>&1"
+  assert "com.clawd.ghl-mcp is not ENABLED in the launchd override database" \
+    "! { command -v launchctl >/dev/null 2>&1 && launchctl print-disabled gui/$(id -u) 2>/dev/null | grep -q '\"com.clawd.ghl-mcp\" => enabled'; }"
+else
+  assert "pm2 dump no longer registers ghl-community-mcp (no @reboot resurrect)" \
+    "! _s36_pm2_dump_registers"
+  if command -v pm2 >/dev/null 2>&1 && [ -f "${PM2_HOME:-$HOME/.pm2}/pm2.pid" ] \
+     && kill -0 "$(cat "${PM2_HOME:-$HOME/.pm2}/pm2.pid" 2>/dev/null)" 2>/dev/null; then
+    assert "pm2 live process list does not contain ghl-community-mcp (RETIRED)" \
+      "! { pm2 jlist 2>/dev/null | grep -q 'ghl-community-mcp'; }"
+  else
+    warn_only "live pm2 process list does not contain ghl-community-mcp — UNDETERMINED (no running pm2 daemon)" "false"
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    assert "systemd unit ghl-mcp is not enabled or active (RETIRED)" \
+      "! systemctl is-enabled ghl-mcp 2>/dev/null | grep -qE '^enabled(-runtime)?$' && ! systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
+  else
+    warn_only "systemd unit ghl-mcp is absent (RETIRED) — UNDETERMINED (no systemctl on PATH)" "false"
+  fi
+fi
+assert "no @reboot resurrect cron entry for the community MCP (RETIRED)" \
+  "! { command -v crontab >/dev/null 2>&1 && crontab -l 2>/dev/null | grep -qiE 'ghl-(community-)?mcp'; }"
 
-# ── TOOL PROFILE (v21.5.0) — the upstream default is `full` (858 tools). The
-# expected count is whatever the configured profile implies, NOT a fixed >=500:
-# a correctly-configured `curated` box serves ~43 and the old >=500 check would
-# have called that a problem while a mis-set `full` box passed.
-T2_TOOLS=$(printf '%s' "$T2_HEALTH" | sed -n 's/.*"tools":[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
-S36_PROFILE="curated"; S36_MIN=1; S36_MAX=200
-if [ -n "${_S36_PIN:-}" ]; then
-  S36_PROFILE=$(sed -n 's/^GHL_MCP_TOOL_PROFILE="\([a-z]*\)".*/\1/p' "$_S36_PIN" | head -1)
-  S36_MIN=$(sed -n 's/^GHL_MCP_EXPECT_MIN_TOOLS="\([0-9]*\)".*/\1/p' "$_S36_PIN" | head -1)
-  S36_MAX=$(sed -n 's/^GHL_MCP_EXPECT_MAX_TOOLS="\([0-9]*\)".*/\1/p' "$_S36_PIN" | head -1)
-  : "${S36_PROFILE:=curated}"; : "${S36_MIN:=1}"; : "${S36_MAX:=200}"
+# A stale env var is harmless only while nothing answers on it. If it survived
+# the migration, the endpoint must still be dead.
+S36_OLD_URL=""
+if command -v openclaw >/dev/null 2>&1; then
+  S36_OLD_URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
 fi
-echo "  Tier 2 tool surface: ${T2_TOOLS:-?} tools (profile=${S36_PROFILE}, expected ${S36_MIN}..${S36_MAX})"
-assert "Tier 2 tool count matches the configured GHL_TOOL_PROFILE (${S36_PROFILE})" \
-  "[ -n \"$T2_TOOLS\" ] && [ \"$T2_TOOLS\" -ge \"$S36_MIN\" ] && [ \"$T2_TOOLS\" -le \"$S36_MAX\" ]"
-# v21.5.0: the smoke tool must EXIST inside the configured profile. Measured on
-# 2026-08-03: under GHL_TOOL_PROFILE=curated the server exposes 43 crm_* tools
-# and NO ghl_* tools at all — so the historic hardcoded `ghl_list_products` call
-# fails on a correctly-configured curated box. The tool name is a parameter now.
-S36_SMOKE_TOOL="crm_list_workspaces"
-if [ -n "${_S36_PIN:-}" ]; then
-  S36_SMOKE_TOOL=$(sed -n 's/^GHL_MCP_SMOKE_TOOL="\([A-Za-z0-9_]*\)".*/\1/p' "$_S36_PIN" | head -1)
-  : "${S36_SMOKE_TOOL:=crm_list_workspaces}"
-fi
-assert "Tier 2 smoke tool ${S36_SMOKE_TOOL} is present in the ${S36_PROFILE} profile" \
-  "curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -q \"$S36_SMOKE_TOOL\""
-T2_CALL=$(curl -sS -m 10 -X POST "$URL/execute" -H "Content-Type: application/json" \
-  -d "{\"name\":\"${S36_SMOKE_TOOL}\",\"arguments\":{}}" 2>/dev/null)
-assert "Tier 2 ${S36_SMOKE_TOOL} returns real data" "echo \"\$T2_CALL\" | grep -qE '\"success\":\\s*true|\"result\"|\"content\"'"
+assert "the legacy community MCP URL does not answer (RETIRED)" \
+  "[ -z \"$S36_OLD_URL\" ] || ! curl -sS -m 5 \"$S36_OLD_URL/health\" 2>/dev/null | grep -q ."
 
 echo ""
 echo "── Section E: Core .md files wired ──"

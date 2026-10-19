@@ -176,5 +176,106 @@ done < <(find "$REPO_ROOT/scripts" -type f \( -name '*.py' -o -name '*.sh' \) -p
   && ok "all $canonical_pysh canonical .py/.sh files match bytes and executable bits" \
   || bad "$full_mismatches canonical .py/.sh file(s) differ after delivery"
 
+# ── W07 / GU-019: the updater must PRUNE the retired community-MCP surfaces
+# from the DESTINATION after every delivery, or each roll reinstalls the
+# resurrection surfaces install.sh prunes at :4063-4094.
+if grep -q '^# >>> GHL-MCP-RETIREMENT-PRUNE-BEGIN' "$UPDATE_SH" \
+   && grep -q '^# <<< GHL-MCP-RETIREMENT-PRUNE-END' "$UPDATE_SH"; then
+  ok "retirement prune block is extractable from the root updater"
+  sed -n '/^# >>> GHL-MCP-RETIREMENT-PRUNE-BEGIN/,/^# <<< GHL-MCP-RETIREMENT-PRUNE-END/p' \
+    "$UPDATE_SH" > "$WORK/prune.sh"
+else
+  bad "retirement prune block markers are missing"
+  printf 'prune_retired_ghl_mcp_surfaces() { return 99; }\n' > "$WORK/prune.sh"
+fi
+# shellcheck source=/dev/null
+source "$WORK/prune.sh"
+type prune_retired_ghl_mcp_surfaces >/dev/null 2>&1 \
+  && ok "prune function is callable in isolation (hermetic, no roll run)" \
+  || bad "prune function missing or not callable"
+
+# Both delivery call sites must invoke it (scripts tree + platform copy).
+_prune_calls="$(grep -c 'prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST"' "$UPDATE_SH")"
+[ "$_prune_calls" -ge 2 ] \
+  && ok "both delivery sites (scripts tree, platform copy) invoke the prune ($_prune_calls calls)" \
+  || bad "prune invoked at only $_prune_calls delivery site(s); at least scripts/ + platform/ are required"
+
+# Hermetic fixture: retired files present, unrelated files present.
+PRUNE_S="$WORK/prune-box/.openclaw/scripts"
+PRUNE_P="$WORK/prune-box/.openclaw/skills/platform"
+mkdir -p "$PRUNE_S/lib" "$PRUNE_S/local-tools" \
+         "$PRUNE_P/vps/36-ghl-mcp-setup-scripts" "$PRUNE_P/vps/hostinger"
+printf '#!/usr/bin/env bash\necho autostart\n' > "$PRUNE_S/ghl-mcp-autostart.sh"
+printf '#!/usr/bin/env bash\necho probe\n'    > "$PRUNE_S/ghl-mcp-probe.sh"
+printf '#!/usr/bin/env bash\necho digest\n'   > "$PRUNE_S/ghl-mcp-pin-digest.sh"
+printf '#!/usr/bin/env bash\necho gate\n'     > "$PRUNE_S/qc-assert-ghl-mcp-supervised.sh"
+printf '#!/usr/bin/env bash\necho paths\n'    > "$PRUNE_S/lib/ghl-mcp-paths.sh"
+printf '#!/usr/bin/env bash\necho start\n'    > "$PRUNE_P/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh"
+printf '#!/usr/bin/env bash\necho keep\n'     > "$PRUNE_S/local-tools/box-only.sh"
+printf '#!/usr/bin/env bash\necho keep\n'     > "$PRUNE_S/lib/shared-unrelated.sh"
+printf 'keep\n'                               > "$PRUNE_P/vps/36-ghl-mcp-setup-scripts/unrelated-helper.sh"
+printf 'keep\n'                               > "$PRUNE_P/common.sh"
+printf 'keep\n'                               > "$PRUNE_P/vps/hostinger/keep.txt"
+
+if _prune_out="$(prune_retired_ghl_mcp_surfaces "$PRUNE_S" "$PRUNE_P" 2>&1)"; then
+  ok "prune exits 0 with the retired files present"
+else
+  bad "prune returned non-zero with the retired files present: $_prune_out"
+fi
+printf '%s\n' "$_prune_out" | grep -q 'pruned 3 resurrection file(s)' \
+  && ok "prune logs one line naming exactly what it removed (3 resurrection surfaces)" \
+  || bad "prune log line missing the removed count: $_prune_out"
+# GHL-101 (B2): the retirement tool, its path library and the digest primitive
+# are RETAINED on purpose — the updater deletes its own source checkout, so
+# pruning them would leave the box unable to run --retire ever again.
+printf '%s\n' "$_prune_out" | grep -q 'RETAINED' \
+  && ok "prune states that the retirement tool + path library + digest primitive are retained" \
+  || bad "prune log does not say the retirement tooling was retained: $_prune_out"
+
+for _prune_rel in ghl-mcp-probe.sh qc-assert-ghl-mcp-supervised.sh; do
+  [ ! -e "$PRUNE_S/$_prune_rel" ] \
+    && ok "retired scripts/$_prune_rel pruned" \
+    || bad "retired scripts/$_prune_rel SURVIVED the prune"
+done
+for _keep_rel in ghl-mcp-autostart.sh ghl-mcp-pin-digest.sh lib/ghl-mcp-paths.sh; do
+  [ -e "$PRUNE_S/$_keep_rel" ] \
+    && ok "retirement scripts/$_keep_rel retained (a source-less box must still be able to run --retire)" \
+    || bad "retirement scripts/$_keep_rel was PRUNED — the box can no longer run --retire"
+done
+[ ! -e "$PRUNE_P/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" ] \
+  && ok "retired platform start script pruned" \
+  || bad "retired platform start script SURVIVED the prune"
+
+# Unrelated files must survive — the prune is targeted, not a directory wipe.
+for _keep_rel in local-tools/box-only.sh lib/shared-unrelated.sh; do
+  [ -f "$PRUNE_S/$_keep_rel" ] \
+    && ok "unrelated scripts/$_keep_rel survives" \
+    || bad "unrelated scripts/$_keep_rel was deleted by the prune"
+done
+[ -f "$PRUNE_P/vps/hostinger/keep.txt" ] \
+  && ok "unrelated platform/vps/hostinger file survives" \
+  || bad "unrelated platform/vps/hostinger file was deleted"
+[ -f "$PRUNE_P/common.sh" ] \
+  && ok "unrelated platform/common.sh survives" \
+  || bad "platform/common.sh was deleted by the prune"
+[ -f "$PRUNE_P/vps/36-ghl-mcp-setup-scripts/unrelated-helper.sh" ] \
+  && ok "unrelated file in the pruned platform dir survives" \
+  || bad "unrelated file in the pruned platform dir was deleted"
+
+# Idempotent + never fatal: second run, then a destination that does not exist.
+if _prune_out2="$(prune_retired_ghl_mcp_surfaces "$PRUNE_S" "$PRUNE_P" 2>&1)"; then
+  ok "second prune run exits 0 (idempotent)"
+else
+  bad "second prune run returned non-zero"
+fi
+printf '%s\n' "$_prune_out2" | grep -q 'nothing to prune' \
+  && ok "second prune run logs 'nothing to prune'" \
+  || bad "second prune run did not log the no-op: $_prune_out2"
+if prune_retired_ghl_mcp_surfaces "$WORK/no-such/scripts" "$WORK/no-such/platform" >/dev/null 2>&1; then
+  ok "prune exits 0 when the destination is absent (never fails the roll)"
+else
+  bad "prune failed on an absent destination"
+fi
+
 printf 'RESULT: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

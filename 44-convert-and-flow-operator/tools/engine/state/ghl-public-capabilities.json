@@ -1,0 +1,69 @@
+{
+  "record_version": 1,
+  "tenant": "Mct54Bwi1KlNouGXQcDX",
+  "recorded_at": "2026-10-19",
+  "authority": "GU-004 3.2 rules 2-3 (GHL-150 live verification amendment)",
+  "note": "Read-verified on 2026-10-19 by live read-only probes against location Mct54Bwi1KlNouGXQcDX ('BlackCEO LLC', companyId DAD7unnJpNUFc36952Xp), base https://services.leadconnectorhq.com. Real 200 observed for locations.get (v2021-07-28 and v3), contacts.list (v2021-07-28), contacts.search (v3), custom_fields.list (v3, 1701 fields), pipelines.list (v3, 41 pipelines) and media.files.list (v3, with &type=file; without type it answers 422). Every other operation stays enabled=false / UNVERIFIED: no 200 was observed for it. The record is bound to this one tenant, so a call for any other location fails closed to default-deny.",
+  "capabilities": {
+    "locations.get": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": true,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "VERIFIED",
+      "provisional": false
+    },
+    "contacts.list": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": true,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "VERIFIED",
+      "provisional": false
+    },
+    "contacts.search": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": true,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "VERIFIED",
+      "provisional": false
+    },
+    "custom_fields.list": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": true,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "VERIFIED",
+      "provisional": false
+    },
+    "pipelines.list": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": true,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "VERIFIED",
+      "provisional": false
+    },
+    "media.files.list": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": true,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "VERIFIED",
+      "provisional": false
+    }
+  }
+}

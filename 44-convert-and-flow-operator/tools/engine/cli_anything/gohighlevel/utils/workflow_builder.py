@@ -12,7 +12,8 @@ import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Optional, Union
+from dataclasses import dataclass
+from typing import Any, Mapping, Optional, Union
 
 from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
@@ -40,6 +41,218 @@ def _build_max_workers() -> int:
     except (ValueError, TypeError):
         return _DEFAULT_BUILD_MAX_WORKERS
     return n if n >= 1 else _DEFAULT_BUILD_MAX_WORKERS
+
+
+# ── Public V4 route selection (GU-013) ───────────────────────────────────────
+#
+# The public V4 adapter is PRIMARY only when that operation's capability row is
+# enabled (freeze 3.2).  Otherwise the Skill 44 private rail keeps today's
+# behaviour, unchanged and explicitly named.  The route is chosen BEFORE any
+# transport call and is never switched afterwards: an ``unknown_outcome`` from a
+# public write must be reconciled through the adapter, never retried through the
+# private rail (freeze 2.4).
+
+WORKFLOW_ROUTE_PUBLIC = "public_v4"
+WORKFLOW_ROUTE_PRIVATE = "skill44_private_fallback"
+
+
+@dataclass(frozen=True)
+class WorkflowRoute:
+    """One named route decision: public primary or the explicit private fallback."""
+
+    operation: str
+    operation_id: Optional[str]
+    route: str
+    reason: str
+    blocked: Any = None
+
+    @property
+    def public(self) -> bool:
+        return self.route == WORKFLOW_ROUTE_PUBLIC
+
+    def as_evidence(self) -> dict:
+        out = {
+            "operation": self.operation,
+            "operation_id": self.operation_id,
+            "route": self.route,
+            "reason": self.reason,
+        }
+        block = self.blocked
+        if block is not None:
+            out["activation_blocked"] = block.as_evidence()
+        return out
+
+
+def _v4_operation_map():
+    from cli_anything.gohighlevel.public.workflow_v4 import OPERATION_MAP
+    return OPERATION_MAP
+
+
+def workflow_operation_id(operation: str) -> Optional[str]:
+    """Frozen public operation id for a workflow surface, or None for a named gap."""
+    return _v4_operation_map().get(str(operation))
+
+
+def workflow_route(v4: Any, operation: str, *, tenant: Any = None) -> WorkflowRoute:
+    """Choose public primary or the named private fallback for one surface.
+
+    Never guesses: an absent adapter, an absent frozen row, a disabled
+    capability, or an unbound probe all fall back, each says why (GHL-168 F2).
+    """
+    key = str(operation)
+    if v4 is None:
+        return WorkflowRoute(
+            key, None, WORKFLOW_ROUTE_PRIVATE,
+            "public V4 adapter unavailable; using the named Skill 44 private fallback",
+        )
+    try:
+        operation_id = _v4_operation_map().get(key)
+    except Exception as exc:  # noqa: BLE001 - an unimportable package is a named fallback
+        return WorkflowRoute(
+            key, None, WORKFLOW_ROUTE_PRIVATE,
+            "public V4 package unavailable (%s); using the named Skill 44 private fallback"
+            % type(exc).__name__,
+        )
+    if operation_id is None:
+        return WorkflowRoute(
+            key, None, WORKFLOW_ROUTE_PRIVATE,
+            "no frozen public row for %r; using the named Skill 44 private fallback" % key,
+        )
+    capability = v4.capability(key, tenant=tenant)
+    if capability.enabled:
+        return WorkflowRoute(
+            key, operation_id, WORKFLOW_ROUTE_PUBLIC,
+            "capability row enabled for this operation",
+        )
+    return WorkflowRoute(
+        key, operation_id, WORKFLOW_ROUTE_PRIVATE,
+        "capability disabled; using the named Skill 44 private fallback",
+        capability.activation_blocked,
+    )
+
+
+def load_public_v4(
+    location_id: str,
+    *,
+    env: Optional[Mapping[str, str]] = None,
+    transport: Any = None,
+    capability: Any = None,
+):
+    """Build ``WorkflowV4Adapter`` over the frozen public adapter.
+
+    Returns ``(adapter, reason)``.  ``adapter`` is None when the public
+    credential class cannot be resolved; the caller then keeps the named
+    private fallback.  The default capability gate is default-deny, so building
+    the adapter can never send a request on its own.
+    """
+    try:
+        from cli_anything.gohighlevel.public.adapter import PublicGhlAdapter
+        from cli_anything.gohighlevel.public.auth import AuthKind, resolve_auth
+        from cli_anything.gohighlevel.public.workflow_v4 import WorkflowV4Adapter
+    except Exception as exc:  # noqa: BLE001
+        return None, "public V4 package unavailable: %s" % type(exc).__name__
+    try:
+        auth = resolve_auth(
+            kind=AuthKind.location_pit, location_id=location_id, env=env
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, "public credential unavailable: %s" % type(exc).__name__
+    public = PublicGhlAdapter(
+        auth=auth, transport=transport, capability=capability
+    )
+    return WorkflowV4Adapter(public=public), "public adapter built; gate is default-deny"
+
+
+def public_approval() -> Any:
+    """Approval seam for a public V4 write: the existing gate token, never its value.
+
+    Freeze 3.2 rule 4 requires an explicit approval token on every V4 write.
+    A ``ZHC-`` name is standing approval for the private rail only; it is not a
+    V4 approval token and is not substituted here.
+    """
+    try:
+        from cli_anything.gohighlevel.public.adapter import ApprovalRef
+    except Exception:  # noqa: BLE001
+        return None
+    if os.environ.get("CAF_APPROVAL_TOKEN", "").strip():
+        return ApprovalRef(ref="CAF_APPROVAL_TOKEN", kind="gate_token")
+    return None
+
+
+def intent_from_definition(
+    current: Mapping[str, Any], desired: Mapping[str, Any]
+) -> Any:
+    """Explicit ``Intent`` that turns ``current`` into ``desired``.
+
+    Top-level fields present in ``desired`` are set; nodes are upserted by
+    identity and identities missing from ``desired`` become explicit removals,
+    so the update request can never delete a step by omission.  ``version`` is
+    never set here -- it is system-owned and carried by the adapter.
+
+    An id-less node in ``current`` is REFUSED (``current_node_identity_missing``):
+    it has no identity to put in ``remove_*``, so excluding it from the present
+    set would make removing it undetectable.  Refusing is the only answer that
+    cannot silently drop a live node.
+
+    ponytail: a top-level key that exists in ``current`` and is absent from
+    ``desired`` cannot be removed through ``Intent`` (it has no remove_fields).
+    Add one when a real plan needs top-level deletion.
+    """
+    from cli_anything.gohighlevel.public.errors import ContractViolation
+    from cli_anything.gohighlevel.public.workflow_v4_intent import (
+        COLLECTIONS,
+        Intent,
+        node_identity,
+    )
+
+    if not isinstance(current, Mapping) or not isinstance(desired, Mapping):
+        raise ContractViolation("definition_invalid")
+    plan: dict[str, Any] = {
+        "set_fields": {
+            str(key): value
+            for key, value in desired.items()
+            if str(key) not in COLLECTIONS and str(key) != "version"
+        }
+    }
+    for kind in COLLECTIONS:
+        current_nodes = _definition_nodes(current, kind)
+        loose = [index for index, node in enumerate(current_nodes) if _identity(node) is None]
+        if loose:
+            raise ContractViolation(
+                "current_node_identity_missing",
+                detail={"kind": kind, "count": len(loose)},
+            )
+        wanted = _definition_nodes(desired, kind)
+        present = {
+            identity
+            for identity in (_identity(node) for node in current_nodes)
+            if identity is not None
+        }
+        seen: set = set()
+        for node in wanted:
+            identity = node_identity(node)
+            if identity is None:
+                raise ContractViolation(
+                    "intent_node_identity_missing", detail={"kind": kind}
+                )
+            seen.add(identity)
+        plan["upsert_" + kind] = tuple(wanted)
+        plan["remove_" + kind] = tuple(sorted(present - seen))
+    return Intent(**plan)
+
+
+def _definition_nodes(definition: Mapping[str, Any], kind: str) -> tuple:
+    nodes = definition.get(kind)
+    if nodes is None:
+        return ()
+    if not isinstance(nodes, (list, tuple)):
+        raise ValueError("definition collection %r is not a list" % kind)
+    return tuple(nodes)
+
+
+def _identity(node: Any) -> Optional[str]:
+    from cli_anything.gohighlevel.public.workflow_v4_intent import node_identity
+    return node_identity(node)
 
 
 # ── Verified Action Types (56 confirmed via save API 2026-03-22) ──────────
@@ -408,9 +621,13 @@ class CampaignBuilder:
     Uses ThreadPoolExecutor for parallel workflow creation.
     """
 
-    def __init__(self, client: InternalGHLClient):
+    def __init__(self, client: InternalGHLClient, *, v4: Any = None):
         self.client = client
         self.loc = client.location_id
+        # Public V4 adapter (GU-013).  None means "not wired": every workflow
+        # surface then keeps the existing private rail, which is the named
+        # fallback rather than an implicit default.
+        self.public_v4 = v4
         self.stats: dict[str, Any] = {
             "workflows_created": 0,
             "steps_saved": 0,
@@ -424,9 +641,102 @@ class CampaignBuilder:
             # folders when it could not is the false-success failure mode this
             # module already got burned by once.
             "notes": [],
+            "route": {},
             "start_time": 0.0,
             "end_time": 0.0,
         }
+
+    def route_for(self, operation: str) -> WorkflowRoute:
+        """Record and return the named route for one workflow surface."""
+        route = workflow_route(self.public_v4, operation, tenant=self.loc)
+        self.stats.setdefault("route", {})[operation] = route.as_evidence()
+        return route
+
+    def _v4_create_blocker(
+        self,
+        wf_def: dict,
+        *,
+        folder_name: Optional[str],
+        requested_folder_id: Optional[str],
+    ) -> Optional[str]:
+        """Why this plan keeps the private create rail, or None when V4 fits.
+
+        These are pre-flight mapping limits, not transport failures: the route
+        is still decided before anything is sent.
+        """
+        if wf_def.get("tag"):
+            return (
+                "plan carries a contact_tag trigger; the V4 trigger node mapping "
+                "is unverified, using the named Skill 44 private fallback"
+            )
+        if requested_folder_id:
+            return (
+                "explicit folder id has no documented V4 create field, using the "
+                "named Skill 44 private fallback (pass --folder name for the "
+                "public rail)"
+            )
+        if not folder_name:
+            return (
+                "no folder name to pass to the V4 create body, using the named "
+                "Skill 44 private fallback"
+            )
+        return None
+
+    def _create_workflow_public(
+        self,
+        key: str,
+        wf_name: str,
+        templates: list,
+        folder_name: str,
+    ) -> tuple:
+        """Create one workflow through the public V4 adapter.
+
+        Returns the same tuple shape as ``_create_workflow``.  A non-ok result
+        is recorded and returned as a failure: there is NO fallback after a
+        transport attempt, least of all after ``unknown_outcome`` (freeze 2.4).
+
+        ponytail: the plan's ``templates`` are sent as the V4 ``actions`` array.
+        The V4 action-node schema beyond id/type/name/attributes is unverified
+        (B-V4-S); the capability gate cannot be enabled until an operator
+        records production contract evidence, so this path is unreachable in
+        production before that evidence exists.
+        """
+        from cli_anything.gohighlevel.public.auth import TenantBinding
+        from cli_anything.gohighlevel.public.result import Status
+
+        definition: dict[str, Any] = {"name": wf_name, "actions": list(templates)}
+        if folder_name:
+            definition["folderName"] = folder_name
+            definition["createFolderIfMissing"] = True
+        result = self.public_v4.create_workflow(
+            tenant=TenantBinding(location_id=self.loc, source="request"),
+            definition=definition,
+            approval=public_approval(),
+            attempt=1,
+        )
+        if result.status is Status.unknown_outcome:
+            self.stats["errors"].append(
+                f"{wf_name}: public V4 create returned unknown_outcome "
+                f"(receipt {result.receipt_id}) — reconcile before any retry; "
+                "the private fallback was NOT used."
+            )
+            return key, None, False, False, None
+        if result.status is not Status.ok:
+            self.stats["errors"].append(
+                f"{wf_name}: public V4 create refused "
+                f"({result.status.value}, receipt {result.receipt_id}) — "
+                "the private fallback was NOT used."
+            )
+            return key, None, False, False, None
+        workflow_v4 = dict(result.evidence.get("workflow_v4") or {})
+        wf_id = workflow_v4.get("workflow_id")
+        if not wf_id:
+            self.stats["errors"].append(
+                f"{wf_name}: public V4 create returned ok without a workflow id "
+                f"(receipt {result.receipt_id}) — reconcile before any retry."
+            )
+            return key, None, False, False, None
+        return key, str(wf_id), True, False, None
 
     def build(
         self,
@@ -460,6 +770,10 @@ class CampaignBuilder:
     ) -> dict:
         """Internal build implementation (called under WriteLock)."""
         self.stats["start_time"] = time.time()
+        # Remember whether the caller pinned an explicit folder id: the V4
+        # create contract has no folder-id field, so that request keeps the
+        # named private fallback (a name-based folder can be passed instead).
+        requested_folder_id = folder_id
 
         # Pre-flight validation
         errors = validate_campaign(campaign)
@@ -494,7 +808,28 @@ class CampaignBuilder:
         # one that already carries the target name can't corrupt anything a
         # human built (unlike reusing a workflow — see the collision check
         # below).
-        if not folder_id:
+        #
+        # When the public V4 create capability is enabled, the folder is passed
+        # as ``folderName`` + ``createFolderIfMissing`` in the create body, so
+        # no private folder POST fires.  A caller-pinned folder id cannot be
+        # expressed that way, and a plan carrying a contact_tag trigger cannot
+        # use the public route, so both keep the private folder + create rail.
+        campaign_has_tag = any(
+            isinstance(value, dict) and value.get("tag")
+            for value in campaign.values()
+        )
+        folder_public_only = (
+            self.route_for("create").public
+            and not campaign_has_tag
+            and bool(folder_name)
+            and requested_folder_id is None
+        )
+        if not folder_id and folder_public_only:
+            self.stats.setdefault("notes", []).append(
+                f"Folder '{folder_name}' is created by the public V4 create body "
+                "(folderName + createFolderIfMissing); no private folder POST."
+            )
+        elif not folder_id:
             if not folder_name:
                 self.stats["errors"].append(
                     "CampaignBuilder.build requires folder_id or folder_name"
@@ -596,6 +931,30 @@ class CampaignBuilder:
             # templates[0]["id"] as its targetActionId), remapping link
             # references (next/parentKey) to the same mints.
             templates = normalize_action_ids(templates, self.loc)
+
+            # GU-013 route decision — made BEFORE any transport call and never
+            # switched after one.  Public V4 is used only when its capability
+            # row is enabled AND the plan maps onto the documented V4 create
+            # body (no contact_tag trigger, no explicit folder id).
+            route = self.route_for("create")
+            if route.public:
+                blocker = self._v4_create_blocker(
+                    wf_def, folder_name=folder_name,
+                    requested_folder_id=requested_folder_id,
+                )
+                if blocker:
+                    route = WorkflowRoute(
+                        "create", route.operation_id, WORKFLOW_ROUTE_PRIVATE,
+                        blocker, route.blocked,
+                    )
+                    self.stats.setdefault("route", {})["create"] = route.as_evidence()
+                else:
+                    return self._create_workflow_public(
+                        key, wf_name, templates, folder_name
+                    )
+
+            # Named private fallback (unchanged behaviour): public capability is
+            # disabled, or this plan cannot be expressed by the V4 contract.
 
             # Step 1: Create workflow
             result = self.client.request(
@@ -785,6 +1144,14 @@ class CampaignBuilder:
             lines.append(f"  Notes:     {len(notes)}")
             for n in notes:
                 lines.append(f"    - {n}")
+
+        routes = self.stats.get("route") or {}
+        if routes:
+            lines.append("  Route:")
+            for operation, info in sorted(routes.items()):
+                lines.append(
+                    f"    {operation}: {info.get('route')} ({info.get('reason')})"
+                )
 
         wf_ids = self.stats.get("workflow_ids", {})
         if wf_ids:

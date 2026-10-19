@@ -13,6 +13,14 @@ HERE = Path(__file__).resolve().parent
 
 MODULES = [
     "test_scripts.py",
+    "test_stage_executor.py",
+    "test_brand_colors.py",
+    "test_stage_executor_prompt_contract.py",
+    "test_overview_board.py",
+    "test_section_count.py",
+    # SPF021: Design Board contract, QC floor, approval binding and gates.
+    "test_design_board.py",
+    "test_review_pdf_stage.py",
     "test_validate_visual_direction.py",
     "test_validate_manifest_grade.py",
     "test_stage_gate.py",
@@ -51,6 +59,7 @@ MODULES = [
     "test_item13_production_method.py",
     "test_item12_hybrid_board.py",
     "test_item15_trait_gates.py",
+    "test_wireframe_build_spec.py",
     "test_item25_part_naming.py",
     "test_item16_parity_gate.py",
     "test_item26_delivered_filename.py",
@@ -59,21 +68,47 @@ MODULES = [
     "test_sync_allowlist.py",
     # Signature Launch S71 A23: per-provider image-generation-qc gate.
     "test_provider_gate_a23.py",
+    # SPF022: reference images are structure only (prompt block + bleed QC).
+    "test_reference_use.py",
+    # SPF020: page color system + image grade blocks and the page-level pixel check.
+    "test_hypersaturation.py",
+    # Design styles A Block, B Circle, C Hybrid: circle-image pipeline, style choice, shape QC.
+    "test_design_style.py",
+    # SPF023: composition library (words over images, shaped crops, light fields).
+    "test_composition_library.py",
 ]
+
+def skip_reason(stdout):
+    """A module that cannot run reports SKIPMOD; a skip is never a pass."""
+    for line in stdout.splitlines():
+        if line.startswith("SKIPMOD "):
+            return line[len("SKIPMOD "):]
+    return ""
 
 def main():
     failures = []
+    skipped = []
     for mod in MODULES:
-        proc = subprocess.run([sys.executable, str(HERE / mod)], text=True)
+        proc = subprocess.run([sys.executable, str(HERE / mod)], text=True,
+                              capture_output=True)
+        sys.stdout.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        reason = skip_reason(proc.stdout)
         if proc.returncode != 0:
             failures.append(mod)
             print(f"FAIL {mod}")
+        elif reason:
+            skipped.append(mod)
+            print(f"SKIP {mod}: {reason}")
         else:
             print(f"PASS {mod}")
     if failures:
         print(f"TESTS FAILED: {', '.join(failures)}")
         return 1
-    print(f"ALL PASS: {len(MODULES)} test modules")
+    passed = len(MODULES) - len(skipped)
+    print(f"ALL PASS: {passed} test modules passed, {len(skipped)} skipped")
+    for mod in skipped:
+        print(f"SKIPPED {mod}")
     return 0
 
 if __name__ == "__main__":

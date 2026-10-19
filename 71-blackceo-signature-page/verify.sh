@@ -68,7 +68,8 @@ for f in \
   scripts/stage_gate.py scripts/render_page.py scripts/compare_sheet.py \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
   scripts/calibrate_grade.py scripts/check_authority_pins.py \
-  scripts/install_local.py scripts/write_intake.py \
+  scripts/install_local.py scripts/write_intake.py scripts/brand_colors.py \
+  scripts/circle_image.py scripts/design_style.py \
   tests/run_tests.py tests/test_scripts.py \
   assets/brand/blackceo-brand.json assets/brand/brand.schema.json \
   assets/brand/client-brand.template.json assets/brand/signature-grade-block.txt \
@@ -81,23 +82,52 @@ for f in \
   CHANGELOG.md VERSION START-HERE.md EVALUATION-CHECKLIST.md \
   references/runtime-adapters.md references/kie-generation-route.md agents/openai.yaml \
   scripts/swarm_runner.py scripts/browser_sessions.py scripts/ship_run_events.py \
+  scripts/reference_use.py references/reference-image-use.md references/reference-library.json \
+  scripts/hypersaturation.py scripts/validate_page_color.py \
+  references/hypersaturation-framework.md references/page-color-thresholds.json \
   scripts/validate_copy_structure.py scripts/validate_install.py \
   scripts/validate_funnel_completion.py scripts/check_deliverables.py \
   references/run-events-schema.md references/run-events.schema.json \
   references/run-events.example.jsonl references/report-json.schema.json \
   references/report-json.example.json references/style-selection.md \
+  references/design-styles.md references/design-styles.json tests/test_design_style.py \
   references/style-selection.schema.json references/prompt-budget-policy.json \
   references/runner-profiles.json references/item-gate-spec.md \
   references/browser-hygiene.md references/funnel-completion-checklist.md \
   references/browser-engine-contract.md references/automation-handoff.md \
   references/deliverables-manifest.md references/layout-trait-vocabulary.json \
+  references/composition-treatments.json references/composition-patterns.md \
+  scripts/composition.py assets/visual-standards/reference-catalog.json \
+  tests/test_composition_library.py \
   references/copy-specs/standard-v6.json references/copy-specs/long-form-v6.json \
+  references/wireframe-build-spec.json scripts/wireframe_spec.py \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \
   repo-integration/universal-sops/signature-page-craft/README.md; do
   need_file "$f"
 done
+
+# Fix 11.1: every standard image named by the manifest is a required file.
+# A shell loop over manifest.json's files[].file keeps this from being 44
+# hand-typed lines; one fix only, no shell-out to test_visual_standards.py.
+VS_LIST="$(python3 - "$ROOT/assets/visual-standards/manifest.json" <<'VSPYEOF'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    for entry in json.load(fh)["files"]:
+        print(entry["file"])
+VSPYEOF
+)" || { printf '[FAIL] cannot read assets/visual-standards/manifest.json\n' >&2; fail=1; VS_LIST=""; }
+if [ -z "$VS_LIST" ]; then
+  printf '[FAIL] assets/visual-standards/manifest.json lists no image files\n' >&2
+  fail=1
+else
+  while IFS= read -r vs_file; do
+    [ -n "$vs_file" ] && need_file "assets/visual-standards/$vs_file"
+  done <<VSLISTEOF
+$VS_LIST
+VSLISTEOF
+fi
 
 front_ver="$(awk 'BEGIN{x=0} /^---$/{x++; next} x==1 && /^version:/{sub(/^version:[[:space:]]*/,""); print; exit}' "$ROOT/SKILL.md" | tr -d '"\r')"
 file_ver="$(tr -d 'vV\r[:space:]' < "$ROOT/skill-version.txt")"

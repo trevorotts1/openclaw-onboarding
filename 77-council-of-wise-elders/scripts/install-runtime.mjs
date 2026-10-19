@@ -626,6 +626,21 @@ export async function main(argv) {
 
   const releaseId = `rel-${sourceManifest.digest.slice(0, 12)}`;
 
+  // The installed bundle (<prefix>/releases/<id>/dist/blackceo-council.mjs)
+  // has no SKILL.md, advisors/ or manifest.json above it. Its dispatcher
+  // reads '../../install-record.json', which from there is
+  // <prefix>/releases/install-record.json: record the skill folder it was
+  // built from. Written before the idempotence check so a re-run heals a
+  // prefix installed without it. Outside every release tree, so receipts
+  // and integrity digests are unaffected.
+  try {
+    mkdirSync(join(prefix, "releases"), { recursive: true });
+    writeJsonAtomic(join(prefix, "releases", "install-record.json"), { skill_dir: dirname(runtimeDir) });
+  } catch (error) {
+    console.log(`FAIL install-record: ${formatError(error)}`);
+    return 1;
+  }
+
   // ---- 4. Idempotence: identical, verified, active release is a no-op ----
   if (existsSync(activePath)) {
     try {

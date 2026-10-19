@@ -2,6 +2,17 @@
 # ghl-mcp-vet-pin.sh — the ONLY thing permitted to write the GHL Community MCP
 # vetting record. Review a candidate commit, then seal the verdict to it.
 #
+# ── GHL_MCP_RETIRED: THE SERVICE IS GONE, THE RECORD IS NOT ──────────────────
+# The community GHL MCP (Tier 2) is RETIRED. This tool never started or
+# supervised it, and the two commands it used to print to prove a seal on one
+# box -- `scripts/ghl-mcp-autostart.sh` to rebuild the tree and
+# `scripts/ghl-mcp-probe.sh --once` to confirm it answered -- are tombstones
+# now: the rebuild path refuses and the probe refuses. What survives is the
+# RECORD (pin file, vetting digest, CI gate, box-side refusal), so sealing one
+# still matters and is still this tool's alone. The proof steps below are the
+# retirement transaction's own read-only verbs: --status to inspect, --retire
+# only when a box reports residual state.
+#
 # ── THE PROBLEM THIS SOLVES ──────────────────────────────────────────────────
 # The pin used to be bumped by hand-editing three files and remembering a rule
 # written in a comment. Nothing checked the rule, so the verdict drifted away
@@ -82,7 +93,7 @@ while [ $# -gt 0 ]; do
     --pin-file)  PIN_FILE="${2:-}"; shift ;;
     --max-lines) MAX_LINES="${2:-60}"; shift ;;
     --dry-run)   DRY_RUN=1 ;;
-    -h|--help)   sed -n '2,60p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,70p' "$0"; exit 0 ;;
     -*)          echo "ghl-mcp-vet-pin.sh: unknown option '$1'" >&2; exit 1 ;;
     *)           CANDIDATE="$1" ;;
   esac
@@ -562,12 +573,15 @@ NEXT — prove it on ONE box before the fleet, not after:
        bash scripts/ghl-mcp-check-pin-digest.sh
        bash scripts/qc-assert-ghl-mcp-supervised.sh
 
-  2. Rebuild on ONE box only. The autostart builds the new pin in a temp dir and
-     only swaps dist/ on success, so a bad pin leaves the running server alone:
-       bash scripts/ghl-mcp-autostart.sh
+  2. Read the retirement state on ONE box. `--status` is read-only: it prints
+     the inventory and the current terminal state (RETIRED_VERIFIED_OFF or
+     MIGRATION_FAILED) and changes nothing:
+       bash scripts/ghl-mcp-autostart.sh --status
 
-  3. Confirm it is actually alive and answering, not merely listening:
-       bash scripts/ghl-mcp-probe.sh --once
+  3. Only a box reporting MIGRATION_FAILED has residual state to clear. The
+     transaction is idempotent — on an already-verified box it reprints the
+     receipt and changes nothing:
+       bash scripts/ghl-mcp-autostart.sh --retire
 
   4. Only then roll the fleet.
 

@@ -22,6 +22,11 @@ Extended per BLACKCEO-SKILL-71-ENFORCEMENT-FIX-ORDER.md C5:
       declare qc_status "passed". Entries still planned (no asset yet) are
       not blocked by this rule. The production gate (stage_gate.py) runs this
       validator, so a non-zero exit blocks the stage.
+  Slot shape (design styles B and C, references/design-styles.md)
+      An entry's shape (or mask) is rect or circle. A circle entry declares
+      ratio 1:1, a ring (when present) carries a client brand color, and with
+      --measure its asset must be a square RGBA PNG with alpha 0 in the four
+      corner regions and an opaque center (scripts/circle_image.py check).
   Delivered filename mapping (Update Plan Item 26, proposal P6, ruled
   2026-10-15)
       One convention: the manifest and inventory carry the three-digit
@@ -41,6 +46,9 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import circle_image  # noqa: E402
 
 # Shared minimum contract, present in every dialect the skill writes.
 BASE_REQUIRED = ["id", "job", "filename", "status"]
@@ -219,7 +227,27 @@ def measure_assets(entries, base_dir):
             errors.append(
                 f"{prefix}.asset {asset} measures {actual[0]}x{actual[1]} but declares {width}x{height}."
             )
+        if circle_image.entry_shape(item) == "circle":
+            for reason in circle_image.shape_failures(circle_image.alpha_stats(path)):
+                errors.append(f"{prefix}.asset {asset} is a circle slot but: {reason}.")
     return errors
+
+
+def shape_errors(prefix, item):
+    """Static slot-shape rules for one entry (design styles B and C)."""
+    shape = circle_image.entry_shape(item)
+    if shape not in ("rect", "circle"):
+        return [f"{prefix}.shape must be rect or circle, got {shape!r}."]
+    if shape != "circle":
+        return []
+    out = []
+    ratio = item.get("intended_ratio") or item.get("aspect_ratio") or item.get("ratio")
+    if ratio not in (None, "1:1"):
+        out.append(f"{prefix} is a circle slot and must declare ratio 1:1 (generated square), got {ratio!r}.")
+    ring = item.get("ring")
+    if ring is not None and not (isinstance(ring, dict) and circle_image.HEX.match(str(ring.get("color", "")))):
+        out.append(f"{prefix}.ring needs a client brand color as #RRGGBB (no default color).")
+    return out
 
 
 def validate(data, base_dir=None, check_files=False, inventory_data=None, measure=False):
@@ -282,6 +310,8 @@ def validate(data, base_dir=None, check_files=False, inventory_data=None, measur
         # the map stage; either satisfies the requirement for a generated asset.
         if status in ASSET_STATUSES and not (item.get("asset_file") or item.get("asset_path")):
             errors.append(f"{prefix} with status {status!r} requires asset_file (or asset_path).")
+
+        errors.extend(shape_errors(prefix, item))
 
         # Order C5: an entry used on the page must carry a passing QC status.
         if (item.get("asset_file") or item.get("asset_path")) and item.get("qc_status") != "passed":

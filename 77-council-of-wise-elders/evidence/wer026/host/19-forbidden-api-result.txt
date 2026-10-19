@@ -1,0 +1,24 @@
+forbidden_api_grep_exit_code=1 (1 means no matches)
+temp_root_contents:
+total 0
+drwxr-xr-x     4 blackceomacmini  wheel     128 Oct 18 17:50 .
+drwxrwxrwt  5297 root             wheel  169504 Oct 18 17:50 ..
+drwxr-xr-x     3 blackceomacmini  wheel      96 Oct 18 17:50 data-crash
+drwxr-xr-x     4 blackceomacmini  wheel     128 Oct 18 17:50 data-single
+runner_import_lines:
+19:import {
+31:import { tmpdir } from "node:os";
+32:import { join, resolve } from "node:path";
+33:import { fileURLToPath, pathToFileURL } from "node:url";
+35:import {
+43:import { defaultPolicy, validatePolicy } from "./policy.mjs";
+44:import { createLeaderState, renewLeadership } from "./leader-state.mjs";
+45:import {
+49:import { executePlannedSweep } from "./sweep-executor.mjs";
+50:import { runPlannedSweep } from "./sweep-runner.mjs";
+51:import { collectHealth } from "./health-collector.mjs";
+52:import { observeHealth } from "./health-observer.mjs";
+53:import { detectOverdue } from "./overdue-detector.mjs";
+54:import {
+60:import {
+66:import {

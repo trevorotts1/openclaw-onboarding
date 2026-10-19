@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="t d">
+  <title id="t">Brené Brown medallion</title>
+  <desc id="d">Illustrative identity medallion for the Brené Brown council seat (courage, trust, and accountable behavior): the initials BB and a heart outline inside a colored ring on a tinted disc. A designed symbol, not a photograph or likeness.</desc>
+  <circle cx="120" cy="120" r="114" fill="#FAECE5"/>
+  <circle cx="120" cy="120" r="114" fill="none" stroke="#BC5837" stroke-width="6"/>
+  <circle cx="120" cy="120" r="102" fill="none" stroke="#BC5837" stroke-width="1.5" opacity="0.45"/>
+  
+  <g fill="none" stroke="#7E3719" stroke-width="5" stroke-linejoin="round">
+    <path d="M120 94C108 80 90 68 90 52c0-9 7-15 15-15 6 0 12 4 15 10 3-6 9-10 15-10 8 0 15 6 15 15 0 16-18 28-30 42Z"/>
+  </g>
+  <text x="120" y="172" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-size="56" font-weight="600" letter-spacing="1" fill="#7E3719">BB</text>
+  <g fill="#BC5837">
+    <circle cx="104" cy="196" r="3.5"/>
+    <circle cx="120" cy="196" r="3.5"/>
+    <circle cx="136" cy="196" r="3.5"/>
+  </g>
+</svg>

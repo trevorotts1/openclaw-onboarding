@@ -274,14 +274,67 @@ else
 fi
 
 # ── WF-7: Action sequence — at least one action node present ──────────────────
+# Action-node recognition is derived from the BUILDER's VERIFIED_ACTIONS set
+# (tools/engine/.../workflow_builder.py — the single source of truth), unioned
+# with six legacy export names. If the builder file is absent or unparseable we
+# fall back to the complete inline VERIFIED_ACTIONS list (v2.1.12, 56 actions +
+# legacy) so recognition can never silently regress to the old 12-name list.
+WF7_BUILDER_FILE="$SCRIPT_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py"
+WF7_EXTRA_LEGACY_NAMES='add_tag|remove_tag|update_contact|create_task|create_note|end'
+WF7_INLINE_FALLBACK='add_contact_tag|add_notes|add_tag|add_to_workflow|array_functions|assign_user|call|chatgpt|conversation_ai|create_note|create_opportunity|create_task|create_update_contact|custom_code|custom_webhook|datetime_formatter|dnd_contact|drip|edit_conversation|email|end|facebook_conversion_api|fb_interactive_messenger|find_contact|find_opportunity|gmb|google_sheets|goto|if_else|ig_interactive_messenger|instagram-dm|internal_notification|ivr_connect_call|ivr_gather|math_operation|membership_grant_offer|membership_revoke_offer|messenger|number_formatter|remove_assigned_user|remove_contact_tag|remove_from_all_workflows|remove_from_workflow|remove_opportunity|remove_tag|respond_on_comment|review_request|slack_message|sms|stripe_one_time_charge|task-notification|text_formatter|transition|update_appointment_status|update_contact|update_contact_field|update_custom_value|voicemail|wait|webhook|workflow_goal|workflow_split'
+WF7_NAMES=$(python3 - "$WF7_BUILDER_FILE" "$WF7_EXTRA_LEGACY_NAMES" <<'WF7PY' 2>/dev/null || true
+import ast, os, re, sys
+path, extra = sys.argv[1], sys.argv[2]
+if not os.path.isfile(path):
+    sys.exit(0)
+try:
+    src = open(path, "r", encoding="utf-8").read()
+except Exception:
+    sys.exit(0)
+m = re.search(r'^\s*VERIFIED_ACTIONS\s*=\s*frozenset\(', src, re.M)
+if not m:
+    sys.exit(0)
+# Scan to the matching close-paren of the frozenset( literal.
+depth = 0
+i = m.end() - 1
+while i < len(src):
+    if src[i] == '(':
+        depth += 1
+    elif src[i] == ')':
+        depth -= 1
+        if depth == 0:
+            break
+    i += 1
+else:
+    sys.exit(0)
+names = set(n for n in extra.split('|') if n)
+try:
+    frag = ast.parse(src[m.start():i + 1])
+    for lit in frag.body[0].value.args[0].elts:
+        if isinstance(lit, ast.Constant) and isinstance(lit.value, str):
+            names.add(lit.value)
+except Exception:
+    sys.exit(0)
+print('|'.join(sorted(names)))
+WF7PY
+)
+if [ -n "$WF7_NAMES" ]; then
+  ACTION_PATTERN="$WF7_NAMES"
+  WF7_NAME_SOURCE="builder VERIFIED_ACTIONS + legacy"
+else
+  ACTION_PATTERN="$WF7_INLINE_FALLBACK"
+  WF7_NAME_SOURCE="inline fallback (VERIFIED_ACTIONS v2.1.12 + legacy)"
+fi
 ACTION_COUNT=0
-ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE '"type"[[:space:]]*:[[:space:]]*"(SMS|EMAIL|WAIT|IF_ELSE|ADD_TAG|REMOVE_TAG|UPDATE_CONTACT|WEBHOOK|CREATE_TASK|CREATE_NOTE|REMOVE_FROM_WORKFLOW|END)[^"]*"' | wc -l || echo 0)
+# Exact, quote-anchored match: a name that merely STARTS with a verified
+# type (e.g. "add_contact_tag_extra") is an unknown type and stays rejected.
+ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE "\"type\"[[:space:]]*:[[:space:]]*\"($ACTION_PATTERN)\"" | wc -l || echo 0)
 ACTION_COUNT=$(echo "$ACTION_COUNT" | tr -d ' ')
 
 if [ "$ACTION_COUNT" -gt 0 ]; then
-  record_pass "WF-7" "${ACTION_COUNT}_action_nodes_present" ">=1 action nodes" "link_steps ordering verified by engine (caf builds apply link_steps before save)"
+  record_pass "WF-7" "${ACTION_COUNT}_action_nodes_present" ">=1 action nodes" "Action-node names from $WF7_NAME_SOURCE; link_steps ordering verified by engine (caf builds apply link_steps before save)"
 else
-  record_fail "WF-7" "0_action_nodes_found" ">=1 action nodes" "No recognizable action nodes found in export. Delivery chain may be empty."
+  record_fail "WF-7" "0_action_nodes_found" ">=1 action nodes" "No recognizable action nodes found in export (names from $WF7_NAME_SOURCE). Delivery chain may be empty."
 fi
 
 # ── WF-12: SMS From-number ────────────────────────────────────────────────────

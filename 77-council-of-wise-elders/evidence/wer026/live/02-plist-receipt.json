@@ -1,0 +1,45 @@
+{
+  "schema": "wise-elders.hybrid-supervisor-launchd/v1",
+  "label": "ai.blackceo.wise-elders.supervisor",
+  "plist_path": "<operator-home>/Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist",
+  "interval_seconds": 600,
+  "run_at_load": true,
+  "program_arguments": [
+    "/opt/homebrew/opt/node@26/bin/node",
+    "<operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders/scripts/supervisor/runner.mjs",
+    "--data-dir",
+    "<operator-home>/Library/Application Support/wise-elders/supervisor",
+    "--once",
+    "--tick-work-ms",
+    "45000"
+  ],
+  "data_dir": "<operator-home>/Library/Application Support/wise-elders/supervisor",
+  "output_path": "<operator-home>/Library/Logs/wise-elders-supervisor.out.log",
+  "error_path": "<operator-home>/Library/Logs/wise-elders-supervisor.err.log",
+  "working_directory": "<operator-home>/.claude/state/council-elders/install/skill/77-council-of-wise-elders",
+  "command_paths": [
+    {
+      "path": "/bin/launchctl",
+      "executable": true
+    }
+  ],
+  "launchctl_commands": {
+    "start": [
+      "/bin/launchctl",
+      "bootstrap",
+      "gui/501",
+      "<operator-home>/Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist"
+    ],
+    "status": [
+      "/bin/launchctl",
+      "print",
+      "gui/501/ai.blackceo.wise-elders.supervisor"
+    ],
+    "stop": [
+      "/bin/launchctl",
+      "bootout",
+      "gui/501",
+      "<operator-home>/Library/LaunchAgents/ai.blackceo.wise-elders.supervisor.plist"
+    ]
+  }
+}

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Council of Wise Elders — the nine advisors</title>
+<link rel="stylesheet" href="./council-theme.css">
+<link rel="stylesheet" href="./council-room.css">
+<link rel="stylesheet" href="./council-journey.css">
+<style>
+  .chamber-nav { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; font-size:.875rem; margin:0 0 1rem; padding:0; list-style:none; }
+  .chamber-nav a { color: var(--council-accent-ink); }
+  .chamber-qualification { border-left:.25rem solid var(--council-accent); background:var(--council-accent-wash); padding:.75rem 1rem; margin:1rem 0; }
+  .advisor-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin-top:1rem; }
+  .advisor-card { border:1px solid var(--council-line); border-radius:var(--council-radius-card); background:var(--council-surface); padding:1rem; }
+  .advisor-card img { display:block; margin-bottom:.75rem; }
+  .advisor-card h3 { margin:0 0 .25rem; font-family:var(--council-font-display); font-size:1.25rem; }
+  .advisor-card p { margin:.35rem 0 0; }
+</style>
+</head>
+<body>
+<div class="council-theme">
+  <div class="council-journey-wrap">
+    <nav aria-label="Chamber pages">
+      <ul class="chamber-nav">
+        <li><a href="./">Chamber</a></li>
+        <li><a href="./advisors.html">The nine advisors</a></li>
+        <li><a href="./not-packaged.html">Not packaged</a></li>
+        <li><a href="/">Service status</a></li>
+      </ul>
+    </nav>
+
+    <header class="council-journey-head">
+      <p class="council-eyebrow">Council of Wise Elders</p>
+      <h1 class="council-display">The nine advisors</h1>
+      <p class="council-lede">Every seat in the chamber, its responsibility, and its source qualification. Roster data comes from the skill's own portrait manifest and advisor packs; nothing here is fetched at runtime.</p>
+    </header>
+
+    <div class="chamber-qualification" role="note">
+      <strong>Source qualification: bibliographic_only.</strong> The advisor packs in this build
+      stand at the bibliographic_only step of the source-qualification ladder. Some required
+      anchors are absent from the authorized source export and are recorded as absent. This page
+      therefore presents each seat as an AI perspective inspired by the named author's published
+      work. It does not present any seat as source-verified, and it quotes no book text.
+    </div>
+
+    <div class="advisor-grid">
+      <article class="advisor-card">
+        <img src="./portraits/simon-sinek.svg" alt="Illustrative medallion for Simon Sinek, the purpose and strategic alignment seat: a colored ring around a warm tinted disc with three concentric circles and the initials SS. A designed symbol, not a photograph of Simon Sinek." width="96" height="96">
+        <h3>Simon Sinek</h3>
+        <p class="council-seat-role">purpose and strategic alignment</p>
+        <p class="council-meta">Owned question: Does this decision express why the business exists, and are the proposed actions consistent with that purpose?</p>
+        <p class="council-meta">AI perspective inspired by the published work of Simon Sinek. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-013 · Qualification: bibliographic_only</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/td-jakes.svg" alt="Illustrative medallion for T. D. Jakes, the instinct, reinvention, and communication seat: a colored ring around a warm tinted disc with a microphone and the initials TJ. A designed symbol, not a photograph of T. D. Jakes." width="96" height="96">
+        <h3>T. D. Jakes</h3>
+        <p class="council-seat-role">instinct, reinvention, and communication</p>
+        <p class="council-meta">Three lenses inside one seat. Lens findings are never three votes; the card still carries exactly one vote.</p>
+        <p class="council-meta">AI perspective inspired by the published work of T. D. Jakes. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Qualification: bibliographic_only · one lens grounded in a derivative, unverified source; others declared ungrounded</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/oprah-winfrey.svg" alt="Illustrative medallion for Oprah Winfrey, the intention, significance, and human connection seat: a colored ring around a warm tinted disc with an open book beneath a small sun and the initials OW. A designed symbol, not a photograph of Oprah Winfrey." width="96" height="96">
+        <h3>Oprah Winfrey</h3>
+        <p class="council-seat-role">intention, significance, and human connection</p>
+        <p class="council-meta">Owned question: What is the real intention behind this choice, and how does it affect the people it is supposed to serve?</p>
+        <p class="council-meta">AI perspective inspired by the published work of Oprah Winfrey. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-015 · Qualification: bibliographic_only · first-person teaching anchor unqualified</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/tiffany-aliche.svg" alt="Illustrative medallion for Tiffany Aliche, the financial stability and sustainable commitments seat: a colored ring around a warm tinted disc with a pediment over three columns, a foundation and the initials TA. A designed symbol, not a photograph of Tiffany Aliche." width="96" height="96">
+        <h3>Tiffany Aliche</h3>
+        <p class="council-seat-role">financial stability and sustainable commitments</p>
+        <p class="council-meta">Critical domain: financial_feasibility.</p>
+        <p class="council-meta">AI perspective inspired by the published work of Tiffany Aliche. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-016 · Qualification: bibliographic_only · blueprint concept level only, provenance unverified</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/russell-brunson.svg" alt="Illustrative medallion for Russell Brunson, the offers, acquisition, and conversion seat: a colored ring around a warm tinted disc with a funnel and the initials RB. A designed symbol, not a photograph of Russell Brunson." width="96" height="96">
+        <h3>Russell Brunson</h3>
+        <p class="council-seat-role">offers, acquisition, and conversion</p>
+        <p class="council-meta">Analysis checklist covers audience, problem, offer, belief gap, acquisition channel, conversion step, follow-up and measurement.</p>
+        <p class="council-meta">AI perspective inspired by the published work of Russell Brunson. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Qualification: bibliographic_only</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/michelle-obama.svg" alt="Illustrative medallion for Michelle Obama, the grounded leadership, identity, and community seat: a colored ring around a warm tinted disc with a sunrise over two horizon lines and the initials MO. A designed symbol, not a photograph of Michelle Obama." width="96" height="96">
+        <h3>Michelle Obama</h3>
+        <p class="council-seat-role">grounded leadership, identity, and community</p>
+        <p class="council-meta">Expected output: a leadership implication, a stakeholder consideration, and a practical behavior that makes the decision livable.</p>
+        <p class="council-meta">AI perspective inspired by the published work of Michelle Obama. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-018 · pack_status: draft · Qualification: bibliographic_only</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/brene-brown.svg" alt="Illustrative medallion for Brené Brown, the courage, trust, and accountable behavior seat: a colored ring around a warm tinted disc with a heart outline and the initials BB. A designed symbol, not a photograph of Brené Brown." width="96" height="96">
+        <h3>Brené Brown</h3>
+        <p class="council-seat-role">courage, trust, and accountable behavior</p>
+        <p class="council-meta">Both required anchors are absent from the authorized source export and are recorded as absent in sources.json and coverage.json.</p>
+        <p class="council-meta">AI perspective inspired by the published work of Brené Brown. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-019 · Qualification: bibliographic_only · seat abstains on source-grounded claims about the books</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/dennis-kimbro.svg" alt="Illustrative medallion for Dr. Dennis Kimbro, the ownership, wealth creation, and achievement seat: a colored ring around a warm tinted disc with a key and the initials DK. A designed symbol, not a photograph of Dr. Dennis Kimbro." width="96" height="96">
+        <h3>Dr. Dennis Kimbro</h3>
+        <p class="council-seat-role">ownership, wealth creation, and achievement</p>
+        <p class="council-meta">One required anchor is absent from the authorized source export; the other exists only as a Skill 22 derivative persona blueprint of unverified quality.</p>
+        <p class="council-meta">AI perspective inspired by the published work of Dr. Dennis Kimbro. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-020 · Qualification: bibliographic_only</p>
+      </article>
+
+      <article class="advisor-card">
+        <img src="./portraits/les-brown.svg" alt="Illustrative medallion for Les Brown, the self-belief, resilience, and committed action seat: a colored ring around a warm tinted disc with a rising arrow over a ground line and the initials LB. A designed symbol, not a photograph of Les Brown." width="96" height="96">
+        <h3>Les Brown</h3>
+        <p class="council-seat-role">self-belief, resilience, and committed action</p>
+        <p class="council-meta">Owned question: Is the obstacle a real constraint, a skill gap, or a limiting belief, and what meaningful action comes next?</p>
+        <p class="council-meta">AI perspective inspired by the published work of Les Brown. Not the individual and not an endorsement.</p>
+        <p class="council-meta">Pack owner: CWE-021 · Qualification: bibliographic_only · partial source coverage, not complete-book certification</p>
+      </article>
+    </div>
+
+    <footer class="council-journey-foot">
+      <p class="council-meta">Each council member is an AI perspective inspired by the published work of the named author. Not the individual and not an endorsement.</p>
+    </footer>
+  </div>
+</div>
+</body>
+</html>

@@ -206,6 +206,65 @@ CANONICAL_ELEMENTS = [
 ]
 ELEMENT_INDEX = {name: i for i, (name, _p) in enumerate(CANONICAL_ELEMENTS)}
 
+# The second element list: the ordered anatomy of a SECTION image prompt
+# (references/section-image-prompt.md, the wireframe and mockup templates).
+# CANONICAL_ELEMENTS above governs the photographic IMG-*.txt prompts; a
+# section prompt for the four image stages carries these twelve parts, in
+# this order, instead. Order is the anatomy: the list is compared by index.
+SECTION_IMAGE_ELEMENTS = [
+    ("Section number and name", r"SECTION\s+NUMBER\s+AND\s+NAME"),
+    ("Skeleton position", r"SKELETON\s+POSITION"),
+    ("Verbatim copy", r"VERBATIM\s+COPY"),
+    ("Header strip", r"HEADER\s+STRIP"),
+    ("Type specs", r"TYPE\s+SPECS"),
+    ("Slots", r"\bSLOTS\b"),
+    ("Behavior notes", r"BEHAVIOR\s+NOTES"),
+    ("Style input", r"STYLE\s+INPUT"),
+    ("Style reference line", r"STYLE\s+REFERENCE\s+LINE"),
+    ("Density target", r"DENSITY\s+TARGET"),
+    ("Native aspect", r"NATIVE\s+ASPECT"),
+    ("Negative block", r"NEGATIVE\s+BLOCK"),
+]
+SECTION_IMAGE_MARKER = re.compile(r"SECTION\s+IMAGE\s+PROMPT\b", re.I)
+
+def split_section_image_prompt(text):
+    """Return [(name, body)] for a section image prompt, in document order.
+
+    Detection is the prompt's own anatomy marker, never the filename, so
+    the photographic prompt path is untouched. An absent marker returns [].
+    """
+    if not SECTION_IMAGE_MARKER.search(text):
+        return []
+    found = []
+    for name, pattern in SECTION_IMAGE_ELEMENTS:
+        match = re.search(pattern, text)
+        if match:
+            found.append((match.start(), name, match.end()))
+    found.sort()
+    parts = []
+    for i, (_start, name, body_start) in enumerate(found):
+        end = found[i + 1][0] if i + 1 < len(found) else len(text)
+        parts.append((name, text[body_start:end].strip()))
+    return parts
+
+def section_image_element_errors(text):
+    """Element-completeness errors for a section image prompt; [] otherwise."""
+    parts = split_section_image_prompt(text)
+    if not parts:
+        return []
+    present = {name: body for name, body in parts}
+    errors = [
+        f"Missing section-prompt part '{name}' from the section image anatomy "
+        "(references/section-image-prompt.md); the twelve parts are mandatory "
+        "and ordered." for name, _pattern in SECTION_IMAGE_ELEMENTS
+        if name not in present
+    ]
+    for name, body in parts:
+        if len(norm_ws(body)) < 10:
+            errors.append(f"Section-prompt part '{name}' is present but empty of "
+                          "descriptive content.")
+    return errors
+
 PLACEHOLDER_PATTERNS = [
     re.compile(r"\[\s*TODO\s*\]", re.I),
     re.compile(r"\{\{[^{}]+\}\}"),
