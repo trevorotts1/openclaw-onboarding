@@ -1215,7 +1215,10 @@ with a missing section number or a section count that differs from the run's.
 One section is one page at the section's native size (no scaling, cropping or
 padding), so a page break never cuts a section and nothing sits between two
 sections. The validator also checks one page width for the set and that every
-page has the shape of its source image. `validate_review_pdf.py <run_dir>
+page has the shape of its source image. `validate_review_pdf.py <manifest> --delivered <folder>`
+also requires the client's delivered section images (sorted `*.png`) to be
+byte-identical, page for page, to what the PDF was built from; run it before a
+PDF and its folder are handed over together. `validate_review_pdf.py <run_dir>
 --stage <stage>` is the gate form; the stage contract runs it at close for
 `visual-mockup` and `final-mockups` and requires those four PDFs.
 

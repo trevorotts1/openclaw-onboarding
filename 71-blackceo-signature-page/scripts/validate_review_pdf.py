@@ -56,18 +56,29 @@ def check_geometry(pdf_path, image_paths):
     return errors
 
 
+def check_delivered(sources, delivered):
+    """The client's own copy of the section images (sorted *.png in `delivered`)
+    must be byte-identical, page for page, to what the PDF was built from."""
+    files = sorted(Path(delivered).glob("*.png"))
+    if len(files) != len(sources):
+        return [f"{delivered} holds {len(files)} section images; the PDF was built from {len(sources)}."]
+    return [f"Page {i} was built from {src.name} ({sha256(src)[:16]}) but the delivered {f.name} is {sha256(f)[:16]}: the PDF and the delivered folder show different images."
+            for i, (src, f) in enumerate(zip(sources, files), start=1) if sha256(src) != sha256(f)]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate a BlackCEO review PDF against its ordered manifest and receipt.")
     parser.add_argument("manifest", type=Path, help="an order manifest, or a run dir with --stage")
     parser.add_argument("pdf", nargs="?", type=Path)
+    parser.add_argument("--delivered", type=Path, help="also require the sections in this delivered folder to be the exact images the PDF was built from")
     parser.add_argument("--stage", help="treat the first argument as a run dir and validate that stage's review PDFs")
     args = parser.parse_args()
     if args.stage:
         return validate_stage(args.manifest, args.stage)
-    return validate(args.manifest, args.pdf)
+    return validate(args.manifest, args.pdf, args.delivered)
 
 
-def validate(manifest_path, pdf_arg=None):
+def validate(manifest_path, pdf_arg=None, delivered=None):
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -126,9 +137,12 @@ def validate(manifest_path, pdf_arg=None):
             if got.get("order") != i:
                 errors.append(f"Receipt order mismatch at page {i}.")
 
+    sources = [(manifest_path.parent / e["path"]).resolve() for e in expected_pages]
+    if not errors and delivered:
+        errors.extend(check_delivered(sources, delivered))
     if not errors:
         try:
-            errors.extend(check_geometry(pdf_path, [(manifest_path.parent / e["path"]).resolve() for e in expected_pages]))
+            errors.extend(check_geometry(pdf_path, sources))
         except ImportError:
             errors.append("Pillow is required to check page geometry.")
 

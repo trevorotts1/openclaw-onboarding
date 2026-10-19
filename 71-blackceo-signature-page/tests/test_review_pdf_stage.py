@@ -93,6 +93,21 @@ class ReviewPdfStageTests(unittest.TestCase):
         self.assertEqual(vrp.check_geometry(pdf, [a]), [])
         self.assertTrue(any("cropped, stretched or padded" in e for e in vrp.check_geometry(pdf, [b])))
 
+    def test_validator_catches_a_delivered_folder_that_drifted_from_the_pdf(self):
+        import shutil
+        make_images(self.run_dir, "mobile-tablet", "section-{n:02d}.png", 200)
+        self.assertEqual(self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet").returncode, 0)
+        manifest = self.run_dir / "review-pdfs" / "wireframes-mobile.order.json"
+        delivered = self.run_dir / "delivered"
+        shutil.copytree(self.run_dir / "mobile-tablet", delivered)
+        self.assertEqual(self.cli("validate_review_pdf.py", manifest, "--delivered", delivered).returncode, 0)
+        # the client's copy of one section is a different image from the one the PDF holds
+        from PIL import Image
+        Image.new("RGB", (200, HEIGHTS[1]), "black").save(delivered / "section-02.png")
+        proc = self.cli("validate_review_pdf.py", manifest, "--delivered", delivered)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("different images", proc.stdout)
+
     def test_stage_validator_fails_when_pdf_was_never_built(self):
         make_images(self.run_dir, "mobile-tablet", "section-{n:02d}.png", 200)
         proc = self.cli("validate_review_pdf.py", self.run_dir, "--stage", "mobile-tablet")
