@@ -886,6 +886,10 @@ class StageGateTest(unittest.TestCase):
                 {"section_id": "offer", "slots": [
                     {"slot_id": "IMG-002", "source": "generated",
                      "file": "image-generation-qc/Image-002.png"}]}]}))
+        # Fix 2 (task 3.2): the full page mockup is stitched from the
+        # model-generated section slices and is a stage artifact and
+        # review-cover item of its own.
+        write(run / "final-mockups" / "mockup-full.png", "stub")
         write(run / "final-mockups" / "production-record.json",
               production_record("final-mockups", ["hero", "offer"]))
 
@@ -923,6 +927,7 @@ class StageGateTest(unittest.TestCase):
                                     ("Image-002", {"grade": 9})],
             "final-mockups": [("desktop-part-01", {"composition_fidelity": 9}),
                               ("mobile-part-01", {"composition_fidelity": 9}),
+                              ("mockup-full", {"composition_fidelity": 9}),
                               ("hybrid-board", {"composition_fidelity": 9}),
                               ("mockup", {"composition_fidelity": 9})],
         }
