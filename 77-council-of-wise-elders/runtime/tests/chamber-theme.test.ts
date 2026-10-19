@@ -192,8 +192,18 @@ test('legacy council-theme.css and council-journey.css carry no brand-external p
   }
 });
 
+// A colour word only counts when it is not part of an identifier, so var(--ch-gold) is fine.
+const NAMED = /(?:color|background(?:-color)?|border(?:-[a-z]+)*|outline(?:-color)?|box-shadow|text-shadow|fill|stroke)\s*:[^;{}]*(?<![\w-])(?:white|black|red|blue|navy|green|gray|grey|gold|cream|purple|orange|yellow)(?![\w-])/i;
+
+test('the named-colour check ignores token references and catches real colour words', () => {
+  assert.doesNotMatch('border: 1px solid var(--ch-gold)', NAMED);
+  assert.doesNotMatch('color: var(--ch-black); background: var(--ch-cream)', NAMED);
+  assert.match('color: gold', NAMED);
+  assert.match('border: 1px solid white', NAMED);
+  assert.match('background: var(--ch-surface-1) url(x) navy', NAMED);
+});
+
 test('only chamber-theme.css holds colour literals among the chamber-*.css files', () => {
-  const NAMED = /(?:color|background(?:-color)?|border(?:-[a-z]+)*|outline(?:-color)?|box-shadow|text-shadow|fill|stroke)\s*:[^;{}]*\b(?:white|black|red|blue|navy|green|gray|grey|gold|cream|purple|orange|yellow)\b/i;
   for (const file of ['chamber-shell.css', 'chamber-decision.css', 'chamber-room.css', 'chamber-keypoints.css', 'chamber-seatcard.css']) {
     if (!existsSync(join(chamberDir, file))) continue; // owned by another unit; checked once it lands
     const text = stripComments(read(file));
