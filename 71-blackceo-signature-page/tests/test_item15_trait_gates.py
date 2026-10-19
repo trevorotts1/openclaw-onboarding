@@ -86,6 +86,7 @@ def annotated_section(section_id, number, name, slot_id, ratio, direction,
 
 def good_wireframe_run(td):
     run = Path(td) / "run"
+    write(run / "intake.json", json.dumps({"brand_owner": "blackceo"}))  # SPF019: BlackCEO fallback palette
     write(run / "copy" / "copy-manifest.json", json.dumps(
         {"sections": [{"section_id": "hero"}, {"section_id": "offer"}]}))
     write(run / "desktop-wireframe" / "image-inventory.json", json.dumps(
@@ -110,6 +111,7 @@ def deficient_wireframe_run(td):
     run's unannotated wireframe -- sections and slots named by id only,
     no annotations, no slot labels."""
     run = Path(td) / "run"
+    write(run / "intake.json", json.dumps({"brand_owner": "blackceo"}))  # SPF019: BlackCEO fallback palette
     write(run / "copy" / "copy-manifest.json", json.dumps(
         {"sections": [{"section_id": "hero"}, {"section_id": "offer"}]}))
     write(run / "desktop-wireframe" / "image-inventory.json", json.dumps(

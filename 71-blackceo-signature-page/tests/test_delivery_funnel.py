@@ -53,6 +53,7 @@ def make_run(td: Path, intake_extra=None, grade=None):
     run = td / "run"
     run.mkdir(parents=True, exist_ok=True)
     brand = {
+        "brand_id": "fixture", "palette": {"gold": "#C0392B", "navy": "#1B2A41", "cream": "#FAF3E0"},
         "grade": grade if grade is not None else
                  {"min_mean_saturation": None, "min_luma_std": None},
         "founder_photos": [f"sha256:{FOUNDER_SHA}"],

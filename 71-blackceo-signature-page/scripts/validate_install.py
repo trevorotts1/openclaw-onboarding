@@ -73,7 +73,9 @@ def brand_path_for(run_dir):
     if bf:
         p = Path(bf)
         return p if p.is_absolute() else (run_dir / bf)
-    return SKILL_ROOT / "assets" / "brand" / "blackceo-brand.json"
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import brand_colors  # SPF019: no silent BlackCEO palette for a client's page
+    return brand_colors.fallback_path(run_dir)
 
 
 def placeholder_patterns():

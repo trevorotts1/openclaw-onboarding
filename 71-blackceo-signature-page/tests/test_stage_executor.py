@@ -26,6 +26,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "stage_executor.py"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from brand_fixture import give_blackceo_colors  # noqa: E402
+
 spec = importlib.util.spec_from_file_location("stage_executor", SCRIPT)
 exe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exe)
@@ -48,6 +51,7 @@ class StageExecutorTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
         self.run_dir.mkdir()
+        give_blackceo_colors(self.run_dir)
         (self.run_dir / "production-request.json").write_text(
             json.dumps(REQUEST), encoding="utf-8")
 

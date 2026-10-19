@@ -12,9 +12,16 @@
   "properties": {
     "brand_id": {"type": "string", "minLength": 1},
     "source": {"type": "string", "minLength": 1},
+    "palette_roles": {
+      "type": "object",
+      "description": "SPF019: the client's colors as given (primary, secondary, accent[], background[], text), written by scripts/brand_colors.py record and printed into every wireframe and mockup prompt. Optional: absent for the bundled BlackCEO file.",
+      "additionalProperties": true
+    },
+    "_palette_note": {"type": "string"},
     "palette": {
       "type": "object",
-      "additionalProperties": false,
+      "description": "Slots gold/navy/cream are accent-CTA, dark, light. Extra hex-valued keys (secondary, accent1, background2) are allowed; every value must be #RRGGBB before any image stage starts (scripts/brand_colors.py).",
+      "additionalProperties": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},
       "required": ["gold", "navy", "cream"],
       "properties": {
         "gold": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},

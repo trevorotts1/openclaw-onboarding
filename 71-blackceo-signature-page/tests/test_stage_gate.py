@@ -395,6 +395,8 @@ class StageGateTest(unittest.TestCase):
         # (rebuild helpers from build_run_chain's file layout without its noop closes
         # for the two image stages; those are closed by these tests on the real contract)
         write(run / "private" / "brand.json", json.dumps({
+            "brand_id": "blackceo",  # SPF019: an image stage starts only on a resolved, owned palette
+            "palette": {"gold": "#C9A227", "navy": "#1A1A2E", "cream": "#F5F0E8"},
             "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
             "logo": {"files": "test.png", "masthead_files": "test.png"},
             # Update plan Item 10 (record corrected on rebuild): this chain
@@ -814,6 +816,8 @@ class StageGateTest(unittest.TestCase):
         run = self.td / "run"
         # Fixture brand: satisfies gate:must_supply without the real Trevor-supplied facts.
         write(run / "private" / "brand.json", json.dumps({
+            "brand_id": "blackceo",  # SPF019: an image stage starts only on a resolved, owned palette
+            "palette": {"gold": "#C9A227", "navy": "#1A1A2E", "cream": "#F5F0E8"},
             "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
             "logo": {"files": "test.png", "masthead_files": "test.png"},
             # Record repair (post-review observation): same latent-trap
