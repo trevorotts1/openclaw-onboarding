@@ -128,7 +128,7 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
 - Keep exact approved copy unless the owner explicitly authorizes copy changes.
 
-For multi-part review exports, keep individual PNGs and use ordered manifests with `scripts/combine_review_pdf.py` and `scripts/validate_review_pdf.py` for separate desktop/mobile wireframe/mockup PDFs.
+The client never receives loose section images: every image stage ends with `scripts/combine_review_pdf.py <run_dir> --stage <stage>` (run automatically by `stage_executor.py`), which combines the sections in order into validator-gated desktop and mobile PDFs under `review-pdfs/` (see references/artifact-contracts.md, Review-PDF manifest). Keep the individual PNGs as internal inputs.
 
 ## Design style: A Block, B Circle, C Hybrid
 

@@ -84,6 +84,7 @@ import composition  # noqa: E402  the composition library (treatments, typed ref
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
+COMBINE = SKILL_ROOT / "scripts" / "combine_review_pdf.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
 BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
@@ -1040,36 +1041,52 @@ def make_provider(args, run_dir: Path):
     return KieProvider(find_adapter(args.kie_adapter), run_dir)
 
 
-def compose(stage: str, run_dir: Path, provider) -> dict:
+def compose(stage: str, run_dir: Path, provider, expect: int | None = None) -> dict:
     """Run the existing deterministic composers when their inputs exist.
 
-    No composer is invented here: stitch_sections.py and
-    build_hybrid_board.py are the repo's own pinned steps, and both
-    refuse to run from inputs that do not pass their validation. Stub
-    mode never composes: a placeholder is not an approved input.
+    No composer is invented here: stitch_sections.py,
+    build_hybrid_board.py and combine_review_pdf.py are the repo's own
+    pinned steps. The stitcher and board refuse to run from inputs that
+    do not pass their validation; the review-PDF step validates its own
+    output and deletes a PDF that fails. Stub mode never composes: a
+    placeholder is not an approved input.
     """
     if provider.name != "kie":
         return {"status": "skipped", "reason": "stub provider writes placeholders only"}
     stage_dir = run_dir / stage
+    result = {"status": "not_applicable"}
     if stage in ("desktop-wireframe", "mobile-tablet"):
         if not (stage_dir / "production-record.json").is_file():
-            return {"status": "skipped", "reason": "no production-record.json to stitch from"}
-        proc = subprocess.run([sys.executable, str(STITCH), str(stage_dir)],
-                              capture_output=True, text=True, cwd=str(SKILL_ROOT))
-        return {"status": "pass" if proc.returncode == 0 else "fail",
-                "command": f"stitch_sections.py {stage_dir}",
-                "exit": proc.returncode,
-                "output": (proc.stdout + proc.stderr).strip()[:600]}
-    if stage == "final-mockups":
+            result = {"status": "skipped", "reason": "no production-record.json to stitch from"}
+        else:
+            proc = subprocess.run([sys.executable, str(STITCH), str(stage_dir)],
+                                  capture_output=True, text=True, cwd=str(SKILL_ROOT))
+            result = {"status": "pass" if proc.returncode == 0 else "fail",
+                      "command": f"stitch_sections.py {stage_dir}",
+                      "exit": proc.returncode,
+                      "output": (proc.stdout + proc.stderr).strip()[:600]}
+    elif stage == "final-mockups":
         if not (run_dir / "final-mockups" / "hybrid-board.json").is_file():
-            return {"status": "skipped", "reason": "no hybrid-board.json to compose from"}
-        proc = subprocess.run([sys.executable, str(HYBRID_BOARD), str(run_dir)],
-                              capture_output=True, text=True, cwd=str(SKILL_ROOT))
-        return {"status": "pass" if proc.returncode == 0 else "fail",
-                "command": f"build_hybrid_board.py {run_dir}",
-                "exit": proc.returncode,
-                "output": (proc.stdout + proc.stderr).strip()[:600]}
-    return {"status": "not_applicable"}
+            result = {"status": "skipped", "reason": "no hybrid-board.json to compose from"}
+        else:
+            proc = subprocess.run([sys.executable, str(HYBRID_BOARD), str(run_dir)],
+                                  capture_output=True, text=True, cwd=str(SKILL_ROOT))
+            result = {"status": "pass" if proc.returncode == 0 else "fail",
+                      "command": f"build_hybrid_board.py {run_dir}",
+                      "exit": proc.returncode,
+                      "output": (proc.stdout + proc.stderr).strip()[:600]}
+    # The client never receives loose section images: once the stage's
+    # sections exist, they are combined, in section order, into the stage's
+    # desktop and mobile review PDFs (review-pdfs/), validator-gated.
+    cmd = [sys.executable, str(COMBINE), str(run_dir), "--stage", stage]
+    if expect:
+        cmd += ["--expect", str(expect)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(SKILL_ROOT))
+    result["review_pdf"] = {"status": "pass" if proc.returncode == 0 else "fail",
+                            "command": f"combine_review_pdf.py {run_dir} --stage {stage}",
+                            "exit": proc.returncode,
+                            "output": (proc.stdout + proc.stderr).strip()[:600]}
+    return result
 
 
 def reference_bleed(out: Path, request: dict, provider):
@@ -1175,7 +1192,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                     print(f"WARN geometry_mismatch {stage} {out.name}: "
                           f"{entry['geometry_mismatch']}")
             records.append(entry)
-    composition = compose(stage, run_dir, provider)
+    composition = compose(stage, run_dir, provider, len(sections))
     composition["overview_boards"] = overview_boards(
         stage, run_dir, provider, request_name, len(sections))
     record = {
@@ -1552,6 +1569,11 @@ def main(argv=None) -> int:
                       + (f"\n{board['output']}" if board.get("output") else ""))
                 if board["status"] == "fail":
                     print(f"FAIL: {stage} overview boards did not build; the client set is not ready")
+            pdf = comp.get("review_pdf")
+            if pdf:
+                print(f"REVIEW_PDF {stage} status={pdf['status']}\n{pdf['output']}")
+                if pdf["status"] == "fail":
+                    print(f"FAIL: {stage} review PDFs did not pass the validator; the client set is not ready")
                     return 1
         return 0
     except ExecutorError as exc:

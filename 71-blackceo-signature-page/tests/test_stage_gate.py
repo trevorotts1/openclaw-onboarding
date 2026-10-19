@@ -33,6 +33,18 @@ sys.path.insert(0, str(ROOT / "tests"))
 import fit_prompt  # noqa: E402
 
 
+def write_review_parts(run, stage):
+    """One real section image per device, then the stage's review PDFs the way
+    the stage executor builds them (the gate requires both)."""
+    from PIL import Image
+    for device in ("desktop", "mobile"):
+        path = run / stage / device / "part-01.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (40, 30), "white").save(path)
+    subprocess.run([PY, str(ROOT / "scripts" / "combine_review_pdf.py"), str(run), "--stage", stage],
+                   check=True, capture_output=True)
+
+
 def fitted_good_prompt():
     """tests/fixtures/prompt_good.txt grown into the KIE rule 12 band (the length gate measures the model maxLength)."""
     return fit_prompt.fit_text((ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8"))
@@ -462,8 +474,7 @@ class StageGateTest(unittest.TestCase):
         write(run / "visual-mockup" / "page-visual-bible.json",
               json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
-        write(run / "visual-mockup" / "desktop" / "part-01.png", "stub")
-        write(run / "visual-mockup" / "mobile" / "part-01.png", "stub")
+        write_review_parts(run, "visual-mockup")
         for i in range(1, images + 1):
             write(run / "image-inventory-prompts" / f"IMG-{i:03d}.txt", prompt_text)
             write(run / "image-generation-qc" / f"Image-{i:03d}.png", png_variant(i))
@@ -897,8 +908,7 @@ class StageGateTest(unittest.TestCase):
         write(run / "visual-mockup" / "page-visual-bible.json",
               json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
-        write(run / "visual-mockup" / "desktop" / "part-01.png", "stub")
-        write(run / "visual-mockup" / "mobile" / "part-01.png", "stub")
+        write_review_parts(run, "visual-mockup")
         write(run / "image-inventory-prompts" / "IMG-001.txt", "prompt")
         write(run / "image-inventory-prompts" / "IMG-002.txt", "prompt")
         write(run / "image-inventory-prompts" / "prompt-manifest.json", "{}")
@@ -914,8 +924,7 @@ class StageGateTest(unittest.TestCase):
         write(run / "image-map-upload" / "image-map.json", "{}")
         write(run / "image-map-upload" / "image-map.md", "map")
         write(run / "final-mockups" / "mockup.html", "<html></html>")
-        write(run / "final-mockups" / "desktop" / "part-01.png", "stub")
-        write(run / "final-mockups" / "mobile" / "part-01.png", "stub")
+        write_review_parts(run, "final-mockups")
         # Item 12: the hybrid board is a closing deliverable of the stage.
         write(run / "final-mockups" / "hybrid-board.png", "stub")
         write(run / "final-mockups" / "hybrid-board.json", "{}")
