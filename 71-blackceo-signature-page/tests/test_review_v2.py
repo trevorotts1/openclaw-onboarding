@@ -500,14 +500,18 @@ class PerFileAndCoversTest(unittest.TestCase):
         # and is in its review cover as the approval artifact.
         write(self.run / "final-mockups" / "hybrid-board.png", b"png-b")
         write(self.run / "final-mockups" / "hybrid-board.json", "{}")
+        # Fix 2 (task 3.2): the stitched full-page mockup is a covered item.
+        write(self.run / "final-mockups" / "mockup-full.png", b"png-f")
         failures = self.gate.check_review_scores(
             self.run, "final-mockups", self.receipt())
         joined = "\n".join(failures)
-        for item in ("desktop-part-01", "mobile-part-01", "mockup", "hybrid-board"):
+        for item in ("desktop-part-01", "mobile-part-01", "mockup-full", "mockup",
+                     "hybrid-board"):
             self.assertIn(item, joined)
         self.assertIn("missing review file", joined)
         for item, rel in (("desktop-part-01", "final-mockups/desktop/part-01.png"),
                           ("mobile-part-01", "final-mockups/mobile/part-01.png"),
+                          ("mockup-full", "final-mockups/mockup-full.png"),
                           ("hybrid-board", "final-mockups/hybrid-board.png"),
                           ("mockup", "final-mockups/mockup.html")):
             self.write_review_file("final-mockups", item, rel,

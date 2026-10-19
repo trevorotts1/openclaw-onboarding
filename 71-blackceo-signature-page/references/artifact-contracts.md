@@ -930,7 +930,7 @@ resolved from the registry at build time, never a name typed from memory.
   "artifact": "mockup",
   "stage": "final-mockups",
   "page_width": 1440,
-  "stitched_output": "wireframe-full.png",
+  "stitched_output": "mockup-full.png",
   "pdf_output": "wireframe.pdf",
   "sections": [
     {
