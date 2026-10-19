@@ -1,0 +1,98 @@
+/*
+ * Seat card (W29-E). Contents of dialog#ch-seatcard only. The backdrop blur,
+ * dim, panel surface and .ch-btn / .ch-eyebrow come from chamber-theme.css.
+ * Colours only through var(--ch-*).
+ */
+.ch-card {
+  box-sizing: border-box;
+  width: min(590px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  padding: 0; /* the body carries the padding so a click on it is never read as a backdrop click */
+  overflow: auto;
+}
+.ch-card-body {
+  padding: var(--ch-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+.ch-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ch-space-4);
+}
+.ch-card-portrait {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--ch-surface-3);
+  box-shadow: 0 0 0 1px var(--ch-gold);
+}
+.ch-card-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
+}
+.ch-card-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+.ch-card-text > p,
+.ch-card-text > h2 {
+  margin: 0;
+}
+.ch-card-domain {
+  overflow-wrap: anywhere;
+}
+.ch-card-name {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+.ch-card-owns {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+.ch-card-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+.ch-card-status > p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+.ch-card-quote {
+  color: var(--ch-ink-muted);
+  border-left: 2px solid var(--ch-gold);
+  padding-left: var(--ch-space-3);
+}
+.ch-card-quote[hidden],
+.ch-card-domain[hidden],
+.ch-card-owns[hidden] {
+  display: none;
+}
+.ch-card-disclaimer {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ch-ink-faint);
+}
+.ch-card-actions {
+  display: flex;
+  justify-content: flex-start;
+}

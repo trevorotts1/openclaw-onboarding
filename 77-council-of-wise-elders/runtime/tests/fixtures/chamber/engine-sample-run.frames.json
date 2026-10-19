@@ -1,0 +1,1059 @@
+[
+ {
+  "sequence": 1,
+  "type": "session_created",
+  "event_id": "13195a49-348f-4073-96f9-4b349738a180",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "mode": "full",
+   "sample": true,
+   "actor": "owner"
+  },
+  "created_at": "2026-10-19T17:55:20.633Z"
+ },
+ {
+  "sequence": 2,
+  "type": "session_state_changed",
+  "event_id": "cd782e45-2355-48ce-a3c9-cc55f0ebace9",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "DRAFT",
+   "to": "READY",
+   "sample": true,
+   "actor": "owner"
+  },
+  "created_at": "2026-10-19T17:55:20.636Z"
+ },
+ {
+  "sequence": 3,
+  "type": "session_state_changed",
+  "event_id": "4fdc0340-3231-4d77-9556-c3d3d626e2db",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "READY",
+   "to": "QUEUED",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.638Z"
+ },
+ {
+  "sequence": 4,
+  "type": "session_state_changed",
+  "event_id": "88cdf32f-36f5-474a-8c64-560c4a539757",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "QUEUED",
+   "to": "PREPARING",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.639Z"
+ },
+ {
+  "sequence": 5,
+  "type": "session_state_changed",
+  "event_id": "960c978f-ed9a-4aac-9490-f8cb83035010",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "PREPARING",
+   "to": "ROUND_1",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.643Z"
+ },
+ {
+  "sequence": 6,
+  "type": "card_accepted",
+  "event_id": "686b2022-744f-4208-a9f9-1dd6b6553751",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "simon-sinek",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:simon-sinek:e010c60314a1e2ce",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.682Z"
+ },
+ {
+  "sequence": 7,
+  "type": "operation_completed",
+  "event_id": "02860236-d362-4495-8d1b-3bfccfac5061",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:simon-sinek:e010c60314a1e2ce",
+   "provider_request_id": "fixture-req-1",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.682Z"
+ },
+ {
+  "sequence": 8,
+  "type": "card_accepted",
+  "event_id": "a196874f-34e2-4128-b589-dbb1aedef9b9",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "td-jakes",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:td-jakes:7b72a86f285ea126",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.713Z"
+ },
+ {
+  "sequence": 9,
+  "type": "operation_completed",
+  "event_id": "d6878ac7-00c6-44a7-9e9f-434a9ed334cf",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:td-jakes:7b72a86f285ea126",
+   "provider_request_id": "fixture-req-2",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.713Z"
+ },
+ {
+  "sequence": 10,
+  "type": "card_accepted",
+  "event_id": "d59c55aa-fe40-4c4a-91f0-9d47683c0bc1",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "oprah-winfrey",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:oprah-winfrey:7ed87f046f91b2f9",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.718Z"
+ },
+ {
+  "sequence": 11,
+  "type": "operation_completed",
+  "event_id": "74473d46-c9c0-4449-a1bb-b1caeb79434f",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:oprah-winfrey:7ed87f046f91b2f9",
+   "provider_request_id": "fixture-req-3",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.718Z"
+ },
+ {
+  "sequence": 12,
+  "type": "card_accepted",
+  "event_id": "0074ac1c-5b37-401d-b4b8-86484e82bfb2",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "tiffany-aliche",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:tiffany-aliche:ab9c119b6e617ab2",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.722Z"
+ },
+ {
+  "sequence": 13,
+  "type": "operation_completed",
+  "event_id": "e2ad56a2-ec37-4047-a5d3-2a33f538d61b",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:tiffany-aliche:ab9c119b6e617ab2",
+   "provider_request_id": "fixture-req-4",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.722Z"
+ },
+ {
+  "sequence": 14,
+  "type": "card_accepted",
+  "event_id": "e08ff833-edf2-4fb8-ad6d-a569239a6c5a",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "russell-brunson",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:russell-brunson:a596de0dd0ff7f44",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.728Z"
+ },
+ {
+  "sequence": 15,
+  "type": "operation_completed",
+  "event_id": "11479430-a465-4ac3-98c1-3e3b176cf9e7",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:russell-brunson:a596de0dd0ff7f44",
+   "provider_request_id": "fixture-req-5",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.728Z"
+ },
+ {
+  "sequence": 16,
+  "type": "card_accepted",
+  "event_id": "f22915aa-9699-49b9-b0bc-37fc20134df0",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "michelle-obama",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:michelle-obama:27dc2d881d8cb376",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.732Z"
+ },
+ {
+  "sequence": 17,
+  "type": "operation_completed",
+  "event_id": "d926f848-48e7-4dc3-abeb-07e64bbb058b",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:michelle-obama:27dc2d881d8cb376",
+   "provider_request_id": "fixture-req-6",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.732Z"
+ },
+ {
+  "sequence": 18,
+  "type": "card_accepted",
+  "event_id": "1cf09d52-2915-440b-abd1-8853ac69cec6",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "brene-brown",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:brene-brown:18762a4b669839c8",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.751Z"
+ },
+ {
+  "sequence": 19,
+  "type": "operation_completed",
+  "event_id": "3649a78b-f588-4ca9-a8d1-191274c514a6",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:brene-brown:18762a4b669839c8",
+   "provider_request_id": "fixture-req-7",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.751Z"
+ },
+ {
+  "sequence": 20,
+  "type": "card_accepted",
+  "event_id": "ee0809b6-fccd-4612-b5a7-8f0512d5bcdb",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "dennis-kimbro",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:dennis-kimbro:afe50600a09c523b",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.756Z"
+ },
+ {
+  "sequence": 21,
+  "type": "operation_completed",
+  "event_id": "3236bf37-ee91-4bd6-8169-06740faf6d3f",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:dennis-kimbro:afe50600a09c523b",
+   "provider_request_id": "fixture-req-8",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.756Z"
+ },
+ {
+  "sequence": 22,
+  "type": "card_accepted",
+  "event_id": "92c0873a-512d-40d7-8c90-039944e9d386",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "les-brown",
+   "round": 1,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:les-brown:b81a7909b3fdfc48",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.760Z"
+ },
+ {
+  "sequence": 23,
+  "type": "operation_completed",
+  "event_id": "b020e7dc-4989-4eaf-9078-2de249fea3d6",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-1:les-brown:b81a7909b3fdfc48",
+   "provider_request_id": "fixture-req-9",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.760Z"
+ },
+ {
+  "sequence": 24,
+  "type": "session_state_changed",
+  "event_id": "dd3ca5b1-19e7-4837-8514-b564e21dccbb",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "ROUND_1",
+   "to": "CRUX_REVIEW",
+   "sample": true,
+   "actor": "chair"
+  },
+  "created_at": "2026-10-19T17:55:20.761Z"
+ },
+ {
+  "sequence": 25,
+  "type": "crux_identified",
+  "event_id": "707821e0-1b5d-47f2-840b-a8b42fe7b6ee",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "crux_id": "crux-1",
+   "type": "numbers",
+   "option_id": "C",
+   "competing_claims": [
+    "tiffany-aliche scores option C at 3",
+    "td-jakes scores option C at 9"
+   ],
+   "responsible_seats": [
+    "tiffany-aliche",
+    "td-jakes"
+   ],
+   "needed_evidence": "Evidence that resolves the 6-point spread on option C.",
+   "resolution_test": "Re-score option C after examining the spread's decisive facts.",
+   "sample": true,
+   "actor": "chair"
+  },
+  "created_at": "2026-10-19T17:55:20.761Z"
+ },
+ {
+  "sequence": 26,
+  "type": "session_state_changed",
+  "event_id": "f6cdf890-19b6-46ca-b60e-254abe033f20",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "CRUX_REVIEW",
+   "to": "ROUND_2",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.762Z"
+ },
+ {
+  "sequence": 27,
+  "type": "card_accepted",
+  "event_id": "171023e8-f8ab-4396-a998-2a75dc10be13",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "simon-sinek",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:simon-sinek:737e2f37455b7847",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.765Z"
+ },
+ {
+  "sequence": 28,
+  "type": "operation_completed",
+  "event_id": "f4fb9274-345e-4ed6-a485-d478bb04ad09",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:simon-sinek:737e2f37455b7847",
+   "provider_request_id": "fixture-req-10",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.765Z"
+ },
+ {
+  "sequence": 29,
+  "type": "card_accepted",
+  "event_id": "e269ad8c-891c-4418-83e5-de541b7eda8b",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "td-jakes",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:td-jakes:a21e082e73059ad1",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.772Z"
+ },
+ {
+  "sequence": 30,
+  "type": "operation_completed",
+  "event_id": "6eab1edc-ecd2-41f1-b119-c63d25a932a2",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:td-jakes:a21e082e73059ad1",
+   "provider_request_id": "fixture-req-11",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.772Z"
+ },
+ {
+  "sequence": 31,
+  "type": "card_accepted",
+  "event_id": "2d56eb8e-38a8-46a2-8aee-bb3eb823f125",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "oprah-winfrey",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:oprah-winfrey:ea302250074cf645",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.774Z"
+ },
+ {
+  "sequence": 32,
+  "type": "operation_completed",
+  "event_id": "dedf71bb-34ee-47ef-a3d9-e9e5329bee8b",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:oprah-winfrey:ea302250074cf645",
+   "provider_request_id": "fixture-req-12",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.775Z"
+ },
+ {
+  "sequence": 33,
+  "type": "card_accepted",
+  "event_id": "9fa9d798-ce7b-46d9-af2c-22400ae5d014",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "tiffany-aliche",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:tiffany-aliche:f90a0caf5801a366",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.777Z"
+ },
+ {
+  "sequence": 34,
+  "type": "operation_completed",
+  "event_id": "76af7ac2-8db9-4b41-9247-105aeeef0dad",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:tiffany-aliche:f90a0caf5801a366",
+   "provider_request_id": "fixture-req-13",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.777Z"
+ },
+ {
+  "sequence": 35,
+  "type": "card_accepted",
+  "event_id": "f7854b77-76d5-4422-a4cf-62a7cabfb2a4",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "russell-brunson",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:russell-brunson:480df2ee6fa7f476",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.780Z"
+ },
+ {
+  "sequence": 36,
+  "type": "operation_completed",
+  "event_id": "f4824af2-251c-44da-a22f-5841a147b6b7",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:russell-brunson:480df2ee6fa7f476",
+   "provider_request_id": "fixture-req-14",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.780Z"
+ },
+ {
+  "sequence": 37,
+  "type": "card_accepted",
+  "event_id": "bbaea645-fb27-4f2b-8d2d-fc9da2aa8c53",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "michelle-obama",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:michelle-obama:ab6c06fda8e16751",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.782Z"
+ },
+ {
+  "sequence": 38,
+  "type": "operation_completed",
+  "event_id": "a4ba843a-1c94-4503-b895-e7959b31fc20",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:michelle-obama:ab6c06fda8e16751",
+   "provider_request_id": "fixture-req-15",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.783Z"
+ },
+ {
+  "sequence": 39,
+  "type": "card_accepted",
+  "event_id": "0e05f905-dc9f-4f38-89bb-2c1877a83c80",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "brene-brown",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:brene-brown:b51246ddf5ffdf9a",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.786Z"
+ },
+ {
+  "sequence": 40,
+  "type": "operation_completed",
+  "event_id": "af9affad-2341-43e2-b5d7-ab89409ac2a0",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:brene-brown:b51246ddf5ffdf9a",
+   "provider_request_id": "fixture-req-16",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.787Z"
+ },
+ {
+  "sequence": 41,
+  "type": "card_accepted",
+  "event_id": "1c87e152-ab04-4022-8183-5ed14df183be",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "dennis-kimbro",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:dennis-kimbro:5be7814fe4c65e3e",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.790Z"
+ },
+ {
+  "sequence": 42,
+  "type": "operation_completed",
+  "event_id": "ba788cc7-fd3d-4b5e-92da-e3a28f98f364",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:dennis-kimbro:5be7814fe4c65e3e",
+   "provider_request_id": "fixture-req-17",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.790Z"
+ },
+ {
+  "sequence": 43,
+  "type": "card_accepted",
+  "event_id": "d6ee09f9-3a61-4126-90f4-e537b2b135ac",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "les-brown",
+   "round": 2,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:les-brown:ad62a129f77d0eb4",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.793Z"
+ },
+ {
+  "sequence": 44,
+  "type": "operation_completed",
+  "event_id": "aa1507eb-27f7-4b95-aef4-ea2a4f028459",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-2:les-brown:ad62a129f77d0eb4",
+   "provider_request_id": "fixture-req-18",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.793Z"
+ },
+ {
+  "sequence": 45,
+  "type": "session_state_changed",
+  "event_id": "722a9cf2-0c5c-403d-8d13-4f9443702339",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "ROUND_2",
+   "to": "DRAFT_RESOLUTION",
+   "sample": true,
+   "actor": "chair"
+  },
+  "created_at": "2026-10-19T17:55:20.793Z"
+ },
+ {
+  "sequence": 46,
+  "type": "resolution_drafted",
+  "event_id": "f69390cd-0353-45ae-a775-08ac0540a09f",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "recommended_option_id": "B",
+   "semantic_sha256": "a50c9a85d60e980210582af47337ff2b94ed6eebe9b9225ebe2f7e876f3db098",
+   "sample": true,
+   "actor": "chair"
+  },
+  "created_at": "2026-10-19T17:55:20.794Z"
+ },
+ {
+  "sequence": 47,
+  "type": "session_state_changed",
+  "event_id": "8fb30e33-5b87-4d76-b121-45ce6ffebb65",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "DRAFT_RESOLUTION",
+   "to": "ROUND_3",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.794Z"
+ },
+ {
+  "sequence": 48,
+  "type": "card_accepted",
+  "event_id": "50105e4b-a94e-445f-b832-ab9b7ed64b70",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "simon-sinek",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:simon-sinek:8933d2da157e6f6e",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.797Z"
+ },
+ {
+  "sequence": 49,
+  "type": "operation_completed",
+  "event_id": "3eb2ead8-b2c0-4e8b-ad15-1e644562601a",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:simon-sinek:8933d2da157e6f6e",
+   "provider_request_id": "fixture-req-19",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.797Z"
+ },
+ {
+  "sequence": 50,
+  "type": "card_accepted",
+  "event_id": "84467329-29bf-47bf-9d87-a00f5605503b",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "td-jakes",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:td-jakes:f0cecb2526d63fc0",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.800Z"
+ },
+ {
+  "sequence": 51,
+  "type": "operation_completed",
+  "event_id": "35637b5e-75ae-4c91-a24c-8832b60ebdd6",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:td-jakes:f0cecb2526d63fc0",
+   "provider_request_id": "fixture-req-20",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.800Z"
+ },
+ {
+  "sequence": 52,
+  "type": "card_accepted",
+  "event_id": "a27964f0-d41a-4e5e-8355-ac35f6d935d2",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "oprah-winfrey",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:oprah-winfrey:1f257c6799449fa3",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.803Z"
+ },
+ {
+  "sequence": 53,
+  "type": "operation_completed",
+  "event_id": "24afb9e4-6c21-417a-9eb4-71f4742f0eb5",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:oprah-winfrey:1f257c6799449fa3",
+   "provider_request_id": "fixture-req-21",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.803Z"
+ },
+ {
+  "sequence": 54,
+  "type": "card_accepted",
+  "event_id": "e66d4235-148f-4869-a4ec-a6363d9de1ee",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "tiffany-aliche",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:tiffany-aliche:593da5ca2418457f",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.806Z"
+ },
+ {
+  "sequence": 55,
+  "type": "operation_completed",
+  "event_id": "8265fea7-e011-428b-9c07-1f09091c7c70",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:tiffany-aliche:593da5ca2418457f",
+   "provider_request_id": "fixture-req-22",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.807Z"
+ },
+ {
+  "sequence": 56,
+  "type": "card_accepted",
+  "event_id": "f916ec63-00bd-4847-b50c-a1c4c0f25181",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "russell-brunson",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:russell-brunson:dc99f7d89de5c704",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.810Z"
+ },
+ {
+  "sequence": 57,
+  "type": "operation_completed",
+  "event_id": "0b7e6dfa-04f6-45c5-9437-9f4b86ab1bad",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:russell-brunson:dc99f7d89de5c704",
+   "provider_request_id": "fixture-req-23",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.811Z"
+ },
+ {
+  "sequence": 58,
+  "type": "card_accepted",
+  "event_id": "24ffd7cc-47ae-4e7a-b8e1-bff9d903bf89",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "michelle-obama",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:michelle-obama:efc45b65edee2f04",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.838Z"
+ },
+ {
+  "sequence": 59,
+  "type": "operation_completed",
+  "event_id": "9ea13dee-9083-4f87-a2cf-35d39f7f840c",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:michelle-obama:efc45b65edee2f04",
+   "provider_request_id": "fixture-req-24",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.839Z"
+ },
+ {
+  "sequence": 60,
+  "type": "card_accepted",
+  "event_id": "ea650ea6-dbc8-44db-bb87-0ec55ed396cf",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "brene-brown",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:brene-brown:63d8ffb881536ab6",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.841Z"
+ },
+ {
+  "sequence": 61,
+  "type": "operation_completed",
+  "event_id": "1222c2c2-e851-47c0-870f-a196917ac651",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:brene-brown:63d8ffb881536ab6",
+   "provider_request_id": "fixture-req-25",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.841Z"
+ },
+ {
+  "sequence": 62,
+  "type": "card_accepted",
+  "event_id": "12493902-25b8-4ed4-99da-3e841721f1c1",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "dennis-kimbro",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:dennis-kimbro:48a6af3464236e19",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.844Z"
+ },
+ {
+  "sequence": 63,
+  "type": "operation_completed",
+  "event_id": "22d0632c-bac4-49a7-8ba0-230fd8aaca10",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:dennis-kimbro:48a6af3464236e19",
+   "provider_request_id": "fixture-req-26",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.844Z"
+ },
+ {
+  "sequence": 64,
+  "type": "card_accepted",
+  "event_id": "5c4379e4-5b0c-4624-bf29-cf0bfec5f173",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "seat_id": "les-brown",
+   "round": 3,
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:les-brown:a8e158670d611a70",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.846Z"
+ },
+ {
+  "sequence": 65,
+  "type": "operation_completed",
+  "event_id": "fd1472e3-fb1a-4ed3-b1d8-6c10af7faed4",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "operation_id": "op:sample-installation:sample-tenant:sess-fixture-1:a1:round-3:les-brown:a8e158670d611a70",
+   "provider_request_id": "fixture-req-27",
+   "sample": true,
+   "actor": "worker"
+  },
+  "created_at": "2026-10-19T17:55:20.847Z"
+ },
+ {
+  "sequence": 66,
+  "type": "session_state_changed",
+  "event_id": "eb0ad2d4-5a70-4c3a-8899-eaa35e1c7673",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "ROUND_3",
+   "to": "VERIFYING",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.847Z"
+ },
+ {
+  "sequence": 67,
+  "type": "verdict_validated",
+  "event_id": "b1c72aa6-0858-4a34-996f-482e50b53e59",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "verdict_revision": 1,
+   "result_kind": "scored",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.850Z"
+ },
+ {
+  "sequence": 68,
+  "type": "session_state_changed",
+  "event_id": "b3ea91dd-8d7e-4a0c-b2db-c91a102c811e",
+  "from_state": null,
+  "to_state": null,
+  "actor_subject": "sample-owner",
+  "payload": {
+   "from": "VERIFYING",
+   "to": "COMPLETED",
+   "sample": true,
+   "actor": "system"
+  },
+  "created_at": "2026-10-19T17:55:20.851Z"
+ }
+]

@@ -1,0 +1,591 @@
+/*
+ * Council chamber, unit C: the room panel (section#ch-room).
+ * Colours come only from the --ch-* tokens in chamber-theme.css.
+ *
+ * Stacking inside .ch-room-stage (an isolated stacking context): bust images
+ * sit at z 0..10 (edges in front), the table at 11, name pills and bubbles at
+ * 12 and up. So the dome hides the lower bodies of the busts while the pills
+ * stay readable on top of it.
+ */
+
+.ch-room-panel {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ch-room-stage {
+  --ch-room-w: clamp(96px, 10.5vw, 150px);
+  --ch-room-bust-h: calc(var(--ch-room-w) * 1.25);
+  --ch-room-bubble: 28px;
+  --ch-room-seat-h: calc(var(--ch-room-bust-h) + var(--ch-room-bubble));
+  /* Share of the seat area the lowest seat sits below the highest: .18 on the
+     arc, .56 for the phone two-row layout (matches arcLayout in the script). */
+  --ch-room-drop: 0.18;
+  --ch-room-area-h: calc(var(--ch-room-seat-h) / (1 - var(--ch-room-drop)));
+  /* How far the dome climbs over the centre bust. F's webps are head crops with
+     about 15 percent collar and the chin at 65 to 75 percent of the height, so
+     the table cuts at 88 percent: head, neck and collar stay above it. */
+  --ch-room-cover: calc(var(--ch-room-bust-h) * 0.12);
+  /* Name pill top, as a share of the bust height: below the chin, on the collar. */
+  --ch-room-pill-top: 0.78;
+
+  /* Vertical radius of the dome: as deep as it can be while still covering the
+     flat bottom of the outermost busts (a seat at the edge sits drop*area lower
+     than the centre; the dome falls 0.68 of its radius at a bust's outer side). */
+  --ch-room-dome: calc((var(--ch-room-drop) * var(--ch-room-area-h) + var(--ch-room-cover) - 14px) * 1.46);
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
+  overflow: hidden;
+  border-radius: inherit;
+  padding-top: 56px;
+  font-family: var(--ch-font);
+  color: var(--ch-ink);
+  background-color: var(--ch-surface-1);
+  background-image:
+    linear-gradient(to right, var(--ch-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--ch-grid) 1px, transparent 1px);
+  background-size: 72px 72px;
+  background-position: center top;
+}
+
+.ch-room-stage [hidden] {
+  display: none !important;
+}
+
+/* ---- Seats ------------------------------------------------------------- */
+
+.ch-room-seats {
+  position: relative;
+  margin-inline: calc(var(--ch-room-w) / 2);
+  height: var(--ch-room-area-h);
+}
+
+.ch-seat {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  width: var(--ch-room-w);
+  height: var(--ch-room-seat-h);
+  margin: 0 0 0 calc(var(--ch-room-w) / -2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--ch-radius-card, 12px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  /* The button box is 150px wide and seats are about 100px apart, so boxes
+     overlap and a transparent side would catch a neighbour's click. Only the
+     painted parts below take the pointer; clicks still bubble to the button. */
+  pointer-events: none;
+  /* Gap between neighbouring seats. cqw resolves against the stage here. */
+  --ch-room-step: calc((100cqw - var(--ch-room-w)) * 0.11);
+}
+
+.ch-seat:focus-visible {
+  outline: 2px solid var(--ch-gold);
+  outline-offset: 2px;
+}
+
+.ch-seat-bust {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--ch-room-bust-h);
+  z-index: var(--z, 0);
+  pointer-events: auto;
+  /* Until the portrait's alpha shape is known (script), and for the svg
+     medallion: a column one seat step wide over the head. */
+  clip-path: inset(0 max(0px, calc((var(--ch-room-w) - var(--ch-room-step)) / 2)));
+}
+
+.ch-seat-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: filter var(--ch-dur, 200ms) var(--ch-ease, ease);
+}
+
+.ch-seat-img--medallion {
+  padding: 6% 10% 22%;
+  box-sizing: border-box;
+  object-position: center;
+}
+
+.ch-seat:hover .ch-seat-img {
+  filter: brightness(1.1);
+}
+
+/* Name pill: hangs from the collar line, below the chin, above the table. It
+   grows downward, so a name never climbs up over the face. */
+.ch-seat-pillslot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--ch-room-bubble) + var(--ch-room-bust-h) * var(--ch-room-pill-top));
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  z-index: calc(12 + var(--z, 0));
+}
+
+.ch-seat-pill {
+  display: inline-block;
+  /* The type shrinks with --ch-room-step (the gap between neighbouring seats)
+     so the widest adjacent full names (Russell Brunson, Michelle Obama) clear
+     each other on one line. Narrower rooms wrap at a space instead (below). */
+  pointer-events: auto;
+  padding: 0.3em 0.45em;
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-chip, 6px);
+  background: var(--ch-surface-3);
+  color: var(--ch-ink);
+  font-size: clamp(9px, calc((var(--ch-room-step) - 6px) / 8.8), 12px);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
+  /* One line on a wide desktop room: the pill shows the full name, sized to the
+     seat gap above. Narrower rooms and phones let it wrap at a space (below). */
+  white-space: nowrap;
+  flex: none;
+  width: max-content;
+  min-width: 0;
+  transition: border-color var(--ch-dur, 200ms) var(--ch-ease, ease);
+}
+
+
+.ch-seat:hover .ch-seat-pill {
+  border-color: var(--ch-gold);
+}
+
+.ch-seat:focus-visible .ch-seat-pill {
+  outline: 2px solid var(--ch-gold);
+  outline-offset: 2px;
+}
+
+.ch-seat--spot .ch-seat-pill {
+  border-color: var(--ch-gold);
+}
+
+/* ---- Bubble above the head --------------------------------------------- */
+
+.ch-seat-bubbleslot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--ch-room-bubble);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  z-index: calc(12 + var(--z, 0));
+}
+
+.ch-seat--speaking .ch-seat-bubbleslot {
+  z-index: 40;
+}
+
+.ch-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 44px;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-surface-3);
+  color: var(--ch-ink-muted);
+  pointer-events: auto;
+}
+
+.ch-bubble-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ch-bubble-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ch-bubble-pulse 1.2s ease-in-out infinite;
+}
+
+.ch-bubble-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.ch-bubble-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.ch-bubble-text,
+.ch-bubble-check {
+  display: none;
+}
+
+.ch-bubble[data-kind='line'] {
+  width: max-content;
+  /* Reaches no further than the neighbours' check bubbles (28px wide, one step
+     away on each side). */
+  max-width: clamp(96px, calc(var(--ch-room-step) * 2 - 36px), 220px);
+  height: auto;
+  min-height: 22px;
+  padding: 5px 10px;
+  border-radius: 14px;
+  color: var(--ch-ink);
+  animation: ch-bubble-in var(--ch-dur, 200ms) var(--ch-ease, ease);
+}
+
+.ch-bubble[data-kind='line'] .ch-bubble-dots,
+.ch-bubble[data-kind='done'] .ch-bubble-dots {
+  display: none;
+}
+
+.ch-bubble[data-kind='line'] .ch-bubble-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.ch-bubble[data-kind='done'] {
+  min-width: 28px;
+  padding: 0 8px;
+  color: var(--ch-gold);
+}
+
+.ch-bubble[data-kind='done'] .ch-bubble-check {
+  display: inline;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ch-seat--spot .ch-bubble {
+  border-color: var(--ch-gold);
+  color: var(--ch-gold-strong);
+}
+
+.ch-seat--spot .ch-bubble[data-kind='line'] {
+  color: var(--ch-ink);
+}
+
+@keyframes ch-bubble-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes ch-bubble-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Table dome and round panel ---------------------------------------- */
+
+.ch-table {
+  position: relative;
+  z-index: 11;
+  box-sizing: border-box;
+  /* Pull the dome up over the lower bodies of the busts. */
+  margin-top: calc(-1 * (var(--ch-room-drop) * var(--ch-room-area-h) + var(--ch-room-cover)));
+  padding: calc(var(--ch-room-cover) + 50px) 24px 40px;
+  border-radius: 50% 50% 0 0 / var(--ch-room-dome) var(--ch-room-dome) 0 0;
+  background: linear-gradient(to bottom, var(--ch-surface-2), var(--ch-surface-1));
+  box-shadow: inset 0 1px 0 var(--ch-line-strong);
+}
+
+/* BlackCEO mark as a mask, far below readable weight. */
+.ch-table-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150px;
+  height: 61px;
+  margin: -30px 0 0 -75px;
+  background: var(--ch-cream);
+  opacity: 0.05;
+  -webkit-mask: url('blackceo-logo.png') center / contain no-repeat;
+  mask: url('blackceo-logo.png') center / contain no-repeat;
+  pointer-events: none;
+}
+
+.ch-round {
+  position: relative;
+  max-width: 660px;
+  margin-inline: auto;
+}
+
+.ch-round-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ch-round-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+
+.ch-round-dot {
+  color: var(--ch-gold);
+}
+
+.ch-round-timer {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ch-ink-muted);
+}
+
+.ch-round-headline {
+  margin: 10px 0 0;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ch-ink);
+}
+
+.ch-round-explain {
+  margin: 8px 0 0;
+  max-width: 460px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink-muted);
+}
+
+.ch-round-weighing {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink-muted);
+}
+
+.ch-round-name {
+  font-weight: 700;
+  color: var(--ch-ink);
+}
+
+.ch-round-track {
+  position: relative;
+  height: 2px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: var(--ch-line);
+}
+
+.ch-round-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: var(--ch-gold);
+  transition: width var(--ch-dur, 200ms) var(--ch-ease, ease);
+}
+
+.ch-round-track[data-mode='indeterminate'] .ch-round-fill {
+  width: 28%;
+  transition: none;
+  animation: ch-round-slide 1.8s ease-in-out infinite;
+}
+
+@keyframes ch-round-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(360%);
+  }
+}
+
+.ch-round-conn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink);
+}
+
+.ch-round-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 16px;
+}
+
+/* Visually hidden live region: headline and progress only. */
+.ch-round-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Phone: two staggered rows, round panel as a card under them ------- */
+
+@media (max-width: 599.98px) {
+  .ch-room-stage {
+    --ch-room-w: 76px;
+    --ch-room-drop: 0.56;
+    /* The front row's bubbles sit right under the back row's pills, so the
+       pills hang a little higher here (still below the chin), and the front
+       row drops far enough (.56) to clear a two-line full name. */
+    --ch-room-pill-top: 0.7;
+    padding-top: 44px;
+  }
+
+  /* Two rows of five and four: seats in a row are 22 percent apart. */
+  .ch-seat {
+    --ch-room-step: calc((100cqw - var(--ch-room-w)) * 0.22);
+  }
+
+  /* Two rows of five and four: seats are 22 percent of the seat area apart.
+     A pill never exceeds that gap less 4px; two-word full names wrap at the
+     space, and nothing can overflow its border. */
+  .ch-seat-pill {
+    padding: 3px 4px;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    width: auto;
+    min-width: 0;
+    max-width: calc(var(--ch-room-step) - 4px);
+  }
+
+  .ch-bubble[data-kind='line'] {
+    max-width: 104px;
+  }
+
+  .ch-bubble[data-kind='line'] .ch-bubble-text {
+    font-size: 11px;
+  }
+
+  .ch-table {
+    margin-top: calc(var(--ch-room-cover) * -1);
+    padding: 40px 16px 28px;
+    border-radius: var(--ch-radius-panel, 18px) var(--ch-radius-panel, 18px) 0 0;
+  }
+
+  .ch-table-mark {
+    width: 120px;
+    height: 49px;
+    margin: -24px 0 0 -60px;
+  }
+
+  .ch-round-headline {
+    font-size: 17px;
+  }
+}
+
+/* Narrow room (under 860px: the type is already at its 9px floor): a pill may
+   wrap at a space, never wider than one step, and a long word breaks inside
+   its border instead of spilling out of it. */
+@media (min-width: 600px) {
+  @container (max-width: 860px) {
+    .ch-seat-pill {
+      white-space: normal;
+      width: auto;
+      max-width: calc(var(--ch-room-step) - 4px);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  /* Tablets just above the phone breakpoint: seats are about 50px apart. */
+  @container (max-width: 640px) {
+    .ch-seat-pill {
+      font-size: 9px;
+      padding: 0.3em 0.3em;
+      max-width: var(--ch-room-step);
+    }
+  }
+}
+
+/* 360px phones: seats are 55px apart, one point smaller keeps 'Brunson' whole. */
+@container (max-width: 340px) {
+  .ch-seat-pill {
+    padding: 3px 3px;
+    font-size: 10px;
+  }
+}
+
+/* 320px phones: smaller busts and 9px type so 'Brunson' stays in one piece. */
+@media (max-width: 359.98px) {
+  .ch-room-stage {
+    --ch-room-w: 68px;
+  }
+
+  .ch-seat-pill {
+    padding: 2px;
+    font-size: 9px;
+  }
+}
+
+/* Narrow room: the quote bubble cannot fit between the neighbours' check
+   bubbles, so while a seat is speaking the two beside it step aside. */
+@media (min-width: 600px) {
+  @container (max-width: 700px) {
+    .ch-seat--speaking + .ch-seat .ch-seat-bubbleslot,
+    .ch-seat:has(+ .ch-seat--speaking) .ch-seat-bubbleslot {
+      visibility: hidden;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ch-bubble-dot,
+  .ch-bubble[data-kind='line'] {
+    animation: none;
+  }
+
+  .ch-bubble-dot {
+    opacity: 0.7;
+  }
+
+  .ch-round-track[data-mode='indeterminate'] .ch-round-fill {
+    animation: none;
+    left: 36%;
+  }
+
+  .ch-round-fill,
+  .ch-seat-img,
+  .ch-seat-pill {
+    transition: none;
+  }
+}

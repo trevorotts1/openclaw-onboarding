@@ -1,0 +1,81 @@
+/* KEY POINTS panel (unit D). Colours only through var(--ch-*) tokens. */
+.ch-kp {
+  min-width: 0;
+  padding: var(--ch-space-4);
+  background: var(--ch-surface-1);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-panel);
+  font-family: var(--ch-font);
+  color: var(--ch-ink);
+}
+
+.ch-kp-title {
+  /* Bleed to the card edges so the divider runs border to border. */
+  margin: 0 calc(-1 * var(--ch-space-4));
+  padding-inline: var(--ch-space-4);
+  padding-bottom: var(--ch-space-3);
+  border-bottom: 1px solid var(--ch-line);
+}
+
+.ch-kp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ch-kp-item {
+  padding-top: var(--ch-space-3);
+}
+
+.ch-kp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.ch-kp-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.ch-kp-rule {
+  flex: 1 1 1px;
+  height: 1px;
+  min-width: var(--ch-space-3);
+  background: var(--ch-line);
+}
+
+.ch-kp-detail {
+  margin: var(--ch-space-1) 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ch-ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.ch-kp-empty {
+  margin: var(--ch-space-3) 0 0;
+  font-size: 13px;
+  color: var(--ch-ink-faint);
+}
+
+.ch-kp-empty[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ch-kp-item {
+    animation: ch-kp-in var(--ch-dur) var(--ch-ease);
+  }
+}
+
+@keyframes ch-kp-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
