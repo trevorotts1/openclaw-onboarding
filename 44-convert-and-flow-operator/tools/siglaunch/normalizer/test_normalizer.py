@@ -1,4 +1,5 @@
 """S44-04 production normalizer proofs (DESIGN-S44-04-v1.md)."""
+import json
 import sys
 import tempfile
 import unittest
@@ -6,8 +7,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "store"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "processor"))
 from normalizer import LaunchContext, ingest, normalize
+from processor import validate_event as validate_processed_event
 from store import Store
+
+_HERE = Path(__file__).parent
+V11 = json.loads((_HERE / "purchase-event.v1.1.schema.json").read_text())
+V12 = json.loads((_HERE / "purchase-event.v1.2.schema.json").read_text())
 
 CTX = LaunchContext("T1", "LOC1", "LN1",
                     {"prod-main": "main", "prod-bump": "bump",
@@ -106,6 +113,60 @@ class NormalizerTests(unittest.TestCase):
         self.assertEqual(out["event"]["schema_version"], "1.0")
         self.assertNotIn("contact_ref", out["event"])
         self.assertEqual(out["contact_ref_context"], "native-contact-123")
+
+    def test_parent_order_ref_stamps_1_2_and_carries_contact_ref(self):
+        rb = readback(contact_ref="native-contact-123",
+                      parent_order_ref="ORDER-INITIAL-1")
+        ev = normalize(rb, CTX, schema_v11=V11, schema_v12=V12)["event"]
+        self.assertEqual(ev["schema_version"], "1.2")
+        self.assertEqual(ev["parent_order_ref"], "ORDER-INITIAL-1")
+        self.assertEqual(ev["contact_ref"], "native-contact-123")
+        self.assertEqual(ev["event_id"], "evt-1")
+        validate_processed_event(ev)  # the production processor accepts it
+
+    def test_parent_order_ref_alone_stamps_1_2(self):
+        # contact_ref is optional in 1.2; parent_order_ref alone still
+        # justifies the stamp, and only the stamp
+        rb = readback(parent_order_ref="ORDER-INITIAL-1")
+        ev = normalize(rb, CTX, schema_v12=V12)["event"]
+        self.assertEqual(ev["schema_version"], "1.2")
+        self.assertEqual(ev["parent_order_ref"], "ORDER-INITIAL-1")
+        self.assertNotIn("contact_ref", ev)
+        validate_processed_event(ev)
+
+    def test_absent_parent_order_ref_keeps_old_stream_stamps(self):
+        out = normalize(readback(), CTX, schema_v11=V11, schema_v12=V12)
+        self.assertEqual(out["event"]["schema_version"], "1.0")
+        self.assertNotIn("parent_order_ref", out["event"])
+        out = normalize(readback(contact_ref="c-1"), CTX,
+                        schema_v11=V11, schema_v12=V12)
+        self.assertEqual(out["event"]["schema_version"], "1.1")
+        self.assertNotIn("parent_order_ref", out["event"])
+        self.assertEqual(out["event"]["contact_ref"], "c-1")
+
+    def test_parent_order_ref_never_synthesized(self):
+        # empty string is absent; an unconfigured v1.2 drops the field
+        # rather than upgrading the stamp
+        out = normalize(readback(parent_order_ref=""), CTX,
+                        schema_v11=V11, schema_v12=V12)
+        self.assertEqual(out["event"]["schema_version"], "1.0")
+        self.assertNotIn("parent_order_ref", out["event"])
+        out = normalize(readback(contact_ref="c-1",
+                                 parent_order_ref="ORDER-INITIAL-1"), CTX,
+                        schema_v11=V11)
+        self.assertEqual(out["event"]["schema_version"], "1.1")
+        self.assertNotIn("parent_order_ref", out["event"])
+
+    def test_ingest_stamps_1_2_and_dedupe_identity_unchanged(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(str(Path(d) / "s44.db"))
+            rb = readback(contact_ref="c-1",
+                          parent_order_ref="ORDER-INITIAL-1")
+            self.assertEqual(ingest(store, rb, CTX)[0], "accepted")
+            self.assertEqual(ingest(store, rb, CTX)[0], "duplicate")
+            stored = store.get_event("T1", "ghl", "evt-1")
+            self.assertEqual(stored["schema_version"], "1.2")
+            self.assertEqual(stored["parent_order_ref"], "ORDER-INITIAL-1")
 
     def test_ingest_accept_duplicate_quarantine(self):
         with tempfile.TemporaryDirectory() as d:

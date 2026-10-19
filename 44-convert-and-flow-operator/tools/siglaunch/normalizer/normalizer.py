@@ -25,6 +25,13 @@ Rules enforced here (design sections 3-8):
   read-back supplies the opaque native contact ID AND a v1.1 schema is
   configured; otherwise it travels in processing context and the event
   stamps 1.0. Never derived from a name or email.
+- parent_order_ref (schema v1.2, CR-S44-003 ruling): emitted only when
+  the native read-back itself carries the opaque provider order id of
+  the initial order AND a v1.2 schema is configured. Never synthesized,
+  never derived, never required, never identity/grouping/dedupe. When it
+  is carried the event stamps 1.2 (S82 refuses the field on 1.1); when
+  it is absent the old-stream stamp is unchanged (1.1 with contact_ref,
+  else 1.0).
 """
 from __future__ import annotations
 
@@ -53,6 +60,19 @@ _V11_SCHEMA_PATH = (Path(__file__).resolve().parent
                     / "purchase-event.v1.1.schema.json")
 _SCHEMA_V11 = (json.loads(_V11_SCHEMA_PATH.read_text())
                if _V11_SCHEMA_PATH.exists() else None)
+
+# Schema v1.2 switch (CR-S44-003, consumer gate closed): the v1.2 schema
+# is vendored beside this module too (byte copy of shared-utils/
+# signature_launch/domain/purchase-event.schema.json on main, which the
+# processor and the S82/S79 consumers already accept). Same explicit-
+# injection contract as v1.1: normalize() callers pass schema_v12 to
+# enable the 1.2 stamp; ingest() wires it by default, so the production
+# pipeline stamps 1.2 and carries parent_order_ref whenever (and only
+# when) the native read-back supplies it.
+_V12_SCHEMA_PATH = (Path(__file__).resolve().parent
+                    / "purchase-event.v1.2.schema.json")
+_SCHEMA_V12 = (json.loads(_V12_SCHEMA_PATH.read_text())
+               if _V12_SCHEMA_PATH.exists() else None)
 
 PAYMENT_STATUSES = {"pending", "succeeded", "failed",
                     "requires_customer_action", "refunded",
@@ -93,7 +113,8 @@ def _quarantine(reason_code: str, detail: str, readback: dict) -> dict:
 
 
 def normalize(readback: dict, ctx: LaunchContext,
-              schema_v11: Optional[dict] = None) -> dict:
+              schema_v11: Optional[dict] = None,
+              schema_v12: Optional[dict] = None) -> dict:
     """Return {"event": envelope, "contact_ref_context": str|None} or
     {"quarantine": {...}}. Never raises for ambiguity."""
     # tenant integrity first: the read-back must belong to the launch
@@ -155,6 +176,7 @@ def normalize(readback: dict, ctx: LaunchContext,
             "entitlement_ids": list(item["entitlement_ids"]),
         })
     contact_ref = readback.get("contact_ref")
+    parent_order_ref = readback.get("parent_order_ref")
     event = {
         "schema_version": "1.0",
         "tenant_id": ctx.tenant_id,
@@ -175,7 +197,16 @@ def normalize(readback: dict, ctx: LaunchContext,
         "test_only": bool(readback.get("test_only", False)),
     }
     schema = _SCHEMA_V10
-    if contact_ref and schema_v11 is not None:
+    if parent_order_ref and schema_v12 is not None:
+        # v1.2: the field is version-scoped to 1.2 (a 1.1 event carrying
+        # it is refused by the S82 consumer), so the stamp follows the
+        # field. contact_ref rides along when supplied: 1.2 defines it.
+        if contact_ref:
+            event["contact_ref"] = contact_ref
+        event["parent_order_ref"] = parent_order_ref
+        event["schema_version"] = "1.2"
+        schema = schema_v12
+    elif contact_ref and schema_v11 is not None:
         event["contact_ref"] = contact_ref
         event["schema_version"] = "1.1"
         schema = schema_v11
@@ -190,13 +221,17 @@ def normalize(readback: dict, ctx: LaunchContext,
 
 
 def ingest(store, readback: dict, ctx: LaunchContext,
-           schema_v11: Optional[dict] = None) -> tuple[str, dict]:
+           schema_v11: Optional[dict] = None,
+           schema_v12: Optional[dict] = None) -> tuple[str, dict]:
     """Pipeline glue (design section 1): normalize, then record-if-unseen
     in the durable inbox, or persist the quarantine as a review item.
     Returns ("accepted"|"duplicate"|"quarantined", payload)."""
     if schema_v11 is None:
         schema_v11 = _SCHEMA_V11  # the vendored v1.1 wiring (above)
-    result = normalize(readback, ctx, schema_v11=schema_v11)
+    if schema_v12 is None:
+        schema_v12 = _SCHEMA_V12  # the vendored v1.2 wiring (above)
+    result = normalize(readback, ctx, schema_v11=schema_v11,
+                       schema_v12=schema_v12)
     if "quarantine" in result:
         q = result["quarantine"]
         qid = store.add_quarantine(
