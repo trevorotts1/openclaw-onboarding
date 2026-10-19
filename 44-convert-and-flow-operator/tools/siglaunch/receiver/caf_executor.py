@@ -205,6 +205,11 @@ def _normalize_export(obj: dict, workflow_id: str) -> dict:
     # - trigger_evidence: the bucket pointer fields, verbatim. The
     #   bucket file exists only because the builder created and
     #   linked a trigger for this workflow at build time.
+    #   The bucket CONTENTS are NOT retrievable: `caf workflows`
+    #   exposes list/get/export/create/build/patch-*/restore only
+    #   (verified against the installed CLI's `workflows --help`),
+    #   and internal/endpoints.py defines no trigger-bucket read
+    #   path. No value is invented from the pointer.
     # - status "draft": when the object carries no explicit status,
     #   is not deleted, and stands as a builder-created object, its
     #   state is observed as draft, with status_evidence recording
@@ -248,6 +253,16 @@ def _normalize_export(obj: dict, workflow_id: str) -> dict:
 
 
 class CafExecutor:
+    # Evidence fields this adapter can actually fill (GU-018). The
+    # receiver intersects this with its own producible set, so the
+    # carrier declares exactly what exists. Fields absent here — the QC
+    # checklist instance/complete/WF-item detail, ghl_pack_version, the
+    # conversational trigger set — have no surface in this adapter and
+    # are declared unproducible, never filled with a placeholder.
+    EVIDENCE_FIELDS = frozenset({
+        "build_stats", "readback", "qc.exit_code", "qc.rubric",
+    })
+
     def __init__(self, caf_path: str = "caf",
                  runner: Runner = _subprocess_runner,
                  provisioning_ledger: Optional[str] = None,
@@ -335,6 +350,10 @@ class CafExecutor:
         return skill_root / "qc-built-workflow.sh"
 
     def _run_qc(self, workflow_id: str, result: dict) -> None:
+        # Only the exit code and the rubric floor are captured. The
+        # checklist instance path / completion flag / WF item count the
+        # stage-14 contract asks for are NOT produced here; the receiver
+        # declares them unproducible (GU-018) rather than inventing them.
         qc_path = self._qc_script_path()
         if not qc_path.exists():
             # Honest recording, never a fabricated pass: the receiver
@@ -359,12 +378,48 @@ class CafExecutor:
             if isinstance(floor, (int, float)) \
                     and not isinstance(floor, bool):
                 result["rubric"] = floor
+        # qc.wf_items (automation-handoff.md:196-204: "the WF item
+        # count carried VERBATIM, e.g. 22/22"). The QC script emits
+        # `items` — one entry per WF item with a mechanical status —
+        # so the count IS producible from this surface: PASSed items
+        # over the number of items the script actually ran. An
+        # N/A / REQUIRES_HUMAN_REVIEW item is not a PASS and is not
+        # counted as one; it still counts in the denominator, so the
+        # fraction can never overstate what was proven.
+        items = qc.get("items")
+        if isinstance(items, dict) and items:
+            passed = sum(
+                1 for entry in items.values()
+                if isinstance(entry, dict)
+                and entry.get("status") == "PASS")
+            result["wf_items"] = f"{passed}/{len(items)}"
 
     # ── build one workflow, then read it back and QC it ──────────────────
+    # ── per-operation QC fields this adapter CAN and CANNOT produce ──────
+    # Contract: automation-handoff.md:196-204 / artifact-contracts.md:656-667
+    # name qc.script, qc.exit_code, qc.checklist_instance,
+    # qc.checklist_complete and qc.wf_items.
+    #   qc.script / qc.exit_code  — produced (the script+its exit code).
+    #   qc.wf_items               — produced from the script's `items`
+    #                               object as PASSed/total (see _run_qc).
+    #   qc.checklist_instance     — NOT producible HERE. qc-built-workflow.sh
+    #                               emits per-item statuses + the rubric to
+    #                               stdout and appends build-events.jsonl; it
+    #                               creates no checklist instance file. The
+    #                               contract's instance is a run artifact
+    #                               (filed under automation-wiring/), and a
+    #                               receiver adapter has no run_dir to write
+    #                               it into. It stays None, named in notes.
+    #   qc.checklist_complete     — NOT producible HERE. Mechanical PASS
+    #                               (overall_mechanical) is not checklist
+    #                               completion: the REQUIRES_HUMAN_REVIEW
+    #                               items are graded by the Step-9 QC agent,
+    #                               outside the executor contract. None.
     def build(self, builder_plan: dict) -> dict:
         result = {"exit_code": 1, "workflow_id": None, "errors": [],
                   "notes": [], "export": None, "export_raw": None,
-                  "qc_exit_code": None, "rubric": None, "stats": None}
+                  "qc_exit_code": None, "rubric": None, "wf_items": None,
+                  "stats": None}
         with tempfile.NamedTemporaryFile(
                 "w", suffix=".json", delete=False) as fh:
             json.dump(builder_plan, fh)

@@ -53,6 +53,42 @@ def fixture_contract(td: Path) -> Path:
     path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
     return path
 
+def production_record(stage, section_ids):
+    """Minimal Item 13 record for a fixture run: one section per slice.
+
+    The fixture contract disables validators (gate:noop), so these tests
+    exercise the artifact requirement only; the record is still shaped as
+    the contract defines it.
+    """
+    return json.dumps({
+        "artifact": "wireframe",
+        "stage": stage,
+        "page_width": 1440,
+        "stitched_output": "wireframe-full.png",
+        "sections": [
+            {"section_id": sid,
+             "slice": f"section-{i:02d}.png",
+             "width": 1440,
+             "height": 900,
+             "generation": {
+                 "route": "kie-gpt-image",
+                 "model_id": "resolved-at-build-time-fixture",
+                 "model_source": "latest-family",
+                 "layout_reference": f"{stage}/section-plan.json",
+                 "reference_urls": [],
+                 "style_input": "visual-mockup/page-visual-bible.json",
+                 "native_aspect": "1440x900"},
+             "text_qc": {
+                 "checked_at_native_resolution": True,
+                 "expected_text": "fixture copy",
+                 "readback_text": "fixture copy",
+                 "garbled_words": [],
+                 "verdict": "pass",
+                 "attempts": 1}}
+            for i, sid in enumerate(section_ids, start=1)
+        ],
+    })
+
 
 def scores_json(**criteria):
     return json.dumps({name: {"score": score, "note": LONG_NOTE}
@@ -115,6 +151,8 @@ class ItemGateTest(unittest.TestCase):
         write(self.run / "mobile-tablet" / "wireframe.pdf", "stub")
         write(self.run / "mobile-tablet" / "tablet-rules.md", "rules")
         write(self.run / "mobile-tablet" / "section-plan.json", "{}")
+        write(self.run / "mobile-tablet" / "production-record.json",
+              production_record("mobile-tablet", ["S01"]))
         put_receipt(self.run, "mobile-tablet")
         proc = run_write_review(self.contract, self.run, "mobile-tablet", "stage",
                                 "sess-rev-mt", scores_json(reflow=9))
@@ -334,6 +372,8 @@ class SuppliedAssetGateTest(unittest.TestCase):
         write(run / "mobile-tablet" / "wireframe.pdf", "stub")
         write(run / "mobile-tablet" / "tablet-rules.md", "rules")
         write(run / "mobile-tablet" / "section-plan.json", "{}")
+        write(run / "mobile-tablet" / "production-record.json",
+              production_record("mobile-tablet", ["S01"]))
         put_receipt(run, "mobile-tablet")
         proc = run_write_review(contract, run, "mobile-tablet", "stage",
                                 "sess-rev-mt", scores_json(reflow=9))

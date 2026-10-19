@@ -39,9 +39,11 @@ STAGES = CONTRACT["stages"]
 WIREFRAME_STAGES = ["desktop-wireframe", "mobile-tablet"]
 RETAINED = {
     "desktop-wireframe": ["desktop-wireframe/image-inventory.json",
-                          "desktop-wireframe/section-plan.json"],
+                          "desktop-wireframe/section-plan.json",
+                          "desktop-wireframe/production-record.json"],
     "mobile-tablet": ["mobile-tablet/tablet-rules.md",
-                      "mobile-tablet/section-plan.json"],
+                      "mobile-tablet/section-plan.json",
+                      "mobile-tablet/production-record.json"],
 }
 
 
@@ -81,8 +83,10 @@ class WireframeArtifactTest(unittest.TestCase):
         self.assertEqual(STAGES["mobile-tablet"]["depends_on"], ["desktop-wireframe"])
         for stage in WIREFRAME_STAGES:
             self.assertEqual(STAGES[stage]["validators"],
-                             [f"python3 scripts/validate_wireframe.py {{run_dir}} {stage}"],
-                             f"{stage} validator wiring is Item 15's to change, not Item 11's")
+                             [f"python3 scripts/validate_wireframe.py {{run_dir}} {stage}",
+                              f"python3 scripts/validate_production_record.py {{run_dir}}/{stage}/production-record.json"],
+                             f"{stage} validators are the wireframe check plus the Item 13 "
+                             f"production-record gate")
             self.assertTrue(STAGES[stage]["review_required"])
 
     def test_artifact_contracts_enumeration_matches_contract(self):

@@ -1743,15 +1743,24 @@ Note the field names: caf uses **`accountIds`** and **`media:[{url,type}]`** —
 
 ### Tier 1 — Official GHL MCP (Skill 36)
 
-If Skill 44 is absent but Skill 36 is installed, use the official MCP tool `social-media-posting_create-post` (and `social-media-posting_get-account` for reads). Fall through to Tier 2 on any MCP error.
+If Skill 44 is absent but Skill 36 is installed, use the official MCP tool `social-media-posting_create-post` (and `social-media-posting_get-account` for reads). Fall through to Tier 3 on any MCP error (there is no Tier 2 — that transport is retired).
 
-### Tier 2 — Community GHL MCP
+### Tier 2 — Community GHL MCP (RETIRED — not a rung)
 
-Community MCP tool `create_social_post`; accounts via `get_social_accounts`. The community MCP HTTP transport speaks JSON-RPC (`method: tools/call`), not a flat `{"name","arguments"}` body. Confirm the exact tool names against your installed community MCP manifest. Fall through to Tier 3 if unreachable.
+**RETIRED.** The community GHL MCP transport was retired (GU-009/GU-010) and is
+NOT a route. Its tools — `create_social_post`, `get_social_accounts` and the rest —
+are gone: never call them and never re-add this tier as a fallback. Skip Tier 1
+straight to Tier 3. Account reads use the public REST route
+`GET /social-media-posting/{locationId}/accounts`; post creation uses the official
+MCP (`social-media-posting_create-post`) then the raw REST POST.
+
+Historically this rung spoke JSON-RPC (`method: tools/call`) rather than a flat
+`{"name","arguments"}` body — kept here only as a note about what a box that still
+carries the retired install would look like.
 
 ### Tier 3 — Raw REST (LAST RESORT)
 
-Only when Tier 0–2 are unavailable, post directly with the PIT. Retry 3× with a 5 s delay (Section 20). The base URL, auth, endpoints, and example bodies below are the Tier 3 contract.
+Only when Tier 0–1 are unavailable, post directly with the PIT (Tier 2 is retired and does not exist). Retry 3× with a 5 s delay (Section 20). The base URL, auth, endpoints, and example bodies below are the Tier 3 contract.
 
 ### API Base URL
 

@@ -3,7 +3,7 @@
 > **Scope of this file:** All endpoints under the `contacts` module.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-07-28` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — for the contacts operations frozen at `v3` per the official operation page `https://marketplace.gohighlevel.com/docs/ghl/contacts/<operation-slug>/` (GHL modernization contract ledger, 2026-10-18). This file also documents operations that the freeze does NOT record; those examples keep their older literal and carry an explicit `Version UNVERIFIED for this operation` marker. Treat the marker as the authority for that block, not this sentence. Read the operation page at `https://marketplace.gohighlevel.com/docs/ghl/contacts/<operation-slug>/` before using any other supported literal. Never send one value for every call.
 >
 > **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
 > (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
@@ -71,12 +71,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -86,6 +86,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/bulk/business - Add/Remove Contacts From Business
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Add/Remove Contacts From Business . Passing a `null` businessId will remove the businessId from the contacts
 - Security: Not specified
 - Token type: Private Integration Token or OAuth Access Token
@@ -112,6 +113,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/bulk/business
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/bulk/tags/update/{type} - Update Contacts Tags
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Allows you to update tags to multiple contacts at once, you can add or remove tags from the contacts
 - Security: Not specified
 - Token type: Private Integration Token or OAuth Access Token
@@ -138,6 +140,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/bulk/tags/upd
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/business/{businessId} - Get Contacts By BusinessId
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get Contacts By BusinessId
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -174,12 +177,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/business/{busi
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/search
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/search' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -189,6 +192,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/search' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/search/duplicate - Get Duplicate Contact
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get Duplicate Contact.<br/><br/>If `Allow Duplicate Contact` is disabled under Settings, the global unique identifier will be used for searching the contact. If the setting is enabled, first priority for search is `email` and the second priority will be `phone`.
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -226,12 +230,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/search/duplica
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/upsert
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -252,12 +256,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -277,12 +281,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -303,12 +307,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}' \
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -317,6 +321,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/{contactId}/appointments - Get Appointments for Contact
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get Appointments for Contact
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -342,6 +347,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/ap
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /contacts/{contactId}/campaigns/removeAll - Remove Contact From Every Campaign
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Remove Contact From Every Campaign
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -367,6 +373,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/{contactId}/campaigns/{campaignId} - Add Contact to Campaign
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Add contact to Campaign
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -393,6 +400,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/c
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /contacts/{contactId}/campaigns/{campaignId} - Remove Contact From Campaign
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Remove Contact From Campaign
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -418,6 +426,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/{contactId}/followers - Add Followers
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Add Followers
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -444,6 +453,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/f
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /contacts/{contactId}/followers - Remove Followers
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Remove Followers
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -469,6 +479,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/{contactId}/notes - Get All Notes
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get All Notes
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -494,6 +505,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/no
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/{contactId}/notes - Create Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Create Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -520,6 +532,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/n
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/{contactId}/notes/{id} - Get Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -545,6 +558,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/no
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /contacts/{contactId}/notes/{id} - Update Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Update Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -571,6 +585,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/no
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /contacts/{contactId}/notes/{id} - Delete Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Delete Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -607,12 +622,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tags
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/tags' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -633,12 +648,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/t
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tags
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/tags' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -647,6 +662,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/{contactId}/tasks - Get all Tasks
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get all Tasks
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -672,6 +688,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /contacts/{contactId}/tasks - Create Task
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Create Task
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -698,6 +715,7 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/t
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /contacts/{contactId}/tasks/{taskId} - Get Task
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Get Task
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -723,6 +741,7 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /contacts/{contactId}/tasks/{taskId} - Update Task
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Update Task
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -749,6 +768,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /contacts/{contactId}/tasks/{taskId} - Delete Task
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Delete Task
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -774,6 +794,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /contacts/{contactId}/tasks/{taskId}/completed - Update Task Completed
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/contacts/
 - Description: Update Task Completed
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -811,12 +832,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -837,12 +858,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/w
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

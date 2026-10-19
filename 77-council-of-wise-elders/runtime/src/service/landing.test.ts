@@ -1,5 +1,5 @@
 /**
- * WER-023/021 root landing route tests.
+ * WER-021/023 root landing route tests.
  *
  * Runner (the runtime's own test runner):
  *   node --import tsx --test src/service/landing.test.ts
@@ -10,17 +10,24 @@
  * and no live session are claimed.
  *
  * Proven here:
- * - `GET /` answers 200 text/html with no external asset, stylesheet,
- *   script or foreign origin;
- * - the page reflects the injected identity and readiness values and
- *   states UI_NOT_BUNDLED honestly;
+ * - `GET /` answers 302 with the relative `Location: /chamber/` when the
+ *   packaged chamber entry page exists (no loopback host in the header);
+ * - `GET /chamber/` serves the chamber HTML, which never carries the
+ *   diagnostics banner;
+ * - `GET /status` serves the previous diagnostics page unchanged, with
+ *   UI_NOT_BUNDLED, the identity table and no external asset or foreign
+ *   origin;
+ * - without the packaged assets `GET /` keeps that honest status page and
+ *   `/chamber/` falls back to the unchanged catch-all 404;
  * - the catch-all 404 and every existing route keep their prior status
  *   and body;
- * - no file outside the two owned paths differs from the base commit.
+ * - no file outside the owned paths (plus the version markers and the
+ *   generated artifacts) differs from the base commit.
  */
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -73,11 +80,44 @@ async function withService<T>(
   }
 }
 
-// ------------------------------------------------------------- landing page
+// ----------------------------------------------------------- chamber entry
 
-test('GET / serves a self-contained landing page with the real service values', async () => {
+test('GET / redirects to the packaged chamber with a relative Location', async () => {
+  await withService(async (_service, origin) => {
+    const response = await fetch(`${origin}/`, { redirect: 'manual' });
+    const body = await response.text();
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), '/chamber/');
+    // A phone reaching the authenticated public origin can never resolve
+    // an absolute loopback URL, so the header must stay relative.
+    const location = response.headers.get('location') ?? '';
+    assert.equal(/^https?:\/\//.test(location), false, 'Location is not absolute');
+    assert.equal(location.includes('127.0.0.1'), false, 'no loopback host');
+    assert.equal(location.includes('localhost'), false, 'no localhost host');
+    assert.equal(body, '', 'the redirect carries no page body');
+  });
+});
+
+test('GET /chamber/ serves the chamber HTML without the diagnostics banner', async () => {
+  await withService(async (_service, origin) => {
+    const response = await fetch(`${origin}/chamber/`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
+    assert.equal(body.includes('UI_NOT_BUNDLED'), false, 'chamber is not a status report');
+    assert.ok(body.includes('The chamber'), 'the chamber page is served');
+    assert.equal(body.includes('/Users/'), false, 'no macOS home path');
+    assert.equal(body.includes('/home/'), false, 'no Linux home path');
+  });
+});
+
+// ----------------------------------------------------------- status page
+
+test('GET /status serves the unchanged diagnostics page', async () => {
   await withService(async (service, origin) => {
-    const response = await fetch(`${origin}/`);
+    const response = await fetch(`${origin}/status`);
     const body = await response.text();
 
     assert.equal(response.status, 200);
@@ -133,6 +173,37 @@ test('GET / serves a self-contained landing page with the real service values', 
   });
 });
 
+// ------------------------------------------------ without packaged assets
+
+test('without packaged chamber assets GET / keeps the honest status page', async () => {
+  const chamberDir = fileURLToPath(new URL('../../public/chamber/', import.meta.url));
+  const parked = fileURLToPath(new URL('../../public/chamber.parked-under-test', import.meta.url));
+  renameSync(chamberDir, parked);
+  try {
+    await withService(async (_service, origin) => {
+      const response = await fetch(`${origin}/`, { redirect: 'manual' });
+      const body = await response.text();
+      assert.equal(response.status, 200, 'no assets: the root serves the status page');
+      assert.match(body, /Council of Wise Elders — service landing/);
+      assert.ok(body.includes('UI_NOT_BUNDLED'), 'the honest blocker is still named');
+
+      const chamber = await fetch(`${origin}/chamber/`, { redirect: 'manual' });
+      assert.equal(chamber.status, 404, 'no assets: the chamber route falls through');
+      assert.equal(chamber.headers.get('location'), null);
+      assert.deepEqual(await chamber.json(), {
+        code: 'SERVICE_ROUTE_NOT_FOUND',
+        detail: 'No service route for GET /chamber/.',
+      });
+
+      const status = await fetch(`${origin}/status`);
+      assert.equal(status.status, 200, 'diagnostics stay reachable in every build');
+      assert.ok((await status.text()).includes('UI_NOT_BUNDLED'));
+    });
+  } finally {
+    renameSync(parked, chamberDir);
+  }
+});
+
 // --------------------------------------------------- existing routes intact
 
 test('every existing route keeps its previous status and body', async () => {
@@ -178,12 +249,21 @@ test('unknown paths still answer the SERVICE_ROUTE_NOT_FOUND 404', async () => {
 
 // ------------------------------------------------------------ scope proof
 
-test('no file outside the two owned paths differs from the base commit', (t) => {
+test('no file outside the owned paths differs from the base commit', (t) => {
   const serviceDir = fileURLToPath(new URL('.', import.meta.url));
   const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
   const allowed = new Set([
     '77-council-of-wise-elders/runtime/src/service/front-door.ts',
+    '77-council-of-wise-elders/runtime/src/service/events.ts',
+    '77-council-of-wise-elders/runtime/src/service/index.ts',
+    '77-council-of-wise-elders/runtime/src/service/front-door-events.test.ts',
     '77-council-of-wise-elders/runtime/src/service/landing.test.ts',
+    '77-council-of-wise-elders/skill-version.txt',
+    '77-council-of-wise-elders/version',
+    '77-council-of-wise-elders/SKILL.md',
+    '77-council-of-wise-elders/CHANGELOG.md',
+    '77-council-of-wise-elders/manifest.json',
+    '77-council-of-wise-elders/council-of-wise-elders.skill',
   ]);
   let status: string;
   try {
@@ -200,8 +280,8 @@ test('no file outside the two owned paths differs from the base commit', (t) => 
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => line.slice(3).trim())
-    // Local dependency scaffolding (a symlink used to run this suite) is
-    // not source; it is ignored by path so real edits cannot hide here.
+    // Local dependency scaffolding (node_modules) is not source; it is
+    // ignored by path so real edits cannot hide here.
     .filter((path) => path.length > 0 && !/(^|\/)node_modules(\/|$)/.test(path));
   const illegal = changed.filter((path) => !allowed.has(path));
   assert.deepEqual(illegal, [], `unexpected changed files: ${illegal.join(', ')}`);

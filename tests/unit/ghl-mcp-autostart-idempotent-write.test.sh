@@ -57,6 +57,84 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # ---------------------------------------------------------------------------
+# PRESENCE CHECK (GHL002): deregister_tier2() was deleted with the community
+# MCP retirement, so its guard body can no longer be extracted. The legacy lock
+# below is NOT deleted -- it stays reachable behind LEGACY_PRESENT, so restoring
+# the function re-arms the original churn assertions instead of bypassing them.
+# While the function is gone, what is locked is the contract that replaced it:
+#   (1) no live line anywhere in the tree writes
+#       `openclaw config set env.vars.GHL_COMMUNITY_MCP_URL` (the churn write
+#       that SIGUSR1'd gateways, comment-stripped so prose cannot hide it),
+#   (2) the GHL002 record naming the deleted function and the deleted write
+#       stays on file (deletion is documented, never silent) -- this doubles as
+#       the control that proves assertion (1) is not matching nothing,
+#   (3) the script refuses to start (START_REFUSED_RETIRED), so no path can
+#       reach a config write behind a service that no longer exists.
+# ---------------------------------------------------------------------------
+LEGACY_PRESENT=0
+if grep -qF 'deregister_tier2() {' "$SCRIPT_UNDER_TEST"; then
+  LEGACY_PRESENT=1
+fi
+
+if [[ "$LEGACY_PRESENT" -eq 0 ]]; then
+  echo "--- RETIRED: deregister_tier2() does not ship; locking the retirement contract instead ---"
+  echo ""
+
+  _code_of() { awk '{ sub(/#.*/, ""); print }' "$1"; }   # live code only
+  C_AUTO="$TMP/code-autostart.txt"
+  C_INSTALL="$TMP/code-install.txt"
+  C_UPDATE="$TMP/code-update.txt"
+  _code_of "$SCRIPT_UNDER_TEST" > "$C_AUTO"
+  _code_of "$REPO_ROOT/install.sh" > "$C_INSTALL"
+  _code_of "$REPO_ROOT/update-skills.sh" > "$C_UPDATE"
+
+  URL_WRITE_RE='openclaw[[:space:]]+config[[:space:]]+set[^|;&]*GHL_COMMUNITY_MCP_URL'
+
+  # (1) the churn write itself must not exist as live code anywhere.
+  if grep -qE "$URL_WRITE_RE" "$C_AUTO"; then
+    fail "1: scripts/ghl-mcp-autostart.sh still carries a LIVE 'openclaw config set ... GHL_COMMUNITY_MCP_URL' write (comment-stripped) — the churn write this test locked is back"
+  else
+    pass "1: no live 'openclaw config set ... GHL_COMMUNITY_MCP_URL' write in scripts/ghl-mcp-autostart.sh (the churn write stayed retired)"
+  fi
+  if grep -qE "$URL_WRITE_RE" "$C_INSTALL"; then
+    fail "2: install.sh still carries a LIVE 'openclaw config set ... GHL_COMMUNITY_MCP_URL' write (comment-stripped) — a fresh install would mutate the URL var again"
+  else
+    pass "2: no live 'openclaw config set ... GHL_COMMUNITY_MCP_URL' write in install.sh"
+  fi
+  if grep -qE "$URL_WRITE_RE" "$C_UPDATE"; then
+    fail "3: update-skills.sh still carries a LIVE 'openclaw config set ... GHL_COMMUNITY_MCP_URL' write (comment-stripped) — a roll would mutate the URL var again"
+  else
+    pass "3: no live 'openclaw config set ... GHL_COMMUNITY_MCP_URL' write in update-skills.sh"
+  fi
+
+  # (2) the deletion record + control: the exact write text is still present in
+  #     raw form (inside the GHL002 note), which is what makes (1) a real test —
+  #     if the pattern itself could not match, (1) would pass vacuously.
+  if grep -qF 'deregister_tier2() is GONE (GHL002)' "$SCRIPT_UNDER_TEST" \
+     && grep -qF 'openclaw config set env.vars.GHL_COMMUNITY_MCP_URL' "$SCRIPT_UNDER_TEST"; then
+    pass "4: GHL002 record still names deregister_tier2() and the exact write that was removed (control: the pattern in (1)-(3) is one that matches)"
+  else
+    fail "4: the GHL002 retirement record (deregister_tier2() + the config-set write) is missing from scripts/ghl-mcp-autostart.sh — the deletion is no longer on file"
+  fi
+
+  # (3) the script refuses to start, so nothing can reach a config write.
+  if grep -qF 'report "START_REFUSED_RETIRED"' "$C_AUTO"; then
+    pass "5: scripts/ghl-mcp-autostart.sh refuses to start (live START_REFUSED_RETIRED) — no live path reaches a config write behind the retired service"
+  else
+    fail "5: scripts/ghl-mcp-autostart.sh no longer reports START_REFUSED_RETIRED on a live line — the retirement refusal is gone"
+  fi
+
+  echo ""
+  echo "=== Results: $PASS passed, $FAIL failed ==="
+  if [[ "$FAIL" -gt 0 ]]; then
+    echo "FAIL: $FAIL check(s) failed -- CI guard triggered"
+    exit 1
+  fi
+  echo "PASS: community-MCP retirement contract holds (deregister_tier2() absent, no live URL-var write, start refused)"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # Extract the write-guard body of deregister_tier2() out of the live script.
 # Bounded by the function open and the (unrelated) `if openclaw mcp list`
 # de-registration block that follows it -- NOT anchored to the guard's own

@@ -11,7 +11,9 @@
  */
 
 export * from './types.js';
+export * from './events.js';
 export * from './identity.js';
 export * from './readiness.js';
 export * from './sessions.js';
 export * from './front-door.js';
+export * from './composition.js';

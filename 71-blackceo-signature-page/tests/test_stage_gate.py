@@ -177,6 +177,42 @@ def fixture_contract(td: Path) -> Path:
     path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
     return path
 
+def production_record(stage, section_ids):
+    """Minimal Item 13 record for a fixture run: one section per slice.
+
+    The fixture contract disables validators (gate:noop), so these tests
+    exercise the artifact requirement only; the record is still shaped as
+    the contract defines it.
+    """
+    return json.dumps({
+        "artifact": "mockup" if stage == "final-mockups" else "wireframe",
+        "stage": stage,
+        "page_width": 1440,
+        "stitched_output": "wireframe-full.png",
+        "sections": [
+            {"section_id": sid,
+             "slice": f"section-{i:02d}.png",
+             "width": 1440,
+             "height": 900,
+             "generation": {
+                 "route": "kie-gpt-image",
+                 "model_id": "resolved-at-build-time-fixture",
+                 "model_source": "latest-family",
+                 "layout_reference": f"{stage}/section-plan.json",
+                 "reference_urls": [],
+                 "style_input": "visual-mockup/page-visual-bible.json",
+                 "native_aspect": "1440x900"},
+             "text_qc": {
+                 "checked_at_native_resolution": True,
+                 "expected_text": "fixture copy",
+                 "readback_text": "fixture copy",
+                 "garbled_words": [],
+                 "verdict": "pass",
+                 "attempts": 1}}
+            for i, sid in enumerate(section_ids, start=1)
+        ],
+    })
+
 
 class StageGateTest(unittest.TestCase):
     def setUp(self):
@@ -404,6 +440,8 @@ class StageGateTest(unittest.TestCase):
         # review covers section-plan.json, mockup.html and bible.md
         # (Item 3); this legacy fixture predates the delta.
         write(run / "desktop-wireframe" / "section-plan.json", "{}")
+        write(run / "desktop-wireframe" / "production-record.json",
+              production_record("desktop-wireframe", ["S01"]))
         write(run / "desktop-wireframe" / "mockup.html", "<html></html>")
         write(run / "desktop-wireframe" / "bible.md", "# bible")
         write(run / "mobile-tablet" / "section-01.png", "stub")
@@ -413,6 +451,8 @@ class StageGateTest(unittest.TestCase):
         # Assembly fix (S8): the assembled contract also requires
         # mobile-tablet/section-plan.json (S3 Request 1 contract reads).
         write(run / "mobile-tablet" / "section-plan.json", "{}")
+        write(run / "mobile-tablet" / "production-record.json",
+              production_record("mobile-tablet", ["S01"]))
         write(run / "visual-mockup" / "page-visual-bible.json",
               json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
@@ -552,6 +592,29 @@ class StageGateTest(unittest.TestCase):
         gate("close", str(run), "image-generation-qc", expect=0, env=env)
         state = json.loads((run / "private" / "state.json").read_text())
         self.assertEqual(state["stages"]["image-generation-qc"]["status"], "closed")
+
+    # ---- (j) GU-016: a run path containing a space must not tear the argv
+    def test_j_per_file_validator_survives_a_run_path_with_spaces(self):
+        # The per-file validator command used to be substituted into a string
+        # and then shlex.split, so every space in the run folder path became an
+        # argument boundary and the real validator (validate_prompt.py) rejected
+        # the torn path. Stage the whole chain under a spaced run path and close
+        # the prompts stage on the REAL contract: the validator must receive the
+        # path as ONE argument, and the stage must close.
+        run = self.td / "run with spaces"
+        env, gate = self.build_image_stage_chain(run, fitted_good_prompt())
+        put_receipt(run, "image-inventory-prompts", author="prompt-writer",
+                    reviewer="prompt-reviewer", scores={"fidelity": 9},
+                    extra={"validator_files": [
+                        "image-inventory-prompts/IMG-001.txt",
+                        "image-inventory-prompts/IMG-002.txt",
+                    ]})
+        proc = gate("close", str(run), "image-inventory-prompts", expect=0, env=env)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("validator exit", combined)
+        self.assertNotIn("unrecognized arguments", combined)
+        state = json.loads((run / "private" / "state.json").read_text())
+        self.assertEqual(state["stages"]["image-inventory-prompts"]["status"], "closed")
 
     def test_g_missing_sauce_block_fails_close_with_real_validator(self):
         # Negative control: a prompt MISSING the Signature Grade Block must fail
@@ -795,6 +858,8 @@ class StageGateTest(unittest.TestCase):
             {"section_id": "offer", "copy_block_ids": ["offer-copy"],
              "image_slot_ids": ["IMG-002"], "reference_traits": []},
         ]))
+        write(run / "desktop-wireframe" / "production-record.json",
+              production_record("desktop-wireframe", ["hero", "offer"]))
         write(run / "mobile-tablet" / "section-01.png", "stub")
         write(run / "mobile-tablet" / "section-02.png", "stub")
         write(run / "mobile-tablet" / "wireframe-full.png", "stub")
@@ -806,6 +871,8 @@ class StageGateTest(unittest.TestCase):
             {"section_id": "offer", "copy_block_ids": ["offer-copy"],
              "image_slot_ids": ["IMG-002"], "reference_traits": []},
         ]))
+        write(run / "mobile-tablet" / "production-record.json",
+              production_record("mobile-tablet", ["hero", "offer"]))
         write(run / "visual-mockup" / "page-visual-bible.json",
               json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
@@ -842,6 +909,12 @@ class StageGateTest(unittest.TestCase):
                 {"section_id": "offer", "slots": [
                     {"slot_id": "IMG-002", "source": "generated",
                      "file": "image-generation-qc/Image-002.png"}]}]}))
+        # Fix 2 (task 3.2): the full page mockup is stitched from the
+        # model-generated section slices and is a stage artifact and
+        # review-cover item of its own.
+        write(run / "final-mockups" / "mockup-full.png", "stub")
+        write(run / "final-mockups" / "production-record.json",
+              production_record("final-mockups", ["hero", "offer"]))
 
         def gate(*args, expect=None):
             return run_gate(*args, expect=expect, env=self.env)
@@ -877,6 +950,7 @@ class StageGateTest(unittest.TestCase):
                                     ("Image-002", {"grade": 9})],
             "final-mockups": [("desktop-part-01", {"composition_fidelity": 9}),
                               ("mobile-part-01", {"composition_fidelity": 9}),
+                              ("mockup-full", {"composition_fidelity": 9}),
                               ("hybrid-board", {"composition_fidelity": 9}),
                               ("mockup", {"composition_fidelity": 9})],
         }

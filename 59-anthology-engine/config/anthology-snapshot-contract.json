@@ -19,6 +19,34 @@
     "caf_location_label": "CONVERT_AND_FLOW_LOCATION_ID",
     "intake_hook_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET"
   },
+  "transport_policy": {
+    "$note": "GU-015: the transport vocabulary this snapshot contract assumes. The public adapter (ghl-public-adapter-0.1) is the PRIMARY route for status/definition reads once its capability is enabled for the tenant; the internal Firebase rail is a BOUNDED fallback (GU-004 B-INTERNAL), never a parity claim. This block records route order only; it changes no gate and no proof level.",
+    "read_primary": {
+      "route": "public-adapter",
+      "operations": ["workflows.list", "workflows.definition.read"],
+      "enablement": "per (operation_id, tenant) capability record; default-deny. Absent or disabled evidence keeps this route off.",
+      "evidence": "GU-004 sections 2.5, 3.2 rule 2 and 5.7"
+    },
+    "read_fallback": {
+      "route": "internal-firebase-rail",
+      "operations": ["GET /workflow/{loc}/list", "GET /workflow/{loc}/{workflowId}"],
+      "bounded": "used only when the public capability is absent/disabled, the adapter is not installed, or the public read refuses; the used route is recorded per run",
+      "blocker": "B-INTERNAL"
+    },
+    "write_route": {
+      "route": "internal-firebase-rail",
+      "reason": "public V4 definition writes stay disabled (B-V4-S, staging-only) and public publish parity is unverified; no public write is claimed"
+    },
+    "parity": "unverified: the public and internal payload shapes have never been proven equivalent",
+    "preserved_gates": {
+      "credential_gate": "scripts/caf_credential_gate.py runs FIRST: live-process-first label resolution across the client env stores, PIT+Location pairing, exit 2 for a missing label, no value or full fingerprint printed",
+      "hmac_participant_gate": {
+        "secret_label": "ANTHOLOGY_GATE_TOKEN_SECRET",
+        "rule": "per-client 64-char hex HMAC secret mints and verifies scoped participant gate tokens/PINs; a foreign, expired or replayed token is refused; no shared operator secret"
+      },
+      "no_commingling": "AF-AE-COMMINGLE fingerprint: operator/shared/foreign-client value collisions, expected-own mismatch and denylisted fingerprints exit 4; the client's own Convert and Flow keys only"
+    }
+  },
   "pipeline": {
     "$note": "GoHighLevel / Convert and Flow exposes NO public v2 API to CREATE a pipeline -- pipelines are UI-only. The snapshot MUST pre-create this pipeline with the EXACT name and the EXACT stage names below; onboarding (provision-anthology-client.sh step 3) then FINDS it BY NAME and BINDS it through the client's OWN PIT. Both the name and every stage name are load-bearing; they must byte-equal config/field-map.json pipeline.standard_pipeline_name + standard_stages (drift gate assertion).",
     "name": "Anthology Engine",
@@ -410,7 +438,7 @@
     "$note": "The single biggest thing a real snapshot must ADD beyond field/pipeline/form parity: the tag-triggered notification automation. The engine emits anthology-release-* tags but the GHL automation that turns a release tag into the client-facing email + SMS is NOT shipped in the repo (scan-no-json-exports.sh bans workflow JSON exports; the only n8n asset present is the unrelated Drive credential broker). This block is a CONTRACT DESCRIPTION (trigger + ordered actions + per-stage link fields), deliberately NOT an n8n/GHL workflow JSON export (no connections/pinData node graph), so it documents what the snapshot carries without tripping the export-leak scanner. The concrete per-stage set the snapshot MUST carry is release_notifications below: EIGHT tag->notification workflows, built once in the operator's OWN template location via the Skill 44 caf Firebase build rail, that turn each release tag into the author's producer-branded EMAIL + link-only SMS.",
     "built_in_template": true,
     "template_folder": "Anthology Engine",
-    "build_rail": "Skill 44 convert-and-flow-operator, caf workflows build (internal Firebase rail), against template location 2HIKGNgsixWx0yds7Qnx",
+    "build_rail": "Skill 44 convert-and-flow-operator: public status/definition adapter when its capability is enabled for the tenant (GU-004 sections 2.5, 5.7); otherwise the caf workflows build internal Firebase rail as the bounded fallback, against template location 2HIKGNgsixWx0yds7Qnx",
     "copy_law": {
       "$note": "Trevor's verbatim law for every client-facing word in these workflows.",
       "editors_never_ai": true,
@@ -421,7 +449,7 @@
       "standing_instruction": "The PDF is yours to view. The Google Doc is the one you edit, and it is the version we use.",
       "per_stage_links": "each email carries that stage's PDF (VIEW) link plus editable Google Doc (EDIT) link pulled from the matching config/field-map.json deliverable_fields contact custom fields"
     },
-    "publish_state_note": "The caf Firebase build rail creates these as GHL workflow DRAFTS with their contact_tag triggers created ACTIVE (built with CAF_DRAFT_ONLY=false). Each must be PUBLISHED (one Publish toggle per workflow in the Convert and Flow UI) before it fires live; the build rail wires trigger + email + SMS but exposes no verifiable publish toggle (the internal GET does not surface publish status). Enable the three LIVE slugs (avatar/tone/outline) first; the three wired-ahead slugs (chapter/rewrite/cover) when those producer gates land in gate_engine.py GATE_BY_CURSOR; final/delivered are doctrine-ahead.",
+    "publish_state_note": "The build rail creates these as GHL workflow DRAFTS with their contact_tag triggers created ACTIVE (built with CAF_DRAFT_ONLY=false). Each must be PUBLISHED (one Publish toggle per workflow in the Convert and Flow UI) before it fires live; the rail wires trigger + email + SMS but exposes no verifiable publish toggle (the internal GET does not surface publish status). Enable the three LIVE slugs (avatar/tone/outline) first; the three wired-ahead slugs (chapter/rewrite/cover) when those producer gates land in gate_engine.py GATE_BY_CURSOR; final/delivered are doctrine-ahead.",
     "per_client_sms_phone_flag": "SMS steps require a provisioned LeadConnector phone number in each client's Convert and Flow sub-account (PRD Gap G15). Without a number the SMS step silently no-ops (the email still sends). Add to the per-client onboarding checklist.",
     "release_notifications": [
       {

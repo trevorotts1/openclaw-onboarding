@@ -37,8 +37,13 @@ _ENVELOPE_FIELDS = {
     # with the dispatch and is echoed into the receipt (packet section
     # 2 step 2 / section 4). Optional: only seam dispatches carry it.
     "handoff_sha256",
+    # GU-018: optional per-dispatch evidence demand. When present, every
+    # named field must be declared producible by this receiver+executor
+    # or the dispatch is refused by field name before any engine call.
+    "required_evidence",
 }
-_REQUIRED = _ENVELOPE_FIELDS - {"notes", "handoff_sha256"}
+_REQUIRED = _ENVELOPE_FIELDS - {"notes", "handoff_sha256",
+                                "required_evidence"}
 
 _HEX = set("0123456789abcdef")
 
@@ -53,8 +58,57 @@ def plan_hash(plan: dict) -> str:
         json.dumps(plan, sort_keys=True).encode()).hexdigest()
 
 
+# ── GU-018 evidence carrier: declare only what can be produced ───────
+# The receiver fills exactly these fields from its own state and from
+# the Executor protocol's return values. Nothing outside this set is
+# ever reported as produced; `evidence.producible_fields` on a receipt
+# is an intersection with the executor's own declaration, so an
+# executor can narrow it but never widen it.
+RECEIVER_DERIVED_FIELDS = frozenset({
+    "name", "folder", "build_method", "trigger", "qc.script",
+    "readback_summary",
+})
+EXECUTOR_DERIVED_FIELDS = frozenset({
+    "build_stats", "readback", "qc.exit_code", "qc.rubric",
+})
+RECEIVER_EVIDENCE_FIELDS = RECEIVER_DERIVED_FIELDS | EXECUTOR_DERIVED_FIELDS
+
+# Stage-14 contract fields no surface this receiver drives can produce
+# (the existing _UNPRODUCIBLE_STAGE14 prose names the same set: the
+# conversational trigger array, the GHL pack version, and the checklist
+# instance / completion / WF item-count detail). A request requiring
+# one is refused by name; a receipt never substitutes a placeholder and
+# never labels the carrier complete.
+UNPRODUCIBLE_EVIDENCE_FIELDS = frozenset({
+    "conversational", "ghl_pack_version",
+    "qc.checklist_instance", "qc.checklist_complete", "qc.wf_items",
+})
+
+def executor_evidence_fields(executor) -> frozenset:
+    """The evidence fields this receiver+executor pair can actually
+    fill. An Executor may declare EVIDENCE_FIELDS (a frozenset) or an
+    evidence_fields() callable; the declaration is intersected with
+    what the receiver has code to compute, never trusted to widen it.
+    An executor that declares nothing keeps the protocol baseline."""
+    declared = getattr(executor, "EVIDENCE_FIELDS", None)
+    if declared is None:
+        probe = getattr(executor, "evidence_fields", None)
+        if callable(probe):
+            try:
+                declared = probe()
+            except Exception:
+                declared = None
+    if isinstance(declared, (set, frozenset, list, tuple)):
+        return RECEIVER_EVIDENCE_FIELDS & (
+            RECEIVER_DERIVED_FIELDS | frozenset(declared))
+    return RECEIVER_EVIDENCE_FIELDS
+
 class Executor(Protocol):
-    """The governed engine surface the receiver drives."""
+    """The governed engine surface the receiver drives.
+
+    Optional: `EVIDENCE_FIELDS` (frozenset of field names this executor
+    can fill) or `evidence_fields()`. Omitting it means the documented
+    receiver baseline; declaring a subset narrows the carrier."""
     def probe(self) -> dict:
         """Capability evidence: {"token_state": healthy|absent|revoked|
         degraded, "access_tier_used": str, ...}"""
@@ -74,6 +128,9 @@ class Receiver:
         self.store = store
         self.executor = executor
         self.configured_location = configured_location
+        # Resolved once per receiver: the exact evidence the carrier can
+        # fill. Requests are checked against this set before any build.
+        self.evidence_fields = executor_evidence_fields(executor)
 
     # ── refusals write nothing (exit discipline) ─────────────────────────
     def _refuse(self, request: dict, exit_code: int, code: str,
@@ -112,6 +169,26 @@ class Receiver:
                 "HANDOFF_HASH_INVALID",
                 "handoff_sha256 is present but is not a 64-character "
                 "SHA-256 hex string")
+        # 1c. evidence demand (GU-018): a request may name the evidence
+        # fields it needs. Every one must be in the declared carrier
+        # set; anything else is refused BY NAME before any engine call,
+        # never filled with a placeholder and never reported complete.
+        required_evidence = request.get("required_evidence")
+        if required_evidence is not None:
+            if not isinstance(required_evidence, list) or not all(
+                    isinstance(field, str) and field
+                    for field in required_evidence):
+                return self._refuse(
+                    EXIT_VALIDATION, "REQUIRED_EVIDENCE_INVALID",
+                    "required_evidence must be a list of non-empty "
+                    "field names")
+            unmet = sorted(set(required_evidence)
+                           - self.evidence_fields)
+            if unmet:
+                return self._refuse(
+                    EXIT_VALIDATION, "EVIDENCE_UNPRODUCIBLE",
+                    "executor cannot produce required evidence fields: "
+                    f"{unmet}")
         # 2. deploy mode: fail-closed, never defaulted
         if request["deploy_mode"] != "draft-only":
             return self._refuse(request, EXIT_VALIDATION, "DEPLOY_MODE",
@@ -166,14 +243,21 @@ class Receiver:
         if prior and prior["receipt"]:
             prior_ops = {op["slug"]: op
                          for op in prior["receipt"].get("operations", [])}
+        required = set(request.get("required_evidence") or [])
         all_ok = True
         for slug, builder_plan in builder_plans:
             if slug in prior_ops and prior_ops[slug].get("workflow_id"):
                 op = prior_ops[slug]  # resume: never rebuild what exists
                 op["status_claimed"] = "reused"
+                if "evidence" not in op:
+                    self._attach_evidence(op)
+                if self._check_required_evidence(op, required):
+                    all_ok = False
                 receipt["operations"].append(op)
                 continue
             op = self._execute_one(request, slug, builder_plan, probe)
+            if self._check_required_evidence(op, required):
+                all_ok = False
             receipt["operations"].append(op)
             if op["status_claimed"] not in ("created", "reused"):
                 all_ok = False
@@ -183,6 +267,12 @@ class Receiver:
         for entry in exceptions:
             receipt["operations"].append(
                 self._exception_op(entry))
+        # Required evidence that was declared producible but did not
+        # actually land is named on the receipt and drags the verdict.
+        receipt["evidence"]["unmet_required_fields"] = sorted({
+            field for op in receipt["operations"]
+            for field in (op.get("evidence") or {}).get(
+                "unmet_required_fields", [])})
         # Top-level stage-14 form_exceptions (artifact-contracts.md:657):
         # the packet-sanctioned no_workflow_reason entries, verbatim.
         receipt["form_exceptions"] = [
@@ -213,23 +303,103 @@ class Receiver:
               "readback_summary": {"exists": False, "status": None}}
         if entry.get("form_id"):
             op["form_id"] = entry["form_id"]
+        return Receiver._attach_evidence(op)
+
+    @staticmethod
+    def _op_produced_fields(op: dict) -> list[str]:
+        """Evidence fields this operation actually carries a value for.
+        A declared-but-unfilled field is absent here, never assumed."""
+        qc = op.get("qc") or {}
+        produced = []
+        for field, value in (
+                ("name", op.get("name")),
+                ("folder", op.get("folder")),
+                ("build_method", op.get("build_method")),
+                ("trigger", op.get("trigger")),
+                ("qc.script", qc.get("script")),
+                ("qc.exit_code", qc.get("exit_code")),
+                ("qc.rubric", qc.get("rubric")),
+                ("build_stats", op.get("build_stats")),
+                ("readback", op.get("readback")),
+                ("readback_summary", op.get("readback_summary"))):
+            if value is not None:
+                produced.append(field)
+        return produced
+
+    @staticmethod
+    def _attach_evidence(op: dict) -> dict:
+        """Attach the per-operation carrier declaration: what this op
+        produced, and which stage-14 fields no surface can produce."""
+        op["evidence"] = {
+            "produced": Receiver._op_produced_fields(op),
+            "unproducible": sorted(UNPRODUCIBLE_EVIDENCE_FIELDS),
+        }
         return op
+
+    @staticmethod
+    def _check_required_evidence(op: dict, required: set) -> list[str]:
+        """Downgrade an operation whose declared-producible required
+        evidence did not actually land. The unmet field is named in the
+        operation's errors and recorded in its evidence block; the
+        expectation list gains a failing check so judge_receipt reports
+        FAILED_CHECKS rather than a verified claim."""
+        if not required or op.get("status_claimed") == "skipped":
+            return []
+        produced = set((op.get("evidence") or {}).get("produced", []))
+        missing = sorted(required - produced)
+        if missing:
+            op["evidence"]["unmet_required_fields"] = missing
+            op.setdefault("errors", []).append(
+                "required evidence not produced: " + ", ".join(missing))
+            op.setdefault("expect", []).append(
+                {"name": "required_evidence_present", "ok": False})
+        return missing
 
     # ── internals ────────────────────────────────────────────────────────
     # Stage-14 fields the receiver cannot produce from its own state or
     # its executor contract. They are named in the receipt's notes on
     # seam dispatches (design 1.2: an omission that is not named is a
     # defect), never invented.
+    # Per-field upstream limitation (2026-10-19 reconciliation; every
+    # claim re-checked against the surfaces named):
+    #   workflows[].trigger — producible ONLY from the envelope's
+    #     declared origin {form_submitted, form_id}. The native caf
+    #     export carries triggers: [] because the trigger lives in a
+    #     separate bucket file; the object carries only the POINTER
+    #     (triggersFilePath + isTriggerBucketMigrated). `caf workflows`
+    #     has no bucket read verb (list/get/export/build/patch-*/
+    #     restore only) and internal/endpoints.py defines no such path,
+    #     so bucket contents cannot be fetched. Absent a declared
+    #     origin the field stays None.
+    #   workflows[].mechanism — producible from the declared mechanism,
+    #     else DERIVED from the plan's tag (the verbatim tag the
+    #     builder sends to POST /workflow/{loc}/trigger). None only
+    #     when no surface carries a tag.
+    #   qc.wf_items — PRODUCED from the QC script's own `items` object
+    #     (PASSed/total, see caf_executor._run_qc).
+    #   qc.checklist_instance — NOT producible here: qc-built-workflow.sh
+    #     emits items + rubric to stdout and appends build-events.jsonl;
+    #     it writes no checklist instance file, and the receiver has no
+    #     run_dir to file the contract's automation-wiring/ artifact in.
+    #   qc.checklist_complete — NOT producible here: the script's
+    #     overall_mechanical covers mechanical items only; the
+    #     REQUIRES_HUMAN_REVIEW items are graded by the Step-9 QC agent.
+    #   conversational / conversational_overrides /
+    #   conversational_not_present — derived by the stage-14 mapper from
+    #     the handoff's form roles; the dispatch envelope carries none.
+    #   ghl_pack_version — no executor or caf surface reports it.
     _UNPRODUCIBLE_STAGE14 = (
-        "conversational (the envelope carries no form roles, so the "
-        "derived opt-in/purchase/booking trigger set cannot be computed "
-        "receiver-side; it is derived by the stage-14 mapper from the "
-        "handoff), conversational_overrides (owner-approved exceptions "
-        "are not on the envelope), conversational_not_present (derived "
-        "with the trigger set), ghl_pack_version (no executor surface "
-        "reports it), qc.checklist_instance path, qc.checklist_complete "
-        "and the WF item count (no checklist instance is created through "
-        "the executor contract)")
+        "conversational, conversational_overrides, "
+        "conversational_not_present (the envelope carries no form "
+        "roles; the stage-14 mapper derives the trigger set from the "
+        "handoff); ghl_pack_version (no executor or caf surface reports "
+        "it); workflows[].trigger when the envelope declares no origin "
+        "(the native export carries only the trigger-bucket POINTER — "
+        "triggersFilePath + isTriggerBucketMigrated — and caf has no "
+        "bucket read verb); qc.checklist_instance (qc-built-workflow.sh "
+        "creates no checklist artifact and the receiver has no run_dir); "
+        "qc.checklist_complete (human-review WF items are graded by the "
+        "Step-9 QC agent, not the executor)")
 
     def _receipt_shell(self, request: dict, probe: dict) -> dict:
         notes = list(request.get("notes", []))
@@ -263,6 +433,19 @@ class Receiver:
             "status_claimed": None,
             "operations": [],
             "notes": notes,
+            # GU-018 carrier declaration: exactly what this receiver+
+            # executor pair can fill, and the stage-14 fields it cannot.
+            # `unmet_required_fields` is filled after execution, from
+            # the operations' own produced lists.
+            "evidence": {
+                "producible_fields": sorted(self.evidence_fields),
+                "unproducible_fields": sorted(
+                    UNPRODUCIBLE_EVIDENCE_FIELDS
+                    - self.evidence_fields),
+                "required_fields": sorted(
+                    request.get("required_evidence") or []),
+                "unmet_required_fields": [],
+            },
             "execution": {
                 "execution_id": "exec_" + uuid.uuid4().hex[:12],
                 "access_tier_used": probe.get("access_tier_used", "unknown"),
@@ -422,14 +605,46 @@ class Receiver:
         return None
 
     @staticmethod
-    def _trigger_bound(declared: dict, export: dict) -> bool:
+    def _effective_mechanism(declared: dict, builder_plan: dict,
+                             slug: str):
+        """The mechanism recorded on the receipt, from the best
+        upstream surface available:
+          1. the envelope's declared mechanism (seam packet section 3);
+          2. the plan's own `tag` — workflow_builder.py realizes a tag
+             build as a contact_tag trigger (`wf_def["tag"]` is the
+             verbatim tag it sends to POST /workflow/{loc}/trigger);
+          3. a legacy declared trigger {type: "contact_tag", tag}.
+        None when no surface carries one — never an invented value."""
+        mechanism = declared.get("mechanism")
+        if isinstance(mechanism, dict):
+            return mechanism
+        wf_def = builder_plan.get(slug)
+        tag = wf_def.get("tag") if isinstance(wf_def, dict) else None
+        if not (isinstance(tag, str) and tag.strip()):
+            legacy = declared.get("trigger")
+            if isinstance(legacy, dict) \
+                    and legacy.get("type") == "contact_tag":
+                candidate = legacy.get("tag")
+                if isinstance(candidate, str) and candidate.strip():
+                    tag = candidate
+        if isinstance(tag, str) and tag.strip():
+            return {"type": "contact_tag", "tag": tag}
+        return None
+
+    @staticmethod
+    def _trigger_bound(declared: dict, export: dict,
+                       mechanism: Optional[dict] = None) -> bool:
         """Trigger check against the packet contract. The native
         trigger the mechanism must realize in the export: for a
         contact_tag mechanism, a contact_tag trigger (and, where the
         export carries the tag, the VERBATIM Phase-A tag string — a
         drifted tag is a receipt-level defect); for a native
         mechanism, the form_submitted origin trigger itself. Legacy
-        requests keep the declared `trigger` type check."""
+        requests keep the declared `trigger` type check.
+
+        `mechanism` is the EFFECTIVE mechanism: the declared one when
+        present, otherwise the one derived from the plan's tag (see
+        _effective_mechanism)."""
         triggers = export.get("triggers", [])
         observed_types = [t.get("type") for t in triggers]
         if not triggers:
@@ -450,7 +665,8 @@ class Receiver:
                                    str) \
                     and evidence.get("triggers_file_path"):
                 return True
-        mechanism = declared.get("mechanism")
+        mechanism = mechanism if mechanism is not None \
+            else declared.get("mechanism")
         if mechanism:
             mtype = mechanism.get("type")
             if mtype == "contact_tag":
@@ -475,6 +691,7 @@ class Receiver:
                      builder_plan: dict, probe: dict) -> dict:
         declared = next(w for w in request["workflows"]
                         if w.get("slug") == slug)
+        mechanism = self._effective_mechanism(declared, builder_plan, slug)
         op = {"slug": slug, "status_claimed": "failed", "workflow_id": None,
               "expect": [], "readback": None, "errors": [],
               # design 1.4 / packet section 4 per-operation fields the
@@ -485,7 +702,9 @@ class Receiver:
               "trigger": self._trigger_record(declared),
               # artifact-contracts.md:663-664: the mechanism recorded
               # alongside the trigger, not only nested inside it.
-              "mechanism": declared.get("mechanism"),
+              # Declared first; else derived from the plan tag the
+              # builder actually sends (see _effective_mechanism).
+              "mechanism": mechanism,
               "qc": {"script": "qc-built-workflow.sh",
                      "exit_code": None, "rubric": None,
                      "checklist_instance": None,
@@ -500,13 +719,13 @@ class Receiver:
             request["location_id"], declared)
         if missing:
             op["errors"].append(f"missing dependencies: {missing}")
-            return op
+            return self._attach_evidence(op)
         # snapshot-or-abort (AC20)
         if not self.executor.snapshot(request["location_id"], slug):
             op["errors"].append(
                 "pre-write snapshot failed: state unreadable, build "
                 "aborted with no write sent")
-            return op
+            return self._attach_evidence(op)
         result = self.executor.build(builder_plan)
         op["errors"] = list(result.get("errors", []))
         # Full build stats recorded on the receipt (MAIN layer-9
@@ -528,7 +747,7 @@ class Receiver:
             "ok": bool(result.get("workflow_id") and export)})
         checks.append({
             "name": "trigger_bound",
-            "ok": self._trigger_bound(declared, export)})
+            "ok": self._trigger_bound(declared, export, mechanism)})
         checks.append({
             "name": "steps_match_contract",
             "ok": len(export.get("steps", [])) ==
@@ -557,7 +776,7 @@ class Receiver:
         if result.get("exit_code") == 0 and result.get("workflow_id") \
                 and all(c["ok"] for c in checks):
             op["status_claimed"] = "created"
-        return op
+        return self._attach_evidence(op)
 
 
 def judge_receipt(receipt: dict) -> dict:
@@ -574,6 +793,11 @@ def judge_receipt(receipt: dict) -> dict:
             # verify — and nothing to fail. It is judged SKIPPED and
             # excluded from the overall computation.
             verdicts[op["slug"]] = "SKIPPED"
+            continue
+        # A request that demanded evidence this dispatch did not produce
+        # is a judge failure by name, never silently verified.
+        if (op.get("evidence") or {}).get("unmet_required_fields"):
+            verdicts[op["slug"]] = "FAILED_CHECKS"
             continue
         claimed_id = op.get("workflow_id")
         readback = op.get("readback") or {}
@@ -670,6 +894,11 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
                 wf["trigger"] = {"type": "form_submitted",
                                  "form_id": origin["form_id"]}
             else:
+                # Upstream limitation, named not invented: the native
+                # export exposes only the trigger-bucket pointer
+                # (triggersFilePath + isTriggerBucketMigrated) and caf
+                # has no verb to read the bucket file. A form_id can
+                # only come from the envelope's declared origin.
                 wf["trigger"] = None
                 unproducible.append(f"workflows[{i}].trigger")
             mechanism = op.get("mechanism")
@@ -683,6 +912,9 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
             qc_in = op.get("qc") or {}
             wf["qc"] = {"script": qc_in.get("script"),
                         "exit_code": qc_in.get("exit_code")}
+            # wf_items is produced by the executor from the QC script's
+            # own `items` object; checklist_instance / checklist_complete
+            # have no producer on this path (see _UNPRODUCIBLE_STAGE14).
             for key in ("checklist_instance", "checklist_complete",
                         "wf_items"):
                 wf["qc"][key] = qc_in.get(key)

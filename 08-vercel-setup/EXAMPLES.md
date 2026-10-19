@@ -79,7 +79,7 @@ AI: "Click 'Create' and fill in these settings:
 Then click 'Create Token'. IMPORTANT: The token will only be shown ONCE!
 Copy it immediately and paste it here."
 
-USER: "oEYwm7BpJVvtywdi6F6B5ymr"
+USER: "<VERCEL_TOKEN-REDACTED-ROTATE>"
 
 AI: "I've saved your Vercel token securely. Let me run a quick test..."
 [AI runs verification command]
