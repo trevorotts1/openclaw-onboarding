@@ -32,6 +32,14 @@ printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$T/fix/oc-schema-migrate.py"
 printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] weekly-full-update $*"' 'exit 0' > "$T/fix/weekly-full-update.sh"
 
 # curl stub: copy the matching fixture instead of hitting the network.
+# git stub: the F3 step clones 999 when absent. Refuse here so nothing leaves
+# the box; the job must record the failure and CONTINUE to the later steps.
+cat > "$T/bin/git" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = "--version" ] && { echo "git version 2.0"; exit 0; }
+exit 1
+EOF
+
 cat > "$T/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 url=""; dest=""
@@ -48,14 +56,14 @@ src="$FIXTURES/$(basename "$url")"
 [ -f "$src" ] || { echo "curl-stub: no fixture for $(basename "$url")" >&2; exit 22; }
 cp "$src" "$dest"
 EOF
-chmod 700 "$T/bin/curl"
+chmod 700 "$T/bin/curl" "$T/bin/git"
 
 # The caller's exact delivery path.
 COPY="/tmp/openclaw-self-update-$ROLL.sh"
 cp "$SRC" "$COPY" || exit 1
 
 CMD="bash $COPY --roll-id $ROLL --openclaw-target $OC_TARGET --ninerouter-target $NR_TARGET --foreground"
-STATUS="$T/root/self-update/$ROLL.status"
+STATUS="$T/root/fleet-refresh/agent-pull-status.json"
 LOG="$T/root/self-update/$ROLL.log"
 echo "running: $CMD"
 
@@ -71,12 +79,36 @@ echo "exit=$RC"
 fail=0
 [ -f "$STATUS" ] || { echo "FAIL: no status file at $STATUS"; fail=1; }
 [ -f "$LOG" ]    || { echo "FAIL: no log file at $LOG"; fail=1; }
-grep -qx "roll_id=$ROLL" "$STATUS" 2>/dev/null || { echo "FAIL: status carries no roll_id=$ROLL"; fail=1; }
 grep -q -- "roll=$ROLL" "$LOG" 2>/dev/null || { echo "FAIL: log did not record the roll id"; fail=1; }
 grep -q -- "openclaw=$OC_TARGET" "$LOG" 2>/dev/null || { echo "FAIL: --openclaw-target was not parsed"; fail=1; }
 grep -q -- "ninerouter=$NR_TARGET" "$LOG" 2>/dev/null || { echo "FAIL: --ninerouter-target was not parsed"; fail=1; }
-# 22 means the parser rejected the contract. On macOS the run then stops at the
-# missing 999 checkout (23); elsewhere the Mac steps are skipped (0).
+if [ -f "$STATUS" ]; then
+  python3 -I - "$STATUS" "$ROLL" <<'PY' || { echo "FAIL: status JSON is not the 10.9 contract"; fail=1; }
+import json, sys
+d = json.load(open(sys.argv[1]))
+need = ("run_id roll_id phase started_utc updated_utc finished_utc step_exit_codes "
+        "stamp_before stamp_after openclaw_before openclaw_after ninerouter_before "
+        "ninerouter_after rolled_back needs_host_restart stuck_reason error_tail").split()
+missing = [k for k in need if k not in d]
+if missing:
+    print("missing fields: %s" % missing)
+    raise SystemExit(1)
+if d["roll_id"] != sys.argv[2]:
+    print("roll_id %r != %r" % (d["roll_id"], sys.argv[2]))
+    raise SystemExit(1)
+if not isinstance(d["step_exit_codes"], dict):
+    print("step_exit_codes is not a dict")
+    raise SystemExit(1)
+PY
+  # F3: the order is 999 -> 9router -> upgrade -> update, and a failed 999 step
+  # does not stop the later ones.
+  ORDER="$(grep -o 'STEP [a-z0-9-]*' "$LOG" | head -4 | tr '\n' ' ')"
+  [ "$ORDER" = "STEP 999-setup STEP 9router STEP upgrade STEP update " ] \
+    || { echo "FAIL: step order: $ORDER"; fail=1; }
+fi
+# 22 means the parser rejected the contract. On macOS with the git stub refusing
+# the clone, 999 is 23 and the job still runs the rest; the exit is the FIRST
+# failed step (23). Elsewhere the Mac steps are skipped (0).
 case "$RC" in
   22) echo "FAIL: parser rejected the caller's flags (exit 22)"; fail=1 ;;
   0|23) : ;;
@@ -85,7 +117,7 @@ esac
 
 if [ -f "$STATUS" ]; then
   echo "--- parsed values (from the run's own status/log) ---"
-  grep -E '^(step|roll_id|exit_code|gh_auth)=' "$STATUS"
+  python3 -I -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d[k] for k in ("run_id","roll_id","phase","step_exit_codes","finished_utc")},sort_keys=True))' "$STATUS"
   sed -n 's/.*openclaw=\([^ ]*\) ninerouter=\([^ ]*\).*/openclaw_target=\1 ninerouter_target=\2/p' "$LOG" | head -1
 fi
 
