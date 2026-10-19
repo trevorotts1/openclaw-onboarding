@@ -82,7 +82,6 @@ import re
 import subprocess
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -138,24 +137,7 @@ GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"
 # in their own named folder; the "upload to root with a name prefix" fallback
 # (media_folder_name_prefix) covers a GHL plan that does not expose this endpoint.
 GHL_MEDIA_FOLDER_PATH = "/medias/folder"
-# Media LIST (live-verified 2026-10-19): GET /medias/files REQUIRES a `type`
-# query parameter. Without it the API answers 422 "type must be a string / type
-# should not be empty"; with type=file it answers 200 {files,count,traceId}.
-GHL_MEDIA_LIST_PATH = "/medias/files"
-GHL_MEDIA_LIST_TYPES = ("file", "image", "video", "audio", "document")
-# The LIST read is the v3 media surface (live-verified 2026-10-19); upload and
-# folder creation stay on the proven 2021-07-28 tier below.
-GHL_MEDIA_LIST_VERSION = "v3"
 GHL_MEDIA_VERSION = "2021-07-28"
-
-# services.* sits behind a Cloudflare edge WAF that 403s (error code 1010) the
-# bare-Python default ``Python-urllib/3.x`` User-Agent (repo evidence:
-# FIX11-QC-EVIDENCE.md). The list read sets a browser UA so the call is not
-# signature-blocked before it reaches GHL.
-_GHL_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-)
 
 # The mandatory English/Latin-only pin — appended VERBATIM to every prompt that
 # renders copy (carried verbatim from kie_generate.py's module docstring so the
@@ -833,6 +815,11 @@ def upload_media(
     NOT Cloudflare-WAF-gated). FAIL-LOUD: a non-2xx response, or a 2xx with no
     ``fileId``/``url``, raises (we never fabricate a CDN URL).
 
+    NAMED GAP (GHL-169): ``media.upload`` is a registered row, but the public
+    adapter carries JSON bodies only and the row declares no readback plan, so
+    no supported adapter route can send this multipart write. See
+    ``ghl_route_gaps.py`` entry ``ghl_media.py:860``.
+
     Args:
         png_path: Local PNG to upload (must be a real PNG — re-verified).
         location_id: The GHL sub-account location id (fixture ``Mct54...``).
@@ -919,16 +906,20 @@ def upload_media(
     }
 
 
-# ── 3a) list_media — REQUIRED-type media list (GET /medias/files) ─────────────
+# ── 3a) list_media — REQUIRED-type media list, routed through the adapter ────
+#
+# GHL-169: media LIST is the one media operation moved onto the frozen public
+# adapter. `type` is a REQUIRED GET /medias/files query parameter (a bare call
+# answers 422 "type must be a string / type should not be empty"); the type gate
+# runs BEFORE the adapter is built, so a missing/out-of-set value never reaches
+# a transport. `media.upload` and `media.folders.create` stay on the raw path
+# and are declared named gaps in ghl_route_gaps.py.
+
+MEDIA_LIST_TYPES = ("file", "image", "video", "audio", "document")
+
 
 class MediaListTypeError(ValueError):
-    """Media LIST refused before any HTTP: ``type`` missing or outside the set.
-
-    ``type`` is a REQUIRED ``GET /medias/files`` query parameter (a call without
-    it returns 422, not a list), so this is raised BEFORE a Request is built or
-    an opener is touched. Subclasses ``ValueError`` so existing "bad argument"
-    handling keeps working while callers can catch the precise class.
-    """
+    """Media LIST refused before any HTTP: ``type`` missing or outside the set."""
 
 
 class MediaListError(RuntimeError):
@@ -942,105 +933,69 @@ def list_media(
     media_type: str | None = None,
     timeout: int = 60,
     opener: Callable[[urllib.request.Request, int], Any] | None = None,
+    capability: Any = None,
+    capability_record: str | None = None,
 ) -> dict:
-    """List one media category in the GHL media library.
+    """List one media category through the frozen public adapter.
 
-    Live-verified contract (2026-10-19): ``GET services.leadconnectorhq.com/
-    medias/files`` REQUIRES a ``type`` query parameter. Without it the API
-    returns 422 ``type must be a string / type should not be empty``; with
-    ``type=file`` it returns 200 ``{files, count, traceId}``. Documented values
-    observed working: ``file``, ``image``, ``video``, ``audio``, ``document``.
-    The request carries ``Version: v3`` (the media v3 surface), the LOCATION
-    Bearer PIT, and a browser User-Agent (bare urllib UA is WAF-1010 blocked).
+    ``GET /medias/files`` REQUIRES a ``type`` query parameter. Without it the API
+    answers 422; with ``type=file`` it answers 200 ``{files, count, traceId}``.
+    The operation row supplies the Version (``v3``); this module carries no
+    media-list version literal and no origin/path literal for the call.
 
     FAIL-LOUD: a missing/invalid ``media_type`` raises ``MediaListTypeError``
-    BEFORE any HTTP attempt; non-2xx, non-JSON, or a body without a ``files``
-    list raises ``MediaListError`` (never a fabricated empty listing).
-
-    Sits on the bare-Python side of the auth split with the same auth model as
-    ``upload_media`` (``services.*`` + Bearer LOCATION PIT).
+    BEFORE any adapter/transport construction. A capability refusal (the
+    default-deny record) or a non-2xx/malformed response raises
+    ``MediaListError`` — never a fabricated empty listing.
 
     Args:
         location_id: The GHL sub-account location id.
         pit: The LOCATION Private Integration Token (Bearer).
-        media_type: REQUIRED category — one of ``GHL_MEDIA_LIST_TYPES``
-            (``file``, ``image``, ``video``, ``audio``, ``document``); case and
+        media_type: REQUIRED category — one of ``MEDIA_LIST_TYPES``; case and
             surrounding whitespace are ignored.
         timeout: HTTP timeout seconds.
-        opener: Optional ``(Request, timeout) -> response-like`` for tests (mock
-            the HTTP). Default = ``urllib.request.urlopen`` (real call).
+        opener: Optional ``(Request, timeout) -> response-like`` for tests.
+        capability: Optional ``CapabilityGate``; omitted = checked-in record
+            (default-deny).
+        capability_record: Optional explicit capability-record path.
 
     Returns:
         ``{files, count, traceId, http}``.
-
-    Raises:
-        MediaListTypeError: ``media_type`` missing or outside the documented set.
-        MediaListError: non-2xx HTTP, non-JSON body, or a body with no ``files``.
-        ValueError: missing ``location_id`` / ``pit``.
     """
+    import ghl_public_client as client
+
     normalized = str(media_type).strip().lower() if media_type is not None else ""
     if not normalized:
         raise MediaListTypeError(
             "media LIST requires an explicit type: pass media_type= one of "
-            f"{', '.join(GHL_MEDIA_LIST_TYPES)}. `type` is a REQUIRED "
+            f"{', '.join(MEDIA_LIST_TYPES)}. `type` is a REQUIRED "
             "GET /medias/files query parameter — omitting it yields HTTP 422 "
             "'type must be a string / type should not be empty'."
         )
-    if normalized not in GHL_MEDIA_LIST_TYPES:
+    if normalized not in MEDIA_LIST_TYPES:
         raise MediaListTypeError(
             f"media LIST type {media_type!r} is not supported; use one of "
-            f"{', '.join(GHL_MEDIA_LIST_TYPES)} (the values observed working "
-            "against GET /medias/files)."
+            f"{', '.join(MEDIA_LIST_TYPES)}."
         )
     _require(location_id, "location_id")
     _require(pit, "pit")
-
-    query = urllib.parse.urlencode({"type": normalized, "locationId": location_id})
-    url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_LIST_PATH + "?" + query
-    req = urllib.request.Request(url, method="GET")
-    req.add_header("Authorization", f"Bearer {pit}")
-    req.add_header("Version", GHL_MEDIA_LIST_VERSION)
-    req.add_header("User-Agent", _GHL_UA)
-    req.add_header("Accept", "application/json")
-
-    _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
     try:
-        resp = _opener(req, timeout)
-        code = resp.getcode()
-        raw = resp.read()
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", "replace")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace") if hasattr(exc, "read") else ""
-        raise MediaListError(
-            f"media list HTTP {exc.code} for type={normalized!r}: {detail[:300]} "
-            "(media reads REQUIRE the LOCATION PIT with medias.read scope; the "
-            "Agency PIT 401s)"
-        ) from exc
-
-    if not (200 <= int(code) < 300):
-        raise MediaListError(
-            f"media list returned HTTP {code} for type={normalized!r}: {raw[:300]}"
+        response = client.list_media_files(
+            location_id,
+            pit,
+            normalized,
+            opener=opener,
+            capability=capability,
+            capability_record=capability_record,
+            timeout=float(timeout),
         )
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except client.MediaTypeRequired as exc:  # defensive: same gate, one owner
+        raise MediaListTypeError(str(exc)) from exc
+    except client.PublicRouteError as exc:
         raise MediaListError(
-            f"media list {code} but body is not JSON for type={normalized!r}: {raw[:300]}"
+            f"media list failed for type={normalized!r}: {exc}"
         ) from exc
-    files = data.get("files") if isinstance(data, dict) else None
-    if not isinstance(files, list):
-        raise MediaListError(
-            f"media list {code} but response has no `files` list for "
-            f"type={normalized!r}: {json.dumps(data)[:300] if isinstance(data, dict) else str(data)[:300]} "
-            "— refusing to report a listing the API did not return"
-        )
-    return {
-        "files": files,
-        "count": data.get("count", len(files)),
-        "traceId": data.get("traceId"),
-        "http": int(code),
-    }
+    return response
 
 
 # ── 3b) create_media_folder — per-run named folder (Skill 48 addition) ────────
@@ -1084,6 +1039,10 @@ def create_media_folder(
 
     Sits on the bare-Python side of the auth split (``services.*`` + Bearer PIT is NOT
     Cloudflare-WAF-gated), exactly like ``upload_media``.
+
+    NAMED GAP (GHL-169): ``media.folders.create`` is a registered row, but no
+    non-vacuous readback plan exists for it, so no supported adapter route can
+    send this write. See ``ghl_route_gaps.py`` entry ``ghl_media.py:1082``.
 
     FAIL-LOUD: a non-2xx response, or a 2xx with no recognizable folder id, raises (we
     never fabricate a folder id). When the deployment's GHL plan does not expose a folder
@@ -1393,12 +1352,7 @@ __all__ = [
     "GHL_SERVICES_ORIGIN",
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
-    "GHL_MEDIA_LIST_PATH",
-    "GHL_MEDIA_LIST_TYPES",
-    "GHL_MEDIA_LIST_VERSION",
     "GHL_MEDIA_VERSION",
-    "MediaListTypeError",
-    "MediaListError",
     "ENGLISH_LATIN_PIN",
     "TEXT_ABSENT_PIN",
     "PNG_MAGIC",
@@ -1413,7 +1367,6 @@ __all__ = [
     "verify_png",
     "generate_images",
     "upload_media",
-    "list_media",
     "create_media_folder",
     "media_folder_name_prefix",
     "funnel_media_folder_plan",

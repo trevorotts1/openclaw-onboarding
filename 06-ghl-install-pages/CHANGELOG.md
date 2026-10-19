@@ -14,6 +14,17 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
+## [v27.1.39] - 2026-10-19 - feat: Skill 06 client routes (GHL-169)
+
+- New `tools/ghl_public_client.py`: the single call path from Skill 06 into the frozen `PublicGhlAdapter`. Method, path, Version, auth class and tenant binding come from the registry row; the module owns only the `(Request, timeout)` opener seam and the browser User-Agent that `services.*` requires. No capability gate is shipped with it, so the checked-in record stays default-deny.
+- `tools/ghl_media.py`: new `list_media` REQUIRED-type media LIST routed as `media.files.list`. The type gate runs before the adapter is built, so a missing/out-of-set `type` never reaches a transport. `media.upload` and `media.folders.create` remain raw and are declared named gaps (adapter carries JSON bodies only; neither row has a readback plan).
+- `tools/ghl_object_router.py`: `PUBLIC_OPERATION_ROUTES` / `public_operation_route()` name the routed and declared registry operations per object type instead of leaving them in free-text rail labels.
+- `tools/ghl_survey_rest.py`: `surveys.list` is the routed list operation; the path builder stays as the contract-shape reference the guard test compares against the frozen row.
+- `tools/ghl_funnels_read.py`, `tools/ghl_rest_canvas.py`: their raw routes have no matching registry row (or are internal SPA/browser routes) and are recorded as named gaps with file:line and reason.
+- `tools/ghl_route_gaps.py`: machine-readable gap table consumed by the guard test; a raw REST call added without an entry fails the suite. New `tests/test_ghl_public_routes.py` covers the routed media/survey calls, pre-transport type gates, default-deny, registry consistency, and the raw-call negative control. Skill version bumped to v27.1.39 (repo-locked pair: `skill-version.txt` + SKILL.md metadata).
+
+---
+
 ## v27.1.19 - 2026-10-13 - refactor: client-choice model doctrine across Skill 06 routing
 
 - Removed every prescribed model name from the Skill 06 routing doctrine. Models are now resolved from the client's own configuration: the client's explicit choice for the task first, then the client's configured default model; when neither is configured, resolution stops with an ask-the-client message instead of silently pinning a named model. Per-role recommendations (context size, code generation, tool calling, vision) are kept as guidance with their reasons, never as defaults or fallbacks in code.
