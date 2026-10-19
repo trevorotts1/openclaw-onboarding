@@ -4,7 +4,8 @@ Stdlib only. No network, no charges. S80-06 binding integration: every
 bundle now carries the extra-offer binding record (see
 build_native_binding) and CTAs bind the binding action ref
 "extra-offer-binding:<offer_id>". The binding is INTERFACE-CONFORMANT
-only, at fixture level, against the S79 extra_offer_interface.md DRAFT:
+only, at fixture level, against the S79 extra_offer_interface.md CONFIRMED
+revision 2 (the contract of record):
 the native action itself is still provisioned by Skill 6 and confirmed
 by S06, so native_action.action_id stays None and verified_by is
 "s80_06_binding" (the binding integration exists; the L3 native install
@@ -46,10 +47,12 @@ ACTION_REF_PREFIX = "native-one-click:"
 BINDING_ACTION_REF_PREFIX = "extra-offer-binding:"
 
 # S80-06 native_binding record constants (fixed integration contract).
-# The interface is the S79/S06 shared DRAFT; binding_status states the
-# conformance level honestly - nothing here claims a live native action.
+# The interface text is the S79/S06 shared contract of record (CONFIRMED,
+# revision 2); confirmation is a status act on the contract and changes no
+# proof level. binding_status states the conformance level honestly --
+# nothing here claims a live native action.
 BINDING_KIND = "extra_offer_binding"
-BINDING_INTERFACE_REF = "S79 extra_offer_interface.md DRAFT (fixture level)"
+BINDING_INTERFACE_REF = "S79 extra_offer_interface.md CONFIRMED revision 2 (fixture level)"
 BINDING_STATUS = "interface_conformant_pending_s06"
 BINDING_OPEN_QUESTIONS = [
     "S06-Q1", "S06-Q2", "S06-Q3", "S06-Q4", "S06-Q5", "S06-Q6",
@@ -502,10 +505,10 @@ def build_result(
     blocked = disposition["action"] != "present_offer"
     blockers: List[str] = [
         "S80-06 extra-offer binding is integrated at interface-conformance "
-        "level only (S79 draft interface, fixture level): the native "
-        "action ID is null pending S06 confirmation (open questions "
-        "S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local only, "
-        "NOT installed or live proof."
+        "level only (S79 confirmed interface, revision 2, fixture level): "
+        "the native action ID is null pending S06 confirmation (open "
+        "questions S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local "
+        "only, NOT installed or live proof."
     ]
     blockers.extend(extra_blockers)
     if disposition["action"] == "block_unverified":

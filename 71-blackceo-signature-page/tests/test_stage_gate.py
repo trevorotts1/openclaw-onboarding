@@ -553,6 +553,29 @@ class StageGateTest(unittest.TestCase):
         state = json.loads((run / "private" / "state.json").read_text())
         self.assertEqual(state["stages"]["image-generation-qc"]["status"], "closed")
 
+    # ---- (j) GU-016: a run path containing a space must not tear the argv
+    def test_j_per_file_validator_survives_a_run_path_with_spaces(self):
+        # The per-file validator command used to be substituted into a string
+        # and then shlex.split, so every space in the run folder path became an
+        # argument boundary and the real validator (validate_prompt.py) rejected
+        # the torn path. Stage the whole chain under a spaced run path and close
+        # the prompts stage on the REAL contract: the validator must receive the
+        # path as ONE argument, and the stage must close.
+        run = self.td / "run with spaces"
+        env, gate = self.build_image_stage_chain(run, fitted_good_prompt())
+        put_receipt(run, "image-inventory-prompts", author="prompt-writer",
+                    reviewer="prompt-reviewer", scores={"fidelity": 9},
+                    extra={"validator_files": [
+                        "image-inventory-prompts/IMG-001.txt",
+                        "image-inventory-prompts/IMG-002.txt",
+                    ]})
+        proc = gate("close", str(run), "image-inventory-prompts", expect=0, env=env)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("validator exit", combined)
+        self.assertNotIn("unrecognized arguments", combined)
+        state = json.loads((run / "private" / "state.json").read_text())
+        self.assertEqual(state["stages"]["image-inventory-prompts"]["status"], "closed")
+
     def test_g_missing_sauce_block_fails_close_with_real_validator(self):
         # Negative control: a prompt MISSING the Signature Grade Block must fail
         # close under --sauce-only, proving {sauce} really reaches the validator.

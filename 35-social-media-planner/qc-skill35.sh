@@ -166,26 +166,50 @@ warn_only "Deprecated GHL_PRIVATE_TOKEN NOT in canonical secrets (should be migr
 
 echo ""
 echo "── Section C: GHL API access ──"
-MCP_URL=""
-if command -v openclaw >/dev/null 2>&1; then
-  MCP_URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
-fi
-if [ -n "$MCP_URL" ] && curl -sS -m 5 "$MCP_URL/health" 2>/dev/null | grep -q "healthy"; then
-  assert "Tier 2 (community MCP) reachable" "curl -sS -m 5 \"$MCP_URL/health\" | grep -q healthy"
-  # Community MCP HTTP transport speaks JSON-RPC (tools/call); the account tool is
-  # get_social_accounts (NOT the flat /execute + get_platform_accounts shape).
-  TEST=$(curl -sS -m 10 -X POST "$MCP_URL" -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' 2>/dev/null)
-  warn_only "MCP get_social_accounts returns data (any platform connected in GHL Social Planner)" \
-    "echo \"$TEST\" | grep -qE '\"result\"|\"accounts\"|\"success\"'"
-else
-  RESP=$(curl -sS -m 10 \
-    -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
-    -H "Version: 2021-07-28" \
-    "https://services.leadconnectorhq.com/social-media-posting/oauth/${GOHIGHLEVEL_LOCATION_ID:-}/facebook/accounts" 2>/dev/null)
-  warn_only "Direct API GHL Social Planner reachable (Facebook accounts endpoint)" \
-    "echo \"$RESP\" | grep -qE 'accounts|results|\\[\\]'"
-fi
+# SUPPORTED READ ONLY — OP-SM-01 accounts.list:
+#   GET https://services.leadconnectorhq.com/social-media-posting/{locationId}/accounts
+#   Authorization: Bearer <LOCATION PIT>   Version: 2021-07-28
+#   response: {"success":true,"results":{"accounts":[...]}}
+#
+# The community MCP JSON-RPC tools/call get_social_accounts check was REMOVED
+# (GU-009/GU-010). That service is retired and is not a route — do not re-add it
+# as a fallback. The old .../oauth/{loc}/facebook/accounts fallback was removed
+# too: it omits the required {accountId} and is not a documented operation.
+#
+# COVERAGE IS PARTIAL AND THIS SAYS SO. This is a connectivity read of the
+# location's connected-account list. It is NOT a per-platform publishing
+# verification: Facebook is the only platform this skill's posting path has
+# exercised; Instagram, LinkedIn, TikTok, YouTube, Pinterest, Threads, Bluesky
+# and Google posting are UNVERIFIED here. Nothing in this script publishes,
+# schedules or sends.
+ACCOUNTS_URL="https://services.leadconnectorhq.com/social-media-posting/${GOHIGHLEVEL_LOCATION_ID:-}/accounts"
+RESP=$(curl -sS -m 10 \
+  -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
+  -H "Version: 2021-07-28" \
+  "$ACCOUNTS_URL" 2>/dev/null)
+
+# Documented wrapper: results.accounts. A parser failure or an unrecognised
+# envelope is NOT "zero accounts" — it is a contract failure, so only a real
+# non-empty list passes the second check. Mirrors the production parser in
+# scripts/run-publishing-cycle.sh.
+accounts_have_data() {
+  printf '%s' "$RESP" | python3 -c 'import sys,json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if not isinstance(d, dict):
+    sys.exit(1)
+a = (d.get("results") or {}).get("accounts")
+if a is None:
+    a = d.get("accounts")
+sys.exit(0 if isinstance(a, list) and len(a) > 0 else 1)' 2>/dev/null
+}
+
+warn_only "Public social account read answers with the documented envelope (GET /social-media-posting/{locationId}/accounts)" \
+  "echo \"$RESP\" | grep -q '\"results\"'"
+warn_only "GHL Social Planner has at least one connected account (any platform)" \
+  "accounts_have_data"
 
 echo ""
 echo "── Section D: Required software ──"
