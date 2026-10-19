@@ -11,7 +11,7 @@
  * Two frame shapes are handled:
  *  - service path (repository writes): to_state is set at the top level and
  *    payload.state_record carries the state; operation_reserved and
- *    operation_completed carry operation_id (...:round-N:<seat>:...);
+ *    operation_completed carry only a hashed operation_id (ignored);
  *    card_accepted carries only {operation_id, seat_id, round, card_hash}.
  *  - CLI path (engine writes): session_state_changed carries payload.from and
  *    payload.to; crux_identified and resolution_drafted carry chair fields.
@@ -80,7 +80,6 @@
     WAIT: 'Wait', INSUFFICIENT_EVIDENCE: 'Not enough evidence'
   };
   var STANCE_TEXT = { support: 'Supports', conditional: 'Supports with conditions', conditional_support: 'Supports with conditions', oppose: 'Opposes', abstain: 'Abstains' };
-  var OP_ROUND = /(?:^|:)round-(\d+):([a-z-]+)(?::|$)/;
 
   function text(v) { return typeof v === 'string' && v.trim() ? v.trim() : null; }
   function obj(v) { return v && typeof v === 'object' ? v : {}; }
@@ -104,7 +103,7 @@
     return null;
   }
 
-  function newSeat() { return { accepted: {}, cards: {}, inflight: {}, inflightAt: {} }; }
+  function newSeat() { return { accepted: {}, cards: {} }; }
 
   function addSeat(m, id) {
     if (!has(m.seats, id)) { m.seats[id] = newSeat(); m.seatIds.push(id); }
@@ -116,7 +115,7 @@
       sessionId: null, question: null, mode: null, options: [], route: { routeId: null, model: null },
       seatIds: [], seats: {}, sample: false, demo: false,
       state: null, since: NaN, startAt: NaN, endedAt: null, step: 0, round: 0, consult: false, reason: null,
-      reserved: {}, ops: {}, opCount: 0, roundNoted: {}, roundDoneAt: {},
+      roundNoted: {}, roundDoneAt: {},
       cruxes: [], draft: null, verdict: null, keyPoints: [], maxSeq: 0, frames: 0
     };
   }
@@ -209,13 +208,6 @@
     return m.seatIds.length > 0 && m.seatIds.every(function (id) { return m.seats[id].accepted[round] === true; });
   }
 
-  function opSeat(p) {
-    var hit = typeof p.operation_id === 'string' ? OP_ROUND.exec(p.operation_id) : null;
-    if (hit) return { seat: hit[2], round: Number(hit[1]) };
-    var n = Number(p.round);
-    return typeof p.seat_id === 'string' ? { seat: p.seat_id, round: isFinite(n) ? n : null } : null;
-  }
-
   /** Apply one committed frame. Returns false for a duplicate, older or malformed frame. */
   function apply(m, frame) {
     if (!frame || typeof frame.sequence !== 'number' || frame.sequence <= m.maxSeq) return false;
@@ -242,25 +234,13 @@
     // The engine writes the state change first and the reason in the next event.
     if (m.reason && tail && (tail.label === 'BLOCKED' || tail.label === 'FAILED') && !tail.detail) tail.detail = m.reason;
 
-    if (frame.type === 'operation_reserved') {
-      var rv = opSeat(p);
-      if (rv && rv.round) {
-        m.opCount += 1;
-        var rs = addSeat(m, rv.seat);
-        rs.inflight[rv.round] = true;
-        rs.inflightAt[rv.round] = m.opCount;
-        m.reserved[rv.round] = true;
-        if (typeof p.operation_id === 'string') m.ops[p.operation_id] = rv;
-      }
-    } else if (frame.type === 'operation_completed') {
-      var op = (typeof p.operation_id === 'string' && m.ops[p.operation_id]) || opSeat(p);
-      if (op && op.round && has(m.seats, op.seat)) m.seats[op.seat].inflight[op.round] = false;
-    } else if (frame.type === 'card_accepted' && typeof p.seat_id === 'string') {
+    // operation_reserved / operation_completed carry only a hashed operation_id on the service
+    // path (no seat), so they say nothing about who is writing and are ignored.
+    if (frame.type === 'card_accepted' && typeof p.seat_id === 'string') {
       var n = Number(p.round);
       var r = isFinite(n) && n >= 1 ? n : (m.round || 1);
       var seat = addSeat(m, p.seat_id);
       seat.accepted[r] = true;
-      seat.inflight[r] = false;
       if (!m.consult && r <= TOTAL_ROUNDS && !m.roundNoted[r] && allAccepted(m, r)) {
         m.roundNoted[r] = true;
         m.roundDoneAt[r] = isFinite(ms) ? ms : m.since;
@@ -385,7 +365,7 @@
       var s = m.seats[id];
       var status = 'idle';
       if (ctx && (s.accepted[ctx] || s.cards[ctx])) { status = 'done'; done += 1; }
-      else if (inRound && (m.reserved[inRound] ? s.inflight[inRound] === true : true)) { status = 'writing'; writers.push(id); }
+      else if (inRound) { status = 'writing'; writers.push(id); }
       return { id: id, status: status, spotlight: false, bubble: { kind: 'none', text: '' }, latest: null, cards: seatCards(m, id) };
     });
     var total = m.seatIds.length;
@@ -410,14 +390,7 @@
       spot = pick.id;
       weighing = { seatId: pick.id, kind: 'said', text: pick.line };
     } else if (writers.length) {
-      var lead = null;
-      if (m.reserved[inRound]) {
-        writers.forEach(function (id) {
-          if (lead === null || m.seats[id].inflightAt[inRound] > m.seats[lead].inflightAt[inRound]) lead = id;
-        });
-      } else {
-        lead = writers[Math.floor(elapsed / SPOTLIGHT_MS) % writers.length];
-      }
+      var lead = writers[Math.floor(elapsed / SPOTLIGHT_MS) % writers.length];
       spot = lead;
       weighing = { seatId: lead, kind: 'weighing', text: '' };
     } else if (state && has(CHAIR, state) && !has(ROUND_OF, state)) {

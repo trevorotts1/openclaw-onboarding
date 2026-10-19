@@ -60,7 +60,7 @@ const cliFrames: Any[] = JSON.parse(
   readFileSync(join(here, 'fixtures', 'chamber', 'engine-sample-run.frames.json'), 'utf8'),
 );
 
-/** Rewrite the CLI run into the service shape: to_state on top, reserved/completed with round-N:seat ids. */
+/** Rewrite the CLI run into the service shape: to_state on top, reserved/completed with hashed operation ids (as the real service writes them). */
 function serviceFrames(): Any[] {
   const out: Any[] = [];
   let seq = 0;
@@ -72,7 +72,7 @@ function serviceFrames(): Any[] {
     } else if (f.type === 'session_state_changed') {
       push({ ...f, from_state: p.from, to_state: p.to, payload: { state_record: { state: p.to } } });
     } else if (f.type === 'card_accepted') {
-      const op = `op:inst:tenant:sess-1:a1:round-${p.round}:${p.seat_id}:abc123`;
+      const op = `${(seq + 1).toString(16).padStart(64, 'c')}`;
       push({ type: 'operation_reserved', to_state: null, payload: { operation_id: op }, created_at: f.created_at });
       push({ ...f, payload: { operation_id: op, seat_id: p.seat_id, round: p.round, card_hash: 'h' } });
       push({ type: 'operation_completed', to_state: null, payload: { operation_id: op }, created_at: f.created_at });
@@ -351,26 +351,32 @@ function serviceRound1(): Any {
   return { S, m };
 }
 
-test('spotlight is the in-flight seat when the events say so', () => {
+test('operation frames (even ones whose id names a seat) never change who is typing; the spotlight keeps rotating', () => {
   const { S, m } = serviceRound1();
-  S.apply(m, frame(2, 'operation_reserved', { payload: { operation_id: 'op:i:t:s:a1:round-1:oprah-winfrey:ff' } }));
   const t = Date.parse('2026-10-19T10:00:00.000Z');
-  for (const dt of [0, 6000, 13_000, 61_000]) {
+  const hash = (n: number): string => `op:i:t:s:a1:round-1:${SEATS[n]}:${n.toString(16).padStart(8, 'a')}`;
+  // A reservation, then the gap after a completion, then the next reservation.
+  S.apply(m, frame(2, 'operation_reserved', { payload: { operation_id: hash(0) } }));
+  const check = (dt: number, finished: string[]): void => {
     const v = S.view(m, t + dt);
-    assert.deepEqual(plain(v.seats.filter((s: Any) => s.spotlight).map((s: Any) => s.id)), ['oprah-winfrey'], `dt ${dt}`);
-    assert.equal(v.round.weighing.seatId, 'oprah-winfrey');
+    const left = SEATS.filter((id) => !finished.includes(id));
+    assert.deepEqual(plain(v.seats.filter((s: Any) => s.status === 'writing').map((s: Any) => s.id)), left, `writing at ${dt}`);
+    assert.equal(v.seats.filter((s: Any) => s.bubble.kind === 'typing').length, left.length);
+    assert.equal(v.seats.filter((s: Any) => s.spotlight).length, 1, `one spotlight at ${dt}`);
     assert.equal(v.round.weighing.kind, 'weighing');
-    assert.deepEqual(plain(v.seats.filter((s: Any) => s.status === 'writing').map((s: Any) => s.id)), ['oprah-winfrey']);
-    assert.equal(v.seats.find((s: Any) => s.id === 'oprah-winfrey').bubble.kind, 'typing');
-  }
-  // It finishes: operation_completed clears it, card_accepted marks it done.
-  S.apply(m, frame(3, 'card_accepted', { payload: { operation_id: 'op:i:t:s:a1:round-1:oprah-winfrey:ff', seat_id: 'oprah-winfrey', round: 1 } }));
-  S.apply(m, frame(4, 'operation_completed', { payload: { operation_id: 'op:i:t:s:a1:round-1:oprah-winfrey:ff' } }));
-  S.apply(m, frame(5, 'operation_reserved', { payload: { operation_id: 'op:i:t:s:a1:round-1:les-brown:aa' } }));
+    assert.equal(v.round.weighing.seatId, left[Math.floor(dt / 6000) % left.length]);
+  };
+  check(0, []);
+  check(6_000, []);
+  S.apply(m, frame(3, 'card_accepted', { payload: { operation_id: hash(0), seat_id: 'simon-sinek', round: 1 } }));
+  S.apply(m, frame(4, 'operation_completed', { payload: { operation_id: hash(0) } }));
+  // Gap: nothing reserved right now, yet every unfinished seat still types and one is spotlit.
+  check(6_400, ['simon-sinek']);
+  check(12_000, ['simon-sinek']);
+  S.apply(m, frame(5, 'operation_reserved', { payload: { operation_id: hash(1) } }));
+  check(12_100, ['simon-sinek']);
   const v = S.view(m, t + 1000);
-  assert.deepEqual(plain(v.seats.filter((s: Any) => s.spotlight).map((s: Any) => s.id)), ['les-brown']);
-  assert.equal(v.seats.find((s: Any) => s.id === 'oprah-winfrey').status, 'done');
-  assert.equal(v.seats.find((s: Any) => s.id === 'oprah-winfrey').bubble.kind, 'done');
+  assert.equal(v.seats.find((s: Any) => s.id === 'simon-sinek').bubble.kind, 'done');
   assert.equal(v.round.progress.indeterminate, false);
   assert.equal(v.round.progressText, '1 of 9 advisors in');
 });
@@ -494,6 +500,8 @@ test('tallies and recommended come from applyRecord cards and verdict', () => {
   assert.equal(v.votesRound, 3);
   assert.equal(v.voters, 1);
   assert.deepEqual(plain(v.options.map((o: Any) => o.votes)), [0, 0, 1]);
+  // share is votes over ALL seats (1 of 9), not over the one seat that has voted so far.
+  assert.deepEqual(plain(v.options.map((o: Any) => Math.round(o.share * 900))), [0, 0, 100]);
 
   S.applyRecord(m, {
     verdict: {
@@ -596,4 +604,27 @@ test('the demo replay reaches COMPLETED with a verdict through create/apply/appl
   // Every line is a distinct sentence in that seat's own voice.
   const lines = new Set(v.seats.flatMap((s: Any) => [1, 2, 3].map((r) => s.cards[r].line)));
   assert.equal(lines.size, 27);
+});
+
+test('during every demo round each unfinished seat types and exactly one is spotlit, with no gaps', () => {
+  const S = loadState();
+  const demo: Any = JSON.parse(readFileSync(join(chamberDir, 'demo-replay.json'), 'utf8'));
+  const m = S.create(demo.record);
+  let checked = 0;
+  for (const { frame: f } of demo.timeline) {
+    S.apply(m, f);
+    const p = f.payload ?? {};
+    if (f.type === 'card_accepted') S.applyRecord(m, { cards: demo.cards.filter((c: Any) => c.seat_id === p.seat_id && c.round === p.round) });
+    const t = Date.parse(f.created_at);
+    for (const dt of [0, 100, 250, 399]) {
+      const v = S.view(m, t + dt);
+      if (!/^ROUND_[123]$/.test(v.state) || v.round.complete) continue;
+      const open = v.seats.filter((s: Any) => s.status !== 'done');
+      assert.equal(open.every((s: Any) => s.status === 'writing' && s.bubble.kind === 'typing'), true, `seq ${f.sequence} +${dt}`);
+      assert.equal(v.seats.filter((s: Any) => s.spotlight).length, 1, `one spotlight at seq ${f.sequence} +${dt}`);
+      assert.ok(v.round.weighing && v.round.weighing.kind === 'weighing', `weighing line at seq ${f.sequence} +${dt}`);
+      checked += 1;
+    }
+  }
+  assert.ok(checked > 100, `checked ${checked} samples`);
 });
