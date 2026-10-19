@@ -1,0 +1,1968 @@
+{
+ "schema": "chamber-demo/v1",
+ "label": "Demo replay: a fictional sample decision. Not a real session and not real advisor output.",
+ "record": {
+  "session_id": "demo",
+  "sample": true,
+  "demo": true,
+  "spec": {
+   "mode": "full",
+   "seat_ids": [
+    "simon-sinek",
+    "td-jakes",
+    "oprah-winfrey",
+    "tiffany-aliche",
+    "russell-brunson",
+    "michelle-obama",
+    "brene-brown",
+    "dennis-kimbro",
+    "les-brown"
+   ],
+   "model_policy": {
+    "route_id": "demo-replay",
+    "requested_model_id": null
+   }
+  },
+  "brief": {
+   "question": "Should we launch a done-for-you AI workforce tier at $2,500 a month?",
+   "options": [
+    {
+     "id": "A",
+     "label": "Launch to all clients in January",
+     "kind": "change"
+    },
+    {
+     "id": "B",
+     "label": "Pilot with 10 clients first",
+     "kind": "bounded_test"
+    },
+    {
+     "id": "C",
+     "label": "Keep the current offer, revisit in Q2",
+     "kind": "status_quo"
+    },
+    {
+     "id": "D",
+     "label": "Launch only with a 90-day money-back guarantee",
+     "kind": "other"
+    }
+   ]
+  },
+  "state": {
+   "state": "DRAFT"
+  }
+ },
+ "cards": [
+  {
+   "card_kind": "advisor",
+   "seat_id": "simon-sinek",
+   "round": 1,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "We say we exist to give owners their time back. A done-for-you workforce proves that only if a small group feels it first."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "td-jakes",
+   "round": 1,
+   "stance": "support",
+   "preferred_option_id": "A",
+   "decisive_arguments": [
+    "Clients already sense they cannot keep up alone. Name that out loud and move now, before a competitor names it for us."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "oprah-winfrey",
+   "round": 1,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Ten clients who truly feel seen teach us more than a hundred who just receive a login. Start where the care can be real."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "tiffany-aliche",
+   "round": 1,
+   "stance": "conditional",
+   "preferred_option_id": "C",
+   "decisive_arguments": [
+    "At $2,500 a month a client commits $30,000 a year. If we cannot show payback within a quarter, we are asking them to risk their foundation."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "russell-brunson",
+   "round": 1,
+   "stance": "support",
+   "preferred_option_id": "A",
+   "decisive_arguments": [
+    "The offer is the product. Put it in front of everyone in January with a clear promise, a clear price and one obvious next step."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "michelle-obama",
+   "round": 1,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Lead with the people it affects. A pilot lets clients help shape this, and that earns trust a launch cannot buy."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "brene-brown",
+   "round": 1,
+   "stance": "conditional",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Tell clients plainly what the workforce will and will not do. Trust breaks when the promise is bigger than the delivery."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "dennis-kimbro",
+   "round": 1,
+   "stance": "conditional",
+   "preferred_option_id": "D",
+   "decisive_arguments": [
+    "Own the outcome. A money-back guarantee shows we build lasting capability for clients, not just more activity."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "les-brown",
+   "round": 1,
+   "stance": "support",
+   "preferred_option_id": "A",
+   "decisive_arguments": [
+    "Do not wait for perfect. The only real obstacle is the fear of starting, so launch to everyone and learn fast."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "simon-sinek",
+   "round": 2,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "The fault line is capacity versus promise. A pilot keeps our promise honest and protects why we exist."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "td-jakes",
+   "round": 2,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "I challenged the idea that big means bold. Ten clients, loudly celebrated, is the bolder story to tell."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "oprah-winfrey",
+   "round": 2,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Ask each pilot client what changed in their week. Those answers will carry the larger launch."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "tiffany-aliche",
+   "round": 2,
+   "stance": "conditional",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "I move to the pilot, with a cap on our own delivery cost. If cost per client rises past plan, we pause."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "russell-brunson",
+   "round": 2,
+   "stance": "conditional",
+   "preferred_option_id": "D",
+   "decisive_arguments": [
+    "A pilot is slow. If we pilot, the guarantee must be on the offer from day one, or conversion will stall."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "michelle-obama",
+   "round": 2,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Choose the ten with care and tell the others when their turn comes. Integrity is in how we handle the waiting list."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "brene-brown",
+   "round": 2,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Name the hard part now: we may not be ready for more than ten. Saying that out loud is the trustworthy move."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "dennis-kimbro",
+   "round": 2,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "decisive_arguments": [
+    "Pick pilot clients who will own the result. Ownership, not enthusiasm, predicts who builds lasting value."
+   ]
+  },
+  {
+   "card_kind": "advisor",
+   "seat_id": "les-brown",
+   "round": 2,
+   "stance": "conditional",
+   "preferred_option_id": "A",
+   "decisive_arguments": [
+    "I still say go big, but I accept a pilot if it has a date. A pilot with no end date is just a delay."
+   ]
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "simon-sinek",
+   "round": 3,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "resolution_stance": "support",
+   "unresolved_objections": [
+    "Put the reason for the pilot in writing for clients: to earn their time back, not to test them."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "td-jakes",
+   "round": 3,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "resolution_stance": "support",
+   "unresolved_objections": [
+    "Tell the story of the pilot publicly so it reads as momentum, not hesitation."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "oprah-winfrey",
+   "round": 3,
+   "stance": "conditional",
+   "preferred_option_id": "B",
+   "resolution_stance": "conditional_support",
+   "unresolved_objections": [
+    "Set a check-in with each pilot client at 30 days, not only at the end."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "tiffany-aliche",
+   "round": 3,
+   "stance": "conditional",
+   "preferred_option_id": "B",
+   "resolution_stance": "conditional_support",
+   "unresolved_objections": [
+    "Cap delivery cost per pilot client before we begin, and stop if it passes plan."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "russell-brunson",
+   "round": 3,
+   "stance": "oppose",
+   "preferred_option_id": "D",
+   "resolution_stance": "oppose",
+   "unresolved_objections": [
+    "A pilot without a guarantee will not convert. Add the 90-day guarantee to the pilot offer."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "michelle-obama",
+   "round": 3,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "resolution_stance": "support",
+   "unresolved_objections": [
+    "Publish how the ten were chosen so the other clients know the process was fair."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "brene-brown",
+   "round": 3,
+   "stance": "conditional",
+   "preferred_option_id": "B",
+   "resolution_stance": "conditional_support",
+   "unresolved_objections": [
+    "Agree now what we will say if the pilot shows we are not ready."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "dennis-kimbro",
+   "round": 3,
+   "stance": "support",
+   "preferred_option_id": "B",
+   "resolution_stance": "support",
+   "unresolved_objections": [
+    "Define the measure of success before the first client starts, so we judge capability, not mood."
+   ],
+   "amendments": []
+  },
+  {
+   "card_kind": "ratification",
+   "seat_id": "les-brown",
+   "round": 3,
+   "stance": "conditional",
+   "preferred_option_id": "B",
+   "resolution_stance": "conditional_support",
+   "unresolved_objections": [
+    "Give the review a firm date. I support it only if the 90 days cannot slip."
+   ],
+   "amendments": []
+  }
+ ],
+ "verdict": {
+  "result_kind": "scored",
+  "label": "GO_WITH_CONDITIONS",
+  "recommended_option_id": "B",
+  "main_reasons": [
+   "Eight of nine advisors back a ten-client pilot over a full January launch.",
+   "The pilot keeps the promise honest while delivery cost per client is still unknown.",
+   "A firm 90-day review date and a cost cap are the conditions the advisors attached."
+  ],
+  "option_scores": [
+   {
+    "option_id": "A",
+    "display_score": 5.4
+   },
+   {
+    "option_id": "B",
+    "display_score": 7.9
+   },
+   {
+    "option_id": "C",
+    "display_score": 4.6
+   },
+   {
+    "option_id": "D",
+    "display_score": 6.3
+   }
+  ]
+ },
+ "timeline": [
+  {
+   "at_ms": 0,
+   "frame": {
+    "sequence": 1,
+    "type": "session_created",
+    "event_id": "demo-event-1",
+    "from_state": null,
+    "to_state": "DRAFT",
+    "actor_subject": "demo",
+    "payload": {
+     "sample": true,
+     "demo": true,
+     "state_record": {
+      "state": "DRAFT"
+     }
+    },
+    "created_at": "2026-01-15T10:00:00.000Z"
+   }
+  },
+  {
+   "at_ms": 2000,
+   "frame": {
+    "sequence": 2,
+    "type": "session_state_changed",
+    "event_id": "demo-event-2",
+    "from_state": "DRAFT",
+    "to_state": "READY",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "READY"
+     }
+    },
+    "created_at": "2026-01-15T10:00:02.000Z"
+   }
+  },
+  {
+   "at_ms": 3500,
+   "frame": {
+    "sequence": 3,
+    "type": "session_state_changed",
+    "event_id": "demo-event-3",
+    "from_state": "READY",
+    "to_state": "QUEUED",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "QUEUED"
+     }
+    },
+    "created_at": "2026-01-15T10:00:03.500Z"
+   }
+  },
+  {
+   "at_ms": 4500,
+   "frame": {
+    "sequence": 4,
+    "type": "session_state_changed",
+    "event_id": "demo-event-4",
+    "from_state": "QUEUED",
+    "to_state": "PREPARING",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "PREPARING"
+     }
+    },
+    "created_at": "2026-01-15T10:00:04.500Z"
+   }
+  },
+  {
+   "at_ms": 6000,
+   "frame": {
+    "sequence": 5,
+    "type": "session_state_changed",
+    "event_id": "demo-event-5",
+    "from_state": "PREPARING",
+    "to_state": "ROUND_1",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "ROUND_1"
+     }
+    },
+    "created_at": "2026-01-15T10:00:06.000Z"
+   }
+  },
+  {
+   "at_ms": 6300,
+   "frame": {
+    "sequence": 6,
+    "type": "operation_reserved",
+    "event_id": "demo-event-6",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:simon-sinek:0001",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:06.300Z"
+   }
+  },
+  {
+   "at_ms": 8700,
+   "frame": {
+    "sequence": 7,
+    "type": "card_accepted",
+    "event_id": "demo-event-7",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:simon-sinek:0001",
+     "seat_id": "simon-sinek",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:08.700Z"
+   }
+  },
+  {
+   "at_ms": 8710,
+   "frame": {
+    "sequence": 8,
+    "type": "operation_completed",
+    "event_id": "demo-event-8",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:simon-sinek:0001",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:08.710Z"
+   }
+  },
+  {
+   "at_ms": 9100,
+   "frame": {
+    "sequence": 9,
+    "type": "operation_reserved",
+    "event_id": "demo-event-9",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:td-jakes:0002",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:09.100Z"
+   }
+  },
+  {
+   "at_ms": 11500,
+   "frame": {
+    "sequence": 10,
+    "type": "card_accepted",
+    "event_id": "demo-event-10",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:td-jakes:0002",
+     "seat_id": "td-jakes",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:11.500Z"
+   }
+  },
+  {
+   "at_ms": 11510,
+   "frame": {
+    "sequence": 11,
+    "type": "operation_completed",
+    "event_id": "demo-event-11",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:td-jakes:0002",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:11.510Z"
+   }
+  },
+  {
+   "at_ms": 11900,
+   "frame": {
+    "sequence": 12,
+    "type": "operation_reserved",
+    "event_id": "demo-event-12",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:oprah-winfrey:0003",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:11.900Z"
+   }
+  },
+  {
+   "at_ms": 14300,
+   "frame": {
+    "sequence": 13,
+    "type": "card_accepted",
+    "event_id": "demo-event-13",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:oprah-winfrey:0003",
+     "seat_id": "oprah-winfrey",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:14.300Z"
+   }
+  },
+  {
+   "at_ms": 14310,
+   "frame": {
+    "sequence": 14,
+    "type": "operation_completed",
+    "event_id": "demo-event-14",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:oprah-winfrey:0003",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:14.310Z"
+   }
+  },
+  {
+   "at_ms": 14700,
+   "frame": {
+    "sequence": 15,
+    "type": "operation_reserved",
+    "event_id": "demo-event-15",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:tiffany-aliche:0004",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:14.700Z"
+   }
+  },
+  {
+   "at_ms": 17100,
+   "frame": {
+    "sequence": 16,
+    "type": "card_accepted",
+    "event_id": "demo-event-16",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:tiffany-aliche:0004",
+     "seat_id": "tiffany-aliche",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:17.100Z"
+   }
+  },
+  {
+   "at_ms": 17110,
+   "frame": {
+    "sequence": 17,
+    "type": "operation_completed",
+    "event_id": "demo-event-17",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:tiffany-aliche:0004",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:17.110Z"
+   }
+  },
+  {
+   "at_ms": 17500,
+   "frame": {
+    "sequence": 18,
+    "type": "operation_reserved",
+    "event_id": "demo-event-18",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:russell-brunson:0005",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:17.500Z"
+   }
+  },
+  {
+   "at_ms": 19900,
+   "frame": {
+    "sequence": 19,
+    "type": "card_accepted",
+    "event_id": "demo-event-19",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:russell-brunson:0005",
+     "seat_id": "russell-brunson",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:19.900Z"
+   }
+  },
+  {
+   "at_ms": 19910,
+   "frame": {
+    "sequence": 20,
+    "type": "operation_completed",
+    "event_id": "demo-event-20",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:russell-brunson:0005",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:19.910Z"
+   }
+  },
+  {
+   "at_ms": 20300,
+   "frame": {
+    "sequence": 21,
+    "type": "operation_reserved",
+    "event_id": "demo-event-21",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:michelle-obama:0006",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:20.300Z"
+   }
+  },
+  {
+   "at_ms": 22700,
+   "frame": {
+    "sequence": 22,
+    "type": "card_accepted",
+    "event_id": "demo-event-22",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:michelle-obama:0006",
+     "seat_id": "michelle-obama",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:22.700Z"
+   }
+  },
+  {
+   "at_ms": 22710,
+   "frame": {
+    "sequence": 23,
+    "type": "operation_completed",
+    "event_id": "demo-event-23",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:michelle-obama:0006",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:22.710Z"
+   }
+  },
+  {
+   "at_ms": 23100,
+   "frame": {
+    "sequence": 24,
+    "type": "operation_reserved",
+    "event_id": "demo-event-24",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:brene-brown:0007",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:23.100Z"
+   }
+  },
+  {
+   "at_ms": 25500,
+   "frame": {
+    "sequence": 25,
+    "type": "card_accepted",
+    "event_id": "demo-event-25",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:brene-brown:0007",
+     "seat_id": "brene-brown",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:25.500Z"
+   }
+  },
+  {
+   "at_ms": 25510,
+   "frame": {
+    "sequence": 26,
+    "type": "operation_completed",
+    "event_id": "demo-event-26",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:brene-brown:0007",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:25.510Z"
+   }
+  },
+  {
+   "at_ms": 25900,
+   "frame": {
+    "sequence": 27,
+    "type": "operation_reserved",
+    "event_id": "demo-event-27",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:dennis-kimbro:0008",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:25.900Z"
+   }
+  },
+  {
+   "at_ms": 28300,
+   "frame": {
+    "sequence": 28,
+    "type": "card_accepted",
+    "event_id": "demo-event-28",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:dennis-kimbro:0008",
+     "seat_id": "dennis-kimbro",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:28.300Z"
+   }
+  },
+  {
+   "at_ms": 28310,
+   "frame": {
+    "sequence": 29,
+    "type": "operation_completed",
+    "event_id": "demo-event-29",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:dennis-kimbro:0008",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:28.310Z"
+   }
+  },
+  {
+   "at_ms": 28700,
+   "frame": {
+    "sequence": 30,
+    "type": "operation_reserved",
+    "event_id": "demo-event-30",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:les-brown:0009",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:28.700Z"
+   }
+  },
+  {
+   "at_ms": 31100,
+   "frame": {
+    "sequence": 31,
+    "type": "card_accepted",
+    "event_id": "demo-event-31",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:les-brown:0009",
+     "seat_id": "les-brown",
+     "round": 1,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:31.100Z"
+   }
+  },
+  {
+   "at_ms": 31110,
+   "frame": {
+    "sequence": 32,
+    "type": "operation_completed",
+    "event_id": "demo-event-32",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-1:les-brown:0009",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:31.110Z"
+   }
+  },
+  {
+   "at_ms": 31400,
+   "frame": {
+    "sequence": 33,
+    "type": "session_state_changed",
+    "event_id": "demo-event-33",
+    "from_state": "ROUND_1",
+    "to_state": "CRUX_REVIEW",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "CRUX_REVIEW"
+     }
+    },
+    "created_at": "2026-01-15T10:00:31.400Z"
+   }
+  },
+  {
+   "at_ms": 36800,
+   "frame": {
+    "sequence": 34,
+    "type": "session_state_changed",
+    "event_id": "demo-event-34",
+    "from_state": "CRUX_REVIEW",
+    "to_state": "ROUND_2",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "ROUND_2"
+     }
+    },
+    "created_at": "2026-01-15T10:00:36.800Z"
+   }
+  },
+  {
+   "at_ms": 37100,
+   "frame": {
+    "sequence": 35,
+    "type": "operation_reserved",
+    "event_id": "demo-event-35",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:simon-sinek:0001",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:37.100Z"
+   }
+  },
+  {
+   "at_ms": 39500,
+   "frame": {
+    "sequence": 36,
+    "type": "card_accepted",
+    "event_id": "demo-event-36",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:simon-sinek:0001",
+     "seat_id": "simon-sinek",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:39.500Z"
+   }
+  },
+  {
+   "at_ms": 39510,
+   "frame": {
+    "sequence": 37,
+    "type": "operation_completed",
+    "event_id": "demo-event-37",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:simon-sinek:0001",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:39.510Z"
+   }
+  },
+  {
+   "at_ms": 39900,
+   "frame": {
+    "sequence": 38,
+    "type": "operation_reserved",
+    "event_id": "demo-event-38",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:td-jakes:0002",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:39.900Z"
+   }
+  },
+  {
+   "at_ms": 42300,
+   "frame": {
+    "sequence": 39,
+    "type": "card_accepted",
+    "event_id": "demo-event-39",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:td-jakes:0002",
+     "seat_id": "td-jakes",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:42.300Z"
+   }
+  },
+  {
+   "at_ms": 42310,
+   "frame": {
+    "sequence": 40,
+    "type": "operation_completed",
+    "event_id": "demo-event-40",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:td-jakes:0002",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:42.310Z"
+   }
+  },
+  {
+   "at_ms": 42700,
+   "frame": {
+    "sequence": 41,
+    "type": "operation_reserved",
+    "event_id": "demo-event-41",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:oprah-winfrey:0003",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:42.700Z"
+   }
+  },
+  {
+   "at_ms": 45100,
+   "frame": {
+    "sequence": 42,
+    "type": "card_accepted",
+    "event_id": "demo-event-42",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:oprah-winfrey:0003",
+     "seat_id": "oprah-winfrey",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:45.100Z"
+   }
+  },
+  {
+   "at_ms": 45110,
+   "frame": {
+    "sequence": 43,
+    "type": "operation_completed",
+    "event_id": "demo-event-43",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:oprah-winfrey:0003",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:45.110Z"
+   }
+  },
+  {
+   "at_ms": 45500,
+   "frame": {
+    "sequence": 44,
+    "type": "operation_reserved",
+    "event_id": "demo-event-44",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:tiffany-aliche:0004",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:45.500Z"
+   }
+  },
+  {
+   "at_ms": 47900,
+   "frame": {
+    "sequence": 45,
+    "type": "card_accepted",
+    "event_id": "demo-event-45",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:tiffany-aliche:0004",
+     "seat_id": "tiffany-aliche",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:47.900Z"
+   }
+  },
+  {
+   "at_ms": 47910,
+   "frame": {
+    "sequence": 46,
+    "type": "operation_completed",
+    "event_id": "demo-event-46",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:tiffany-aliche:0004",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:47.910Z"
+   }
+  },
+  {
+   "at_ms": 48300,
+   "frame": {
+    "sequence": 47,
+    "type": "operation_reserved",
+    "event_id": "demo-event-47",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:russell-brunson:0005",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:48.300Z"
+   }
+  },
+  {
+   "at_ms": 50700,
+   "frame": {
+    "sequence": 48,
+    "type": "card_accepted",
+    "event_id": "demo-event-48",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:russell-brunson:0005",
+     "seat_id": "russell-brunson",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:50.700Z"
+   }
+  },
+  {
+   "at_ms": 50710,
+   "frame": {
+    "sequence": 49,
+    "type": "operation_completed",
+    "event_id": "demo-event-49",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:russell-brunson:0005",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:50.710Z"
+   }
+  },
+  {
+   "at_ms": 51100,
+   "frame": {
+    "sequence": 50,
+    "type": "operation_reserved",
+    "event_id": "demo-event-50",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:michelle-obama:0006",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:51.100Z"
+   }
+  },
+  {
+   "at_ms": 53500,
+   "frame": {
+    "sequence": 51,
+    "type": "card_accepted",
+    "event_id": "demo-event-51",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:michelle-obama:0006",
+     "seat_id": "michelle-obama",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:53.500Z"
+   }
+  },
+  {
+   "at_ms": 53510,
+   "frame": {
+    "sequence": 52,
+    "type": "operation_completed",
+    "event_id": "demo-event-52",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:michelle-obama:0006",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:53.510Z"
+   }
+  },
+  {
+   "at_ms": 53900,
+   "frame": {
+    "sequence": 53,
+    "type": "operation_reserved",
+    "event_id": "demo-event-53",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:brene-brown:0007",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:53.900Z"
+   }
+  },
+  {
+   "at_ms": 56300,
+   "frame": {
+    "sequence": 54,
+    "type": "card_accepted",
+    "event_id": "demo-event-54",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:brene-brown:0007",
+     "seat_id": "brene-brown",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:56.300Z"
+   }
+  },
+  {
+   "at_ms": 56310,
+   "frame": {
+    "sequence": 55,
+    "type": "operation_completed",
+    "event_id": "demo-event-55",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:brene-brown:0007",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:56.310Z"
+   }
+  },
+  {
+   "at_ms": 56700,
+   "frame": {
+    "sequence": 56,
+    "type": "operation_reserved",
+    "event_id": "demo-event-56",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:dennis-kimbro:0008",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:56.700Z"
+   }
+  },
+  {
+   "at_ms": 59100,
+   "frame": {
+    "sequence": 57,
+    "type": "card_accepted",
+    "event_id": "demo-event-57",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:dennis-kimbro:0008",
+     "seat_id": "dennis-kimbro",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:59.100Z"
+   }
+  },
+  {
+   "at_ms": 59110,
+   "frame": {
+    "sequence": 58,
+    "type": "operation_completed",
+    "event_id": "demo-event-58",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:dennis-kimbro:0008",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:59.110Z"
+   }
+  },
+  {
+   "at_ms": 59500,
+   "frame": {
+    "sequence": 59,
+    "type": "operation_reserved",
+    "event_id": "demo-event-59",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:les-brown:0009",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:00:59.500Z"
+   }
+  },
+  {
+   "at_ms": 61900,
+   "frame": {
+    "sequence": 60,
+    "type": "card_accepted",
+    "event_id": "demo-event-60",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:les-brown:0009",
+     "seat_id": "les-brown",
+     "round": 2,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:01.900Z"
+   }
+  },
+  {
+   "at_ms": 61910,
+   "frame": {
+    "sequence": 61,
+    "type": "operation_completed",
+    "event_id": "demo-event-61",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-2:les-brown:0009",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:01.910Z"
+   }
+  },
+  {
+   "at_ms": 62200,
+   "frame": {
+    "sequence": 62,
+    "type": "session_state_changed",
+    "event_id": "demo-event-62",
+    "from_state": "ROUND_2",
+    "to_state": "DRAFT_RESOLUTION",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "DRAFT_RESOLUTION"
+     }
+    },
+    "created_at": "2026-01-15T10:01:02.200Z"
+   }
+  },
+  {
+   "at_ms": 67600,
+   "frame": {
+    "sequence": 63,
+    "type": "session_state_changed",
+    "event_id": "demo-event-63",
+    "from_state": "DRAFT_RESOLUTION",
+    "to_state": "ROUND_3",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "ROUND_3"
+     }
+    },
+    "created_at": "2026-01-15T10:01:07.600Z"
+   }
+  },
+  {
+   "at_ms": 67900,
+   "frame": {
+    "sequence": 64,
+    "type": "operation_reserved",
+    "event_id": "demo-event-64",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:simon-sinek:0001",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:07.900Z"
+   }
+  },
+  {
+   "at_ms": 70300,
+   "frame": {
+    "sequence": 65,
+    "type": "card_accepted",
+    "event_id": "demo-event-65",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:simon-sinek:0001",
+     "seat_id": "simon-sinek",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:10.300Z"
+   }
+  },
+  {
+   "at_ms": 70310,
+   "frame": {
+    "sequence": 66,
+    "type": "operation_completed",
+    "event_id": "demo-event-66",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:simon-sinek:0001",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:10.310Z"
+   }
+  },
+  {
+   "at_ms": 70700,
+   "frame": {
+    "sequence": 67,
+    "type": "operation_reserved",
+    "event_id": "demo-event-67",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:td-jakes:0002",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:10.700Z"
+   }
+  },
+  {
+   "at_ms": 73100,
+   "frame": {
+    "sequence": 68,
+    "type": "card_accepted",
+    "event_id": "demo-event-68",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:td-jakes:0002",
+     "seat_id": "td-jakes",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:13.100Z"
+   }
+  },
+  {
+   "at_ms": 73110,
+   "frame": {
+    "sequence": 69,
+    "type": "operation_completed",
+    "event_id": "demo-event-69",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:td-jakes:0002",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:13.110Z"
+   }
+  },
+  {
+   "at_ms": 73500,
+   "frame": {
+    "sequence": 70,
+    "type": "operation_reserved",
+    "event_id": "demo-event-70",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:oprah-winfrey:0003",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:13.500Z"
+   }
+  },
+  {
+   "at_ms": 75900,
+   "frame": {
+    "sequence": 71,
+    "type": "card_accepted",
+    "event_id": "demo-event-71",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:oprah-winfrey:0003",
+     "seat_id": "oprah-winfrey",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:15.900Z"
+   }
+  },
+  {
+   "at_ms": 75910,
+   "frame": {
+    "sequence": 72,
+    "type": "operation_completed",
+    "event_id": "demo-event-72",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:oprah-winfrey:0003",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:15.910Z"
+   }
+  },
+  {
+   "at_ms": 76300,
+   "frame": {
+    "sequence": 73,
+    "type": "operation_reserved",
+    "event_id": "demo-event-73",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:tiffany-aliche:0004",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:16.300Z"
+   }
+  },
+  {
+   "at_ms": 78700,
+   "frame": {
+    "sequence": 74,
+    "type": "card_accepted",
+    "event_id": "demo-event-74",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:tiffany-aliche:0004",
+     "seat_id": "tiffany-aliche",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:18.700Z"
+   }
+  },
+  {
+   "at_ms": 78710,
+   "frame": {
+    "sequence": 75,
+    "type": "operation_completed",
+    "event_id": "demo-event-75",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:tiffany-aliche:0004",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:18.710Z"
+   }
+  },
+  {
+   "at_ms": 79100,
+   "frame": {
+    "sequence": 76,
+    "type": "operation_reserved",
+    "event_id": "demo-event-76",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:russell-brunson:0005",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:19.100Z"
+   }
+  },
+  {
+   "at_ms": 81500,
+   "frame": {
+    "sequence": 77,
+    "type": "card_accepted",
+    "event_id": "demo-event-77",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:russell-brunson:0005",
+     "seat_id": "russell-brunson",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:21.500Z"
+   }
+  },
+  {
+   "at_ms": 81510,
+   "frame": {
+    "sequence": 78,
+    "type": "operation_completed",
+    "event_id": "demo-event-78",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:russell-brunson:0005",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:21.510Z"
+   }
+  },
+  {
+   "at_ms": 81900,
+   "frame": {
+    "sequence": 79,
+    "type": "operation_reserved",
+    "event_id": "demo-event-79",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:michelle-obama:0006",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:21.900Z"
+   }
+  },
+  {
+   "at_ms": 84300,
+   "frame": {
+    "sequence": 80,
+    "type": "card_accepted",
+    "event_id": "demo-event-80",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:michelle-obama:0006",
+     "seat_id": "michelle-obama",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:24.300Z"
+   }
+  },
+  {
+   "at_ms": 84310,
+   "frame": {
+    "sequence": 81,
+    "type": "operation_completed",
+    "event_id": "demo-event-81",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:michelle-obama:0006",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:24.310Z"
+   }
+  },
+  {
+   "at_ms": 84700,
+   "frame": {
+    "sequence": 82,
+    "type": "operation_reserved",
+    "event_id": "demo-event-82",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:brene-brown:0007",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:24.700Z"
+   }
+  },
+  {
+   "at_ms": 87100,
+   "frame": {
+    "sequence": 83,
+    "type": "card_accepted",
+    "event_id": "demo-event-83",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:brene-brown:0007",
+     "seat_id": "brene-brown",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:27.100Z"
+   }
+  },
+  {
+   "at_ms": 87110,
+   "frame": {
+    "sequence": 84,
+    "type": "operation_completed",
+    "event_id": "demo-event-84",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:brene-brown:0007",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:27.110Z"
+   }
+  },
+  {
+   "at_ms": 87500,
+   "frame": {
+    "sequence": 85,
+    "type": "operation_reserved",
+    "event_id": "demo-event-85",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:dennis-kimbro:0008",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:27.500Z"
+   }
+  },
+  {
+   "at_ms": 89900,
+   "frame": {
+    "sequence": 86,
+    "type": "card_accepted",
+    "event_id": "demo-event-86",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:dennis-kimbro:0008",
+     "seat_id": "dennis-kimbro",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:29.900Z"
+   }
+  },
+  {
+   "at_ms": 89910,
+   "frame": {
+    "sequence": 87,
+    "type": "operation_completed",
+    "event_id": "demo-event-87",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:dennis-kimbro:0008",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:29.910Z"
+   }
+  },
+  {
+   "at_ms": 90300,
+   "frame": {
+    "sequence": 88,
+    "type": "operation_reserved",
+    "event_id": "demo-event-88",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:les-brown:0009",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:30.300Z"
+   }
+  },
+  {
+   "at_ms": 92700,
+   "frame": {
+    "sequence": 89,
+    "type": "card_accepted",
+    "event_id": "demo-event-89",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:les-brown:0009",
+     "seat_id": "les-brown",
+     "round": 3,
+     "card_hash": "demo",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:32.700Z"
+   }
+  },
+  {
+   "at_ms": 92710,
+   "frame": {
+    "sequence": 90,
+    "type": "operation_completed",
+    "event_id": "demo-event-90",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "operation_id": "op:demo:demo:demo:a1:round-3:les-brown:0009",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:32.710Z"
+   }
+  },
+  {
+   "at_ms": 93000,
+   "frame": {
+    "sequence": 91,
+    "type": "session_state_changed",
+    "event_id": "demo-event-91",
+    "from_state": "ROUND_3",
+    "to_state": "VERIFYING",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "VERIFYING"
+     }
+    },
+    "created_at": "2026-01-15T10:01:33.000Z"
+   }
+  },
+  {
+   "at_ms": 98000,
+   "frame": {
+    "sequence": 92,
+    "type": "verdict_validated",
+    "event_id": "demo-event-92",
+    "from_state": null,
+    "to_state": null,
+    "actor_subject": "demo",
+    "payload": {
+     "verdict_revision": 1,
+     "result_kind": "scored",
+     "demo": true
+    },
+    "created_at": "2026-01-15T10:01:38.000Z"
+   }
+  },
+  {
+   "at_ms": 98500,
+   "frame": {
+    "sequence": 93,
+    "type": "session_state_changed",
+    "event_id": "demo-event-93",
+    "from_state": "VERIFYING",
+    "to_state": "COMPLETED",
+    "actor_subject": "demo",
+    "payload": {
+     "demo": true,
+     "state_record": {
+      "state": "COMPLETED"
+     }
+    },
+    "created_at": "2026-01-15T10:01:38.500Z"
+   }
+  }
+ ]
+}
