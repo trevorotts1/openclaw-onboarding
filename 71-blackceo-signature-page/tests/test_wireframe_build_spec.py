@@ -245,7 +245,10 @@ class RepairRound1Tests(unittest.TestCase):
         for blocks in w.spec()["blocks"].values():
             for text in ([blocks] if isinstance(blocks, str) else blocks):
                 w.refuse_colourless_prose("desktop-wireframe", text)
-        for bad in ("Draw the layout in warm grey line work on ivory, no colour fill.",
+        run_002 = ("Draw the layout only: stacked blocks, rules, type placeholders and image "
+                   "boxes in warm grey line work on ivory, no photography, no colour fill.")
+        for bad in (run_002,
+                    "Draw the layout in warm grey line work on ivory, no colour fill.",
                     "Keep the sheet pure greyscale.",
                     "Use grey line work. Photos are muted."):
             with self.assertRaises(w.SpecError):

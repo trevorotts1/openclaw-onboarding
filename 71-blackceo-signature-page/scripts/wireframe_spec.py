@@ -148,16 +148,20 @@ def reference_urls(stage: str, request: dict, strict: bool = False) -> list:
 
 
 _NEGATED = re.compile(r"\b(never|not|no|don'?t|do not|avoid|without|isn'?t|is not)\b", re.I)
-_PLATE_TALK = re.compile(r"\b(plates?|placeholders?|photos?|photography|images?|portraits?)\b", re.I)
+_PLATE_SUBJECT = re.compile(
+    r"^\W*(?:image\s+|photo\s+)?(plates?|placeholders?|photos?|photography|images?|portraits?)\b", re.I)
 
 
 def refuse_colourless_prose(stage: str, text: str) -> None:
     """Refuse prose that asks for a colourless sheet. Tested sentence by
     sentence: a phrase negated earlier in its sentence ("never grey line work")
-    or in a sentence about image plates ("plates are neutral grey with no colour
-    fill") restates the build spec and passes."""
+    or in a sentence whose subject is the image plates ("plates are neutral grey
+    with no colour fill") restates the build spec and passes. A plate word later
+    in a sentence about the layout does not exempt it: the run-002 template
+    "Draw the layout only: ... type placeholders and image boxes in warm grey
+    line work on ivory, no photography, no colour fill." is refused."""
     for sentence in re.split(r"(?<=[.!?;])\s+|\n", text):
-        if _PLATE_TALK.search(sentence):
+        if _PLATE_SUBJECT.search(sentence):
             continue
         for pattern in spec()["colourless_prose"]:
             match = re.search(pattern, sentence, re.I)
