@@ -274,6 +274,70 @@ def artifacts_for(run_dir, stage):
     return problems, counts
 
 
+# Shared-service generation check: the four image stages a page's image
+# service must actually produce. Success is wired to these artifacts on
+# disk, never to a script reaching its end.
+GENERATED_IMAGE_STAGES = ("desktop-wireframe", "mobile-tablet",
+                          "visual-mockup", "final-mockups")
+# Mockup parts carry the stage's documented raster width; the wireframe
+# stages are dimension-checked by validate_wireframe.py, never here.
+MOCKUP_PART_WIDTHS = (("visual-mockup/desktop", 1440),
+                      ("visual-mockup/mobile", 390),
+                      ("final-mockups/desktop", 1440),
+                      ("final-mockups/mobile", 390))
+MOCKUP_WIDTH_TOLERANCE_PX = 2
+
+def verify_generated_images(run_dir, stages=GENERATED_IMAGE_STAGES):
+    """Return (failure_lines, image_count) for a generation run.
+
+    Existence comes from the stage contract's own artifact globs
+    (artifacts_for), format and dimensions from reading the bytes. A run
+    that produced zero images is a failure even when every command it
+    ran exited 0. Empty failures and a positive count mean success.
+    """
+    failures = []
+    count = 0
+    for stage in stages:
+        if stage not in STAGES:
+            failures.append(f"generated images: stage {stage!r} is not in "
+                            f"the stage contract")
+            continue
+        problems, _counts = artifacts_for(run_dir, stage)
+        failures.extend(problems)
+        count += sum(1 for p in run_dir.glob(f"{stage}/**/*.png")
+                     if p.is_file())
+    try:
+        from PIL import Image
+    except Exception as exc:
+        failures.append(f"generated images: Pillow is required to read "
+                        f"image dimensions ({exc})")
+        Image = None
+    if Image is not None:
+        for prefix, want in MOCKUP_PART_WIDTHS:
+            for path in sorted(run_dir.glob(f"{prefix}/part-*.png")):
+                if not path.is_file():
+                    continue
+                try:
+                    with Image.open(path) as im:
+                        width = im.size[0]
+                except Exception as exc:
+                    failures.append(
+                        f"generated images: {path.relative_to(run_dir)} is "
+                        f"not a readable image ({exc})")
+                    continue
+                if abs(width - want) > MOCKUP_WIDTH_TOLERANCE_PX:
+                    failures.append(
+                        f"generated images: {path.relative_to(run_dir)} is "
+                        f"{width}px wide, expected {want}px "
+                        f"(+/-{MOCKUP_WIDTH_TOLERANCE_PX}px) for "
+                        f"{'desktop' if want == 1440 else 'mobile'}")
+    if count == 0:
+        failures.append(
+            "generated images: the run produced zero images across "
+            + ", ".join(stages)
+            + "; reaching the end of the pipeline is not a generated run")
+    return failures, count
+
 def receipt_status(run_dir, stage):
     """Return (status, receipt_dict_or_None, lines). status '' when no receipt."""
     rp = run_dir / "private" / "receipts" / f"{stage}.json"

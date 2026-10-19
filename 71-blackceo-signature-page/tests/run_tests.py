@@ -59,6 +59,8 @@ MODULES = [
     "test_sync_allowlist.py",
     # Signature Launch S71 A23: per-provider image-generation-qc gate.
     "test_provider_gate_a23.py",
+    # Diagnostic repair 2026-10-19: a zero-image generation run is FAILED.
+    "test_shared_page_service_generation.py",
 ]
 
 def main():
