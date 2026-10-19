@@ -1,0 +1,5 @@
+captured_at=2026-10-18T23:33:43Z
+cc_head=800b076907122bd080e774024e6da7b66fb67a73
+seat_count=9 entries=9 variants=27
+bad=0
+PORTRAIT MANIFEST: PASS

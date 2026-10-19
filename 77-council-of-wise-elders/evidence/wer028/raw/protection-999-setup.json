@@ -1,0 +1,9 @@
+{
+  "command": "gh api repos/trevorotts1/999-setup/branches/main/protection",
+  "exit_code": 1,
+  "captured_at": "2026-10-18T23:31:35Z",
+  "http_status": 404,
+  "stdout_body": "{\"message\":\"Branch not protected\",\"documentation_url\":\"https://docs.github.com/rest/branches/branch-protection#get-branch-protection\",\"status\":\"404\"}",
+  "stderr": "gh: Branch not protected (HTTP 404)",
+  "note": "Captured verbatim as a single stream (gh wrote the JSON body and the error line to the same captured output). This wrapper makes the capture valid JSON so the skill's doctor can parse every .json in the tree; the command, exit code, body and stderr are preserved exactly as captured, unedited. 999-setup genuinely has no branch protection on main."
+}

@@ -1,0 +1,20 @@
+captured_at=2026-10-18T23:32:08Z
+repo=trevorotts1/openclaw-onboarding ref=39e74434810d9c110f2c6ac506386c832f7b6fb5
+method=git rev-parse <sha>:<path> (rc=128 means absent)
+rc=0 path=77-council-of-wise-elders/scripts/supervisor/runner.mjs id=592a618f1861177cd4c4f46e876bb7e8ee149f08
+rc=0 path=77-council-of-wise-elders/scripts/supervisor/runner.test.mjs id=888d4cf7ae886a97ed89602e6fb22f0115d85b8d
+rc=0 path=77-council-of-wise-elders/evidence/wer026/host id=e50fc6a8eac5cdd93c50207a65b559efc110b229
+rc=0 path=77-council-of-wise-elders/evidence/wer026/local id=f7dd0f17f5faf791c73c7bd6501291a74e10ba7b
+rc=0 path=77-council-of-wise-elders/evidence/wer026/journey id=0d314bd526a83541d92088231df0f226baadc093
+rc=0 path=77-council-of-wise-elders/runtime/src/service id=687ca21d97c21023b5f76d788978addbf62c5909
+rc=0 path=77-council-of-wise-elders/runtime/src/platform id=1e7f380c6f61af3fed6a462ac0ead988e0aa2460
+rc=0 path=77-council-of-wise-elders/runtime/src/platform/windows.ts id=0f06d011a0b9b0975fe2066db4615e8dabd0137d
+rc=0 path=77-council-of-wise-elders/runtime/src/remote id=9ba555fd37d737b4b59424fe8d5ca9c82551f160
+rc=0 path=77-council-of-wise-elders/scripts/verify-cohort-parity.mjs id=bc37ab535f3c5b9fa6ddb4886ffb114e37529baf
+rc=0 path=77-council-of-wise-elders/scripts/supervisor id=5edb5427d63691bf8390e5fd1e62e15da4db1f77
+rc=0 path=77-council-of-wise-elders/skill-version.txt id=0275cf61093801beb36d29e7aebb266860f63ca0
+rc=0 path=77-council-of-wise-elders/version id=a9707166ba785cfc8602a5300ae64206bdbd6999
+rc=0 path=77-council-of-wise-elders/SKILL.md id=0d50dd9877dbee6c26acb7c907780e2145ee48d0
+rc=0 path=77-council-of-wise-elders/CHANGELOG.md id=0aabad75db6e61f6a5c262bf8944ce0df001410c
+rc=0 path=77-council-of-wise-elders/manifest.json id=8921b5a33718bc6153f03eefc642b8b3cab8a64a
+rc=0 path=76-local-embedder id=35e3b3d2cf2a8bb05a82177f60bc270353b68e17

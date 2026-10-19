@@ -1,0 +1,28 @@
+[2026-10-18T23:36:20Z] arming: waiting for launchd fire 3 (tick_seq 3, process alive)
+[2026-10-18T23:45:50Z] runner_pids=66990
+{
+  "at": "2026-10-18T23:45:50.470Z",
+  "pid": 66990,
+  "tick": 3,
+  "ledger_generation": 3,
+  "pending_actions": [
+    {
+      "id": "PEND-000003",
+      "at_ms": 1792367147470,
+      "kind": "SCHEDULED_SWEEP_TICK",
+      "payload": {
+        "tick_seq": 3,
+        "cadence_ms": 600000
+      },
+      "state": "PENDING"
+    }
+  ]
+}
+[2026-10-18T23:45:50Z] kill -9 66990
+kill_rc=0
+[2026-10-18T23:45:51Z] pids_after_kill=[]
+dead_confirmed_at=2026-10-18T23:45:51Z
+kill_part_done
+kill_part_script_rc=0
+
+[exited with code 0]

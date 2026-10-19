@@ -1,0 +1,69 @@
+WER-026 live host acceptance — W15-U001
+=======================================
+
+Captured: 2026-10-18T23:26Z (UTC)
+Host: THIS operator Mac (darwin arm64), user scope gui/501.
+
+1. Prerequisite re-verification (read-only, before any host write)
+---------------------------------------------------------------
+command: git fetch origin main --quiet
+         git cat-file -t 39e74434810d9c110f2c6ac506386c832f7b6fb5
+         git log -1 --format='%H %ci %s' 39e7443...
+         git rev-parse origin/main
+         git merge-base --is-ancestor 39e7443... origin/main
+exit codes: fetch 0, cat-file 0 (type=commit), rev-parse 0, ancestor 0
+
+39e74434810d9c110f2c6ac506386c832f7b6fb5
+2026-10-18 19:20:50 -0400
+Merge pull request #2280 from trevorotts1/batch/wer026-runner
+
+origin/main == 39e74434810d9c110f2c6ac506386c832f7b6fb5 (identical)
+ancestor check rc=0 → the merge commit is ON origin/main.
+
+command: gh pr view 2280 --repo trevorotts1/openclaw-onboarding \
+           --json number,state,mergedAt,mergeCommit,title
+exit code 0
+{"number":2280,"state":"MERGED","mergedAt":"2026-10-18T23:20:50Z",
+ "mergeCommit":{"oid":"39e74434810d9c110f2c6ac506386c832f7b6fb5"},
+ "title":"WER-026: runnable supervisor driver + live crash/restart acceptance, Skill 77 v1.0.14"}
+
+Tree presence at that commit (git ls-tree -r):
+  77-council-of-wise-elders/scripts/supervisor/runner.mjs          present
+  77-council-of-wise-elders/scripts/supervisor/launchd.mjs         present
+  77-council-of-wise-elders/evidence/wer026/host/                  present (30 files)
+  77-council-of-wise-elders/evidence/wer026/journey/               present
+  77-council-of-wise-elders/evidence/wer026/local/                 present
+
+2. Stable pinned install checkout
+---------------------------------
+path: <operator-home>/.claude/state/council-elders/install/skill
+command: git clone --no-checkout https://github.com/trevorotts1/openclaw-onboarding.git <path>
+exit code 0
+command: git -C <path> checkout --detach 39e74434810d9c110f2c6ac506386c832f7b6fb5
+exit code 0
+git -C <path> rev-parse HEAD
+39e74434810d9c110f2c6ac506386c832f7b6fb5
+git -C <path> status --porcelain → empty at checkout time
+
+3. Node runtime matrix
+----------------------
+/opt/homebrew/opt/node@26/bin/node --version → v26.8.1   (file exists, mode -r-xr-xr-x, executable)
+Matrix required by runtime/package.json engines: "^22.13.0 || >=24" → v26.8.1 satisfies >=24.
+Chosen absolute stable path: /opt/homebrew/opt/node@26/bin/node
+(Not used: /opt/homebrew/bin/node v26.8.1 — a keg symlink that moves on brew upgrade;
+ <operator-home>/.nvm/.../v24.21.0/bin/node — per-user nvm path, also valid but less stable.)
+
+4. Supervisor test suite in the pinned clone
+--------------------------------------------
+cwd: <path>/77-council-of-wise-elders/scripts/supervisor
+command: /opt/homebrew/opt/node@26/bin/node --test tests/*.test.mjs runner.test.mjs
+exit code 0
+ℹ tests 113 | ℹ pass 113 | ℹ fail 0 | ℹ cancelled 0 | ℹ skipped 0
+Full log: 01-supervisor-tests.log
+
+5. Runtime build inside the pinned clone (needed for proofs C and D)
+--------------------------------------------------------------------
+command: /opt/homebrew/opt/node@26/bin/npm ci --no-audit --no-fund      exit 0
+command: /opt/homebrew/opt/node@26/bin/npm run build                    exit 0
+artifact: <path>/runtime/dist/blackceo-council.mjs
+sha256: bd834abb8723ef90782d9f9fb2e6398bdd6ee2f1ebfbf38a14358c2e6170c7c4

@@ -1,0 +1,81 @@
+{
+  "at": "2026-10-18T23:26:36.068Z",
+  "steps": [
+    {
+      "step": "initial",
+      "state": "STARTING",
+      "canAutoRestart": {
+        "allowed": true,
+        "reason": "WITHIN_BUDGET",
+        "restarts_in_window": 0,
+        "limit": 3,
+        "window_ms": 1800000
+      }
+    },
+    {
+      "step": "request_stop_explicit_true",
+      "accepted": true,
+      "reason": "REQUEST_STOP",
+      "state": "STOPPING",
+      "explicit_stop": {
+        "requested_at_ms": 1792365996069,
+        "by": "operator:w15u001",
+        "reason": "W15-U001 explicit stop demonstration"
+      },
+      "automatic_engineering_restart_allowed": false
+    },
+    {
+      "step": "can_auto_restart_while_fenced",
+      "is_explicit_stop_fenced": true,
+      "gate": {
+        "allowed": false,
+        "reason": "EXPLICIT_STOP_FENCE",
+        "restarts_in_window": 0,
+        "limit": 3,
+        "window_ms": 1800000
+      }
+    },
+    {
+      "step": "auto_restart_event_while_fenced",
+      "accepted": false,
+      "reason": "EXPLICIT_STOP_FENCE"
+    },
+    {
+      "step": "clear_without_operator",
+      "accepted": false,
+      "reason": "OPERATOR_CLEAR_REQUIRED"
+    },
+    {
+      "step": "clear_as_operator",
+      "accepted": true,
+      "reason": "EXPLICIT_STOP_CLEARED",
+      "explicit_stop": null,
+      "automatic_engineering_restart_allowed": true,
+      "is_explicit_stop_fenced": false,
+      "canAutoRestart": {
+        "allowed": true,
+        "reason": "WITHIN_BUDGET",
+        "restarts_in_window": 0,
+        "limit": 3,
+        "window_ms": 1800000
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "type": "REQUEST_STOP",
+      "from": "STARTING",
+      "to": "STOPPING",
+      "at_ms": 1792365996069,
+      "by": "operator:w15u001"
+    },
+    {
+      "type": "CLEAR_EXPLICIT_STOP",
+      "from": "STOPPING",
+      "to": "STOPPING",
+      "at_ms": 1792365996073,
+      "by": "operator:w15u001"
+    }
+  ],
+  "ok": true
+}

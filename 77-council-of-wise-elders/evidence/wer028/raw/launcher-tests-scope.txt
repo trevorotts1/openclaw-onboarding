@@ -1,0 +1,10 @@
+# 999-setup launcher tests at a156e4dfb7db831b32b47416cc751d8e803636a1 (read-only lane clone)
+# captured_at=2026-10-18T23:34:17Z
+# W14 recorded: node launchers/tests/windows-launcher-simulation.mjs -> RESULT PASS, exit 0; bash launchers/tests/test-council-desktop-macos.sh -> RESULT PASS, exit 0. This repair did NOT re-execute the suites; the scope lines below were re-read at the current head.
+#
+# SCOPE OF THOSE PASSES (they do NOT close the serve//api/health seam):
+launchers/tests/test-council-desktop-macos.sh:34  cat > "$T/stub.cjs" <<'STUB'
+launchers/tests/test-council-desktop-macos.sh:51  cat > "$T/fake-run-council.cjs" <<'ENTRY'
+launchers/tests/windows-launcher-simulation.mjs:153  // --- simulated end-to-end against stub listeners ---------------------------
+#
+# Both suites drive stub listeners/fake entries and never execute the real onboarding runtime entry point.

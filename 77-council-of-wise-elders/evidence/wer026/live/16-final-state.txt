@@ -1,0 +1,27 @@
+Proof E — final delivered state
+===============================
+Captured 2026-10-18T23:56:40Z.
+
+The LaunchAgent is LEFT LOADED and healthy. That is the delivered product
+state; the work is not torn down.
+
+/bin/launchctl print gui/501/ai.blackceo.wise-elders.supervisor   exit code 0
+  active count = 0            (between fires; the job is interval-driven)
+  state = not running
+  runs = 4                    (four launchd-scheduled fires)
+  last exit code = 0
+  run interval = 600 seconds
+  full output: 16-final-launchctl-print.raw.txt
+
+/bin/launchctl list ai.blackceo.wise-elders.supervisor            exit code 0
+  Label = "ai.blackceo.wise-elders.supervisor"
+  LastExitStatus = 0
+  StandardOutPath/StandardErrorPath set as generated
+
+Reboot persistence is NOT claimed. A registered LaunchAgent in
+<operator-home>/Library/LaunchAgents is loaded by launchd at login as a
+structural property of the platform; **no reboot was performed** in this
+acceptance.
+
+Not tested, and not claimed: Windows, a VPS host, a phone-through-Cloudflare-
+Access path, and a reboot. Those remain deferred and unproven.
