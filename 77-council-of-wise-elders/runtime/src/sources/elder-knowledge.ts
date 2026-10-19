@@ -170,6 +170,16 @@ export interface BookToPersonaRootShape {
   resolved_from: string;
 }
 
+/** Which layers one seat's briefing was built from (journaled by the service). */
+export interface SeatKnowledgeUse {
+  seat_id: SeatId;
+  layer: SeatKnowledgeLayer;
+  /** Live Book-to-Persona keys read for this seat; empty for the other layers. */
+  persona_keys: string[];
+  /** Fresh web findings attached in their own labelled section. */
+  web_fact_count: number;
+}
+
 export interface ElderKnowledge {
   loadSeatBriefing(
     seatId: SeatId,
@@ -366,6 +376,8 @@ export function createElderKnowledge(opts: {
   personaRoot: BookToPersonaRootShape | null;
   scope: ScopeFields;
   listSessionEvidence?: (session: StoredSession) => Array<Record<string, unknown>>;
+  /** Called after each session briefing load with the layer that load actually used. */
+  onSeatBriefing?: (session: StoredSession, use: SeatKnowledgeUse) => void;
 }): ElderKnowledge {
   const visibility: SessionVisibility = 'company';
   const shippedCache = new Map<SeatId, ShippedSeat>();
@@ -485,11 +497,21 @@ export function createElderKnowledge(opts: {
   return {
     async loadSeatBriefing(seatId, session) {
       if (!(SEAT_IDS as readonly string[]).includes(seatId)) return null;
-      const books = booksSection(fresh(), seatId);
-      const web =
+      const state = fresh();
+      const books = booksSection(state, seatId);
+      const facts =
         session && opts.listSessionEvidence
-          ? webSection(freshFactsFromEvidenceRows(opts.listSessionEvidence(session)))
-          : null;
+          ? freshFactsFromEvidenceRows(opts.listSessionEvidence(session))
+          : [];
+      const web = webSection(facts);
+      if (session) {
+        opts.onSeatBriefing?.(session, {
+          seat_id: seatId,
+          layer: state.layers[seatId],
+          persona_keys: [...new Set((state.live.get(seatId) ?? []).map((p) => p.key))],
+          web_fact_count: facts.length,
+        });
+      }
       const parts = [books, web].filter((p): p is string => p !== null);
       return parts.length > 0 ? { briefing_text: parts.join('\n\n') } : null;
     },
