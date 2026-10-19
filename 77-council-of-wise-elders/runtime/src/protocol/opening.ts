@@ -83,6 +83,11 @@ import { OPENING_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
 import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import { parseCardResponseText } from '../cli/card-text.js';
 import {
+  cardOutputContract,
+  cardRequestSystem,
+  cardSystemBytes,
+} from '../cli/card-contract.js';
+import {
   SimulatedCrashError,
   TransportDispatchError,
   type OperationDispatchContext,
@@ -381,10 +386,12 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
       ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${OPENING_ROUND_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : OPENING_ROUND_SYSTEM;
+    const system = cardRequestSystem(
+      OPENING_ROUND_SYSTEM,
+      'advisor',
+      [],
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -410,6 +417,8 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
           pack_briefing: pack?.briefing_text ?? null,
           input_manifest_sha256: plan.input_manifest_sha256,
           pack_version: plan.pack_version,
+          // The exact card schema; Round 1 issues no challenges.
+          output_contract: cardOutputContract('advisor', []),
         },
       });
     } catch (error) {
@@ -620,7 +629,7 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
     }
     const route: RouteContextBudget = {
       ...limits,
-      system_rules_bytes: new TextEncoder().encode(OPENING_ROUND_SYSTEM).length,
+      system_rules_bytes: cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor'),
     };
     const seatBudgets: Partial<Record<SeatId, number>> = {};
     for (const other of SEAT_IDS) {

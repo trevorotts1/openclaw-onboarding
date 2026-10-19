@@ -121,3 +121,49 @@ export function cardRepairInstruction(
     'Return the complete corrected card only: one JSON object with every required field present, and nothing else (no prose, no markdown, no code fences, no partial card).',
   ].join('\n');
 }
+
+/**
+ * The card contract for one request on any path (RP-046-3/4 on the
+ * CLI engine; W30 on the service executors): the output_contract
+ * object that rides in the request input, and the system text with
+ * the contract instruction (plus, on the one permitted repair, the
+ * exact validation issues and the full contract restated).
+ */
+export function cardOutputContract(
+  purpose: CardContractPurpose,
+  challengeIds: string[] | null,
+) {
+  return {
+    card_kind: purpose,
+    instruction: cardContractInstruction(purpose, challengeIds),
+    json_schema: cardAuthorJsonSchema(purpose),
+  };
+}
+
+export function cardRequestSystem(
+  baseSystem: string,
+  purpose: CardContractPurpose,
+  challengeIds: string[] | null,
+  repairIssues: string[],
+): string {
+  const system = `${baseSystem}\n${cardContractInstruction(purpose, challengeIds)}`;
+  return repairIssues.length > 0
+    ? `${system}\n${cardRepairInstruction(purpose, challengeIds, repairIssues)}`
+    : system;
+}
+
+/** Issue text allowance reserved beside the restated contract on a repair. */
+const REPAIR_ISSUES_RESERVE = 'x'.repeat(2048);
+
+/**
+ * Worst-case system bytes for a request (the repair form), so the
+ * context budget reserves room for the contract prose it now carries.
+ */
+export function cardSystemBytes(
+  baseSystem: string,
+  purpose: CardContractPurpose,
+): number {
+  return new TextEncoder().encode(
+    cardRequestSystem(baseSystem, purpose, [], [REPAIR_ISSUES_RESERVE]),
+  ).length;
+}
