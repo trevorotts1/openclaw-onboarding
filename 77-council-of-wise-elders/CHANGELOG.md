@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.21: the real backend is composed (W22-U001)
+
+- W20 proved the honest-probe mechanism but left `store`, `route`, `routeCallable` and `worker` unbound on purpose, so the service still reported `usable: no` about a running process. The composition modules were merged and waiting; this entry binds them.
+- `runtime/src/service/composition.ts` now opens one canonical SQLite handle at `<dataDir>/council.db`, applies the additive `council-0001` schema (all 18 Section 16.2 tables), records the standalone installation profile, and builds `CouncilRepositories` — which constructs the `EventJournal` and the `ProjectionOutbox` over that same handle.
+- The supported route path is reused, not reinvented: the selected route id resolves read-only through `discoverConfiguredRoutes` / `resolveRouteForDispatch`; with no id, exactly one composable route is accepted and two or more is `ROUTE_SELECTION_AMBIGUOUS`. The guarded provider dispatch port is bound by the host launcher; offline readiness checks its presence and makes zero provider calls.
+- `composeDeliberationService` composes the durable runner, jobs, budget ledger, grants and admission over the same handle, and one `startCouncilWorkers` supervisor runs over that runner. `stop()` stops the supervisor (awaiting in-flight work) and closes the handle exactly once; the timers are unref'd and no child process is spawned.
+- Readiness observations now cite real state: `store` = 18/18 canonical tables present with journal and outbox bound; `route` = the selected route configured and its dispatch port bound; `worker` = supervisor running, poll generation observed and the durable budget ledger readable. `ui`, `discovery`, `executable` and `packs` are unchanged from W20. A bare `CouncilFrontDoor` keeps the byte-identical unbound shape.
+- The four deliberation host bindings (material catalog, trusted-principal resolver, transport resolver, verified route budget) stay honestly unbound with their exact file and line recorded in the unit receipt; `DeliberationService.readiness()` therefore reports not-ready and no completed deliberation or live advisor turn is claimed. `GET /api/council/sessions/<id>/events` still answers `EVENT_STREAM_ADAPTER_NOT_BOUND`; the event stream is W21's unit.
+- Advisors and book-persona mappings are byte-identical to the base commit; `front-door.ts`, `readiness.ts`, `sessions.ts`, `landing.test.ts` and `service.test.ts` are untouched.
+
 ## v1.0.20: the composition root moves into the repository (W20-U001, F5)
 
 - The only working wiring of the front door lived outside the repository in a hand-written host launcher that called `new CouncilFrontDoor({ identity, host, ports })` and bound no readiness probe. `readiness.ts` honestly reports every unbound layer as `unknown` with `READINESS_PROBE_NOT_BOUND` (and `ui` as `blocked` with `UI_NOT_BUNDLED`), and `usable` is true only when every layer is `ready`, so the status page printed `usable: no` with six unbound layers about a service that was actually running. The real composition modules were merged but never wired into the front door.
