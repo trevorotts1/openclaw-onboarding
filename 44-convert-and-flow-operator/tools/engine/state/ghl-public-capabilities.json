@@ -3,7 +3,7 @@
   "tenant": "XCgFTEA1oDvsPnTqqgoB",
   "recorded_at": "2026-10-19",
   "authority": "GU-004 3.2 rules 2-3 (GHL-140 amendment)",
-  "note": "enabled=true with provisional=true means the record authorizes dispatch on offline evidence (contract, adapter, tests) only. activation=UNVERIFIED means no real 200 has been observed for this tenant. The record never asserts tenant capability.",
+  "note": "enabled=false everywhere: the frozen evidence rule (GU-004 3.2 rule 2) requires read_verified and no real 200 has been observed for this tenant. The record exists so the loader and operation rows are testable; it does NOT admit any call.",
   "capabilities": {
     "locations.get": {
       "contract_verified": true,
@@ -11,9 +11,9 @@
       "offline_tests_passed": true,
       "read_verified": false,
       "canary_verified": false,
-      "enabled": true,
+      "enabled": false,
       "activation": "UNVERIFIED",
-      "provisional": true
+      "provisional": false
     },
     "contacts.list": {
       "contract_verified": true,
@@ -21,9 +21,9 @@
       "offline_tests_passed": true,
       "read_verified": false,
       "canary_verified": false,
-      "enabled": true,
+      "enabled": false,
       "activation": "UNVERIFIED",
-      "provisional": true
+      "provisional": false
     },
     "contacts.search": {
       "contract_verified": true,
@@ -31,9 +31,9 @@
       "offline_tests_passed": true,
       "read_verified": false,
       "canary_verified": false,
-      "enabled": true,
+      "enabled": false,
       "activation": "UNVERIFIED",
-      "provisional": true
+      "provisional": false
     },
     "custom_fields.list": {
       "contract_verified": true,
@@ -41,9 +41,9 @@
       "offline_tests_passed": true,
       "read_verified": false,
       "canary_verified": false,
-      "enabled": true,
+      "enabled": false,
       "activation": "UNVERIFIED",
-      "provisional": true
+      "provisional": false
     }
   }
 }

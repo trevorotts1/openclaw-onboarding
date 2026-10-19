@@ -135,16 +135,20 @@ class Capability:
             )
 
     def evidence_ok(self) -> bool:
-        """Rules 2-3 evidence minus the write-only canary flag.
+        """Frozen GU-004 section 3.2 rule 2, taken literally.
 
-        ``read_verified`` remains the tenant proof.  A record may instead
-        declare ``provisional``: offline evidence is complete, the tenant read
-        is explicitly unproven, and activation stays ``UNVERIFIED``.  Default
-        deny is untouched: an enabled row still needs every offline flag.
+        A read operation is enabled only when contract_verified AND
+        adapter_built AND offline_tests_passed AND read_verified.  There is no
+        offline-only escape: until a real 200 is observed for the tenant, the
+        operation stays denied.  ``provisional`` remains a receipt field only
+        and no longer admits anything.
         """
 
-        tenant_read = self.read_verified or (
-            self.provisional and self.activation == ACTIVATION_UNVERIFIED
+        return (
+            self.contract_verified
+            and self.adapter_built
+            and self.offline_tests_passed
+            and self.read_verified
         )
         return (
             self.contract_verified

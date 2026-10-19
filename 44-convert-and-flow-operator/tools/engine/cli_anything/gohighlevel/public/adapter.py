@@ -24,6 +24,7 @@ from urllib.parse import quote
 
 from .auth import AuthContext, AuthKind, TenantBinding, auth_headers
 from .capability import (
+    ACTIVATION_UNVERIFIED,
     DEFAULT_BLOCK,
     ActivationBlock,
     Capability,
@@ -603,6 +604,13 @@ class PublicGhlAdapter:
             "elapsed_s": response.elapsed_s,
         }
         if capability_evidence is not None:
+            # A 401/403 CONTRADICTS a record's read_verified claim for this
+            # tenant. The receipt must not keep claiming a verified read after
+            # the service refused the token: downgrade activation and
+            # tenant_verified so the receipt never over-claims.
+            if http_status in (401, 403):
+                capability_evidence["activation"] = ACTIVATION_UNVERIFIED
+                capability_evidence["tenant_verified"] = False
             # ``activation`` is the record state, not this call's outcome.  A
             # 200 is surfaced as observed, never written back as VERIFIED.
             capability_evidence["observed_http_status"] = http_status

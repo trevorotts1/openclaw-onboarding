@@ -65,11 +65,11 @@ def _capability_row(**overrides: object) -> dict[str, object]:
         "contract_verified": True,
         "adapter_built": True,
         "offline_tests_passed": True,
-        "read_verified": False,
+        "read_verified": True,
         "canary_verified": False,
         "enabled": True,
-        "activation": ACTIVATION_UNVERIFIED,
-        "provisional": True,
+        "activation": ACTIVATION_VERIFIED,
+        "provisional": False,
     }
     row.update(overrides)
     return row
@@ -204,22 +204,37 @@ class CapabilityEvidenceInvariantTest(unittest.TestCase):
                     caught.exception.rule, "enabled_without_evidence"
                 )
 
-    def test_provisional_is_a_legal_read_state(self) -> None:
+    def test_a_verified_read_is_the_enabling_state(self) -> None:
         capability = Capability(
             operation_id="contacts.search", **_capability_row()
         )
         self.assertTrue(capability.enabled)
         self.assertTrue(capability.evidence_ok())
         self.assertFalse(capability.write_ready())
-        self.assertFalse(capability.tenant_verified())
-        self.assertEqual(capability.activation, ACTIVATION_UNVERIFIED)
+        self.assertTrue(capability.tenant_verified())
+        self.assertEqual(capability.activation, ACTIVATION_VERIFIED)
+
+    def test_provisional_without_a_verified_read_is_denied(self) -> None:
+        # GU-004 3.2 rule 2, literally: there is no offline-only escape.
+        with self.assertRaises(ContractViolation) as caught:
+            Capability(
+                operation_id="contacts.search",
+                **_capability_row(
+                    provisional=True,
+                    read_verified=False,
+                    activation=ACTIVATION_UNVERIFIED,
+                ),
+            )
+        self.assertEqual(caught.exception.rule, "enabled_without_evidence")
 
     def test_verified_activation_demands_a_verified_read(self) -> None:
         with self.assertRaises(ContractViolation) as caught:
             Capability(
                 operation_id="contacts.search",
                 **_capability_row(
-                    provisional=False, activation=ACTIVATION_VERIFIED
+                    provisional=False,
+                    read_verified=False,
+                    activation=ACTIVATION_VERIFIED,
                 ),
             )
         self.assertEqual(
@@ -230,7 +245,7 @@ class CapabilityEvidenceInvariantTest(unittest.TestCase):
         with self.assertRaises(ContractViolation) as caught:
             Capability(
                 operation_id="contacts.search",
-                **_capability_row(read_verified=True),
+                **_capability_row(provisional=True, read_verified=True),
             )
         self.assertEqual(
             caught.exception.rule, "provisional_with_read_verified"
@@ -238,7 +253,12 @@ class CapabilityEvidenceInvariantTest(unittest.TestCase):
         with self.assertRaises(ContractViolation) as caught:
             Capability(
                 operation_id="contacts.search",
-                **_capability_row(canary_verified=True),
+                **_capability_row(
+                    provisional=True,
+                    read_verified=False,
+                    canary_verified=True,
+                    activation=ACTIVATION_UNVERIFIED,
+                ),
             )
         self.assertEqual(caught.exception.rule, "provisional_with_canary")
 
@@ -329,7 +349,7 @@ class AdapterReachesTransportTest(_RecordCase):
         self.assertEqual(sent["url"], "/locations/" + SYNTHETIC_TENANT)
         self.assertEqual(sent["version"], "2021-07-28")
 
-    def test_the_receipt_surfaces_unverified_activation(self) -> None:
+    def test_the_receipt_surfaces_the_verified_read(self) -> None:
         path = self.write_record(_record("contacts.search"))
         transport = FakeTransport([resp(200)])
         adapter = self.adapter(path, transport)
@@ -346,9 +366,9 @@ class AdapterReachesTransportTest(_RecordCase):
             {
                 "operation_id": "contacts.search",
                 "enabled": True,
-                "activation": ACTIVATION_UNVERIFIED,
-                "tenant_verified": False,
-                "provisional": True,
+                "activation": ACTIVATION_VERIFIED,
+                "tenant_verified": True,
+                "provisional": False,
                 "observed_http_status": 200,
             },
         )
@@ -455,16 +475,18 @@ class RegistryRowTest(unittest.TestCase):
         }
         self.assertEqual(versions, {"2021-07-28", "v3"})
 
-    def test_the_checked_in_record_enables_only_named_operations(self) -> None:
+    def test_the_checked_in_record_declares_rows_without_admitting_them(self) -> None:
+        # GU-004 3.2 rule 2 is literal: no real 200 has been observed for this
+        # tenant, so the checked-in record MUST NOT enable anything. It exists
+        # so the loader and the operation rows are testable.
         gate = load_capability_record(tenant=CHECKED_IN_TENANT)
         for operation_id in (LOCATION_OPERATION, *REPRESENTATIVE):
             with self.subTest(operation_id=operation_id):
                 capability = gate.get(operation_id)
-                self.assertTrue(capability.enabled)
-                self.assertTrue(capability.provisional)
-                self.assertEqual(capability.activation, ACTIVATION_UNVERIFIED)
+                self.assertFalse(capability.enabled)
                 self.assertFalse(capability.read_verified)
                 self.assertFalse(capability.tenant_verified())
+                self.assertFalse(capability.evidence_ok())
         # Default-deny is untouched for everything else.
         self.assertFalse(gate.get("contacts.get").enabled)
         self.assertIsNotNone(gate.get("contacts.get").activation_blocked)
