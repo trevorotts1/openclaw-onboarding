@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.19: the composition root moves into the repository (W20-U001, F5)
+## v1.0.20: the composition root moves into the repository (W20-U001, F5)
 
 - The only working wiring of the front door lived outside the repository in a hand-written host launcher that called `new CouncilFrontDoor({ identity, host, ports })` and bound no readiness probe. `readiness.ts` honestly reports every unbound layer as `unknown` with `READINESS_PROBE_NOT_BOUND` (and `ui` as `blocked` with `UI_NOT_BUNDLED`), and `usable` is true only when every layer is `ready`, so the status page printed `usable: no` with six unbound layers about a service that was actually running. The real composition modules were merged but never wired into the front door.
 - Adds `runtime/src/service/composition.ts`, the canonical composition root inside the repository. `composeCouncilService()` builds the identity, creates the durable data directory, binds the probes and the owning authority's `admissionSink` (when supplied), and returns the door without listening. `startCouncilService()` starts it exactly as the host launcher did, optionally installs SIGTERM/SIGINT shutdown, and returns a stop handle. The module imports no `child_process`, reads no `process.env`, makes no network call at module load and creates nothing until called.
