@@ -57,4 +57,18 @@ mkdir -p "$T/h3"; out="$(run "$T/h3")"
 [ -d "$T/h3/999-setup/.git" ] && [ -L "$T/h3/.claude/skills/kaizen" ] && ok "B3 cloned and linked" || bad "B3: $out"
 [ ! -e "$T/h3/INSTALLER_RAN" ] && [ ! -e "$T/h3/.9router" ] && [ ! -e "$T/h3/.local" ] && ok "B3 installer/9Router untouched" || bad "B3 installer ran"
 echo "$out" | grep -q "No such file" && bad "B4 path error: $out" || ok "B4 link step works from unrelated cwd"
+
+# B6 (CAN005): clone left on a branch whose upstream was merged + deleted -> moved to main and fast-forwarded;
+# with an unpushed commit it is left untouched and named (the front door then clones a clean copy).
+mkdir -p "$T/h6"; clone "$T/h6/999-setup"; git -C "$T/h6/999-setup" checkout -q -b batch/x
+git -C "$T/h6/999-setup" config branch.batch/x.remote origin; git -C "$T/h6/999-setup" config branch.batch/x.merge refs/heads/batch/x
+out="$(run "$T/h6")"   # upstream batch/x never existed on origin: same "gone" state git reports after a prune
+[ "$(git -C "$T/h6/999-setup" rev-parse --abbrev-ref HEAD)" != batch/x ] && ok "B6 gone-upstream branch moved off" || bad "B6 still on gone branch: $out"
+echo "$out" | grep -q "FAILED" && bad "B6 pull failed: $out" || ok "B6 no pull failure"
+mkdir -p "$T/h7"; clone "$T/h7/999-setup"; git -C "$T/h7/999-setup" checkout -q -b batch/y
+git -C "$T/h7/999-setup" config branch.batch/y.remote origin; git -C "$T/h7/999-setup" config branch.batch/y.merge refs/heads/batch/y
+echo m > "$T/h7/999-setup/mine.txt"; git -C "$T/h7/999-setup" add -A; git -C "$T/h7/999-setup" -c user.email=a@b -c user.name=t commit -qm mine
+out="$(run "$T/h7")"
+[ "$(git -C "$T/h7/999-setup" rev-parse --abbrev-ref HEAD)" = batch/y ] && ok "B6 unmerged branch untouched" || bad "B6 unmerged branch moved: $out"
+echo "$out" | grep -q "UNTOUCHED.*batch/y.*1 commit" && ok "B6 reason names branch and commit count" || bad "B6 no reason: $out"
 exit $fail

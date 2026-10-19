@@ -714,6 +714,45 @@ class Update999(unittest.TestCase):
         (self.home / ".claude/skills/nine-router-setup").symlink_to(repo / ".claude/skills/nine-router-setup")
         self.assertEqual(fr._find_999_checkout().resolve(), repo.resolve())
 
+    def gone_upstream(self, local_commit=False):
+        """CAN005: clone sits on a branch whose upstream was merged into main and deleted on origin."""
+        repo, marker, new_sha = self.make_999("Downloads/999-setup")
+        origin = self.tmp / "gh" / "trevorotts1" / "999-setup.git"
+        seed = self.tmp / "seed"
+        git(seed, "checkout", "-q", "-b", "batch/x")
+        commit(seed, {"x.txt": "x"}, "feature")
+        git(seed, "push", "-q", "origin", "batch/x")
+        git(repo, "fetch", "-q")
+        git(repo, "checkout", "-q", "-b", "batch/x", "--track", "origin/batch/x")
+        git(seed, "checkout", "-q", "main")
+        git(seed, "merge", "-q", "--no-ff", "-m", "merge x", "batch/x")
+        git(seed, "push", "-q", "origin", "main")
+        git(seed, "push", "-q", "origin", "--delete", "batch/x")
+        if local_commit:
+            commit(repo, {"mine.txt": "unpushed"}, "local only")
+        return repo, marker
+
+    def test_gone_upstream_clean_branch_moves_to_main_and_fast_forwards(self):
+        repo, _marker = self.gone_upstream()
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_update_999(res, dry_run=False)
+        self.assertEqual(res.steps["update-999"], "ok", res.errors)
+        self.assertEqual(git(repo, "rev-parse", "--abbrev-ref", "HEAD"), "main")
+        self.assertEqual(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"))
+        self.assertTrue(git(repo, "rev-parse", "--verify", "batch/x"))   # branch kept, never deleted
+
+    def test_gone_upstream_with_unmerged_commit_is_left_alone_and_named(self):
+        repo, marker = self.gone_upstream(local_commit=True)
+        before = git(repo, "rev-parse", "HEAD")
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_update_999(res, dry_run=False)
+        self.assertTrue(res.steps["update-999"].startswith("skip:NEEDS ATTENTION"), res.steps["update-999"])
+        self.assertIn("batch/x", res.steps["update-999"])
+        self.assertIn("1 commit(s)", res.steps["update-999"])
+        self.assertEqual(git(repo, "rev-parse", "HEAD"), before)
+        self.assertEqual(git(repo, "rev-parse", "--abbrev-ref", "HEAD"), "batch/x")
+        self.assertFalse(marker.exists())
+
     def test_dry_run_does_not_pull(self):
         repo, _marker, _sha = self.make_999("Documents/999-setup")
         before = git(repo, "rev-parse", "HEAD")
