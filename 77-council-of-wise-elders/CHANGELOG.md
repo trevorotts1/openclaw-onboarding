@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.25: W27 hardening batch (status cold path, launcher, skill root, live chamber)
+
+Four Opus-QC-passed patches, integrated once (W27-U001):
+
+- **First `/status` is no longer cold** (`patch/W27-status-cold-path`): the front door runs one readiness pass at service start, so the first `GET /status` does not pay lazy-init and cold filesystem cost inside the request under macOS background QoS. Each request still re-observes live state. The focused test moved to `runtime/tests/service-status-cold-path.test.ts` so `npm test` actually collects it. QC verdict: PASS.
+- **Upstreamed service launcher** (`patch/W27-launcher-upstream`): `runtime/scripts/service-launch.mjs` starts the front door through `startCouncilService`, so the event, admission and session adapters are bound (a bare front door answers 501 on events). Data dir comes from `COUNCIL_SERVICE_DATA_DIR` or the platform default. INSTALL.md documents the `runtime/node_modules/.bin/tsx` run command from the skill root; guard test `runtime/tests/service-launcher.test.ts`. QC verdict: PASS.
+- **Installed binary finds its skill folder** (`patch/W27-skill-root-upstream`): `skillRootForAssets()` in `runtime/src/cli/dispatcher.ts` resolves the skill root from the install record (`skill_dir`), else the nearest ancestor holding SKILL.md, advisors/ and manifest.json; data-dir commands refuse when none is found. `scripts/install-runtime.mjs` now writes `releases/install-record.json` and heals prefixes installed without it. New `runtime/src/cli/skill-root.test.ts` covers both bundle layouts (`test:skill-root` npm script). QC verdict: PASS.
+- **Live chamber view over real sessions** (`patch/W27-live-chamber-view`): read-only `GET /api/council/sessions` (501 `SESSION_LIST_NOT_BOUND` when no listing reader is bound), selected-session committed events over the existing SSE route, an honest "No council sessions yet" state, and the fixture kept only as a hidden, labelled sample. The list refreshes in place by `session_id`, keeping keyboard focus and announcing "Loading" only on first load or Refresh. New `chamber-live.js` ships in the `public/chamber` allowlist. QC verdict: PASS.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.41).
+
 ## v1.0.24: the runtime test collection states the platform it actually runs on
 
 - `runtime/tests/core.test.ts` asserted the XDG data-directory default unconditionally, so it failed on macOS and Windows where `src/cli/paths.ts` documents and implements a per-platform default. The test now asserts the contract for the running platform: `~/Library/Application Support/BlackCEO/WiseElders` on darwin (and that `XDG_DATA_HOME` does not steer it), `%LOCALAPPDATA%\BlackCEO\WiseElders` on win32, XDG elsewhere.

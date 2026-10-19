@@ -34,6 +34,7 @@ test('every chamber file the front door serves exists on disk', () => {
     'council-theme.css',
     'council-room.css',
     'council-journey.css',
+    'chamber-live.js',
     'RECEIPT.md',
   ]) {
     assert.ok(existsSync(join(chamber, name)), `${name} must exist`);
