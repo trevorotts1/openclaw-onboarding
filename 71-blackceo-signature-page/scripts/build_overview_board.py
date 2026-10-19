@@ -452,14 +452,18 @@ def build_mobile(imgs, secs, c, title, stage, viewport):
     cap_h = max(line_h(f_cap) * len(n) + line_h(f_sub) * len(s) for n, s in caps) + 28
     n_f = len(groups)
     note = [f"Optimized for mobile ({viewport})", "Same content and flow as desktop \u00b7 No section labels on the page"]
-    head_w = (tmp.textlength(title.upper(), font=font("serif", 56)) + 48 + 40 +
+    subtitle = f"Mobile {STAGE_LABEL[stage]} (complete scroll)"
+    # the left block is as wide as the longer of title and subtitle; the note box sits right of it
+    left_w = max(tmp.textlength(title.upper(), font=font("serif", 56)),
+                 tmp.textlength(subtitle.upper(), font=font("bold", 24)))
+    head_w = (left_w + 48 + 40 +
               max(tmp.textlength(n, font=font("sans", 20)) for n in note) + 48 + D_MARGIN * 2)
     W = int(max(head_w, M_MARGIN * 2 + n_f * fw + (n_f - 1) * M_GAP))
     top = M_BAND_H + 32
     H = top + M_TAB_H + fh + 12 + cap_h + M_MARGIN
     board = Image.new("RGB", (W, H), c["bg"])
     d = ImageDraw.Draw(board)
-    title_band(d, W, M_BAND_H, c, title, f"Mobile {STAGE_LABEL[stage]} (complete scroll)", note)
+    title_band(d, W, M_BAND_H, c, title, subtitle, note)
     x0 = (W - (n_f * fw + (n_f - 1) * M_GAP)) // 2
     meta = []
     for k, (g, (names, sub)) in enumerate(zip(groups, caps)):

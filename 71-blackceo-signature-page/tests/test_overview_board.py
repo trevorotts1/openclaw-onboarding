@@ -22,11 +22,11 @@ COLORS = [(200, 30, 30), (30, 160, 40), (30, 50, 210), (230, 200, 20)]
 BRAND = {"brand_id": "Test Co", "palette": {"a": "#FAF9F5", "b": "#162F23", "c": "#A64335"}}
 
 
-def make_run(tmp, stage="final-mockups", n=4, drop=None):
+def make_run(tmp, stage="final-mockups", n=4, drop=None, mh=520):
     from PIL import Image
     run = Path(tmp)
     for device, w, h, tpl in (("desktop", 1440, 1000, "desktop/part-{n:02d}.png"),
-                              ("mobile", 390, 520, "mobile/part-{n:02d}.png")):
+                              ("mobile", 390, mh, "mobile/part-{n:02d}.png")):
         for i in range(1, n + 1):
             if i == drop:
                 continue
@@ -60,6 +60,22 @@ class OverviewBoardTests(unittest.TestCase):
             self.assertEqual([f["label"] for f in receipt["geometry"]["frames"]],
                              ["SECTIONS 1-2", "SECTIONS 3-4"])
             self.assertEqual(receipt["sections"][0]["name"], "Name 1")
+
+    def test_mobile_note_never_covers_subtitle_with_short_title(self):
+        # 3 frames + the brand-id title (shorter than the subtitle) was the overlap case
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            run = make_run(tmp, n=3, mh=1000)
+            for stage_title in ("BLACKCEO", "X"):
+                p, (w, _h) = bob.build_stage(run, "final-mockups", device="mobile", title=stage_title,
+                                             brand=run / "brand.json")[0]
+                geo = json.loads((run / "review-pdfs/final-mockups-mobile-overview.json").read_text())["geometry"]
+                self.assertEqual(len(geo["frames"]), 3)
+                sub = bob.font("bold", 24).getlength(f"MOBILE {bob.STAGE_LABEL['final-mockups']} (COMPLETE SCROLL)")
+                note = max(bob.font("sans", 20).getlength(n) for n in (
+                    f"Optimized for mobile ({bob.VIEWPORT_RANGE})",
+                    "Same content and flow as desktop \u00b7 No section labels on the page")) + 48
+                self.assertGreaterEqual(w, bob.D_MARGIN + sub + 40 + note + bob.D_MARGIN, stage_title)
 
     def test_desktop_sections_scaled_uniformly_top_to_bottom(self):
         from PIL import Image
