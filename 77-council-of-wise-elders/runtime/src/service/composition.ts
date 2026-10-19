@@ -165,7 +165,7 @@ const WORKER_ID = 'council-service-worker';
 
 type CouncilDriverHandle = ReturnType<typeof createCouncilDriver>;
 
-const DEFAULT_CONVENE_DRAIN_TIMEOUT_MS = 25_000;
+const DEFAULT_CONVENE_DRAIN_TIMEOUT_MS = 6_000;
 
 export interface CouncilServiceCompositionOptions {
   /** Owner tenant served at the identity endpoint. */
@@ -232,7 +232,8 @@ export interface CouncilServiceCompositionOptions {
   ) => ModelTransport | null | Promise<ModelTransport | null>;
   /**
    * Longest `stop()` waits for in-flight convened sessions before it
-   * closes the database. Default 25000 ms.
+   * closes the database. One budget covers the convene drain and the
+   * worker stop together. Default 6000 ms.
    */
   conveneDrainTimeoutMs?: number;
 }
@@ -1075,11 +1076,17 @@ function composeBackend(input: {
       stopping = (async () => {
         try {
           // Convened sessions deliberate in the background on this handle:
-          // give them a bounded chance to settle before it closes.
+          // give them, and the in-flight worker executions, one bounded
+          // chance to settle before it closes. Work still running past the
+          // budget stays durable (running/dispatched rows) and boot
+          // reconciliation settles it on the next start.
           let timer: NodeJS.Timeout | undefined;
           try {
             await Promise.race([
-              convening.drain(),
+              (async () => {
+                await convening.drain();
+                if (workers) await stopCouncilWorkers(workers);
+              })(),
               new Promise<void>((resolve) => {
                 timer = setTimeout(resolve, drainTimeoutMs);
                 timer.unref();
@@ -1087,8 +1094,9 @@ function composeBackend(input: {
             ]);
           } finally {
             clearTimeout(timer);
+            // Past the budget the supervisor must still stop claiming work.
+            if (workers) void stopCouncilWorkers(workers);
           }
-          if (workers) await stopCouncilWorkers(workers);
         } finally {
           db.close();
         }

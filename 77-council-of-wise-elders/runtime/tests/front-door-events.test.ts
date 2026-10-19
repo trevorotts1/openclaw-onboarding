@@ -263,3 +263,36 @@ test('journal adapter: follow delivers a newly committed row, never a synthetic 
     detach();
   }
 });
+
+// ------------------------------------------------------------- shutdown drain
+
+test('stop: an attached follow-mode SSE client does not hold shutdown open', async () => {
+  const adapter: CouncilEventStreamAdapter = {
+    open: () => ({
+      replay: () => [{ sequence: 1, type: 'session_created', event_id: 'evt-1' }],
+      subscribe: () => () => undefined, // follows forever, never ends on its own
+    }),
+  };
+  const { door, origin } = await startDoor({ eventsAdapter: adapter });
+  const { request } = await import('node:http');
+  let req: ReturnType<typeof request> | undefined;
+  const clientEnded = new Promise<void>((resolve) => {
+    req = request(`${origin}/api/council/sessions/known-id/events`, (res) => {
+      res.resume();
+      res.on('close', () => resolve());
+      res.on('end', () => resolve());
+    });
+    req.on('error', () => resolve());
+    req.end();
+  });
+  // Wait until the stream is attached (headers + first frame sent).
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  const outcome = await Promise.race([
+    door.stop().then(() => 'stopped'),
+    new Promise<string>((resolve) => setTimeout(() => resolve('HUNG'), 3_000)),
+  ]);
+  req?.destroy(); // let a failing run still release the listener
+  assert.equal(outcome, 'stopped', 'stop() must not wait on an open SSE stream');
+  await clientEnded;
+});

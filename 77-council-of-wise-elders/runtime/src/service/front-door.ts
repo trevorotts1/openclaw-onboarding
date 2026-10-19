@@ -236,6 +236,8 @@ interface ListenFailure {
 export class CouncilFrontDoor {
   private readonly options: FrontDoorOptions;
   private server: Server | null = null;
+  /** Open SSE responses; stop() ends them so a follower cannot hold shutdown open. */
+  private readonly eventStreams = new Set<ServerResponse>();
   private state: ServiceState = 'idle';
   private origin: string | null = null;
   private boundPort: number | null = null;
@@ -804,9 +806,11 @@ export class CouncilFrontDoor {
     const close = (): void => {
       if (closed) return;
       closed = true;
+      this.eventStreams.delete(res);
       detach?.();
       detach = null;
     };
+    this.eventStreams.add(res);
     res.on('close', close);
 
     try {
@@ -1081,6 +1085,12 @@ ${eventsBound ? '' : '<div class="notice"><strong>EVENT_STREAM_ADAPTER_NOT_BOUND
     const server = this.server;
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
+      // Committed events are durable and replay on reconnect, so ending the
+      // followers loses nothing. Idle keep-alives close now; any request
+      // still in flight gets a bounded grace, then is cut.
+      for (const stream of this.eventStreams) stream.end();
+      server.closeIdleConnections();
+      setTimeout(() => server.closeAllConnections(), 2_000).unref();
     });
     this.server = null;
     this.state = 'stopped';
