@@ -1,14 +1,15 @@
-# Combined overview board (second deliverable of every image stage)
+# Overview boards (second deliverable of every image stage)
 
 Every image stage (`desktop-wireframe`, `mobile-tablet`, `visual-mockup`,
-`final-mockups`) delivers two views of the same sections, for desktop and for
-mobile:
+`final-mockups`) delivers two views of the same sections:
 
 1. the long review PDF: the whole page, top to bottom (`combine_review_pdf.py`);
-2. the combined overview board: all sections on one big image
-   (`scripts/build_overview_board.py`, this contract).
+2. the overview boards: all sections on one big image per board
+   (`scripts/build_overview_board.py`, this contract): a desktop board, a
+   mobile board, and the combined board that shows desktop and mobile together.
 
-The board is a second deliverable beside the PDF, never a replacement for it.
+The boards are a second deliverable beside the PDF, never a replacement for it,
+and the combined board never replaces the two separate boards.
 The two models Trevor approved fix the structure only. Their brand, palette,
 people and copy are never reused: every word and color on a board comes from
 the run.
@@ -21,10 +22,14 @@ Written next to the PDFs, in `<run_dir>/review-pdfs/`:
 |---|---|
 | `<stage>-desktop-overview.png` | desktop board (stages that deliver desktop images) |
 | `<stage>-mobile-overview.png` | mobile board (stages that deliver mobile images) |
-| `<stage>-<device>-overview.json` | receipt: sha256 of every input and of the board, sizes, chrome colors, fonts, mobile grouping, which source supplied each field |
+| `<name>-combined-overview.png` | combined board: desktop and mobile together (see "Combined board") |
+| `<stage>-<device>-overview.json`, `<name>-combined-overview.json` | receipt: sha256 of every input and of the board, sizes, chrome colors, fonts, geometry (mobile grouping, section positions), which source supplied each field |
 
 `<stage>` is the stage id. `desktop-wireframe` owes the desktop board,
 `mobile-tablet` the mobile board, `visual-mockup` and `final-mockups` both.
+`<name>` is the stage id for `visual-mockup` and `final-mockups`. The two
+wireframe stages are one pair (desktop wireframe, mobile wireframe), so their
+combined board is `wireframe-combined-overview.png`.
 Sections are read from the same files the PDF combiner reads
 (`section-NN.png`, or `desktop/part-NN.png` and `mobile/part-NN.png`).
 
@@ -76,6 +81,41 @@ is as tall as the tallest group (never shorter than a 2.16 : 1 phone), so a
 shorter group leaves background-colored screen below its last section. No
 section is split, dropped or reordered.
 
+## Combined board
+
+Model: Trevor's all-in-one reference. Five columns on one image, same section
+order everywhere:
+
+1. `DESKTOP <STAGE LABEL> (N SECTIONS)`: the desktop page, top to bottom, with
+   the numbered rail beside it (page column 560 px wide, widened in 20 px steps
+   up to 960 px until every section is tall enough for its guide card);
+2. `DESKTOP SECTION GUIDE`: the same guide cards as the desktop board (name,
+   thumbnail, `Headline:` `Body:` `CTA:` `Image:` `Frame:`), aligned to each
+   desktop section;
+3. to 5. `MOBILE <STAGE LABEL> (PART 1/3)`, `(PART 2/3)`, `(PART 3/3)`: the
+   mobile page as flush, numbered section stacks.
+
+- Title band as on the other boards: page title, `Desktop + Mobile <STAGE
+  LABEL> · N sections · desktop page, guide and mobile page`, and a note box
+  (`Optimized for mobile (<viewport range>)`).
+- The mobile page is split into at most three consecutive parts that minimize
+  the tallest part (ties go to taller earlier parts). A cut falls only between
+  two sections, never inside one; fewer than three sections gives fewer parts.
+  Section numbers on the rails are the sections' positions in the run, so the
+  numbers run 1..N down the desktop column and then 1..N again across the parts,
+  in the same order.
+- Mobile column width is chosen so the tallest part is about as tall as the
+  desktop column, within 240 to 520 px; images are scaled uniformly.
+- The guide is the desktop guide: type sizes, ratios and names come from the
+  desktop stage's records first (see below).
+- It needs both devices. `visual-mockup` and `final-mockups` carry both in one
+  stage. For the wireframe pair the board is built by whichever of the two
+  stages runs once the other has delivered images; before that it is skipped
+  without error. A desktop and a mobile section count that differ, or any
+  fault in either device's images, fails the board and the stage.
+- Layout constants live at the top of the script (`C_*`). Everything else
+  (chrome colors, receipts, determinism, no crop) is as for the other boards.
+
 ## Where the text comes from
 
 Nothing is invented; a field the run does not carry is either skill-standard
@@ -112,9 +152,12 @@ than two valid hex colors fails the board.
   and device is deleted so a stale board never ships, when: no image matches the
   stage layout, the numbering has a gap, the image count differs from the run's
   section count (or `--expect`), an image is unreadable, the run carries no
-  section names, or the brand palette is unusable.
+  section names, or the brand palette is unusable. The combined board adds:
+  the desktop and mobile section counts differ. A failure deletes the stage's
+  combined board too.
 - The stage executor runs the composer right after the stage's composition and
-  review-PDF step (`overview_boards()` in `scripts/stage_executor.py`); a failed
+  review-PDF step (`overview_boards()` in `scripts/stage_executor.py`), which
+  builds the separate boards and then the combined board in one call; a failed
   board fails the stage run the same way a failed PDF does. Stub mode never
   composes.
 
@@ -122,7 +165,7 @@ than two valid hex colors fails the board.
 
 ```
 python3 scripts/build_overview_board.py <run_dir> --stage visual-mockup \
-    [--device desktop|mobile] [--request production-request.json] \
+    [--device desktop|mobile|combined] [--request production-request.json] \
     [--brand brand.json] [--title "Page title"] [--viewport-range "320px – 430px"] \
     [--expect N] [--out-dir DIR]
 ```

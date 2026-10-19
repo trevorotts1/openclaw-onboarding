@@ -1,33 +1,40 @@
 #!/usr/bin/env python3
-"""Deterministically compose the Skill 71 combined overview boards.
+"""Deterministically compose the Skill 71 overview boards.
 
 Usage:
   python3 scripts/build_overview_board.py <run_dir> --stage STAGE
-      [--device desktop|mobile] [--request FILE] [--brand FILE]
+      [--device desktop|mobile|combined] [--request FILE] [--brand FILE]
       [--title TEXT] [--viewport-range TEXT] [--expect N] [--out-dir DIR]
 
-Every image stage delivers two views of the same sections: the long
-review PDF (the whole page top to bottom) and this COMBINED OVERVIEW
-BOARD (all sections on one big image). The contract is
-references/overview-board.md. One board per device per stage, named
-<stage>-desktop-overview.png and <stage>-mobile-overview.png, written to
-<run_dir>/review-pdfs/ next to the PDFs, each with a receipt
-(<stage>-<device>-overview.json) pinning the sha256 of every input.
+Every image stage delivers views of the same sections: the long review PDF
+(the whole page top to bottom) and the OVERVIEW BOARDS (all sections on one
+big image). The contract is references/overview-board.md. Boards are written
+to <run_dir>/review-pdfs/ next to the PDFs, each with a receipt (.json)
+pinning the sha256 of every input:
 
-  desktop  the full page as one tall column, top to bottom, beside a
-           numbered SECTION GUIDE column (name, headline/body/CTA sizes,
-           image ratio, thumbnail) aligned to each section.
-  mobile   phone frames side by side, each with a "SECTIONS a-b" header
-           and a caption under it naming what that part does, under a
-           title band with the viewport-range note.
+  <stage>-desktop-overview.png   desktop board
+  <stage>-mobile-overview.png    mobile board
+  <name>-combined-overview.png   combined board: desktop and mobile together
+
+  desktop   the full page as one tall column, top to bottom, beside a
+            numbered SECTION GUIDE column (name, headline/body/CTA sizes,
+            image ratio, thumbnail) aligned to each section.
+  mobile    phone frames side by side, each with a "SECTIONS a-b" header
+            and a caption under it naming what that part does, under a
+            title band with the viewport-range note.
+  combined  the desktop column and its guide, then the mobile page split
+            into Part 1/3, 2/3, 3/3 columns (balanced, cut only between
+            sections), all on one image. <name> is the stage id; the two
+            wireframe stages share the name "wireframe" and the board is
+            built once both have delivered (skipped until then).
 
 The composer is pure code (Pillow): no generation, no network, no
 randomness. It fails closed (exit 1, one FAIL line per fault, stale
 boards removed) when a section image is missing, the numbering has a
-gap, the image count differs from the run's section count, or the run
-carries no section names. Section images are only ever scaled
-uniformly (one factor for width and height); nothing is cropped or
-stretched.
+gap, the image count differs from the run's section count (desktop and
+mobile counts must match for the combined board), or the run carries no
+section names. Section images are only ever scaled uniformly (one factor
+for width and height); nothing is cropped or stretched.
 
 Exit codes: 0 pass, 1 named failure, 2 usage / Pillow missing.
 """
@@ -60,6 +67,15 @@ STAGE_SETS = {
     "final-mockups": [("desktop", "desktop/part-{n:02d}.png"),
                       ("mobile", "mobile/part-{n:02d}.png")],
 }
+# stage -> (combined board name, desktop (stage, template), mobile (stage, template)).
+# The two wireframe stages are two runs of one pair: the combined board is named
+# for the pair and is built once both stages have delivered their images.
+COMBINED_SETS = {
+    "desktop-wireframe": ("wireframe", ("desktop-wireframe", "section-{n:02d}.png"), ("mobile-tablet", "section-{n:02d}.png")),
+    "mobile-tablet": ("wireframe", ("desktop-wireframe", "section-{n:02d}.png"), ("mobile-tablet", "section-{n:02d}.png")),
+    "visual-mockup": ("visual-mockup", ("visual-mockup", "desktop/part-{n:02d}.png"), ("visual-mockup", "mobile/part-{n:02d}.png")),
+    "final-mockups": ("final-mockups", ("final-mockups", "desktop/part-{n:02d}.png"), ("final-mockups", "mobile/part-{n:02d}.png")),
+}
 STAGE_LABEL = {"desktop-wireframe": "WIREFRAME", "mobile-tablet": "WIREFRAME",
                "visual-mockup": "VISUAL MOCKUP", "final-mockups": "FINAL MOCKUP"}
 
@@ -76,6 +92,9 @@ D_THUMB_W, D_THUMB_MAX_H, D_PAD, D_GAP = 168, 230, 18, 18
 # mobile layout (px)
 M_MARGIN, M_SCREEN_W, M_BEZEL, M_GAP, M_BAND_H, M_TAB_H = 36, 300, 11, 26, 160, 46
 M_MAX_RATIO, M_MIN_RATIO = 2.8, 2.16  # frame content height / screen width: grouping limit, shortest phone
+# combined board (desktop column + guide + mobile parts on one image)
+C_PAGE_MIN, C_GUIDE_W, C_RAIL_W, C_COL_GAP = 560, 560, 56, 28
+C_MOBILE_MIN, C_MOBILE_MAX, C_PARTS = 240, 520, 3
 
 RATIOS = ["1:1", "5:4", "4:3", "3:2", "16:9", "2:1", "21:9", "3:1",
           "4:5", "3:4", "2:3", "9:16", "1:2", "9:21", "1:3"]
@@ -351,24 +370,69 @@ def title_band(draw, W, H, c, title, subtitle, note=None):
 # ------------------------------------------------------------- desktop
 
 
-def build_desktop(imgs, secs, c, title, stage):
+def split_parts(heights, k):
+    """Consecutive split of section heights into at most k parts, cut only at
+    section boundaries, minimizing the tallest part (ties: the earlier parts
+    taller). Returns lists of 0-based section indexes."""
+    from itertools import combinations
+    n = len(heights)
+    k = max(1, min(k, n))
+    best = None
+    for cuts in combinations(range(1, n), k - 1):
+        edges = (0, *cuts, n)
+        parts = [sum(heights[a:b]) for a, b in zip(edges, edges[1:])]
+        key = (max(parts), [-h for h in parts])
+        if best is None or key < best[0]:
+            best = (key, edges)
+    return [list(range(a, b)) for a, b in zip(best[1], best[1][1:])]
+
+
+def build_desktop(imgs, secs, c, title, stage, mobile_imgs=None, viewport=None):
+    """The desktop board; with mobile_imgs it is the COMBINED board: the same
+    page column and section guide (narrower), then the mobile page split into
+    Part 1/k .. k/k columns beside them."""
     from PIL import Image, ImageDraw
+    combined = mobile_imgs is not None
     tmp = ImageDraw.Draw(Image.new("RGB", (4, 4)))
-    pages = [scaled(im, D_PAGE_W) for im in imgs]
+    guide_w = C_GUIDE_W if combined else D_GUIDE_W
     f_name, f_spec, f_num = font("bold", 24), font("sans", 19), font("bold", 24)
     text_x = D_PAD + D_THUMB_W + D_PAD
-    spec_w = D_GUIDE_W - text_x - D_PAD
+    spec_w = guide_w - text_x - D_PAD
     cards, any_star = [], False
     for n, (sec, im) in enumerate(zip(secs, imgs), start=1):
         thumb = fit_box(im, D_THUMB_W, D_THUMB_MAX_H)
         lines, star = spec_lines(sec, "desktop", im.size)
         any_star |= star
-        name_lines = wrap(tmp, sec["name"], f_name, D_GUIDE_W - D_PAD * 2 - 52)
+        name_lines = wrap(tmp, sec["name"], f_name, guide_w - D_PAD * 2 - 52)
         spec_wrapped = [w for ln in lines for w in wrap(tmp, ln, f_spec, spec_w)]
         head_h = max(44, line_h(f_name) * len(name_lines))
         body_h = max(thumb.height, line_h(f_spec) * len(spec_wrapped))
         cards.append((thumb, name_lines, spec_wrapped, head_h, D_PAD + head_h + 12 + body_h + D_PAD))
-    top = D_BAND_H + D_HEAD_H + 24
+    page_w, rail_w = D_PAGE_W, D_RAIL_W
+    if combined:  # narrowest page column whose every section is tall enough for its guide card
+        page_w, rail_w = C_PAGE_MIN, C_RAIL_W
+        while page_w < D_PAGE_W and any(round(im.height * page_w / im.width) < cards[i][4] for i, im in enumerate(imgs)):
+            page_w += 20
+    pages = [scaled(im, page_w) for im in imgs]
+    page_h = sum(p.height for p in pages)
+    # mobile parts: consecutive, balanced, cut only between sections
+    parts, m_w, m_pages = [], 0, []
+    if combined:
+        ratios = [im.height / im.width for im in mobile_imgs]
+        parts = split_parts(ratios, C_PARTS)
+        m_w = round(max(C_MOBILE_MIN, min(C_MOBILE_MAX, page_h / max(sum(ratios[i] for i in g) for g in parts))))
+        m_pages = [scaled(im, m_w) for im in mobile_imgs]
+    k = len(parts)
+    # column headers (one wrapped line set; the tallest decides the bar height)
+    f_head = font("bold", 22)
+    kind = STAGE_LABEL[stage]
+    heads = [(page_w, "FULL PAGE"), (guide_w, "SECTION GUIDE")]
+    if combined:
+        heads = [(page_w, f"DESKTOP {kind} ({len(imgs)} SECTIONS)"), (guide_w, "DESKTOP SECTION GUIDE")]
+        heads += [(m_w, f"MOBILE {kind} (PART {i + 1}/{k})") for i in range(k)]
+    head_lines = [wrap(tmp, t, f_head, w - 32) for w, t in heads]
+    head_h = D_HEAD_H if not combined else max(len(hl) for hl in head_lines) * line_h(f_head) + 24
+    top = D_BAND_H + head_h + 24
     y, ys, tops = top, [], []
     for p in pages:  # section tops on the page column
         tops.append(y)
@@ -380,42 +444,77 @@ def build_desktop(imgs, secs, c, title, stage):
         ys.append(cy)
         cy += h + D_GAP
     guide_bottom = cy - D_GAP
+    m_tops = []  # per part: y of each of its sections
+    m_bottom = 0
+    for g in parts:
+        yy, col = top, []
+        for i in g:
+            col.append(yy)
+            yy += m_pages[i].height
+        m_tops.append(col)
+        m_bottom = max(m_bottom, yy)
+    bottom = max(page_bottom, guide_bottom, m_bottom)
     foot = [("* Type sizes marked with an asterisk are the skill standard "
              "(references/section-image-prompt.md); this run recorded no per-section value.")] if any_star else []
     foot.append("Section images are scaled uniformly; nothing is cropped or stretched.")
     f_foot = font("sans", 17)
-    W = D_MARGIN * 2 + D_PAGE_W + D_RAIL_W + D_GUIDE_W
-    H = max(page_bottom, guide_bottom) + 28 + line_h(f_foot) * len(foot) + D_MARGIN
+    px = D_MARGIN
+    gx = px + page_w + rail_w
+    mxs = []
+    mx = gx + guide_w + C_COL_GAP
+    for _g in parts:
+        mxs.append(mx)
+        mx += m_w + C_RAIL_W + C_COL_GAP
+    W = D_MARGIN * 2 + page_w + rail_w + guide_w
+    if combined:
+        W = mx - C_COL_GAP + D_MARGIN
+        subtitle = f"Desktop + Mobile {kind} \u00b7 {len(imgs)} sections \u00b7 desktop page, guide and mobile page"
+        note = [f"Optimized for mobile ({viewport or VIEWPORT_RANGE})", "Desktop page left, mobile page in parts right"]
+        left_w = max(tmp.textlength(title.upper(), font=font("serif", 56)), tmp.textlength(subtitle.upper(), font=font("bold", 24)))
+        W = int(max(W, left_w + 48 + 40 + max(tmp.textlength(n, font=font("sans", 20)) for n in note) + 48 + D_MARGIN * 2))
+    else:
+        subtitle, note = f"Desktop {kind} \u00b7 {len(imgs)} sections \u00b7 full page, top to bottom", None
+    H = bottom + 28 + line_h(f_foot) * len(foot) + D_MARGIN
     board = Image.new("RGB", (W, H), c["bg"])
     d = ImageDraw.Draw(board)
-    title_band(d, W, D_BAND_H, c, title, f"Desktop {STAGE_LABEL[stage]} \u00b7 {len(imgs)} sections \u00b7 full page, top to bottom")
-    px, gx = D_MARGIN, D_MARGIN + D_PAGE_W + D_RAIL_W
-    for x, w, label in ((px, D_PAGE_W, "FULL PAGE"), (gx, D_GUIDE_W, "SECTION GUIDE")):
-        d.rectangle([x, D_BAND_H + 12, x + w, D_BAND_H + 12 + D_HEAD_H - 8], fill=c["accent"])
-        d.text((x + 16, D_BAND_H + 22), label, font=font("bold", 22), fill=c["on_accent"])
-    for n, (p, t) in enumerate(zip(pages, tops), start=1):
-        board.paste(p, (px, t))
-        rx = px + D_PAGE_W + D_RAIL_W // 2
-        d.line([rx, t + 40, rx, t + p.height - 6], fill=c["line"], width=3)
-        d.ellipse([rx - 22, t + 4, rx + 22, t + 48], fill=c["accent"])
-        s = str(n)
-        d.text((rx - d.textlength(s, font=f_num) / 2, t + 12), s, font=f_num, fill=c["on_accent"])
-    for n, ((thumb, name_lines, spec_wrapped, head_h, ch), cy) in enumerate(zip(cards, ys), start=1):
-        d.rounded_rectangle([gx, cy, gx + D_GUIDE_W, cy + ch], 14, fill=c["tint"], outline=c["line"], width=2)
+    title_band(d, W, D_BAND_H, c, title, subtitle, note)
+    for x, (w, _t), hl in zip([px, gx] + mxs, heads, head_lines):
+        d.rectangle([x, D_BAND_H + 12, x + w, D_BAND_H + 12 + head_h - 8], fill=c["accent"])
+        text_block(d, (x + 16, D_BAND_H + 22 if not combined else D_BAND_H + 12 + 8), hl, f_head, c["on_accent"])
+
+    def rail(x, w, rw, column, numbers, col_tops):
+        for n, p, t in zip(numbers, column, col_tops):
+            board.paste(p, (x, t))
+            rx = x + w + rw // 2
+            d.line([rx, t + 40, rx, t + p.height - 6], fill=c["line"], width=3)
+            d.ellipse([rx - 22, t + 4, rx + 22, t + 48], fill=c["accent"])
+            d.text((rx - d.textlength(str(n), font=f_num) / 2, t + 12), str(n), font=f_num, fill=c["on_accent"])
+
+    rail(px, page_w, rail_w, pages, range(1, len(pages) + 1), tops)
+    for n, ((thumb, name_lines, spec_wrapped, hh, ch), cy) in enumerate(zip(cards, ys), start=1):
+        d.rounded_rectangle([gx, cy, gx + guide_w, cy + ch], 14, fill=c["tint"], outline=c["line"], width=2)
         d.ellipse([gx + D_PAD, cy + D_PAD, gx + D_PAD + 40, cy + D_PAD + 40], fill=c["accent"])
         d.text((gx + D_PAD + 20 - d.textlength(str(n), font=f_num) / 2, cy + D_PAD + 6), str(n), font=f_num, fill=c["on_accent"])
         text_block(d, (gx + D_PAD + 54, cy + D_PAD + 6), name_lines, f_name, c["ink"])
-        by = cy + D_PAD + head_h + 12
+        by = cy + D_PAD + hh + 12
         board.paste(thumb, (gx + D_PAD, by))
         d.rectangle([gx + D_PAD - 1, by - 1, gx + D_PAD + thumb.width, by + thumb.height], outline=c["line"])
         text_block(d, (gx + text_x, by), spec_wrapped, f_spec, c["ink"])
-    fy = max(page_bottom, guide_bottom) + 28
+    for x, g, col in zip(mxs, parts, m_tops):
+        rail(x, m_w, C_RAIL_W, [m_pages[i] for i in g], [i + 1 for i in g], col)
+    fy = bottom + 28
     for ln in foot:
         d.text((D_MARGIN, fy), ln, font=f_foot, fill=c["muted"])
         fy += line_h(f_foot)
-    return board, {"layout": "desktop", "page_column_width": D_PAGE_W,
-                   "sections": [{"number": n, "id": s["id"], "page_y": t, "guide_y": g}
-                                for n, (s, t, g) in enumerate(zip(secs, tops, ys), start=1)]}
+    geometry = {"layout": "combined" if combined else "desktop", "page_x": px, "page_column_width": page_w,
+                "sections": [{"number": n, "id": s["id"], "page_y": t, "guide_y": g}
+                             for n, (s, t, g) in enumerate(zip(secs, tops, ys), start=1)]}
+    if combined:
+        geometry["mobile_column_width"] = m_w
+        geometry["mobile_parts"] = [{"label": f"PART {i + 1}/{k}", "x": x, "sections": [secs[j]["id"] for j in g],
+                                     "section_y": col}
+                                    for i, (g, col, x) in enumerate(zip(parts, m_tops, mxs))]
+    return board, geometry
 
 
 # -------------------------------------------------------------- mobile
@@ -493,9 +592,10 @@ def build_mobile(imgs, secs, c, title, stage, viewport):
 # ---------------------------------------------------------------- main
 
 
-def build_device(run_dir, stage, device, template, secs, c, title, viewport, out_dir, expect):
+def load_images(run_dir, stage, template, expect):
+    """(paths, RGB images) for one device's section images; BoardError on any fault."""
     from PIL import Image
-    paths = discover(run_dir, stage, template, expect if expect is not None else len(secs))
+    paths = discover(run_dir, stage, template, expect)
     imgs = []
     for p in paths:
         try:
@@ -503,53 +603,113 @@ def build_device(run_dir, stage, device, template, secs, c, title, viewport, out
                 imgs.append(im.convert("RGB"))
         except Exception as exc:
             raise BoardError(f"{stage}: section image {p.name} is not a readable image ({exc})")
-    if device == "desktop":
-        board, geometry = build_desktop(imgs, secs, c, title, stage)
-    else:
-        board, geometry = build_mobile(imgs, secs, c, title, stage, viewport)
-    name = f"{stage}-{device}-overview"
+    return paths, imgs
+
+
+def write_board(board, name, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(suffix=".png", dir=out_dir)
     os.close(fd)
     board.save(tmp, "PNG")  # no metadata, no timestamps: identical inputs give identical bytes
     os.chmod(tmp, 0o644)
     os.replace(tmp, out_dir / f"{name}.png")
+
+
+def write_receipt(out_dir, name, board, stage, device, secs, inputs, c, geometry, run_dir):
+    """inputs: [(device, paths, imgs)] in the order the receipt lists them."""
+    def one(inp, n):  # a single device keeps the flat per-section keys of the first contract
+        _dv, paths, imgs = inp
+        return {"image": os.path.relpath(paths[n - 1], run_dir), "native_size": list(imgs[n - 1].size),
+                "sha256": sha256(paths[n - 1])}
+
     receipt = {
         "board": f"{name}.png", "stage": stage, "device": device,
         "size": {"width": board.width, "height": board.height},
         "output_sha256": sha256(out_dir / f"{name}.png"),
-        "sections": [{"number": n, "id": s["id"], "name": s["name"], "image": os.path.relpath(p, run_dir),
-                      "native_size": list(im.size), "sha256": sha256(p),
-                      "field_sources": s.get("sources", {})}
-                     for n, (s, p, im) in enumerate(zip(secs, paths, imgs), start=1)],
+        "sections": [dict({"number": n, "id": s["id"], "name": s["name"]},
+                          **(one(inputs[0], n) if len(inputs) == 1 else
+                             {"images": [dict(device=dv, **one((dv, paths, imgs), n)) for dv, paths, imgs in inputs]}),
+                          field_sources=s.get("sources", {}))
+                     for n, s in enumerate(secs, start=1)],
         "chrome": {k: (list(v) if isinstance(v, tuple) else v) for k, v in c.items()},
         "fonts": sorted(FONTS_USED), "geometry": geometry,
     }
     (out_dir / f"{name}.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+
+
+def build_device(run_dir, stage, device, template, secs, c, title, viewport, out_dir, expect):
+    paths, imgs = load_images(run_dir, stage, template, expect if expect is not None else len(secs))
+    if device == "desktop":
+        board, geometry = build_desktop(imgs, secs, c, title, stage)
+    else:
+        board, geometry = build_mobile(imgs, secs, c, title, stage, viewport)
+    name = f"{stage}-{device}-overview"
+    write_board(board, name, out_dir)
+    write_receipt(out_dir, name, board, stage, device, secs, [(device, paths, imgs)], c, geometry, run_dir)
     return out_dir / f"{name}.png", board.size
+
+
+def build_combined(run_dir, stage, secs, c, title, viewport, out_dir, expect, required):
+    """The all-in-one board: desktop and mobile of the same sections on one image.
+
+    Returns None (skipped) when the stage's other device has delivered nothing
+    yet and `required` is False; raises BoardError for any real fault, including
+    a desktop and a mobile section count that differ."""
+    name, (d_stage, d_tpl), (m_stage, m_tpl) = COMBINED_SETS[stage]
+    want = expect if expect is not None else len(secs)
+    loaded = {}
+    for dv, st, tpl in (("desktop", d_stage, d_tpl), ("mobile", m_stage, m_tpl)):
+        try:
+            loaded[dv] = load_images(run_dir, st, tpl, want)
+        except BoardError as exc:
+            if st != stage and not required and not any(
+                    f.is_file() for f in (run_dir / st / tpl).parent.glob("*.png")) :
+                return None  # the sibling stage has not run yet; its own run builds the board
+            raise
+    board, geometry = build_desktop(loaded["desktop"][1], secs, c, title, d_stage, loaded["mobile"][1], viewport)
+    write_board(board, f"{name}-combined-overview", out_dir)
+    write_receipt(out_dir, f"{name}-combined-overview", board, name, "combined", secs,
+                  [("desktop", *loaded["desktop"]), ("mobile", *loaded["mobile"])], c, geometry, run_dir)
+    return out_dir / f"{name}-combined-overview.png", board.size
 
 
 def build_stage(run_dir, stage, device=None, request=DEFAULT_REQUEST, brand=None, title=None,
                 viewport=None, expect=None, out_dir=None):
     """Build every board the stage owes. Returns [(path, (w, h))]; raises BoardError.
 
-    A failure removes the stage's existing boards so a stale board never ships.
+    The separate desktop and mobile boards come first, then the combined
+    all-in-one board. A failure removes the stage's existing boards so a stale
+    board never ships.
     """
     run_dir = Path(run_dir).resolve()
     out = Path(out_dir) if out_dir else run_dir / OUT_DIR
-    sets = [(d, t) for d, t in STAGE_SETS[stage] if device in (None, d)]
-    if not sets:
+    sets = [(d, t) for d, t in STAGE_SETS[stage] if device in (None, "combined", d)]
+    if device == "combined":
+        sets = []
+    elif not sets:
         raise BoardError(f"{stage} has no {device} images")
+    cname = COMBINED_SETS[stage][0]
     try:
         c = chrome(run_dir, brand)
         secs = load_sections(run_dir, stage, request)
         title = title or (c.get("brand_id") or "Signature page")
-        return [build_device(run_dir, stage, d, t, secs, c, title, viewport or VIEWPORT_RANGE, out, expect)
-                for d, t in sets]
+        built = [build_device(run_dir, stage, d, t, secs, c, title, viewport or VIEWPORT_RANGE, out, expect)
+                 for d, t in sets]
+        if device in (None, "combined"):
+            d_stage = COMBINED_SETS[stage][1][0]  # the guide is the desktop guide: desktop-stage records first
+            try:
+                csecs = secs if d_stage == stage else load_sections(run_dir, d_stage, request)
+            except BoardError:
+                csecs = secs
+            combined = build_combined(run_dir, stage, csecs, c, title, viewport or VIEWPORT_RANGE, out, expect,
+                                      required=device == "combined")
+            if combined:
+                built.append(combined)
+        return built
     except BoardError:
-        for d, _t in sets:
+        for n in [f"{stage}-{d}-overview" for d, _t in sets] + [f"{cname}-combined-overview"]:
             for ext in ("png", "json"):
-                (out / f"{stage}-{d}-overview.{ext}").unlink(missing_ok=True)
+                (out / f"{n}.{ext}").unlink(missing_ok=True)
         raise
 
 
@@ -557,7 +717,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Compose a stage's combined overview boards (desktop and mobile).")
     p.add_argument("run_dir", type=Path)
     p.add_argument("--stage", required=True, choices=sorted(STAGE_SETS))
-    p.add_argument("--device", choices=["desktop", "mobile"])
+    p.add_argument("--device", choices=["desktop", "mobile", "combined"])
     p.add_argument("--request", default=DEFAULT_REQUEST,
                    help="production request inside the run dir (section names, copy, CTA)")
     p.add_argument("--brand", default=None, help="brand JSON for the chrome colors (default: the run's pinned brand)")

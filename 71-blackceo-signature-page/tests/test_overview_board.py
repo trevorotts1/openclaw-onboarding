@@ -52,7 +52,8 @@ class OverviewBoardTests(unittest.TestCase):
             built = build(run)
             out = run / "review-pdfs"
             self.assertEqual([p.name for p, _ in built],
-                             ["final-mockups-desktop-overview.png", "final-mockups-mobile-overview.png"])
+                             ["final-mockups-desktop-overview.png", "final-mockups-mobile-overview.png",
+                              "final-mockups-combined-overview.png"])
             for p, size in built:
                 with Image.open(p) as im:
                     self.assertEqual(im.size, size)
@@ -60,6 +61,113 @@ class OverviewBoardTests(unittest.TestCase):
             self.assertEqual([f["label"] for f in receipt["geometry"]["frames"]],
                              ["SECTIONS 1-2", "SECTIONS 3-4"])
             self.assertEqual(receipt["sections"][0]["name"], "Name 1")
+
+    def test_combined_board_named_receipted_and_pinned_to_both_devices(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            run = make_run(tmp)
+            built = build(run, device="combined")
+            self.assertEqual([p.name for p, _ in built], ["final-mockups-combined-overview.png"])
+            p, size = built[0]
+            with Image.open(p) as im:
+                self.assertEqual(im.size, size)
+            r = json.loads((run / "review-pdfs/final-mockups-combined-overview.json").read_text())
+            self.assertEqual((r["device"], r["board"], r["stage"]), ("combined", p.name, "final-mockups"))
+            self.assertEqual(r["output_sha256"], bob.sha256(p))
+            first = r["sections"][0]["images"]
+            self.assertEqual([i["device"] for i in first], ["desktop", "mobile"])
+            self.assertEqual(first[1]["image"], "final-mockups/mobile/part-01.png")
+            self.assertEqual(first[1]["sha256"], bob.sha256(run / "final-mockups/mobile/part-01.png"))
+            self.assertEqual(r["geometry"]["layout"], "combined")
+
+    def test_combined_board_deterministic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = make_run(tmp)
+            p, _ = build(run, device="combined")[0]
+            first = (bob.sha256(p), (run / "review-pdfs/final-mockups-combined-overview.json").read_text())
+            p, _ = build(run, device="combined")[0]
+            self.assertEqual(first, (bob.sha256(p), (run / "review-pdfs/final-mockups-combined-overview.json").read_text()))
+
+    def test_combined_keeps_section_order_across_desktop_column_and_mobile_parts(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            run = make_run(tmp, n=4, mh=1000)
+            p, _ = build(run, device="combined")[0]
+            im = Image.open(p).convert("RGB")
+            geo = json.loads((run / "review-pdfs/final-mockups-combined-overview.json").read_text())["geometry"]
+            ids = [f"S0{i}" for i in range(1, 5)]
+            self.assertEqual([s["id"] for s in geo["sections"]], ids)
+            self.assertEqual([i for part in geo["mobile_parts"] for i in part["sections"]], ids)
+            self.assertGreater(len(geo["mobile_parts"]), 1)
+            ys = [s["page_y"] for s in geo["sections"]]
+            self.assertEqual(ys, sorted(ys))
+            for sec, color in zip(geo["sections"], COLORS):  # desktop column: section i is the i-th color
+                self.assertEqual(im.getpixel((geo["page_x"] + 10, sec["page_y"] + 5)), color)
+            seen = []
+            for part in geo["mobile_parts"]:  # mobile parts: sections in order, top to bottom, left to right
+                self.assertEqual(part["section_y"], sorted(part["section_y"]))
+                for sid, y in zip(part["sections"], part["section_y"]):
+                    color = COLORS[ids.index(sid)]
+                    self.assertEqual(im.getpixel((part["x"] + 10, y + 5)), color)
+                    seen.append(sid)
+            self.assertEqual(seen, ids)
+
+    def test_split_parts_cuts_only_between_sections_and_balances(self):
+        self.assertEqual(bob.split_parts([1, 1, 1, 1, 1, 1], 3), [[0, 1], [2, 3], [4, 5]])
+        self.assertEqual(bob.split_parts([5, 1, 1, 1, 1, 1], 3), [[0], [1, 2, 3, 4], [5]])
+        self.assertEqual(bob.split_parts([3, 2], 3), [[0], [1]])
+        flat = [i for part in bob.split_parts([2, 7, 1, 1, 4, 3, 3], 3) for i in part]
+        self.assertEqual(flat, list(range(7)))
+
+    def test_combined_fails_closed_on_count_mismatch_and_removes_stale_board(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = make_run(tmp)
+            built = build(run)
+            combined = built[2][0]
+            self.assertTrue(combined.is_file())
+            (run / "final-mockups/mobile/part-04.png").unlink()
+            with self.assertRaises(bob.BoardError):
+                build(run, device="combined")
+            self.assertFalse(combined.exists())
+            self.assertFalse(combined.with_suffix(".json").exists())
+
+    def test_wireframe_pair_combines_once_both_stages_delivered(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "production-request.json").write_text(json.dumps({"sections": [
+                {"section_id": f"S0{i}", "section_name": f"Name {i}"} for i in (1, 2)]}), encoding="utf-8")
+            (run / "brand.json").write_text(json.dumps(BRAND), encoding="utf-8")
+            for i in (1, 2):
+                path = run / "desktop-wireframe" / f"section-{i:02d}.png"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGB", (1440, 810), COLORS[i - 1]).save(path)
+            first = bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")  # mobile stage not run yet
+            self.assertEqual([p.name for p, _ in first], ["desktop-wireframe-desktop-overview.png"])
+            mobile = run / "mobile-tablet"
+            mobile.mkdir()
+            Image.new("RGB", (390, 900), COLORS[0]).save(mobile / "section-01.png")
+            with self.assertRaises(bob.BoardError):  # a half-delivered sibling is a fault, not a skip
+                bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")
+            Image.new("RGB", (390, 900), COLORS[1]).save(mobile / "section-02.png")
+            built = bob.build_stage(run, "mobile-tablet", brand=run / "brand.json")
+            self.assertEqual([p.name for p, _ in built],
+                             ["mobile-tablet-mobile-overview.png", "wireframe-combined-overview.png"])
+
+    def test_wireframe_combined_skipped_until_sibling_stage_has_images(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "production-request.json").write_text(json.dumps({"sections": [
+                {"section_id": "S01", "section_name": "Name 1"}]}), encoding="utf-8")
+            (run / "brand.json").write_text(json.dumps(BRAND), encoding="utf-8")
+            path = run / "desktop-wireframe/section-01.png"
+            path.parent.mkdir(parents=True)
+            Image.new("RGB", (1440, 810), COLORS[0]).save(path)
+            built = bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")
+            self.assertEqual([p.name for p, _ in built], ["desktop-wireframe-desktop-overview.png"])
+            with self.assertRaises(bob.BoardError):  # asked for explicitly, it must fail, not skip
+                bob.build_stage(run, "desktop-wireframe", device="combined", brand=run / "brand.json")
 
     def test_mobile_note_never_covers_subtitle_with_short_title(self):
         # 3 frames + the brand-id title (shorter than the subtitle) was the overlap case
@@ -158,6 +266,7 @@ class OverviewBoardTests(unittest.TestCase):
             done = exe.overview_boards("final-mockups", run, Provider("kie"), "production-request.json", 4)
             self.assertEqual(done["status"], "pass", done["output"])
             self.assertTrue((run / "review-pdfs/final-mockups-mobile-overview.png").is_file())
+            self.assertTrue((run / "review-pdfs/final-mockups-combined-overview.png").is_file())
 
 
 if __name__ == "__main__":

@@ -758,7 +758,8 @@ def compose(stage: str, run_dir: Path, provider) -> dict:
 def overview_boards(stage: str, run_dir: Path, provider, request_name: str,
                     expect: int | None = None) -> dict:
     """Second client deliverable next to the review PDFs: the combined
-    overview board(s), all sections on one image (references/overview-board.md).
+    overview boards (desktop, mobile, and the combined desktop + mobile board),
+    all sections on one image each (references/overview-board.md).
     Pure Pillow, no provider call; fails closed on a missing section. Stub
     mode never composes, same as compose()."""
     if provider.name != "kie":
