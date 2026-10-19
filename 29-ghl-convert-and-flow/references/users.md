@@ -4,7 +4,7 @@
 > Covers: user CRUD, roles, permissions, team management.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-07-28` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — this file records no verified literal for these operations. Read it from the operation page at `https://marketplace.gohighlevel.com/docs/ghl/users/<operation-slug>/` before the call. Never send one value for every call.
 >
 > **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
 > (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
@@ -30,6 +30,7 @@
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/users/
@@ -55,6 +56,7 @@ curl --request GET 'https://services.leadconnectorhq.com/users/' \
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/users/
@@ -81,6 +83,7 @@ curl --request POST 'https://services.leadconnectorhq.com/users/' \
 - Required path params: None
 - Required query params: companyId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/users/search
@@ -106,6 +109,7 @@ curl --request GET 'https://services.leadconnectorhq.com/users/search' \
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/users/search/filter-by-email
@@ -132,6 +136,7 @@ curl --request POST 'https://services.leadconnectorhq.com/users/search/filter-by
 - Required path params: userId
 - Required query params: None
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/users/{userId}
@@ -157,6 +162,7 @@ curl --request GET 'https://services.leadconnectorhq.com/users/{userId}' \
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/users/{userId}
@@ -183,6 +189,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/users/{userId}' \
 - Required path params: None
 - Required query params: None
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/users/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/users/{userId}

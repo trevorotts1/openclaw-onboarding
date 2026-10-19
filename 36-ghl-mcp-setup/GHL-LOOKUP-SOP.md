@@ -16,38 +16,49 @@ or routing a funnel/workflow build request.
 
 ## RULE 1 — MCP tools live in the ORCHESTRATOR only
 
-MCP tool calls (`ghl-mcp__contacts_get-contacts`, `ghl-mcp__contacts_search-contacts`,
-and all `ghl-mcp__*` / Tier 2 community tools) **are available only in the orchestrating
-agent session**. Spawned sub-agents receive NO injected MCP tools.
+MCP tool calls **are available only in the orchestrating agent session**. Spawned sub-agents
+receive NO injected MCP tools.
+
+Two MCP surfaces exist and they are not the same catalog:
+
+- **Official MCP (documented, Tier 1):** four tools — `list_locations`, `search_operations`,
+  `describe_operation`, `execute_operation`. Contact lookup is `execute_operation` with the
+  operation id `contacts.search` (or `contacts.get`), discovered through `search_operations`
+  and schema-captured with `describe_operation`.
+- **Transitional `/mcp/` registration:** per-operation names such as
+  `contacts_get-contacts` / `contacts_search-contacts`. These are **UNVERIFIED** against the
+  v2 catalog and are never presented as the documented interface.
 
 **What this means in practice:**
 
-- **Orchestrator:** may call `contacts_get-contacts` directly as an MCP tool.
+- **Orchestrator:** may call `execute_operation` for `contacts.search` / `contacts.get`.
 - **Sub-agent:** MUST use the Tier 0 CLI (`caf contacts search <query>`) or a raw
   HTTPS call to `services.leadconnectorhq.com`. Never assume MCP tools exist inside a
   sub-agent.
 
 **Anti-patterns:**
 
-- A sub-agent that calls `ghl-mcp__contacts_get-contacts` — this will fail silently or
-  return a tool-not-found error.
+- A sub-agent that calls any MCP tool (`execute_operation` or a legacy `contacts_*` name) —
+  this will fail silently or return a tool-not-found error.
 - An orchestrator that spawns a sub-agent and tells it "use the MCP to look up the
   contact" — the sub-agent cannot.
+- Teaching `contacts_get-contacts` / `contacts_search-contacts` as the official catalog —
+  the documented catalog is the four tools above.
 
 **Correct pattern:**
 
 ```
-Orchestrator: call contacts_get-contacts (MCP tool) → pass contactId to sub-agent
-Sub-agent:    call `caf contacts get <contactId>` (CLI) OR raw HTTPS (Tier 3)
+Orchestrator: execute_operation {operationId: "contacts.search"} → pass contactId to sub-agent
+Sub-agent:    call `caf contacts get <contactId>` (CLI) OR public REST (Tier 3)
 ```
 
 ---
 
 ## RULE 2: Lookup model: the client's choice, or their configured default model (direct, low-cost; never a metered `:cloud` model)
 
-When the orchestrator calls the official MCP (`contacts_get-contacts`,
-`contacts_search-contacts`) and a model inference step is needed to parse the result or
-decide the next action:
+When the orchestrator calls the official MCP (`execute_operation` with `contacts.search` or
+`contacts.get`) and a model inference step is needed to parse the result or decide the next
+action:
 
 - **Model:** the client's choice, or their configured default model, where it is a direct
   (non-`:cloud`) model. If neither is set, ask the client which model to use for lookups.
@@ -59,50 +70,48 @@ decide the next action:
 
 ---
 
-## RULE 3 — Raw HTTP fallback MUST carry BOTH headers
+## RULE 3 — Raw HTTP fallback is public REST; Version is per operation
 
-When neither the CLI (Tier 0) nor an MCP tool is available and a raw-HTTP fallback is
-required (Tier 3), the request to `https://services.leadconnectorhq.com/mcp/` **MUST**
-send both of the following headers:
+When neither the CLI (Tier 0) nor an MCP tool is available, the fallback (Tier 3) is the
+**public REST API** at `https://services.leadconnectorhq.com`, authenticated with the
+location PIT as `Authorization: Bearer $GOHIGHLEVEL_API_KEY`.
 
-```
-Accept: application/json, text/event-stream
-Version: 2021-07-28
-```
+**The `Version` header is set per operation.** It is not one global value and must not be
+hardcoded for all modules. The authoritative registry is
+`evidence/W01/GU-004-CONTRACT-FREEZE.md` §5 — read the `Ver` column of the operation row
+being called. `describe_operation` and `29-ghl-convert-and-flow/references/<module>.md`
+are the live cross-checks.
 
-**Why both are mandatory:**
+| Operation family (examples) | Frozen Ver |
+|---|---|
+| `contacts.search`, `contacts.get` | `v3` |
+| `conversations.messages.send`, `calendars.list` | `v3` |
+| `products.*`, `invoices.*`, `payments/transactions`, `subscriptions.*`, `coupons.*` | `v3` (permitted rollback literal `2021-07-28` for payments) |
+| `funnels.list`, `funnels.pages.list` | `v3` (alternate `2023-02-21`) |
+| `social.accounts.list` … `social.oauth.accounts.list` | `2021-07-28` (alternate `v3`) |
+| `social.statistics`, `social.queues.*`, `social.comments.*` | `v3` |
+| `workflows.list`, `workflows.enroll`, `workflows.remove` | `v3` |
+| `workflows.definition.*`, `workflows.status.publish` | `v4` — **staging-only**, disabled |
 
-- The GHL hosted MCP endpoint uses HTTP content negotiation. If the `Accept` header
-  does NOT include `text/event-stream`, the server returns **HTTP 406 Not Acceptable**.
-  This is not an auth error — it is a content-negotiation error. Sending only
-  `Accept: application/json` is the documented failure mode.
-- The `Version` header selects the API contract. Omitting it or sending the wrong
-  version for the module returns 400 or 401.
+Sending the wrong version for an operation returns 400 or 401.
 
 **Correct raw-HTTP example (contacts lookup):**
 
 ```bash
-curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
+curl -sS -X POST "https://services.leadconnectorhq.com/contacts/search" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
-  -H "Version: 2021-07-28" \
-  -H "Accept: application/json, text/event-stream" \
+  -H "Version: v3" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"contacts_get-contacts","arguments":{"limit":5}}}' \
-  | grep "^data:" | head -1 | sed 's/^data: //' | python3 -m json.tool
+  -d '{"locationId":"'"$GOHIGHLEVEL_LOCATION_ID"'","limit":5}' \
+  | python3 -m json.tool
 ```
 
-**Per-module Version header reference:**
-
-| Module | Version header value |
-|---|---|
-| **DEFAULT** — contacts, locations, blogs, social, opportunities, **payments**, users, campaigns, phone-system, medias, invoices, products, workflows | `2021-07-28` |
-| **ONLY these seven** — conversations, calendars, saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base | `2021-04-15` |
-| the v3 generation (43 specs, published 2026-06-19) | `v3` |
-
-When in doubt, check the authoritative reference in
-`29-ghl-convert-and-flow/references/<module>.md`. Do not hardcode a single version for
-all modules — version drift causes intermittent 400/401 errors.
+**Historical note — the transitional `/mcp/` surface.** Before the v2 OAuth endpoints, raw
+calls went to `https://services.leadconnectorhq.com/mcp/` with
+`Accept: application/json, text/event-stream`, `locationId`, and a `Version` header.
+That dual-Accept requirement belonged to that JSON-RPC surface and is **not** a REST
+requirement. The endpoint is now transitional; per-operation tool names there are
+UNVERIFIED as the v2 catalog. Do not teach the dual Accept header as a REST rule.
 
 ---
 
@@ -169,13 +178,9 @@ Before executing a contact lookup (any tier), run the fail-fast preflight in thi
    If remaining < 1000, stop and surface the reset time to the owner.
 
    ```bash
-   REMAINING=$(curl -sS -i -X POST "https://services.leadconnectorhq.com/mcp/" \
+   REMAINING=$(curl -sS -i "https://services.leadconnectorhq.com/products/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
      -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-     -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
-     -H "Version: 2021-07-28" \
-     -H "Accept: application/json, text/event-stream" \
-     -H "Content-Type: application/json" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+     -H "Version: v3" \
      | grep -i "x-ratelimit-daily-remaining" | head -1 \
      | python3 -c "import sys; line=sys.stdin.read(); print(line.split(':')[1].strip() if ':' in line else '999999')")
    [[ "$REMAINING" -lt 1000 ]] && { echo "PREFLIGHT FAIL: Daily quota nearly exhausted ($REMAINING remaining). Stopping."; exit 1; }
@@ -202,7 +207,7 @@ decision table.
 
 | Primary | Fallback | Last resort |
 |---|---|---|
-| Tier 0: `caf contacts search/get` (CLI, works in orchestrator AND sub-agent) | Tier 1: orchestrator MCP `contacts_get-contacts` / `contacts_search-contacts` (the client's selected lookup model or configured default, dual Accept header, Version: 2021-07-28) | Tier 3: raw HTTPS: mandatory dual Accept + correct Version header + no `grep -P` |
+| Tier 0: `caf contacts search/get` (CLI, works in orchestrator AND sub-agent) | Tier 1: official MCP `execute_operation` with `contacts.search` / `contacts.get` (ids discovered via `search_operations`, schema captured via `describe_operation`; the client's selected lookup model or configured default) | Tier 3: public REST: PIT bearer + the operation's own `Version` (`GU-004` §5) + no `grep -P` |
 
 **Why Tier 0 CLI is preferred for lookups:**
 
@@ -224,12 +229,16 @@ UI-only flows and workflow-build backstops only.
 
 **Critical constraint — public API is read-only for workflows:**
 
-The public API at `services.leadconnectorhq.com/workflows/` is **GET-only** — there is
-no `POST` endpoint to create or edit a workflow via the public REST API or any MCP.
-The community MCP DOES ship `ghl_create_workflow` / `ghl_update_workflow_actions`
-(confirmed in the fork at `src/tools/workflow-builder-tools.ts` + `workflow-builder-client.ts`),
-but they wrap an undocumented internal endpoint and are **unverified — likely produce empty
-or non-functional shells**. Do NOT rely on community MCP workflow tools as a build path.
+The public API at `services.leadconnectorhq.com/workflows/` is **GET-only** for authoring
+(`workflows.list`; `workflows.enroll` and `workflows.remove` are contact mutations, not
+authoring). There is no verified `POST` to create or edit a workflow via public REST or
+the official MCP. The frozen `workflows.definition.*` rows exist only at `v4`, which is
+**staging-only and disabled**.
+
+The **retired** community MCP historically shipped `ghl_create_workflow` /
+`ghl_update_workflow_actions`. Those names are historical: they wrapped an undocumented
+internal endpoint and were unverified. The transport is retired — do not route a build
+through it, and do not treat those names as a build path.
 
 The ONLY verified programmatic workflow build path is Skill 44's internal Build API
 (`backend.leadconnectorhq.com`, authed with a Firebase ID token derived from the
@@ -246,8 +255,8 @@ fallback — it is the ONLY path for page content.
 ```
 Task: contact lookup
   → Tier 0 caf contacts search/get
-  → (if caf unavailable) Tier 1 MCP in orchestrator (the client's selected lookup model or configured default)
-  → (if MCP unavailable) Tier 3 raw HTTPS (dual Accept + correct Version + python3 parsing)
+  → (if caf unavailable) Tier 1 official MCP execute_operation (contacts.search / contacts.get; the client's selected lookup model or configured default)
+  → (if MCP unavailable) Tier 3 public REST (PIT bearer + the operation's own Version + python3 parsing)
 
 Task: workflow BUILD or EDIT
   → Tier 0 Skill 44 internal Build API (requires Firebase refresh token)
@@ -262,11 +271,13 @@ Task: funnel PAGE CONTENT deploy
 
 Task: workflow READ / LIST / EXPORT / AUDIT
   → Tier 0 caf workflows list/get/export — ALWAYS start here
-  → Escalate to Tier 1/2/3 only for what caf export cannot show (e.g. trigger-bucket state)
+  → Escalate to Tier 1/3 only for what caf export cannot show (e.g. trigger-bucket state)
 
-Task: product / invoice / subscription / billing / Voice AI / Phone System
-  → Tier 2 community MCP (on-demand curl to $GHL_COMMUNITY_MCP_URL)
-  → Never Tier 1 for these — the official MCP has no tools for them
+Task: product / invoice / subscription / billing
+  → Tier 3 public REST with the frozen operation id (GU-004 §5: products.*, invoices.*, subscriptions.*, transactions.*, coupons.*)
+  → Never Tier 1 for these — the documented official MCP catalog is four tools, none of them commerce operations
+  → Voice AI / Phone System: no audited operation ids — report a capability gap; do not invent one
+  → The retired community MCP is never a route
 ```
 
 ---
@@ -282,8 +293,8 @@ Every response that surfaces GHL data MUST open with the tier disclosure:
 For lookup paths specifically:
 
 - `[GHL tier used: 0 — convertandflow contacts search]`
-- `[GHL tier used: 1 — contacts_get-contacts]` (orchestrator MCP)
-- `[GHL tier used: 3 (Tier 0 unavailable; Tier 1 N/A — sub-agent) — raw HTTPS GET /contacts/]`
+- `[GHL tier used: 1 — execute_operation contacts.search]` (orchestrator MCP)
+- `[GHL tier used: 3 (Tier 0 unavailable; Tier 1 N/A — sub-agent) — public REST POST /contacts/search]`
 
 Missing disclosure = protocol violation.
 
@@ -295,27 +306,27 @@ The following are HARD FAILURES. If you catch yourself doing any of these, stop 
 correct before proceeding:
 
 - **Sub-agent calling an MCP tool** — sub-agents have no MCP injection. Use `caf` or
-  raw HTTPS instead.
-- **Raw HTTP without dual Accept** — missing `text/event-stream` in Accept causes HTTP
-  406. Both values in the Accept header are mandatory.
+  public REST instead.
+- **Treating the transitional dual-Accept MCP rule as a REST rule** — public REST does not
+  require `Accept: application/json, text/event-stream`. That rule belonged to the
+  transitional `/mcp/` JSON-RPC surface, where omitting `text/event-stream` returned HTTP 406.
 - **`grep -P` in any shell script on a Mac client** — BSD grep has no `-P`. Use
   `python3 -c "import json,sys; ..."` or `jq`.
 - **Metered `:cloud` model for a contact lookup** — lookups are cheap data-retrieval
   tasks. Use the client's selected direct (non-metered) model, their configured default
   model, or an equivalent free model.
-- **Routing a workflow BUILD through the community MCP** — the public `/workflows/` API
-  is read-only. The community MCP's `ghl_create_workflow` is unverified and likely
-  non-functional. Use Skill 44 internal Build API.
+- **Routing a workflow BUILD through the retired community MCP** — the public `/workflows/`
+  API is GET-only for authoring, and the community transport is retired. V4 workflow
+  definition endpoints are staging-only and disabled. Use Skill 44 internal Build API.
 - **Routing a lookup to Tier 4 (browser)** — the browser tier is for UI-only flows and
   workflow-build backstops. A contact lookup NEVER goes to the browser.
 - **Skipping the fail-fast credential preflight** — if credentials are missing, the
   lookup will return an auth error that looks like a connectivity problem. Always check
   first.
-- **Version header mismatch** — `2021-07-28` is the DEFAULT (including **payments**, which
-  was previously documented here as `2021-04-15` — that was wrong). Only conversations,
-  calendars, saas-api, voice-ai, agent-studio, conversation-ai and knowledge-base use
-  `2021-04-15`. Wrong version causes intermittent 400/401. Check
-  `29-ghl-convert-and-flow/references/<module>.md`.
+- **A single global `Version` header** — version is per operation. Read the `Ver` column of
+  the operation row in `evidence/W01/GU-004-CONTRACT-FREEZE.md` §5. Do not hardcode one
+  value for every module; wrong version causes intermittent 400/401. Check
+  `29-ghl-convert-and-flow/references/<module>.md` too.
 
 ---
 
@@ -323,14 +334,16 @@ correct before proceeding:
 
 ```
 GHL LOOKUP SOP (skill 36 / 2026-06-14):
-- Lookup in orchestrator: Tier 0 caf → Tier 1 MCP (the client's selected lookup model or configured default, dual Accept, Version: 2021-07-28) → Tier 3 raw HTTPS
-- Sub-agent lookup: ONLY caf CLI or raw HTTPS — no MCP tools
-- Raw HTTP: MUST include BOTH "Accept: application/json, text/event-stream" AND "Version: 2021-07-28" — missing text/event-stream = HTTP 406
+- Lookup in orchestrator: Tier 0 caf → Tier 1 official MCP execute_operation (contacts.search / contacts.get; the client's selected lookup model or configured default) → Tier 3 public REST
+- Sub-agent lookup: ONLY caf CLI or public REST — no MCP tools
+- REST Version is PER OPERATION — read the "Ver" column in evidence/W01/GU-004-CONTRACT-FREEZE.md §5; never hardcode one value for all modules
+- The dual Accept header belongs to the transitional /mcp/ surface only (missing text/event-stream there = HTTP 406), NOT to REST
 - No grep -P on macOS — use python3 -c / jq
 - Fail-fast preflight: check API_KEY + LOCATION_ID before any call
 - BUILD = Skill 44 internal Build API (Firebase token) → Tier 4 = Skill 6 GATED managed builder (ghl_workflow_builder.py via browser_manager.sh), NOT bare agent-browser; genuinely dead token → ghl_auth.py Tier-2 self-heal, NOT Tier 4; NEVER build via MCP
 - Funnel page content = browser-only (Tier 4) always
 - No metered :cloud model for lookups: the client's selected direct model, their configured default, or a free fallback
 - Disclosure required: [GHL tier used: N — tool_name]
+- Community MCP is RETIRED: verify registration, unit, listener and env var are absent; never a route
 Full ref: 36-ghl-mcp-setup/GHL-LOOKUP-SOP.md
 ```

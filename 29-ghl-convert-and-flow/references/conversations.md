@@ -3,13 +3,14 @@
 > **Scope of this file:** All endpoints under the `conversations` module (conversations and messages).
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — for the conversations operations frozen in `evidence/W01/GU-004-CONTRACT-FREEZE.md` §5.3 it is `v3`. This file also documents operations that the freeze does NOT record; those examples keep their older literal and carry an explicit `Version UNVERIFIED for this operation` marker. Treat the marker as the authority for that block, not this sentence. Read the operation page at `https://marketplace.gohighlevel.com/docs/ghl/conversations/<operation-slug>/` before using any other supported literal. Never send one value for every call.
 
 ---
 
 ### Module: conversations
 
 #### POST /conversations/ - Create Conversation
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Creates a new conversation with the data provided
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -36,6 +37,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversations/' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /conversations/locations/{locationId}/messages/{messageId}/transcription - Get transcription by Message ID
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Get the recording transcription for a message by passing the message id
 - Security: bearer, Location-Access
 - Token type: Sub-Account (Location) Token
@@ -61,6 +63,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/locations
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /conversations/locations/{locationId}/messages/{messageId}/transcription/download - Download transcription by Message ID
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Download the recording transcription for a message by passing the message id
 - Security: bearer, Location-Access
 - Token type: Sub-Account (Location) Token
@@ -97,12 +100,12 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/locations
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/conversations/messages
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/conversations/messages' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -112,6 +115,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversations/messages
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /conversations/messages/email/{emailMessageId}/schedule - Cancel a scheduled email message.
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Post the messageId for the API to delete a scheduled email message. <br />
 - Security: Not specified
 - Token type: Private Integration Token or OAuth Access Token
@@ -147,11 +151,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/conversations/messag
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversations/messages/email/{id}
-  - Headers: Authorization + Version as needed
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/conversations/messages/email/{id}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -160,6 +165,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/messages/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /conversations/messages/inbound - Add an inbound message
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Post the necessary fields for the API to add a new inbound message. <br />
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -186,6 +192,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversations/messages
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /conversations/messages/outbound - Add an external outbound call
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Post the necessary fields for the API to add a new outbound call.
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -212,6 +219,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversations/messages
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /conversations/messages/upload - Upload file attachments
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Post the necessary fields for the API to upload files. The files need to be a buffer with the key "fileAttachment". <br /><br /> The allowed file types are: <br/> <ul><li>JPG</li><li>JPEG</li><li>PNG</li><li>MP4</li><li>MPEG</li><li>ZIP</li><li>RAR</li><li>PDF</li><li>DOC</li><li>DOCX</li><li>TXT</li><li>MP3</li><li>WAV</li></ul> <br /><br /> The A
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -238,6 +246,7 @@ curl --request POST 'https://services.leadconnectorhq.com/conversations/messages
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /conversations/messages/{id} - Get message by message id
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Get message by message id.
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -263,6 +272,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/messages/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /conversations/messages/{messageId}/locations/{locationId}/recording - Get Recording by Message ID
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Get the recording for a message by passing the message id
 - Security: bearer, Location-Access
 - Token type: Sub-Account (Location) Token
@@ -288,6 +298,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/messages/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /conversations/messages/{messageId}/schedule - Cancel a scheduled message.
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Post the messageId for the API to delete a scheduled message. <br />
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -313,6 +324,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/conversations/messag
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /conversations/messages/{messageId}/status - Update message status
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Post the necessary fields for the API to update message status.
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -339,6 +351,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/conversations/messages/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /conversations/providers/live-chat/typing - Agent/Ai-Bot is typing a message indicator for live chat
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Agent/AI-Bot will call this when they are typing a message in live chat message
 - Security: Location-Access
 - Token type: Sub-Account (Location) Token
@@ -376,12 +389,12 @@ curl --request POST 'https://services.leadconnectorhq.com/conversations/provider
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversations/search
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/conversations/search' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -401,12 +414,12 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/search' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversations/{conversationId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/conversations/{conversationId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -415,6 +428,7 @@ curl --request GET 'https://services.leadconnectorhq.com/conversations/{conversa
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /conversations/{conversationId} - Update Conversation
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Update the conversation details based on the conversation ID
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -441,6 +455,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/conversations/{conversa
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /conversations/{conversationId} - Delete Conversation
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/conversations/
 - Description: Delete the conversation details based on the conversation ID
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -477,12 +492,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/conversations/{conve
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/conversations/{conversationId}/messages
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/conversations/{conversationId}/messages' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

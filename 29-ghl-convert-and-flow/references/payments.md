@@ -4,7 +4,7 @@
 > Covers: invoices, invoice items, schedules, templates, orders, order fulfillments, transactions, subscriptions, coupons, custom provider integrations, payment integrations.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-07-28` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — products, orders, transactions, subscriptions, coupons, invoices and estimates are frozen at `v3`, with `2021-07-28` the only permitted rollback literal (`evidence/W01/GU-004-CONTRACT-FREEZE.md` §5.4). Read the operation page at `https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/` before switching either way. Never send one value for every call.
 >
 > **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
 > (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
@@ -33,12 +33,12 @@
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -58,12 +58,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -84,12 +84,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -110,12 +110,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/list
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/list' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -132,6 +132,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/list'
 - Required path params: None
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/number/generate
@@ -157,6 +158,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/numbe
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/estimate/stats/last-visited-at
@@ -183,6 +185,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/estimate/sta
 - Required path params: None
 - Required query params: altId, altType, limit, offset
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template
@@ -208,6 +211,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/templ
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template
@@ -234,6 +238,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/temp
 - Required path params: None
 - Required query params: altId, altType, templateId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template/preview
@@ -259,6 +264,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/templ
 - Required path params: templateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template/{templateId}
@@ -285,6 +291,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/estimate/templ
 - Required path params: templateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template/{templateId}
@@ -310,6 +317,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/estimate/te
 - Required path params: estimateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}
@@ -336,6 +344,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/estimate/{esti
 - Required path params: estimateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}
@@ -361,6 +370,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/estimate/{e
 - Required path params: estimateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/invoice
@@ -390,12 +400,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{est
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/send
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/send' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -413,6 +423,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{est
 - Required path params: None
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/generate-invoice-number
@@ -438,6 +449,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/generate-invoi
 - Required path params: None
 - Required query params: altId, altType, limit, offset
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/schedule
@@ -466,12 +478,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/schedule' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -489,6 +501,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule' \
 - Required path params: scheduleId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}
@@ -514,6 +527,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/schedule/{sche
 - Required path params: scheduleId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}
@@ -540,6 +554,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/schedule/{sche
 - Required path params: scheduleId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}
@@ -565,6 +580,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/schedule/{s
 - Required path params: scheduleId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/auto-payment
@@ -591,6 +607,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - Required path params: scheduleId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/cancel
@@ -617,6 +634,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - Required path params: scheduleId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/schedule
@@ -643,6 +661,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - Required path params: scheduleId
 - Required query params: None
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/updateAndSchedule
@@ -669,6 +688,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/stats/last-visited-at
@@ -695,6 +715,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/stats/last-v
 - Required path params: None
 - Required query params: altId, altType, limit, offset
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/template
@@ -720,6 +741,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/template' \
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/template
@@ -746,6 +768,7 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/template' \
 - Required path params: templateId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}
@@ -771,6 +794,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/template/{temp
 - Required path params: templateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}
@@ -797,6 +821,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/template/{temp
 - Required path params: templateId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}
@@ -822,6 +847,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/template/{t
 - Required path params: templateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}/late-fees-configuration
@@ -848,6 +874,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/template/{te
 - Required path params: templateId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}/payment-methods-configuration
@@ -874,6 +901,7 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/template/{te
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/text2pay
@@ -903,12 +931,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/text2pay' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -925,6 +953,7 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
 - Required path params: invoiceId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}
@@ -951,6 +980,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
 - Required path params: invoiceId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}
@@ -976,6 +1006,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/{invoiceId}
 - Required path params: invoiceId
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/invoices/
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/late-fees-configuration
@@ -1005,12 +1036,12 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/{invoiceId}/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/record-payment
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/record-payment' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1031,12 +1062,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/r
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/send
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/send' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1057,12 +1088,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/s
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/void
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/void' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1086,12 +1117,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/v
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1111,12 +1142,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1137,12 +1168,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1163,12 +1194,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1188,12 +1219,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/coupon/list
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/coupon/list' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1210,6 +1241,7 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/coupon/list' \
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/capabilities
@@ -1236,6 +1268,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/payments/custom-provide
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/connect
@@ -1261,6 +1294,7 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/custom-provide
 - Required path params: None
 - Required query params: locationId
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/connect
@@ -1287,6 +1321,7 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provid
 - Required path params: None
 - Required query params: locationId
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/disconnect
@@ -1313,6 +1348,7 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provid
 - Required path params: None
 - Required query params: locationId
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/provider
@@ -1339,6 +1375,7 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provid
 - Required path params: None
 - Required query params: locationId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/provider
@@ -1364,6 +1401,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/payments/custom-prov
 - Required path params: None
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel
@@ -1389,6 +1427,7 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/integrations/p
 - Required path params: None
 - Required query params: None
 - Required body fields: Body required but fields not explicit 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel
@@ -1418,12 +1457,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/integrations/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/orders' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1440,6 +1479,7 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders' \
 - Required path params: None
 - Required query params: altId
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/orders/migrate-order-ps
@@ -1469,12 +1509,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/orders/migrat
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1491,6 +1531,7 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderI
 - Required path params: orderId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments
@@ -1519,12 +1560,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderI
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1542,6 +1583,7 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{order
 - Required path params: orderId
 - Required query params: altId, altType
 - Required body fields: None 
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/payments/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/notes
@@ -1570,12 +1612,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderI
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/record-payment
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{orderId}/record-payment' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1596,12 +1638,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{order
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/subscriptions
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1621,12 +1663,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions'
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/subscriptions/{subscriptionId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions/{subscriptionId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1646,12 +1688,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/transactions
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/transactions' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1671,12 +1713,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/transactions' 
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/transactions/{transactionId}
-  - Headers: Authorization + Version (2021-07-28)
+  - Headers: Authorization + Version (v3; documented rollback 2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/transactions/{transactionId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

@@ -3,7 +3,7 @@
 > **Scope of this file:** All endpoints under the `calendars` module (calendars, appointments, slots, groups, resources).
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: **required**. Its VALUE is the version documented for that specific operation — for the calendars and appointments operations frozen in `evidence/W01/GU-004-CONTRACT-FREEZE.md` §5.3 it is `v3`. This file also documents operations that the freeze does NOT record; those examples keep their older literal and carry an explicit `Version UNVERIFIED for this operation` marker. Treat the marker as the authority for that block, not this sentence. Read the operation page at `https://marketplace.gohighlevel.com/docs/ghl/calendars/<operation-slug>/` before using any other supported literal. Never send one value for every call.
 
 ---
 
@@ -21,12 +21,12 @@
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/calendars/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/calendars/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -46,12 +46,12 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/calendars/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/calendars/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -61,6 +61,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/appointments/{appointmentId}/notes - Get Notes
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Get Appointment Notes
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -86,6 +87,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/appointments/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /calendars/appointments/{appointmentId}/notes - Create Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Create Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -112,6 +114,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/appointments
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/appointments/{appointmentId}/notes/{noteId} - Update Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Update Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -138,6 +141,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/appointments/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /calendars/appointments/{appointmentId}/notes/{noteId} - Delete Note
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Delete Note
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -163,6 +167,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/calendars/appointmen
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/blocked-slots - Get Blocked Slots
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Get Blocked Slots
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -199,12 +204,12 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/blocked-slots
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/calendars/events
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/calendars/events' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -224,12 +229,12 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/events' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/calendars/events/appointments
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/calendars/events/appointments' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -239,6 +244,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/events/appoi
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/events/appointments/{eventId} - Get Appointment
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Get appointment by ID
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -275,12 +281,12 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/events/appoin
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/calendars/events/appointments/{eventId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/calendars/events/appointments/{eventId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -290,6 +296,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/events/appoin
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /calendars/events/block-slots - Create Block Slot
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Create block slot
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -316,6 +323,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/events/block
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/events/block-slots/{eventId} - Update Block Slot
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Update block slot by ID
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -353,12 +361,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/events/block-
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/calendars/events/{eventId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/calendars/events/{eventId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -378,12 +386,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/calendars/events/{ev
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/calendars/groups
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/calendars/groups' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -392,6 +400,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/groups' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /calendars/groups - Create Calendar Group
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Create Calendar Group
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -418,6 +427,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/groups' \
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /calendars/groups/validate-slug - Validate group slug
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Validate if group slug is available or not.
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -444,6 +454,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/groups/valid
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/groups/{groupId} - Update Group
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Update Group by group ID
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -470,6 +481,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/groups/{group
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /calendars/groups/{groupId} - Delete Group
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Delete Group
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -495,6 +507,7 @@ curl --request DELETE 'https://services.leadconnectorhq.com/calendars/groups/{gr
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/groups/{groupId}/status - Disable Group
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Disable Group
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -521,6 +534,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/groups/{group
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/resources/{resourceType} - List Calendar Resources
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: List calendar resources by resource type and location ID
 - Security: Location-Access
 - Token type: Sub-Account (Location) Token
@@ -546,6 +560,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/resources/{re
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /calendars/resources/{resourceType} - Create Calendar Resource
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Create calendar resource by resource type
 - Security: Location-Access
 - Token type: Sub-Account (Location) Token
@@ -572,6 +587,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/resources/{r
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/resources/{resourceType}/{id} - Get Calendar Resource
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Get calendar resource by ID
 - Security: Location-Access
 - Token type: Sub-Account (Location) Token
@@ -597,6 +613,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/resources/{re
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/resources/{resourceType}/{id} - Update Calendar Resource
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Update calendar resource by ID
 - Security: Location-Access
 - Token type: Sub-Account (Location) Token
@@ -623,6 +640,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/resources/{re
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /calendars/resources/{resourceType}/{id} - Delete Calendar Resource
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Delete calendar resource by ID
 - Security: Location-Access
 - Token type: Sub-Account (Location) Token
@@ -659,12 +677,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/calendars/resources/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/calendars/{calendarId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/calendars/{calendarId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -673,6 +691,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/{calendarId}'
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/{calendarId} - Update Calendar
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Update calendar by ID.
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -699,6 +718,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/{calendarId}'
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /calendars/{calendarId} - Delete Calendar
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Delete calendar by ID
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -735,12 +755,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/calendars/{calendarI
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/calendars/{calendarId}/free-slots
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (v3)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/calendars/{calendarId}/free-slots' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: v3' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -749,6 +769,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/{calendarId}/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/{calendarId}/notifications - Get notifications
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Get calendar notifications based on query
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -774,6 +795,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/{calendarId}/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### POST /calendars/{calendarId}/notifications - Create notification
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Create Calendar notifications, either one or multiple. All notification settings must be for single calendar only
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -800,6 +822,7 @@ curl --request POST 'https://services.leadconnectorhq.com/calendars/{calendarId}
   - Invalid/expired token or wrong token type for endpoint security
 
 #### GET /calendars/{calendarId}/notifications/{notificationId} - Get notification
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Find Event notification by notificationId
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -825,6 +848,7 @@ curl --request GET 'https://services.leadconnectorhq.com/calendars/{calendarId}/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### PUT /calendars/{calendarId}/notifications/{notificationId} - Update notification
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Update Event notification by id
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
@@ -851,6 +875,7 @@ curl --request PUT 'https://services.leadconnectorhq.com/calendars/{calendarId}/
   - Invalid/expired token or wrong token type for endpoint security
 
 #### DELETE /calendars/{calendarId}/notifications/{notificationId} - Delete Notification
+> Version UNVERIFIED for this operation - read the operation page before use: https://marketplace.gohighlevel.com/docs/ghl/calendars/
 - Description: Delete notification
 - Security: bearer
 - Token type: Private Integration Token or OAuth Access Token
