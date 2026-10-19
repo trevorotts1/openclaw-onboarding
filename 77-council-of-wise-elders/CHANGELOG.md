@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.20: a real event-stream adapter injection point, and a falsifiable session route
+
+- The merged service answered `GET /api/council/sessions/<id>/events` with an unconditional `501 EVENT_STREAM_ADAPTER_NOT_BOUND`, and `GET /council/<id>` with `200 ui: "not_bundled"` for ANY id including `does-not-exist-123`, which made an earlier "real session URL" proof unfalsifiable.
+- `runtime/src/service/front-door.ts`: `FrontDoorOptions` gains optional `eventsAdapter` and `sessionReader` injection points. With an adapter bound, the events route serves `200 text/event-stream` from committed frames only (replay plus optional follow) in the accepted Command Center SSE wire (`id: <sequence>` / `event: <type>` / `data: <json>`). Unbound, the exact `501 EVENT_STREAM_ADAPTER_NOT_BOUND` response is unchanged.
+- With a session reader bound, `GET /council/<id>` answers `404 SESSION_NOT_FOUND` for an id the durable store does not know, and `200` with that session's data for one it does. With no reader injected, the historical `200 ui: "not_bundled"` body is preserved byte-for-byte.
+- New `runtime/src/service/events.ts` supplies the injection contracts plus `journalEventStreamAdapter` (canonical `EventJournal.list` under an injected envelope) and `repositorySessionReader` (canonical `CouncilRepositories.getSession`). It opens no database, reads no credential and calls no network; a read failure is retried from the same cursor, never replaced by a synthetic frame.
+- Cross-unit dependency recorded, not edited: `composition.ts` lives on `unit/W22-U001-composition-root`. That root must pass `eventsAdapter` and `sessionReader` to `CouncilFrontDoor` before these routes are live in the composed service.
+- Base-vs-head loopback probe is byte-identical while unbound: `/` 302 `/chamber/`, `/status` 200, `/chamber/` 200, `/council/s1` 200 with `UI_NOT_BUNDLED`, `/api/council/sessions/s1/events` 501 `EVENT_STREAM_ADAPTER_NOT_BOUND`, `/nope` 404.
+- QC: typecheck exit 0; new `front-door-events.test.ts` 6/6; `service.test.ts` + `landing.test.ts` 20/20; full runtime suite 430 tests / 423 pass / 7 fail with the failing names identical to a fresh detached worktree at the base commit.
+
 ## v1.0.19: the URL opens the Council chamber, not a status report
 
 - The merged service served `GET /` as the developer status page while the packaged chamber sat unreferenced at `runtime/public/chamber/` — no link on that page reached it, so the URL Trevor opens showed identity hashes, six `READINESS_PROBE_NOT_BOUND` layers and three loopback links that are dead on a phone.
