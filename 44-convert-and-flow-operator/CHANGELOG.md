@@ -1,3 +1,9 @@
+## [v2.1.17] - 2026-10-19 - safe dotenv loader
+
+- caf wrapper parses dotenv data instead of executing it with `source`
+- malformed, digit-leading and shell-expression lines are ignored as data
+- credential precedence and quoted-value behavior unchanged
+
 # Changelog — convert-and-flow-operator (Skill 44)
 
 ## [2.1.6] - 2026-10-14 - docs(skill44): Consumers section states verified handoffs only
