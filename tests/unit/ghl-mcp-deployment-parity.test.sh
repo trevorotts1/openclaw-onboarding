@@ -127,13 +127,33 @@ if [ -n "$INS_PRUNE" ] && [ -n "$UPD_PRUNE" ]; then
 else
   bad "a retirement prune anchor moved (install=$([ -n "$INS_PRUNE" ] && echo yes || echo no) updater=$([ -n "$UPD_PRUNE" ] && echo yes || echo no))"
 fi
-for fam in 'ghl-mcp-*.sh' 'qc-assert-ghl-mcp-supervised.sh' 'lib/ghl-mcp-paths.sh'; do
+# GHL-101 (B2): the retirement tool, its path library and the digest primitive
+# are RETAINED by both installers. What must stay symmetric is that BOTH use the
+# same explicit resurrection list and neither prunes the retained set.
+for fam in 'ghl-mcp-probe.sh' 'qc-assert-ghl-mcp-supervised.sh'; do
   if printf '%s\n' "$INS_PRUNE" | grep -qF "$fam" && printf '%s\n' "$UPD_PRUNE" | grep -qF "$fam"; then
     ok "prune parity: install.sh and update-skills.sh both remove $fam"
   else
     bad "prune drift: '$fam' is not removed by both installers"
   fi
 done
+# Parse the two ACTUAL prune lists rather than grepping the whole block: the
+# block legitimately NAMES the retained files in comments and in a post-prune
+# existence check, so a whole-block grep cannot tell retention from pruning.
+_ins_list="$(printf '%s\n' "$INS_PRUNE" | sed -n 's/^_OC_GHL_MCP_RETIRED_SCRIPTS="\([^"]*\)".*/\1/p' | head -1)"
+_upd_list="$(printf '%s\n' "$UPD_PRUNE" | sed -n 's/.*local _retired="\([^"]*\)".*/\1/p' | head -1)"
+if [ -z "$_ins_list" ] || [ -z "$_upd_list" ]; then
+  bad "could not parse the prune lists (ins='$_ins_list' upd='$_upd_list') — an anchor moved"
+else
+  for keep in 'ghl-mcp-autostart.sh' 'ghl-mcp-paths.sh' 'ghl-mcp-pin-digest.sh'; do
+    case " $_ins_list " in *" $keep "*) bad "install prune list drops '$keep' — a source-less box could never run --retire" ;; *)
+      case " $_upd_list " in *" $keep "*) bad "updater prune list drops '$keep' — the box could never run --retire" ;; *)
+        ok "retention parity: '$keep' is in neither installer's prune list" ;; esac ;; esac
+  done
+  for gone in 'ghl-mcp-probe.sh' 'qc-assert-ghl-mcp-supervised.sh'; do
+    case " $_ins_list " in *" $gone "*) case " $_upd_list " in *" $gone "*) ok "prune parity: '$gone' in both lists" ;; *) bad "updater list missing '$gone'" ;; esac ;; *) bad "install list missing '$gone'" ;; esac
+  done
+fi
 printf '%s\n' "$UPD_PRUNE" | grep -q 'vps/36-ghl-mcp-setup-scripts/\*ghl-mcp\*\.sh' \
   && ok "updater also prunes the VPS retired start script from the delivered platform copy" \
   || bad "updater does not prune the VPS retired start script"
@@ -226,11 +246,20 @@ for pair in "contabo:$CT:$BOX/platform/vps/contabo/container-startup.sh" \
     bad "$label: delivered copy drifted from the template"
   fi
 done
-if ! find "$BOX/scripts" -name 'ghl-mcp-*.sh' -o -name 'qc-assert-ghl-mcp-supervised.sh' 2>/dev/null | grep -q .; then
+# GHL-101 (B2): the delivered tree keeps the retirement tool on purpose, so the
+# assertion is that no RESURRECTION surface survives — not that no ghl-mcp file
+# survives. The retained set is checked positively above.
+_res_survivors="$(find "$BOX/scripts" \( -name 'ghl-mcp-probe.sh' -o -name 'qc-assert-ghl-mcp-supervised.sh' \) 2>/dev/null)"
+if [ -z "$_res_survivors" ]; then
   ok "delivered scripts/ carries no retired supervision surface"
 else
-  bad "a retired supervision surface survived the delivered prune"
+  bad "a retired supervision surface survived the delivered prune: $_res_survivors"
 fi
+for keep in ghl-mcp-autostart.sh ghl-mcp-pin-digest.sh lib/ghl-mcp-paths.sh; do
+  [ -e "$BOX/scripts/$keep" ] \
+    && ok "delivered scripts/$keep retained (source-less box can still run --retire)" \
+    || bad "delivered scripts/$keep was pruned — the box can no longer run --retire"
+done
 [ ! -e "$BOX/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" ] \
   && ok "delivered platform/ has no retired VPS start script" \
   || bad "delivered platform/ still carries the retired VPS start script"
@@ -265,9 +294,9 @@ PULLED="$TMP/pulled"; mkdir -p "$PULLED"; cp -Rp "$REPO_ROOT/scripts" "$PULLED/s
 DST="$TMP/dest-scripts"; cp -Rp "$REPO_ROOT/scripts" "$DST"
 extract_fn "$UPD" prune_retired_ghl_mcp_surfaces > "$TMP/prune2.sh"
 bash -c 'set -u; . "$1"; prune_retired_ghl_mcp_surfaces "$2" "$3"' _ "$TMP/prune2.sh" "$DST" "$TMP/no-platform" >/dev/null 2>&1
-[ -f "$PULLED/scripts/ghl-mcp-autostart.sh" ] && [ ! -e "$DST/ghl-mcp-autostart.sh" ] \
-  && ok "destination prune removes the launcher; the pulled bundle keeps the retirement tool" \
-  || bad "prune removed the retirement tool from the pulled bundle (roll cannot retire)"
+[ -f "$PULLED/scripts/ghl-mcp-autostart.sh" ] && [ -f "$DST/ghl-mcp-autostart.sh" ] \
+  && ok "the retirement tool survives BOTH the pulled bundle and the delivered destination (B2)" \
+  || bad "the retirement tool is missing from the pulled bundle or the destination — the roll cannot retire"
 
 # ── 4. [SIMULATED BOOT] dump strip is load-bearing on both platforms ───────
 if command -v node >/dev/null 2>&1; then
