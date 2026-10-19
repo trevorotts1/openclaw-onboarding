@@ -1113,14 +1113,14 @@ if [[ -n "$GHL_RT_SCRIPT" ]]; then
   GHL_RT_OUT=$(cat "$_grt_tmp"); rm -f "$_grt_tmp"
   case "$GHL_RT_RC" in
     0)
-      green "  ✓ X.13b GHL MCP runtime conformance: the INSTALLED service matches the pin (launcher, crash-only, profile, ports, log dir, build stamp, tool count, Tier 2 unregistered)"; PASS=$((PASS+1)) ;;
+      green "  ✓ X.13b GHL MCP runtime conformance: RETIRED_OK (every community surface provably absent; receipt records VERIFIED_OFF)"; PASS=$((PASS+1)) ;;
     2)
-      yellow "  ⚠ X.13b Tier 2 GHL MCP is not installed on this box — nothing to assert (expected in the repo/CI checkout and on every box without Tier 2)"; WARN=$((WARN+1))
-      WARNINGS+=("X.13b|Tier 2 GHL MCP not installed on this box|Informational only — no action needed unless this box is supposed to run Tier 2") ;;
+      yellow "  ⚠ X.13b Tier 2 GHL MCP: NOT_APPLICABLE (no history of the retired community MCP on this box — fresh installs omit it)"; WARN=$((WARN+1))
+      WARNINGS+=("X.13b|Retired Tier 2 GHL MCP has no history on this box|Informational only — the retired service is expected to be absent") ;;
     *)
-      red "  ✗ X.13b GHL MCP RUNTIME conformance violated — the service this box is RUNNING does not match the shipped standard"
+      red "  ✗ X.13b GHL MCP retirement is NOT proven — a retired surface is still live, or the retirement state cannot be verified"
       FAIL=$((FAIL+1))
-      FAILURES+=("X.13b|GHL MCP installed service does not match the pin|Run: bash scripts/ghl-mcp-assert-runtime.sh — then bash scripts/ghl-mcp-autostart.sh to regenerate the service definition from config/ghl-mcp-pin.env")
+      FAILURES+=("X.13b|Community GHL MCP not provably retired|Run: bash scripts/ghl-mcp-assert-runtime.sh — then finish retirement with: bash scripts/ghl-mcp-autostart.sh --retire (idempotent; never start or regenerate the retired service)")
       while IFS= read -r _grtline; do
         case "$_grtline" in *"[ghl-mcp-runtime] FAIL"*) red "    $_grtline" ;; esac
       done <<< "$GHL_RT_OUT" ;;

@@ -12403,7 +12403,7 @@ PY
     *HEALTHY_ALREADY*|*"=HEALTHY "*) echo "  ✓ GHL MCP running + ANSWERING JSON-RPC. ${GHL_MCP_STATUS_LINE}" ;;
     *SKIPPED_NO_CREDS*)             echo "  ℹ GHL MCP not started -- GHL token absent (honest gap, not a failure). ${GHL_MCP_STATUS_LINE}" ;;
     *"=DEAF"*)                      echo "  ⚠ GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) -- every agent init will burn the full connectionTimeoutMs until fixed. ${GHL_MCP_STATUS_LINE}" ;;
-    *TOKEN_REJECTED*)               echo "  ⚠ GHL rejected the PIT -- the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${GHL_MCP_STATUS_LINE}" ;;
+    *TOKEN_REJECTED*)               echo "  ⚠ OLD STARTER LOG: GHL rejected the PIT. The community MCP is RETIRED — do NOT re-run the starter (it refuses) and do not restart the service. Rotate/repair GOHIGHLEVEL_API_KEY, then run: bash scripts/ghl-mcp-autostart.sh --retire. ${GHL_MCP_STATUS_LINE}" ;;
     *PIN_MISMATCH*|*PIN_INVALID*)   echo "  ⚠ GHL MCP refused to start: the vetted commit pin could not be honoured -- an UNPINNED third-party MCP is never started. ${GHL_MCP_STATUS_LINE}" ;;
     # DEFECT 1 (proven live 2026-08-04): before this STATUS existed, running
     # ghl-mcp-autostart.sh as root against a checkout owned by a different uid
