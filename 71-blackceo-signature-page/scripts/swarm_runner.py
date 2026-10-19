@@ -709,7 +709,8 @@ class Runner:
                 .replace("{{done_criteria}}", "\n".join(f"- {d}" for d in done))
                 .replace("{{note_file}}", str(note_file))
                 .replace("{{item}}", str(item))
-                .replace("{{stage}}", stage))
+                .replace("{{stage}}", stage)
+                .replace("{{purpose}}", spec.get("purpose", "")))
         if extra_context:
             text += "\n" + extra_context
         brief_path = (self.run_dir / "private" / "briefs" /

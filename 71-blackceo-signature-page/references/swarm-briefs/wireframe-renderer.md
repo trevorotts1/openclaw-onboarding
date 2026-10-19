@@ -2,6 +2,15 @@
 
 Objective: {{objective}}
 
+## Purpose of this stage
+
+{{purpose}}
+
+The stage purpose above is a constraint, not background. Read it before the first
+section prompt; the run's prompt anatomy for a section is
+`references/section-image-prompt.md` (wireframe template for desktop-wireframe and
+mobile-tablet, mockup template for visual-mockup and final-mockups).
+
 ## Your one job
 
 Render the one part or artifact named in your brief, from the section plan
