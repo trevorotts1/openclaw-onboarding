@@ -6,8 +6,8 @@
  *
  * Read-only. Never throws from the resolver; a missing store is `null`.
  */
-import { accessSync, constants, copyFileSync, mkdtempSync, rmSync, statSync, symlinkSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { accessSync, constants, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SEAT_ROSTER, type SeatId } from '../contracts/enums.js';
 import { discoverHostLayout } from '../cli/route-discovery.js';
@@ -106,7 +106,12 @@ export function resolveBookToPersonaRoot(opts: PersonaRootOptions = {}): BookToP
 }
 
 export interface LivePersonaInventory {
-  root: { resolved_from: string; found: boolean };
+  /**
+   * `found` means a store was resolved. `unreadable` is set (with the error
+   * class name, never a path) when it was resolved but could not be read, so
+   * a broken store is never reported as a missing one.
+   */
+  root: { resolved_from: string; found: boolean; unreadable?: true; error?: string };
   seats: Array<{
     seat_id: SeatId;
     layer: 'live_book_to_persona' | 'shipped_brief_fallback';
@@ -120,25 +125,13 @@ export interface LivePersonaInventory {
  * side notes) cannot brief an elder, so the shipped brief stays in force.
  */
 export function inventoryLivePersonas(opts: PersonaRootOptions = {}): LivePersonaInventory {
-  const empty = (resolvedFrom: string): LivePersonaInventory => ({
-    root: { resolved_from: resolvedFrom, found: false },
-    seats: SEAT_ROSTER.map((s) => ({ seat_id: s.seat_id, layer: 'shipped_brief_fallback' as const, personas: [] })),
-  });
+  const fallbackSeats = (): LivePersonaInventory['seats'] =>
+    SEAT_ROSTER.map((s) => ({ seat_id: s.seat_id, layer: 'shipped_brief_fallback' as const, personas: [] }));
   const root = resolveBookToPersonaRoot(opts);
-  if (!root) return empty('none');
+  if (!root) return { root: { resolved_from: 'none', found: false }, seats: fallbackSeats() };
 
-  let inventoryRoot = root.skill_root;
-  let scratch: string | null = null;
   try {
-    if (root.categories_path !== join(root.skill_root, CATEGORIES)) {
-      // The inventory reads <root>/persona-categories.json, so present the
-      // workspace copy through a throwaway directory (read-only for the store).
-      scratch = mkdtempSync(join(tmpdir(), 'wise-elders-persona-root-'));
-      copyFileSync(root.categories_path, join(scratch, CATEGORIES));
-      symlinkSync(root.personas_dir, join(scratch, 'personas'), 'dir');
-      inventoryRoot = scratch;
-    }
-    const inv = inventoryCouncilSkill22Personas(inventoryRoot);
+    const inv = inventoryCouncilSkill22Personas(root.skill_root, root.categories_path);
     return {
       root: { resolved_from: root.resolved_from, found: true },
       seats: inv.seats.map((seat) => ({
@@ -151,9 +144,10 @@ export function inventoryLivePersonas(opts: PersonaRootOptions = {}): LivePerson
         personas: seat.existing_personas.map((p) => ({ key: p.key, book: p.book, content_level: p.content_level })),
       })),
     };
-  } catch {
-    return empty(root.resolved_from);
-  } finally {
-    if (scratch) rmSync(scratch, { recursive: true, force: true });
+  } catch (e) {
+    return {
+      root: { resolved_from: root.resolved_from, found: true, unreadable: true, error: e instanceof Error ? e.name : 'Error' },
+      seats: fallbackSeats(),
+    };
   }
 }

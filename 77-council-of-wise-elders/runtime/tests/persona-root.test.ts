@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -140,17 +140,79 @@ test('inventory lists all 9 seats, maps brown-atlas-of-heart to brene-brown, and
   rmSync(home, { recursive: true, force: true });
 });
 
-test('script prints and --json both omit absolute paths and write nothing', () => {
+/** Every path under `dir` with size and mtime, so any create/modify/delete shows up. */
+function snapshot(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const name of readdirSync(d).sort()) {
+      const p = join(d, name);
+      const st = statSync(p);
+      out.push(`${p.slice(dir.length)}|${st.isDirectory() ? 'd' : st.size}|${st.mtimeMs}`);
+      if (st.isDirectory()) walk(p);
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+test('workspace categories fallback reads in place and writes nothing', () => {
   const home = temp();
-  makeStore(join(home, '.openclaw', 'skills', BOOK_TO_PERSONA_FOLDER));
+  const scratch = temp(); // stands in for the system temp dir
+  makeStore(join(home, '.openclaw', 'skills', BOOK_TO_PERSONA_FOLDER), false);
+  const ws = join(home, '.openclaw', 'workspace', 'data', 'coaching-personas');
+  mkdirSync(ws, { recursive: true });
+  writeFileSync(join(ws, 'persona-categories.json'), JSON.stringify({ personas: REGISTRY }));
   const script = new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname;
-  const env = { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home };
+  const env = { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home, TMPDIR: scratch, TEMP: scratch, TMP: scratch };
+  const before = snapshot(home);
   for (const args of [[], ['--json']]) {
     const r = spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
-    assert.ok(!r.stdout.includes(home) && !/\/(Users|home|tmp|var)\//.test(r.stdout), r.stdout);
+    assert.match(r.stdout, /brene-brown/);
+    assert.ok(!r.stdout.includes(home) && !r.stdout.includes(scratch));
+  }
+  assert.deepEqual(snapshot(home), before, 'store and home are untouched');
+  assert.deepEqual(readdirSync(scratch), [], 'no scratch files were created in the temp dir');
+  rmSync(home, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+test('a resolved store that cannot be read is reported as unreadable, not as not found', () => {
+  const home = temp();
+  const dir = makeStore(join(home, '.openclaw', 'skills', BOOK_TO_PERSONA_FOLDER));
+  writeFileSync(join(dir, 'persona-categories.json'), '{ not json');
+  const inv = inventoryLivePersonas({ homeDir: home, env: {} });
+  assert.equal(inv.root.found, true);
+  assert.equal(inv.root.unreadable, true);
+  assert.equal(inv.root.error, 'SyntaxError');
+  assert.equal(inv.root.resolved_from, 'openclaw_default');
+  assert.equal(inv.seats.length, 9);
+  assert.ok(inv.seats.every((s) => s.layer === 'shipped_brief_fallback'));
+  assert.ok(!JSON.stringify(inv).includes(home));
+  const script = new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname;
+  const r = spawnSync(process.execPath, [script], { env: { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home }, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /UNREADABLE/);
+  assert.doesNotMatch(r.stdout, /not found/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('script prints and --json both omit absolute paths and write nothing', () => {
+  const home = temp();
+  const scratch = temp();
+  makeStore(join(home, '.openclaw', 'skills', BOOK_TO_PERSONA_FOLDER));
+  const script = new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname;
+  const env = { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home, TMPDIR: scratch, TEMP: scratch, TMP: scratch };
+  const before = snapshot(home);
+  for (const args of [[], ['--json']]) {
+    const r = spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!r.stdout.includes(home) && !r.stdout.includes(scratch) && !/\/(Users|home|tmp|var)\//.test(r.stdout), r.stdout);
     assert.match(r.stdout, /openclaw_default/);
     assert.match(r.stdout, /brene-brown/);
   }
+  assert.deepEqual(snapshot(home), before);
+  assert.deepEqual(readdirSync(scratch), []);
   rmSync(home, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true });
 });
