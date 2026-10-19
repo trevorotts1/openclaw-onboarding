@@ -1380,7 +1380,9 @@ function conveneRefusal(
     else if (e.code === 'CONVENE_INPUT_INVALID' || e.code.startsWith('ROUTE_')) status = 422;
     else return null;
   }
-  const raw = e.detail ?? (error instanceof Error ? error.message : '');
+  // DriverRefusal defaults detail to {} (route refusals pass none): fall back to the message.
+  const bare = e.detail === undefined || e.detail === null || (isPlainObject(e.detail) && Object.keys(e.detail).length === 0);
+  const raw = bare ? (error instanceof Error ? error.message : '') : e.detail;
   const detail =
     typeof raw === 'string'
       ? redactHome(raw)

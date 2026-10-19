@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 
 import { SEAT_IDS, validateDecisionBrief } from '../src/contracts/index.js';
+import { DriverRefusal } from '../src/service/driver.js';
 import { CouncilFrontDoor } from '../src/service/front-door.js';
 import { buildServiceIdentity } from '../src/service/identity.js';
 
@@ -80,11 +81,17 @@ test('GET /chamber/ is the new shell page', async () => {
 test('every contract file on disk is served with its content type and nosniff', async () => {
   const mine = ['chamber-shell.css', 'chamber-shell.js', 'chamber-live.js', 'blackceo-logo.png'];
   for (const name of mine) assert.ok(existsSync(join(chamberDir, name)), `${name} ships with this unit`);
+  const strict =
+    process.env.CHAMBER_REQUIRE_ALL === '1' ||
+    ['chamber-decision.js', 'chamber-room.js', 'chamber-keypoints.js', 'chamber-seatcard.js'].every((n) =>
+      existsSync(join(chamberDir, n)),
+    );
   await withDoor(async (origin) => {
     let served = 0;
     for (const [name, type] of CONTRACT_FILES) {
       const res = await fetch(`${origin}/chamber/${name}`);
       if (!existsSync(join(chamberDir, name))) {
+        assert.ok(!strict, `${name} must exist once the chamber is integrated`);
         // Another unit's file that has not merged yet: it is on the allowlist but not on disk.
         assert.equal(res.status, 404, `${name} is absent so it must not be served`);
         continue;
@@ -420,4 +427,58 @@ test('stepperModel: no session means Brief is current; a session passes its step
   // An unknown status degrades to todo rather than rendering something odd.
   const odd = plain(shell.stepperModel({ session: { steps: [{ key: 'brief', label: 'Brief', status: 'weird' }] } }));
   assert.equal(odd[0].status, 'todo');
+});
+
+test('stepperModel: a completed session (every step done) still has exactly one current step, Verdict', () => {
+  const shell = loadShell();
+  const steps = ['brief', 'openings', 'fault_lines', 'debate', 'vote', 'verdict'].map((key) => ({ key, label: key, status: 'done' }));
+  const model = plain(shell.stepperModel({ session: { steps } }));
+  assert.equal(model.filter((s) => s.status === 'current').length, 1);
+  assert.equal(model[5].status, 'current');
+  assert.deepEqual(model.slice(0, 5).map((s) => s.status), ['done', 'done', 'done', 'done', 'done']);
+});
+
+test('chamber-shell.css: the single row starts at 1240px and the stepper strip is a positioned box', () => {
+  const css = readFileSync(join(chamberDir, 'chamber-shell.css'), 'utf8');
+  assert.match(css, /@media \(min-width: 1240px\)\s*\{\s*\.ch-top \{/);
+  assert.match(css, /\.ch-top-steps \{[^}]*position: relative/);
+});
+
+test('chamber-shell.js never shows a literal {} or raw JSON as a refusal detail', () => {
+  const js = readFileSync(join(chamberDir, 'chamber-shell.js'), 'utf8');
+  assert.equal(js.includes('JSON.stringify(detail)'), false);
+  assert.ok(js.includes('function detailText('));
+});
+
+test('a route refusal built without a detail reaches the browser with a readable detail, not {}', async () => {
+  const door = new CouncilFrontDoor({
+    identity: buildServiceIdentity({
+      tenant_id: 'tenant-w29a',
+      company_id: 'company-w29a',
+      data_dir: 'w29a-data',
+      started_at: '2026-10-19T12:00:00.000Z',
+    }),
+    ports: [0],
+    convening: {
+      routes: () => ({}) as never,
+      convene: async () => {
+        throw new DriverRefusal('ROUTE_NOT_COMPOSABLE', 'No approved budget covers ollama-cloud.', 'Approve the route budget.', 409);
+      },
+    },
+  });
+  const started = await door.start();
+  assert.equal(started.outcome, 'started');
+  try {
+    const res = await fetch(`${started.origin as string}/api/council/convene`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sample: true, route_id: 'x', requested_by: 'chamber-composer' }),
+    });
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { code: string; detail: unknown };
+    assert.equal(body.code, 'ROUTE_NOT_COMPOSABLE');
+    assert.equal(body.detail, 'No approved budget covers ollama-cloud.');
+  } finally {
+    await door.stop();
+  }
 });

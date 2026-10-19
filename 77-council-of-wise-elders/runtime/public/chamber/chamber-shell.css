@@ -22,7 +22,7 @@
 }
 
 .ch-top-brand { grid-area: brand; display: flex; align-items: center; gap: var(--ch-space-3); min-width: 0; height: 40px; }
-.ch-top-steps { grid-area: steps; min-width: 0; display: flex; justify-content: center; }
+.ch-top-steps { grid-area: steps; min-width: 0; display: flex; justify-content: center; position: relative; }
 .ch-top-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: var(--ch-space-2); }
 
 .ch-top-logo {
@@ -48,7 +48,7 @@
 }
 
 /* Wide: one 56px row, stepper centred between brand and buttons. */
-@media (min-width: 1100px) {
+@media (min-width: 1240px) {
   .ch-top {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     grid-template-areas: "brand steps actions";
@@ -63,9 +63,17 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "brand" "actions" "steps";
   }
-  .ch-top-actions { justify-content: center; flex-wrap: wrap; }
+  .ch-top { position: static; }
+  .ch-top-actions { justify-content: center; flex-wrap: wrap; gap: 6px; }
+  .ch-top-actions .ch-btn { padding-left: 10px; padding-right: 10px; font-size: 13px; white-space: nowrap; }
   .ch-top-steps { display: block; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
   .ch-step-list { width: max-content; margin: 0 auto; padding: 0 var(--ch-space-2); }
+}
+
+/* Very narrow phones (320px): tighten so the three buttons still share one row. */
+@media (max-width: 359px) {
+  .ch-top-actions { gap: 4px; }
+  .ch-top-actions .ch-btn { padding-left: 7px; padding-right: 7px; font-size: 12px; }
 }
 
 /* ------------------------------------------------------------- stepper */
@@ -103,6 +111,9 @@
 .ch-step[data-status="skipped"] .ch-step-dot { background: transparent; box-shadow: inset 0 0 0 1px var(--ch-ink-faint); }
 
 /* ------------------------------------------------------------- banner, footer */
+
+/* Space between the top bar or banner and the decision panel. */
+.ch-app .ch-main { padding-top: var(--ch-space-4); }
 
 .ch-banner {
   display: flex;

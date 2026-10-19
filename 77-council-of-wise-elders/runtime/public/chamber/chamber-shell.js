@@ -30,7 +30,7 @@
   function stepperModel(view) {
     var session = view && view.session;
     var given = session && Array.isArray(session.steps) ? session.steps : null;
-    return STEPS.map(function (step, index) {
+    var model = STEPS.map(function (step, index) {
       var found = null;
       if (given) {
         for (var i = 0; i < given.length; i += 1) {
@@ -42,6 +42,11 @@
         : (!session && index === 0 ? 'current' : 'todo');
       return { key: step.key, label: step.label, status: status };
     });
+    // A finished session has every step done; Verdict stays the current one.
+    if (session && !model.some(function (m) { return m.status === 'current'; }) && model[5].status !== 'skipped') {
+      model[5].status = 'current';
+    }
+    return model;
   }
 
   var OPTION_KINDS = { status_quo: 1, bounded_test: 1, change: 1, other: 1 };
@@ -185,6 +190,17 @@
 
   // ---- stepper and banner
 
+  var currentKey = null;
+
+  // On a phone the strip scrolls inside itself; keep the current phase visible.
+  function keepInView(item) {
+    var strip = els.stepper;
+    var left = item.offsetLeft - 8;
+    var right = item.offsetLeft + item.offsetWidth + 8;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+  }
+
   function renderStepper(view) {
     var model = stepperModel(view);
     for (var i = 0; i < model.length; i += 1) {
@@ -192,8 +208,13 @@
       if (!item) continue;
       var status = model[i].status;
       if (item.getAttribute('data-status') !== status) item.setAttribute('data-status', status);
-      if (status === 'current') item.setAttribute('aria-current', 'step');
-      else item.removeAttribute('aria-current');
+      if (status === 'current') {
+        item.setAttribute('aria-current', 'step');
+        if (currentKey !== model[i].key) {
+          currentKey = model[i].key;
+          keepInView(item);
+        }
+      } else item.removeAttribute('aria-current');
       var sr = item.querySelector('.ch-step-sr');
       if (!sr) {
         sr = make('span', 'ch-sr-only ch-step-sr');
@@ -324,6 +345,22 @@
 
   function updateSubmit() {
     els.submit.disabled = posting || selectedRoute() === null;
+  }
+
+  // A refusal detail can be a string, an empty object (route refusals) or raw
+  // JSON (issues). Show a plain sentence, never "{}" or JSON.
+  function detailText(detail, fallback) {
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    var issues = detail && Array.isArray(detail.issues) ? detail.issues : null;
+    if (issues) {
+      var lines = [];
+      for (var i = 0; i < issues.length; i += 1) {
+        var m = issues[i] && typeof issues[i].message === 'string' ? issues[i].message : '';
+        if (m) lines.push(issues[i].path ? issues[i].path + ': ' + m : m);
+      }
+      if (lines.length) return lines.join('; ');
+    }
+    return fallback;
   }
 
   function showError(parts) {
@@ -492,10 +529,9 @@
           els.composer.close();
           return;
         }
-        var detail = result.body.detail;
         showError({
           code: result.body.code || (result.status === 202 ? 'CONVENE_NO_SESSION' : 'HTTP_' + result.status),
-          detail: detail === undefined || detail === null ? (result.status === 202 ? 'The service accepted the request but returned no session id.' : 'The service refused the request.') : (typeof detail === 'string' ? detail : JSON.stringify(detail)),
+          detail: detailText(result.body.detail, result.status === 202 ? 'The service accepted the request but returned no session id.' : 'The service refused the request.'),
           recovery: result.body.recovery || 'Check the question, the options and the route, then try again.'
         });
       })

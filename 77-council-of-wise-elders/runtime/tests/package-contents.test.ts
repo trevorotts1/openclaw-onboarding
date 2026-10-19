@@ -64,6 +64,13 @@ test('every chamber file the front door serves exists on disk', (t) => {
     assert.ok(existsSync(join(chamber, name)), `${name} must exist`);
   }
   const missing = OTHER_UNIT_FILES.filter((name) => !existsSync(join(chamber, name)));
+  // Strict once the four renderer units have landed (or when forced): then nothing may be missing.
+  const strict =
+    process.env.CHAMBER_REQUIRE_ALL === '1' ||
+    ['chamber-decision.js', 'chamber-room.js', 'chamber-keypoints.js', 'chamber-seatcard.js'].every((n) =>
+      existsSync(join(chamber, n)),
+    );
+  assert.ok(!strict || missing.length === 0, `integrated chamber is missing: ${missing.join(', ')}`);
   if (missing.length > 0) t.diagnostic(`other units' files not merged yet: ${missing.join(', ')}`);
   const portraits = readdirSync(join(chamber, 'portraits')).filter((n) => /\.(svg|webp)$/.test(n));
   assert.ok(portraits.length > 0, 'portrait svgs or webps must exist');
