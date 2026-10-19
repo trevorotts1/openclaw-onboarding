@@ -178,6 +178,7 @@ LEAK_LINE = re.compile(
     r"^\s*[-\s]*Pixels:\s*\d+\s*[x×]\s*\d+|"
     r"^\s*[-\s]*Raster:\s*\d+\s*[x×]\s*\d+|"
     r"(?<!\d)(?:724|2171|2172)(?!\d)|\braster_(?:width|height)\b)")
+MAX_LABEL_WORDS = 8
 TERMINAL = (".", "!", "?", '"', "”", "'", "’", ")", "]", "…")
 
 
@@ -423,6 +424,17 @@ def copy_contract(section: dict) -> str:
              "Spell every word exactly: do not invent, drop, double, or substitute "
              "characters anywhere:",
              copy]
+    # Chip labels and the founder's signature are names, not sentences: the builder
+    # lists them apart so the truncated-prose guard above keeps reading prose only.
+    labels = [str(x).strip() for x in section.get("labels") or [] if str(x).strip()]
+    for text in labels:
+        if len(text.split()) > MAX_LABEL_WORDS:
+            raise ExecutorError(
+                f"section {label}: label {text[:56]!r} is longer than {MAX_LABEL_WORDS} words; "
+                "a label is a chip or a signature, so unfinished prose belongs in the copy block")
+    if labels:
+        lines.append("LABELS — print exactly, one per line, as designed labels: " +
+                     " | ".join(f'"{x}"' for x in labels))
     if cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
@@ -464,6 +476,108 @@ def require_brand_colors(run_dir: Path) -> str:
     return res.block()
 
 
+SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
+
+
+def canon_section_id(value) -> str:
+    """Canonical copy-spec section id: "S02A", "02A", "2a" -> "2A"."""
+    text = str(value).strip().upper()
+    text = re.sub(r"^S(?=\d)", "", text)
+    match = re.fullmatch(r"0*(\d+)([A-Z]?)", text)
+    return f"{int(match.group(1))}{match.group(2)}" if match else text
+
+
+def declared_copy_version(run_dir: Path, request: dict):
+    """The selected form: request, then request metadata, then intake.json."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    values = [request.get("copy_version"), metadata.get("copy_version")]
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        values.append(intake.get("copy_version"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    for value in values:
+        if value:
+            return str(value)
+    return None
+
+
+def allowed_section_sequences(spec: dict) -> list:
+    """The spec sequence, plus each optional-children expansion (5 -> 5A,5B,5C)."""
+    base = list(spec["sequence"])
+    out = [base]
+    for parent, child in (spec.get("containment", {}).get("child_sections") or {}).items():
+        if parent in base and child.get("ids"):
+            i = base.index(parent)
+            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
+    return out
+
+
+def check_section_count(run_dir: Path, request: dict, paid: bool = False):
+    """Fail closed unless the request carries one section per canonical copy
+    section of the selected form (Standard 12, Long-Form 15), in order.
+
+    Never band-compressed: a request that merges sections to fit fewer images
+    is refused by name before any prompt is composed or any call is made.
+    """
+    version = declared_copy_version(run_dir, request)
+    if not version:
+        if paid:
+            raise ExecutorError(
+                "the production request does not declare copy_version (request "
+                "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
+                "paid run needs the selected form so the section count can be checked")
+        print("NOTE section_count: no copy_version declared; the section-count "
+              "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
+        return None
+    spec_path = SPEC_DIR / f"{version}-v6.json"
+    if not spec_path.is_file():
+        raise ExecutorError(
+            f"copy_version {version!r} is not one of standard, long-form "
+            f"(no spec at {spec_path.name})")
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
+    allowed = allowed_section_sequences(spec)
+    if ids not in allowed:
+        want = allowed[0]
+        raise ExecutorError(
+            f"section count: the request has {len(ids)} sections {ids} but the "
+            f"{version} copy has {len(want)} canonical sections {want}; missing "
+            f"{[i for i in want if i not in ids]}, unexpected "
+            f"{[i for i in ids if i not in want]}. One request section per canonical "
+            "copy section, in order; never band-compress sections")
+    sources, absent = [], []
+    for path in _copy_source_candidates(run_dir, request):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        sources.append(("copy source", [canon_section_id(s["id"]) for s in data.get("sections") or []
+                                        if isinstance(s, dict) and s.get("id")]))
+        break
+    else:
+        absent.append("copy source file not found")
+    manifest = run_dir / "copy" / "copy-manifest.json"
+    if not manifest.is_file():
+        absent.append(f"copy manifest absent at {manifest}")
+    else:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from validate_wireframe import manifest_section_ids  # the wireframe gate's own reader
+        try:
+            sources.append(("copy manifest", [canon_section_id(i) for i in manifest_section_ids(
+                json.loads(manifest.read_text(encoding="utf-8")))]))
+        except (OSError, ValueError):
+            pass
+    for label, source_ids in sources:
+        if source_ids and source_ids != ids:
+            raise ExecutorError(
+                f"section count: the request has {len(ids)} sections {ids} but its {label} "
+                f"has {len(source_ids)} sections {source_ids}; they must match one to one")
+    return version, ids, [label for label, _ in sources] + absent
+
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -476,7 +590,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def load_request(run_dir: Path, name: str) -> dict:
+def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
     path = run_dir / name
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -493,11 +607,13 @@ def load_request(run_dir: Path, name: str) -> dict:
     if data["_hypersat"] is None:
         print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
               "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
-    ctas = copy_source_ctas(run_dir, data)
-    required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
+    data["_section_check"] = check_section_count(run_dir, data, paid)
+    ctas = copy_source_ctas(run_dir, data)
+    required = bool(data.get("cta_required"))
+    for i, s in enumerate(sections):
         s.setdefault("section_name", s["section_id"])
         inline = _cta_label(s.get("cta"))
         source = ctas.get(str(s["section_id"]))
@@ -548,7 +664,7 @@ def render_template(template: str, values: dict, stage: str) -> str:
 
 def stage_prompt(stage: str, section: dict, index: int, width: int,
                  request: dict, ratio: str | None = None,
-                 with_sizes: bool = False):
+                 with_sizes: bool = False, strict_floor: bool = False):
     slots = section.get("slots") or []
     slot_words = "; ".join(
         f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
@@ -556,9 +672,11 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     values = {
         "stage": stage,
         "section_number": str(index),
+        "section_total": str(len(request.get("sections") or [])),
         "section_name": section.get("section_name") or section["section_id"],
         "copy": section.get("copy") or "",
         "slots": slot_words,
+        "layout": str(section.get("layout") or ""),
         "width": str(width),
         "ratio": ratio or "",
         "style": request.get("style") or "",
@@ -571,9 +689,13 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"at {width}px page width. Copy: {values['copy']}. "
                 f"Image slots: {slot_words}. {values['style']}").strip()
     copy = str(section.get("copy") or "").strip()
-    body = sanitize_prompt(body)
+    # Lift the verbatim copy out of the template body BEFORE sanitising: the sanitiser
+    # drops blank lines, so a multi-paragraph copy would no longer match and would
+    # print twice (once in the verbatim block, once in the body).
     if copy and copy in body:
-        body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
+        body = body.replace(copy, "", 1)
+    body = sanitize_prompt(body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block()
@@ -635,10 +757,12 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"{budget['max_chars']}-char model maximum; cut design prose, never "
                 "the verbatim copy")
         if deficit > 0:
-            print(f"WARN prompt_budget {stage} section {index}: {len(prompt)} chars, "
-                  f"{deficit} below the {budget['floor_chars']}-char floor "
-                  f"({budget['target_chars']}-char target); add genuine specification",
-                  file=sys.stderr)
+            message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
+                       f"{budget['floor_chars']}-char floor ({budget['target_chars']}-char "
+                       "target); add genuine specification")
+            if strict_floor:  # owner Decision 1: under the floor fails the prompt stage
+                raise ExecutorError(f"prompt budget: {message}")
+            print(f"WARN prompt_budget {message}", file=sys.stderr)
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:
@@ -846,7 +970,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             ratio = target_ratio(stage, template, section, run_dir, index)
             refs = prior_slices(stage, run_dir, index, template)
             prompt, prompt_sizes = stage_prompt(
-                stage, section, index, width, request, ratio, with_sizes=True)
+                stage, section, index, width, request, ratio, with_sizes=True,
+                strict_floor=provider.name == "kie")
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
@@ -1006,6 +1131,11 @@ def main(argv=None) -> int:
         if args.preflight:
             request = load_request(run_dir, args.request)
             request["_brand_block"] = brand_block
+            check = request.get("_section_check")
+            if check:
+                print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
+                      f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
+                      f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
             refs = list(dict.fromkeys(str(r) for r in request.get("references") or []))
             known = [r for r in refs if reference_use.lookup(r)]
@@ -1022,7 +1152,7 @@ def main(argv=None) -> int:
                             ratio = target_ratio(stage, template, section, run_dir, index)
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
-                                with_sizes=True)
+                                with_sizes=True, strict_floor=True)
                             refs = prior_slices(stage, run_dir, index, template)
                         except ExecutorError as exc:
                             refused += 1
@@ -1045,13 +1175,14 @@ def main(argv=None) -> int:
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
         if args.item:
-            request = load_request(run_dir, args.request) if (run_dir / args.request).is_file() else {}
+            request = (load_request(run_dir, args.request, paid=args.provider == "kie")
+                       if (run_dir / args.request).is_file() else {})
             entry = run_item(run_dir, args.stage or "image-generation-qc",
                              args.item, request, provider, args.overwrite)
             print(f"ITEM {entry['item']} {entry['file']} provider={entry['provider']} "
                   f"mode={entry['mode']}")
             return 0
-        request = load_request(run_dir, args.request)
+        request = load_request(run_dir, args.request, paid=args.provider == "kie")
         request["_brand_block"] = brand_block
         for stage in stages:
             record = run_stage(stage, run_dir, request, provider, args.request)

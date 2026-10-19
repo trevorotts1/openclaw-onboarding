@@ -17,6 +17,7 @@ MODULES = [
     "test_brand_colors.py",
     "test_stage_executor_prompt_contract.py",
     "test_overview_board.py",
+    "test_section_count.py",
     "test_validate_visual_direction.py",
     "test_validate_manifest_grade.py",
     "test_stage_gate.py",

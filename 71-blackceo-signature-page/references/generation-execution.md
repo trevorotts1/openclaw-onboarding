@@ -32,6 +32,7 @@ sibling `74-kie-live-adapter` skill; a missing adapter is a named failure.
 ```json
 {
   "model": "<id resolved by Skill 66>",
+  "copy_version": "standard | long-form",
   "style": "<one-line direction>",
   "references": ["/abs/path/reference-1.png"],
   "stage_prompts": {"desktop-wireframe": "... {section_name} ... {copy} ... {slots} ... {width} ..."},
@@ -48,6 +49,34 @@ Each stage writes its images into its own stage folder and one
 provider, the mode and the task id. Later stages attach the actual PNGs the earlier stages
 wrote as input references. The record is not a gate receipt: it cannot close a stage, and the
 gate's validators and reviewers still run against the artifacts.
+
+## Section count contract
+
+One request section per canonical copy section of the selected form, never
+band-compressed: Standard 12, Long-Form 15 (`references/copy-specs/<copy_version>-v6.json`,
+`sequence`; Section 5 may expand to 5A, 5B, 5C, which makes 17). The form comes from the
+request's `copy_version`, else its `metadata.copy_version`, else `<run_dir>/intake.json`.
+`stage_executor.py` refuses, by name and before any prompt is composed, a request whose
+canonical section ids (`S02A`, `02A` and `2A` all read as `2A`) differ from that sequence,
+from the request's copy source (`copy_source` file), or from `copy/copy-manifest.json`. A
+free run with no declared form prints a NOTE and skips the check; a paid run
+(`--provider kie`) refuses. `--preflight` prints `PREFLIGHT_SECTIONS` (form, count, ids) and one
+`PREFLIGHT_CTA` per section.
+
+`scripts/build_production_request.py` is the request builder for this path. It reads
+`copy/internal-manuscript.md`, writes one section per canonical id with the section's public
+copy, its single CTA label, optional image slots (`--slots`) and optional design prose packed
+to the model's 95 percent target (`--design-prose`), and runs the same check on its own
+output before writing; that check reads the run the manuscript belongs to (`--run-dir`, else
+the parent of `copy/`), never the working directory, and prints what it was checked against.
+A section's copy always ends on a finished sentence: a signature or chip label (8 words or
+fewer) is listed apart in the section's `labels` and printed as its own LABELS line, so
+unfinished prose is refused even when the cut lands on its own line. The builder lands every
+section at or above the 16,000-character floor and refuses (naming the section) when the
+supplied `--design-prose` is too thin; it warns when the shortest section is below the
+19,000-character target. `--preflight` and a paid run (`--provider kie`) fail a prompt under
+the floor (owner Decision 1); a stub run only warns. Templates may use `{section_total}` and
+`{layout}` besides the placeholders listed under Production request.
 
 ## Prompt and geometry contract
 
