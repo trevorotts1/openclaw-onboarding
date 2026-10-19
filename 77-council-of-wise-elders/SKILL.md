@@ -7,7 +7,6 @@ description: Convene a source-grounded Council of Wise Elders for business or
   review a consequential decision, revisit a prior council, or compare a
   changed-facts rerun. Use the client's explicitly selected model route.
 version: 1.0.20
-version: 1.0.19
 ---
 
 # Council of Wise Elders (Skill 77)
