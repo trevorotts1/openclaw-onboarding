@@ -55,7 +55,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -78,6 +80,194 @@ LAYOUT = {
     "final-mockups": [("desktop/part-{n:02d}.png", 1440, 760),
                       ("mobile/part-{n:02d}.png", 390, 1080)],
 }
+
+RATIO_ENUM = ("1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16",
+              "21:9", "27:16", "16:27", "9:8", "8:9")
+RATIO_DEFAULT = {
+    "desktop-wireframe": "16:9",
+    "mobile-tablet": "9:16",
+    "visual-mockup": "3:4",
+    "final-mockups": "3:4",
+}
+# Prose the request builder pasted INTO the verbatim copy is not copy.
+COPY_PADDING = (
+    "Preserve the measured band order",
+    "Hold the type scale",
+    "Keep the authority band",
+    "Keep the photography square-cornered",
+    "Keep the gold hairline rules",
+    "Keep the ivory ground warm",
+    "Set the eyebrow in rust",
+    "Let the hero carry the script overlay",
+    "Keep small text crisp",
+    "Render the sheet flat",
+)
+ABS_PATH = re.compile(r"(?:/Users|/Volumes)/[^\s`'\"]+")
+REF_NAME = re.compile(
+    r"\b(?:chatgpt-(?:mockup|wireframe)-\d+|set-for-life-[a-z0-9-]+)\.png\b", re.I)
+LEAK_LINE = re.compile(
+    r"(?i)(/Users/|/Volumes/|\bSHA-256\b|\bBundled path\b|\bReviewed download\b|"
+    r"\bEvidence copy\b|Drive folder|crops saved in|Measured with PIL|\balias M4\b|"
+    r"^\s*Bytes:\s|"
+    r"^\s*[-\s]*Pixels:\s*\d+\s*[x×]\s*\d+|"
+    r"^\s*[-\s]*Raster:\s*\d+\s*[x×]\s*\d+|"
+    r"(?<!\d)(?:724|2171|2172)(?!\d)|\braster_(?:width|height)\b)")
+TERMINAL = (".", "!", "?", '"', "”", "'", "’", ")", "]", "…")
+
+
+def png_size(path: Path):
+    """(width, height) from the PNG IHDR, or None; no Pillow dependency."""
+    try:
+        with Path(path).open("rb") as f:
+            head = f.read(24)
+    except OSError:
+        return None
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        return None
+    return struct.unpack(">II", head[16:24])
+
+
+def nearest_ratio(width: int, height: int) -> str:
+    """Nearest ratio the GPT Image route offers (its enum has no 1:3 or 3:1)."""
+    if width <= 0 or height <= 0:
+        return RATIO_DEFAULT["visual-mockup"]
+    want = width / height
+
+    def distance(label):
+        a, b = label.split(":")
+        return abs(int(a) / int(b) - want)
+
+    return min(RATIO_ENUM, key=distance)
+
+
+def _platform(stage: str, template: str) -> str:
+    if stage == "mobile-tablet":
+        return "mobile"
+    if stage == "desktop-wireframe":
+        return "desktop"
+    return "mobile" if template.startswith("mobile") else "desktop"
+
+
+def prior_slices(stage: str, run_dir: Path, index: int, template: str):
+    """The matching slice of each earlier stage for THIS section only.
+
+    The executor used to attach every earlier slice to every job. A model
+    handed all twelve slices draws a whole page and leaves the rest blank;
+    it must see the same-index wireframe (and, at final mockups, the
+    same-index visual mockup) and nothing else.
+    """
+    earlier = STAGES[:STAGES.index(stage)]
+    want = _platform(stage, template)
+    picks = []
+    for platform in (want, "desktop" if want == "mobile" else "mobile"):
+        for name in earlier:
+            for pattern, _w, _h in LAYOUT[name]:
+                if _platform(name, pattern) != platform:
+                    continue
+                candidate = run_dir / name / pattern.format(n=index)
+                if candidate.is_file() and candidate not in picks:
+                    picks.append(candidate)
+    return picks
+
+
+def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
+                 index: int) -> str:
+    """Per-section, per-platform ratio: the pixel-mate's, never one 3:4 for all."""
+    for candidate in prior_slices(stage, run_dir, index, template):
+        size = png_size(candidate)
+        if not size:
+            continue
+        width, height = size
+        if _platform(stage, template) == "mobile" and width > height:
+            continue  # never carry a landscape mobile slice forward
+        return nearest_ratio(width, height)
+    slot = (section.get("slots") or [{}])[0]
+    ratio = slot.get("aspect_ratio")
+    if ratio and ratio != "auto":
+        try:
+            a, b = (int(part) for part in ratio.split(":"))
+        except (TypeError, ValueError):
+            a = b = 0
+        if _platform(stage, template) == "mobile" and a > b:
+            return RATIO_DEFAULT["mobile-tablet"]
+        return ratio
+    return RATIO_DEFAULT.get(stage, "3:4")
+
+
+def sanitize_prompt(text: str) -> str:
+    """Strip provenance a model must not see: local paths, reference
+    filenames, hashes, and the reference raster's absolute pixel size.
+
+    The measured 724x2172 raster was being copied verbatim into every
+    prompt; the model reproduced that 1:3 canvas and left blank bands.
+    Design ratios and tokens stay; the provenance disappears.
+    """
+    kept = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if LEAK_LINE.search(line):
+            continue
+        if stripped.startswith(("File:", "Selection:", "Unit:", "Builder:", "Date:")):
+            continue
+        kept.append(line)
+    cleaned = REF_NAME.sub("the reference sheet", "\n".join(kept))
+    cleaned = ABS_PATH.sub("the reference sheet", cleaned)
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def prompt_cap(model: str | None):
+    try:
+        policy = json.loads((SKILL_ROOT / "references" / "prompt-budget-policy.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for entry in policy.get("models") or []:
+        match = entry.get("match")
+        if model and match and str(match) in model and entry.get("unit") == "chars":
+            return entry.get("max_chars")
+    return None
+
+
+def copy_contract(section: dict) -> str:
+    """The verbatim copy goes FIRST, so attention cannot drift to prose."""
+    copy = str(section.get("copy") or "").strip()
+    if not copy:
+        return ""
+    label = section.get("section_id")
+    for phrase in COPY_PADDING:
+        if phrase in copy:
+            raise ExecutorError(
+                f"section {label}: verbatim copy carries style padding "
+                f"({phrase!r}); rebuild the request with the client's full copy "
+                "(no production prose inside the copy block)")
+    if copy.endswith("...") or copy[-1] not in TERMINAL:
+        raise ExecutorError(
+            f"section {label}: verbatim copy ends mid-sentence "
+            f"({copy[-56:]!r}); rebuild the request with the full section copy")
+    cta = str(section.get("cta") or "").strip()
+    if not cta:
+        match = re.search(r"\bCTA:\s*([^\n]+)", copy)
+        if match:
+            cta = match.group(1).strip().rstrip(".")
+    lines = ["VERBATIM COPY — print exactly these strings, character for "
+             "character. Do not paraphrase, shorten, reorder, or add text. "
+             "Spell every word exactly: do not invent, drop, double, or substitute "
+             "characters anywhere:",
+             copy]
+    if cta:
+        lines.append(f'CTA LABEL — print exactly: "{cta}"')
+    return "\n".join(lines)
+
+
+def frame_contract(width: int, ratio: str) -> str:
+    return (
+        "FRAME CONTRACT — this image is ONE section slice, not a full page. "
+        f"Fill the entire {width}px-wide frame edge to edge at aspect ratio {ratio}. "
+        "Draw the section across the full height of the canvas: no blank bands, no "
+        "empty lower region, no letterboxing, no collage of other sections. Do not "
+        "reproduce the reference sheet's full-page height or any other section.")
 
 
 class ExecutorError(Exception):
@@ -116,7 +306,8 @@ def load_request(run_dir: Path, name: str) -> dict:
     return data
 
 
-def stage_prompt(stage: str, section: dict, index: int, width: int, request: dict) -> str:
+def stage_prompt(stage: str, section: dict, index: int, width: int,
+                 request: dict, ratio: str | None = None) -> str:
     slots = section.get("slots") or []
     slot_words = "; ".join(
         f"{s.get('slot_id', 'slot')} {s.get('aspect_ratio', '')} {s.get('art_direction', '')}".strip()
@@ -128,18 +319,33 @@ def stage_prompt(stage: str, section: dict, index: int, width: int, request: dic
         "copy": section.get("copy") or "",
         "slots": slot_words,
         "width": str(width),
+        "ratio": ratio or "",
         "style": request.get("style") or "",
     }
     template = (request.get("stage_prompts") or {}).get(stage)
     if template:
         try:
-            return template.format(**values)
+            body = template.format(**values)
         except (KeyError, IndexError) as exc:
             raise ExecutorError(
                 f"stage_prompts[{stage!r}] has an unknown placeholder: {exc}")
-    return (f"{stage} build spec, section {index} '{values['section_name']}' "
-            f"at {width}px page width. Copy: {values['copy']}. "
-            f"Image slots: {slot_words}. {values['style']}").strip()
+    else:
+        body = (f"{stage} build spec, section {index} '{values['section_name']}' "
+                f"at {width}px page width. Copy: {values['copy']}. "
+                f"Image slots: {slot_words}. {values['style']}").strip()
+    copy = str(section.get("copy") or "").strip()
+    body = sanitize_prompt(body)
+    if copy and copy in body:
+        body = re.sub(r"\n{3,}", "\n\n", body.replace(copy, "", 1)).strip()
+    blocks = [b for b in (copy_contract(section),
+                          frame_contract(width, ratio or "")) if b]
+    prompt = "\n\n".join(blocks + [body]).strip()
+    cap = prompt_cap(request.get("model"))
+    if cap and len(prompt) > cap:
+        raise ExecutorError(
+            f"{stage} section {index}: prompt is {len(prompt)} chars, over the "
+            f"{cap}-char model maximum; cut design prose, never the verbatim copy")
+    return prompt
 
 
 def build_input(job: dict, request: dict) -> dict:
@@ -299,34 +505,29 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
     sections = request["sections"]
     targets = LAYOUT[stage]
-    prior: list[Path] = []
-    for earlier in STAGES:
-        if earlier == stage:
-            break
-        for pattern, _w, _h in LAYOUT[earlier]:
-            stage_dir = run_dir / earlier
-            for n in range(1, len(sections) + 1):
-                candidate = stage_dir / pattern.format(n=n)
-                if candidate.is_file():
-                    prior.append(candidate)
     records = []
     for index, section in enumerate(sections, start=1):
         for template, width, height in targets:
             out = run_dir / stage / template.format(n=index)
+            ratio = target_ratio(stage, template, section, run_dir, index)
+            refs = prior_slices(stage, run_dir, index, template)
             job = {
                 "stage": stage, "index": index, "section": section,
                 "out": out, "width": width, "height": height,
                 "label": f"{stage} section {index:02d} {width}px",
-                "ratio": (section.get("slots") or [{}])[0].get("aspect_ratio"),
-                "references": [str(p) for p in prior],
-                "prompt": stage_prompt(stage, section, index, width, request),
+                "ratio": ratio,
+                "references": [str(p) for p in refs],
+                "prompt": stage_prompt(stage, section, index, width, request, ratio),
             }
             result = provider.generate(job, request)
-            records.append({
+            actual = png_size(out)
+            entry = {
                 "section_id": section["section_id"],
                 "section_number": index,
                 "file": str(out.relative_to(run_dir)),
                 "width": width,
+                "requested_ratio": ratio,
+                "actual_pixels": list(actual) if actual else None,
                 "sha256": sha256(out),
                 "prompt_sha256": hashlib.sha256(job["prompt"].encode("utf-8")).hexdigest(),
                 "model": result.get("model"),
@@ -334,7 +535,17 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider) -> dict:
                 "mode": result.get("mode"),
                 "task_id": result.get("task_id"),
                 "inputs": job["references"],
-            })
+            }
+            if actual:
+                a, b = ratio.split(":")
+                want = int(a) / int(b)
+                got = actual[0] / actual[1]
+                if abs(got - want) / want > 0.02:
+                    entry["geometry_mismatch"] = (
+                        f"requested {ratio}, delivered {actual[0]}x{actual[1]}")
+                    print(f"WARN geometry_mismatch {stage} {out.name}: "
+                          f"{entry['geometry_mismatch']}")
+            records.append(entry)
     composition = compose(stage, run_dir, provider)
     record = {
         "stage": stage,
@@ -414,6 +625,9 @@ def main(argv=None) -> int:
     p.add_argument("--stage", default=None,
                    help="stage for --item; defaults to image-generation-qc")
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--preflight", action="store_true",
+                   help="compose and validate every prompt with no provider call "
+                        "and no file write")
     args = p.parse_args(argv)
 
     run_dir = args.run_dir.resolve()
@@ -426,6 +640,18 @@ def main(argv=None) -> int:
             print(f"FAIL: unknown stage {stage!r}; expected one of {list(STAGES)}")
             return 2
     try:
+        if args.preflight:
+            request = load_request(run_dir, args.request)
+            for stage in stages:
+                for index, section in enumerate(request["sections"], start=1):
+                    for template, width, _height in LAYOUT[stage]:
+                        ratio = target_ratio(stage, template, section, run_dir, index)
+                        prompt = stage_prompt(stage, section, index, width,
+                                              request, ratio)
+                        refs = prior_slices(stage, run_dir, index, template)
+                        print(f"PREFLIGHT {stage} {template.format(n=index)} "
+                              f"ratio={ratio} chars={len(prompt)} refs={len(refs)}")
+            return 0
         provider = make_provider(args, run_dir)
         if args.item:
             request = load_request(run_dir, args.request) if (run_dir / args.request).is_file() else {}

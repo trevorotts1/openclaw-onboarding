@@ -49,6 +49,30 @@ provider, the mode and the task id. Later stages attach the actual PNGs the earl
 wrote as input references. The record is not a gate receipt: it cannot close a stage, and the
 gate's validators and reviewers still run against the artifacts.
 
+## Prompt and geometry contract
+
+The executor enforces four rules on every job before a paid call; `--preflight`
+composes and checks them with no provider call and no file write.
+
+1. **Verbatim copy first.** The section's `copy` is the first block and appears
+   once, followed by the exact CTA label. The run's production prose is never
+   inside the copy block.
+2. **Incomplete copy is refused.** A copy string that carries style padding
+   ("Preserve the measured band order", …) or ends mid-sentence fails by
+   section name, because a paid render of truncated copy is a wasted call.
+3. **Provenance is stripped.** Local paths, reference filenames, hashes and the
+   reference raster's absolute pixel size are removed; measured ratios and
+   design tokens stay. The prompt states the target ratio and the full-frame
+   contract (one section, no blank bands, no letterboxing).
+4. **One section in, one section out.** Each job receives only the same-index
+   slices of earlier stages, same platform first. It never receives every
+   section at once, and its ratio is derived from its pixel-mate and snapped to
+   the route's ratio enum (`RATIO_ENUM`), not one fixed 3:4 for all parts.
+
+The record carries `requested_ratio` and `actual_pixels`; a delivered image
+more than 2% off the requested ratio is recorded as `geometry_mismatch` and
+printed as a named warning.
+
 ## Composition
 
 `stitch_sections.py` (wireframe full-page PNG) and `build_hybrid_board.py` (mockup board) are
