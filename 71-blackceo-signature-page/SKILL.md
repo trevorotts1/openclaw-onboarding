@@ -160,6 +160,10 @@ Ask whether the owner/client has an explicit image-engine preference when genera
 - If another configured provider is explicitly selected, honor it if the current client environment supports it.
 - `stage_gate.py close image-generation-qc` requires the receipt's `transport` block, with a per-provider branch (A23): on the KIE route, Skill 74, mode active, the real KIE task ids, model ids, preflight and budget results, N43 ratios; on the Agnes route (Skill 63, only when intake records `image_engine: "agnes"`), the synchronous shape: `task_id` null or omitted, `request_id` only if Agnes returned one, mode `sync`, no polling artefacts, and never a KIE task ID (Agnes issues none; attaching one fails the gate). A hand-rolled createTask has no such receipt and cannot close the stage.
 
+### Generation execution path
+
+`scripts/stage_executor.py` is the single execution entry point for the four image stages (`desktop-wireframe`, `mobile-tablet`, `visual-mockup`, `final-mockups`) and for one `image-generation-qc` item. It is the production command `scripts/shared_page_service.py --pipeline-command` passes, and the command a `scripts/swarm_runner.py --worker-cmd` worker runs for one item. It calls Skill 74 once per image and writes the files into the stage folders with a `<stage>/stage-executor-record.json`. It never closes a stage and never writes a gate receipt. `--provider stub` (the default) is inert and writes placeholders; the real switch is `--provider kie --allow-paid` with `KIE_API_KEY` set. Contract: `references/generation-execution.md`.
+
 Paid-call approvals, client-owned credentials, provider limits, and retry rules remain owned by the executing provider skill and fleet policy.
 
 ## Swarm execution
