@@ -1,5 +1,19 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.27: Roast-Room chamber screen (full reference structure, brand colors, Pixar portraits)
+
+Eight Opus-passed pieces, integrated once on top of v1.0.26 (W29-U001). In plain English: the chamber page is rebuilt as the full Roast-Room screen. A sticky top bar, a decision header with live option bars, a room of nine seated advisors with typing bubbles and a round headline, a key-points rail, and a click-to-open advisor card, all in BlackCEO colors, with 3D Pixar-style portraits.
+
+- **Page shell** (`patch/W29-A-shell`): top bar with the BlackCEO logo, a six-step progress strip (Brief, Openings, Fault lines, Debate, Vote, Verdict), and How it works, Past sessions and New question buttons. New question convenes a real council through the client-chosen model route. The front door now serves every new chamber file and the portrait images.
+- **Decision header** (`patch/W29-B-decision`): the question and its options with a bar and count per option that fill in as advisors take positions, and a verdict badge at the end.
+- **Room** (`patch/W29-C-room`): nine advisors in a shallow arc behind a table, a typing bubble over each, the active advisor highlighted, round label, timer, headline, "is weighing" line and progress bar. Clicking an advisor opens that advisor's card.
+- **Key points** (`patch/W29-D-keypoints`): a running list of milestones on the right (or below on narrow screens).
+- **Advisor card** (`patch/W29-E-seatcard`): portrait, role, the question that advisor owns, current position, and the plain "simulated advisor, not the person" note; closes with Escape, the backdrop or the Close button.
+- **Advisor data and portraits** (`patch/W29-F-seatdata`): names, roles and weighing lines for all nine advisors plus cut-out Pixar-style portraits.
+- **Brand theme** (`patch/W29-G-theme`): one set of BlackCEO color tokens (black, cream, gold) used everywhere; no navy.
+- **Live state** (`patch/W29-H-state`): turns the live event stream into what the screen shows, keeps a clearly labelled demo replay, and adds card details to the stream so bars, lines and the advisor card come from real cards.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.43).
+
 ## v1.0.26: live council (client-chosen model, service driver, Book-to-Persona elders)
 
 Eight Opus-QC-passed patches, integrated once on top of v1.0.25 (W28-U001). In plain English: the client now picks the model for each council run, a convened session is actually deliberated end to end, and the elders speak from the client's own Book-to-Persona material with clearly labelled web research for current facts.
