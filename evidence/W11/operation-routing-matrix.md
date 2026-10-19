@@ -117,7 +117,7 @@ Current result:
 
 ```
 RESULT: PASS — 18 former callers and 2 domain references all carry a mapped
-replacement; 60 files classified.
+replacement; 61 files classified.
 ```
 
 Non-caller retired-rail references are enumerated, with a reason each, in

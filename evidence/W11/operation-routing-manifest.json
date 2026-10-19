@@ -915,6 +915,11 @@
     "35-social-media-planner/qc-skill35.sh": {
       "class": "non_caller",
       "reason": "removal note"
+    },
+    "tests/unit/ghl-mcp-retirement-tool-retained.test.sh": {
+      "class": "non_caller",
+      "reason": "retention test added with the B2 fix (#2300): it asserts the retirement tool and its dependencies survive the prune; it names the retired rail only to prove the tool is retained and inert",
+      "exempt_lines": []
     }
   }
 }
