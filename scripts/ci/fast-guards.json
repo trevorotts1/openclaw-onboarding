@@ -1284,6 +1284,7 @@
      "shared-utils/oct4_frontdoor.py",
      "shared-utils/lib-frontdoor.sh",
      "tests/unit/one-front-door-full-path.test.sh",
+     "tests/unit/frontdoor-verdict-after-install.test.sh",
      ".github/workflows/one-front-door-full-path-guard.yml"
     ]
    },
@@ -1299,6 +1300,7 @@
      "shared-utils/oct4_frontdoor.py",
      "shared-utils/lib-frontdoor.sh",
      "tests/unit/one-front-door-full-path.test.sh",
+     "tests/unit/frontdoor-verdict-after-install.test.sh",
      ".github/workflows/one-front-door-full-path-guard.yml"
     ]
    }
