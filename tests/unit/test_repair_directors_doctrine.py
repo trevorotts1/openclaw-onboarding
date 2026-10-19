@@ -8,6 +8,7 @@ Run: python3 tests/unit/test_repair_directors_doctrine.py
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -119,6 +120,25 @@ class TestRepairDirectorsDoctrine(unittest.TestCase):
         self.assertIn("directors: PASS - all 4 departments have a director", after)  # + ai-ceo, made by the same run
         self.assertIn("placeholder-files: PASS", after)
         self.assertTrue((self.box.depts / "branding-dept" / "IDENTITY.md").read_text().startswith("# Head of stub"))
+
+    def test_roleless_general_task_ends_with_exactly_one_head_after_frontdoor_order(self):
+        # CAN007 QC: scaffold director here + ensure-general-task-dept's head = two heads.
+        self.box.role("crm", "00-director-of-crm", FILLER)
+        gt = self.box.depts / "general-task"
+        gt.mkdir()
+        (gt / "IDENTITY.md").write_text("# stub\n")
+        rc, rep, err = self.box.run()
+        self.assertEqual(rc, 0, err)
+        self.assertNotIn("general-task", [d["department"] for d in rep["directors_created"]])
+        ensure = SKILL / "scripts" / "repair" / "ensure-general-task-dept.py"
+        r = subprocess.run([sys.executable, str(ensure), "--workspace", str(self.box.ws),
+                            "--departments-dir", str(self.box.depts), "--skill-dir", str(SKILL),
+                            "--company-config", str(self.box.cfg)],
+                           capture_output=True, text=True, env=dict(os.environ, ROLE_LIBRARY_PATH=str(SKILL)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        heads = [d.name for d in gt.iterdir() if d.is_dir() and
+                 re.match(r"^00-(director|head)-of-", d.name)]
+        self.assertEqual(heads, ["00-head-of-general-task"])
 
     def test_doctrine_appended_once_and_old_bytes_preserved(self):
         original = "# Director of Widgets\n\n" + FILLER

@@ -10,6 +10,10 @@ repairs them on a live box, additively:
      otherwise the generic templates/role-library/_director-scaffold.md.
      Same fill path the installer uses (create_role_workspaces), so a repaired
      director is identical to a freshly built one.
+     Role-less stub departments (only IDENTITY.md / AGENTS.md) get a scaffold
+     director too: library-gate-check.sh counts every department folder, so
+     skipping them left the health gate failing. The one exception is a role-less
+     general-task, which ensure-general-task-dept.py fills with its own head.
   2. DOCTRINE. Every existing director/head playbook that lacks the
      persistent-director / ephemeral-worker doctrine and the chain of command
      gets one marker-guarded block APPENDED. Existing text is never edited:
@@ -344,6 +348,11 @@ def run(a):
         try:
             roles = role_folders(dept)
             directors = [r for r in roles if is_director_folder(r.name)]
+            if not roles and dept.name.lower() == "general-task":
+                # ensure-general-task-dept.py installs its own 00-head-of-general-task;
+                # a scaffold director here would leave general-task with two heads.
+                rep["general_task_left_to_ensure"] = True
+                continue
             if not directors and dept.name.lower() != CEO_DEPT:
                 # A department with no role folders (a Buzz/ZHC stub holding only
                 # IDENTITY.md / AGENTS.md) still counts as a department to
