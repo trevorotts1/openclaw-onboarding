@@ -4061,56 +4061,36 @@ if [ -d "$ONBOARDING_DIR/scripts" ]; then
 fi
 
 # >>> GHL-MCP-RETIREMENT-SCRIPTS-BEGIN
-# W07 / GU-019 + GHL-101 (defect B2): the GHL community MCP is RETIRED. Its
-# RESURRECTION surfaces must not reach a box — fresh or upgraded:
+# W07 / GU-019: the GHL community MCP is RETIRED. Its supervision scripts must
+# not reach a box — fresh or upgraded:
+#   ghl-mcp-autostart.sh             builds + installs the launchd/pm2/systemd unit
 #   ghl-mcp-probe.sh                 --heal RESTARTS it through the supervisor
 #   ghl-mcp-assert-runtime.sh        asserts it IS installed and running
 #   qc-assert-ghl-mcp-supervised.sh  static gate that keeps the above "correct"
-#   ghl-mcp-check-pin-digest.sh      policy layer over the retired service's pin
-#   ghl-mcp-vet-pin.sh               pin-vetting tooling for the retired service
-# RETAINED — the RETIREMENT TOOL and every dependency it sources or executes.
-# update-skills.sh deletes its source checkout at the end of a roll, so pruning
-# these left a box with no way to run `--retire` afterwards (GHL-101 / B2):
-#   ghl-mcp-autostart.sh             --status / --retire (the transaction itself)
-#   lib/ghl-mcp-paths.sh             sourced by the tool (hard dependency)
-#   ghl-mcp-pin-digest.sh            executed by the tool's pin gate
-# The whole-tree copy above is how these land. Retired files are REMOVED
+#   lib/ghl-mcp-paths.sh             the shared path derivation all three source
+# The whole-tree copy above is how they landed pre-W07. They are REMOVED
 # immediately after the copy rather than excluded from it, so a box that still
 # carries them from an earlier release loses them on the same pass. The decision
-# is "remove after", not "exclude": cp cannot delete a stale file, and an
-# upgrade over an armed box is exactly the case that matters.
-# Do not re-add a caller for a retired service. A NEW resurrection surface added
-# under scripts/ must be named in _OC_GHL_MCP_RETIRED_SCRIPTS — Step 14a's scan
-# reads the same list. The retained tool must never be named in CODE here: the
-# retirement gate forbids it, because "the installer mentions it" is one rename
-# away from "the installer runs it".
+# is "remove after", not "exclude": cp cannot delete a stale file, and an upgrade
+# over an armed box is exactly the case that matters.
+# Do not re-add a caller for a retired service.
 _OC_RETIRED_SCRIPTS_ROOT="$SKILLS_DIR/../scripts"
-_OC_GHL_MCP_RETIRED_SCRIPTS="ghl-mcp-probe.sh ghl-mcp-assert-runtime.sh ghl-mcp-check-pin-digest.sh ghl-mcp-vet-pin.sh qc-assert-ghl-mcp-supervised.sh"
 _OC_RETIRED_REMOVED=0
-for _OC_RETIRED_NAME in $_OC_GHL_MCP_RETIRED_SCRIPTS; do
-    _OC_RETIRED_REL="$_OC_RETIRED_SCRIPTS_ROOT/$_OC_RETIRED_NAME"
+# Glob-driven on purpose: the five basenames are documented in the comment
+# above, but the launcher's name must not appear in install.sh CODE — the
+# retirement gate forbids it outright, because "the installer mentions the
+# launcher" is one rename away from "the installer runs the launcher". The
+# glob covers every ghl-mcp-*.sh delivered today (launcher, probe, runtime
+# gate, and the pin digest/vet/policy tooling that only served the retired
+# service), plus the shared paths library.
+for _OC_RETIRED_REL in "$_OC_RETIRED_SCRIPTS_ROOT"/ghl-mcp-*.sh \
+                        "$_OC_RETIRED_SCRIPTS_ROOT"/qc-assert-ghl-mcp-supervised.sh \
+                        "$_OC_RETIRED_SCRIPTS_ROOT"/lib/ghl-mcp-paths.sh; do
     [ -f "$_OC_RETIRED_REL" ] || continue
     rm -f "$_OC_RETIRED_REL" 2>/dev/null || true
     _OC_RETIRED_REMOVED=$((_OC_RETIRED_REMOVED + 1))
 done
-unset _OC_RETIRED_REL _OC_RETIRED_NAME
-# The retained tool is the whole point of the fix: if the copy above did not
-# deliver it, this run is broken and the reason must be loud, not silent.
-for _OC_RETAINED_REL in "$_OC_RETIRED_SCRIPTS_ROOT"/*.sh \
-                        "$_OC_RETIRED_SCRIPTS_ROOT"/lib/ghl-mcp-paths.sh; do
-    [ -f "$_OC_RETAINED_REL" ] || continue
-    grep -q 'START_REFUSED_RETIRED' "$_OC_RETAINED_REL" 2>/dev/null || continue
-    _OC_RETAINED_TOOL="${_OC_RETAINED_REL##*/}"
-    break
-done
-if [ -z "${_OC_RETAINED_TOOL:-}" ]; then
-    warn "GHL MCP retirement tool was NOT delivered to $_OC_RETIRED_SCRIPTS_ROOT — --retire cannot run on this box after the source checkout is removed."
-fi
-if [ ! -f "$_OC_RETIRED_SCRIPTS_ROOT/lib/ghl-mcp-paths.sh" ]; then
-    warn "GHL MCP path library was NOT delivered to $_OC_RETIRED_SCRIPTS_ROOT/lib/ — the retirement tool will refuse to derive paths."
-fi
-unset _OC_RETAINED_REL _OC_RETAINED_TOOL
-note "Community GHL MCP retired — removed $_OC_RETIRED_REMOVED resurrection script(s) from $_OC_RETIRED_SCRIPTS_ROOT (retirement tool, its path library and digest primitive RETAINED)"
+note "Community GHL MCP retired — removed $_OC_RETIRED_REMOVED supervision script(s) from $_OC_RETIRED_SCRIPTS_ROOT"
 # <<< GHL-MCP-RETIREMENT-SCRIPTS-END
 
 # Platform helpers are runtime dependencies of the delivered Skill32 resume command.
@@ -7877,20 +7857,15 @@ oc_ghl_mcp_scan() {
         OC_GHL_MCP_V_INSTALLDIR=present
     fi
 
-    # 2. A retired RESURRECTION surface back in the delivered tree. install.sh
-    #    removes _OC_GHL_MCP_RETIRED_SCRIPTS earlier in the run; if one is back,
-    #    something re-delivered it. The RETIREMENT TOOL, its path library and its
-    #    digest primitive are RETAINED on purpose (GHL-101 / B2: --retire must
-    #    still run after the source checkout is deleted), so their presence is
-    #    expected and is NOT a resurrection signal.
+    # 2. Any community launcher back in the delivered tree. install.sh removes
+    #    them earlier in the run; if one is back, something re-delivered it.
     if [ -n "$_launcher_dir" ] && [ -d "$_launcher_dir" ]; then
-        for _lf in ${_OC_GHL_MCP_RETIRED_SCRIPTS:-}; do
-            if [ -f "$_launcher_dir/$_lf" ]; then
+        for _lf in "$_launcher_dir"/ghl-mcp-*.sh; do
+            if [ -f "$_lf" ]; then
                 OC_GHL_MCP_V_LAUNCHER=present
                 break
             fi
         done
-        unset _lf
     fi
 
     # 3. A live process, matched on the exact install-dir path. Never a broad
