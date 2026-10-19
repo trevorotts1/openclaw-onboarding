@@ -127,7 +127,22 @@ const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
   ['council-theme.css', 'text/css; charset=utf-8'],
   ['council-room.css', 'text/css; charset=utf-8'],
   ['council-journey.css', 'text/css; charset=utf-8'],
+  ['chamber-theme.css', 'text/css; charset=utf-8'],
+  ['chamber-shell.css', 'text/css; charset=utf-8'],
+  ['chamber-decision.css', 'text/css; charset=utf-8'],
+  ['chamber-room.css', 'text/css; charset=utf-8'],
+  ['chamber-keypoints.css', 'text/css; charset=utf-8'],
+  ['chamber-seatcard.css', 'text/css; charset=utf-8'],
+  ['chamber-seats.js', 'text/javascript; charset=utf-8'],
+  ['chamber-state.js', 'text/javascript; charset=utf-8'],
   ['chamber-live.js', 'text/javascript; charset=utf-8'],
+  ['chamber-shell.js', 'text/javascript; charset=utf-8'],
+  ['chamber-decision.js', 'text/javascript; charset=utf-8'],
+  ['chamber-room.js', 'text/javascript; charset=utf-8'],
+  ['chamber-keypoints.js', 'text/javascript; charset=utf-8'],
+  ['chamber-seatcard.js', 'text/javascript; charset=utf-8'],
+  ['demo-replay.json', 'application/json; charset=utf-8'],
+  ['blackceo-logo.png', 'image/png'],
   ['RECEIPT.md', 'text/markdown; charset=utf-8'],
 ]);
 
@@ -854,10 +869,10 @@ export class CouncilFrontDoor {
       } catch {
         return false;
       }
-      const portrait = /^portraits\/[A-Za-z0-9._-]+\.svg$/.exec(decoded);
+      const portrait = /^portraits\/[A-Za-z0-9._-]+\.(svg|webp)$/.exec(decoded);
       if (portrait) {
         relative = decoded;
-        contentType = 'image/svg+xml; charset=utf-8';
+        contentType = portrait[1] === 'webp' ? 'image/webp' : 'image/svg+xml; charset=utf-8';
       } else if (/^[A-Za-z0-9._-]+$/.test(decoded) && CHAMBER_ROOT_FILES.has(decoded)) {
         relative = decoded;
         contentType = CHAMBER_ROOT_FILES.get(decoded) as string;
@@ -1365,7 +1380,9 @@ function conveneRefusal(
     else if (e.code === 'CONVENE_INPUT_INVALID' || e.code.startsWith('ROUTE_')) status = 422;
     else return null;
   }
-  const raw = e.detail ?? (error instanceof Error ? error.message : '');
+  // DriverRefusal defaults detail to {} (route refusals pass none): fall back to the message.
+  const bare = e.detail === undefined || e.detail === null || (isPlainObject(e.detail) && Object.keys(e.detail).length === 0);
+  const raw = bare ? (error instanceof Error ? error.message : '') : e.detail;
   const detail =
     typeof raw === 'string'
       ? redactHome(raw)
