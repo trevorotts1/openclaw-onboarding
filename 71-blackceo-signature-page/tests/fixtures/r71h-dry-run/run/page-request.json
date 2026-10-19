@@ -12,7 +12,8 @@
         "mechanism": {
           "type": "contact_tag",
           "tag": "fixture-optin-signed-up"
-        }
+        },
+        "name": "fixture-optin-followup"
       },
       {
         "form_id": "FORM-2",
@@ -22,7 +23,8 @@
         "mechanism": {
           "type": "native",
           "build_method": "tier4-browser-backstop"
-        }
+        },
+        "name": "fixture-order-confirmation"
       },
       {
         "form_id": "FORM-3",

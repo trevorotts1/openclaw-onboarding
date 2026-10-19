@@ -7,7 +7,7 @@
   "deploy_mode": "draft-only",
   "approval": {
     "ref": "fixture-plan-approval-001",
-    "plan_hash": "49e5ca744043d45f0d7824802885747da5b8afc2d129e9ea88c46574bacea6f3"
+    "plan_hash": "90196b7fd7573ee5861004cce49746d3dce0897bbcc4884050da0e19bbdfe2f5"
   },
   "handoff_sha256": "5ea1502da48cf5c46317c865cfa06ef4f772cede6bba2026852a28809afb2325",
   "plan": {
@@ -23,7 +23,8 @@
         "tag": "fixture-optin-signed-up"
       },
       "expected_steps": 4,
-      "allow_multiple": false
+      "allow_multiple": false,
+      "name": "fixture-optin-followup"
     },
     "fixture-order-confirmation": {
       "form_id": "FORM-2",
@@ -36,7 +37,8 @@
         "build_method": "tier4-browser-backstop"
       },
       "expected_steps": 3,
-      "allow_multiple": true
+      "allow_multiple": true,
+      "name": "fixture-order-confirmation"
     }
   },
   "workflows": [
