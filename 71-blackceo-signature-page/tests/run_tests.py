@@ -61,19 +61,37 @@ MODULES = [
     "test_provider_gate_a23.py",
 ]
 
+def skip_reason(stdout):
+    """A module that cannot run reports SKIPMOD; a skip is never a pass."""
+    for line in stdout.splitlines():
+        if line.startswith("SKIPMOD "):
+            return line[len("SKIPMOD "):]
+    return ""
+
 def main():
     failures = []
+    skipped = []
     for mod in MODULES:
-        proc = subprocess.run([sys.executable, str(HERE / mod)], text=True)
+        proc = subprocess.run([sys.executable, str(HERE / mod)], text=True,
+                              capture_output=True)
+        sys.stdout.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        reason = skip_reason(proc.stdout)
         if proc.returncode != 0:
             failures.append(mod)
             print(f"FAIL {mod}")
+        elif reason:
+            skipped.append(mod)
+            print(f"SKIP {mod}: {reason}")
         else:
             print(f"PASS {mod}")
     if failures:
         print(f"TESTS FAILED: {', '.join(failures)}")
         return 1
-    print(f"ALL PASS: {len(MODULES)} test modules")
+    passed = len(MODULES) - len(skipped)
+    print(f"ALL PASS: {passed} test modules passed, {len(skipped)} skipped")
+    for mod in skipped:
+        print(f"SKIPPED {mod}")
     return 0
 
 if __name__ == "__main__":
