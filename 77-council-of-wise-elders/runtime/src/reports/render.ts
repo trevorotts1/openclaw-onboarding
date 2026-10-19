@@ -332,6 +332,9 @@ function webTodayFacts(model: Record<string, unknown>): Record<string, unknown>[
   return asArray(model.web_today).map(asRecord);
 }
 
+// Web text is untrusted: collapse every line break so a fact cannot forge a heading.
+const oneLine = (v: unknown): string => asString(v).replace(/\s+/g, ' ').trim();
+
 function pushWebTodayMd(lines: string[], model: Record<string, unknown>): void {
   const facts = webTodayFacts(model);
   if (facts.length === 0) return;
@@ -340,9 +343,9 @@ function pushWebTodayMd(lines: string[], model: Record<string, unknown>): void {
   lines.push("These findings were gathered from the web for this session. They are not from the elder's books.");
   lines.push('');
   for (const fact of facts) {
-    lines.push(`- ${asString(fact.claim)}`);
-    lines.push(`  - URL: ${asString(fact.url)}`);
-    lines.push(`  - Retrieved: ${asString(fact.retrieved_at)}`);
+    lines.push(`- ${oneLine(fact.claim)}`);
+    lines.push(`  - URL: ${oneLine(fact.url)}`);
+    lines.push(`  - Retrieved: ${oneLine(fact.retrieved_at)}`);
   }
   lines.push('');
 }
@@ -355,7 +358,7 @@ function pushWebTodayHtml(out: string[], model: Record<string, unknown>): void {
   out.push('<ul>');
   for (const fact of facts) {
     out.push(
-      `<li>${escapeHtml(asString(fact.claim))}<br>URL: ${escapeHtml(asString(fact.url))}<br>Retrieved: ${escapeHtml(asString(fact.retrieved_at))}</li>`,
+      `<li>${escapeHtml(oneLine(fact.claim))}<br>URL: ${escapeHtml(oneLine(fact.url))}<br>Retrieved: ${escapeHtml(oneLine(fact.retrieved_at))}</li>`,
     );
   }
   out.push('</ul>');

@@ -64,23 +64,34 @@ export interface FreshFact {
   retrieved_at: string;
 }
 
+// Web content is untrusted. Whitespace and control characters (the URL parser silently strips tab and
+// newline) could forge a heading line in the briefing or report, so they are refused outright.
+const UNSAFE_CHARS = /[\s\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
+function safeWebUrl(value: string): boolean {
+  if (value === '' || UNSAFE_CHARS.test(value)) return false;
+  try {
+    const u = new URL(value);
+    return (u.protocol === 'https:' || u.protocol === 'http:') && u.username === '' && u.password === '';
+  } catch {
+    return false;
+  }
+}
+
+function safeDate(value: string): boolean {
+  return !UNSAFE_CHARS.test(value) && !Number.isNaN(Date.parse(value));
+}
+
 function assertFreshFact(fact: FreshFact): void {
   const bad = (why: string): never => {
     throw new Error(`Fresh fact refused: ${why}.`);
   };
   if (typeof fact.claim !== 'string' || fact.claim.trim() === '') bad('claim is empty');
   if (fact.title !== null && typeof fact.title !== 'string') bad('title must be text or null');
-  if (typeof fact.retrieved_at !== 'string' || Number.isNaN(Date.parse(fact.retrieved_at))) {
-    bad('retrieved_at is not a date');
+  if (typeof fact.retrieved_at !== 'string' || !safeDate(fact.retrieved_at)) bad('retrieved_at is not a date');
+  if (typeof fact.url !== 'string' || !safeWebUrl(fact.url)) {
+    bad('url must be a plain http or https URL with no whitespace, control characters or credentials');
   }
-  let url: URL | null = null;
-  try {
-    url = new URL(fact.url);
-  } catch {
-    bad('url is not a valid URL');
-  }
-  if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:')) bad('url must be http or https');
-  if (url !== null && (url.username !== '' || url.password !== '')) bad('url must not carry credentials');
 }
 
 /** The council_evidence row for one web finding. Not the elder's principle. */
@@ -121,8 +132,8 @@ export function freshFactsFromEvidenceRows(rows: Array<Record<string, unknown>>)
     const s = summary as Record<string, unknown>;
     if (s.layer !== WEB_TODAY_LAYER) continue;
     if (typeof s.claim !== 'string' || s.claim === '') continue;
-    if (typeof s.url !== 'string' || s.url === '') continue;
-    if (typeof s.retrieved_at !== 'string' || s.retrieved_at === '') continue;
+    if (typeof s.url !== 'string' || !safeWebUrl(s.url)) continue;
+    if (typeof s.retrieved_at !== 'string' || !safeDate(s.retrieved_at)) continue;
     facts.push({
       claim: s.claim,
       url: s.url,
@@ -138,7 +149,7 @@ function webSection(facts: readonly FreshFact[]): string | null {
   const one = (text: string) => text.replace(/\s+/g, ' ').trim();
   const lines = facts.map(
     (f) =>
-      `- ${one(f.claim)} (URL: ${f.url}; retrieved ${f.retrieved_at}${f.title ? `; page title: ${one(f.title)}` : ''})`,
+      `- ${one(f.claim)} (URL: ${one(f.url)}; retrieved ${one(f.retrieved_at)}${f.title ? `; page title: ${one(f.title)}` : ''})`,
   );
   return [
     '## From the web today (not from the elder\'s books)',
