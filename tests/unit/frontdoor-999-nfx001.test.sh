@@ -57,4 +57,27 @@ mkdir -p "$T/h3"; out="$(run "$T/h3")"
 [ -d "$T/h3/999-setup/.git" ] && [ -L "$T/h3/.claude/skills/kaizen" ] && ok "B3 cloned and linked" || bad "B3: $out"
 [ ! -e "$T/h3/INSTALLER_RAN" ] && [ ! -e "$T/h3/.9router" ] && [ ! -e "$T/h3/.local" ] && ok "B3 installer/9Router untouched" || bad "B3 installer ran"
 echo "$out" | grep -q "No such file" && bad "B4 path error: $out" || ok "B4 link step works from unrelated cwd"
+
+# B6 (CAN005): clone left on a branch whose upstream was merged + deleted -> moved to main and fast-forwarded;
+# with an unpushed commit it is left untouched and named (the front door then clones a clean copy).
+mkdir -p "$T/h6"; clone "$T/h6/999-setup"; git -C "$T/h6/999-setup" checkout -q -b batch/x
+git -C "$T/h6/999-setup" config branch.batch/x.remote origin; git -C "$T/h6/999-setup" config branch.batch/x.merge refs/heads/batch/x
+out="$(run "$T/h6")"   # upstream batch/x never existed on origin: same "gone" state git reports after a prune
+[ "$(git -C "$T/h6/999-setup" rev-parse --abbrev-ref HEAD)" != batch/x ] && ok "B6 gone-upstream branch moved off" || bad "B6 still on gone branch: $out"
+echo "$out" | grep -q "FAILED" && bad "B6 pull failed: $out" || ok "B6 no pull failure"
+mkdir -p "$T/h7"; clone "$T/h7/999-setup"; git -C "$T/h7/999-setup" checkout -q -b batch/y
+git -C "$T/h7/999-setup" config branch.batch/y.remote origin; git -C "$T/h7/999-setup" config branch.batch/y.merge refs/heads/batch/y
+echo m > "$T/h7/999-setup/mine.txt"; git -C "$T/h7/999-setup" add -A; git -C "$T/h7/999-setup" -c user.email=a@b -c user.name=t commit -qm mine
+out="$(run "$T/h7")"
+[ "$(git -C "$T/h7/999-setup" rev-parse --abbrev-ref HEAD)" = batch/y ] && ok "B6 unmerged branch untouched" || bad "B6 unmerged branch moved: $out"
+echo "$out" | grep -q "UNTOUCHED.*batch/y.*1 commit" && ok "B6 reason names branch and commit count" || bad "B6 no reason: $out"
+# B6 clash: ff to the default branch fails (untracked file would be overwritten) -> clone stays on the gone branch, file intact.
+mkdir -p "$T/h8"; clone "$T/h8/999-setup"; R8="$T/h8/999-setup"; git -C "$R8" checkout -q -b batch/z
+git -C "$R8" config branch.batch/z.remote origin; git -C "$R8" config branch.batch/z.merge refs/heads/batch/z
+sha8="$(git -C "$R8" rev-parse HEAD)"
+echo origin > "$O/clash"; git -C "$O" add -A; git -C "$O" -c user.email=a@b -c user.name=t commit -qm clash
+echo mine > "$R8/clash"
+out="$(run "$T/h8")"
+[ "$(git -C "$R8" rev-parse --abbrev-ref HEAD)" = batch/z ] && [ "$(git -C "$R8" rev-parse HEAD)" = "$sha8" ] && ok "B6 failed ff leaves clone on gone branch" || bad "B6 clash moved clone: $out"
+[ "$(cat "$R8/clash")" = mine ] && ok "B6 untracked file unchanged" || bad "B6 untracked file changed"
 exit $fail

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Folded from .github/workflows/cc-update-only-credential-and-git-sync-guard.yml (job "--update-only never mutates secrets/.env; detached-HEAD CC checkout still syncs"). Generated once by the CIO002 fold; edit freely.
 set -e
+# Never write the real ~/.gitconfig: point global git config at a throwaway file.
+export GIT_CONFIG_GLOBAL="$(mktemp "${TMPDIR:-/tmp}/guard-gitconfig.XXXXXX")"
+trap 'rm -f "$GIT_CONFIG_GLOBAL"' EXIT
 cd "$GITHUB_WORKSPACE"
 ( # step: Configure git identity (needed for local test-fixture commits)
 set -e

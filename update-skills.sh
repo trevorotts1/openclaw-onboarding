@@ -4479,6 +4479,7 @@ _content_current_exit() {
     echo "  → [CONTENT RECHECK] skills content is current, but the GHL MCP retirement/convergence check FAILED — exiting 2, never 0." >&2
     exit 2
   fi
+  if declare -F frontdoor_final_verdict >/dev/null 2>&1; then frontdoor_final_verdict || exit $?; fi
   exit 0
 }
 # <<< GHL-MCP-RETIREMENT-GATE-END
@@ -4645,6 +4646,27 @@ retire_legacy_sunday_crontab() {
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
+# CAN006: the front-door verdict that decides this run's exit code. The early
+# tail in main() only latches (_FD_EARLY_RC); once the install + manifest/stamp
+# are done, a failed early verdict is re-judged against the freshly installed
+# tree. Returns 0 (clean now) or the early rc (still failing: 2 gate, 1 no stage).
+# Callers: _content_current_exit and the end of main(), before registry-parity.
+frontdoor_final_verdict() {
+  [ "${_FD_EARLY_RC:-0}" -ne 0 ] || return 0
+  if [ -n "${_FRONTDOOR_STAGE_PY:-}" ] && declare -F frontdoor_run_stage >/dev/null 2>&1; then
+    echo "  ℹ [FRONT DOOR] re-running the shared stage against the freshly installed tree..."
+    if frontdoor_run_stage "${_FRONTDOOR_STAGE_PY}"; then
+      echo "  ✓ [FRONT DOOR] repairs + health gate clean after the install ($FRONTDOOR_STATUS)"
+      echo "${FRONTDOOR_JSON:-{\"frontdoor\":{\"status\":\"$FRONTDOOR_STATUS\"}}}" \
+        > "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+      return 0
+    fi
+    rm -f "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+  fi
+  echo "  ✗ [FRONT DOOR] still failing after the install -- content is current (stamp written); exiting ${_FD_EARLY_RC} = infrastructure needs attention" >&2
+  return "$_FD_EARLY_RC"
+}
+
 main() {
   # ----------------------------------------------------------
   # U001 — MUTEX (MUST stay the first action in main): take the global
@@ -4933,7 +4955,17 @@ main() {
       fi
     fi
   fi
-  if [ "$fd_rc" -ne 0 ]; then exit "$fd_rc"; fi
+  # CAN006 (fleet roll 20261019): this tail runs BEFORE the content install and
+  # the manifest/stamp write below, so it judges the box's PREVIOUS tree. It used
+  # to `exit` here -- a gate failure on the old tree (e.g. a department without a
+  # director) aborted the update that ships the repair, leaving the stamp and
+  # .onboarding-content-manifest.json at the old version (the roll then failed
+  # role-library: "content manifest is for v27.1.29, not v27.1.36"). Latch the
+  # verdict instead and re-run the stage after the install: frontdoor_final_verdict.
+  _FD_EARLY_RC="$fd_rc"
+  if [ "$fd_rc" -ne 0 ]; then
+    echo "  ℹ [FRONT DOOR] verdict on the PRE-update tree was rc=$fd_rc -- continuing the install, the stage re-runs against the new tree before exit" >&2
+  fi
 
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
@@ -12656,6 +12688,10 @@ BACKUP_BLOCK
   # whatever exit code the rest of this run would otherwise report and exits
   # 78 (EX_CONFIG) directly, the moment it is detected, rather than folding
   # into the normal return-code decision tree.
+  # CAN006: re-judge a failed pre-install front-door verdict now that the new
+  # tree and stamp are in place; folded into the final return code below.
+  _FD_FINAL_RC=0
+  frontdoor_final_verdict || _FD_FINAL_RC=$?
   _REGISTRY_PARITY_POST_RC=0
   registry_parity_gate post || _REGISTRY_PARITY_POST_RC=$?
   if [ "$_REGISTRY_PARITY_POST_RC" -ne 0 ]; then
@@ -12721,7 +12757,7 @@ BACKUP_BLOCK
   if [ "${_PRES_DEPS_CONVERGE_RC:-0}" -ne 0 ]; then
     return 2
   fi
-  return 0
+  return "${_FD_FINAL_RC:-0}"
 }
 
 main "$@"
