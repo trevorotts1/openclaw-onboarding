@@ -77,8 +77,9 @@ When neither the CLI (Tier 0) nor an MCP tool is available, the fallback (Tier 3
 location PIT as `Authorization: Bearer $GOHIGHLEVEL_API_KEY`.
 
 **The `Version` header is set per operation.** It is not one global value and must not be
-hardcoded for all modules. The authoritative registry is
-`evidence/W01/GU-004-CONTRACT-FREEZE.md` §5 — read the `Ver` column of the operation row
+hardcoded for all modules. The authoritative registry is the operation's official page
+`https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/` (GHL modernization
+contract ledger, 2026-10-18) — read the `Ver` column of the operation row
 being called. `describe_operation` and `29-ghl-convert-and-flow/references/<module>.md`
 are the live cross-checks.
 
@@ -324,7 +325,7 @@ correct before proceeding:
   lookup will return an auth error that looks like a connectivity problem. Always check
   first.
 - **A single global `Version` header** — version is per operation. Read the `Ver` column of
-  the operation row in `evidence/W01/GU-004-CONTRACT-FREEZE.md` §5. Do not hardcode one
+  the operation row on the operation's official page `https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/` (GHL modernization contract ledger, 2026-10-18). Do not hardcode one
   value for every module; wrong version causes intermittent 400/401. Check
   `29-ghl-convert-and-flow/references/<module>.md` too.
 
@@ -336,7 +337,7 @@ correct before proceeding:
 GHL LOOKUP SOP (skill 36 / 2026-06-14):
 - Lookup in orchestrator: Tier 0 caf → Tier 1 official MCP execute_operation (contacts.search / contacts.get; the client's selected lookup model or configured default) → Tier 3 public REST
 - Sub-agent lookup: ONLY caf CLI or public REST — no MCP tools
-- REST Version is PER OPERATION — read the "Ver" column in evidence/W01/GU-004-CONTRACT-FREEZE.md §5; never hardcode one value for all modules
+- REST Version is PER OPERATION — read the "Ver" column on the operation's official page https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/ (GHL modernization contract ledger, 2026-10-18); never hardcode one value for all modules
 - The dual Accept header belongs to the transitional /mcp/ surface only (missing text/event-stream there = HTTP 406), NOT to REST
 - No grep -P on macOS — use python3 -c / jq
 - Fail-fast preflight: check API_KEY + LOCATION_ID before any call

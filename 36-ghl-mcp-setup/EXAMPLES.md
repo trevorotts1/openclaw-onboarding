@@ -6,7 +6,9 @@ Two retained routes are documented here:
   exactly four tools: `list_locations`, `search_operations`, `describe_operation`, `execute_operation`.
   See `INSTALL.md` → "Action 3".
 - **Public REST API** — `https://services.leadconnectorhq.com`, location PIT bearer, and the
-  `Version` frozen **per operation** in `evidence/W01/GU-004-CONTRACT-FREEZE.md` §5.
+  `Version` frozen **per operation** — read the `Ver` column on the operation's official page
+  `https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/` (GHL modernization
+  contract ledger, 2026-10-18).
 
 The self-hosted community MCP (`ghl-community-mcp`, the old "Tier 2") is **RETIRED**. It is not
 installed by a fresh install, not a fallback, and not a route. Updated boxes must verify it is off

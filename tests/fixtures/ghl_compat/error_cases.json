@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "source_freeze": "/Volumes/mac mini m4/Downloads/GHL updates/evidence/W01/GU-004-CONTRACT-FREEZE.md",
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_public_result_envelope.py",
     "contract_revision": "GU-004-2026-10-18",
     "purpose": "Synthetic HTTP and transport failures with the frozen status derivation and reconciliation rule."
   },

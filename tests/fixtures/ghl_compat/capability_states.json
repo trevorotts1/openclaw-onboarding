@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "source_freeze": "/Volumes/mac mini m4/Downloads/GHL updates/evidence/W01/GU-004-CONTRACT-FREEZE.md",
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_public_capability_gate.py",
     "contract_revision": "GU-004-CONTRACT-FREEZE@2026-10-18",
     "purpose": "Legal and illegal capability-descriptor combinations with the expected validation result for each, per freeze section 3."
   },

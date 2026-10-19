@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "source_freeze": "/Volumes/mac mini m4/Downloads/GHL updates/evidence/W01/GU-004-CONTRACT-FREEZE.md",
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_workflow_v4_graph_preservation.py",
     "contract_revision": "GU-004-CONTRACT-FREEZE@2026-10-18",
     "purpose": "Synthetic V4 definition graphs with expected diff outcomes: linear, branch with an unknown-but-supported node, omitted step, non-integer revision, stale revision, published conflict."
   },
