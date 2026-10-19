@@ -29,6 +29,7 @@ Mark each item PASS, FAIL, or BLOCKED and include evidence.
 - `validate_public_copy.py` rejects definite private-label leakage.
 - `combine_review_pdf.py` builds a multi-page PDF in manifest order.
 - `validate_review_pdf.py` confirms expected page count and manifest order.
+- `combine_review_pdf.py --stage` runs at the end of every image stage and writes the named desktop and mobile review PDFs; `validate_review_pdf.py` also checks page width and page shape against the source images.
 - `install_local.py --dry-run` does not overwrite existing content.
 
 ## Live integrations

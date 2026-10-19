@@ -263,11 +263,20 @@
         {
           "glob": "visual-mockup/mobile/part-*.png",
           "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/visual-mockups-desktop.pdf",
+          "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/visual-mockups-mobile.pdf",
+          "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_visual_direction.py {run_dir}",
-        "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
+        "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage visual-mockup"
       ],
       "review_required": true,
       "review_covers": [
@@ -436,12 +445,21 @@
         {
           "glob": "final-mockups/mockup-full.png",
           "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/final-mockups-desktop.pdf",
+          "min_count": 1
+        },
+        {
+          "glob": "review-pdfs/final-mockups-mobile.pdf",
+          "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
-        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json"
+        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups"
       ],
       "review_required": true,
       "review_covers": [
