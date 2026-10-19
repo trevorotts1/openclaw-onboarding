@@ -1,3 +1,9 @@
+## [v2.1.18] - 2026-10-19 - safe dotenv loader
+
+- caf wrapper parses dotenv data instead of executing it with `source`
+- malformed, digit-leading and shell-expression lines are ignored as data
+- credential precedence and quoted-value behavior unchanged
+
 ## [v2.1.17] - 2026-10-19 - safe dotenv loader
 
 - caf wrapper parses dotenv data instead of executing it with `source`
