@@ -3987,6 +3987,15 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
         esac
     done
     
+    # FIX 11.3: verify what was copied. Every post-copy verify.sh call in this
+    # file used to sit inside `|| true`, so a skill that landed incomplete was
+    # silent. Warn (never fail) on the same "continuing" rule update-skills.sh
+    # uses — an install must not stop over one skill's own check.
+    if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
+        bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >/dev/null 2>&1 \
+            || warn "Skill $SKILL_NAME failed its post-copy verify.sh — review $SKILLS_DIR/$SKILL_NAME"
+    fi
+
     add_to_list "installed" "$SKILL_NAME"
     SKILL_COUNT=$((SKILL_COUNT + 1))
 done
