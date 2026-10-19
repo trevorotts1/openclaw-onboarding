@@ -14,6 +14,15 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
+## [v27.1.40] - 2026-10-19 - fix: media LIST is adapter-routed only (GHL-186)
+
+- Reconciled with `origin/main` after the raw `GET /medias/files` implementation merged in #2316. `list_media` keeps the capability-gated `media.files.list` adapter route: the adapter row supplies the method, path and `Version: v3`, and the checked-in capability record stays default-deny. The raw list path and its `GHL_MEDIA_LIST_*` / `_GHL_UA` constants are gone, so there is one path, not two.
+- `tests/test_ghl_media.py`: the media-list cases carried over from #2316 now run through the gate. A gate admitting `media.files.list` asserts the same transport shape as before (GET `services.leadconnectorhq.com/medias/files`, `locationId` + `type=file`, `Version: v3`, Bearer LOCATION PIT, browser UA) and the same returned `{files,count,traceId,http}`; the query order is the frozen row's canonical `locationId` then `type`. A call without a capability record asserts `MediaListError` (`capability_disabled`) with zero transport calls. Required-`type` pre-transport gates (missing/blank/out-of-set -> 0 transport calls) are unchanged. The 422 case now asserts the adapter's typed `validation_error` status and its underlying `http_status == 422`; the missing-`files` case asserts `payload_no_files`. No case was deleted.
+- `tests/test_ghl_public_routes.py` continues to cover the routed media/survey calls, default-deny, registry consistency and the raw-call negative control.
+- Skill version bumped to v27.1.40 (repo-locked pair: `skill-version.txt` + SKILL.md metadata).
+
+---
+
 ## [v27.1.39] - 2026-10-19 - feat: Skill 06 client routes (GHL-169)
 
 - New `tools/ghl_public_client.py`: the single call path from Skill 06 into the frozen `PublicGhlAdapter`. Method, path, Version, auth class and tenant binding come from the registry row; the module owns only the `(Request, timeout)` opener seam and the browser User-Agent that `services.*` requires. No capability gate is shipped with it, so the checked-in record stays default-deny.
