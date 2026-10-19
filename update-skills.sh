@@ -5251,7 +5251,7 @@ main() {
   fi
 
   # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
-  # (skills.workshop.autonomous.mode=propose when unset/auto; explicit propose/off kept).
+  # (skills.workshop.autonomous.mode = propose where the build accepts it, else off; unset/auto are set, an explicit value the build accepts is kept; a stale propose is migrated).
   # Runs HERE — right after scripts/ is delivered and BEFORE the content-recheck
   # `exit 0` — so it runs on EVERY roll, including content-current re-rolls that
   # never reach the steps near the end of this file. Hot reload, backup only on

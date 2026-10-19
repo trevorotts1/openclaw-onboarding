@@ -41,7 +41,9 @@ on:
       - scripts/repair-model-sovereignty.sh
       - tests/unit/repair-model-sovereignty-no-truncate.test.sh
       - scripts/ensure-burn-guard.sh
+      - scripts/oc-schema-migrate.py
       - tests/unit/burn-guard.test.sh
+      - tests/unit/workshop-mode-compat.test.sh
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
   pull_request:
     paths:
@@ -53,7 +55,9 @@ on:
       - scripts/repair-model-sovereignty.sh
       - tests/unit/repair-model-sovereignty-no-truncate.test.sh
       - scripts/ensure-burn-guard.sh
+      - scripts/oc-schema-migrate.py
       - tests/unit/burn-guard.test.sh
+      - tests/unit/workshop-mode-compat.test.sh
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
 
 concurrency:
@@ -86,8 +90,11 @@ jobs:
       - name: Model-sovereignty repair never truncates fallback chains
         run: bash tests/unit/repair-model-sovereignty-no-truncate.test.sh
 
-      - name: Burn guard keeps skill-collection-review crons off (unset/auto -> propose)
+      - name: Burn guard keeps skill-collection-review crons off (unset/auto -> the value the installed build accepts)
         run: bash tests/unit/burn-guard.test.sh
+
+      - name: CAN014 workshop mode follows the installed build's schema (propose -> off on 2026.10.5+)
+        run: bash tests/unit/workshop-mode-compat.test.sh
 
       - name: Both scripts parse
         run: |
