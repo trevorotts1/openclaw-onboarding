@@ -1499,26 +1499,43 @@ export class DurableJobRunner {
     const session = this.sessionOrThrow(envelope, sessionId);
     const epoch = this.bumpSessionEpoch(envelope, session, workerId, jobId).lease_epoch;
 
+    // The job's operation chain: the original plus its bounded
+    // follow-ons. A graceful stop or crash can land while a retry or
+    // repair is the dispatched operation, so recovery settles every
+    // operation in the chain, not only the original.
+    const chain = [operationId, `${operationId}:repair:1`, `${operationId}:retry:1`];
     const finalizeReservation = (
-      action: 'unknown' | 'release' | 'none',
+      action: 'unknown' | 'release',
+      opId: string = operationId,
     ): void => {
-      const reservation = this.budget.getReservation(envelope, sessionId, operationId);
+      const reservation = this.budget.getReservation(envelope, sessionId, opId);
       if (!reservation || reservation.state !== 'reserved') return;
       if (action === 'unknown') {
         this.admission.recordConsumption(envelope, {
           grant_id: descriptor.grant_id,
           session_id: sessionId,
-          operation_id: operationId,
+          operation_id: opId,
           lease_epoch: epoch,
           outcome: 'unknown',
         });
-      } else if (action === 'release') {
+      } else {
         this.budget.release(envelope, {
           session_id: sessionId,
-          operation_id: operationId,
+          operation_id: opId,
           lease_epoch: epoch,
           reason: 'worker_lost_before_dispatch',
         });
+      }
+    };
+    const isLiveAttempt = (status: string | null): boolean =>
+      status === 'dispatched' || status === 'reserved';
+    // Settle one chain operation as unknown. Only an attempt still
+    // dispatched or reserved is rewritten; a terminal row keeps its recorded
+    // usage and outcome.
+    const settleChainUnknown = (opId: string): void => {
+      finalizeReservation('unknown', opId);
+      if (isLiveAttempt(this.attemptStatus(envelope, opId))) {
+        this.updateAttempt(envelope, opId, 'provider_completion_unknown', 'completion_unknown');
       }
     };
 
@@ -1540,24 +1557,28 @@ export class DurableJobRunner {
           currentCancelGeneration: session.state.cancel_generation,
         });
     const attemptStatus = this.attemptStatus(envelope, operationId);
+    const chainDispatched = chain.some((id) => this.attemptStatus(envelope, id) === 'dispatched');
 
     if (superseded) {
-      finalizeReservation(attemptStatus === 'dispatched' ? 'unknown' : 'release');
-      if (attemptStatus === 'dispatched') {
-        this.updateAttempt(envelope, operationId, 'provider_completion_unknown', 'completion_unknown');
+      for (const id of chain) {
+        if (this.attemptStatus(envelope, id) === 'dispatched') settleChainUnknown(id);
+        else finalizeReservation('release', id);
       }
       this.finishJobRow(envelope, jobId, row.lease_epoch, 'cancelled', 'session_cancelled');
       return { job_id: jobId, operation_id: operationId, outcome: 'recovered_cancelled' };
     }
     if (card || checkpoint?.status === 'accepted') {
-      finalizeReservation('unknown');
-      this.updateAttempt(envelope, operationId, 'accepted', 'recovered_after_commit');
+      for (const id of chain) {
+        finalizeReservation('unknown', id);
+        if (isLiveAttempt(this.attemptStatus(envelope, id))) {
+          this.updateAttempt(envelope, id, 'accepted', 'recovered_after_commit');
+        }
+      }
       this.finishJobRow(envelope, jobId, row.lease_epoch, 'succeeded', operationId);
       return { job_id: jobId, operation_id: operationId, outcome: 'recovered_committed' };
     }
-    if (attemptStatus === 'dispatched' || checkpoint?.status === 'dispatched') {
-      finalizeReservation('unknown');
-      this.updateAttempt(envelope, operationId, 'provider_completion_unknown', 'completion_unknown');
+    if (chainDispatched || checkpoint?.status === 'dispatched') {
+      for (const id of chain) settleChainUnknown(id);
       const claim = this.claimShell(session, payload, descriptor, payload.runner.route_snapshot, operationId, workerId, row.lease_epoch, epoch);
       this.saveCheckpoint(envelope, claim, session, 'provider_completion_unknown', checkpoint?.provider_request_id ?? null, {
         input_tokens: checkpoint?.usage.input_tokens ?? null,

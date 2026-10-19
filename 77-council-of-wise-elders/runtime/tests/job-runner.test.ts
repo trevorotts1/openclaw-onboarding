@@ -710,6 +710,67 @@ test('T050: crash after provider submission yields an uncertain attempt, never a
   assert.equal(ctx.repositories.listCards(worker, setup.session.spec.session_id).length, 0);
 });
 
+test('sigterm-drain: a stop during an output repair settles the repair, not the finished original', async () => {
+  const setup = setupRunningSession('sigterm-repair');
+  const { ctx, worker } = setup;
+  let calls = 0;
+  const executor = new FakeExecutor(async (dispatchCtx) => {
+    calls += 1;
+    if (calls === 2) {
+      // The repair is in flight when the process stops.
+      throw new SimulatedCrashError('stop_during_output_repair');
+    }
+    const result = await fixtureResult(dispatchCtx);
+    return {
+      ...result,
+      author: { ...result.author, stance: 'not-a-stance' },
+      input_tokens: 6315,
+      output_tokens: 6151,
+    };
+  });
+  const runner = makeRunner(ctx, executor);
+  const seat = setup.session.spec.seat_ids[0];
+  const { operationId } = enqueueSeatOperation(runner, setup, seat, 'sigterm-repair-1');
+  const repairId = `${operationId}:repair:1`;
+
+  const claim = runner.claimNextOperation(worker, setup.session.spec.session_id, 'worker-1');
+  assert.ok(claim);
+  await assert.rejects(
+    runner.executeClaimedOperation(worker, claim),
+    (error: unknown) => error instanceof SimulatedCrashError,
+  );
+  assert.equal(calls, 2);
+  const usage = (opId: string) =>
+    ctx.db.read((handle) =>
+      handle
+        .prepare(
+          `SELECT status, outcome_code, input_tokens, output_tokens, response_hash
+             FROM council_provider_attempts
+            WHERE tenant_id = ? AND company_id = ? AND operation_id = ?`,
+        )
+        .get(worker.tenant_id, worker.company_id, opId),
+    ) as Record<string, unknown>;
+  const original = usage(operationId);
+  assert.equal(original.status, 'failed');
+  assert.equal(attemptRow(ctx, worker, repairId)?.status, 'dispatched');
+  assert.equal(ctx.budget.getReservation(worker, setup.session.spec.session_id, repairId)?.state, 'reserved');
+
+  // Restart after lease expiry: recovery settles the in-flight repair.
+  advanceClock(61_000);
+  const runner2 = makeRunner(ctx, executor);
+  assert.equal(runner2.claimNextOperation(worker, setup.session.spec.session_id, 'worker-2'), null);
+  assert.equal(calls, 2, 'nothing was replayed');
+  assert.deepEqual(usage(operationId), original, 'the finished original keeps its recorded usage');
+  assert.equal(original.input_tokens, 6315);
+  assert.equal(attemptRow(ctx, worker, repairId)?.status, 'provider_completion_unknown');
+  assert.equal(
+    ctx.budget.getReservation(worker, setup.session.spec.session_id, repairId)?.state,
+    'unknown',
+    'the repair hold is not left reserved',
+  );
+  assert.equal(runner2.listSessionJobs(worker, setup.session.spec.session_id)[0].state, 'failed');
+});
+
 test('T053: a cancelled session rejects late results; no verdict afterward; usage reconciled', async () => {
   const setup = setupRunningSession('t053');
   const { ctx, worker, envelope } = setup;
