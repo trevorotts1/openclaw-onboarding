@@ -359,7 +359,8 @@ def test_letter_fixture_short_inline_block_anchor_fails():
         page_dir = run_dir / "page"
         html = (page_dir / "index.html").read_text(encoding="utf-8")
         injected = ('<a class="promo-link" href="#join" '
-                    'style="display: inline-block; padding: 4px 10px;">'
+                    'style="display: inline-block; padding: 4px 10px; '
+                    'font-size: 18px;">'
                     "Short Promo</a>")
         html = html.replace("</body>", f"  {injected}\n</body>")
         assert "promo-link" in html
