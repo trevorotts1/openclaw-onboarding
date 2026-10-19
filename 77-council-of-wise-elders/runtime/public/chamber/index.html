@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Council of Wise Elders — chamber (fictional sample)</title>
+<link rel="stylesheet" href="./council-theme.css">
+<link rel="stylesheet" href="./council-room.css">
+<link rel="stylesheet" href="./council-journey.css">
+<style>
+  .chamber-nav { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; font-size:.875rem; margin:0 0 1rem; padding:0; list-style:none; }
+  .chamber-nav a { color: var(--council-accent-ink); }
+  .chamber-static-note { border-left:.25rem solid #b42318; background:#b423181a; padding:.75rem 1rem; margin:1rem 0; }
+  .chamber-reading-card { border:1px solid var(--council-line); border-radius:var(--council-radius-control); padding:.75rem 1rem; background:var(--council-surface); }
+  .chamber-reading-card summary { cursor:pointer; min-height:var(--council-touch-target); }
+  .chamber-reading-card dl { margin:.5rem 0 0; }
+  .chamber-reading-card dt { font-weight:700; margin-top:.5rem; }
+  .chamber-reading-card dd { margin:.15rem 0 0; }
+</style>
+</head>
+<body>
+<div class="council-theme">
+  <div class="council-journey-wrap">
+    <nav aria-label="Chamber pages">
+      <ul class="chamber-nav">
+        <li><a href="./">Chamber</a></li>
+        <li><a href="./advisors.html">The nine advisors</a></li>
+        <li><a href="/">Service status</a></li>
+      </ul>
+    </nav>
+
+    <header class="council-journey-head">
+      <p class="council-eyebrow">Council of Wise Elders</p>
+      <h1 class="council-display">The chamber</h1>
+      <p class="council-lede">Nine advisors, one frozen brief, a verdict you can inspect. This page is a self-contained, fixture-driven view of the locked chamber design. It is not a live council session.</p>
+    </header>
+
+    <div class="chamber-static-note" role="note">
+      <strong>Fictional sample.</strong> The decision, the advisor cards and every quotation on
+      this page come from the synthetic fixture in the Command Center council component set.
+      No real client, session or model output appears here. Live council pages require the
+      authenticated Command Center council API and its database; the exact blocking
+      dependencies are recorded in this package's RECEIPT.md.
+    </div>
+
+    <div class="council-shell-head">
+      <h2 class="council-heading">Council of Wise Elders</h2>
+      <span class="council-mode-badge">Fictional sample</span>
+    </div>
+
+    <p class="council-meta" style="margin:0 0 1rem">Room view below 920px becomes a designed grid; nothing is scaled down to illegibility. The same committed state is repeated in full text in the reading view.</p>
+
+    <section class="council-stage" aria-label="Council room" style="padding:1.5rem">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.75rem 1rem;margin-bottom:1rem">
+        <p style="margin:0" aria-live="polite"><strong>Round 2 of 3: Challenge</strong>
+          <span style="color:var(--council-stage-muted)">6 of 9 perspectives are in. Nothing here is final until the verdict is validated.</span>
+        </p>
+        <span class="council-mode-badge">Fictional sample</span>
+      </div>
+
+      <ol class="council-stepper" aria-label="Council rounds">
+        <li data-step-state="done"><span class="council-step-marker" aria-hidden="true">✓</span><span>Round 1: Opening perspectives (done)</span></li>
+        <li data-step-state="current" aria-current="step"><span class="council-step-marker" aria-hidden="true">2</span><span>Round 2: Challenge (current)</span></li>
+        <li data-step-state="todo"><span class="council-step-marker" aria-hidden="true">3</span><span>Round 3: Ratification</span></li>
+      </ol>
+
+      <div class="council-room" style="margin-top:1rem">
+        <div class="council-room-frame">
+          <div class="council-room-center">
+            <p class="council-meta" style="margin:0 0 .5rem">THE DECISION</p>
+            <p class="council-room-center-decision">Pilot the revised coaching offer with new clients next month?</p>
+            <p class="council-meta" style="margin:.75rem 0 0">Current crux: demand evidence versus delivery capacity</p>
+          </div>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="simon-sinek" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Simon Sinek, purpose and strategic alignment, current state: Supports" style="left:50.0%;top:16.4%">
+            <img src="./portraits/simon-sinek-sm.svg" alt="Illustrative medallion for Simon Sinek, the purpose and strategic alignment seat: a colored ring around a warm tinted disc with three concentric circles and the initials SS. A designed symbol, not a photograph of Simon Sinek." width="36" height="36">
+            <span class="council-seat-name">Simon Sinek</span>
+            <span class="council-state council-state-support">Supports</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="td-jakes" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="T. D. Jakes, instinct, reinvention, and communication, current state: Conditional" style="left:73.8%;top:24.3%">
+            <img src="./portraits/td-jakes-sm.svg" alt="Illustrative medallion for T. D. Jakes, the instinct, reinvention, and communication seat: a colored ring around a warm tinted disc with a microphone and the initials TJ. A designed symbol, not a photograph of T. D. Jakes." width="36" height="36">
+            <span class="council-seat-name">T. D. Jakes</span>
+            <span class="council-state council-state-conditional">Conditional</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="oprah-winfrey" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Oprah Winfrey, intention, significance, and human connection, current state: Supports" style="left:86.4%;top:44.2%">
+            <img src="./portraits/oprah-winfrey-sm.svg" alt="Illustrative medallion for Oprah Winfrey, the intention, significance, and human connection seat: a colored ring around a warm tinted disc with an open book beneath a small sun and the initials OW. A designed symbol, not a photograph of Oprah Winfrey." width="36" height="36">
+            <span class="council-seat-name">Oprah Winfrey</span>
+            <span class="council-state council-state-support">Supports</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="tiffany-aliche" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Tiffany Aliche, financial stability and sustainable commitments, current state: Opposes" style="left:82.0%;top:66.8%">
+            <img src="./portraits/tiffany-aliche-sm.svg" alt="Illustrative medallion for Tiffany Aliche, the financial stability and sustainable commitments seat: a colored ring around a warm tinted disc with a pediment over three columns, a foundation and the initials TA. A designed symbol, not a photograph of Tiffany Aliche." width="36" height="36">
+            <span class="council-seat-name">Tiffany Aliche</span>
+            <span class="council-state council-state-oppose">Opposes</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="russell-brunson" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Russell Brunson, offers, acquisition, and conversion, current state: Supports" style="left:62.6%;top:81.6%">
+            <img src="./portraits/russell-brunson-sm.svg" alt="Illustrative medallion for Russell Brunson, the offers, acquisition, and conversion seat: a colored ring around a warm tinted disc with a funnel and the initials RB. A designed symbol, not a photograph of Russell Brunson." width="36" height="36">
+            <span class="council-seat-name">Russell Brunson</span>
+            <span class="council-state council-state-support">Supports</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="michelle-obama" data-status="started" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Michelle Obama, grounded leadership, identity, and community, current state: In progress" style="left:37.4%;top:81.6%">
+            <img src="./portraits/michelle-obama-sm.svg" alt="Illustrative medallion for Michelle Obama, the grounded leadership, identity, and community seat: a colored ring around a warm tinted disc with a sunrise over two horizon lines and the initials MO. A designed symbol, not a photograph of Michelle Obama." width="36" height="36">
+            <span class="council-seat-name">Michelle Obama</span>
+            <span class="council-seat-status">In progress</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="brene-brown" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Brené Brown, courage, trust, and accountable behavior, current state: Conditional" style="left:18.0%;top:66.8%">
+            <img src="./portraits/brene-brown-sm.svg" alt="Illustrative medallion for Brené Brown, the courage, trust, and accountable behavior seat: a colored ring around a warm tinted disc with a heart outline and the initials BB. A designed symbol, not a photograph of Brené Brown." width="36" height="36">
+            <span class="council-seat-name">Brené Brown</span>
+            <span class="council-state council-state-conditional">Conditional</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="dennis-kimbro" data-status="queued" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Dr. Dennis Kimbro, ownership, wealth creation, and achievement, current state: Waiting in queue" style="left:13.6%;top:44.2%">
+            <img src="./portraits/dennis-kimbro-sm.svg" alt="Illustrative medallion for Dr. Dennis Kimbro, the ownership, wealth creation, and achievement seat: a colored ring around a warm tinted disc with a key and the initials DK. A designed symbol, not a photograph of Dr. Dennis Kimbro." width="36" height="36">
+            <span class="council-seat-name">Dr. Dennis Kimbro</span>
+            <span class="council-seat-status">Waiting in queue</span>
+          </button>
+
+          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="les-brown" data-status="queued" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Les Brown, self-belief, resilience, and committed action, current state: Waiting in queue" style="left:26.2%;top:24.3%">
+            <img src="./portraits/les-brown-sm.svg" alt="Illustrative medallion for Les Brown, the self-belief, resilience, and committed action seat: a colored ring around a warm tinted disc with a rising arrow over a ground line and the initials LB. A designed symbol, not a photograph of Les Brown." width="36" height="36">
+            <span class="council-seat-name">Les Brown</span>
+            <span class="council-seat-status">Waiting in queue</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Council reading view" style="margin-top:1.5rem">
+      <p class="council-eyebrow">Round 2 of 3: Challenge</p>
+      <h2 class="council-heading" style="margin:.5rem 0">Pilot the revised coaching offer with new clients next month?</h2>
+      <p aria-live="polite">6 of 9 perspectives are in. Current crux: demand evidence versus delivery capacity. Nothing here is final until the verdict is validated. This session is shown as: Fictional sample.</p>
+
+      <div class="council-reading-list" style="margin-top:1rem">
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Simon Sinek</span> — <span class="council-state council-state-support">Supports</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>purpose and strategic alignment</dd>
+            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
+            <dt>Decisive argument</dt><dd>The pilot tests the revised offer without breaking the promise the current offer already makes to clients.</dd>
+            <dt>Strongest objection</dt><dd>If the pilot is framed as a discount rather than a purpose-led test, it dilutes the WHY.</dd>
+            <dt>What would change this seat&#39;s mind</dt><dd>Evidence that the revised offer contradicts the stated purpose.</dd>
+            <dt>Evidence strength</dt><dd>medium</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">T. D. Jakes</span> — <span class="council-state council-state-conditional">Conditional</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>instinct, reinvention, and communication</dd>
+            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
+            <dt>Decisive argument</dt><dd>The message has to fit the moment: a test offered with confidence, not an apology for changing.</dd>
+            <dt>Strongest objection</dt><dd>If the announcement sounds uncertain, new clients will hear risk instead of intention.</dd>
+            <dt>Conditions</dt><dd>Rewrite the announcement so the reason for the pilot leads.</dd>
+            <dt>What would change this seat&#39;s mind</dt><dd>A message test showing the current announcement already lands clearly.</dd>
+            <dt>Evidence strength</dt><dd>low</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Oprah Winfrey</span> — <span class="council-state council-state-support">Supports</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>intention, significance, and human connection</dd>
+            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
+            <dt>Decisive argument</dt><dd>New clients experience the revised offer first, so the people affected by the change are the ones who chose it.</dd>
+            <dt>Strongest objection</dt><dd>Existing clients must hear the intention plainly, or the pilot reads as favoritism.</dd>
+            <dt>Conditions</dt><dd>Tell existing clients why the pilot starts with new clients.</dd>
+            <dt>What would change this seat&#39;s mind</dt><dd>Feedback that existing clients experience the pilot as exclusion.</dd>
+            <dt>Evidence strength</dt><dd>low</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Tiffany Aliche</span> — <span class="council-state council-state-oppose">Opposes</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>financial stability and sustainable commitments</dd>
+            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
+            <dt>Decisive argument</dt><dd>A broad launch commits cash before delivery capacity is proven; the bounded pilot prices that risk in advance.</dd>
+            <dt>Strongest objection</dt><dd>Delivery capacity is unproven at twice the volume, and the reserve does not cover a failed broad launch.</dd>
+            <dt>What would change this seat&#39;s mind</dt><dd>A measured pilot showing delivery hours per client at the revised price.</dd>
+            <dt>Evidence strength</dt><dd>medium</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Russell Brunson</span> — <span class="council-state council-state-support">Supports</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>offers, acquisition, and conversion</dd>
+            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
+            <dt>Decisive argument</dt><dd>A capped pilot produces real conversion evidence instead of another forecast.</dd>
+            <dt>Strongest objection</dt><dd>Without a cap, early demand can oversell seats the team cannot deliver.</dd>
+            <dt>Conditions</dt><dd>Cap pilot seats at what the team can actually deliver.</dd>
+            <dt>Critical unknowns</dt><dd>Conversion rate of the revised price page.</dd>
+            <dt>What would change this seat&#39;s mind</dt><dd>Pilot conversion data showing the revised price underperforms the current offer.</dd>
+            <dt>Evidence strength</dt><dd>medium</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Michelle Obama</span> — <span class="council-seat-status">In progress</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>grounded leadership, identity, and community</dd>
+            <dt>State</dt><dd>Started; no validated perspective committed yet.</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Brené Brown</span> — <span class="council-state council-state-conditional">Conditional</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>courage, trust, and accountable behavior</dd>
+            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
+            <dt>Decisive argument</dt><dd>The pilot works only if the team can say plainly what is being tested and what would stop it.</dd>
+            <dt>Strongest objection</dt><dd>Unclear stop conditions turn a bounded test into quiet overcommitment.</dd>
+            <dt>Conditions</dt><dd>Write the pilot stop conditions down before launch.</dd>
+            <dt>What would change this seat&#39;s mind</dt><dd>A team agreement on explicit stop conditions and honest reporting.</dd>
+            <dt>Evidence strength</dt><dd>low</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Dr. Dennis Kimbro</span> — <span class="council-seat-status">Waiting in queue</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>ownership, wealth creation, and achievement</dd>
+            <dt>State</dt><dd>Waiting in the queue; no perspective committed yet.</dd>
+          </dl>
+        </details>
+
+        <details class="chamber-reading-card">
+          <summary><span class="council-seat-name">Les Brown</span> — <span class="council-seat-status">Waiting in queue</span></summary>
+          <dl>
+            <dt>Responsibility</dt><dd>self-belief, resilience, and committed action</dd>
+            <dt>State</dt><dd>Waiting in the queue; no perspective committed yet.</dd>
+          </dl>
+        </details>
+      </div>
+    </section>
+
+    <footer class="council-journey-foot">
+      <p class="council-meta">Each council member is an AI perspective inspired by the published work of the named author. Not the individual and not an endorsement.</p>
+      <p class="council-meta">Fictional sample fixture. No live session, client data or model output is represented. Live council journeys require the authenticated Command Center council API; see RECEIPT.md for the exact blocking dependency per route.</p>
+    </footer>
+  </div>
+</div>
+</body>
+</html>
