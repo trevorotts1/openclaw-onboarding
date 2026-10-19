@@ -12,7 +12,10 @@ This module loads the data and answers four questions for the other scripts:
 
 CLI:
   design_style.py question                 print the intake question with the example links
-  design_style.py validate REQUEST.json    check production-request.json slot shapes against its style
+  design_style.py validate REQUEST.json    check production-request.json slot shapes (and the sibling
+                                           desktop-wireframe/image-inventory.json when present) against its style
+  design_style.py validate-inventory RUN_DIR   check desktop-wireframe/image-inventory.json against intake.json's
+                                           style (the file that drives circle generation); a gate validator
   design_style.py board-block A|B|C        print the Design Board fields as JSON
 Exit 0 pass, 1 failures, 2 unreadable input.
 """
@@ -130,6 +133,14 @@ def question_text(data=None):
     return "\n".join(lines)
 
 
+def inventory_slots(path):
+    """The entry dicts of an image-inventory.json, whichever dialect list key it uses."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    items = data if isinstance(data, list) else (
+        data.get("images") or data.get("items") or data.get("inventory") or [])
+    return [item for item in items if isinstance(item, dict)]
+
+
 def _request_slots(request):
     for section in request.get("sections") or []:
         yield from (section.get("slots") or [])
@@ -158,6 +169,9 @@ def main(argv=None):
                 print(f"FAIL: request design_style {style_id!r} is not one of {list(STYLE_IDS)}")
                 return 1
             failures = slot_failures(style_id, list(_request_slots(request)))
+            inventory = Path(argv[1]).parent / "desktop-wireframe" / "image-inventory.json"
+            if inventory.is_file():   # the inventory drives circle generation; check it too
+                failures += [f"image inventory: {f}" for f in slot_failures(style_id, inventory_slots(inventory))]
         except (OSError, ValueError) as exc:
             print(f"FAIL: {exc}")
             return 2
@@ -167,6 +181,29 @@ def main(argv=None):
                 print(f"- {line}")
             return 1
         print(f"PASS: Style {style_id} slot shapes")
+        return 0
+    if len(argv) == 2 and argv[0] == "validate-inventory":
+        run_dir = Path(argv[1])
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+            style_id = intake.get("design_style") if isinstance(intake, dict) else None
+            inventory = run_dir / "desktop-wireframe" / "image-inventory.json"
+            if not style_id:   # test runs and older runs carry no style; gate:intake_design_style owns that
+                print("PASS: intake.json records no design_style; no slot-shape rule applies")
+                return 0
+            if style_id not in STYLE_IDS:
+                print(f"FAIL: intake design_style {style_id!r} is not one of {list(STYLE_IDS)}")
+                return 1
+            failures = slot_failures(style_id, inventory_slots(inventory))
+        except (OSError, ValueError) as exc:
+            print(f"FAIL: {exc}")
+            return 2
+        if failures:
+            print(f"FAIL: Style {style_id} image inventory slot shapes")
+            for line in failures:
+                print(f"- {line}")
+            return 1
+        print(f"PASS: Style {style_id} image inventory slot shapes")
         return 0
     print(__doc__)
     return 2

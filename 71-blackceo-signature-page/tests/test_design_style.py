@@ -126,6 +126,15 @@ class CircleImageTests(unittest.TestCase):
         rect = photo(self.d / "Image-03.png", (600, 600))
         self.assertEqual(run("circle_image.py", "check", rect, "--inventory", inv).returncode, 0)
 
+    def test_check_fails_a_circle_that_is_not_a_png(self):
+        # a masked circle saved as lossless WebP under a .png name is not a PNG
+        webp = self.d / "as-webp.png"
+        out = circle_image.make_circle(Image.open(self.src))
+        out.save(webp, format="WEBP", lossless=True)
+        proc = run("circle_image.py", "check", webp, "--force-circle")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("not a PNG", proc.stdout)
+
     def test_check_fails_a_transparent_square_with_opaque_corners(self):
         # RGBA but a full-bleed rectangle: alpha everywhere, so the corners are opaque.
         p = self.d / "full.png"
@@ -287,6 +296,54 @@ class ExecutorTests(unittest.TestCase):
         proc = run("circle_image.py", "check", out, "--inventory",
                    self.run_dir / "desktop-wireframe" / "image-inventory.json")
         self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    def inventory_run(self, style, shapes):
+        inv = {"images": [{"id": f"IMG-{i:03d}", "shape": sh, "aspect_ratio": "1:1" if sh == "circle" else "3:2"}
+                          for i, sh in enumerate(shapes, start=1)]}
+        (self.run_dir / "desktop-wireframe" / "image-inventory.json").write_text(json.dumps(inv))
+        (self.run_dir / "intake.json").write_text(json.dumps({"design_style": style}))
+        clause = design_style.circle_clause()
+        for i in range(1, len(shapes) + 1):
+            (self.run_dir / "image-inventory-prompts" / f"IMG-{i:03d}.txt").write_text(f"A photo. {clause}")
+
+    def test_style_a_inventory_circle_is_refused_by_executor_and_gate_validator(self):
+        # request slot is rect, inventory marks the slot circle: the inventory path must refuse
+        self.write_request(request("A", circle=False))
+        self.inventory_run("A", ["circle"])
+        with self.assertRaises(EXEC.ExecutorError) as ctx:
+            EXEC.run_item(self.run_dir, "image-generation-qc", "IMG-001",
+                          EXEC.load_request(self.run_dir, "production-request.json"),
+                          EXEC.StubProvider(), False)
+        self.assertIn("Style A", str(ctx.exception))
+        self.assertFalse((self.run_dir / "image-generation-qc" / "Image-01.png").exists())
+        # the same refusal with no request file at all (the --item path loads {})
+        with self.assertRaises(EXEC.ExecutorError):
+            EXEC.run_item(self.run_dir, "image-generation-qc", "IMG-001", {}, EXEC.StubProvider(), False)
+        proc = run("design_style.py", "validate-inventory", self.run_dir)
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("Style A", proc.stdout)
+        # `validate` on the request also reads the sibling inventory
+        self.assertEqual(run("design_style.py", "validate", self.run_dir / "production-request.json").returncode, 1)
+
+    def test_style_c_inventory_over_the_circle_budget_is_refused(self):
+        self.inventory_run("C", ["circle", "circle", "rect"])
+        with self.assertRaises(EXEC.ExecutorError) as ctx:
+            EXEC.run_item(self.run_dir, "image-generation-qc", "IMG-001", {}, EXEC.StubProvider(), False)
+        self.assertIn("one in three", str(ctx.exception))
+        self.assertEqual(run("design_style.py", "validate-inventory", self.run_dir).returncode, 1)
+
+    def test_inventory_within_style_passes_and_styleless_run_is_exempt(self):
+        self.inventory_run("C", ["circle", "rect", "rect"])
+        self.assertEqual(run("design_style.py", "validate-inventory", self.run_dir).returncode, 0)
+        EXEC.run_item(self.run_dir, "image-generation-qc", "IMG-001", {}, EXEC.StubProvider(), False)
+        (self.run_dir / "intake.json").write_text(json.dumps({"test_run": True}))
+        self.assertEqual(run("design_style.py", "validate-inventory", self.run_dir).returncode, 0)
+
+    def test_gate_contract_runs_the_inventory_validator_on_both_stages(self):
+        contract = json.loads((ROOT / "references" / "stage-contract.json").read_text())
+        for stage in ("desktop-wireframe", "image-generation-qc"):
+            self.assertIn("python3 scripts/design_style.py validate-inventory {run_dir}",
+                          contract["stages"][stage]["validators"], stage)
 
     def test_circle_item_prompt_without_the_clause_is_refused(self):
         inv = {"images": [{"id": "IMG-001", "shape": "circle"}]}

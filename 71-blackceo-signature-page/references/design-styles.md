@@ -96,7 +96,7 @@ and nothing is invented).
   should feel personal: the founder or host portrait, the "who this is for" personas, the testimonial
   avatars, and at most one hero or "meet" portrait. The wireframe declares each circle slot with
   `shape: "circle"`; every other slot stays `rect`.
-- **Budget.** At most one circle slot in three of the page's photo slots (enforced by `design_style.py validate`). A page whose photos are mostly circles is Style B, not C.
+- **Budget.** At most one circle slot in three of the page's photo slots (enforced by `design_style.py validate` on the request and `design_style.py validate-inventory` on the image inventory). A page whose photos are mostly circles is Style B, not C.
 - **Ring.** Circle slots may carry a full ring or a crescent ring in a brand accent. One ring treatment
   per page, used on every circle slot.
 - **Overlap.** A circle portrait may overlap its text panel's edge by about 10 percent of its diameter; a
@@ -121,8 +121,7 @@ and nobody needs a mask or `border-radius`.
    write RGBA PNG. The raw square is kept under `image-generation-qc/raw-square/` and recorded.
 3. **Deliver.** The masked PNG replaces `Image-NN.png`; the raw is the audit trail.
 4. **QC shape check.** `scripts/circle_image.py check` (a per-file validator on `image-generation-qc`, also
-   inside `scripts/validate_image_manifest.py`): a circle slot passes only if the file is a square RGBA
-   PNG, all four corner regions (8 percent per axis) have alpha 0, the center region (middle 20 percent
+   inside `scripts/validate_image_manifest.py`): a circle slot passes only if the file is a real PNG (format checked, not the extension) that is square RGBA, all four corner regions (8 percent per axis) have alpha 0, the center region (middle 20 percent
    per axis) is fully opaque, and 10 to 35 percent of the pixels are transparent. An unmasked square fails
    by name. A rect slot is not checked for shape.
 
@@ -147,7 +146,7 @@ On an inventory entry in `desktop-wireframe/image-inventory.json`, and the same 
 | `ring` | `{style: full or crescent, color: "#RRGGBB", width_pct: 3, direction: br, bl, tr or tl}` | Optional; color is a client brand color. |
 | `crop_focal` | `"x,y"`, `[x, y]` or `{x, y}`, fractions 0 to 1 | Where the subject sits; the crop centers there. Default: image center. |
 
-Style rules enforced in code (`scripts/design_style.py`): Style A refuses a circle slot by name; Style B and C
+Style rules enforced in code (`scripts/design_style.py`), on the request AND on `desktop-wireframe/image-inventory.json` (the file that drives circle generation: `stage_executor.py` checks the whole inventory before generating any item, and `design_style.py validate-inventory RUN_DIR` is a gate validator on `desktop-wireframe` and `image-generation-qc`): Style A refuses a circle slot by name; Style B and C
 accept `shape` on any slot; a circle slot must declare ratio `1:1`. `production-request.json` carries
 `design_style` (a letter) and each section's slots carry `shape`; when the request omits `design_style`,
 the executor reads it from `intake.json`.

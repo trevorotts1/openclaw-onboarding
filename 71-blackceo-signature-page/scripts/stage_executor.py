@@ -469,10 +469,9 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def resolve_design_style(run_dir: Path, request: dict) -> None:
-    """Carry the client's design style (A, B or C) into the request and refuse slot
-    shapes the style does not allow. The request's own design_style wins; otherwise
-    intake.json's. A run with neither (older runs) gets no style block."""
+def style_id_for(run_dir: Path, request: dict):
+    """The run's design style letter: the request's own wins, else intake.json's, else None
+    (older runs and test runs carry none). An unknown letter is refused."""
     style_id = request.get("design_style")
     if not style_id:
         try:
@@ -480,10 +479,17 @@ def resolve_design_style(run_dir: Path, request: dict) -> None:
         except (OSError, ValueError):
             intake = {}
         style_id = intake.get("design_style") if isinstance(intake, dict) else None
+    if style_id and style_id not in design_style.STYLE_IDS:
+        raise ExecutorError(f"design_style {style_id!r} is not one of {list(design_style.STYLE_IDS)}")
+    return style_id
+
+
+def resolve_design_style(run_dir: Path, request: dict) -> None:
+    """Carry the client's design style (A, B or C) into the request and refuse slot
+    shapes the style does not allow."""
+    style_id = style_id_for(run_dir, request)
     if not style_id:
         return
-    if style_id not in design_style.STYLE_IDS:
-        raise ExecutorError(f"design_style {style_id!r} is not one of {list(design_style.STYLE_IDS)}")
     request["design_style"] = style_id
     slots = [slot for sec in request.get("sections") or [] if isinstance(sec, dict)
              for slot in sec.get("slots") or [] if isinstance(slot, dict)]
@@ -905,6 +911,17 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         raise ExecutorError(f"{out} exists; pass --overwrite to replace it")
     slot = inventory_slot(run_dir, item)
     circle = circle_image.entry_shape(slot) == "circle"
+    # The inventory, not the request, decides which slots are circles, so the style is
+    # checked against the whole inventory here (the request path never sees these slots).
+    style_id = style_id_for(run_dir, request)
+    inventory = run_dir / "desktop-wireframe" / "image-inventory.json"
+    if style_id and inventory.is_file():
+        try:
+            failures = design_style.slot_failures(style_id, design_style.inventory_slots(inventory))
+        except (OSError, ValueError) as exc:
+            raise ExecutorError(f"cannot read {inventory}: {exc}")
+        if failures:
+            raise ExecutorError(f"design style slot shapes refused for {item}: " + "; ".join(failures))
     if circle and design_style.circle_clause().split(":")[0].lower() not in prompt.lower():
         raise ExecutorError(
             f"{item} is a circle slot but its prompt lacks the circle clause "

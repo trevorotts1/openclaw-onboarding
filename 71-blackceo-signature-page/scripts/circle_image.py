@@ -32,6 +32,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import design_style  # noqa: E402
+
 SUPERSAMPLE = 4
 CORNER_FRAC = 0.08       # each corner region is 8% of the side, per axis
 CENTER_FRAC = 0.20       # the opaque center region is the middle 20% per axis
@@ -159,7 +162,7 @@ def make_circle(src, size=None, focus=None, ring=None):
 def alpha_stats(path):
     """Alpha facts for one file: corners, center, transparent share, mode, size."""
     with Image.open(path) as im:
-        mode, (w, h) = im.mode, im.size
+        mode, (w, h), fmt = im.mode, im.size, im.format
         has_alpha = mode in ("RGBA", "LA") or (mode == "P" and "transparency" in im.info)
         alpha = im.convert("RGBA").getchannel("A")
     cw, ch = max(1, int(w * CORNER_FRAC)), max(1, int(h * CORNER_FRAC))
@@ -169,7 +172,7 @@ def alpha_stats(path):
     mx, my = int(w * (0.5 - CENTER_FRAC / 2)), int(h * (0.5 - CENTER_FRAC / 2))
     center_min = alpha.crop((mx, my, w - mx, h - my)).getextrema()[0]
     hist = alpha.histogram()
-    return {"mode": mode, "size": [w, h], "has_alpha": has_alpha,
+    return {"mode": mode, "format": fmt, "size": [w, h], "has_alpha": has_alpha,
             "corner_max_alpha": corners, "center_min_alpha": center_min,
             "transparent_share": round(hist[0] / (w * h), 4)}
 
@@ -178,6 +181,8 @@ def shape_failures(stats):
     """Named reasons a file is not a compliant circle PNG; empty means pass."""
     out = []
     w, h = stats["size"]
+    if stats["format"] != "PNG":
+        out.append(f"not a PNG (format {stats['format']}): a circle image is delivered as a PNG")
     if not stats["has_alpha"]:
         out.append(f"no alpha channel (mode {stats['mode']}): a square without transparency "
                    "is not a circle image")
@@ -203,12 +208,9 @@ def _slot_number(value):
 
 def inventory_entry(inventory_path, name):
     """The inventory entry whose id number matches a file name or item id, else {}."""
-    data = json.loads(Path(inventory_path).read_text(encoding="utf-8"))
-    items = data if isinstance(data, list) else (
-        data.get("images") or data.get("items") or data.get("inventory") or [])
     want = _slot_number(Path(str(name)).stem)
-    for item in items:
-        if isinstance(item, dict) and want is not None and _slot_number(item.get("id")) == want:
+    for item in design_style.inventory_slots(inventory_path):
+        if want is not None and _slot_number(item.get("id")) == want:
             return item
     return {}
 

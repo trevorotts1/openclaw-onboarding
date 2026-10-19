@@ -82,11 +82,15 @@ class WireframeArtifactTest(unittest.TestCase):
         self.assertEqual(STAGES["desktop-wireframe"]["depends_on"], ["font-action-plan"])
         self.assertEqual(STAGES["mobile-tablet"]["depends_on"], ["desktop-wireframe"])
         for stage in WIREFRAME_STAGES:
+            # desktop-wireframe also runs the design-style inventory check (the inventory
+            # lives there; SPF025): the chosen style is checked against the slot shapes.
+            style_gate = (["python3 scripts/design_style.py validate-inventory {run_dir}"]
+                          if stage == "desktop-wireframe" else [])
             self.assertEqual(STAGES[stage]["validators"],
-                             [f"python3 scripts/validate_wireframe.py {{run_dir}} {stage}",
+                             [f"python3 scripts/validate_wireframe.py {{run_dir}} {stage}", *style_gate,
                               f"python3 scripts/validate_production_record.py {{run_dir}}/{stage}/production-record.json"],
                              f"{stage} validators are the wireframe check plus the Item 13 "
-                             f"production-record gate")
+                             f"production-record gate (and the style inventory check on desktop-wireframe)")
             self.assertTrue(STAGES[stage]["review_required"])
 
     def test_artifact_contracts_enumeration_matches_contract(self):
