@@ -83,7 +83,8 @@ ROW = re.compile(r"^\|\s*(\d+[A-C]?)\s*\|[^|]*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|
 PRIVATE_ID = re.compile(r"\b[2-5][A-C]\b\s*")
 # The guide's internal vocabulary must never reach a prompt (see ROLE_NAMES).
 PRIVATE_TEXT = re.compile(r"\bSection \d+[A-C]\b|\bP0\d\b|\b[2-5][A-C]\b|\bPart [A-Z]\b|Big Bold|"
-                          r"framework|CTA BUTTON|CTA MICROCOPY", re.I)
+                          r"framework|CTA BUTTON|CTA MICROCOPY|\bPain \d|\bSolution \d", re.I)
+ORDINAL = ("first", "second", "third")
 
 COMMON_CANON = [
     "FRAME AND MEASURE: the desktop page is 1440 px wide with a 1200 px content column; "
@@ -186,6 +187,11 @@ KIND_ROLE = {
 }
 
 
+def neutral(text):
+    """The guide's "Pain 2" is the page's "second cost": same job, no framework name."""
+    return re.sub(r"\bpain 0?([1-3])\b", lambda m: f"the {ORDINAL[int(m.group(1)) - 1]} cost", text or "", flags=re.I)
+
+
 def skeleton_table():
     out = {}
     for sid, purpose, slots in ROW.findall(SKELETON_DOC.read_text(encoding="utf-8")):
@@ -239,10 +245,10 @@ def section_fragments(stage, section, index, sections, spec, table):
             f"directly above {names[index]}" if index < n else "the last section before the footer"]
     out.append(f"SECTION SPECIFICATION: this slice is section {index} of {n}, {section['section_name']}, "
                f"{near[0]} and {near[1]}. Draw this section only.")
-    job = spec_section.get("job")
-    if row.get("purpose") or job:
-        out.append("PURPOSE: " + "; ".join(x.rstrip(".") for x in (row.get("purpose"), job)
-                                            if x and not PRIVATE_TEXT.search(x)) + ".")
+    purpose = [x.rstrip(".") for x in map(neutral, (row.get("purpose"), spec_section.get("job")))
+               if x and not PRIVATE_TEXT.search(x)]
+    if purpose:
+        out.append("PURPOSE: " + "; ".join(purpose) + ".")
     out.append("PAGE ORDER: " + ", ".join(f"{i}. {name}" for i, name in enumerate(names, 1)) +
                ". The numbered sections never merge and never renumber.")
     if lines:
@@ -261,7 +267,7 @@ def section_fragments(stage, section, index, sections, spec, table):
         out.append("BUTTON: this section carries no button, no chip and no button-shaped pill; a button here is a defect.")
     else:
         out.append("BUTTON: none planned; draw a button only if the copy block above prints a label for it.")
-    if row.get("slots"):  # the run's own planned slots print under IMAGE SLOTS at the end
+    if row.get("slots") and section.get("slots"):  # the run's IMAGE SLOTS list governs; no plan, no canon
         out.append("SLOT CANON: the usual slots for this kind of section are " + row["slots"].rstrip(".") +
                    ". Each planned slot keeps its stated ratio and is drawn once.")
     out.extend(COMMON_CANON[:1])
@@ -407,6 +413,7 @@ def sizes_for(request: dict, stage: str, quiet: bool = False, strict: bool = Fal
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
     spec = json.loads((exe.SPEC_DIR / f"{version}-v6.json").read_text(encoding="utf-8"))
     sections = sections_from_manuscript(manuscript_text, spec, slots)
+    prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
                "stage_prompts": {stage: template_for(stage, {})}}

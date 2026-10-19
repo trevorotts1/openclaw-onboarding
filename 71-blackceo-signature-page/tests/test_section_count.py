@@ -235,9 +235,9 @@ def design_prose(chars=14500):
 class BandTests(unittest.TestCase):
     """The builder lands every section in the 95 to 100 percent band, or refuses."""
 
-    def build(self, version, prose, stage="visual-mockup"):
+    def build(self, version, prose, stage="visual-mockup", slots=None):
         text = (FIXTURES / f"{version}-path-b.md").read_text(encoding="utf-8")
-        return builder.build(stage, version, text, {}, prose, [], REAL_MODEL, "")
+        return builder.build(stage, version, text, slots or {}, prose, [], REAL_MODEL, "")
 
     def test_every_section_is_in_band_for_both_forms_and_both_mockup_stages(self):
         for version in ("standard", "long-form"):
@@ -266,6 +266,21 @@ class BandTests(unittest.TestCase):
         layouts = " ".join(s["layout"] for s in request["sections"])
         for bad in ("Big Bold", "framework", "5A", "2A", "CTA BUTTON"):
             self.assertNotIn(bad, layouts)
+        self.assertNotRegex(layouts, r"(?i)\b(pain|solution) \d")
+        self.assertIn("Answer the first cost in place", layouts)
+        prose = design_prose()
+        prose["rules_md"] += "\n| Pain 01 | 394 | 525 | 132 |\n| Pain 02 | 526 | 649 | 124 |"
+        template = self.build("long-form", prose)["stage_prompts"]["visual-mockup"]
+        self.assertNotRegex(template, r"(?i)\bpain \d")
+        self.assertIn("| the first cost | 394", template)
+
+    def test_slot_canon_only_where_the_run_plans_slots(self):
+        bare = " ".join(s["layout"] for s in self.build("standard", design_prose())["sections"])
+        self.assertNotIn("SLOT CANON", bare)
+        slots = {"2": [{"slot_id": "hero", "aspect_ratio": "16:9", "art_direction": "x"}]}
+        planned = self.build("standard", design_prose(), slots=slots)["sections"]
+        self.assertIn("SLOT CANON", planned[1]["layout"])
+        self.assertEqual(sum("SLOT CANON" in s["layout"] for s in planned), 1)
 
     def test_signature_is_a_label_and_the_founder_letter_still_builds(self):
         request = self.build("standard", design_prose())
