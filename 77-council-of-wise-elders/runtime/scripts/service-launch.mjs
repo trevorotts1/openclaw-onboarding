@@ -9,21 +9,17 @@
 // installed Skill 22 export) and routeBudget (needs a verified token->byte
 // conversion) remain honestly null, so readiness reports them not-ready.
 //
-// Run:   node runtime/scripts/service-launch.mjs
-//        (from a source checkout, add: --import tsx)
+// Run:   node --import tsx runtime/scripts/service-launch.mjs
+//        (tsx is required: the launcher imports src/, and the tsc output in
+//        dist/ uses extensionless imports that plain node cannot load)
 // Env (all optional):
 //   COUNCIL_SERVICE_DATA_DIR   durable data dir (default: platform default)
 //   COUNCIL_SERVICE_PORT       loopback port (default 8787)
 //   COUNCIL_TENANT_ID / COUNCIL_COMPANY_ID   identity overrides
 // Stdout is one JSON object per line. SIGTERM/SIGINT stop the service.
-import { existsSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
 
 const env = process.env;
-const built = fileURLToPath(new URL("../dist/service/index.js", import.meta.url));
-const source = fileURLToPath(new URL("../src/service/index.js", import.meta.url));
-const entry = existsSync(built) ? built : source;
-const { startCouncilService } = await import(pathToFileURL(entry).href);
+const entry = new URL("../src/service/index.js", import.meta.url).href;
 
 const port = Number(env.COUNCIL_SERVICE_PORT || 8787);
 const options = {
@@ -39,6 +35,7 @@ if (env.COUNCIL_COMPANY_ID) options.companyId = env.COUNCIL_COMPANY_ID;
 
 let service;
 try {
+  const { startCouncilService } = await import(entry);
   service = await startCouncilService(options);
 } catch (error) {
   console.log(JSON.stringify({

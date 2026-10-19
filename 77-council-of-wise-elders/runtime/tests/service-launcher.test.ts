@@ -30,3 +30,16 @@ test('launcher passes no fabricated materialCatalog or routeBudget', () => {
 test('launcher hard-codes no operator home path', () => {
   assert.doesNotMatch(source, /\/Users\//);
 });
+
+test('launcher loads the composition module inside the try block', () => {
+  const tryAt = source.indexOf('try {');
+  const importAt = source.indexOf('await import(');
+  const catchAt = source.indexOf('front_door_start_failed');
+  assert.ok(tryAt >= 0 && importAt > tryAt && importAt < catchAt);
+});
+
+test('launcher documents and uses only the tsx run path', () => {
+  const raw = readFileSync(new URL('../scripts/service-launch.mjs', import.meta.url), 'utf8');
+  assert.match(raw, /node --import tsx runtime\/scripts\/service-launch\.mjs/);
+  assert.doesNotMatch(source, /dist\//);
+});

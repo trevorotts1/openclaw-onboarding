@@ -246,9 +246,9 @@ root `startCouncilService(...)`, never a bare `CouncilFrontDoor`: a bare
 door leaves the event, admission and session adapters unbound (events
 answer 501). It binds loopback only, defaults to port 8787, takes the data
 directory from `COUNCIL_SERVICE_DATA_DIR` or the platform default, logs one
-JSON object per stdout line, and stops on SIGTERM or SIGINT. From a source
-checkout without a built `dist/`, run it as
-`node --import tsx runtime/scripts/service-launch.mjs`.
+JSON object per stdout line, and stops on SIGTERM or SIGINT. Run it only as
+`node --import tsx runtime/scripts/service-launch.mjs`; plain `node` cannot
+load the extensionless imports in the tsc `dist/` output.
 
 ## Restarts
 
