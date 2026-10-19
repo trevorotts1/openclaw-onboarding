@@ -1,0 +1,21 @@
+# NEGATIVE CHECKS WITH CONTROLS (grep rc: 0=match, 1=no match, 2=error) at current heads
+captured_at=2026-10-18T23:34:12Z cc_head=800b076907122bd080e774024e6da7b66fb67a73 setup_head=a156e4dfb7db831b32b47416cc751d8e803636a1 onboarding_ref=39e74434810d9c110f2c6ac506386c832f7b6fb5
+
+## A. command-center: service-identity / platform-handoff absent
+service-identity rc=1 matches=0
+platform-handoff rc=1 matches=0
+CONTROL route-selection rc=0 matches=4
+
+## B. 999-setup: service-identity / platform-handoff absent
+service-identity rc=1 matches=0
+platform-handoff rc=1 matches=0
+CONTROL council rc=0 matches=255
+
+## C. onboarding runtime: api/health and serve command absent
+api/health rc=1 matches=0
+serve command (cli dir absent; probes runtime/src/cli and runtime/src/cli/dispatcher.ts) rc=1 matches=0
+CONTROL doctor rc=0 matches=10
+
+## D. onboarding main: runner.mjs PRESENT (was absent in W14)
+runner.mjs read rc=0 lines=1262
+CONTROL supervisor.mjs lines rc=0 lines=270

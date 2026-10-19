@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-FIXTURE-7FIGUREPRENEUR",
+  "revision": 1,
+  "journey_mode": "folded_levels",
+  "brand": {
+    "ref": "TEST-ONLY-BRAND",
+    "hash": "5625f29ecb9aea44c8cdee178a1f538eb892b10958ebdd2552994937d8dfab60"
+  },
+  "copy_profile": "standard",
+  "approval": {
+    "ref": "TEST-ONLY-APPROVAL",
+    "hash": "c28ba6b9d0cc7c0962eeedf2cfaf2128fefd83251855a35d9d044fc3cfb14b2f"
+  },
+  "entitlement_attestation": {
+    "basis": "brand_management_membership",
+    "evidence_ref": "TEST-ONLY-EVIDENCE",
+    "attested_by": "TEST-ONLY-ATTESTER"
+  },
+  "offers": [
+    {
+      "offer_id": "MAIN-A",
+      "name": "TEST ONLY Level A",
+      "role": "main",
+      "price": {"amount_minor": 9700, "currency": "USD"}
+    },
+    {
+      "offer_id": "MAIN-B",
+      "name": "TEST ONLY Level B",
+      "role": "main",
+      "price": {"amount_minor": 19700, "currency": "USD"}
+    },
+    {
+      "offer_id": "MAIN-C",
+      "name": "TEST ONLY Level C",
+      "role": "main",
+      "price": {"amount_minor": 29700, "currency": "USD"}
+    },
+    {
+      "offer_id": "BUMP",
+      "name": "TEST ONLY Bump",
+      "role": "bump",
+      "price": {"amount_minor": 2700, "currency": "USD"},
+      "relationships": {"included_in": ["MAIN-B", "MAIN-C"]}
+    },
+    {
+      "offer_id": "U1",
+      "name": "TEST ONLY U1",
+      "role": "upsell_1",
+      "price": {"amount_minor": 6700, "currency": "USD"}
+    },
+    {
+      "offer_id": "D1",
+      "name": "TEST ONLY D1",
+      "role": "downsell_1",
+      "price": {"amount_minor": 3700, "currency": "USD"}
+    },
+    {
+      "offer_id": "U2",
+      "name": "TEST ONLY U2",
+      "role": "upsell_2",
+      "price": {"amount_minor": 4700, "currency": "USD"}
+    }
+  ]
+}

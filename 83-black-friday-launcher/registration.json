@@ -1,0 +1,145 @@
+{
+  "schema": "blackceo.skill.registration/1",
+  "skill": {
+    "name": "black-friday-launcher",
+    "number": "83",
+    "number_final": true,
+    "number_status": "assigned 2026-10-18 (LAUNCH-04) after the availability check recorded in number_assignment",
+    "number_source": "launcher_core/constants.py:SKILL_NUMBER",
+    "directory": "83-black-friday-launcher",
+    "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
+    "entry": "SKILL.md",
+    "version": "0.2.1",
+    "status": "core-only"
+  },
+  "number_assignment": {
+    "assigned_at": "2026-10-18",
+    "task": "LAUNCH-04",
+    "evidence": [
+      {
+        "claim": "onboarding uses 01 through 83 with no gaps",
+        "check": "numbered skill directories in the repository root (python3 os.listdir + regex ^[0-9]{2}-, isdir)",
+        "result": "83 numbered directories, minimum 01, maximum 83, zero gaps",
+        "status": "confirmed"
+      },
+      {
+        "claim": "the department map holds 83 entries",
+        "check": "23-ai-workforce-blueprint/skill-department-map.json skills array",
+        "result": "83 entries, skill 01 through 83, zero gaps, zero duplicate skill numbers; skill 83 is slug black-friday-launcher",
+        "status": "confirmed"
+      },
+      {
+        "claim": "999 has no numeric collision at 83",
+        "check": "ls -d ~/999-setup/83-*",
+        "result": "no match (exit 1)",
+        "status": "confirmed"
+      },
+      {
+        "claim": "registry line 18 in 999 CONTROL/bundled-skills.txt names 83-black-friday-launcher",
+        "check": "cat -n ~/999-setup/CONTROL/bundled-skills.txt and grep black-friday-launcher CONTROL installer-registration",
+        "result": "not reproduced: that file has 15 lines, none of which is black-friday-launcher, and grep returns no match (exit 1). The coordinator's report of line 18 could not be confirmed on the operator 999-setup tree.",
+        "status": "unconfirmed"
+      }
+    ],
+    "blocking_evidence": [
+      "onboarding 01..83 no gaps",
+      "department map 83 entries no gaps",
+      "999 no 83-* directory"
+    ],
+    "non_blocking_evidence": [
+      "the 999 registry line was reported by the coordinator but is absent from the live file read here; it is recorded as unconfirmed, never asserted as fact"
+    ]
+  },
+  "registration": {
+    "scope": "repository-local registration record; no installer edit, no fleet rollout, no 999 write",
+    "registered_at": "2026-10-18",
+    "base_commit": "50c8908a15c445bd4f8fa672e61028ff30b962fa",
+    "branch": "recovery/launcher-portability"
+  },
+  "depends_on": {
+    "49-signature-funnel": "intake validation, route substrate, delegation receipt collection",
+    "71-blackceo-signature-page": "landing page producer (separate skill, not edited here)",
+    "77-council-of-wise-elders": "Council planning-step invocation through the documented offline entry point",
+    "shared-utils/signature_launch": "schemas and domain utilities",
+    "78-signature-product-selection": "product_selection page producer",
+    "79-signature-order-form": "native checkout contract and cross-field validator",
+    "80-signature-upsell": "upsell_1 and upsell_2 page producer",
+    "81-signature-downsell": "downsell_1 validators",
+    "82-signature-thank-you": "thank_you result and run manifest"
+  },
+  "entitlements": {
+    "status": "decided",
+    "decision": "entitlement_declaration_and_attestation",
+    "declaration": "entitlement-declaration.json",
+    "gate": "launcher_core/entitlement.py:gate (fail-closed; unknown state never builds)",
+    "enforced_in_code": true,
+    "creates_entitlements": false,
+    "calls_billing_api": false,
+    "owner_stated_rules_source": "owner decision recorded in RECOVERY_2026-10-18 (LAUNCH-02b)"
+  },
+  "distribution": {
+    "status": "open_decision",
+    "seam": "distribution_run_target",
+    "chosen_target": null
+  },
+  "council": {
+    "status": "decided",
+    "decision": "council_included_in_launch_planning",
+    "step": "council_launch_planning",
+    "entry_point": "council-of-wise-elders/scripts/doctor.mjs",
+    "route_node_emitted": false,
+    "blocks_build": false,
+    "is_permission": false
+  },
+  "checkout": {
+    "status": "decided",
+    "decision": "native_converted_and_flow_checkout_mapping",
+    "surface": "native Convert and Flow order form installed by Skill 06",
+    "contract": "signature-order-form/references/checkout.schema.json",
+    "dispatch_adapter": false
+  },
+  "cross_sales": {
+    "status": "open_decision",
+    "seam": "cross_sales_teaching_source",
+    "inclusion": "decided: the relationship surface is present on the thank-you page",
+    "teaching_state": "pending",
+    "route_node_emitted": false
+  },
+  "offer_facts": {
+    "status": "decided",
+    "decision": "verified_offer_facts_only",
+    "rule": "a defaulted price, level or entitlement fails the build"
+  },
+  "journey_modes": {
+    "status": "decided",
+    "modes": ["single_simple", "multiple_options", "folded_levels"],
+    "folded_levels": "N >= 2 distinct main offers folded into the signature page, no product_selection node, never relabelled a single offer"
+  },
+  "open_decisions": [
+    "distribution_run_target",
+    "cross_sales_teaching_source"
+  ],
+  "enablement": {
+    "enabled_in_999": false,
+    "note": "Enabling in 999 is not part of LAUNCH-04 and no 999 write was made. This records the state of the three reported enablement blockers.",
+    "blockers": [
+      {
+        "id": "department-map-entry-absent",
+        "status": "resolved",
+        "evidence": "repo-integration/skill-department-map-entry.json added"
+      },
+      {
+        "id": "skill-number-unassigned",
+        "status": "resolved",
+        "evidence": "skill.number_final true with number_assignment evidence"
+      },
+      {
+        "id": "runtime-dependency-declared-nowhere",
+        "status": "declared",
+        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator; the 999 installer still installs no Python dependencies"
+      }
+    ]
+  },
+  "live_effects": "none",
+  "offline_only": true
+}

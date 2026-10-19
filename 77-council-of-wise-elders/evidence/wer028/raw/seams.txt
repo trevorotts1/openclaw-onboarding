@@ -1,0 +1,31 @@
+captured_at=2026-10-18T23:33:17Z
+onboarding_ref=39e74434810d9c110f2c6ac506386c832f7b6fb5 cc_head=800b076907122bd080e774024e6da7b66fb67a73 setup_head=a156e4dfb7db831b32b47416cc751d8e803636a1
+--- contract schema byte identity ---
+onboarding=<operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders/runtime/src/contracts/schemas.ts sha256=67246fc1533f041d7ac5e7f902a52a1da90e0f84165940a3c76dc8797418d4ae rc=0
+cc=<operator-home>/.claude/state/council-elders/lanes/W14-U001-lane/cc/src/lib/council/contracts/schemas.ts sha256=67246fc1533f041d7ac5e7f902a52a1da90e0f84165940a3c76dc8797418d4ae rc=0
+diff_q_rc=0
+--- contract literals on both sides ---
+57:export const CONTRACT_PACKAGE_VERSION = 'wise-elders.core/1.0.0';
+772:  schema_version: z.literal('wise-elders.operation-receipt/v1'),
+57:export const CONTRACT_PACKAGE_VERSION = 'wise-elders.core/1.0.0';
+772:  schema_version: z.literal('wise-elders.operation-receipt/v1'),
+--- route-selection literal ---
+<operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders/runtime/src/providers/selection.ts:110:  schema: 'wise-elders.route-selection/v1';
+<operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders/runtime/src/cli/local-host.ts:164:      schema: 'wise-elders.route-selection/v1',
+<operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders/runtime/src/cli/local-host.ts:216:    schema: 'wise-elders.route-selection/v1',
+<operator-home>/.claude/state/council-elders/lanes/W16-U001-lane/scratch/77-council-of-wise-elders/runtime/src/cli/local-host.ts:316:      schema: 'wise-elders.route-selection/v1',
+<operator-home>/.claude/state/council-elders/lanes/W14-U001-lane/cc/src/lib/council/explicit-selection.ts:104:  schema: 'wise-elders.route-selection/v1';
+<operator-home>/.claude/state/council-elders/lanes/W14-U001-lane/cc/src/lib/council/explicit-selection.ts:247:    schema: 'wise-elders.route-selection/v1',
+--- single-sided schemas (grep rc=1 means no match; same-instrument control follows) ---
+cc_service_identity_grep_rc=1
+cc_platform_handoff_grep_rc=1
+setup_service_identity_grep_rc=1
+setup_platform_handoff_grep_rc=1
+control_cc_CONTRACT_PACKAGE_VERSION_rc=0
+control_cc_route_selection_rc=0
+--- onboarding declarations ---
+18:export const SERVICE_IDENTITY_SCHEMA = 'wise-elders.service-identity/v1';
+35:export const HANDOFF_SCHEMA = 'wise-elders.platform-handoff/v1';
+6: * the Tunnel, the Access application, the audience and the origin already
+71:  audience: string;
+117:  audience: readonly string[];

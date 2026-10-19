@@ -21,6 +21,7 @@
  * in tests, and any host mutation.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
@@ -78,6 +79,36 @@ export interface FrontDoorOptions {
 
 const MAX_BODY_BYTES = 1_048_576;
 
+/**
+ * Packaged chamber assets (WER-021 full packaging).
+ *
+ * Both roots are tried so the same files resolve from the TypeScript source
+ * (src/service), the tsc output (dist/service) and the esbuild single-file
+ * bundle (dist). The asset directory is the only file set this route serves;
+ * there is no directory listing and no traversal.
+ */
+const CHAMBER_ASSET_ROOTS: readonly URL[] = [
+  new URL('../../public/chamber/', import.meta.url),
+  new URL('../public/chamber/', import.meta.url),
+];
+
+const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
+  ['index.html', 'text/html; charset=utf-8'],
+  ['advisors.html', 'text/html; charset=utf-8'],
+  ['not-packaged.html', 'text/html; charset=utf-8'],
+  ['council-theme.css', 'text/css; charset=utf-8'],
+  ['council-room.css', 'text/css; charset=utf-8'],
+  ['council-journey.css', 'text/css; charset=utf-8'],
+  ['RECEIPT.md', 'text/markdown; charset=utf-8'],
+]);
+
+function chamberAssetRoot(): URL | null {
+  for (const root of CHAMBER_ASSET_ROOTS) {
+    if (existsSync(root)) return root;
+  }
+  return null;
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
@@ -86,6 +117,44 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
     'cache-control': 'no-store',
   });
   res.end(text);
+}
+
+/** Self-contained HTML only: no external asset, script or stylesheet. */
+function sendHtml(res: ServerResponse, html: string): void {
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(html),
+    'cache-control': 'no-store',
+  });
+  res.end(html);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Observed artifacts are echoed, never with an absolute home path. */
+function redactHome(value: string): string {
+  return value.replace(
+    /(?:\/Users\/[^/\s"'<>]+|\/home\/[^/\s"'<>]+|[A-Za-z]:\\Users\\[^\\\s"'<>]+)/g,
+    '~',
+  );
+}
+
+/** The landing page must not introduce a fetch or name a foreign origin. */
+function redactExternalUrls(value: string, origin: string): string {
+  return value.replace(/https?:\/\/[^\s"'<>]+/g, (url) =>
+    origin.length > 0 && url.startsWith(origin) ? url : '[external-url-redacted]',
+  );
+}
+
+function redactObserved(value: string, origin: string): string {
+  return escapeHtml(redactExternalUrls(redactHome(value), origin));
 }
 
 /** Exact loopback set plus the 127/8 block; nothing else is a local front door. */
@@ -355,6 +424,13 @@ export class CouncilFrontDoor {
     }
     const method = req.method ?? 'GET';
 
+    // Root landing page only. Every other unknown path still falls through
+    // to the SERVICE_ROUTE_NOT_FOUND catch-all unchanged.
+    if (method === 'GET' && path === '/') {
+      sendHtml(res, await this.renderLanding());
+      return;
+    }
+
     if (method === 'GET' && (path === '/healthz' || path === '/api/council/health')) {
       sendJson(res, 200, {
         ok: this.state === 'running' || this.state === 'draining' || this.state === 'reused',
@@ -442,10 +518,157 @@ export class CouncilFrontDoor {
       return;
     }
 
+    // Packaged, fully self-contained chamber UI. Additive: a miss falls
+    // through to the unchanged SERVICE_ROUTE_NOT_FOUND catch-all.
+    if (method === 'GET' && (path === '/chamber' || path.startsWith('/chamber/'))) {
+      if (this.serveChamberAsset(path, res)) return;
+    }
+
     sendJson(res, 404, {
       code: 'SERVICE_ROUTE_NOT_FOUND',
       detail: `No service route for ${method} ${path}.`,
     });
+  }
+
+  /**
+   * Serve one packaged chamber asset. Returns false for anything outside the
+   * fixed file set (so the caller falls through to the unchanged catch-all).
+   * No directory listing, no traversal, no external asset.
+   */
+  private serveChamberAsset(path: string, res: ServerResponse): boolean {
+    const root = chamberAssetRoot();
+    if (!root) return false;
+
+    let relative: string;
+    let contentType: string;
+    if (path === '/chamber' || path === '/chamber/') {
+      relative = 'index.html';
+      contentType = 'text/html; charset=utf-8';
+    } else {
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(path.slice('/chamber/'.length));
+      } catch {
+        return false;
+      }
+      const portrait = /^portraits\/[A-Za-z0-9._-]+\.svg$/.exec(decoded);
+      if (portrait) {
+        relative = decoded;
+        contentType = 'image/svg+xml; charset=utf-8';
+      } else if (/^[A-Za-z0-9._-]+$/.test(decoded) && CHAMBER_ROOT_FILES.has(decoded)) {
+        relative = decoded;
+        contentType = CHAMBER_ROOT_FILES.get(decoded) as string;
+      } else {
+        return false;
+      }
+    }
+
+    let body: Buffer;
+    try {
+      body = readFileSync(new URL(relative, root));
+    } catch {
+      return false;
+    }
+    res.writeHead(200, {
+      'content-type': contentType,
+      'content-length': body.length,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    res.end(body);
+    return true;
+  }
+
+  /**
+   * Self-contained landing page for `GET /`.
+   *
+   * Every value is read from this handle — identity, verified origin,
+   * readiness layers and service state — so nothing is hardcoded, no
+   * external asset is fetched and the page is explicit that the full
+   * chamber UI is not packaged.
+   */
+  private async renderLanding(): Promise<string> {
+    const identity = this.options.identity;
+    const origin = this.origin ?? '';
+    const readiness = await this.readiness();
+    const identityRows = [
+      ['Service', identity.service],
+      ['Composition', identity.composition],
+      ['API version', identity.api_version],
+      ['Owner tenant', identity.owner.tenant_id],
+      ['Owner company', identity.owner.company_id],
+      ['Data directory (SHA-256)', identity.owner.data_dir_sha256],
+      ['Started at', identity.started_at],
+      ['Origin', origin],
+      ['State', this.state],
+    ]
+      .map(
+        ([label, value]) =>
+          `<tr><th>${escapeHtml(label)}</th><td>${redactObserved(value, origin)}</td></tr>`,
+      )
+      .join('');
+    const layerRows = readiness.layers
+      .map((layer) => {
+        const artifact =
+          layer.artifact === null ? '—' : redactObserved(layer.artifact, origin);
+        const blocker = layer.blocker
+          ? `${escapeHtml(layer.blocker.code)}: ${redactObserved(layer.blocker.detail, origin)}`
+          : '—';
+        const recovery =
+          layer.recovery === null ? '—' : redactObserved(layer.recovery, origin);
+        return `<tr><th>${escapeHtml(layer.layer)}</th><td>${escapeHtml(
+          layer.state,
+        )}</td><td>${artifact}</td><td>${blocker}</td><td>${recovery}</td></tr>`;
+      })
+      .join('');
+    const identityLink = `${origin}${SERVICE_IDENTITY_PATH}`;
+    const sessionLink = `${origin}/council/your-session-id`;
+    const eventsLink = `${origin}/api/council/sessions/your-session-id/events`;
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Council of Wise Elders — service landing</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{margin:0;padding:1.5rem;line-height:1.45}
+main{max-width:60rem;margin:0 auto}
+h1{font-size:1.4rem;margin:0 0 .25rem}
+h2{font-size:1.05rem;margin:1.5rem 0 .5rem}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;vertical-align:top;padding:.35rem .5rem;border-bottom:1px solid #8884}
+th{white-space:nowrap;font-weight:600}
+.notice{border-left:.25rem solid #c98a00;padding:.5rem .75rem;margin:1rem 0;background:#c98a001a}
+.ok{opacity:.85}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+ul{margin:.25rem 0;padding-left:1.25rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Council of Wise Elders — service landing</h1>
+<p class="ok">This is the Council service status and session landing page. It is <strong>not</strong> the full Council chamber UI.</p>
+<div class="notice"><strong>UI_NOT_BUNDLED</strong> — the full Council chamber UI is not packaged by this service slice. Packaging the accepted shared Council UI build (WER-021 full packaging) is the path to it, then re-run service-readiness.</div>
+<div class="notice"><strong>EVENT_STREAM_ADAPTER_NOT_BOUND</strong> — the durable event stream adapter is not bound here. <code>GET /api/council/sessions/&lt;id&gt;/events</code> answers 501 until the integration root binds the canonical journal/outbox adapter.</div>
+<h2>Service identity</h2>
+<table>${identityRows}</table>
+<h2>Readiness (${escapeHtml(readiness.observed_at)}, usable: ${readiness.usable ? 'yes' : 'no'})</h2>
+<table>
+<thead><tr><th>Layer</th><th>State</th><th>Artifact</th><th>Blocker</th><th>Recovery</th></tr></thead>
+<tbody>${layerRows}</tbody>
+</table>
+<h2>Routes that work</h2>
+<ul>
+<li><a href="${escapeHtml(identityLink)}"><code>GET /api/council/service/identity</code></a> — service identity JSON (200)</li>
+<li><a href="${escapeHtml(sessionLink)}"><code>GET /council/&lt;sessionId&gt;</code></a> — session record; reports <code>ui: "not_bundled"</code> with blocker <code>UI_NOT_BUNDLED</code> (200)</li>
+<li><a href="${escapeHtml(eventsLink)}"><code>GET /api/council/sessions/&lt;id&gt;/events</code></a> — event stream (501, adapter not bound)</li>
+</ul>
+</main>
+</body>
+</html>
+`;
   }
 
   /**

@@ -108,6 +108,130 @@ finished look for a single approval pass):
 - H2: the section guide matches the mockups it sits beside: numbered
   sections, mini wireframe thumbnails, and typography specs.
 
+### B. Wireframe canon (dialects, confirmed from the bundled set)
+
+Two dialects plus a guide column. Review the artifact against the dialect
+its page type calls for; a dialect mismatch is a named defect.
+
+B1, photo wireframe (the standard and long-form teaching sheets):
+
+- edge-to-edge on desktop, a single centered column with internal 2-column
+  splits on mobile, or a three-column newspaper board for long-form mobile;
+- a black title bar carrying the page name; no device frame, legend or
+  swatches;
+- grayscale photography only, darkened, with white ratio labels, plus one
+  red accent family (measured #c8091a to #d90110) for tags and headlines;
+- two-tone headlines (black then red, or white then red on a black band);
+- alternating white and black full-bleed bands;
+- a thin red edge bar on most photographs, left or right edge;
+- asymmetric alternating 2-3 column rows (text, photo, details);
+- pains use "!" bullets or black checkmark circles; benefits use
+  checkmarks;
+- the 7-step sequence as red circles joined by chevrons or a dotted line on
+  the dark band (a vertical black-circle timeline on the long-form mobile
+  board);
+- gray objection cards beside pains ("This feels familiar:", "You might be
+  thinking:", "Sound familiar?"), Who side cards ("AND IT'S ALSO FOR YOU
+  IF…" / "NOT FOR YOU IF…"), white icon cards on the black What band, and a
+  founder block with a back-view or silhouette photo, letter, script
+  signature and gray sidebar;
+- CTA strips after persuasion blocks, first-person labels with microcopy;
+- absent from the observed set and therefore never invented: testimonials,
+  price, order form, FAQ, countdown, logo bar, guarantee block.
+
+B2, grayscale wireframe (the long-form event opt-in):
+
+- strictly grayscale (measured #f6f6f6, #ffffff, #e8e8e8, #242424;
+  saturated-pixel share 0.000%);
+- a dark meta bar carrying page width and content width, alternating
+  content bands, then a light footer;
+- 2 px dark-outline CTA rectangles with a boxed "CTA" tag, an arrow glyph
+  and gray microcopy;
+- hero dashed offset frame with a caption;
+- art-direction briefs printed in the slots.
+
+B3, section guide column: numbered rows with thumbnails and type specs;
+each row states headline, subheadline, body, CTA and layout with its image
+ratio.
+
+### C. Mockup canon (two tiers)
+
+Two tiers exist. Both repeat the copy; they differ in photo density and
+decoration. Any trait that fails is a named defect, and a mockup failing M1
+fails review outright.
+
+- Tier R (layered, photo-dense): about 9 portraits per page, Black
+  professional casting, hand-chin or upward-gaze poses, jewel and earth-tone
+  blazers, gold hoops, golden-hour bokeh; shapes bleed out of their frames
+  (arches, diagonals); botanicals, monstera and palm, leaf texture, gold
+  rules, hairline dividers; rust and green pills with arrow glyphs and
+  shadows; script overlays on photos; slogans printed on objects (mugs,
+  books).
+- Tier H (flat, sparse, same copy): square plain-rectangle photography
+  (about 7 photos with 7 content bands photo-free), no botanicals and no
+  script on photos (the script moves to a caption bar), square green or
+  cream buttons with an arrow glyph and gray microcopy, six cream icon
+  cards, rust or peach number badges, hairline dividers and gold left or top
+  rules.
+- Palette, measured: cream #f7f2e9, ivory #fffdf9, deep green #28513f,
+  blush #f0dedb, rose #93504f, brick #bc5248; gold (#c49a45, #e2c98f) is an
+  accent only; neither tier uses the wireframe red family.
+- Type: a two-tone statement-turn headline (the one exception is an upright
+  Title-Case red second line); serif body in the layered tier, sans body in
+  the flat tier; tracked-uppercase eyebrows; script overlays and a
+  handwritten signature.
+- Structure: the mockup matches its approved wireframe section for section
+  (M5). The stitched desktop mockup is 1440 px wide; the stitched mobile
+  mockup is 780 px (390 CSS px at 2x). The mobile mockup is stacked from the
+  same order and copy, never a desktop image resized.
+
+### E. Section order per page type
+
+Section order is part of the trait set. A section out of order, missing or
+duplicated is a named defect.
+
+- Sales page: header, 1 Claim, 2 Pain 1, 3 Pain 2, 4 Pain 3, 5 Why, 6 Who,
+  7 What, 8-10 Benefits, 11 How-to (7 steps), 12 Founder letter, closing
+  CTA. Long form inserts 2A, 3A and 4A after each pain, splits Why into
+  named beats, gives the founder letter six beats, and closes with a full
+  CTA panel. The live challenge page observed follows hero, why-now-why-you,
+  day 1-5 blocks, "deeper than business" band, mastery day cards, founder
+  story.
+- Opt-in page: 15-band order: header, 1 Claim, 2 Pain 1, 2A, 3 Pain 2, 3A,
+  4 Pain 3, 4A, 5 Why (A recognition and reason, B commitment, C
+  invitation), 6 Who, 7 What, 8-10 Benefits, 11 How-to, 12 Founder letter,
+  footer, with 7 CTAs. Every opt-in example is long-form; no short opt-in
+  example exists.
+- No example exists for upsell, downsell, thank-you, order form/checkout or
+  squeeze pages. Do not invent a precedent for them from the sales or opt-in
+  order.
+
+### F. Generic-versus-Trevor discriminators
+
+Sixteen confirmed discriminators. Score the artifact against the list; a
+generic page fails several of them.
+
+1. headline turn (two-tone);
+2. twelve named sections, 7 steps, founder letter, no testimonials or FAQ;
+3. pains before benefits, each pain answered;
+4. layered-tier photo density (about 9 portraits per frame) against
+   flat-tier or generic sparseness;
+5. consistent casting, pose and styling;
+6. gold script on the photo (flat tier: the caption bar);
+7. slogans on props (mugs, books);
+8. hue-shifting full-width bands;
+9. arches and diagonal masks, monstera and palm, leaf texture (layered
+   tier);
+10. red edge bars plus red offset blocks and bracket frames;
+11. varied image ratios with art direction ("never a defeated stereotype");
+12. a CTA after nearly every block, first-person outcome labels with
+    microcopy;
+13. asymmetric alternating rows;
+14. six icon cards in tinted circles plus peach or rust sequence badges;
+15. the four-line brand system reused in header, overlay, props and footer;
+16. founder close: portrait, script signature, capitals name and title,
+    final CTA.
+
 ## Failed-only repair loop
 
 1. Run initial QC.

@@ -1,0 +1,32 @@
+captured_at=2026-10-18T23:33:57Z
+onboarding_ref=39e74434810d9c110f2c6ac506386c832f7b6fb5
+method=git archive of 77-council-of-wise-elders at the ref, extracted with tar, then recompute-manifest.mjs (exact build-bundles.mjs algorithm: sorted relative paths, per-file SHA-256, aggregate over "<sha256>  <path>" lines + trailing newline; manifest.json, *.skill, runtime/dist and runtime/node_modules excluded)
+
+recorded:     {"file_count":585,"aggregate_sha256":"e19d41a24881da28d9b317a8fc6bf6f9ad62f49c28a9911b561ad9a0b7ede61f"}
+recomputed:   {"file_count":569,"aggregate_sha256":"06d8b2107cd1cfcd5eaee23d278be46b1beb363fa0cc1ec7091bdcd8a278bbf0"}
+
+tracked entries under 77-council-of-wise-elders: 571
+
+manifest-only paths (present in manifest.json, absent from the tracked tree):
+evidence/wer028/raw/cc-portrait-diff.txt
+evidence/wer028/raw/check-runs-999-setup.json
+evidence/wer028/raw/check-runs-blackceo-command-center.json
+evidence/wer028/raw/check-runs-openclaw-onboarding.json
+evidence/wer028/raw/cohort-presence.txt
+evidence/wer028/raw/doctor.log
+evidence/wer028/raw/launcher-tests-scope.txt
+evidence/wer028/raw/malcom-baseline-diff.txt
+evidence/wer028/raw/manifest-parity.txt
+evidence/wer028/raw/negative-checks.txt
+evidence/wer028/raw/parity.log
+evidence/wer028/raw/queried-at.txt
+evidence/wer028/raw/seams.txt
+evidence/wer028/raw/setup-pr240-paths.txt
+evidence/wer028/raw/supervisor-listing-main.txt
+evidence/wer028/raw/version-markers.txt
+
+tree-only paths (tracked, absent from the manifest):
+(none above means zero)
+
+archive shasum: d70a0da03e7e8b397f84154b274d855cb3570b1cc1e169214f609e6011330db5  recorded=d70a0da03e7e8b397f84154b274d855cb3570b1cc1e169214f609e6011330db5
+archive contains evidence/wer028 entries: 16

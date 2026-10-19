@@ -178,7 +178,9 @@
         "font-action-plan/font-map.json",
         "assets/page-references/README.md (the layout reference index: how each reference resolves, original file or registered house default, is recorded there per Item 13 as amended by Item 17)",
         "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
-        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)"
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md"
       ],
       "may_be_not_authorized": false
     },
@@ -223,7 +225,9 @@
         "font-action-plan/font-map.json",
         "assets/page-references/README.md (the layout reference index: how each reference resolves, original file or registered house default, is recorded there per Item 13 as amended by Item 17)",
         "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
-        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)"
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md"
       ],
       "may_be_not_authorized": false
     },
@@ -271,7 +275,10 @@
         "assets/brand/signature-grade-block.txt",
         "desktop-wireframe/",
         "mobile-tablet/",
-        "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)"
+        "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)",
+        "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md"
       ],
       "may_be_not_authorized": false
     },
@@ -309,7 +316,8 @@
         "references/kie-generation-route.md",
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
-        "assets/brand/signature-grade-block.txt"
+        "assets/brand/signature-grade-block.txt",
+        "references/qc-contract.md"
       ],
       "may_be_not_authorized": false
     },
@@ -348,7 +356,8 @@
         "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md",
         "references/kie-generation-route.md",
         "references/BlackCEO-Page-Brand-Law.md",
-        "assets/brand/blackceo-brand.json"
+        "assets/brand/blackceo-brand.json",
+        "references/qc-contract.md"
       ],
       "may_be_not_authorized": false
     },
@@ -433,7 +442,9 @@
         "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
         "desktop-wireframe/section-plan.json (the section guide's section order; the guide's thumbnails are the desktop wireframe slices)",
         "font-action-plan/font-map.json (the typography spec record the section guide's specs are drawn from)",
-        "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)"
+        "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)",
+        "references/qc-contract.md",
+        "references/section-image-prompt.md"
       ],
       "may_be_not_authorized": false,
       "approval_artifact": "final-mockups/hybrid-board.png"

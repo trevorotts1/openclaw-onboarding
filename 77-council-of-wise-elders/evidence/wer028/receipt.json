@@ -1,0 +1,374 @@
+{
+  "schema": "wer028.final-receipt/2",
+  "unit": "WER-028 final integration verification and release receipt",
+  "unit_id": "W16-U001",
+  "repairs": "W14-U001",
+  "verifier_model": "deepseek-chain",
+  "window_utc": {
+    "start": "2026-10-18T23:31:10Z",
+    "end": "2026-10-18T23:35:00Z"
+  },
+  "method": "Capture first, state second: every count and state claim in RECEIPT.md is quoted from a stored file under raw/ whose own capture timestamp precedes the claim's citation.",
+  "verdict": "RELEASE_NOT_CERTIFIED",
+  "verdict_reason": "Cohort artifacts are now present on main, but the Skill 77 manifest and its distributable archive on main were generated from a worktree that contained 16 untracked evidence/wer028/raw files. Manifest parity and both release checkers (doctor, verify-cohort-parity) FAIL at current main. Repair scope forbids touching generated source artifacts.",
+  "heads": {
+    "openclaw-onboarding": {
+      "ref": "main",
+      "sha": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "committer_date": "2026-10-18T23:20:50Z",
+      "read_by": "gh api repos/trevorotts1/openclaw-onboarding/commits/main"
+    },
+    "blackceo-command-center": {
+      "ref": "main",
+      "sha": "800b076907122bd080e774024e6da7b66fb67a73",
+      "committer_date": "2026-10-18T18:13:36Z",
+      "read_by": "gh api repos/trevorotts1/blackceo-command-center/commits/main"
+    },
+    "999-setup": {
+      "ref": "main",
+      "sha": "a156e4dfb7db831b32b47416cc751d8e803636a1",
+      "committer_date": "2026-10-18T21:40:30Z",
+      "read_by": "gh api repos/trevorotts1/999-setup/commits/main"
+    },
+    "pr-2280": {
+      "state": "MERGED",
+      "head": "efb72e94c1d26e33878595d72845d7808f3fc93d",
+      "merge_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "mergedAt": "2026-10-18T23:20:50Z",
+      "read_by": "gh pr view 2280 --repo trevorotts1/openclaw-onboarding"
+    }
+  },
+  "branch_protection": {
+    "capture_log": "raw/protection-captures.txt",
+    "captured_at": "2026-10-18T23:31:35Z",
+    "openclaw-onboarding": {
+      "file": "raw/protection-openclaw-onboarding.json",
+      "exit_code": 0,
+      "enforce_admins": true,
+      "required_status_checks": "absent from the protection object",
+      "required_pull_request_reviews": "absent from the protection object",
+      "allow_force_pushes": false,
+      "allow_deletions": false
+    },
+    "blackceo-command-center": {
+      "file": "raw/protection-blackceo-command-center.json",
+      "exit_code": 0,
+      "enforce_admins": true,
+      "required_status_checks": "absent from the protection object",
+      "required_pull_request_reviews": "absent from the protection object",
+      "allow_force_pushes": false,
+      "allow_deletions": false
+    },
+    "999-setup": {
+      "file": "raw/protection-999-setup.json",
+      "exit_code": 1,
+      "http_status": 404,
+      "message": "Branch not protected"
+    }
+  },
+  "check_runs": {
+    "capture_log": "raw/check-runs-captures.txt",
+    "method": "gh api repos/trevorotts1/<repo>/commits/<head_sha>/check-runs?per_page=100&filter=latest --paginate --slurp",
+    "openclaw-onboarding": {
+      "file": "raw/check-runs-openclaw-onboarding.json",
+      "head_sha": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "captured_at": "2026-10-18T23:31:45Z",
+      "capture_exit_code": 0,
+      "total": 42,
+      "completed": 42,
+      "success": 42,
+      "fail": 0,
+      "in_progress": 0,
+      "pending": 0,
+      "skipped": 0,
+      "neutral": 0
+    },
+    "blackceo-command-center": {
+      "file": "raw/check-runs-blackceo-command-center.json",
+      "head_sha": "800b076907122bd080e774024e6da7b66fb67a73",
+      "captured_at": "2026-10-18T23:31:46Z",
+      "capture_exit_code": 0,
+      "total": 34,
+      "completed": 34,
+      "success": 34,
+      "fail": 0,
+      "in_progress": 0,
+      "pending": 0,
+      "skipped": 0,
+      "neutral": 0
+    },
+    "999-setup": {
+      "file": "raw/check-runs-999-setup.json",
+      "head_sha": "a156e4dfb7db831b32b47416cc751d8e803636a1",
+      "captured_at": "2026-10-18T23:31:47Z",
+      "capture_exit_code": 0,
+      "total": 0,
+      "completed": 0,
+      "success": 0,
+      "fail": 0,
+      "in_progress": 0,
+      "pending": 0,
+      "skipped": 0,
+      "neutral": 0
+    }
+  },
+  "cohort_presence": {
+    "capture": "raw/cohort-presence-main.txt",
+    "captured_at": "2026-10-18T23:32:08Z",
+    "onboarding_ref": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+    "onboarding": {
+      "scripts/supervisor/runner.mjs": {
+        "present": true,
+        "blob": "592a618f1861177cd4c4f46e876bb7e8ee149f08"
+      },
+      "scripts/supervisor/runner.test.mjs": {
+        "present": true,
+        "blob": "888d4cf7ae886a97ed89602e6fb22f0115d85b8d"
+      },
+      "scripts/supervisor/": {
+        "present": true,
+        "tree": "5edb5427d63691bf8390e5fd1e62e15da4db1f77",
+        "files": 35
+      },
+      "evidence/wer026/host/": {
+        "present": true,
+        "tree": "e50fc6a8eac5cdd93c50207a65b559efc110b229",
+        "files": 30
+      },
+      "evidence/wer026/local/": {
+        "present": true,
+        "tree": "f7dd0f17f5faf791c73c7bd6501291a74e10ba7b",
+        "files": 34
+      },
+      "evidence/wer026/journey/": {
+        "present": true,
+        "tree": "0d314bd526a83541d92088231df0f226baadc093",
+        "files": 85
+      },
+      "runtime/src/service/": {
+        "present": true,
+        "tree": "687ca21d97c21023b5f76d788978addbf62c5909"
+      },
+      "runtime/src/platform/": {
+        "present": true,
+        "tree": "1e7f380c6f61af3fed6a462ac0ead988e0aa2460"
+      },
+      "runtime/src/platform/windows.ts": {
+        "present": true,
+        "blob": "0f06d011a0b9b0975fe2066db4615e8dabd0137d"
+      },
+      "runtime/src/remote/": {
+        "present": true,
+        "tree": "9ba555fd37d737b4b59424fe8d5ca9c82551f160"
+      },
+      "scripts/verify-cohort-parity.mjs": {
+        "present": true,
+        "blob": "bc37ab535f3c5b9fa6ddb4886ffb114e37529baf"
+      }
+    },
+    "command-center": {
+      "head": "800b076907122bd080e774024e6da7b66fb67a73",
+      "capture": "raw/cross-repo-checks.txt",
+      "paths": {
+        "src/lib/council/engine.ts": {
+          "present": true,
+          "blob": "d669970c7d67b6ddfaf71af05cd5a186349a107f"
+        },
+        "src/lib/council/intents/": {
+          "present": true,
+          "tree": "7ffbab63d831c8685cc4e63210337899688a6cd8"
+        },
+        "src/lib/council/kanban/": {
+          "present": true,
+          "tree": "5364d8328c05afe795a6c7b8d69ea0fee393c7e0"
+        }
+      }
+    },
+    "999-setup": {
+      "head": "a156e4dfb7db831b32b47416cc751d8e803636a1",
+      "capture": "raw/cross-repo-checks.txt",
+      "paths": {
+        "scripts/council-runtime-install.sh": {
+          "present": true,
+          "blob": "f29d75d578ceeffa7a9ef70752710f5988152e8e"
+        },
+        "scripts/council-runtime-install.ps1": {
+          "present": true,
+          "blob": "b7eeb4d301f023c2bdb3051dd23e293f096b82f8"
+        },
+        "launchers/macos/": {
+          "present": true,
+          "tree": "a444f5dab73d4706c4e919430776262fe01bdd20"
+        },
+        "launchers/windows/": {
+          "present": true,
+          "tree": "0a263f390c7555a521b2ea035e2dc4866d268c44"
+        }
+      }
+    }
+  },
+  "version_manifest_archive": {
+    "capture": "raw/version-markers.txt",
+    "captured_at": "2026-10-18T23:33:53Z",
+    "markers": {
+      "skill-version.txt": "v1.0.15",
+      "version": "1.0.15",
+      "SKILL.md frontmatter version": "1.0.15",
+      "CHANGELOG.md top entry": "## v1.0.15: runnable supervisor driver and live crash/restart acceptance (WER-026)"
+    },
+    "markers_equal": true,
+    "manifest": {
+      "recorded_file_count": 585,
+      "recorded_aggregate_sha256": "e19d41a24881da28d9b317a8fc6bf6f9ad62f49c28a9911b561ad9a0b7ede61f",
+      "recorded_source_commit": "e0a34cdaf0252737829ede0e9b4f262f9bacd188",
+      "recomputed_file_count": 569,
+      "recomputed_aggregate_sha256": "06d8b2107cd1cfcd5eaee23d278be46b1beb363fa0cc1ec7091bdcd8a278bbf0",
+      "tracked_entries_under_skill": 571,
+      "manifest_only_paths": 16,
+      "manifest_only_paths_capture": "raw/manifest-parity.txt",
+      "manifest_parity": "FAIL",
+      "cause": "manifest.json lists 16 paths under evidence/wer028/raw/ that are not tracked in the git tree; the aggregate was computed over a worktree that contained them"
+    },
+    "archive": {
+      "sha256": "d70a0da03e7e8b397f84154b274d855cb3570b1cc1e169214f609e6011330db5",
+      "recorded_sha256": "d70a0da03e7e8b397f84154b274d855cb3570b1cc1e169214f609e6011330db5",
+      "match": true,
+      "leaked_wer028_entries": 16
+    },
+    "doctor": {
+      "command": "node scripts/doctor.mjs",
+      "exit_code": 1,
+      "last_line": "DOCTOR: FAIL (1 failing check(s))",
+      "capture": "raw/doctor.log"
+    },
+    "cohort_parity": {
+      "command": "node scripts/verify-cohort-parity.mjs",
+      "exit_code": 1,
+      "last_line": "COHORT PARITY: FAIL (1 failing check(s))",
+      "capture": "raw/parity.log"
+    }
+  },
+  "malcom_ownership": {
+    "capture": "raw/malcom-baseline-diff.txt",
+    "captured_at": "2026-10-18T23:33:11Z",
+    "skill22_diff_vs_baseline": "5 modified, 6 added, 0 deleted",
+    "skill22_persona_categories_numstat": "280 added / 1 removed",
+    "post_registration_diff": "empty, exit 0",
+    "post_registration_ancestor_check": "aa4e83a1b is an ancestor of 39e7443, exit 0",
+    "skill76_diff_vs_baseline": "empty, exit 0",
+    "skill76_tree_both_sides": "35e3b3d2cf2a8bb05a82177f60bc270353b68e17",
+    "result": "carried forward from W14 and re-confirmed at current main; recorded as B-5, not claimed as an empty diff"
+  },
+  "command_center_portraits": {
+    "capture": "raw/cc-portrait-diff.txt",
+    "validation_capture": "raw/cc-portrait-validation.txt",
+    "head": "800b076907122bd080e774024e6da7b66fb67a73",
+    "diff_vs_baseline": "75 added, 0 modified, 0 deleted, exit 0",
+    "post_portrait_diff": "empty, exit 0",
+    "manifest_validation": {
+      "seat_count": 9,
+      "entries": 9,
+      "variants": 27,
+      "bad": 0,
+      "result": "PASS"
+    }
+  },
+  "seams": {
+    "capture": "raw/seams.txt",
+    "captured_at": "2026-10-18T23:33:17Z",
+    "contract_schema": {
+      "sha256_onboarding": "67246fc1533f041d7ac5e7f902a52a1da90e0f84165940a3c76dc8797418d4ae",
+      "sha256_command_center": "67246fc1533f041d7ac5e7f902a52a1da90e0f84165940a3c76dc8797418d4ae",
+      "diff_q_exit": 0,
+      "verdict": "MATCH"
+    },
+    "route_selection_literal": {
+      "onboarding": "wise-elders.route-selection/v1",
+      "command_center": "wise-elders.route-selection/v1",
+      "verdict": "MATCH"
+    },
+    "service_identity": "SINGLE-SIDED (B-6)",
+    "platform_handoff": "SINGLE-SIDED (B-6)",
+    "access_audience": "NO SHARED CONSTANT (B-6)",
+    "negative_checks": "raw/negative-checks.txt",
+    "controls_passed": true
+  },
+  "blockers": [
+    {
+      "id": "B-1",
+      "status": "RESOLVED",
+      "detail": "PR #2280 merged at 2026-10-18T23:20:50Z as 39e7443; runner.mjs (blob 592a618f…) and evidence/wer026/host/ (tree e50fc6a8…, 30 files) are present on main and proven above."
+    },
+    {
+      "id": "B-2",
+      "status": "OPEN",
+      "detail": "999-setup launches `run-council.mjs serve --host <h> --port <p>` and polls GET /api/health; the onboarding runtime has no `serve` command and no /api/health route. Greps over runtime/src rc=1 with same-instrument controls rc=0 (raw/negative-checks.txt)."
+    },
+    {
+      "id": "B-3",
+      "status": "OPEN",
+      "detail": "scripts/council-runtime-install.sh:240 passes (resolver, options) to createClaudeNineHost; the canonical template on main renders createClaudeNineHost(options = {}, nativeResolver) (runtime/src/bridges/claude-nine.ts:207,218)."
+    },
+    {
+      "id": "B-4",
+      "status": "OPEN",
+      "detail": "999-setup vendors Skill 77 v1.0.0 (310 files, aggregate 0c11a84d…) against onboarding main v1.0.15 (recorded 585 files, aggregate e19d41a2…)."
+    },
+    {
+      "id": "B-5",
+      "status": "RECORDED",
+      "detail": "Malcom baseline diff is not empty: 5 modified + 6 added in Skill 22, 0 deleted; modifications are his own registration commits; nothing moved after aa4e83a1b."
+    },
+    {
+      "id": "B-6",
+      "status": "OPEN",
+      "detail": "wise-elders.service-identity/v1 and wise-elders.platform-handoff/v1 have no counterpart declaration in either other repository; the Access audience is configuration, not a shared constant."
+    },
+    {
+      "id": "B-7",
+      "status": "RECORDED",
+      "detail": "Head movement: main advanced from 61049cd2 (W14 final) to 39e7443 (PR #2280 merge). This repair re-read every claim at 39e7443; no W14 count is reused."
+    },
+    {
+      "id": "B-8",
+      "status": "OPEN",
+      "detail": "Manifest and archive contamination. manifest.json on main lists 16 evidence/wer028/raw/ paths that are not tracked in the git tree (recorded 585 files / e19d41a2… vs recomputed 569 / 06d8b210…), and council-of-wise-elders.skill contains the same 16 evidence files (586 archive entries). doctor.mjs and verify-cohort-parity.mjs both exit 1 at 39e7443. Generating artifact was built from a worktree containing W14's untracked evidence; repair scope forbids rewriting generated source artifacts."
+    }
+  ],
+  "deferred": [
+    "Windows host: Windows execution of the platform observer, the .ps1 installer and the PowerShell/CMD launchers has never run on a Windows host; static tests and byte inspection are the whole of the evidence.",
+    "Real VPS / container deployment: the cohort has not been installed or exercised on any remote host, container or VPS; only local repository state was inspected.",
+    "Real phone or tablet reaching the Cloudflare origin: no mobile browser has reached the authenticated Council origin; the remote Access topology is declared in code and was never exercised from a phone or tablet.",
+    "Production worker claiming a real council_run against the live Command Center database: not attempted; mutating production data is not authorized.",
+    "Live launchd acceptance of the supervisor runner: the runner and its crash/restart evidence are merged (PR #2280), and live launchd acceptance is being performed in a separate lane; no launchd acceptance is claimed here.",
+    "Service identity, platform handoff and Access audience cross-repo equality (B-6): no counterpart declaration exists in the other repository, so equality is unexercised and unproven.",
+    "Installed end-to-end journey through the 999-setup launchers: blocked by B-2/B-3/B-4 and never attempted."
+  ],
+  "read_only": {
+    "repositories_read": [
+      "trevorotts1/openclaw-onboarding",
+      "trevorotts1/blackceo-command-center",
+      "trevorotts1/999-setup"
+    ],
+    "writes_outside_owned_path": false,
+    "operator_home_paths": "redacted as <operator-home>"
+  },
+  "source_files_modified": false,
+  "pushes": 0,
+  "tags": 0,
+  "releases": 0,
+  "merges": 0,
+  "self_approved": false,
+  "commit": {
+    "created": true,
+    "scope": "local only",
+    "branch": "unit/W16-U001-wer028-receipt",
+    "base": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+    "note": "commit sha, git status and diff --stat are recorded in the final task report"
+  },
+  "files_written": [
+    "77-council-of-wise-elders/evidence/wer028/RECEIPT.md",
+    "77-council-of-wise-elders/evidence/wer028/receipt.json",
+    "77-council-of-wise-elders/evidence/wer028/raw/"
+  ]
+}

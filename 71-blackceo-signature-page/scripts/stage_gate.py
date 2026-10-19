@@ -175,6 +175,10 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     """
     brand = brand_path_for(run_dir)
     spec = STAGES[stage]
+    # S44-05: the substituted values are shell tokens, not raw text. A run
+    # directory containing a space (or non-ASCII) must survive the
+    # shlex.split in run_one_validator as ONE argv entry, so quote each
+    # value before it enters the command string.
     substitutions = {
         "{run_dir}": str(run_dir),
         "{brand}": str(brand),
@@ -222,6 +226,8 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
             sauce = ""
     # Always substitute {sauce}, even when empty: an unsubstituted token would be
     # shipped to the validator as a literal argument.
+    # An empty {sauce} must stay empty (quoting "" would add a spurious
+    # empty argv entry); a set flag is a single safe token.
     substitutions["{sauce}"] = sauce
     if "{file}" in cmd:
         if not files:

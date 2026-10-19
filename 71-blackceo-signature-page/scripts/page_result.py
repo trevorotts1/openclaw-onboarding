@@ -445,9 +445,10 @@ def resolve_route(run_dir, request):
         return info, [f"route graph {ref!r} is not readable JSON"]
     nodes = {n.get("page_id"): n for n in graph.get("nodes", [])
              if isinstance(n, dict)}
-    landing = nodes.get(request.get("page_id"))
-    if landing is None or landing.get("role") != "landing":
-        return info, [f"route graph has no landing node for page "
+    page = nodes.get(request.get("page_id"))
+    page_role = request.get("page_role")
+    if page is None or page.get("role") != page_role:
+        return info, [f"route graph has no {page_role!r} node for page "
                       f"{request.get('page_id')!r}"]
     edge = None
     for candidate in graph.get("edges", []):
@@ -591,7 +592,7 @@ def build_handoff(run_dir, request, route, submission, submission_state,
         "request_id": request.get("request_id"),
         "page_id": request.get("page_id"),
         "input_hash": request.get("input_hash"),
-        "page_role": "landing",
+        "page_role": request.get("page_role"),
         "page_status": status,
         "next_role": route["next_role"],
         "next_page_id": route["next_page_id"],
@@ -649,6 +650,7 @@ def build_result(run_dir, request, status, blockers, artifacts,
         "request_id": request.get("request_id"),
         "input_hash": request.get("input_hash"),
         "page_id": request.get("page_id"),
+        "page_role": request.get("page_role"),
         "status": status,
         "artifacts": artifacts,
         "author_session": author_session,
