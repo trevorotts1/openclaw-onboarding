@@ -92,6 +92,7 @@
 }
 @media (min-width: 1200px) {
   .ch-app {
+    width: calc(100% - 48px);
     margin-block: var(--ch-space-5);
     border: 1px solid var(--ch-line);
     border-radius: 24px;

@@ -148,7 +148,7 @@
 .council-drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(20, 22, 26, 0.45);
+  background: rgba(0, 0, 0, 0.45);
   z-index: 60;
 }
 .council-drawer {
@@ -161,7 +161,7 @@
   overflow-y: auto;
   background: var(--council-canvas);
   color: var(--council-ink);
-  box-shadow: -16px 0 40px rgba(20, 22, 26, 0.25);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.25);
   z-index: 61;
   padding: 1.25rem;
 }

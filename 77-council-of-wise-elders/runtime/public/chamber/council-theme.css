@@ -127,6 +127,11 @@ body:has(> .council-theme) {
 .council-theme a:any-link { color: var(--council-accent-ink); }
 .council-theme a:any-link:hover { color: var(--council-accent-deep); }
 
+/* The legacy SVG medallions carry their own blue, purple, teal and green
+   rings. Drop their saturation to grey, then tint warm (brand cream/gold)
+   so the advisors page reads cream, black and gold without editing the SVGs. */
+.council-theme img[src$=".svg"] { filter: grayscale(1) sepia(.75) saturate(1.1); }
+
 /* ── Typography ──────────────────────────────────────────────────────────── */
 .council-display {
   font-family: var(--council-font-display);

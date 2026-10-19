@@ -143,21 +143,10 @@ function scannedFiles(): string[] {
     .sort();
 }
 
-/**
- * Legacy scrims in council-room.css (not owned by the theme unit): near-black
- * overlays at 45% and 25% alpha, drawn from a slightly cool dark grey. They
- * are translucent shadows, never a surface colour. Allowed by exact literal.
- */
-const LEGACY_ALLOWED: Record<string, string[]> = {
-  'council-room.css': ['rgba(20, 22, 26, 0.45)', 'rgba(20, 22, 26, 0.25)'],
-};
-
 function offending(file: string, predicate: (c: Rgba) => boolean): string[] {
   const raw = read(file);
   const text = file.endsWith('.html') ? stripSvg(raw) : raw;
-  const allowed = LEGACY_ALLOWED[file] ?? [];
   return literalsIn(text).filter((lit) => {
-    if (allowed.includes(lit)) return false;
     const c = parseColour(lit);
     return c !== null && predicate(c);
   });
@@ -463,4 +452,16 @@ test('the theme carries no external URL and no import', () => {
   assert.doesNotMatch(text, /https?:\/\//);
   assert.doesNotMatch(text, /@import/);
   assert.doesNotMatch(text, /url\(/);
+});
+
+test('wide app frame floats with a 24px gap on every side from 1200px', () => {
+  const block = media(theme, '(min-width: 1200px)');
+  assert.match(rule(block, '.ch-app'), /width:\s*calc\(100%\s*-\s*48px\)/);
+});
+
+test('the legacy SVG medallions are desaturated and warmed to brand on council-theme pages', () => {
+  assert.match(
+    read('council-theme.css'),
+    /\.council-theme img\[src\$="\.svg"\]\s*\{[^}]*filter:\s*grayscale\(1\)\s*sepia\(/,
+  );
 });
