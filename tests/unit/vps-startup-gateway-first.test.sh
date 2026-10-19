@@ -62,11 +62,13 @@ rc=$?
 [ "$rc" = 0 ] && ok "contabo: template exits 0" || bad "contabo: rc=$rc"
 w=$(line_of wait-script); x=$(line_of exec-node)
 [ -n "$w" ] && [ -n "$x" ] && [ "$w" -lt "$x" ] && ok "contabo: wait-gateway-owner-stale runs before the final exec" || bad "contabo: wait not before exec ($(tr '\n' ' ' < "$EV"))"
-wait_for autostart; wait_for "pm2 resurrect"; sleep 0.3
+wait_for "pm2 resurrect"; sleep 0.3
 u=$(line_of healthz-up); r=$(line_of "pm2 resurrect"); a=$(line_of autostart); c=$(line_of openclaw-cli)
 [ -n "$u" ] && [ -n "$r" ] && [ "$u" -lt "$r" ] && ok "contabo: pm2 resurrect only after /healthz 200" || bad "contabo: pm2 before gateway ($(tr '\n' ' ' < "$EV"))"
-[ -n "$a" ] && [ -n "$u" ] && [ "$u" -lt "$a" ] && ok "contabo: GHL MCP autostart only after /healthz 200" || bad "contabo: autostart before gateway ($(tr '\n' ' ' < "$EV"))"
-[ -n "$c" ] && [ -n "$u" ] && [ "$u" -lt "$c" ] && ok "contabo: no openclaw CLI call before /healthz 200" || bad "contabo: CLI before gateway ($(tr '\n' ' ' < "$EV"))"
+# W07 retirement: the template no longer invokes the community autostart at
+# all, so the ordering question is moot. Assert the stronger fact instead.
+if [ -z "$a" ]; then ok "contabo: community autostart never invoked (retired)"; else bad "contabo: community autostart still invoked ($(tr '\n' ' ' < "$EV"))"; fi
+if [ -z "$c" ]; then ok "contabo: no openclaw CLI call at all (autostart retired)"; elif [ -n "$u" ] && [ "$u" -lt "$c" ]; then ok "contabo: no openclaw CLI call before /healthz 200"; else bad "contabo: CLI before gateway ($(tr '\n' ' ' < "$EV"))"; fi
 kill "$GW_PID" 2>/dev/null; wait "$GW_PID" 2>/dev/null
 
 # gateway never answers: the cap ends the wait, pm2 still resurrects, the CLI-calling autostart is skipped

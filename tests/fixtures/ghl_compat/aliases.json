@@ -1,0 +1,307 @@
+{
+  "_meta": {
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_public_aliases.py",
+    "contract_revision": "GU-004-CONTRACT-FREEZE@2026-10-18",
+    "purpose": "Machine-readable freeze section 4 alias map: credential aliases, community tool names, official MCP tool names, UNMAPPED entries with reasons, and the ghl-mcp name collision."
+  },
+  "frozen_rules": {
+    "nothing_is_dropped": "Every alias is either mapped to an operation id or listed as UNMAPPED with a reason.",
+    "new_alias_rule": "A new alias discovered later is added to .../public/aliases.py with the same three fields (alias, mapping, honored_at or reason).",
+    "auth_source_recording": "The adapter records auth_source (the variable name) and never the value.",
+    "placeholder_values": "Placeholder-shaped values are skipped everywhere (ghl_client.py:62-83; ghl_secret_resolver.is_placeholder, ghl_secret_resolver.py:81-96).",
+    "precedence": "The union is resolved by the credential module that owns the caller; PODCAST_ENGINE_GHL_PIT remains first only for Skill 58/06 media callers."
+  },
+  "credential_aliases": {
+    "location_pit": {
+      "class": "location_pit",
+      "maps_to": "auth_context",
+      "note": "Maps to the auth context, not to an operation id.",
+      "aliases": [
+        {"alias": "GOHIGHLEVEL_API_KEY", "honored_at": ["utils/ghl_client.py:48", "shared-utils/ghl_creds.py:46", "06-.../ghl_media.py:222"]},
+        {"alias": "GHL_API_KEY", "honored_at": ["utils/ghl_client.py:49", "shared-utils/ghl_creds.py:47", "06-.../ghl_media.py:223"]},
+        {"alias": "GHL_PIT", "honored_at": ["utils/ghl_client.py:50", "shared-utils/ghl_creds.py:56", "06-.../ghl_media.py:224"]},
+        {"alias": "GHL_TOKEN", "honored_at": ["utils/ghl_client.py:51", "06-.../ghl_media.py:225"]},
+        {"alias": "GHL_PRIVATE_INTEGRATION_TOKEN", "honored_at": ["utils/ghl_client.py:52", "shared-utils/ghl_creds.py:55", "06-.../ghl_media.py:226"]},
+        {"alias": "PRIVATE_INTEGRATION_TOKEN", "honored_at": ["utils/ghl_client.py:53", "06-.../ghl_media.py:227"]},
+        {"alias": "GHL_PRIVATE_TOKEN", "honored_at": ["utils/ghl_client.py:54", "shared-utils/ghl_creds.py:48", "06-.../ghl_media.py:228"]},
+        {"alias": "PIT_TOKEN", "honored_at": ["utils/ghl_client.py:55", "06-.../ghl_media.py:229"]},
+        {"alias": "GHL_PIT_TOKEN", "honored_at": ["utils/ghl_client.py:56", "06-.../ghl_media.py:230"]},
+        {"alias": "GOHIGHLEVEL_LOCATION_PIT", "honored_at": ["utils/ghl_client.py:57", "06-.../ghl_media.py:231"]},
+        {"alias": "GHL_LOCATION_PIT", "honored_at": ["utils/ghl_client.py:58", "06-.../ghl_media.py:232"]},
+        {"alias": "GOHIGHLEVEL_PIT", "honored_at": ["shared-utils/ghl_creds.py:57"]},
+        {"alias": "GOHIGHLEVEL_CF_PIT", "honored_at": ["shared-utils/ghl_creds.py:49"]},
+        {"alias": "CONVERT_AND_FLOW_API_KEY", "honored_at": ["shared-utils/ghl_creds.py:50"]},
+        {"alias": "CONVERT_AND_FLOW_PIT", "honored_at": ["shared-utils/ghl_creds.py:51"]},
+        {"alias": "CONVERT_AND_FLOW_PRIVATE_INTEGRATION_TOKEN", "honored_at": ["shared-utils/ghl_creds.py:52"]},
+        {"alias": "CONVERTANDFLOW_API_KEY", "honored_at": ["shared-utils/ghl_creds.py:53"]},
+        {"alias": "CONVERTFLOW_API_KEY", "honored_at": ["shared-utils/ghl_creds.py:54"]},
+        {"alias": "PODCAST_ENGINE_GHL_PIT", "honored_at": ["06-.../ghl_media.py:221"], "note": "checked first: engine tenant wins"}
+      ]
+    },
+    "agency_pit": {
+      "class": "agency_pit",
+      "mapped": false,
+      "aliases": [
+        "GOHIGHLEVEL_AGENCY_PIT",
+        "GOHIGHLEVEL_AGENCY_API_KEY",
+        "GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT",
+        "GHL_AGENCY_PIT"
+      ],
+      "honored_at": ["06-.../ghl_media.py:236-243"],
+      "reason": "No operation in this freeze accepts agency auth. These names are read only to produce a fail-loud message; mapping them to any operation would be credential substitution."
+    },
+    "firebase_internal": {
+      "class": "firebase_internal",
+      "maps_to": "skill44_private rows only",
+      "aliases": [
+        {"alias": "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN", "honored_at": ["06-.../ghl_auth.py:59", "seed-ghl-auth.py:269"]},
+        {"alias": "CAF_FIREBASE_REFRESH_TOKEN", "honored_at": ["06-.../ghl_auth.py:60"]},
+        {"alias": "GHL_FIREBASE_REFRESH_TOKEN", "honored_at": ["06-.../ghl_auth.py:61"]}
+      ]
+    },
+    "file_inputs": {
+      "class": "*_FILE inputs",
+      "note": "Contents are the value; highest precedence. The adapter must never see an unresolved *_FILE.",
+      "aliases": [
+        {
+          "alias": "GHL_REFRESH_TOKEN_FILE",
+          "honored_at": ["06-.../ghl_auth.py:66", "06-.../ghl_auth.py:121", "seed-ghl-auth.py:198", "ghl_secret_resolver.py:1-35"],
+          "maps_to": "firebase_internal auth"
+        },
+        {
+          "alias": "GHL_LOCATION_PIT_FILE",
+          "honored_at": ["06-.../ghl_media.py:269", "06-.../ghl_media.py:389", "ghl_secret_resolver.py:1-35"],
+          "maps_to": "location_pit auth"
+        },
+        {
+          "alias": "GHL_LOCATION_ID_FILE",
+          "honored_at": ["06-.../ghl_media.py:270", "06-.../ghl_media.py:457", "ghl_secret_resolver.py:1-35"],
+          "maps_to": "tenant binding"
+        }
+      ],
+      "frozen_gap": "utils/ghl_client.py honors no *_FILE variable (:86-121 reads os.environ only). A box carrying the PIT only behind GHL_LOCATION_PIT_FILE fails on every Skill-44-routed operation today. W04 must route Skill 44 through the shared resolver or refuse with a named error; the adapter must never see an unresolved *_FILE."
+    },
+    "tenant_binding": {
+      "class": "tenant binding",
+      "maps_to": "tenant/local location id",
+      "aliases": [
+        {"alias": "GHL_LOCATION_ID", "honored_at": ["utils/ghl_client.py:129", "gohighlevel_cli.py:80 (--location-id envvar)", "gohighlevel_cli.py:46-48", "shared-utils/ghl_creds.py:36", "06-.../ghl_media.py:249"]},
+        {"alias": "GOHIGHLEVEL_LOCATION_ID", "honored_at": ["shared-utils/ghl_creds.py:37", "06-.../ghl_media.py:248"]},
+        {"alias": "GOHIGHLEVEL_ALLOWED_LOCATION_IDS", "honored_at": ["shared-utils/ghl_creds.py:38 (first id)", "06-.../ghl_media.py:250", "safety_gate.py:101", "safety_gate.py:109"]},
+        {"alias": "CONVERT_AND_FLOW_LOCATION_ID", "honored_at": ["shared-utils/ghl_creds.py:39"]},
+        {"alias": "convert_and_flow_location", "honored_at": ["shared-utils/ghl_creds.py:40", "ghl_creds.py:124-139 (matched case-insensitively)"]},
+        {"alias": "CAF_LOCATION_ID", "honored_at": ["shared-utils/ghl_creds.py:41"]},
+        {"alias": "CAF_ALLOWED_LOCATION_IDS", "honored_at": ["shared-utils/ghl_creds.py:42 (first id)", "06-.../ghl_media.py:251", "safety_gate.py:33", "safety_gate.py:104-118 (write whitelist)"]},
+        {"alias": "HIGHLEVEL_LOCATION_ID", "honored_at": ["shared-utils/ghl_creds.py:43"]},
+        {"alias": "PODCAST_ENGINE_GHL_LOCATION_ID", "honored_at": ["06-.../ghl_media.py:247 (checked first)"]}
+      ],
+      "unmapped": [
+        {
+          "alias": "GHL_LOC",
+          "reason": "Documented in INSTALL.md:320 as an install-time shell variable. It is an installer-local variable, not an env alias; mapping it would invent a resolution path. Settle with a read of wire.sh at W07 if the installer intends to persist it."
+        }
+      ]
+    }
+  },
+  "community_tools": {
+    "source": "36-ghl-mcp-setup/INSTRUCTIONS.md:77-86",
+    "frozen_status": "Every mapped entry is a retired transport. Mapping states caller intent and the replacement operation; it does not make the community tool a valid route.",
+    "mapped": [
+      {"tool": "ghl_list_products", "operation_id": "products.list", "note": ""},
+      {"tool": "ghl_get_product", "operation_id": "products.get", "note": ""},
+      {"tool": "ghl_create_product", "operation_id": "products.create", "note": "+ Skill44 approval"},
+      {"tool": "ghl_update_product", "operation_id": "products.update", "note": ""},
+      {"tool": "ghl_delete_product", "operation_id": "products.delete", "note": "approval"},
+      {"tool": "ghl_create_price", "operation_id": "products.prices.create", "note": ""},
+      {"tool": "ghl_list_prices", "operation_id": "products.prices.list", "note": ""},
+      {"tool": "list_invoices", "operation_id": "invoices.list", "note": ""},
+      {"tool": "get_invoice", "operation_id": "invoices.get", "note": ""},
+      {"tool": "create_invoice", "operation_id": "invoices.create", "note": ""},
+      {"tool": "send_invoice", "operation_id": "invoices.send", "note": "approval-gated send"},
+      {"tool": "create_invoice_schedule", "operation_id": "invoices.schedules.create", "note": ""},
+      {"tool": "list_subscriptions", "operation_id": "subscriptions.list", "note": ""},
+      {"tool": "get_subscription_by_id", "operation_id": "subscriptions.get", "note": ""},
+      {"tool": "list_estimates", "operation_id": "estimates.list", "note": ""},
+      {"tool": "create_estimate", "operation_id": "estimates.create", "note": ""},
+      {"tool": "send_estimate", "operation_id": "estimates.send", "note": "approval-gated send"},
+      {"tool": "list_orders", "operation_id": "orders.list", "note": ""},
+      {"tool": "get_order_by_id", "operation_id": "orders.get", "note": ""},
+      {"tool": "list_transactions", "operation_id": "transactions.list", "note": ""},
+      {"tool": "get_transaction_by_id", "operation_id": "transactions.get", "note": ""},
+      {"tool": "record_order_payment", "operation_id": "orders.recordPayment", "note": "approval"},
+      {"tool": "list_coupons", "operation_id": "coupons.list", "note": ""},
+      {"tool": "get_coupon", "operation_id": "coupons.get", "note": ""},
+      {"tool": "create_coupon", "operation_id": "coupons.create", "note": ""},
+      {"tool": "update_coupon", "operation_id": "coupons.update", "note": ""},
+      {"tool": "delete_coupon", "operation_id": "coupons.delete", "note": ""},
+      {"tool": "ghl_list_workflows", "operation_id": "workflows.list", "note": ""},
+      {"tool": "ghl_get_workflow", "operation_id": "workflows.definition.read", "fallback_operation_id": "workflows.private.get", "note": "(S) staging level; private fallback"},
+      {"tool": "ghl_trigger_workflow", "operation_id": "workflows.enroll", "note": "contact mutation, not authoring"},
+      {"tool": "ghl_publish_workflow", "operation_id": "workflows.status.publish", "fallback_operation_id": "workflows.private.publish", "note": "separate authorization; (S) staging level"}
+    ],
+    "unmapped": [
+      {
+        "tools": ["ghl_create_product_collection", "ghl_list_product_collections", "ghl_list_inventory", "ghl_bulk_edit_products"],
+        "reason": "No audited public operation row; not invented."
+      },
+      {
+        "tools": ["update_invoice", "delete_invoice"],
+        "reason": "No audited operation row; settle with describe_operation."
+      },
+      {
+        "tools": ["view_invoice", "generate_invoice_number"],
+        "reason": "No audited operation row."
+      },
+      {
+        "tools": ["list_invoice_schedules", "get_invoice_schedule", "update_invoice_schedule"],
+        "reason": "Only invoices.schedules.create is audited."
+      },
+      {
+        "tools": ["update_saas_subscription", "rebilling_update"],
+        "reason": "No audited operation row."
+      },
+      {
+        "tools": ["create_invoice_from_estimate", "generate_estimate_number"],
+        "reason": "No audited operation row."
+      },
+      {
+        "tools": ["list_gateways"],
+        "reason": "No audited operation row."
+      },
+      {
+        "tools": ["create_voice_ai_agent", "update_voice_ai_agent", "list_voice_ai_agents", "get_voice_ai_call_log"],
+        "reason": "Voice AI domain not audited; retirement only."
+      },
+      {
+        "tools": ["ghl_buy_phone_number", "ghl_list_phone_numbers", "update_phone_number", "ghl_get_call_recording", "update_call_forwarding"],
+        "reason": "Phone System domain not audited."
+      },
+      {
+        "tools": ["ghl_create_agent", "ghl_update_agent", "ghl_deploy_agent", "ghl_list_agents"],
+        "reason": "Agent Studio not audited."
+      },
+      {
+        "tools": ["ghl_create_workflow", "ghl_update_workflow_actions"],
+        "reason": "UNMAPPED BY DESIGN: internal wrappers, documented as unverified (INSTRUCTIONS.md:86); mapping them to V4 would launder an undocumented endpoint into a public contract."
+      }
+    ]
+  },
+  "official_mcp_tools": {
+    "source": "https://marketplace.gohighlevel.com/docs/other/mcp/ fetched 2026-10-18; exactly four tools",
+    "mapped": [
+      {"tool": "list_locations", "operation_id": "mcp.list_locations", "level": "D + M (name only)", "note": "no version header"},
+      {"tool": "search_operations", "operation_id": "mcp.search_operations", "level": "D + M (name only)", "note": "the only lawful discovery source for catalog ids"},
+      {"tool": "describe_operation", "operation_id": "mcp.describe_operation", "level": "D + M (name only)", "note": "schema capture before any execute"},
+      {"tool": "execute_operation", "operation_id": "mcp.execute_operation", "level": "D + M (name only)", "note": "never a fallback after an unknown REST write"}
+    ],
+    "unmapped": [
+      {
+        "tool": "search",
+        "reason": "Listed at 36-ghl-mcp-setup/SKILL.md:39-42; not on the official page fetched 2026-10-18. Unverified legacy name."
+      },
+      {
+        "tool": "fetch",
+        "reason": "Listed at 36-ghl-mcp-setup/SKILL.md:39-42; not on the official page fetched 2026-10-18. Unverified legacy name."
+      }
+    ]
+  },
+  "registration_service_cli_aliases": [
+    {
+      "alias": "ghl-mcp",
+      "kind": "mcp.servers name",
+      "honored_at": ["36-ghl-mcp-setup/INSTALL.md:325 (openclaw mcp set ghl-mcp)"],
+      "meaning": "Official MCP connection name. Preserved.",
+      "preserved": true,
+      "note": "Registered today against the original /mcp/ endpoint with a PIT bearer and Version: 2021-07-28 headers, contradicted by the OAuth-only official page (B-MCP-AUTH)."
+    },
+    {
+      "alias": "ghl-mcp",
+      "kind": "systemd unit name",
+      "honored_at": ["36-ghl-mcp-setup/SKILL.md:132 (systemctl restart ghl-mcp)"],
+      "meaning": "Community service unit on systemd boxes. Retired.",
+      "preserved": false,
+      "note": "A different thing from the mcp.servers name."
+    },
+    {
+      "alias": "leadconnector",
+      "kind": "MCP client registration",
+      "honored_at": ["36-ghl-mcp-setup/SKILL.md:49 (claude mcp add ... leadconnector .../anthropic/v2)"],
+      "meaning": "Official MCP client registration for Claude Code. Preserved.",
+      "preserved": true
+    },
+    {
+      "alias": "ghl-community-mcp",
+      "kind": "service",
+      "honored_at": ["36-ghl-mcp-setup/INSTRUCTIONS.md:71", "INSTALL.md:374-376", "INSTALL.md:591", "INSTALL.md:676-677"],
+      "meaning": "Retired service. Operation id: none. De-register; never a route.",
+      "preserved": false
+    },
+    {
+      "alias": "caf",
+      "kind": "Skill 44 private transport entry point",
+      "honored_at": ["36-ghl-mcp-setup/SKILL.md:16"],
+      "meaning": "Maps to skill44_private rows only.",
+      "preserved": true
+    },
+    {
+      "alias": "convertandflow",
+      "kind": "Skill 44 private transport entry point",
+      "honored_at": ["36-ghl-mcp-setup/SKILL.md:16"],
+      "meaning": "Maps to skill44_private rows only.",
+      "preserved": true
+    },
+    {
+      "alias": "ghl",
+      "kind": "Skill 44 private transport entry point",
+      "honored_at": ["36-ghl-mcp-setup/SKILL.md:16"],
+      "meaning": "Maps to skill44_private rows only.",
+      "preserved": true
+    },
+    {
+      "alias": "CAF_APPROVAL_TOKEN",
+      "kind": "approval gate input",
+      "honored_at": ["44-.../utils/safety_gate.py:10", "safety_gate.py:43-45", "safety_gate.py:120-124"],
+      "meaning": "ApprovalRef input; the value is never recorded.",
+      "preserved": true
+    },
+    {
+      "alias": "CAF_ALLOWED_LOCATION_IDS",
+      "kind": "tenant whitelist",
+      "honored_at": ["44-.../utils/safety_gate.py:7", "safety_gate.py:104-118"],
+      "meaning": "TenantBinding validation.",
+      "preserved": true
+    },
+    {
+      "alias": "CAF_DRY_RUN",
+      "kind": "dry-run switch",
+      "honored_at": ["44-.../utils/safety_gate.py:88-92"],
+      "meaning": "Dry-run switch; the adapter equivalent is capability-disabled, not dry-run.",
+      "preserved": true
+    },
+    {
+      "alias": "GHL_API_KEY",
+      "kind": "community service .env",
+      "honored_at": ["36-ghl-mcp-setup/SKILL.md:134"],
+      "meaning": "Same location PIT, second store. Not a second credential class; retired with the service.",
+      "preserved": false
+    }
+  ],
+  "name_collision": {
+    "alias": "ghl-mcp",
+    "resolution": "Two distinct things share the string ghl-mcp. Retirement must never stop the official connection by string-matching ghl-mcp.",
+    "entries": [
+      {
+        "kind": "mcp.servers name",
+        "status": "official",
+        "action": "preserve",
+        "honored_at": "36-ghl-mcp-setup/INSTALL.md:325"
+      },
+      {
+        "kind": "systemd unit name",
+        "status": "community service, retired",
+        "action": "retire the unit only",
+        "honored_at": "36-ghl-mcp-setup/SKILL.md:132"
+      }
+    ]
+  }
+}

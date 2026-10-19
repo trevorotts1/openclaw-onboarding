@@ -1,8 +1,8 @@
 # GHL MCP — How to Use It Day to Day
 
-This document explains how to USE the 6-tier GHL access chain after setup is complete. If setup is not done yet, read INSTALL.md first.
+This document explains how to USE the GHL access chain after setup is complete. If setup is not done yet, read INSTALL.md first.
 
-After setup, your agent can route GHL requests through Tier 0 Convert and Flow CLI (skill 44 — PRIMARY), then Official MCP, Community MCP, raw API, agent-browser/Playwright, and Codex Computer Use — in that order of preference.
+After setup, your agent can route GHL requests through Tier 0 Convert and Flow CLI (skill 44 — PRIMARY), then Official MCP, raw API, agent-browser/Playwright, and Codex Computer Use — in that order of preference. The self-hosted community MCP (the old Tier 2) is **retired**: it is not installed, not a fallback, and its absence is the expected end state.
 
 ## The Cardinal Rule
 
@@ -38,9 +38,25 @@ If you fall through tiers, the header must show the chain so the audit is comple
 
 ### Tier 1 — Official GHL MCP (`ghl-mcp`)
 
-Use first when the task is in one of these domains:
+**Documented catalog — exactly four tools:** `list_locations`, `search_operations`,
+`describe_operation`, `execute_operation`. The documented endpoints are client-specific and
+use **OAuth**:
 
-| Domain | Example tools |
+| Client | Endpoint | Auth |
+|---|---|---|
+| Claude Code / Claude MCP client | `https://services.leadconnectorhq.com/mcp/anthropic/v2` | OAuth |
+| ChatGPT / Codex / OpenAI clients | `https://services.leadconnectorhq.com/mcp/openai/v2/` | OAuth |
+| OpenClaw gateway / legacy `/mcp/` registration | `https://services.leadconnectorhq.com/mcp/` | **transitional**; PIT bearer is an unverified compatibility mode |
+
+The per-operation names in the table below come from the **transitional `/mcp/` endpoint**,
+not from the documented four-tool catalog. They are **UNVERIFIED** as current catalog and may
+not exist on a client-specific v2 connection. Do not delete them from the reference — but
+never cite them as the official catalog. Discover the real operation set with
+`search_operations` and inspect it with `describe_operation`.
+
+Use Tier 1 first when the task is in one of these domains:
+
+| Domain | Example tools (legacy `/mcp/` surface — UNVERIFIED as v2 catalog) |
 |---|---|
 | Contacts | `contacts_get-contact`, `contacts_create-contact`, `contacts_search-contacts`, `contacts_upsert-contact`, `contacts_add-tags`, `contacts_remove-tags` |
 
@@ -50,10 +66,11 @@ email and/or phone, supplied fields only, tags via `caf contacts add-tag`;
 `--create-new-if-duplicate-allowed` only on explicit new-record request);
 explicit "create a NEW contact" → `caf contacts create`; known contactId →
 `caf contacts update <id>` with non-tag fields only (`--tag` is refused
-destructive — PUT replaces the whole set). Same rule binds Tier 1 MCP
-(`contacts_upsert-contact` for generic add/save, `contacts_create-contact` for
-explicit new) and Tier 3 raw API (POST /contacts/upsert default, POST
-/contacts/ explicit-new only). HighLevel's Upsert endpoint resolves
+destructive — PUT replaces the whole set). Same rule binds Tier 3 raw API
+(POST /contacts/upsert default, POST /contacts/ explicit-new only). On the
+transitional `/mcp/` surface the corresponding names are `contacts_upsert-contact`
+and `contacts_create-contact` — **UNVERIFIED** as current catalog (the documented
+catalog publishes only the four tools above). HighLevel's Upsert endpoint resolves
 create-vs-update per the Location-level Allow Duplicate Contact configuration
 and its matching priority. Verify every write: capture the contact ID, read the
 record back, confirm intended fields.
@@ -66,13 +83,31 @@ record back, confirm intended fields.
 | Social Media | `social-media-posting_create-post`, `social-media-posting_edit-post`, `social-media-posting_get-post`, `social-media-posting_get-posts`, `social-media-posting_get-account`, `social-media-posting_get-social-media-statistics` |
 | Payments (read-only) | `payments_get-order-by-id`, `payments_list-transactions` |
 
-**At least 36 tools (range-based since v1.2.6; 36 is the verified baseline, GHL may add more).**
+**No tool count is a contract.** The documented catalog is four tools. Counts from the
+transitional endpoint are observations, not an interface — never gate a decision on one.
 
-### Tier 2 — Community GHL MCP (`ghl-community-mcp`)
+### Four evidence levels for MCP — do not collapse them
 
-Use when Tier 1 lacks the needed tool. Domains:
+| Level | What it means | Can this repo assert it? |
+|---|---|---|
+| **1. Documented endpoint** | Vendor docs publish the URL for a named client | **Yes** |
+| **2. Documented catalog** | Vendor docs publish exactly four tool names | **Yes** — names only |
+| **3. Account / tenant grant** | This account actually authorizes the connection and scopes | **No** — needs an authorized OAuth connect |
+| **4. Actually observed on this box** | `tools/list` plus one real call, captured here | **No** — needs the box's own receipt |
 
-| Domain | Primary tools |
+### Tier 2 — RETIRED community GHL MCP (`ghl-community-mcp`)
+
+The community MCP is **not installed, not required, and not a fallback**. Do not call it, do
+not probe it, do not restart it, and do not rebuild it because a count looks low. Use Tier 0
+(CLI) or Tier 3 (REST) for anything the official MCP does not cover.
+
+The table below is **historical**: it records the retired transport's tool names so a
+migration can map intent to a live route. Every name is **UNVERIFIED** against any current
+upstream, and none is a valid call path. The last vetted profile was `curated` (43 crm tools),
+so under that profile most `ghl_*` names below did not even exist — the 588 figure described a
+different profile and proves nothing.
+
+| Domain | Historical tool names (RETIRED — map to Tier 0/3) |
 |---|---|
 | Products | `ghl_list_products`, `ghl_get_product`, `ghl_create_product`, `ghl_update_product`, `ghl_delete_product`, `ghl_create_price`, `ghl_list_prices`, `ghl_create_product_collection`, `ghl_list_product_collections`, `ghl_list_inventory`, `ghl_bulk_edit_products` |
 | Invoices | `list_invoices`, `get_invoice`, `create_invoice`, `update_invoice`, `delete_invoice`, `send_invoice`, `view_invoice`, `generate_invoice_number` |
@@ -85,14 +120,19 @@ Use when Tier 1 lacks the needed tool. Domains:
 | Agent Studio | `ghl_create_agent`, `ghl_update_agent`, `ghl_deploy_agent`, `ghl_list_agents` |
 | Workflows (escalation/read only) | `ghl_list_workflows`, `ghl_get_workflow`, `ghl_trigger_workflow`, `ghl_publish_workflow`. **Workflow BUILD/EDIT is Tier 0 (Skill 44 Build API), NOT here** — `ghl_create_workflow` / `ghl_update_workflow_actions` exist in the fork (`src/tools/workflow-builder-tools.ts`) but wrap an undocumented internal endpoint and are unverified / likely produce non-functional shells. Do not build via MCP. |
 
-**At least 500 tools (range-based since v1.2.6).** For anything not in this table, run live discovery:
+**Retirement check (the only valid Tier 2 operation):**
+
 ```bash
-curl $GHL_COMMUNITY_MCP_URL/tools | python3 -m json.tool
+openclaw mcp list | grep -w ghl-community-mcp || echo "registration: absent"
+lsof -nP -iTCP:8765 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN && echo "LISTENER STILL PRESENT" || echo "listener: absent"
 ```
+
+Expected: no registration, no listener. The old `curl $GHL_COMMUNITY_MCP_URL/tools` discovery
+is gone with the service — there is no `$GHL_COMMUNITY_MCP_URL` in the required end state.
 
 ### Tier 3 — Direct REST API + skill 29 reference
 
-Use only when neither MCP covers the call. Resolve which reference file to read:
+Use when the official MCP does not cover the call. Resolve which reference file to read:
 
 ```bash
 # Identify domain from the task, then read the matching reference
@@ -100,14 +140,20 @@ ls "$MASTER_FILES_DIR/29-ghl-convert-and-flow/references/"
 # contacts.md, conversations.md, opportunities.md, calendars.md, locations.md, payments.md, etc.
 ```
 
-Then build the curl call:
+Then build the curl call. **The `Version` header is selected per operation, never globally.**
+The literal below is an example only — copy the literal from the operation's reference page or
+skill 29 reference row:
+
 ```bash
 curl -sS -X GET "https://services.leadconnectorhq.com/<endpoint>?locationId=$GOHIGHLEVEL_LOCATION_ID" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-07-28"
+  -H "Version: <per-operation literal>"
 ```
 
-Some modules use `Version: 2021-04-15`. Always check the reference file for the correct version header.
+Documented supported versions include `v3`, `2023-02-21`, `2021-07-28`, `2021-04-15`, and
+`legacy`; `v4` workflow contracts are staging-only evidence and are not on the production
+supported list. There is no global header rule and no default — a missing literal is a
+contract question to settle from the page, never a value to guess.
 
 ### Tier 4 — Browser (agent-browser FIRST, Playwright fallback) — skill 03
 
@@ -128,23 +174,22 @@ Last resort. Route through `codex-computer-use` sub-agent with model `codex/gpt-
 
 When a tier returns 404 / 502 / connection refused / "not found":
 
-1. **Re-read the canonical state block in AGENTS.md.** Compare URL/port/path against what you actually called. If they don't match, fix and retry.
-2. **Hit `/health`** for that tier:
-   - Tier 1: `curl https://services.leadconnectorhq.com/mcp/ -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" ...`
-   - Tier 2: `curl $GHL_COMMUNITY_MCP_URL/health`
-3. If health passes, the server is fine — your call shape is wrong. Fix and retry.
-4. If health fails, attempt recovery:
-   - Tier 2 macOS: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp`
-   - Tier 2 VPS: `pm2 restart ghl-community-mcp` (Docker/Hostinger canonical) — or `sudo systemctl restart ghl-mcp` on a non-container systemd box
-5. Only after recovery fails, fall through to the next tier. The disclosure header must reflect the actual reason.
+1. **Re-read the canonical state block in AGENTS.md.** Compare endpoint / transport / credential class against what you actually called. If they don't match, fix and retry.
+2. **Separate auth from transport before declaring a tier dead.**
+   - Tier 1: 401/403 is an OAuth grant or scope problem, not an outage. 406 is `Accept` negotiation (documented for the transitional `/mcp/` endpoint). DNS/TLS/timeout is transport. Re-authorize in the client and record a fresh `tools/list` capture.
+   - Tier 3: re-check the per-operation `Version` literal, the PIT class, and the rate-limit headers.
+3. **Tier 2 is retired — there is nothing to recover.** Do not start it, probe it, or restart it to test it.
+4. Only after call shape and auth are ruled out, fall through to the next tier. The disclosure header must reflect the actual reason.
 
 ## 🔴 Rate-Limit Protocol — 429 is NOT a fallthrough trigger
 
-GHL enforces per-location rate limits across ALL THREE tiers — they share the same backend bucket. Switching tiers does NOT bypass.
+The documented per-location rate limits belong to the **REST API**. HighLevel publishes **no
+rate limits for the MCP endpoints**. Assume one shared backend bucket, so switching routes
+does not create capacity and 429 is never a fallthrough trigger.
 
-**Limits:** 100 req/10s burst | 200,000 req/day per location.
+**Documented REST limits:** 100 req/10s burst | 200,000 req/day per location.
 
-**Headers on every response:**
+**Headers on REST responses:**
 - `X-RateLimit-Remaining` (burst budget)
 - `X-RateLimit-Daily-Remaining` (daily budget left)
 - `X-RateLimit-Limit-Daily` (200000)
@@ -153,25 +198,22 @@ GHL enforces per-location rate limits across ALL THREE tiers — they share the 
 **Pre-flight before bulk ops:**
 
 ```bash
-# Cheap probe — read headers
-curl -sS -i -X POST "https://services.leadconnectorhq.com/mcp/" \
+# Cheap probe — a REST read, because the documented rate-limit headers are REST headers.
+# Use a known Tier 3 read from skill 29's reference and its own Version literal.
+curl -sS -i -X GET "https://services.leadconnectorhq.com/<documented-read-operation>" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
-  -H "Version: 2021-07-28" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  -H "Version: <per-operation literal>" \
   | grep -i "x-ratelimit-daily-remaining"
 ```
 
 If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLimit-Daily-Reset` (seconds), surface to owner as "Rate limit nearly exhausted — back at HH:MM ET". Do NOT proceed.
 
-**On 429 from any tier:**
+**On 429 from any surface:**
 
 1. Parse `X-RateLimit-Daily-Reset` (or `Retry-After` if present).
 2. Compute clock time: `reset_time = now + reset_seconds`.
 3. Surface to owner: "Rate limited — back at HH:MM ET (in X hours)."
-4. **DO NOT retry blindly. DO NOT fall through to a different tier** (all three share the same quota).
+4. **DO NOT retry blindly. DO NOT fall through to a different tier** (all surfaces share the same backend bucket).
 5. Log the incident to MEMORY.md under "## Rate Limit Incidents".
 
 **Batching rules:**
@@ -189,25 +231,27 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
 
 ## Anti-Patterns (DO NOT do these)
 
-- ❌ "Tier 1 doesn't have X → I'll use Tier 3 because Tier 3 has X." → Wrong. Use Tier 2.
-- ❌ Hardcoding a port number from session memory. → Always use `$GHL_COMMUNITY_MCP_URL`.
-- ❌ "Tier 2 crashed earlier in this session → skip it." → Wrong. Restart and retry.
+- ❌ "Tier 1 doesn't have X → I'll use Tier 3 because Tier 3 has X." → Wrong reasoning. Use Tier 3 because Tier 1 does not cover the operation, not because REST "has" it. Tier 2 is retired and is never the answer.
+- ❌ Hardcoding a port number from session memory. → There is no community URL env var any more; the required state is no listener on 8765.
+- ❌ "The community MCP crashed earlier in this session → restart it." → Wrong. It is retired. Do not start it.
 - ❌ "Tier 3 is faster / cleaner / I prefer raw API." → Personal preference is not a routing override.
-- ❌ Skipping the disclosure header on a GHL response. → Required on every GHL-data response.
+- ❌ Skipping the disclosure header on an operator-channel GHL response. → Required there; stripped from client-facing replies.
 - ❌ "CLI covers it but I'll use an MCP." Wrong. Tier 0 first for every covered op.
 - ❌ Jumping to Tier 4 (browser) for a workflow-write when the Firebase token is
   present and healthy. Tier 4 is the backstop ONLY when the token is genuinely
   unavailable.
-- ❌ Using MCP tools (Tiers 1-2) to BUILD a GHL workflow. MCP covers contacts /
-  conversations / calendar / tags reads and writes. Workflow creation and editing use
-  Skill 44's internal Build API (Tier 0) or the Build-with-AI manual paste (fallback).
-  These are orthogonal surfaces — see `38-conversational-ai-system/references/GHL_AI_LAYERS.md`.
+- ❌ Using any MCP tool to BUILD a GHL workflow. The official MCP documents workflow
+  lookup plus contact enrollment/removal only; it has no authoring tool. Workflow creation
+  and editing use Skill 44's internal Build API (Tier 0) or the Build-with-AI manual paste
+  (fallback). These are orthogonal surfaces — see `38-conversational-ai-system/references/GHL_AI_LAYERS.md`.
 - ❌ Calling an MCP tool (`ghl-mcp__*`) inside a spawned sub-agent. Sub-agents have no
   MCP tool injection. Lookups inside sub-agents MUST use `caf contacts search/get` (CLI)
   or raw HTTPS to `services.leadconnectorhq.com`. Never instruct a sub-agent to use MCP.
-- ❌ Raw HTTP fallback with only `Accept: application/json`. The GHL hosted MCP endpoint
-  requires BOTH `Accept: application/json, text/event-stream` AND `Version: 2021-07-28`.
-  Missing `text/event-stream` returns HTTP 406 (content-negotiation failure, not auth).
+- ❌ Raw HTTP to the transitional `/mcp/` endpoint with only `Accept: application/json`.
+  That endpoint requires BOTH `Accept: application/json, text/event-stream`; missing
+  `text/event-stream` returns HTTP 406 (content-negotiation failure, not auth). Do not
+  assume that rule carries to the v2 client endpoints without a capture, and do not add a
+  global `Version` header — the version is per operation, and the MCP endpoints document none.
 - ❌ `grep -P` in any shell script on a Mac client box. BSD grep has no -P flag.
   Use `python3 -c "import json,sys; ..."` or `jq` for all JSON/SSE parsing.
 - ❌ Metered `:cloud` model for a contact lookup. Use the client's selected direct
@@ -219,45 +263,50 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
 
 ## Common Cross-Tier Workflows
 
-### Product → Invoice → Subscription (Tier 2 only)
+### Product → Invoice → Subscription (Tier 0 CLI first, else Tier 3 REST)
+
+The retired community tool names in this flow are historical; the route is Tier 0 where the
+CLI covers it, otherwise Tier 3 REST.
 
 ```
-ghl_create_product          → create the product record
+products.create         → create the product record            POST /products/
   ↓
-ghl_create_price            → attach pricing (set type=recurring, interval=month for subscriptions)
+products.prices.create  → attach pricing                       POST /products/{productId}/price
   ↓
-ghl_update_product          → set status=active/live
+products.update         → set status=active/live               PUT  /products/{productId}
   ↓
-create_invoice              → create invoice linked to contact
+invoices.create         → create invoice linked to contact      POST /invoices/
   ↓
-send_invoice                → deliver to client
+invoices.send           → deliver to client                     POST /invoices/{invoiceId}/send
   ↓
-record_order_payment        → log payment received
+orders.recordPayment    → log payment received                  POST /payments/orders/{orderId}/record-payment
 ```
 
 For monthly subscriptions, after the price is created:
 ```
-create_invoice_schedule           → define recurrence
+invoices.schedules.create   → define recurrence     POST /invoices/schedule
   ↓
-update_invoice_schedule           → activate it
-  ↓
-auto_payment_invoice_schedule     → enable auto-charge on file
+(recurrence is activated by the documented schedule payload; no community
+ auto_payment_invoice_schedule tool exists any more)
 ```
 
-### Contact lookup + payment history (Tier 1 + Tier 2)
+Every write above is approval-gated and needs a read-back.
+
+### Contact lookup + payment history (Tier 1 + Tier 3)
 
 ```
-Tier 1: contacts_search-contacts → find the contact
+Tier 1: discovery tool for the contact operation (UNVERIFIED legacy name: contacts_search-contacts)
   ↓
-Tier 2: list_transactions filtered by contactId → payment history
+Tier 3: GET /payments/transactions filtered by contactId → payment history
 ```
 
-Disclosure: `[GHL tier used: 1+2 — contacts_search-contacts; list_transactions]`
+Disclosure: `[GHL tier used: 3 (Tier 1 lacked operation: transactions.list) — raw API GET /payments/transactions]`
 
 ### Social media post — AD-HOC interactive request only (Tier 1)
 
 ```
-Tier 1: social-media-posting_create-post
+Tier 1: the social-media-posting operation exposed by this connection
+        (legacy name `social-media-posting_create-post` is UNVERIFIED)
   ↓
 Body includes content, media URLs, platform targets, schedule
 ```
@@ -269,7 +318,11 @@ posts via its own verified direct-API path and is NOT routed through this MCP.
 ## Health Check Cheatsheet
 
 ```bash
-# Tier 1 — verify auth
+# Tier 1 — documented client path: authorize OAuth in the client, then record tools/list.
+# The four documented names are the assertion; a count is not.
+#   list_locations, search_operations, describe_operation, execute_operation
+
+# Tier 1 — transitional /mcp/ reachability check (names, not a count)
 curl -sS -m 5 -X POST "https://services.leadconnectorhq.com/mcp/" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
@@ -278,18 +331,18 @@ curl -sS -m 5 -X POST "https://services.leadconnectorhq.com/mcp/" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | grep "^data:" | head -1 | sed 's/^data: //' \
-  | python3 -c "import json,sys; print('Tier 1 OK, tools:', len(json.load(sys.stdin).get('result',{}).get('tools',[])))"
+  | python3 -c "import json,sys; print('transitional /mcp/ tools:', [t.get('name') for t in json.load(sys.stdin).get('result',{}).get('tools',[])])"
 
-# Tier 2 — verify server running
-curl -sS -m 5 $GHL_COMMUNITY_MCP_URL/health
-
-# Tier 2 service status
+# Tier 2 — RETIRED. The healthy state is ABSENT, not running:
+openclaw mcp list | grep -w ghl-community-mcp || echo "registration: absent"
 # macOS:
-launchctl print gui/$(id -u)/com.clawd.ghl-mcp | grep -E "state|pid"
+launchctl print gui/$(id -u)/com.clawd.ghl-mcp >/dev/null 2>&1 && echo "STILL LOADED" || echo "launchd: not loaded"
 # VPS (pm2 canonical):
-pm2 describe ghl-community-mcp
-# Non-container Linux (systemd fallback):
-systemctl status ghl-mcp
+pm2 describe ghl-community-mcp 2>/dev/null || echo "pm2: absent"
+# Non-container Linux (systemd):
+systemctl is-enabled ghl-mcp 2>/dev/null || echo "systemd: no unit"
+# Port:
+lsof -nP -iTCP:8765 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN && echo "LISTENER STILL PRESENT" || echo "listener: absent"
 ```
 
 ## Command Center hooks (Skill 32 board — operator visibility)
@@ -303,7 +356,7 @@ Emit a card / status update at these moments:
 - **Install start** — open/append a card: "GHL MCP setup — started (box, platform)". Emitted by
   `scripts/cc-task.sh start` from INSTALL.md's Autonomous Setup Execution (Pre-Action 0.5).
 - **Install complete** — move that card to `review` with the QC result (e.g. "qc-ghl-mcp-setup.sh
-  exit 0; Tier 1 >=36 tools, Tier 2 >=500 on-demand"). Emitted by `scripts/cc-task.sh review`
+  exit 0; official MCP connection present; community MCP verified absent"). Emitted by `scripts/cc-task.sh review`
   from the QC PASS branch. The **independent Command Center auto-scorer is the only authority
   that promotes review → done** — the builder never self-grades.
 - **Tier incident — 429 lockout** — status card: "GHL rate-limit lockout; daily reset ~HH:MM

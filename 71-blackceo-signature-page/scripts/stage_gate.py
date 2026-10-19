@@ -162,12 +162,16 @@ def fonts_derivable(brand_file):
             and policy.get("when_brand_fonts_missing") == "derive-document")
 
 
-def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
+def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     """Substitute {run_dir}/{brand}/{file}/{sauce} in a validator command.
 
-    Per-file validators ({file} in the template) return ("__per_file__", cmd, files)
-    with every OTHER placeholder already substituted, so run_validators only has to
-    swap {file} once per file.
+    Per-file validators ({file} in the template) return a 4-tuple
+    ("__per_file__", raw_template, files, substitutions): the template is left
+    unsubstituted so the caller can tokenize once and substitute inside tokens,
+    keeping a path that contains spaces in one argv entry.
+
+    as_argv=True returns an already-tokenized argv list for the non-per-file
+    case instead of a string, for the same reason (the gate runs it directly).
     """
     brand = brand_path_for(run_dir)
     spec = STAGES[stage]
@@ -176,8 +180,8 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
     # shlex.split in run_one_validator as ONE argv entry, so quote each
     # value before it enters the command string.
     substitutions = {
-        "{run_dir}": shlex.quote(str(run_dir)),
-        "{brand}": shlex.quote(str(brand)),
+        "{run_dir}": str(run_dir),
+        "{brand}": str(brand),
     }
     if "{copy_version}" in cmd:
         # S4 CR-2 / S1 copy wiring: the copy spec path is selected by the
@@ -224,18 +228,19 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
     # shipped to the validator as a literal argument.
     # An empty {sauce} must stay empty (quoting "" would add a spurious
     # empty argv entry); a set flag is a single safe token.
-    substitutions["{sauce}"] = shlex.quote(sauce) if sauce else ""
+    substitutions["{sauce}"] = sauce
     if "{file}" in cmd:
         if not files:
             return None, [f"per-file validator has no files to validate "
                           f"(glob {per_file!r} matched none and the receipt lists none)"]
-        # Per-file validators run per file; {file} is replaced once per file -> expand to N commands.
-        per_file_cmd = cmd
-        for k, v in substitutions.items():
-            per_file_cmd = per_file_cmd.replace(k, v)
-        return ("__per_file__", per_file_cmd, files), []
+        # Per-file validators run once per file. Return the template UNSUBSTITUTED
+        # with the substitution map, so the caller tokenizes once and substitutes
+        # inside tokens ({file} included) instead of re-tokenizing a path.
+        return ("__per_file__", cmd, files, substitutions), []
     if files:
-        substitutions["{file}"] = shlex.quote(files[0])
+        substitutions["{file}"] = files[0]
+    if as_argv:
+        return substitute_argv(cmd, substitutions), []
     for k, v in substitutions.items():
         cmd = cmd.replace(k, v)
     return cmd, []
@@ -392,35 +397,67 @@ def run_validators(run_dir, stage, receipt):
     spec = STAGES[stage]
     failures = []
     for raw in spec.get("validators", []):
-        resolved, rlines = resolve_brand_placeholder(raw, run_dir, stage, receipt)
+        # The launch profile flag is appended to the template before tokenizing:
+        # the flag is its own argv entry either way.
+        raw, profile_line = apply_launch_profile(raw, run_dir)
+        if profile_line:
+            failures.append(profile_line)
+            continue
+        resolved, rlines = resolve_brand_placeholder(raw, run_dir, stage, receipt,
+                                                     as_argv=True)
         failures.extend(rlines)
         if resolved is None:
             continue
         if isinstance(resolved, tuple) and resolved[0] == "__per_file__":
-            _, cmd_tpl, files = resolved
-            cmd_tpl, profile_line = apply_launch_profile(cmd_tpl, run_dir)
-            if profile_line:
-                failures.append(profile_line)
-                continue
+            _, cmd_tpl, files, substitutions = resolved
+            # Split the template ONCE, then substitute {file} inside the matching
+            # argv entries: a file path that contains spaces must stay ONE
+            # argument instead of being re-tokenized by shlex.split.
+            argv_tpl = substitute_argv(cmd_tpl, substitutions)
             for fpath in files:
-                cmd = cmd_tpl.replace("{file}", shlex.quote(fpath))
-                line = run_one_validator(cmd, run_dir)
+                argv = [tok.replace("{file}", fpath) for tok in argv_tpl]
+                line = run_one_validator(argv, run_dir)
                 if line:
                     failures.append(line)
         else:
-            resolved, profile_line = apply_launch_profile(resolved, run_dir)
-            if profile_line:
-                failures.append(profile_line)
-                continue
             line = run_one_validator(resolved, run_dir)
             if line:
                 failures.append(line)
     return failures
 
 
+def substitute_argv(template, substitutions):
+    """Tokenize a validator template ONCE, then substitute inside each token.
+
+    Substituting into the string first and splitting afterwards tears a path
+    that contains a space into several arguments. A token that substitutes to
+    nothing (an unengaged {sauce}) is dropped, as the old string form dropped it.
+    """
+    argv = []
+    for tok in shlex.split(template):
+        substituted = tok
+        had_placeholder = False
+        for k, v in substitutions.items():
+            if k in substituted:
+                had_placeholder = True
+            substituted = substituted.replace(k, v)
+        if substituted or not had_placeholder:
+            argv.append(substituted)
+    return argv
+
 def run_one_validator(cmd, run_dir):
-    """Run one validator command; return None on exit 0 else a failure line."""
-    parts = shlex.split(cmd)
+    """Run one validator command; return None on exit 0 else a failure line.
+
+    `cmd` is either a shell-style string (split here) or an already-split argv
+    list. Callers that substitute a path into a template pass argv, so a path
+    containing spaces is never re-tokenized.
+    """
+    if isinstance(cmd, str):
+        parts = shlex.split(cmd)
+        label = cmd
+    else:
+        parts = list(cmd)
+        label = shlex.join(parts)
     if not parts:
         return "validator failed: empty command (nothing to run)"
     if parts[0] in GATE_BUILTINS:
@@ -433,12 +470,12 @@ def run_one_validator(cmd, run_dir):
         proc = subprocess.run(parts, capture_output=True, text=True, timeout=600,
                               cwd=str(SKILL_ROOT))
     except subprocess.TimeoutExpired:
-        return f"validator timed out: {cmd}"
+        return f"validator timed out: {label}"
     if proc.returncode != 0:
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
         detail = (out or err or "(no output)")[:600]
-        return f"validator exit {proc.returncode}: {cmd}\n    {detail}"
+        return f"validator exit {proc.returncode}: {label}\n    {detail}"
     return None
 
 
@@ -1914,13 +1951,18 @@ def run_item_validators(run_dir, stage, artifact_rel):
         except Exception:
             sauce = ""
     for raw in spec.get("validators", []):
-        # S44-05: quote each path token so a spaced/non-ASCII run dir
-        # survives run_one_validator's shlex.split as one argv entry.
-        cmd = (raw.replace("{run_dir}", shlex.quote(str(run_dir)))
-                  .replace("{brand}", shlex.quote(str(brand)))
-                  .replace("{file}", shlex.quote(str(run_dir / artifact_rel)))
-                  .replace("{sauce}", shlex.quote(sauce) if sauce else ""))
-        line = run_one_validator(cmd, run_dir)
+        # Split the template ONCE, then substitute inside each argv entry, so a
+        # run folder path containing spaces is never re-tokenized. A placeholder
+        # that substitutes to nothing (an unengaged {sauce}) drops its token
+        # exactly as it did when the command was a substituted string.
+        substitutions = {
+            "{run_dir}": str(run_dir),
+            "{brand}": str(brand),
+            "{file}": str(run_dir / artifact_rel),
+            "{sauce}": sauce,
+        }
+        argv = substitute_argv(raw, substitutions)
+        line = run_one_validator(argv, run_dir)
         if line:
             failures.append(line)
     return failures

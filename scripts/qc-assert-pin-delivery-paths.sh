@@ -39,10 +39,21 @@
 #   VPS_ONBOARDING  /data/.openclaw/onboarding/config
 #   VPS_SKILLS      /data/.openclaw/skills/config
 #
+# RETIREMENT AWARENESS (v22.0.0)
+#
+# The community MCP is RETIRED. In a retired tree the community pin is EXEMPT:
+# it must not be demanded from installers, and consumers that still mention it
+# (the retirement tool, policy gates) do not force delivery. This check does NOT
+# go green on deletion: while any OTHER file under config/ still ships, both
+# installers must still carry the canonical config/ delivery step. Retirement is
+# detected from the pin file (absent or marked retired) or an explicit
+# retirement entry point in the updaters.
+#
 # Exit codes:
-#   0  every resolver path is delivered, and both installers still deliver
-#   1  INVARIANT VIOLATED — a resolver searches somewhere nothing populates,
-#      or an installer stopped delivering config/
+#   0  every still-required resolver path is delivered, and both installers still
+#      deliver the config/ files that STILL SHIP (the retired pin is exempt)
+#   1  INVARIANT VIOLATED — a live resolver searches somewhere nothing
+#      populates, or an installer stopped delivering a still-shipped config/
 #
 # Usage: bash scripts/qc-assert-pin-delivery-paths.sh [--quiet]
 #
@@ -62,6 +73,47 @@ _info() { [ "$QUIET" = "0" ] && printf '[qc-pin-delivery] INFO  %s\n' "$*"; retu
 FAILURES=0
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/.." && pwd)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. RETIREMENT AWARENESS — v22.0.0
+#
+# The community MCP (Tier 2) is RETIRED. Demanding delivery of its pin would
+# force a dead config back onto every box; ignoring a still-shipped config would
+# recreate the v21.5.0 defect. So retirement is detected explicitly (pin absent,
+# pin marked retired, or the updater carries the retirement entry point) and
+# changes only WHICH files must be delivered:
+#   * retired  -> the community pin is exempt; any OTHER still-shipped config/
+#                 file must still be delivered (marker + landing assert).
+#   * live     -> the original invariant holds unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+RETIRED=0
+PIN_PATH="$REPO_ROOT/config/ghl-mcp-pin.env"
+if [ ! -f "$PIN_PATH" ]; then
+  RETIRED=1
+elif grep -qiE '^GHL_MCP_(RETIRED|STATUS)=.*(1|true|yes|retired)' "$PIN_PATH" 2>/dev/null; then
+  RETIRED=1
+else
+  for _rf in "$REPO_ROOT/update-skills.sh" "$REPO_ROOT/install.sh" "$REPO_ROOT"/scripts/ghl-mcp-retire*.sh; do
+    [ -f "$_rf" ] || continue
+    if grep -qE 'ghl-mcp-retire|retire_ghl_mcp|GHL_MCP_RETIRED' "$_rf" 2>/dev/null; then
+      RETIRED=1
+      break
+    fi
+  done
+fi
+if [ "$RETIRED" = "1" ]; then
+  _info "community MCP is RETIRED — delivery applies only to still-shipped config/"
+else
+  _info "community MCP is still live in this tree — the full pin-delivery invariant applies"
+fi
+
+# A runtime consumer that survives retirement can read the pin and start the
+# service again. Policy-only consumers (QC/digest) may stay; they must simply
+# stop demanding delivery of the retired pin.
+RUNTIME_CONSUMERS="scripts/ghl-mcp-autostart.sh scripts/ghl-mcp-probe.sh scripts/ghl-mcp-assert-runtime.sh platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh"
+_is_runtime_consumer() {
+  case " $RUNTIME_CONSUMERS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. THE DELIVERED SET — what the installers actually populate.
@@ -122,16 +174,34 @@ platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
 for rel in $CONSUMERS; do
   f="$REPO_ROOT/$rel"
   if [ ! -f "$f" ]; then
-    _fail "$rel is missing — it is one of the consumers whose resolver list this gate keeps honest."
-    FAILURES=$((FAILURES+1))
+    if [ "$RETIRED" = "1" ]; then
+      _pass "$rel is retired (absent from the shipped tree)"
+    elif _is_runtime_consumer "$rel"; then
+      _fail "$rel is missing — it is one of the RUNTIME consumers whose resolver list this gate keeps honest, and the community MCP is NOT retired."
+      FAILURES=$((FAILURES+1))
+    else
+      _fail "$rel is missing — it is one of the consumers whose resolver list this gate keeps honest."
+      FAILURES=$((FAILURES+1))
+    fi
     continue
   fi
+
+  # In the retired world a surviving consumer is allowed — the retirement tool
+  # itself lives in ghl-mcp-autostart.sh. Whether it is safe (tombstone/refusal)
+  # is owned by qc-assert-ghl-mcp-supervised.sh; HERE it only stops requiring
+  # delivery of the retired pin.
+  if [ "$RETIRED" = "1" ] && _is_runtime_consumer "$rel"; then
+    _info "$rel still ships — retirement-safety is asserted by qc-assert-ghl-mcp-supervised.sh; its pin paths are delivery-exempt"
+  fi
+
   found_any=0
   while IFS= read -r cand; do
     [ -n "$cand" ] || continue
     found_any=1
     root="$(_classify "$cand")"
-    if [ "$root" = "UNKNOWN" ]; then
+    if [ "$RETIRED" = "1" ]; then
+      _info "$rel still lists $cand [$root] — exempt: the community pin is retired and must NOT be demanded from installers."
+    elif [ "$root" = "UNKNOWN" ]; then
       _fail "$rel searches '$cand', which this gate cannot classify. Either use one of the canonical roots or teach _classify() about the new one AND make an installer populate it."
       FAILURES=$((FAILURES+1))
     elif _is_delivered "$root"; then
@@ -144,8 +214,12 @@ for rel in $CONSUMERS; do
 $(_candidates "$f")
 EOF
   if [ "$found_any" = "0" ]; then
-    _fail "$rel declares NO ghl-mcp-pin.env candidate at all — it can no longer read the pin."
-    FAILURES=$((FAILURES+1))
+    if [ "$RETIRED" = "1" ]; then
+      _pass "$rel no longer resolves the retired community pin"
+    else
+      _fail "$rel declares NO ghl-mcp-pin.env candidate at all — it can no longer read the pin."
+      FAILURES=$((FAILURES+1))
+    fi
   fi
 done
 
@@ -160,6 +234,22 @@ _installer_delivers() {   # <file> <human name>
     FAILURES=$((FAILURES+1)); return 0
   fi
   body="$(sed 's/#.*$//' "$f" 2>/dev/null)"
+  if [ "$RETIRED" = "1" ]; then
+    # The retired community pin is exempt. But this gate must still fail if a
+    # config/ file that DOES still ship stops being delivered.
+    _still_shipped="$(find "$REPO_ROOT/config" -type f ! -name 'ghl-mcp-pin.env' 2>/dev/null | head -1)"
+    if [ -z "$_still_shipped" ]; then
+      _info "$name: config/ carries no still-shipped file besides the retired pin — no config delivery requirement (retired)."
+      return 0
+    fi
+    if grep -qF 'OC_CANONICAL_CONFIG_DEST' <<< "$body"; then
+      _pass "$name still declares the canonical config/ delivery destination (still-shipped config present)"
+    else
+      _fail "$name no longer contains the canonical config/ delivery step (marker OC_CANONICAL_CONFIG_DEST) while $(basename "$_still_shipped") STILL SHIPS. Boxes would stop receiving config/ — not just the retired pin."
+      FAILURES=$((FAILURES+1))
+    fi
+    return 0
+  fi
   if grep -qF 'OC_CANONICAL_CONFIG_DEST' <<< "$body"; then
     _pass "$name declares the canonical config/ delivery destination (OC_CANONICAL_CONFIG_DEST)"
   else
@@ -180,7 +270,9 @@ _installer_delivers "$REPO_ROOT/install.sh"       "install.sh"
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. The pin file itself must be in the repo — it is the thing being delivered.
 # ─────────────────────────────────────────────────────────────────────────────
-if [ -f "$REPO_ROOT/config/ghl-mcp-pin.env" ]; then
+if [ "$RETIRED" = "1" ]; then
+  _pass "config/ghl-mcp-pin.env is retired or absent — nothing to deliver (community MCP RETIRED)"
+elif [ -f "$PIN_PATH" ]; then
   _pass "config/ghl-mcp-pin.env exists in the repo"
 else
   _fail "config/ghl-mcp-pin.env is missing from the repo — there is nothing to deliver."

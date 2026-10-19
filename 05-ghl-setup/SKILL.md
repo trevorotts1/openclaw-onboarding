@@ -5,7 +5,9 @@ description: Foundational GoHighLevel (GHL / Convert and Flow) setup — obtains
 
 # GHL / Convert and Flow Setup
 
-> **For MCP-based access (preferred when available):** This skill covers the foundational direct-API setup. For Tier 1 (Official GHL MCP, 36 tools) and Tier 2 (Community GHL MCP, 588 tools — products, invoices, subscriptions, Voice AI, Phone System, Agent Studio), install **skill 36 (`36-ghl-mcp-setup`)** after completing this one. The agent should prefer MCPs first and fall back to this skill's direct REST API only when MCPs lack the needed tool.
+> **For official-MCP access:** This skill covers the foundational direct-API setup. For the **official GHL MCP** — documented catalog: four tools, `list_locations`, `search_operations`, `describe_operation`, `execute_operation` — install **skill 36 (`36-ghl-mcp-setup`)** after completing this one. The agent prefers the official MCP where its catalog covers the call and falls back to this skill's direct public REST API otherwise.
+>
+> **The community GHL MCP is retired.** It is not part of the update or install path: fresh installs omit it, and an updated box must verify it is **off** — service unloaded and de-registered. A stopped process is not a retirement; a lingering launchd job with `RunAtLoad=true` resurfaces it at login. Never repair or reinstall it because a tool count looks low. Official MCP plus public REST are the supported routes.
 
 ## What This Is
 
@@ -33,9 +35,9 @@ You MUST have these installed first:
 
 These are the most common mistakes AI agents make with GHL. Read these carefully:
 
-1. **GHL does NOT use API keys anymore.** That method is old and no longer recommended. GHL uses a Private Integration Token (PIT). If your agent says "I need the API key" for GHL, it is using outdated information. The correct term is Private Integration Token. You find it in Settings > Integrations > Private Integration Token.
+1. **GHL does NOT use API keys anymore.** That method is old and no longer recommended. GHL uses a Private Integration Token (PIT). If your agent says "I need the API key" for GHL, it is using outdated information. The correct term is Private Integration Token. You find it in Settings > Integrations > Private Integration Token. This PIT is the **public REST API** credential. The **official GHL MCP is a separate path and uses OAuth, not a PIT** — do not hand it a PIT and call that the documented connection.
 
-2. **Every single GHL request needs a Version header.** Without it, your requests will fail with a 400 error. The version to use is: 2021-07-28. Your agent must include this header on every call.
+2. **The Version header is selected PER OPERATION.** There is no global default you may assume: many current operations are documented at `v3`, while dated versions remain supported for other operations. Read the version from that operation's own documentation before each call. Omitting the header on an operation that declares one fails with a 401 (`version header was not found`). See skill 29 (`29-ghl-convert-and-flow`) and its `references/api-generations.md` for the per-operation table, and never sweep one version string across calls.
 
 3. **The base URL for all GHL API calls is:** https://services.leadconnectorhq.com
 
@@ -61,7 +63,7 @@ These are the most common mistakes AI agents make with GHL. Read these carefully
 
 - How to get your Private Integration Token and Location ID from GHL
 - How to add those credentials to your OpenClaw configuration
-- The required headers for every API request (Authorization + Version)
+- The required headers (Authorization plus the operation's own Version)
 - Common operations: searching contacts, creating contacts, sending SMS, sending email, calendar booking, managing opportunities
 - Example curl commands you can copy and use right away
 - A 5-step, entirely read-only self-test to verify everything is working before claiming setup is done. It does not send anything — proving send capability is a separate, operator-approved step against a designated operator test contact
