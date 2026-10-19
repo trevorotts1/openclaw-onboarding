@@ -108,9 +108,9 @@ class ContractTest(unittest.TestCase):
         self.assertIn("hybrid board", fm["purpose"].lower())
 
     def test_stage_shape_unchanged(self):
-        self.assertEqual(len(CONTRACT["stage_order"]), 14)
+        self.assertEqual(len(CONTRACT["stage_order"]), 15)
         self.assertEqual(CONTRACT["stages"]["final-mockups"]["depends_on"],
-                         ["visual-mockup", "image-map-upload"])
+                         ["visual-mockup", "image-map-upload", "design-board"])
 
     def test_sop_and_contracts_define_the_board(self):
         stage11 = SOP.split("## Stage 11 -", 1)[1].split("## Stage 12 -", 1)[0].lower()

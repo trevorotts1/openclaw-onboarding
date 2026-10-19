@@ -95,11 +95,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import design_style
 import launch_context
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 ENGINES = ("kie", "agnes")
+DESIGN_STYLE_SOURCES = ("client_choice", "recommended_accepted")
 
 # Item 19: supplied assets are measured against the slot's RENDERED size:
 # the layout size scaled by this display-density factor (a 2x retina
@@ -398,6 +400,11 @@ def main(argv=None):
     p.add_argument("--creative-direction", default=None)
     p.add_argument("--image-cap", type=int, required=True)
     p.add_argument("--image-engine", choices=ENGINES, default="kie")
+    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=None,
+                   help="the client's page design style: A Block, B Circle or C Hybrid "
+                        "(references/design-styles.md); ask with `design_style.py question`")
+    p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
+                   help="how the style was chosen (default client_choice when --design-style is given)")
     p.add_argument("--copy-version", choices=["standard", "long-form"], default=None,
                    help="the run's copy selection (required intake decision, "
                         "Amendment 6 Items 18/19); selects the copy guide, spec, "
@@ -512,6 +519,16 @@ def main(argv=None):
               "creative_direction": a.creative_direction, "image_cap": a.image_cap,
               "image_engine": a.image_engine, "test_run": a.test_run,
               "copy_version": a.copy_version}
+    if a.design_style:
+        intake["design_style"] = a.design_style
+        intake["design_style_source"] = a.design_style_source or "client_choice"
+    elif a.design_style_source:
+        print("REFUSED: --design-style-source needs --design-style.")
+        return 2
+    else:
+        print("NOTE design_style: none recorded. Ask the client with "
+              "`python3 scripts/design_style.py question` and rerun with --design-style A|B|C; "
+              "a production run cannot close intake without it (test runs are exempt).")
 
     waivers = []
     for flag, reason, gate_name in (

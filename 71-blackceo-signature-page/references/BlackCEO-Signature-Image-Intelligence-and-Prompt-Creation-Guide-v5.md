@@ -2484,7 +2484,7 @@ For every text-bearing image, explicitly state **both the text color and the exa
 
 Use dark text over light surfaces or light text over dark surfaces unless a tested high-contrast alternative is explicitly designed. On complex imagery, create a readable zone with one of these restrained methods: semi-transparent color block, subtle drop shadow, thin contrast stroke, localized blur/darken zone, or gradient fade.
 
-Never place generated text over a face. Maintain 5-10% or greater safe margins from frame edges depending on platform/crop risk. Every verbatim string uses a spelling lock and is QC'd pixel-for-pixel.
+Never place generated text over a face. Maintain 5-10% or greater safe margins from frame edges depending on platform/crop risk. Every verbatim string uses a spelling lock and is QC'd pixel-for-pixel. On a page that declares composition treatments, the readable zone is the slot's `copy_zone`, the scrim comes from the slot's `scrim` record, and the face keep-out is its `subject_zone` (see G below).
 
 ### D. Two-font power dynamic for typography-led images
 
@@ -2504,6 +2504,17 @@ Every neighboring asset must differ meaningfully in several dimensions: composit
 
 Harmony comes from the brand, emotional arc, typography system, recurring material world, and color-grade family. Distinctness comes from art direction.
 
+
+### G. Composition treatments: words over images, shaped crops, light fields
+
+The wireframe declares one treatment per image slot (`references/composition-treatments.json`; vocabulary in `references/composition-patterns.md`). The photo prompt for that slot reserves the space the treatment needs INSIDE the photo; it never relies on a blank column, and the photo is never composed as a website section. Every treatment's own sentence is in the JSON; the four below are the ones AI designs most often miss.
+
+- **Words over the image (hero, `overlay-light`).** "Subject occupies only the right 38 percent of the frame, eye line on the upper third. The left 55 percent is one continuous, softly defocused, evenly lit plain surface with no objects, edges, highlights or texture: reserved copy space, brightness variation within about 6 percent. Do not center the subject. Do not fill the frame. No text, no lettering, no logos. Do not compose this as a website section; do not leave a blank column." The section mockup prompt then says the photograph spans the full width as the background and the headline sits ON it inside the gradient zone.
+- **Caption on the photo (`caption-over-photo`).** "Keep the bottom-left corner quiet: plain background, no faces, hands or busy detail in that 25 percent of the frame." The caption (an eyebrow, a script accent, 3 to 8 words) is verbatim copy.
+- **Circle crop (Who section, `mask-circle`).** "Head-and-shoulders, face centered horizontally, top of head 12 percent below the frame top, chin at 62 percent of the frame height, plain background. Everything important sits inside the inscribed circle; the frame will be cropped round." The crop is CSS (`border-radius:50%`), never baked into the photo.
+- **Light full-width field (`band-light-field`).** "Flat single-weight 1px line-art pattern of the mood board's motifs, drawn as hairlines in {line_color} on a flat {surface_color} background, no shading, no photography, seamless tile, evenly spread with no focal point." The two colors are hex values the executor computes from the run's brand file (the surface color, and that color shifted toward the ink color as far as the contrast limit allows) and the motifs come from the slot, else the brand's `composition_cues.imagery_direction`; a prompt is never sent with an unfilled placeholder. It must stay light (field-to-surface contrast at most 1.15:1 on any palette) and textured (standard deviation at least 1.5).
+
+Rhythm rule: no two adjacent sections share the same non-split treatment, and `split` is at most 40 percent of photo-bearing sections. A page that is all photo-beside-text fails the per-page composition budget even if every image is excellent.
 
 ## 10. Write for the actual section, not just its number
 

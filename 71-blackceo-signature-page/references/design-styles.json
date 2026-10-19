@@ -1,0 +1,79 @@
+{
+  "schema": "skill71-design-styles/v1",
+  "purpose": "The three page design styles a client chooses from at intake. design_styles.md (references/design-styles.md) is the full definition; this file is the data the code and the intake question read.",
+  "library": "BlackCEO LLC GoHighLevel media library, folder sigpage-reference-images",
+  "slot_shapes": [
+    "rect",
+    "circle"
+  ],
+  "styles": [
+    {
+      "id": "A",
+      "key": "block",
+      "name": "Block",
+      "one_line": "Clean rectangular photos and straight-edged sections, like a magazine layout. Classic, polished and easy to read.",
+      "default_shape": "rect",
+      "circle_slots": "forbidden",
+      "example": {
+        "status": "uploaded",
+        "label": "Block example (desktop page)",
+        "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/57997068-c7b6-4df8-886d-e90d3eb9cc42.png",
+        "sha256": "af639085ec400d4b27a57f4455e79718a6ac103a00aae908318248fc14ef8a3a",
+        "note": "Structure and image shape only. The example's colors, brand and words are never used."
+      },
+      "prompt_rules": {
+        "all": "STYLE A BLOCK: traditional editorial layout. Every photo is a rectangle with square corners; no circular crops, no rings, no rounded photo corners. Full-width alternating bands, a text column and a photo column that swap sides, rectangular buttons, hairline rules.",
+        "wireframe": "Draw every image slot as a rectangle labeled with its ratio.",
+        "mockup": "Render every photo as a square-cornered rectangle."
+      }
+    },
+    {
+      "id": "B",
+      "key": "circle",
+      "name": "Circle",
+      "one_line": "Round framed photos with colored rings, circular text panels and soft curved shapes. Warm, friendly and a little more playful.",
+      "default_shape": "circle",
+      "circle_slots": "allowed",
+      "example": {
+        "status": "uploaded",
+        "label": "Circle example (desktop page)",
+        "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/21305eb3-693a-4e8b-ba4d-a86089497487.png",
+        "sha256": "07149506279b8f5eb0872c4417183a7ab5471cb8a245095ab623a739e3c128f0",
+        "mobile_url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/4c4f2cb7-f91d-44ec-88b7-54b07d2a2658.png",
+        "mobile_sha256": "715649c14d43a388a946c14cb770675884a35d5a9e1f2ab839dc7987c193929a",
+        "note": "Structure and image shape only. The example's colors, brand and words are never used."
+      },
+      "prompt_rules": {
+        "all": "STYLE B CIRCLE: round-photo layout. Feature, benefit and people rows pair one large photo circle with one circular text panel that overlaps it, alternating sides down the page; each photo circle has a partial ring (crescent) offset to its outer-bottom edge in a brand accent color. Pill-shaped buttons, rounded panels, soft curved dividers. Hero, proof and offer panels may stay rectangular.",
+        "wireframe": "Draw each circle slot as a circle, with its circular text panel overlapping it and the slot label beside it.",
+        "mockup": "Render each circle slot as a round photo with its ring in the brand accent; the corners outside the circle are the page background."
+      }
+    },
+    {
+      "id": "C",
+      "key": "hybrid",
+      "name": "Hybrid",
+      "one_line": "The straight, polished structure of Block with round photos and ring accents on the personal pictures, such as you, your team and your clients.",
+      "default_shape": "rect",
+      "circle_slots": "accent",
+      "example": {
+        "status": "placeholder",
+        "label": null,
+        "url": null,
+        "sha256": null,
+        "note": "No Style C example exists yet. Generate a real Hybrid page, upload it with the same method, and replace this entry."
+      },
+      "prompt_rules": {
+        "all": "STYLE C HYBRID: Block structure (full-width alternating bands, text column and photo column, rectangular hero, proof and offer panels) with circle accents only on the slots marked circle below; every other photo stays a square-cornered rectangle. One ring treatment on all circle slots, in a brand accent color.",
+        "wireframe": "Draw circle slots as circles and every other slot as a rectangle.",
+        "mockup": "Render circle slots as round photos with the ring in the brand accent and every other photo as a rectangle."
+      }
+    }
+  ],
+  "circle_clause": "CIRCLE CROP SAFE FRAME: compose a perfectly square 1:1 image for a round crop. Place the subject centered in the frame with the face or main object inside the central 60 percent. Keep every important element inside the inscribed circle; the four corners are cropped away, so leave them as quiet, out-of-focus background with no text, no hands, no props and no object edges touching the corners.",
+  "question": {
+    "intro": "Which look do you want for your page? There are three styles. Tap each link to see a real example of the shape and layout. Your own colors, logo and words go on whichever one you pick; the examples only show the design.",
+    "closing": "Tell me A, B or C. If you are not sure, tell me three words for how you want your brand to feel and I will recommend one.",
+    "unsure_rule": "Recommend one style with a one-sentence reason from the brand's feel; record it with design_style_source recommended_accepted only after the client agrees."
+  }
+}

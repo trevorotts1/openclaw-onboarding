@@ -47,15 +47,26 @@ Long-form adds 2A/3A/4A only; the numbered sections never renumber.
 
 ## Palette tokens
 
-**Wireframe — photo-wireframe dialect.** Grayscale with exactly one red.
+**Wireframe — photo-wireframe dialect.** (The hexes below are the bundled
+example sheets' own brand colours, a structure and tonal-weight benchmark. A
+client's wireframe uses that client's resolved palette in the same roles:
+primary for the chip, CTA fill and edge bars; darkest colour for the dark
+bands; lightest colours for the light grounds.) Grayscale with exactly one red.
 Ink `#111111` and `#242424`; paper `#ffffff`; band gray `#f6f6f6`; rule
 gray `#e8e8e8`; signal red one of `#c8091a`, `#d90110`, `#ca0a19`,
 `#d40213` — pick one and use it everywhere. Full-bleed white/black bands
 alternate; photos are darkened black-and-white with thin red edge bars.
 
-**Wireframe — grayscale dialect.** No saturated pixels. `#f6f6f6` band,
-`#ffffff` paper, `#e8e8e8` rule, `#242424` ink; 15 alternating content
-bands between the meta bar and the footer.
+**Wireframe — grayscale dialect (RETIRED, owner 2026-10-19).** Not a
+palette to prompt: a grayscale, no-colour sheet fails trait W8. Recorded for
+history only: no saturated pixels, `#f6f6f6` band, `#ffffff` paper, `#e8e8e8`
+rule, `#242424` ink.
+
+**Mockup — client colors.** A mockup's colors are the client's resolved palette, applied through the
+page color system in `references/hypersaturation-framework.md`: `stage_executor.py` adds the PAGE COLOR
+SYSTEM and IMAGE COLOR GRADE blocks to every mockup prompt, and the IMAGE COLOR GRADE block to every
+image-slot prompt. The Tier H and Tier R hexes below are the canon example set's own colors, a
+structure and tonal-weight benchmark only; never put them in a client's prompt.
 
 **Mockup — Tier H (flat, sparse).** Cream `#f7f2e9`, ivory `#fffdf9`,
 green `#28513f`, blush `#f0dedb`, rose `#93504f`, brick `#bc5248` as the
@@ -122,11 +133,15 @@ SECTION IMAGE PROMPT — WIREFRAME (stage: {{stage}}; mirror: {{purpose}})
    under it: {{type_specs}}, drawn from {{font_map}} and these tokens:
    {{type_tokens_for_this_slice}}.
 
-6. SLOTS — for every image slot print the slot label, its ratio, and its
-   art direction:
+6. SLOTS — for every image slot print the slot label (slot id, pixel box,
+   ratio, treatment) and its art direction:
    {{slots}}
    Each ratio is one of the planned values; a slot's ratio label is
-   printed once and matches the rectangle drawn.
+   printed once and matches the shape drawn. DRAW each slot's treatment from
+   the slot record, never a default rectangle beside a text column: the text
+   box ON the placeholder for an overlay, a mask drawn as its real shape, a
+   full-width tint for a light field, an overlap drawn as an overlap
+   (`references/composition-treatments.json`).
 
 7. BEHAVIOR NOTES — print the behavior note for this slice where it
    governs, not in a legend: {{behavior_notes}} (mobile-specific
@@ -161,9 +176,11 @@ SECTION IMAGE PROMPT — WIREFRAME (stage: {{stage}}; mirror: {{purpose}})
     Do not garble any label or annotation: no "BIGNEFIT", "BTEP 7",
     "DISCIFIONAL", "FREIDOM", "Folow Gnlume Sno Home", "widhh", and no
     invented, dropped, doubled, or substituted characters anywhere.
-    Do not print any text that is not in the verbatim copy above; no
-    placeholder tokens, no lorem, no bracketed markers, no captions,
-    watermarks, or production labels.
+    Do not print any text that is not in the verbatim copy above or in
+    the wireframe annotations this template asks for (section number and
+    name, type specs, slot labels with pixel size, ratio and treatment,
+    behavior notes); no placeholder tokens, no lorem, no bracketed markers,
+    no watermarks.
 ```
 
 ---
@@ -202,25 +219,38 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
    and art direction:
    {{slots}}
    Tier R: ~9 portraits per frame, consistent Black-professional casting,
-   hand-chin and upward-gaze poses, jewel and earth blazers, gold hoops,
-   golden-hour bokeh; layered, arched, or diagonal shapes that bleed.
+   hand-chin and upward-gaze poses, wardrobe, set and light graded toward
+   the client's hero color with hero-color rim light; layered, arched, or
+   diagonal shapes that bleed out of their frames where the slot's
+   treatment says so.
    Tier H: sparse square rectangles, photos only where planned; founder
    slot stays the planned portrait or supplied asset.
+   Treatment, per slot from the slot record (not per tier): each slot keeps
+   the treatment the wireframe declared (`{{slots}}` carries it). State the
+   layering for that treatment: an overlay photo spans the full section
+   width as the BACKGROUND with the headline ON it inside the scrim zone; a
+   mask (circle, arch, pill, angled cut) is visible against the section
+   background; a light field runs the full width behind the words; a card
+   overlaps its photo. Add "Do not split this section into an image column
+   and a text column" for every non-split treatment.
 
 7. BEHAVIOR NOTES — {{behavior_notes}}; CTA strips keep the first-person
    outcome label and the microcopy line directly under the button.
 
 8. STYLE INPUT — apply `visual-mockup/page-visual-bible.json`:
-   {{style_input}}. Palette for this slice: {{palette_tokens}} (Tier R or
-   Tier H tokens; never wireframe red). Hue-shifting full-width bands,
-   gold hairline rules, leaf or botanical texture only in Tier R.
+   {{style_input}}. Palette for this slice: {{palette_tokens}} (the client's
+   resolved colors per the PAGE COLOR SYSTEM block; never the example
+   set's hexes, never another client's colors). Hard-ground full-width
+   bands in the hero, dark and light colors, hero-color rules and bracket
+   frames.
 
 9. STYLE REFERENCE LINE — print verbatim in the prompt:
    Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text.
 
 10. DENSITY TARGET — Tier R photo-dense (about nine portraits per frame
     where the section is photographic); Tier H sparse, one photo per
-    planned band at most. Script overlay on the photo in Tier R; move it
+    planned band at most; the per-page composition budget still holds
+    (`references/composition-treatments.json`). Script overlay on the photo in Tier R; move it
     to the caption bar in Tier H.
 
 11. NATIVE ASPECT — this slice at {{native_width}} x {{native_height}} px
@@ -242,5 +272,6 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
     characters anywhere.
     Do not print any text that is not in the verbatim copy above; no
     placeholder tokens, no agent notes, no lorem, no bracketed markers,
-    no captions, watermarks, or production labels.
+    no captions, watermarks, or production labels. A caption set on a photo
+    (treatment caption-over-photo) is verbatim copy, never an addition.
 ```

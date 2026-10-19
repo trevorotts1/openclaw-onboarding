@@ -32,7 +32,9 @@ SECTION = {
 LEAKY = ("Styled mockup section {section_number} {section_name} at {width}px ratio {ratio}. "
          "File: /Users/example/ref/chatgpt-mockup-4.png. Pixels: 724 × 2172. "
          "SHA-256: deadbeef. Raster: 724 × 2172. {copy} {slots}")
-REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image",
+# Mockup prompts need a resolved client palette (hypersaturation is built in); a made-up client.
+PALETTE = {"hero": "#0B5FFF", "dark": "#0A0A12", "light": "#FFFFFF", "accent": "#FFB400"}
+REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image", "_hypersat": PALETTE,
            "style": "warm editorial", "stage_prompts": {"visual-mockup": LEAKY}}
 
 
@@ -98,7 +100,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
                          "art_direction": "Desk detail."}]}
 
     def test_double_brace_template_renders_clean(self):
-        request = {"model": "stub",
+        request = {"model": "stub", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup":
                        "{{section_name}} section {{section_number}} at {width}px. "
                        "{copy} {slots}"}}
@@ -119,7 +121,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
         section = dict(self.NO_CTA, cta={"label": "SHOW ME THE SYSTEM",
                                          "microcopy": "45 minutes"})
         prompt = exe.stage_prompt("visual-mockup", section, 2, 1440,
-                                  {"model": "stub"}, "4:3")
+                                  {"model": "stub", "_hypersat": PALETTE}, "4:3")
         self.assertIn('CTA LABEL — print exactly: "SHOW ME THE SYSTEM"', prompt)
 
     def test_cta_resolves_from_the_run_copy_source(self):
@@ -128,6 +130,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
             (run / "copy.json").write_text(json.dumps({"sections": [
                 {"id": "S01", "cta": {"label": "SAVE MY SEAT"}},
                 {"id": "S02", "headline": "No button here"}]}), encoding="utf-8")
+            (run / "intake.json").write_text(json.dumps({"brand_owner": "blackceo", "brand_file": "assets/brand/blackceo-brand.json"}), encoding="utf-8")
             (run / "production-request.json").write_text(json.dumps({
                 "model": "stub", "sections": [
                     {"section_id": "S01", "section_name": "Hero",
@@ -155,7 +158,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
             "The page canvas is 1440x16736 and the reference is 724 × 2172.\n"
             "Keep the BlackCEO gold hairline rules and the 1440px frame.\n"
             "{copy} {slots}")
-        request = {"model": "stub", "stage_prompts": {"visual-mockup": template}}
+        request = {"model": "stub", "_hypersat": PALETTE, "stage_prompts": {"visual-mockup": template}}
         prompt = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
         for leak in ("Set for Life", "Tier H", "1440×16723", "1440x16736",
                      "724 × 2172", "MD ("):
@@ -164,7 +167,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
         self.assertIn("1440px frame", prompt)
 
     def test_below_floor_warns_and_names_the_deficit(self):
-        request = {"model": "gpt-image-2-5-sunburst",
+        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": "{copy}"}}
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
@@ -175,7 +178,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
 
     def test_design_prose_section_budget_refuses(self):
         filler = "Detailed rule. " * 1400
-        request = {"model": "gpt-image-2-5-sunburst",
+        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": filler + "{copy} {slots}"}}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
