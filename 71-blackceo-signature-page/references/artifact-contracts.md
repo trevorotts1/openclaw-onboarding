@@ -943,6 +943,20 @@ A section whose recomputed garble set is non-empty, whose verdict is not
 `pass`, or whose text-QC record is missing fails validation by name, and
 the stitcher produces nothing from such a record.
 
+`generation.reference_urls` is the section's reference image set, and it
+selects the task type: a non-empty list is the image-to-image task, an
+empty list is text-to-image. Every entry is an image URL (never a local
+path) and every entry is a slice, never a full sheet: the standard set's
+full sheets are 1440x16736 and 780x48894 pixels and are unusable as a
+style reference, which is why the set ships slices. The same list travels
+to Skill 66 as the request's `input_urls`; Skill 66 selects the model and
+validates the reference count, and Skill 74 forwards the payload verbatim.
+Standing files are raw.githubusercontent.com URLs on the public
+onboarding repository; per-run assets are uploaded with kie.ai's file
+upload (deleted after 24 hours, so usable only inside the same run). Never
+use a client's Go High Level media library for the standard set: it writes
+into the client's own library.
+
 A complete worked example follows. It is the record the Item 13
 test fixture writes (`tests/test_item13_production_method.py`), filled in
 for a mockup delivered as two section images. The file it describes is

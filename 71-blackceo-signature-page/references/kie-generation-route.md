@@ -13,6 +13,23 @@ Skill 71 stage -> policy owner (Skill 66 image, Skill 67 video) -> transport (Sk
 
 - Skill 71 never writes a model id from memory (rule 10). It hands the final prompt, the ratio and the
   reference files to Skill 66 (image) or Skill 67 (video), which select the model from their registry.
+- **Reference images select the task type.** When a section's
+  `generation.reference_urls` is non-empty, Skill 71 requests the `image-to-image`
+  task from Skill 66 (`66-kie-image/scripts/select_image_model.py` returns that
+  model's `routes["i2i"]`); when the list is empty it requests text-to-image. The
+  same URLs travel as the request's `input_urls`, the key Skill 66 validates
+  against the registry's reference caps (`66-kie-image/scripts/validate_payload.py`)
+  and Skill 74 forwards verbatim (`kie_live_adapter.py`). Skill 71 still never
+  selects the model itself.
+- **Slices only, never a full sheet.** Every `reference_urls` entry is a slice; the
+  standard set's full sheets are 1440x16736 and 780x48894 pixels and are never
+  attached. Standing files use
+  `https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/71-blackceo-signature-page/assets/visual-standards/...`
+  URLs (the repository is public). Per-run assets use kie.ai's file upload
+  (`07-kie-setup/INSTRUCTIONS.md:293`), which the documentation says is deleted
+  after 24 hours, so it is usable only inside the same run. Never use a client's
+  Go High Level media library for the standard set: `06-ghl-install-pages/tools/ghl_media.py`
+  writes into the client's own library.
 - Authority order (rule 1): owner rulings, department pins, Skills 66/67/68, Skill 74 (mechanics), static tables.
   An explicit client request for a model or a department pin wins over the default.
 - The GPT Image default is the newest GPT Image generation in KIE's live catalog (rule 13). Skill 66

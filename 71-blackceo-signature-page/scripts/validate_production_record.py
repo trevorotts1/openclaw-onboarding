@@ -23,7 +23,10 @@ checks:
 
   1. The generation inputs are recorded: the KIE GPT-image route, the
      build-time-resolved model id and its registry source, the layout
-     reference, and the style input (the visual bible).
+     reference, and the style input (the visual bible). On a mockup the
+     layout reference must resolve to an existing file -- the approved
+     wireframe section slice -- against the record's stage folder or the
+     run folder above it.
   2. The native-aspect output: the recorded width/height and native_aspect
      match the slice file's actual pixel dimensions.
   3. The text-QC leg record exists, states the read happened at native
@@ -107,6 +110,17 @@ def check_record(data, base_dir=None):
             failures.append(f"section {label}: generation.model_source must be one of {sorted(MODEL_SOURCES)}")
         if not isinstance(gen.get("layout_reference"), str) or not gen.get("layout_reference"):
             failures.append(f"section {label}: generation.layout_reference is required (the approved wireframe section for a mockup section; the section plan for a wireframe section)")
+        layout_reference = gen.get("layout_reference")
+        if (base_dir is not None and data.get("artifact") == "mockup"
+                and isinstance(layout_reference, str) and layout_reference.strip()):
+            ref = Path(layout_reference)
+            candidates = ([ref] if ref.is_absolute()
+                          else [Path(base_dir) / ref, Path(base_dir).parent / ref])
+            if not any(candidate.is_file() for candidate in candidates):
+                failures.append(
+                    f"section {label}: generation.layout_reference does not resolve to an existing file: "
+                    f"{layout_reference} (a mockup section's approved wireframe slice must be on disk, "
+                    f"relative to the stage folder or the run folder above it)")
         if not isinstance(gen.get("style_input"), str) or not gen.get("style_input"):
             failures.append(f"section {label}: generation.style_input is required (the page visual bible)")
         if dims_ok and gen.get("native_aspect") != f"{width}x{height}":
