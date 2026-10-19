@@ -387,6 +387,101 @@ class TestUploadMedia:
                 m.upload_media(*args, opener=_ok_opener())
 
 
+# ── list_media (REQUIRED type; mock the HTTP via opener) ─────────────────────
+
+class TestListMedia:
+    """GET /medias/files REQUIRES ``type``; the type gate runs BEFORE any HTTP."""
+
+    LIST_BODY = (
+        b'{"files":[{"id":"FILEID123","name":"hero.png","type":"file"}],'
+        b'"count":1,"traceId":"TRACE123"}'
+    )
+
+    def _recording_opener(self, rec: dict, code: int = 200, body: bytes | None = None):
+        def _opener(req, timeout):
+            rec["url"] = req.full_url
+            rec["method"] = req.get_method()
+            rec["auth"] = req.get_header("Authorization")
+            rec["version"] = req.get_header("Version")
+            rec["accept"] = req.get_header("Accept")
+            rec["ua"] = req.get_header("User-agent")
+            return _FakeResp(code, self.LIST_BODY if body is None else body)
+        return _opener
+
+    def test_list_without_type_fails_before_any_http(self):
+        calls = {"n": 0}
+
+        def opener(req, t):
+            calls["n"] += 1
+            return _FakeResp(200, self.LIST_BODY)
+
+        with pytest.raises(m.MediaListTypeError, match="requires an explicit type"):
+            m.list_media(FAKE_LOC, FAKE_PIT, opener=opener)
+        assert calls["n"] == 0  # no Request reached the transport
+
+    def test_blank_type_fails_before_any_http(self):
+        calls = {"n": 0}
+
+        def opener(req, t):
+            calls["n"] += 1
+            return _FakeResp(200, self.LIST_BODY)
+
+        with pytest.raises(m.MediaListTypeError, match="requires an explicit type"):
+            m.list_media(FAKE_LOC, FAKE_PIT, media_type="  ", opener=opener)
+        assert calls["n"] == 0
+
+    def test_type_file_builds_v3_get_and_reaches_transport(self):
+        rec: dict = {}
+        res = m.list_media(
+            FAKE_LOC, FAKE_PIT, media_type="file",
+            opener=self._recording_opener(rec),
+        )
+        assert rec["url"] == (
+            "https://services.leadconnectorhq.com/medias/files"
+            f"?type=file&locationId={FAKE_LOC}"
+        )
+        assert rec["method"] == "GET"
+        assert rec["auth"] == f"Bearer {FAKE_PIT}"
+        assert rec["version"] == "v3"
+        assert rec["accept"] == "application/json"
+        assert rec["ua"] and "Python-urllib" not in rec["ua"]
+        assert res["files"] == [{"id": "FILEID123", "name": "hero.png", "type": "file"}]
+        assert res["count"] == 1
+        assert res["traceId"] == "TRACE123"
+        assert res["http"] == 200
+
+    def test_type_is_normalized(self):
+        rec: dict = {}
+        m.list_media(FAKE_LOC, FAKE_PIT, media_type="  IMAGE ",
+                     opener=self._recording_opener(rec))
+        assert "?type=image&" in rec["url"]
+
+    def test_invalid_type_rejected_before_transport(self):
+        calls = {"n": 0}
+
+        def opener(req, t):
+            calls["n"] += 1
+            return _FakeResp(200, self.LIST_BODY)
+
+        with pytest.raises(m.MediaListTypeError, match="not supported"):
+            m.list_media(FAKE_LOC, FAKE_PIT, media_type="spreadsheet", opener=opener)
+        assert calls["n"] == 0
+
+    def test_http_error_is_typed(self):
+        opener = lambda req, t: _FakeResp(422, b'{"message":"type should not be empty"}')
+        with pytest.raises(m.MediaListError, match="HTTP 422"):
+            m.list_media(FAKE_LOC, FAKE_PIT, media_type="file", opener=opener)
+
+    def test_body_without_files_is_typed(self):
+        opener = lambda req, t: _FakeResp(200, b'{"count":0}')
+        with pytest.raises(m.MediaListError, match="no `files` list"):
+            m.list_media(FAKE_LOC, FAKE_PIT, media_type="file", opener=opener)
+
+    def test_blank_location_or_pit_rejected(self):
+        for loc, pit in (("", FAKE_PIT), (FAKE_LOC, "")):
+            with pytest.raises(ValueError):
+                m.list_media(loc, pit, media_type="file", opener=_ok_opener())
+
 # ── image_tag ─────────────────────────────────────────────────────────────────
 
 class TestImageTag:

@@ -4,8 +4,11 @@
  * One same-origin loopback service exposes the health, identity, session
  * URL and admission contract AROUND the canonical durable owner. It is
  * deliberately not an engine: admissions are forwarded to an injected
- * sink, and the event stream adapter is reported as unbound rather than
- * fabricated.
+ * sink, the event stream is served from an injected adapter over the
+ * canonical journal, and the session route reads through an injected
+ * reader. With neither adapter bound the service keeps its historical
+ * unbound answers byte-for-byte (`EVENT_STREAM_ADAPTER_NOT_BOUND`,
+ * `ui: "not_bundled"`) — it never fabricates a stream or a session.
  *
  * Behaviour proven by the colocated tests:
  * - duplicate start resolves and reuses ONLY a verified matching service;
@@ -25,6 +28,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
+import {
+  formatCouncilEventFrame,
+  type CouncilEventCursor,
+  type CouncilEventStreamAdapter,
+  type CouncilSessionReader,
+} from './events.js';
 import {
   classifyListener,
   normalizeOrigin,
@@ -74,6 +83,16 @@ export interface FrontDoorOptions {
   openUrl?: (url: string) => BrowserOpenResult;
   /** The owning authority's admission surface (composition root supplies it). */
   admissionSink?: AdmissionSink;
+  /**
+   * Durable event stream source (composition root supplies it over the
+   * canonical journal/outbox). Unbound keeps the 501 contract.
+   */
+  eventsAdapter?: CouncilEventStreamAdapter;
+  /**
+   * Durable session reader (composition root supplies it over the
+   * canonical repositories). Unbound keeps the historical 200 body.
+   */
+  sessionReader?: CouncilSessionReader;
   readiness?: FrontDoorReadinessDeps;
 }
 
@@ -123,6 +142,22 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
     'cache-control': 'no-store',
   });
   res.end(text);
+}
+
+/** Unknown durable session: one code for the session and events routes. */
+function sessionNotFound(sessionId: string): {
+  code: 'SESSION_NOT_FOUND';
+  session_id: string;
+  detail: string;
+  recovery: string;
+} {
+  return {
+    code: 'SESSION_NOT_FOUND',
+    session_id: sessionId,
+    detail: `No durable council session ${sessionId} is known to the composed store.`,
+    recovery:
+      'Admit the session through POST /api/council/admissions, then use the session id the store returned.',
+  };
 }
 
 /** Self-contained HTML only: no external asset, script or stylesheet. */
@@ -502,6 +537,39 @@ export class CouncilFrontDoor {
         sendJson(res, 503, target);
         return;
       }
+      // Bound reader: an id the durable store does not know is a 404,
+      // never the unbound page. An id it knows serves that session.
+      const sessionReader = this.options.sessionReader;
+      if (sessionReader) {
+        const record = await sessionReader.read(sessionId);
+        if (record === null) {
+          sendJson(res, 404, sessionNotFound(sessionId));
+          return;
+        }
+        const authority =
+          record.authority === 'managed' || record.authority === 'standalone'
+            ? record.authority
+            : 'standalone';
+        const known = resolveSessionTarget(
+          { session_id: sessionId, authority },
+          { origin: this.origin },
+        );
+        if (known.kind === 'blocked') {
+          sendJson(res, 503, known);
+          return;
+        }
+        sendJson(res, 200, {
+          session_id: sessionId,
+          authority,
+          url: known.url,
+          session: record,
+          api: {
+            session: known.url,
+            events: eventsPath(sessionId),
+          },
+        });
+        return;
+      }
       sendJson(res, 200, {
         session_id: sessionId,
         authority: 'standalone',
@@ -530,6 +598,11 @@ export class CouncilFrontDoor {
       } catch {
         sessionId = '';
       }
+      const adapter = this.options.eventsAdapter;
+      if (adapter) {
+        await this.serveEventStream(res, sessionId, adapter);
+        return;
+      }
       sendJson(res, 501, {
         code: 'EVENT_STREAM_ADAPTER_NOT_BOUND',
         session_id: sessionId,
@@ -551,6 +624,73 @@ export class CouncilFrontDoor {
       code: 'SERVICE_ROUTE_NOT_FOUND',
       detail: `No service route for ${method} ${path}.`,
     });
+  }
+
+  /**
+   * Serve one session's committed events from the injected adapter.
+   *
+   * Frames are committed journal rows only: `replay` is the catch-up and
+   * the optional `subscribe` follows new rows. A failed read is retried
+   * by the adapter from the same cursor; nothing is fabricated to cover
+   * it. Without a follow hook the response ends after replay (a bounded,
+   * honest read), and a browser/harness disconnect detaches at once.
+   */
+  private async serveEventStream(
+    res: ServerResponse,
+    sessionId: string,
+    adapter: CouncilEventStreamAdapter,
+  ): Promise<void> {
+    const reader = this.options.sessionReader;
+    if (reader && (await reader.read(sessionId)) === null) {
+      sendJson(res, 404, sessionNotFound(sessionId));
+      return;
+    }
+
+    const cursor: CouncilEventCursor | null = await adapter.open(sessionId);
+    if (cursor === null) {
+      sendJson(res, 404, sessionNotFound(sessionId));
+      return;
+    }
+
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+
+    let closed = false;
+    let detach: (() => void) | null = null;
+    const close = (): void => {
+      if (closed) return;
+      closed = true;
+      detach?.();
+      detach = null;
+    };
+    res.on('close', close);
+
+    try {
+      for (const frame of await cursor.replay(0)) {
+        if (closed) return;
+        res.write(formatCouncilEventFrame(frame));
+      }
+    } catch (error) {
+      close();
+      if (!res.headersSent) throw error;
+      res.end();
+      return;
+    }
+
+    if (!cursor.subscribe) {
+      res.end();
+      return;
+    }
+
+    detach = cursor.subscribe((frame) => {
+      if (closed) return;
+      res.write(formatCouncilEventFrame(frame));
+    });
+    if (closed) close();
   }
 
   /**
