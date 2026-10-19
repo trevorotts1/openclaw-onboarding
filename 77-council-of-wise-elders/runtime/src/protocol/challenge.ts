@@ -105,6 +105,7 @@ import type {
 } from '../cli/host-ports.js';
 import { CHALLENGE_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
 import { parseCardResponseText } from '../cli/card-text.js';
+import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import {
   SimulatedCrashError,
   TransportDispatchError,
@@ -226,6 +227,7 @@ export interface LaterRoundDeps {
    */
   readonly loadSeatBriefing?: (
     seatId: SeatId,
+    session?: StoredSession,
   ) => Promise<{ briefing_text: string } | null>;
   /**
    * Optional actual-charge pricer for transports that meter money.
@@ -724,7 +726,7 @@ export function cruxSetSha256(cruxes: readonly Crux[]): string {
  * CWE-050 consolidation: the single source is CHALLENGE_SYSTEM in
  * cli/engine.ts; this name is kept as the protocol surface.
  */
-export const CHALLENGE_ROUND_SYSTEM = CHALLENGE_SYSTEM;
+export const CHALLENGE_ROUND_SYSTEM = `${CHALLENGE_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a Round 2 challenge input manifest. */
 export const CHALLENGE_INPUT_KIND = 'wise-elders.challenge-input/v1';
@@ -894,7 +896,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
     const assigned = assignedCruxesFor(cruxes, seatId);

@@ -110,6 +110,7 @@ import {
   SEAT_FOCUS,
 } from '../cli/engine.js';
 import { parseCardResponseText } from '../cli/card-text.js';
+import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import {
   SimulatedCrashError,
   type OperationDispatchContext,
@@ -572,7 +573,7 @@ export function evaluateQuickModeSkip(input: QuickSkipInput): QuickSkipEvaluatio
  * consolidation: the single source is RATIFICATION_SYSTEM in
  * cli/engine.ts; this name is kept as the protocol surface.
  */
-export const RATIFICATION_ROUND_SYSTEM = RATIFICATION_SYSTEM;
+export const RATIFICATION_ROUND_SYSTEM = `${RATIFICATION_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a Round 3 ratification input manifest. */
 export const RATIFICATION_INPUT_KIND = 'wise-elders.ratification-input/v1';
@@ -754,7 +755,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
     const round1Cards = this.deps
@@ -997,7 +998,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
  * single source is CONSULT_SYSTEM in cli/engine.ts; re-exported under
  * the same name for this module's existing surface.
  */
-export const CONSULT_SYSTEM = ENGINE_CONSULT_SYSTEM;
+export const CONSULT_SYSTEM = `${ENGINE_CONSULT_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a consult input manifest. */
 export const CONSULT_INPUT_KIND = 'wise-elders.consult-input/v1';
@@ -1139,7 +1140,7 @@ export class ConsultExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
     const briefView = payloadBriefView(context);
 
