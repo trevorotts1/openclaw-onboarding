@@ -42,6 +42,101 @@ echo ""
 [ -f "$UPDATE_SH" ] || { echo "FATAL: $UPDATE_SH not found"; exit 1; }
 
 # ── install.sh: start_ghl_mcp_autostart() ────────────────────────────────────
+#
+# PRESENCE CHECK: start_ghl_mcp_autostart() was deleted when install.sh Step 14a
+# became a retirement scan (GU-019) — a fresh install no longer runs the
+# autostart at all, so install.sh has no STATUS line of its own to route. The
+# original install.sh half below stays reachable behind LEGACY_PRESENT:
+# restoring the function re-arms those assertions instead of bypassing them.
+# What locks install.sh now is the contract that replaced the function — the
+# step must exist as a retirement scan, it must carry its refusal marker and
+# read-only scanner, it must contain no start invocation, and its state router
+# must still decide on evidence (three live cases, run for real).
+LEGACY_PRESENT=0
+if grep -qF 'start_ghl_mcp_autostart() {' "$INSTALL_SH"; then
+  LEGACY_PRESENT=1
+fi
+
+if [ "$LEGACY_PRESENT" -eq 0 ]; then
+  echo "--- RETIRED: start_ghl_mcp_autostart() absent from install.sh; locking Step 14a's retirement contract instead ---"
+
+  _code_of() { awk '{ sub(/#.*/, ""); print }' "$1"; }   # live code only
+  C_INSTALL="$(mktemp "${TMPDIR:-/tmp}/ghl-status-code.XXXXXX")"
+  _code_of "$INSTALL_SH" > "$C_INSTALL"
+
+  if grep -qF 'Step 14a: GHL community MCP' "$C_INSTALL"; then
+    pass "(install.sh) Step 14a still ships as the GHL community MCP step (retirement scan)"
+  else
+    fail "(install.sh) Step 14a: GHL community MCP step is missing from install.sh (comment-stripped)"
+  fi
+
+  if grep -qE '^[[:space:]]*GHL_MCP_RETIRED=1' "$C_INSTALL"; then
+    pass "(install.sh) GHL_MCP_RETIRED=1 is assigned on a live line (the step declares retirement)"
+  else
+    fail "(install.sh) GHL_MCP_RETIRED=1 is no longer assigned — Step 14a stopped declaring the retirement"
+  fi
+
+  if grep -qF '# >>> GHL-MCP-RETIREMENT-BEGIN' "$INSTALL_SH" \
+     && grep -qF '# <<< GHL-MCP-RETIREMENT-END' "$INSTALL_SH"; then
+    pass "(install.sh) GHL-MCP-RETIREMENT-BEGIN/END markers present — the read-only scan block tests extract still ships"
+  else
+    fail "(install.sh) GHL-MCP-RETIREMENT markers missing — the extracted retirement scan block is gone"
+  fi
+
+  # The step must contain NO start invocation: nothing may shell out to the
+  # community lifecycle script (statement/argument boundary, 60-char window,
+  # same rule scripts/qc-assert-ghl-mcp-supervised.sh enforces).
+  if grep -qE '(^|[;&|({"=])[[:space:]]*(bash|sh|zsh|exec|nohup|setsid|source)[[:space:]]+[^|;&]{0,60}ghl-mcp-(autostart|probe)\.sh' "$C_INSTALL"; then
+    fail "(install.sh) install.sh still invokes the community lifecycle script on a live line — Step 14a is a start path again, not a retirement scan"
+    grep -nE '(^|[;&|({"=])[[:space:]]*(bash|sh|zsh|exec|nohup|setsid|source)[[:space:]]+[^|;&]{0,60}ghl-mcp-(autostart|probe)\.sh' "$C_INSTALL" | sed 's/^/        /'
+  else
+    pass "(install.sh) install.sh contains no invocation of ghl-mcp-autostart.sh / ghl-mcp-probe.sh (comment-stripped) — Step 14a never starts the service"
+  fi
+
+  if grep -qF 'ghl-mcp-retirement=' "$C_INSTALL"; then
+    pass "(install.sh) Step 14a reports its own status surface: STATUS: ghl-mcp-retirement=<STATE> (replaces the deleted STATUS routing)"
+  else
+    fail "(install.sh) Step 14a no longer prints STATUS: ghl-mcp-retirement= — the retirement state is silent"
+  fi
+
+  # Control: the comment-stripper must still yield real live function
+  #   definitions, otherwise the absence claim above could pass on an empty strip.
+  if grep -qE 'oc_ghl_mcp_write_receipt[[:space:]]*\(\)[[:space:]]*\{' "$C_INSTALL"; then
+    pass "(install.sh) control — comment-stripped install.sh still contains live function definitions (oc_ghl_mcp_write_receipt), so the no-invocation claim is about real code"
+  else
+    fail "(install.sh) control failed — comment-stripped install.sh contains no live function definitions; the no-invocation claim proves nothing"
+  fi
+
+  # Behaviour, not description: the replacement state router decides on
+  # evidence — present beats unknown beats absent. Run the REAL function
+  # extracted from the shipped installer, three ways.
+  STATE_FN="$(awk '/^oc_ghl_mcp_state_from\(\) \{/,/^}/' "$INSTALL_SH")"
+  if [ -n "$STATE_FN" ]; then
+    _state() { ( eval "$STATE_FN"; oc_ghl_mcp_state_from "$@" ) 2>/dev/null; }
+    _got_all_absent="$(_state absent absent absent)"
+    _got_present="$(_state present absent absent)"
+    _got_unknown="$(_state absent unknown absent)"
+    if [ "$_got_all_absent" = "RETIRED_VERIFIED" ]; then
+      pass "(install.sh) state router: every surface absent -> RETIRED_VERIFIED"
+    else
+      fail "(install.sh) state router: all-absent should be RETIRED_VERIFIED, got '${_got_all_absent}'"
+    fi
+    if [ "$_got_present" = "MIGRATION_FAILED" ]; then
+      pass "(install.sh) state router: a present residual surface -> MIGRATION_FAILED (evidence beats an absent majority)"
+    else
+      fail "(install.sh) state router: one present surface should be MIGRATION_FAILED, got '${_got_present}'"
+    fi
+    if [ "$_got_unknown" = "UNVERIFIED" ]; then
+      pass "(install.sh) state router: an unreadable surface -> UNVERIFIED (never reported as off)"
+    else
+      fail "(install.sh) state router: an unknown surface should be UNVERIFIED, got '${_got_unknown}'"
+    fi
+  else
+    fail "(install.sh) could not extract oc_ghl_mcp_state_from() from install.sh — the retirement state router is gone"
+  fi
+
+  rm -f "$C_INSTALL"
+elif [ "$LEGACY_PRESENT" -eq 1 ]; then
 INSTALL_FN="$(awk '/^start_ghl_mcp_autostart\(\) \{/,/^}/' "$INSTALL_SH")"
 if [ -z "$INSTALL_FN" ]; then
   fail "(install.sh setup) could not extract start_ghl_mcp_autostart() — anchors drifted"
@@ -94,6 +189,12 @@ if printf '%s' "$OUT" | grep -qF 'OK:' && printf '%s' "$OUT" | grep -qiF 'answer
 else
   fail "(install.sh) HEALTHY_ALREADY routing regressed. Output: $OUT"
 fi
+
+fi
+# Both halves of the legacy route run only while start_ghl_mcp_autostart()
+# ships; the retirement contract above runs while it does not. Either way the
+# update-skills.sh half below still runs — that STATUS-line router is live in
+# both worlds.
 
 # ── update-skills.sh: the STATUS-line case block ─────────────────────────────
 UPDATE_CASE="$(awk '/^  case "\$GHL_MCP_STATUS_LINE" in/,/^  esac/' "$UPDATE_SH")"
