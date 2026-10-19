@@ -7893,11 +7893,16 @@ oc_ghl_mcp_scan() {
     #    still run after the source checkout is deleted), so their presence is
     #    expected and is NOT a resurrection signal.
     if [ -n "$_launcher_dir" ] && [ -d "$_launcher_dir" ]; then
-        for _lf in ${_OC_GHL_MCP_RETIRED_SCRIPTS:-}; do
-            if [ -f "$_launcher_dir/$_lf" ]; then
-                OC_GHL_MCP_V_LAUNCHER=present
-                break
-            fi
+        # GLOB, not the named list: the named list only covers the five files we
+        # know about, so a NEWLY added ghl-mcp-*.sh resurrection surface would be
+        # invisible here. The retained retirement tooling is exempted by its
+        # retirement marker (same rule the delivery gate uses), so any OTHER
+        # ghl-mcp-*.sh that reappears is still caught.
+        for _lf in "$_launcher_dir"/ghl-mcp-*.sh; do
+            [ -f "$_lf" ] || continue
+            grep -qE 'GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED' "$_lf" 2>/dev/null && continue
+            OC_GHL_MCP_V_LAUNCHER=present
+            break
         done
         unset _lf
     fi
