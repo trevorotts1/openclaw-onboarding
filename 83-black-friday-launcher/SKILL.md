@@ -11,7 +11,7 @@ description: >
   completeness checks. Ships a 999 dependency package that enables nothing.
   Offline core only: no live payment, no entitlement creation, no paid model
   session.
-version: 0.2.1
+version: 0.2.2
 priority: HIGH
 ---
 
