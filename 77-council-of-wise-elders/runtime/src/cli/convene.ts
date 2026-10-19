@@ -110,6 +110,13 @@ function asText(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+// A refusal's plain-English summary when it has one, else the raw detail.
+function detailText(detail: unknown): string | null {
+  if (detail === undefined) return null;
+  const summary = (detail as { summary?: unknown } | null)?.summary;
+  return typeof summary === 'string' ? summary : asText(detail);
+}
+
 async function callService(
   origin: string,
   path: string,
@@ -151,7 +158,7 @@ async function callService(
   if (!res.ok) {
     throw serviceError(
       typeof obj.code === 'string' ? obj.code : `SERVICE_HTTP_${res.status}`,
-      obj.detail !== undefined ? asText(obj.detail) : `The council service refused with HTTP ${res.status}.`,
+      detailText(obj.detail) ?? `The council service refused with HTTP ${res.status}.`,
       typeof obj.recovery === 'string' ? obj.recovery : 'Read the code above and retry once it is resolved.',
     );
   }

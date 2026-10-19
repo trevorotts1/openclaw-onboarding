@@ -94,6 +94,7 @@ import {
   loadRouteBudgetConfig,
   routeBudgetApprovalsPath,
   routeBudgetConfigPath,
+  routeBudgetRecovery,
   routeBudgetResolver,
   routeBudgetStatus,
   type RouteBudgetApproval,
@@ -619,7 +620,7 @@ function assertRouteBudgetApproved(
             ? `not yet measured: ${describeProposed(proposed)}`
             : 'no route budget entry covers this route and model',
     },
-    'The operator measures this route (scripts/measure-route-bytes-per-token.mjs) and approves the proposed numbers (scripts/approve-route-budget.mjs); no restart is needed. Or convene on a route that already has an approved budget.',
+    routeBudgetRecovery(snapshot.routeId),
   );
 }
 

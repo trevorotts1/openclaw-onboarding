@@ -227,7 +227,8 @@ test('convene is refused 503 until the operator approves, then runs with no rest
     assert.deepEqual(refusedBody.detail.unbound, ['route_budget']);
     assert.match(refusedBody.detail.checks[0].detail, /awaiting operator approval/);
     assert.match(refusedBody.detail.checks[0].detail, /3\.1 min bytes per token/);
-    assert.ok(refusedBody.recovery.length > 0);
+    assert.match(refusedBody.recovery, /measure-route-bytes-per-token\.mjs --route claude-nine-configured/);
+    assert.match(refusedBody.recovery, /approve-route-budget\.mjs --route claude-nine-configured/);
     assert.equal(
       db.listSessions(fixture.service.composition.backend.ownerEnvelope).length,
       0,

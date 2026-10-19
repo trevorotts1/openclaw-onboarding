@@ -78,6 +78,23 @@ export function routeBudgetConfigPath(
     : join(skillRoot, 'config', 'route-budgets.json');
 }
 
+/**
+ * What a refusal for a missing route budget tells the client. One text for
+ * every refusal path, so the first-run message never says less than the
+ * per-route one. Nothing here approves anything.
+ */
+export function routeBudgetRecovery(routeId: string = '<route_id>'): string {
+  return (
+    'This route cannot start a council until its token budget is measured and approved by the operator. ' +
+    'Nothing is approved automatically, and a client cannot approve it. ' +
+    'The operator, from the council skill folder: ' +
+    `(1) run "node scripts/measure-route-bytes-per-token.mjs --route ${routeId} --write" (a few small real model calls; it writes PROPOSED numbers and approves nothing); ` +
+    '(2) review the proposed numbers it prints; ' +
+    `(3) run "node scripts/approve-route-budget.mjs --route ${routeId} --approved-by <name> --data-dir <council service data folder>" to record the approval. ` +
+    'No restart is needed: convene again afterwards. A route that already has an approved budget can be used meanwhile.'
+  );
+}
+
 export function routeBudgetApprovalsPath(serviceDataDir: string): string {
   return join(serviceDataDir, 'route-budget-approvals.json');
 }

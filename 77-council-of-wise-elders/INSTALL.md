@@ -209,6 +209,33 @@ recorded budget:
   it names the missing prerequisite precisely rather than claiming
   the council itself is unbuilt.
 
+## Step 9b: Route budget (first-run operator step)
+
+A fresh install ships `config/route-budgets.json` with every route
+unmeasured, so the first convene on any route is refused with
+`COMPOSITION_NOT_READY` and a message naming the route and these steps.
+This is deliberate: the budget converts the model's token limits into the
+byte limits the council can count, and a wrong number wastes paid calls.
+Nothing is approved automatically, and the client cannot approve it.
+
+1. Measure (operator, from the skill folder; spends the client's model
+   allowance, so only with their go): `node scripts/measure-route-bytes-per-token.mjs
+   --route ID --write`. It sends eight small fixed samples, prints the
+   PROPOSED entry, and writes it to the config. It approves nothing.
+   `--save-measurements FILE` keeps the raw readings; `--measurements FILE`
+   recomputes the same entry offline with no model call.
+2. Review the proposed numbers (smallest bytes per token, safety factor,
+   context window, output limit).
+3. Approve exactly those numbers: `node scripts/approve-route-budget.mjs
+   --route ID --approved-by NAME --data-dir DIR`. DIR is the council
+   service data folder, outside the skill folder. If the proposed numbers
+   change later, the approval no longer matches and the route returns to
+   "awaiting approval".
+4. No restart is needed: the service re-reads both files on every convene.
+
+Each route (Claude, claude-nine, DeepSeek) needs its own measurement and
+approval before it can convene.
+
 ## Step 10: Release receipt
 
 Record, in the install work log or the box's onboarding state:

@@ -25,6 +25,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TrustedPrincipal } from '../authorization/index.js';
+import { routeBudgetRecovery } from '../budgets/route-budget.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import { buildSampleSession } from '../cli/fixture-transport.js';
 import type { Clock, IdSource, StoredSession } from '../cli/host-ports.js';
@@ -312,14 +313,18 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     const readiness = deps.deliberation.readiness();
     if (!readiness.ready) {
       const unbound = readiness.checks.filter((c) => !c.bound);
+      const budget = unbound.find((c) => c.name === 'route_budget');
       throw new DriverRefusal(
         'COMPOSITION_NOT_READY',
         `The council is not ready to convene: ${unbound.map((c) => c.name).join(', ')} not bound.`,
-        'Bind the missing services (see detail.checks), then convene again.',
+        budget
+          ? routeBudgetRecovery(input.route?.route_id ?? undefined)
+          : 'Bind the missing services (see detail.checks), then convene again.',
         503,
         {
           unbound: unbound.map((c) => c.name),
           checks: unbound.map((c) => ({ name: c.name, detail: c.detail })),
+          ...(budget ? { summary: budget.detail } : {}),
         },
       );
     }
