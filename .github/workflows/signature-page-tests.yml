@@ -1,0 +1,41 @@
+name: signature-page-tests
+
+# Fix 11.2: nothing ran skill 71's tests, so a change could land green while
+# the skill's own suite was red. One step, both entry points, from the
+# repository root. Both are self-contained: no framework, no install step.
+#
+# Problem 11 proved the gap: `grep -rl 'run_tests.py' .github/workflows` = 0
+# while 65 workflow files existed. This job is the one that names the skill.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "71-blackceo-signature-page/**"
+      - ".github/workflows/signature-page-tests.yml"
+  pull_request:
+    paths:
+      - "71-blackceo-signature-page/**"
+      - ".github/workflows/signature-page-tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  signature-page-tests:
+    name: signature-page-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run skill 71 tests
+        run: |
+          python3 71-blackceo-signature-page/tests/run_tests.py
+          python3 71-blackceo-signature-page/tests/test_visual_standards.py
