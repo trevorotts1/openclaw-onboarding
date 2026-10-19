@@ -30,7 +30,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE_SRC="$REPO_ROOT/scripts/ghl-mcp-assert-runtime.sh"
 LIB_SRC="$REPO_ROOT/scripts/lib/ghl-mcp-paths.sh"
-TMPBASE="${GHL_TEST_TMPBASE:-/Volumes/mac mini m4/Downloads/GHL updates/tmp}"
+TMPBASE="${GHL_TEST_TMPBASE:-${TMPDIR:-/tmp}/ghl-retire-test}"
 mkdir -p "$TMPBASE"
 
 PASS=0

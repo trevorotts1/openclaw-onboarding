@@ -44,7 +44,7 @@ if [ ! -f "$PROBE" ]; then
 fi
 
 # ── sandbox ──────────────────────────────────────────────────────────────────
-BASE="${GHL_RETIRE_TEST_ROOT:-/Volumes/mac mini m4/Downloads/GHL updates/tmp}"
+BASE="${GHL_RETIRE_TEST_ROOT:-${TMPDIR:-/tmp}/ghl-retire-test}"
 mkdir -p "$BASE" || exit 1
 WORK="$(mktemp -d "$BASE/ghl-probe-retire.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT

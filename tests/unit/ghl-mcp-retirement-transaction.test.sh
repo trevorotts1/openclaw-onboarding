@@ -24,7 +24,7 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AUTOSTART="$REPO_ROOT/scripts/ghl-mcp-autostart.sh"
 PATHS_LIB="$REPO_ROOT/scripts/lib/ghl-mcp-paths.sh"
-BASE="${GHL_RETIRE_TEST_ROOT:-/Volumes/mac mini m4/Downloads/GHL updates/tmp}"
+BASE="${GHL_RETIRE_TEST_ROOT:-${TMPDIR:-/tmp}/ghl-retire-test}"
 
 PASS=0; FAIL=0
 pass() { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }

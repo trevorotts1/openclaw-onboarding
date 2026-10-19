@@ -16,7 +16,10 @@
 #     CHECK 3  any lifecycle script still shipped must be an inert tombstone
 #              (a retirement refusal marker), or be absent entirely
 #     CHECK 4  no shipped script may start, restart, register, schedule or
-#              resurrect the community MCP (the FORBIDDEN_PATTERNS scan)
+#              resurrect the community MCP — the FORBIDDEN_PATTERNS scan, plus
+#              the INVOKE_RE pass that catches a plain
+#              `bash scripts/ghl-mcp-autostart.sh` (no supervisor verb on the
+#              line), which is the shape every supervisor-verb pattern missed
 #     CHECK 5  the official ghl-mcp (Tier 1) registration must survive
 #   Supervision QUALITY of a service that never runs is no longer a shipped-code
 #   property, so the old content cases were re-cast onto the invariants the gate
@@ -40,8 +43,8 @@
 #   (A) The SHIPPED repo scripts PASS (exit 0).
 #   (B) A lifecycle script that ships WITHOUT a retirement refusal marker FAILS.
 #   (C) A comment that merely DOCUMENTS a removed launch surface PASSES.
-#   (D) `setsid nohup bash "$SUP"` PASSES; the same line NAMING the retired
-#       service FAILS — that is what the setsid rule requires now.
+#   (D) `setsid nohup bash "$SUP"` PASSES; invoking the lifecycle script by
+#       name, or naming the retired service on a setsid line, FAILS.
 #
 # Exit 0 = all checks pass. Exit 1 = one or more failed (CI FAIL).
 
@@ -227,20 +230,30 @@ else
   fail "(C) comment-only documentation tripped the gate (exit $SBX_RC) — false positive"
 fi
 
-# ── (D) What the setsid rule requires now ─────────────────────────────────────
-# The generic scan does NOT ban a supervised relaunch loop; it bans one that
-# names the RETIRED SERVICE. Both halves are asserted.
+# ── (D) What the launch-surface rules require now ─────────────────────────────
+# Three halves, one contract. A supervised relaunch loop that names NOTHING is
+# fine; the two shapes the gate must still catch are (1) INVOKING the community
+# lifecycle script by name — the blind spot where every supervisor-verb pattern
+# looked for `pm2`/`launchctl`/`systemctl` on the same line and a plain
+# `bash scripts/ghl-mcp-autostart.sh` matched nothing — and (2) a setsid line
+# that names the RETIRED SERVICE.
 LOOP_HELPER='#!/usr/bin/env bash
 setsid nohup bash "$SUP" >/dev/null 2>&1 &'
 _run_sandbox "$GOOD_AUTOSTART" "$GOOD_VPS" "$LOOP_HELPER"
-_d_rc="$SBX_RC"
-SERVICED_HELPER='#!/usr/bin/env bash
-setsid nohup bash "$SELF_DIR/ghl-mcp-autostart.sh" --service ghl-community-mcp >/dev/null 2>&1 &'
-_run_sandbox "$GOOD_AUTOSTART" "$GOOD_VPS" "$SERVICED_HELPER"
-if [ "$_d_rc" = "0" ] && [ "$SBX_RC" = "1" ] && _trip "is a live community-MCP resurrection surface"; then
-  pass "(D) 'setsid nohup bash \"\$SUP\"' PASSES and the same loop NAMING ghl-community-mcp FAILS (the rule keys on the service, not the verb)"
+_d_loop="$SBX_RC"
+INVOKE_HELPER='#!/usr/bin/env bash
+bash "$SELF_DIR/ghl-mcp-autostart.sh"'
+_run_sandbox "$GOOD_AUTOSTART" "$GOOD_VPS" "$INVOKE_HELPER"
+_d_invoke="$SBX_RC"; _d_invoke_trip=$(_trip "is a live community-MCP resurrection surface" && echo yes || echo no)
+SERVICE_HELPER='#!/usr/bin/env bash
+setsid nohup bash -c "serve ghl-community-mcp" >/dev/null 2>&1 &'
+_run_sandbox "$GOOD_AUTOSTART" "$GOOD_VPS" "$SERVICE_HELPER"
+_d_service="$SBX_RC"; _d_service_trip=$(_trip "is a live community-MCP resurrection surface" && echo yes || echo no)
+if [ "$_d_loop" = "0" ] && [ "$_d_invoke" = "1" ] && [ "$_d_invoke_trip" = "yes" ] \
+   && [ "$_d_service" = "1" ] && [ "$_d_service_trip" = "yes" ]; then
+  pass "(D) 'setsid nohup bash \"\$SUP\"' PASSES; invoking the lifecycle script by name and naming the service on a setsid line both FAIL"
 else
-  fail "(D) setsid contract broken: unserviced exit=$_d_rc, serviced exit=$SBX_RC (expected 0 then 1) — the gate either bans every loop or bans none"
+  fail "(D) launch-surface contract broken: loop=$_d_loop (want 0), invoke=$_d_invoke/$_d_invoke_trip (want 1/yes), service=$_d_service/$_d_service_trip (want 1/yes)"
 fi
 
 # ── (E)-(I),(K),(L) CHECK 4: every resurrection surface in a shipped script ──
