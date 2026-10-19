@@ -1,5 +1,10 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.16: WER-028 final cohort receipt, and a manifest-drift fix
+
+- Records the WER-028 final integration receipt under `evidence/wer028/`: cohort presence proven by tree/blob comparison rather than ancestry (squash and merge-commit merges make ancestry the wrong test), all four version markers asserted equal, required-check state captured per repository with SKIPPED separated from pass, branch-protection state captured for all three repositories including the 999-setup 404, MALCOM's books/personas/portraits proven byte-identical against the pre-session baseline, Skill 76 proven untouched, cross-repository seam schema hashes compared on both sides, and a deferred list naming every item that remains unproven on this hardware.
+- **Fixes a manifest drift this skill introduced on main.** The previous rebuild ran while untracked `evidence/wer028/` scratch files sat in the working tree, so `manifest.json` recorded 16 paths that were never committed: `doctor.mjs` and `verify-cohort-parity.mjs` both FAILED on a clean checkout of main (computed 569 files vs recorded 585). Those 16 paths are now genuinely committed, and every build is re-run only after `git status --porcelain` is empty. The rebuild procedure now carries that guard explicitly.
+
 ## v1.0.15: runnable supervisor driver and live crash/restart acceptance (WER-026)
 
 - Adds `scripts/supervisor/runner.mjs`, the missing entry point. The merged supervisor was a pure reducer with no main: `supervisor.mjs` declared `NATIVE_ADAPTER_BINDING = {status: UNKNOWN, bound: false}` and `sweep-executor.mjs` took injected functions, so nothing could actually run - which is exactly why the scheduled-sweep and crash/restart receipts had never existed. The driver wires the existing modules with a durable data directory, an interval loop driving `executePlannedSweep` through an injected execute that only records receipts, a durable restart ledger, singleton/lease refusal for a second instance, atomic graceful drain on SIGTERM, and `--once` for deterministic tests. It imports no `child_process`, no network module and no credential, and reads no `process.env`.
