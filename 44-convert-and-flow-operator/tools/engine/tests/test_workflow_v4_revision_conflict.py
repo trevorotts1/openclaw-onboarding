@@ -122,7 +122,14 @@ def _graph(version=3, name="Synthetic Conflict Flow") -> dict:
 
 
 def _payload(definition: dict, status: str = "draft") -> dict:
-    return {"status": status, "definition": definition}
+    # GU-003 WF-04: the definition read returns ``workflowId`` at the root,
+    # and the write read-backs assert it to prove the read returned THIS
+    # workflow.  A payload without it is a mismatch, by design.
+    return {
+        "status": status,
+        "workflowId": WORKFLOW_ID,
+        "definition": definition,
+    }
 
 
 def _json_response(payload: dict, status: int = 200):
@@ -197,6 +204,7 @@ class RevisionRefusal(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent={"set_fields": {"source": "synthetic"}},
             approval=APPROVAL,
+            expected_revision=12,
         )
 
         self.assertIs(result.status, Status.validation_error)
@@ -264,6 +272,7 @@ class RevisionRefusal(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent={"set_fields": {"name": "Synthetic Changed Flow"}},
             approval=APPROVAL,
+            expected_revision=12,
         )
 
         self.assertIs(result.status, Status.conflict)
@@ -294,6 +303,7 @@ class RevisionRefusal(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent={"set_fields": {"name": prior["name"]}},
             approval=APPROVAL,
+            expected_revision=12,
         )
 
         self.assertIs(result.status, Status.conflict)
@@ -332,6 +342,7 @@ class RevisionRefusal(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent={"set_fields": {"name": fresh["name"]}},
             approval=APPROVAL,
+            expected_revision=12,
             allow_draft_transition=True,
             draft_transition_approval=APPROVAL,
         )
@@ -369,6 +380,7 @@ class RevisionRefusal(unittest.TestCase):
                 workflow_id=WORKFLOW_ID,
                 intent={"set_fields": {"name": prior["name"]}},
                 approval=APPROVAL,
+                expected_revision=12,
                 allow_draft_transition=True,
                 draft_transition_approval=None,
             )
@@ -408,6 +420,7 @@ class UnknownOutcomeReconciliation(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent=intent,
             approval=APPROVAL,
+            expected_revision=3,
         )
 
         self.assertIs(first.status, Status.unknown_outcome)
@@ -422,6 +435,7 @@ class UnknownOutcomeReconciliation(unittest.TestCase):
                 workflow_id=WORKFLOW_ID,
                 intent=intent,
                 approval=APPROVAL,
+                expected_revision=3,
             )
         self.assertEqual(caught.exception.rule, "reconciliation_required")
         self.assertEqual(
@@ -449,6 +463,7 @@ class UnknownOutcomeReconciliation(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent=intent,
             approval=APPROVAL,
+            expected_revision=3,
         )
         self.assertIs(retried.status, Status.ok, retried.error)
         self.assertEqual(transport.call_count, 8)
@@ -470,6 +485,7 @@ class UnknownOutcomeReconciliation(unittest.TestCase):
             workflow_id=WORKFLOW_ID,
             intent=intent,
             approval=APPROVAL,
+            expected_revision=3,
         )
         self.assertIs(first.status, Status.unknown_outcome)
         settled_result = adapter.reconcile(first)

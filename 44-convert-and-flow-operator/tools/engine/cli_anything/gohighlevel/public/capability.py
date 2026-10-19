@@ -48,10 +48,20 @@ class Capability:
     canary_verified: bool = False
     enabled: bool = False
     activation_blocked: ActivationBlock | None = None
+    #: MAJOR 4: the tenant this record is authorized for.  ``None`` records no
+    #: assertion; a non-null value must equal the call tenant (GU-004 3.3).
+    tenant: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.operation_id, str) or not self.operation_id.strip():
             raise ContractViolation("capability_operation_missing")
+        if self.tenant is not None and (
+            not isinstance(self.tenant, str) or not self.tenant.strip()
+        ):
+            raise ContractViolation(
+                "capability_tenant_invalid",
+                operation_id=self.operation_id,
+            )
         if self.enabled and self.activation_blocked is not None:
             raise ContractViolation(
                 "enabled_with_activation_block",
@@ -88,7 +98,11 @@ DEFAULT_BLOCK = ActivationBlock(
 
 
 class CapabilityGate:
-    """Default-deny gate.  Unbound gates may hold no enabled capability."""
+    """Default-deny gate.  Unbound gates may hold no enabled capability.
+
+    A gate is bound to one tenant, so a row that carries its own tenant is
+    authorized for that tenant and for no other (GU-004 section 3.3).
+    """
 
     def __init__(
         self,
@@ -132,12 +146,28 @@ class CapabilityGate:
             )
         return capability
 
-    def put(self, capability: Capability, *, operation_id: str | None = None) -> None:
+    def put(
+        self,
+        capability: Capability,
+        *,
+        operation_id: str | None = None,
+        write: bool = False,
+    ) -> None:
         if not isinstance(capability, Capability):
             raise ContractViolation("capability_invalid")
         if capability.enabled and self._tenant is None:
             raise ContractViolation(
                 "capability_requires_tenant",
+                operation_id=capability.operation_id,
+            )
+        # BLOCKER 3: ``enable()`` already demands the canary for a write; a
+        # row registered directly as write-capable must clear the same rule,
+        # or a row without canary evidence would sit in the gate as a write
+        # candidate.  (Evidence itself is already pinned by the constructor:
+        # ``enabled`` without evidence cannot be built.)
+        if write and not capability.canary_verified:
+            raise ContractViolation(
+                "capability_canary_missing",
                 operation_id=capability.operation_id,
             )
         self._capabilities[str(operation_id or capability.operation_id)] = capability

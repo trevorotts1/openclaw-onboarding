@@ -49,7 +49,7 @@ from .capability import Capability
 from .errors import ContractViolation, ReconciliationRequired
 from .idempotency import IdempotencyKey, canonical_intent
 from .operations import OPERATIONS
-from .readback import ReadbackSpec
+from .readback import ReadbackSpec, ReadbackStatus
 from .result import ADAPTER_VERSION, OperationResult, Status, canonical_json
 from .transport import Transport, TransportResponse
 from .workflow_v4_intent import (
@@ -388,6 +388,7 @@ class WorkflowV4Adapter:
 
         readback = ReadbackSpec(
             operation_id=LIST_OPERATION,
+            expect={"name": str(body["name"])},
             description="duplicate-create reconciliation by workflow name",
         )
         mark = len(self._transport)
@@ -403,7 +404,24 @@ class WorkflowV4Adapter:
             name=str(body["name"]),
         )
         if result.status is not Status.ok:
-            return result
+            if not (
+                result.status is Status.unknown_outcome
+                and result.readback is not None
+                and result.readback.result is ReadbackStatus.mismatch
+            ):
+                return result
+            # The frozen read-back matcher is shallow (root, or one level
+            # under ``data``), while the documented list envelopes carry the
+            # rows under ``workflows`` or as a bare array -- deeper than it
+            # can see.  A landed create therefore reads as ``mismatch`` on
+            # those shapes.  The name search below is the shape-tolerant
+            # authority for exactly this check (GU-003 WF-05: duplicate
+            # create reconciles by name search), so it decides -- never the
+            # shallow verdict, and never in the create's favour on its own:
+            # if the name is absent there the outcome is still unknown.
+            self._settle_adapter_pending(result)
+            self._clear(result.receipt_id)
+            result = replace(result, status=Status.ok, error=None)
 
         payload = self._response_body(mark)
         workflow_id = _field(payload, "workflowId") or _field(payload, "id")
@@ -467,15 +485,25 @@ class WorkflowV4Adapter:
         workflow_id: str,
         intent: Any,
         approval: ApprovalRef | Mapping[str, Any] | str,
-        expected_revision: Any = None,
+        expected_revision: Any,
+        allow_deletions: bool = False,
         allow_draft_transition: bool = False,
         draft_transition_approval: ApprovalRef | Mapping[str, Any] | str | None = None,
         attempt: int = 1,
     ) -> OperationResult:
         """Complete-replacement update driven by an approved intent.
 
-        ``expected_revision``, when supplied, is an exact opaque value; a
-        mismatch refuses before transport (the documented 422 semantics).
+        ``expected_revision`` is REQUIRED and is an exact opaque value: the
+        caller must echo the revision it actually read (the shipped CLI passes
+        ``extract_revision`` of the payload it already holds), so the 422
+        ``stale_revision`` branch is reachable from every caller.  Omitting it
+        is a ``ContractViolation`` raised before any transport call; a mismatch
+        refuses before transport.
+
+        A graph whose application would DELETE any node also refuses before
+        transport unless ``allow_deletions`` is set (see
+        ``_deletion_scope``): omission must never read as an approved removal.
+
         A published workflow refuses with conflict unless
         ``allow_draft_transition`` plus a separate ``draft_transition_approval``
         authorize the draft move.  Publish is never triggered here.
@@ -488,6 +516,14 @@ class WorkflowV4Adapter:
         if not self._enabled(operation_id):
             return self._disabled_result(
                 key, tenant=tenant, attempt=attempt, path_params=path_params
+            )
+        # MAJOR C: a missing revision is a contract break, not a default.  The
+        # gate answers first so a disabled capability still refuses as itself.
+        if expected_revision is None:
+            raise ContractViolation(
+                "expected_revision_required",
+                operation_id=operation_id,
+                detail={"reason": "the caller must echo the revision it read"},
             )
 
         # 1. current complete definition and status
@@ -520,6 +556,40 @@ class WorkflowV4Adapter:
                     "source_read_receipt": read_result.receipt_id,
                     "observed": status,
                 },
+            )
+
+        # 2. revision discipline -- decided on the revision the CALLER read,
+        #    i.e. before any status change can move it.  This is what makes the
+        #    documented 422 branch reachable from the shipped verb.
+        try:
+            revision_seen = extract_revision(definition)
+        except RevisionError as exc:
+            return self._refusal(
+                key,
+                tenant=tenant,
+                status=Status.validation_error,
+                rule=exc.rule,
+                attempt=attempt,
+                path_params=path_params,
+                detail={
+                    "reason": "revision_missing_or_invalid",
+                    "source_read_receipt": read_result.receipt_id,
+                },
+                documented_http_status=422,
+            )
+        if not revision_equals(expected_revision, revision_seen):
+            return self._refusal(
+                key,
+                tenant=tenant,
+                status=Status.validation_error,
+                rule="stale_revision",
+                attempt=attempt,
+                path_params=path_params,
+                detail={
+                    "reason": "expected revision does not match the current read",
+                    "source_read_receipt": read_result.receipt_id,
+                },
+                documented_http_status=422,
             )
 
         draft_transition = False
@@ -573,9 +643,36 @@ class WorkflowV4Adapter:
                     detail={"source_read_receipt": read_result.receipt_id},
                 )
 
-        # 2. revision discipline
+        # 3. apply the approved intent to the complete graph
+        proposed = apply_intent(definition, intent)
+
+        # 4. deletion scope -- decided HERE, after the apply and BEFORE the
+        #    write, so an omitted node is refused at the decision point instead
+        #    of being applied first.  Omission is never an approved removal.
+        deletions = diff_definition(definition, proposed).deletion_requests()
+        if deletions and not (allow_deletions or _deletion_scope(approval)):
+            return self._refusal(
+                key,
+                tenant=tenant,
+                status=Status.denied,
+                rule="deletion_requires_approval",
+                attempt=attempt,
+                path_params=path_params,
+                detail={
+                    "reason": "the intent omits nodes present in the current graph",
+                    "deletion_requests": [
+                        {"kind": node.kind, "identity": node.identity}
+                        for node in deletions
+                    ],
+                    "source_read_receipt": read_result.receipt_id,
+                },
+            )
+
+        # 5. the write carries the CURRENT system-owned revision: a draft
+        #    transition above already advanced it past the caller's echo, so
+        #    re-extract it from the graph that is actually being written.
         try:
-            revision = extract_revision(definition)
+            revision = extract_revision(proposed)
         except RevisionError as exc:
             return self._refusal(
                 key,
@@ -590,32 +687,10 @@ class WorkflowV4Adapter:
                 },
                 documented_http_status=422,
             )
-        if expected_revision is not None and not revision_equals(
-            expected_revision, revision
-        ):
-            return self._refusal(
-                key,
-                tenant=tenant,
-                status=Status.validation_error,
-                rule="stale_revision",
-                attempt=attempt,
-                path_params=path_params,
-                detail={
-                    "reason": "expected revision does not match the current read",
-                    "source_read_receipt": read_result.receipt_id,
-                },
-                documented_http_status=422,
-            )
-
-        # 3. apply the approved intent to the complete graph
-        proposed = apply_intent(definition, intent)
         carry_revision(proposed, revision)
 
-        # 4. write the complete preserved graph with the exact revision
-        readback = ReadbackSpec(
-            operation_id=READ_OPERATION,
-            target_params={"workflowId": workflow_id},
-        )
+        # 6. write the complete preserved graph with the exact revision
+        readback = _identity_readback(workflow_id)
         write = self._write(
             operation_id,
             tenant=tenant,
@@ -727,10 +802,10 @@ class WorkflowV4Adapter:
                 detail={"allowed": sorted(_DOCUMENTED_STATUSES)},
             )
 
-        readback = ReadbackSpec(
-            operation_id=READ_OPERATION,
-            target_params={"workflowId": workflow_id},
-        )
+        # The status change is the one write whose result is carried at the
+        # root of the definition read (GU-003 WF-07: ``workflowId``,
+        # ``status``), so the read-back asserts the write is reflected too.
+        readback = _identity_readback(workflow_id, status=status)
         write = self._write(
             operation_id,
             tenant=tenant,
@@ -865,10 +940,15 @@ class WorkflowV4Adapter:
                 detail={"source_read_receipt": snapshot_result.receipt_id},
             )
 
-        readback = ReadbackSpec(
-            operation_id=LIST_OPERATION,
-            description="delete is proven absent by the follow-up definition read",
-        )
+        # A delete's read-back is inverted: 404 answers ``absent`` BEFORE the
+        # expectation is consulted, so ``verified`` would mean the workflow
+        # SURVIVED, and ``absent`` is the proof it is gone -- the same 404 the
+        # follow-up definition read demands.  The adapter maps every
+        # non-verified read-back to ``unknown_outcome``; for this operation
+        # only, ``absent`` is the success signal.  Any other verdict stands:
+        # ``mismatch`` (some other document came back) and ``unreadable``
+        # (nothing was proven) are never a delete.
+        readback = _identity_readback(workflow_id)
         write = self._write(
             operation_id,
             tenant=tenant,
@@ -881,7 +961,20 @@ class WorkflowV4Adapter:
             workflow_id=workflow_id,
         )
         if write.status is not Status.ok:
-            return write
+            if not (
+                write.status is Status.unknown_outcome
+                and write.readback is not None
+                and write.readback.result is ReadbackStatus.absent
+            ):
+                return write
+            # Settle the adapter's pending row through the same read-back row
+            # (reconcile re-reads; it never re-issues the DELETE).  The
+            # follow-up definition read below stays the authority on whether
+            # the workflow is really gone.
+            if self._settle_adapter_pending(write).status is not Status.not_found:
+                return write
+            self._clear(write.receipt_id)
+            write = replace(write, status=Status.ok, error=None)
 
         verify = self.read_definition(
             tenant=tenant, workflow_id=workflow_id, attempt=attempt
@@ -1381,6 +1474,19 @@ class WorkflowV4Adapter:
         self._pending_graph.pop(receipt_id, None)
         self._unreconciled = None
 
+    def _settle_adapter_pending(self, result: OperationResult) -> OperationResult:
+        """Free the adapter's pending row for a write whose read-back verdict
+        this operation overrides.
+
+        The adapter holds an unknown-outcome write until ``reconcile()`` frees
+        it, and ``reconcile()`` re-reads through the same read-back row -- it
+        never re-issues the write.  Its verdict is the caller's to interpret,
+        so it is returned; only the side effect (the pending row) is wanted
+        here.
+        """
+
+        return self._public.reconcile(result)
+
     def _response_body(self, mark: int) -> Any:
         records = self._transport.records
         if mark < 0 or mark >= len(records):
@@ -1471,6 +1577,68 @@ def _field(payload: Any, name: str) -> Any:
 def _status_of(payload: Any) -> Any:
     value = _field(payload, "status")
     return value if isinstance(value, str) else None
+
+def _identity_readback(
+    workflow_id: str, *, status: str | None = None
+) -> ReadbackSpec:
+    """Read-back expectation for a write to ONE workflow.
+
+    GU-003 WF-04/WF-07 document ``workflowId`` (and, for the status change,
+    ``status``) as root fields of the definition read, so the read-back proves
+    the read returned THIS workflow, never a stand-in.  The revision is not
+    asserted here: it lives one level down (``definition.version``), deeper
+    than the frozen shallow matcher reaches, and the verbs that write it
+    already re-read the complete graph and diff it against what they wrote.
+    """
+
+    expect: dict[str, Any] = {"workflowId": str(workflow_id)}
+    if status is not None:
+        expect["status"] = str(status)
+    return ReadbackSpec(
+        operation_id=READ_OPERATION,
+        target_params={"workflowId": str(workflow_id)},
+        expect=expect,
+        description="the read-back must return this workflow id",
+    )
+
+
+def _deletion_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:
+    """True only for an approval that is explicitly deletion-scoped.
+
+    The frozen ``ApprovalRef`` vocabulary has one ``ref`` and one ``kind`` and
+    the adapter validates ``kind`` against it, so scope travels as text: an
+    explicit ``scope`` key on a mapping, or a scope marker inside ``ref``.  A
+    marker must be present -- an absent marker never authorises a removal, and
+    a word that merely mentions "delete" (a delete-record ref) is not one.
+    """
+
+    ref: str = ""
+    scope: str = ""
+    if isinstance(approval, ApprovalRef):
+        ref = str(approval.ref)
+    elif isinstance(approval, Mapping):
+        ref = str(approval.get("ref") or "")
+        scope = str(approval.get("scope") or "")
+    elif isinstance(approval, str):
+        ref = approval
+    if scope.strip().lower().rstrip("s") == "deletion":
+        return True
+    lowered = ref.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "deletion-scoped",
+            "deletion_scoped",
+            "scope:deletion",
+            "scope=deletion",
+            "scope:delete",
+            "scope=delete",
+            "allow-deletion",
+            "allow_deletion",
+            "allow-delete",
+            "allow_delete",
+        )
+    )
 
 
 def _workflow_rows(payload: Any) -> list[Any] | None:

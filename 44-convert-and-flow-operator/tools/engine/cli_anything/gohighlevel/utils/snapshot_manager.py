@@ -155,8 +155,10 @@ def restore(
 
     Raises:
         FileNotFoundError:       if snapshot_path does not exist.
-        ValueError:              if the snapshot JSON is missing 'name' or
-                                 'workflowData'.
+        ValueError:              if the snapshot JSON carries neither the
+                                 private {'name', 'workflowData'} shape nor
+                                 the V4 {'status', 'definition'} envelope whose
+                                 definition has a 'name'.
         RuntimeError:            if the fresh read fails — a restore never
                                  proceeds on a blind replay.
     """
@@ -168,9 +170,21 @@ def restore(
 
     data: dict = json.loads(snap.read_text(encoding="utf-8"))
 
+    # Two documented snapshot shapes.  The public V4 rail captures the
+    # {status, definition} envelope (capture_payload of read_definition_document),
+    # which previously failed the 'name'/'workflowData' gate below and made every
+    # V4 snapshot unrestorable.  Flatten the definition so it restores; a V4
+    # definition carries no workflowData, so only the private shape keeps that
+    # gate.
+    is_v4_envelope = False
+    if "workflowData" not in data and isinstance(data.get("definition"), dict):
+        envelope = data
+        data = dict(envelope["definition"])
+        is_v4_envelope = True
+
     if "name" not in data:
         raise ValueError("Snapshot is missing required 'name' field.")
-    if "workflowData" not in data:
+    if not is_v4_envelope and "workflowData" not in data:
         raise ValueError("Snapshot is missing required 'workflowData' field.")
 
     # Fresh read — the revision is system-owned.  The snapshot's historical

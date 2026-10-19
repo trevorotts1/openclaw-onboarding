@@ -1106,12 +1106,19 @@ def workflows_export(ctx, workflow_id, out_file):
 @click.option("--workflow-id", required=True, help="Workflow ID to update")
 @click.option("--from-json", "json_file", required=True, type=click.Path(exists=True),
               help="JSON file with updated workflow body")
+@click.option("--allow-deletions", "allow_deletions", is_flag=True, default=False,
+              help="Approve removals: nodes present in the live workflow but "
+                   "absent from --from-json are deleted instead of refused.")
 @click.pass_context
-def workflows_update(ctx, workflow_id, json_file):
+def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
     """Update a workflow from a JSON file (write-gated).
 
     Requires --experimental. A pre-write snapshot is captured automatically
     before the PUT — use 'workflows restore' to revert.
+
+    An omitted node is a DELETE request: without --allow-deletions the update
+    is refused before transport (rule ``deletion_requires_approval``) rather
+    than silently removing live steps.
 
     When the public V4 definition-update capability is enabled the public
     adapter is primary and an ``unknown_outcome`` is SURFACED for
@@ -1131,13 +1138,26 @@ def workflows_update(ctx, workflow_id, json_file):
             from cli_anything.gohighlevel.public.result import Status
             from cli_anything.gohighlevel.public.workflow_v4_intent import (
                 extract_definition,
+                extract_revision,
             )
             from cli_anything.gohighlevel.utils.snapshot_manager import capture_payload
 
             location_id = _loc(ctx)
             tenant = _v4_tenant(location_id)
             with open(json_file) as f:
-                desired = json.load(f)
+                desired_raw = json.load(f)
+            # An export writes {status, definition}; an unwrapped document would
+            # make every current node look removed.  Unwrap the envelope.
+            desired = extract_definition(desired_raw)
+            if desired is None:
+                if not isinstance(desired_raw, dict):
+                    click.echo(
+                        "Error: --from-json must be a definition object or an "
+                        "{status, definition} envelope — nothing was written.",
+                        err=True,
+                    )
+                    sys.exit(1)
+                desired = desired_raw
             read_result, payload = v4.read_definition_document(
                 tenant=tenant, workflow_id=workflow_id
             )
@@ -1155,12 +1175,17 @@ def workflows_update(ctx, workflow_id, json_file):
             )
             if not ctx.obj["json"]:
                 click.echo(f"[snapshot] {snap_path}")
+            # Echo the revision of the payload just read, so the adapter's
+            # stale-revision refusal is reachable from this verb.
+            expected_revision = extract_revision(definition)
             intent = intent_from_definition(definition, desired)
             result = v4.update_definition(
                 tenant=tenant,
                 workflow_id=workflow_id,
                 intent=intent,
                 approval=public_approval(),
+                expected_revision=expected_revision,
+                allow_deletions=allow_deletions,
             )
             if result.status is Status.unknown_outcome:
                 click.echo(

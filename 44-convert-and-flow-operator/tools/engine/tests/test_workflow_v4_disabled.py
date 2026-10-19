@@ -173,11 +173,15 @@ class DisabledByDefault(unittest.TestCase):
         self._assert_denied_receipt(result, "workflows.definition.create", 0)
 
     def test_update_refuses_without_canary(self) -> None:
+        # ``expected_revision`` is a required keyword since the 422 stale branch
+        # became reachable from the shipped verb; a disabled capability must
+        # still refuse before it is ever looked at.
         result = self.adapter.update_definition(
             tenant=TENANT,
             workflow_id="wf_synthetic_0001",
             intent={"set_fields": {"name": "Synthetic Flow"}},
             approval=APPROVAL,
+            expected_revision=1,
         )
         self._assert_denied_receipt(result, "workflows.definition.update", 0)
 
@@ -219,6 +223,7 @@ class DisabledByDefault(unittest.TestCase):
                 workflow_id="wf_synthetic_0001",
                 intent={"set_fields": {"name": "Synthetic Flow"}},
                 approval=APPROVAL,
+                expected_revision=1,
             ),
             lambda: adapter.publish_workflow(
                 tenant=TENANT, workflow_id="wf_synthetic_0001", approval=APPROVAL

@@ -296,11 +296,20 @@ class FrozenRegistryCapabilityTest(unittest.TestCase):
                 self.assertIsNotNone(capability.activation_blocked)
 
     def test_enabled_and_activation_blocked_never_coexist_for_a_frozen_row(self) -> None:
+        # MAJOR 6a -- construct the illegal Capability directly: get() can only
+        # return enabled=False, so a condition over it is identically False and
+        # can never fail.  The impossibility is a constructor rule.
         for operation_id in FROZEN_OPERATIONS:
-            row_capability = CapabilityGate().get(operation_id)
+            block = ActivationBlock(reason="x", owner="W04", unblock="y")
             with self.subTest(operation_id=operation_id):
-                self.assertFalse(
-                    row_capability.enabled and row_capability.activation_blocked is not None
+                with self.assertRaises(ContractViolation) as caught:
+                    Capability(
+                        operation_id=operation_id,
+                        enabled=True,
+                        activation_blocked=block,
+                    )
+                self.assertEqual(
+                    caught.exception.rule, "enabled_with_activation_block"
                 )
 
     def test_skill44_private_rows_are_not_governed_by_this_gate(self) -> None:

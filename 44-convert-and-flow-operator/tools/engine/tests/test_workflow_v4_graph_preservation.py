@@ -103,7 +103,14 @@ _CASES = _fixture_cases()
 
 
 def _payload(definition: dict, status: str = "draft") -> dict:
-    return {"status": status, "definition": definition}
+    # GU-003 WF-04: the definition read returns ``workflowId`` at the root,
+    # and the write read-backs assert it to prove the read returned THIS
+    # workflow.  A payload without it is a mismatch, by design.
+    return {
+        "status": status,
+        "workflowId": WORKFLOW_ID,
+        "definition": definition,
+    }
 
 
 def _json_response(payload: dict, status: int = 200):

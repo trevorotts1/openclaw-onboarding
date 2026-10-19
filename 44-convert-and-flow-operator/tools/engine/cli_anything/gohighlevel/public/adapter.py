@@ -416,17 +416,34 @@ class PublicGhlAdapter:
                 raise ContractViolation(
                     "readback_invalid", operation_id=operation_id
                 )
-            if (
-                plan is not None
-                and isinstance(readback, ReadbackSpec)
-                and plan.operation_id != readback.operation_id
-            ):
+            # BLOCKER 1: a read-back may only re-READ.  A spec pointing at a
+            # write row would make reconcile() re-issue the same mutating
+            # request, so the target row must be a read row.  The write row's
+            # declared plan, when present, must be the spec that runs.
+            target_row = self._resolve_row(spec.operation_id)
+            if bool(_row_attr(target_row, "write", False)):
+                raise ContractViolation(
+                    "readback_invalid",
+                    operation_id=operation_id,
+                    detail={
+                        "reason": "readback_targets_a_write",
+                        "readback": spec.operation_id,
+                    },
+                )
+            if plan is not None and plan.operation_id != spec.operation_id:
                 raise ContractViolation(
                     "readback_plan_mismatch",
                     operation_id=operation_id,
-                    detail={"plan": plan.operation_id, "call": readback.operation_id},
+                    detail={"plan": plan.operation_id, "call": spec.operation_id},
                 )
-            self._resolve_row(spec.operation_id)
+            # MAJOR 5: a spec with no expectation verifies any 2xx, which is
+            # zero verification.  No write crosses transport on it.
+            if not spec.expect:
+                raise ContractViolation(
+                    "readback_vacuous",
+                    operation_id=operation_id,
+                    detail={"readback": spec.operation_id},
+                )
         elif readback is not None:
             raise ContractViolation(
                 "readback_not_allowed_for_read", operation_id=operation_id
@@ -435,7 +452,41 @@ class PublicGhlAdapter:
         # 3.2 rule 7 -- the gate refuses before transport, with a receipt.
         if not _gate_skips(route_class):
             capability = self._capability.get(operation_id)
-            if not capability.enabled:
+            # MAJOR 4: a gate (or the capability record itself) authorized for
+            # one tenant never authorizes a call for another.
+            gate_tenant = self._capability.tenant
+            record_tenant = getattr(capability, "tenant", None)
+            wrong_tenant = next(
+                (
+                    bound
+                    for bound in (record_tenant, gate_tenant)
+                    if bound is not None and bound != tenant.location_id
+                ),
+                None,
+            )
+            if wrong_tenant is not None:
+                return finish(
+                    Status.denied,
+                    error={
+                        "rule": "capability_tenant_mismatch",
+                        "operation_id": operation_id,
+                        "hint": (
+                            "the capability is bound to another tenant"
+                        ),
+                    },
+                    extra={
+                        "refused_before_transport": True,
+                        "capability": {
+                            "operation_id": operation_id,
+                            "enabled": capability.enabled,
+                        },
+                    },
+                )
+            # BLOCKER 3: a write needs canary evidence, not just enablement.
+            admitted = (
+                capability.write_ready() if write else capability.enabled
+            )
+            if not admitted:
                 block = capability.activation_blocked or DEFAULT_BLOCK
                 return finish(
                     Status.denied,
@@ -459,15 +510,32 @@ class PublicGhlAdapter:
         if key is not None:
             self._ledger.record(key.value, fingerprint_box["value"])
 
-        response = self._transport.request(
-            method=method,
-            url=resolved_path,
-            version=version,
-            headers=headers,
-            query=query_map or None,
-            body=body_map or None,
-            timeout_s=timeout,
-        )
+        # BLOCKER 2: transport.py classifies only the failures it knows.  Any
+        # other exception (http.client.IncompleteRead, HTTPException,
+        # ValueError, a broken fake) must not escape call() with no receipt and
+        # no pending record -- that is how the same key got retried.  An
+        # unclassified failure is an unknown outcome, mapped through the normal
+        # finish path below, and the write is remembered for reconcile().
+        transport_exception: str | None = None
+        try:
+            response = self._transport.request(
+                method=method,
+                url=resolved_path,
+                version=version,
+                headers=headers,
+                query=query_map or None,
+                body=body_map or None,
+                timeout_s=timeout,
+            )
+        except Exception as caught:  # noqa: BLE001 - the blocker is exactly here
+            transport_exception = type(caught).__name__
+            response = TransportResponse(
+                status=None,
+                headers={},
+                body=b"",
+                error_kind="unknown",
+                elapsed_s=None,
+            )
 
         http_status: int | None
         if response.error_kind == "none":
@@ -516,6 +584,9 @@ class PublicGhlAdapter:
             "response_headers": redact_headers(response.headers),
             "elapsed_s": response.elapsed_s,
         }
+        if transport_exception is not None:
+            # The class name only: an exception object can carry payload.
+            extra["transport_exception"] = transport_exception
         if approval_kind is not None:
             # Intensity only: which seam was used, never the value.
             extra["approval"] = {"present": True, "kind": approval_kind}
@@ -765,6 +836,8 @@ class PublicGhlAdapter:
                 None,
             )
 
+        # BLOCKER 2: an unexpected exception anywhere in the read-back must
+        # degrade to unreadable, never escape a call or a reconcile().
         try:
             response: TransportResponse = self._transport.request(
                 method=method,
@@ -774,6 +847,35 @@ class PublicGhlAdapter:
                 query=query_map or None,
                 body=body_map or None,
                 timeout_s=self._default_timeout_s,
+            )
+
+            parsed: Any = None
+            if (
+                response.error_kind == "none"
+                and response.status is not None
+                and 200 <= response.status < 300
+                and response.body
+            ):
+                try:
+                    parsed = json.loads(response.body.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    parsed = None
+
+            outcome = evaluate_readback(
+                spec,
+                http_status=(
+                    response.status if response.error_kind == "none" else None
+                ),
+                parsed_body=parsed,
+                transport_error=response.error_kind,
+            )
+            detail = {
+                "http_status": response.status,
+                "error_kind": response.error_kind,
+                "response_fingerprint": response_fingerprint(response.body),
+            }
+            http_status = (
+                response.status if response.error_kind == "none" else None
             )
         except Exception:  # noqa: BLE001 - a readback must never crash a call
             return (
@@ -787,29 +889,6 @@ class PublicGhlAdapter:
                 None,
             )
 
-        parsed: Any = None
-        if (
-            response.error_kind == "none"
-            and response.status is not None
-            and 200 <= response.status < 300
-            and response.body
-        ):
-            try:
-                parsed = json.loads(response.body.decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
-                parsed = None
-
-        outcome = evaluate_readback(
-            spec,
-            http_status=response.status if response.error_kind == "none" else None,
-            parsed_body=parsed,
-            transport_error=response.error_kind,
-        )
-        detail = {
-            "http_status": response.status,
-            "error_kind": response.error_kind,
-            "response_fingerprint": response_fingerprint(response.body),
-        }
         return (
             ReadbackResult(
                 result=outcome,
@@ -818,7 +897,7 @@ class PublicGhlAdapter:
                 detail=detail,
                 evidence={"readback_method": method, "readback_path": path},
             ),
-            response.status if response.error_kind == "none" else None,
+            http_status,
         )
 
     def _remember(self, pending: _PendingWrite) -> None:

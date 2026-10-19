@@ -13,6 +13,7 @@ Proves, entirely offline:
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import sys
@@ -48,7 +49,10 @@ from _public_contract_fakes import (  # noqa: E402
 from cli_anything.gohighlevel.public.adapter import ApprovalRef  # noqa: E402
 from cli_anything.gohighlevel.public.auth import AuthKind  # noqa: E402
 from cli_anything.gohighlevel.public.errors import ContractViolation  # noqa: E402
-from cli_anything.gohighlevel.public.readback import ReadbackRegistry  # noqa: E402
+from cli_anything.gohighlevel.public.readback import (  # noqa: E402
+    ReadbackRegistry,
+    ReadbackSpec,
+)
 from cli_anything.gohighlevel.public.result import Status  # noqa: E402
 from cli_anything.gohighlevel.public.transport import RequestsTransport  # noqa: E402
 
@@ -76,6 +80,14 @@ _WRITE_ROW = row(
     write=True,
     tenant_binding="body.locationId",
 )
+#: A second read row, so a caller spec can point somewhere off the plan and
+#: still resolve (BLOCKER 1's plan-mismatch half needs a legal target).
+_OTHER_READ_ROW = row(
+    "products.list",
+    method="GET",
+    path_template="/products/",
+    tenant_binding="query.locationId",
+)
 
 
 def _public_sources() -> list[tuple[str, str]]:
@@ -99,20 +111,44 @@ class NoGlobalVersionDefaultTest(unittest.TestCase):
             )
 
     def test_no_module_level_version_literal(self) -> None:
-        # A module-level constant whose *name* carries VERSION and whose value
-        # is a version literal is the forbidden global default (freeze 1.3
-        # step 3).  Date constants such as DOC_FETCH_DATE are not versions.
-        literal = re.compile(
-            r"^[A-Z][A-Z0-9_]*VERSION[A-Z0-9_]*\s*=\s*['\"]"
-            r"(?:v\d+|legacy|\d{4}-\d{2}-\d{2})['\"]",
-            re.MULTILINE,
-        )
+        # MAJOR 6c -- walk the AST, not the text: a regex misses
+        # ``VERSION = "v3"`` written as an annotated assignment and any
+        # spelling a text pattern does not enumerate.  A module-level constant
+        # whose name carries VERSION and whose value is a version literal is
+        # the forbidden global default (freeze 1.3 step 3).  Date constants
+        # such as DOC_FETCH_DATE are not versions.
+        version_literal = re.compile(r"v\d+|legacy|\d{4}-\d{2}-\d{2}")
+        offenders: list[str] = []
         for name, text in _public_sources():
-            match = literal.search(text)
-            self.assertIsNone(
-                match,
-                f"{name} declares a module-level version constant: {match.group(0) if match else ''}",
-            )
+            tree = ast.parse(text, filename=name)
+            for node in tree.body:  # module level only
+                targets: list[ast.expr] = []
+                value: ast.expr | None = None
+                if isinstance(node, ast.Assign):
+                    targets, value = node.targets, node.value
+                elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                    targets, value = [node.target], node.value
+                for target in targets:
+                    if not isinstance(target, ast.Name):
+                        continue
+                    ident = target.id
+                    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", ident):
+                        continue
+                    if "VERSION" not in ident:
+                        continue
+                    if not isinstance(value, ast.Constant):
+                        continue
+                    if not isinstance(value.value, str):
+                        continue
+                    if version_literal.fullmatch(value.value):
+                        offenders.append(
+                            f"{name}:{node.lineno} {ident} = {value.value!r}"
+                        )
+        self.assertEqual(
+            offenders,
+            [],
+            f"module-level version constants declared: {offenders}",
+        )
 
     def test_public_package_does_not_import_ghl_client(self) -> None:
         for name, text in _public_sources():
@@ -233,6 +269,52 @@ class PerOperationVersionHeaderTest(unittest.TestCase):
 
         built = opener.last
         self.assertEqual(built.headers["Version"], "2021-07-28")
+
+    def test_no_version_row_omits_the_header_even_with_a_caller_supplied_one(
+        self,
+    ) -> None:
+        # MAJOR 6b -- the earlier test cannot fail on a broken strip list: the
+        # row literal overwrites whatever survived, so a value check passes
+        # either way.  With version=None nothing may overwrite, so an absent
+        # header is the only possible proof that "version" was stripped.
+        contacts = row(
+            "contacts.get",
+            method="GET",
+            path_template="/contacts/{contactId}",
+            version=None,
+            tenant_binding="path.contactId",
+        )
+        operations = registry(contacts)
+        opener = RecordingOpener(StubResponse())
+        transport = RequestsTransport(
+            base_url="https://example.invalid", opener=opener
+        )
+        adapter = make_adapter(
+            transport,  # type: ignore[arg-type]
+            operations,
+            gate=enabled_gate(list(operations.values())),
+        )
+
+        adapter.call(
+            operation_id="contacts.get",
+            tenant=fake_tenant(),
+            path_params={"contactId": SYNTHETIC_CONTACT},
+        )
+
+        self.assertNotIn("Version", opener.last.headers)
+
+        # a caller-supplied Version header is stripped, never forwarded.
+        transport.request(
+            method="GET",
+            url="/contacts/x",
+            version=None,
+            headers={"Version": "2021-07-28", "version": "v1"},
+            query=None,
+            body=None,
+            timeout_s=1.0,
+        )
+        self.assertNotIn("Version", opener.last.headers)
+        self.assertNotIn("version", opener.last.headers)
 
     def test_transport_drops_a_caller_supplied_version_header(self) -> None:
         opener = RecordingOpener(StubResponse())

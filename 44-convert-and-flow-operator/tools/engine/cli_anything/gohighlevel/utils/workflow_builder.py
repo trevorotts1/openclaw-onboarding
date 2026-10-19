@@ -189,6 +189,11 @@ def intent_from_definition(
     so the update request can never delete a step by omission.  ``version`` is
     never set here -- it is system-owned and carried by the adapter.
 
+    An id-less node in ``current`` is REFUSED (``current_node_identity_missing``):
+    it has no identity to put in ``remove_*``, so excluding it from the present
+    set would make removing it undetectable.  Refusing is the only answer that
+    cannot silently drop a live node.
+
     ponytail: a top-level key that exists in ``current`` and is absent from
     ``desired`` cannot be removed through ``Intent`` (it has no remove_fields).
     Add one when a real plan needs top-level deletion.
@@ -210,10 +215,17 @@ def intent_from_definition(
         }
     }
     for kind in COLLECTIONS:
+        current_nodes = _definition_nodes(current, kind)
+        loose = [index for index, node in enumerate(current_nodes) if _identity(node) is None]
+        if loose:
+            raise ContractViolation(
+                "current_node_identity_missing",
+                detail={"kind": kind, "count": len(loose)},
+            )
         wanted = _definition_nodes(desired, kind)
         present = {
             identity
-            for identity in (_identity(node) for node in _definition_nodes(current, kind))
+            for identity in (_identity(node) for node in current_nodes)
             if identity is not None
         }
         seen: set = set()
