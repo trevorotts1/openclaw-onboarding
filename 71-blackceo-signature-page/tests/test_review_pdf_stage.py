@@ -108,6 +108,30 @@ class ReviewPdfStageTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("different images", proc.stdout)
 
+    def test_a_stale_delivered_pdf_fails_the_gate_and_deliver_refreshes_it(self):
+        from PIL import Image
+        make_images(self.run_dir, "mobile-tablet", "section-{n:02d}.png", 200)
+        client = self.run_dir / "client-pdfs"
+        gate = lambda *a: self.cli("validate_review_pdf.py", self.run_dir, "--stage", "mobile-tablet", *a)
+        proc = self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet", "--deliver", client)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        built = self.run_dir / "review-pdfs" / "wireframes-mobile.pdf"
+        self.assertEqual(vrp.sha256(client / "wireframes-mobile.pdf"), vrp.sha256(built))
+        self.assertEqual(gate("--delivered-pdfs", client).returncode, 0)
+        # a section is redone and the PDF rebuilt, but nobody copies it over: the client's PDF is the old build
+        Image.new("RGB", (200, HEIGHTS[1]), "black").save(self.run_dir / "mobile-tablet" / "section-02.png")
+        self.assertEqual(self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet").returncode, 0)
+        proc = gate("--delivered-pdfs", client)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("stale or different PDF", proc.stdout)
+        manifest = self.run_dir / "review-pdfs" / "wireframes-mobile.order.json"
+        self.assertEqual(self.cli("validate_review_pdf.py", manifest, "--delivered-pdf", client / "wireframes-mobile.pdf").returncode, 1)
+        (client / "wireframes-mobile.pdf").unlink()
+        self.assertIn("is missing", gate("--delivered-pdfs", client).stdout)
+        # re-running the build with --deliver replaces the client's copy and the gate passes again
+        self.assertEqual(self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet", "--deliver", client).returncode, 0)
+        self.assertEqual(gate("--delivered-pdfs", client).returncode, 0)
+
     def test_stage_validator_fails_when_pdf_was_never_built(self):
         make_images(self.run_dir, "mobile-tablet", "section-{n:02d}.png", 200)
         proc = self.cli("validate_review_pdf.py", self.run_dir, "--stage", "mobile-tablet")

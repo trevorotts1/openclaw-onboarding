@@ -66,19 +66,33 @@ def check_delivered(sources, delivered):
             for i, (src, f) in enumerate(zip(sources, files), start=1) if sha256(src) != sha256(f)]
 
 
+def check_delivered_pdf(pdf_path, delivered_pdf):
+    """The client's copy of the PDF must be the very file the receipt
+    describes (byte-identical), not an earlier build of the same name."""
+    delivered_pdf = Path(delivered_pdf)
+    if not delivered_pdf.is_file():
+        return [f"The delivered PDF is missing: {delivered_pdf}"]
+    if sha256(delivered_pdf) != sha256(pdf_path):
+        return [f"The delivered {delivered_pdf.name} ({sha256(delivered_pdf)[:16]}) is not the validated build "
+                f"({sha256(pdf_path)[:16]}): it is a stale or different PDF; copy the validated one over it."]
+    return []
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate a BlackCEO review PDF against its ordered manifest and receipt.")
     parser.add_argument("manifest", type=Path, help="an order manifest, or a run dir with --stage")
     parser.add_argument("pdf", nargs="?", type=Path)
     parser.add_argument("--delivered", type=Path, help="also require the sections in this delivered folder to be the exact images the PDF was built from")
+    parser.add_argument("--delivered-pdf", type=Path, help="also require this delivered PDF to be byte-identical to the validated build")
+    parser.add_argument("--delivered-pdfs", type=Path, help="with --stage: a delivered folder that must hold each of the stage's PDFs, byte-identical to the validated builds")
     parser.add_argument("--stage", help="treat the first argument as a run dir and validate that stage's review PDFs")
     args = parser.parse_args()
     if args.stage:
-        return validate_stage(args.manifest, args.stage)
-    return validate(args.manifest, args.pdf, args.delivered)
+        return validate_stage(args.manifest, args.stage, args.delivered_pdfs)
+    return validate(args.manifest, args.pdf, args.delivered, args.delivered_pdf)
 
 
-def validate(manifest_path, pdf_arg=None, delivered=None):
+def validate(manifest_path, pdf_arg=None, delivered=None, delivered_pdf=None):
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -140,6 +154,8 @@ def validate(manifest_path, pdf_arg=None, delivered=None):
     sources = [(manifest_path.parent / e["path"]).resolve() for e in expected_pages]
     if not errors and delivered:
         errors.extend(check_delivered(sources, delivered))
+    if not errors and delivered_pdf:
+        errors.extend(check_delivered_pdf(pdf_path, delivered_pdf))
     if not errors:
         try:
             errors.extend(check_geometry(pdf_path, sources))
@@ -155,9 +171,10 @@ def validate(manifest_path, pdf_arg=None, delivered=None):
     return 0
 
 
-def validate_stage(run_dir, stage):
+def validate_stage(run_dir, stage, delivered_pdfs=None):
     """Gate form: every review PDF the stage owes exists, is in section order,
-    and matches the stage's real section images."""
+    and matches the stage's real section images; with `delivered_pdfs`, the
+    client's copy of each PDF is the validated build too."""
     import combine_review_pdf as crp
     run_dir = Path(run_dir).resolve()
     try:
@@ -177,7 +194,7 @@ def validate_stage(run_dir, stage):
             print(f"FAIL: {stage}: {name} was built from a different image list than the stage now holds (rebuild it).")
             rc = 1
             continue
-        rc = max(rc, validate(manifest))
+        rc = max(rc, validate(manifest, delivered_pdf=delivered_pdfs / name if delivered_pdfs else None))
     return rc
 
 

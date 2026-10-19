@@ -1218,9 +1218,16 @@ sections. The validator also checks one page width for the set and that every
 page has the shape of its source image. `validate_review_pdf.py <manifest> --delivered <folder>`
 also requires the client's delivered section images (sorted `*.png`) to be
 byte-identical, page for page, to what the PDF was built from; run it before a
-PDF and its folder are handed over together. `validate_review_pdf.py <run_dir>
---stage <stage>` is the gate form; the stage contract runs it at close for
-`visual-mockup` and `final-mockups` and requires those four PDFs.
+PDF and its folder are handed over together. The client's copy of the PDF is
+checked the same way: `--delivered-pdf <file>` (one PDF) or, in the stage form,
+`--delivered-pdfs <folder>` (every PDF the stage owes) require the delivered
+file to be byte-identical to the validated build, so a rebuilt PDF that was
+never copied over an earlier one of the same name fails the gate.
+`combine_review_pdf.py <run_dir> --stage <stage> --deliver <folder>` does the
+copy for you and re-validates the copy, so a rebuild always refreshes the
+client's PDFs. `validate_review_pdf.py <run_dir> --stage <stage>` is the gate
+form; the stage contract runs it at close for `visual-mockup` and
+`final-mockups` and requires those four PDFs.
 
 ## Item state (itemized stages)
 

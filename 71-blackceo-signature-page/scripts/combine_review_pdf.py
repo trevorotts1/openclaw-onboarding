@@ -89,11 +89,13 @@ def discover(run_dir, stage, expect=None):
     return out
 
 
-def build_stage(run_dir, stage, expect=None, overwrite=True):
+def build_stage(run_dir, stage, expect=None, deliver=None):
     """Combine and validate every review PDF of one stage. Returns 0 on pass.
 
     A PDF that fails its validator is deleted, so a bad PDF never reaches
-    the client.
+    the client. With `deliver`, each validated PDF is copied into that
+    folder and the copy is re-validated against the build, so a rebuild
+    can never leave an earlier PDF of the same name in the client's folder.
     """
     run_dir = Path(run_dir).resolve()
     try:
@@ -112,14 +114,25 @@ def build_stage(run_dir, stage, expect=None, overwrite=True):
             "pages": [{"path": os.path.relpath(p, review), "label": part_label(i)}
                       for i, p in enumerate(images, start=1)],
         }, indent=2), encoding="utf-8")
-        for script, extra in (("combine_review_pdf.py", ["--overwrite"]), ("validate_review_pdf.py", [])):
+        dest = Path(deliver).resolve() / name if deliver else None
+
+        def run(script, *extra):
             proc = subprocess.run([sys.executable, str(here / script), str(manifest), *extra],
                                   capture_output=True, text=True)
             print((proc.stdout + proc.stderr).strip())
             if proc.returncode != 0:
-                for stale in (review / name, review / (name + ".manifest.json")):
-                    stale.unlink(missing_ok=True)
+                for stale in (review / name, review / (name + ".manifest.json"), dest):
+                    if stale:
+                        stale.unlink(missing_ok=True)
                 print(f"FAIL: {stage} {name} did not pass {script}; the PDF was removed.")
+            return proc.returncode
+
+        if run("combine_review_pdf.py", "--overwrite") or run("validate_review_pdf.py"):
+            return 1
+        if dest:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(review / name, dest)
+            if run("validate_review_pdf.py", "--delivered-pdf", str(dest)):
                 return 1
         if stage in CONTRACT_COPY:
             shutil.copyfile(review / name, run_dir / stage / CONTRACT_COPY[stage])
@@ -132,11 +145,12 @@ def main():
     parser.add_argument("--stage", choices=sorted(STAGE_PDFS),
                         help="treat the first argument as a run dir: combine and validate that stage's desktop/mobile review PDFs")
     parser.add_argument("--expect", type=int, default=None, help="with --stage: the expected section count")
+    parser.add_argument("--deliver", type=Path, help="with --stage: also copy each validated PDF into this client folder and prove the copy is the build")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--resolution", type=float, default=144.0)
     args = parser.parse_args()
     if args.stage:
-        return build_stage(args.manifest, args.stage, args.expect)
+        return build_stage(args.manifest, args.stage, args.expect, args.deliver)
 
     try:
         from PIL import Image
