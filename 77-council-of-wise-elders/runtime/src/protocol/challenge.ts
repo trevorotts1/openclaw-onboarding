@@ -105,6 +105,11 @@ import type {
 } from '../cli/host-ports.js';
 import { CHALLENGE_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
 import { parseCardResponseText } from '../cli/card-text.js';
+import {
+  cardOutputContract,
+  cardRequestSystem,
+  cardSystemBytes,
+} from '../cli/card-contract.js';
 import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import {
   SimulatedCrashError,
@@ -261,7 +266,14 @@ export function assembleSeatContext(args: {
   }
   const route: RouteContextBudget = {
     ...limits,
-    system_rules_bytes: new TextEncoder().encode(args.systemText).length,
+    system_rules_bytes: cardSystemBytes(
+      args.systemText,
+      args.operation === 'round_3_ratification'
+        ? 'ratification'
+        : args.operation === 'consult'
+          ? 'consult'
+          : 'advisor',
+    ),
   };
   const seatBudgets: Partial<Record<SeatId, number>> = {};
   for (const other of SEAT_IDS) {
@@ -903,10 +915,13 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     const ownOpening = round1Cards.find((c) => c.seat_id === seatId) ?? null;
     const briefView = payloadBriefView(context);
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${CHALLENGE_ROUND_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : CHALLENGE_ROUND_SYSTEM;
+    const challengeIds = assigned.map((crux) => crux.crux_id);
+    const system = cardRequestSystem(
+      CHALLENGE_ROUND_SYSTEM,
+      'advisor',
+      challengeIds,
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -945,6 +960,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
             assigned.length === 0
               ? 'No targeted challenge is assigned to your seat. Confirm or update your opening position against the evidence; a fresh Round 2 card is still required.'
               : null,
+          output_contract: cardOutputContract('advisor', challengeIds),
         },
       });
     } catch (error) {

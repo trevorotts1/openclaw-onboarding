@@ -110,6 +110,10 @@ import {
   SEAT_FOCUS,
 } from '../cli/engine.js';
 import { parseCardResponseText } from '../cli/card-text.js';
+import {
+  cardOutputContract,
+  cardRequestSystem,
+} from '../cli/card-contract.js';
 import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import {
   SimulatedCrashError,
@@ -765,10 +769,12 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
     const ownRound2 = round2Cards.find((c) => c.seat_id === seatId) ?? null;
     const briefView = payloadBriefView(context);
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${RATIFICATION_ROUND_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : RATIFICATION_ROUND_SYSTEM;
+    const system = cardRequestSystem(
+      RATIFICATION_ROUND_SYSTEM,
+      'ratification',
+      null,
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -796,6 +802,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
           // each seat sees the draft, the relevant challenges, and the
           // frozen evidence).
           relevant_cruxes: assignedCruxesFor(cruxes, seatId),
+          output_contract: cardOutputContract('ratification', null),
         },
       });
     } catch (error) {
@@ -1144,10 +1151,12 @@ export class ConsultExecutor implements OperationExecutorPort {
       : null;
     const briefView = payloadBriefView(context);
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${CONSULT_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : CONSULT_SYSTEM;
+    const system = cardRequestSystem(
+      CONSULT_SYSTEM,
+      'consult',
+      null,
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -1168,6 +1177,7 @@ export class ConsultExecutor implements OperationExecutorPort {
           pack_briefing: pack?.briefing_text ?? null,
           input_manifest_sha256: plan.input_manifest_sha256,
           pack_version: plan.pack_version,
+          output_contract: cardOutputContract('consult', null),
         },
       });
     } catch (error) {
