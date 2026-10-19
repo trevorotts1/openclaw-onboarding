@@ -120,6 +120,7 @@ if not depts:
 files = {}          # path -> reason (None = fine); one entry per file examined
 residue = []        # other dept-level .md files (ROSTER.md ...) still carrying placeholder text
 no_director = []
+empty_depts = []   # no role folders at all: repair-directors-doctrine.py skips these (skipped_empty), so the gate only warns
 for dept in depts:
     names = []
     for r in sorted(dept.iterdir()):
@@ -147,7 +148,9 @@ for dept in depts:
                 # inherited core files (USER.md, TOOLS.md ...) are shared copies/links, not SOPs
                 if n.endswith(".md") and n not in CORE and p.is_file() and not p.is_symlink():
                     files.setdefault(p, bad_reason(p, False, True))
-    if not any(DIRECTOR.search(n) for n in names):
+    if not names:
+        empty_depts.append(dept.name)
+    elif not any(DIRECTOR.search(n) for n in names):
         no_director.append(dept.name)
 
 placeholders = sorted((p, why) for p, why in files.items() if why)
@@ -242,7 +245,7 @@ if no_director:
     line("directors", "FAIL", "%d of %d departments have no director" % (len(no_director), len(depts)))
     show(no_director, str)
 else:
-    line("directors", "PASS", "all %d departments have a director" % len(depts))
+    line("directors", "PASS", "all %d departments have a director" % (len(depts) - len(empty_depts)))
 if broken:
     failed += 1
     line("user-md-links", "FAIL", "%d of %d USER.md links are broken" % (broken, links))
@@ -264,6 +267,10 @@ if goal_msg:
     line("revenue-goal", "WARN", goal_msg + " (warning only; the box's own agent asks its owner)")
 else:
     line("revenue-goal", "PASS", "yearlyRevenueGoal is set")
+if empty_depts:
+    warned += 1
+    line("empty-departments", "WARN", "%d departments have no role folders yet, so no director is expected (warning only)" % len(empty_depts))
+    show(empty_depts, str)
 if residue:
     warned += 1
     line("placeholder-residue", "WARN", "%d other department files still carry placeholder text (warning only)" % len(residue))
