@@ -1,0 +1,253 @@
+/*
+ * council-journey.css (CWE-033, Skill 77)
+ *
+ * Journey screen layout for the council home, intake, brief review,
+ * session, verdict, and consult screens. Every rule is scoped under
+ * .council-theme (the CWE-031 scoped theme) and uses only the locked
+ * --council-* tokens; no theme value is redefined here. Layout holds
+ * at 320px: single column, wrapping rows, 44px touch targets via the
+ * token-driven .council-btn.
+ */
+
+.council-theme .council-journey-wrap {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+.council-theme .council-journey-head {
+  margin-bottom: 1.5rem;
+}
+
+.council-theme .council-journey-head a {
+  color: var(--council-accent-ink);
+}
+
+.council-theme .council-journey-foot {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--council-line);
+  padding-top: 1rem;
+}
+
+.council-theme .council-journey-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.council-theme .council-journey-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.council-theme .council-journey-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.council-theme .council-journey-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.council-theme .council-journey-field label,
+.council-theme .council-journey-legend {
+  font-weight: 600;
+  color: var(--council-ink);
+}
+
+.council-theme .council-journey-input,
+.council-theme .council-journey-textarea,
+.council-theme .council-journey-select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--council-line-strong);
+  border-radius: var(--council-radius-control);
+  background: var(--council-surface);
+  color: var(--council-ink);
+  font: inherit;
+  padding: 0.625rem 0.75rem;
+  min-height: var(--council-touch-target);
+}
+
+.council-theme .council-journey-textarea {
+  min-height: 6rem;
+}
+
+.council-theme .council-journey-check {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+}
+
+.council-theme .council-journey-check input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.125rem;
+  flex: none;
+}
+
+.council-theme .council-journey-notice {
+  border: 1px solid var(--council-line-strong);
+  border-left: 0.375rem solid var(--council-accent);
+  border-radius: var(--council-radius-card);
+  background: var(--council-surface);
+  padding: 0.875rem 1rem;
+}
+
+.council-theme .council-journey-notice-warn {
+  border-left-color: #b45309;
+  background: #fffbeb;
+}
+
+.council-theme .council-journey-notice-error {
+  border-left-color: #b91c1c;
+  background: #fef2f2;
+}
+
+.council-theme .council-journey-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.council-theme .council-journey-progress li {
+  border: 1px solid var(--council-line);
+  border-radius: 999px;
+  padding: 0.25rem 0.625rem;
+  font-size: var(--council-text-meta);
+  color: var(--council-ink-soft);
+  background: var(--council-surface);
+}
+
+.council-theme .council-journey-progress li[data-state='done'] {
+  border-color: var(--council-accent);
+  color: var(--council-accent-ink);
+}
+
+.council-theme .council-journey-progress li[data-state='current'] {
+  background: var(--council-accent-wash);
+  border-color: var(--council-accent-strong);
+  color: var(--council-ink);
+  font-weight: 700;
+}
+
+.council-theme .council-journey-kind {
+  border: 1px solid var(--council-line);
+  border-radius: var(--council-radius-card);
+  background: var(--council-surface);
+  padding: 1rem;
+}
+
+.council-theme .council-journey-kind h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+}
+
+.council-theme .council-journey-kind-tag {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.0625rem 0.5rem;
+  font-size: var(--council-text-meta);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.council-theme [data-kind='statement'] .council-journey-kind-tag {
+  background: var(--council-accent-wash);
+  color: var(--council-accent-ink);
+}
+
+.council-theme [data-kind='fact'] .council-journey-kind-tag {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.council-theme [data-kind='assumption'] .council-journey-kind-tag {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.council-theme [data-kind='range'] .council-journey-kind-tag {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.council-theme [data-kind='unknown'] .council-journey-kind-tag {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.council-theme .council-journey-source {
+  display: inline-block;
+  border: 1px dashed var(--council-line-strong);
+  border-radius: 999px;
+  padding: 0.0625rem 0.5rem;
+  font-size: var(--council-text-meta);
+  color: var(--council-ink-soft);
+  margin-left: 0.5rem;
+}
+
+.council-theme .council-journey-seat-option {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid var(--council-line);
+  border-radius: var(--council-radius-card);
+  padding: 0.625rem 0.75rem;
+  background: var(--council-surface);
+}
+
+.council-theme .council-journey-seat-option img {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  flex: none;
+}
+
+.council-theme .council-journey-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.council-theme .council-journey-table th,
+.council-theme .council-journey-table td {
+  border-bottom: 1px solid var(--council-line);
+  padding: 0.5rem 0.375rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.council-theme .council-journey-hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--council-text-meta);
+  word-break: break-all;
+}
+
+.council-theme .council-journey-verdict-section {
+  border-top: 2px solid var(--council-line-strong);
+  padding-top: 1rem;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 30rem) {
+  .council-theme .council-journey-wrap {
+    padding: 1rem 0.75rem 2.5rem;
+  }
+
+  .council-theme .council-journey-grid {
+    grid-template-columns: 1fr;
+  }
+}

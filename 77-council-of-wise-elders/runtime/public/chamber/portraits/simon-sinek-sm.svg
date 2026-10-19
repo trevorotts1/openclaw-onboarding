@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-labelledby="t d">
+  <title id="t">Simon Sinek medallion, small</title>
+  <desc id="d">Small illustrative identity medallion for the Simon Sinek council seat (purpose and strategic alignment): the initials SS inside a colored ring on a tinted disc. A designed symbol, not a photograph or likeness.</desc>
+  <circle cx="48" cy="48" r="44" fill="#FBF1DA"/>
+  <circle cx="48" cy="48" r="44" fill="none" stroke="#B57E0E" stroke-width="4"/>
+  <text x="48" y="62" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-size="30" font-weight="600" fill="#7A5200">SS</text>
+</svg>

@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.18: the Council chamber itself — WER-021 full packaging
+
+- The merged service served `GET /` as a status report while the chamber did not exist: `GET /chamber/` returned `404 SERVICE_ROUTE_NOT_FOUND`, so an authenticated phone on the public origin landed on a report page instead of the Council. This entry ships the chamber.
+- Adds `runtime/public/chamber/` — 25 self-contained files: `index.html` (nine seats, persistent fictional-sample labelling), `advisors.html` (nine seats, 11 `bibliographic_only` labels), `not-packaged.html`, three stylesheets and 18 advisor portrait SVGs. The three stylesheets are byte-identical to the Command Center council styles (16905 / 7384 / 5963 bytes, 3/3 match) and all 18 portraits byte-identical to the Command Center portraits (18/18 match). Zero `<script>`, zero `fetch(`, zero `url(`, zero `https://` in the directory; the only absolute URLs present are 18 SVG `xmlns="http://www.w3.org/2000/svg"` namespace declarations. No operator home path appears anywhere in them.
+- `runtime/src/service/front-door.ts` gains a static-asset route under `/chamber/` (and `/chamber`), keeping the catch-all 404 for everything else. Traversal probes all refused with the unchanged catch-all: `/chamber/../package.json`, `/chamber/%2e%2e/package.json`, `/chamber/portraits/%2e%2e%2fpackage.json`, `/chamber/portraits/../../front-door.ts`.
+- Every existing route is proven byte-identical in behaviour by a base-vs-head loopback probe against both worktrees: `GET /` 200 text/html, `/nope` 404 `SERVICE_ROUTE_NOT_FOUND`, `/api/council/service/identity` 200, `/council/s1` 200 with the `UI_NOT_BUNDLED` blocker, `/api/council/sessions/s1/events` 501 `EVENT_STREAM_ADAPTER_NOT_BOUND`.
+- Pages that cannot ship without the Command Center database and its tenant gate are named with their exact blocking dependency in `runtime/public/chamber/RECEIPT.md` and are served as `not-packaged.html` rather than faked: `/council` (needs `resolveTenantContext` plus `src/lib/council/store.ts`), `/council/<sessionId>` (needs a persisted session and the durable event journal), the Command Center's own `/council/advisors` route (a static roster copy ships instead), `/council/history`, `/council/new`, `/council/settings`.
+- QC: typecheck exit 0; `landing.test.ts` + `service.test.ts` 17/17 exit 0 with both files untouched; full runtime suite 430 tests / 423 pass / 7 fail, with the 7 failure names byte-identical to a fresh detached worktree at the base commit (all ENOENT on a pre-existing fixture), so the control, not the change, explains them.
+
 ## v1.0.17: a real landing page at GET / (WER-023 authenticated origin)
 
 - The authenticated public origin returned a JSON 404 at `/` - observed live as `{"code":"SERVICE_ROUTE_NOT_FOUND","detail":"No service route for GET /."}` - because the merged WER-021 slice ships no UI and never had a root route.

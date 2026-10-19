@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="t d">
+  <title id="t">Tiffany Aliche medallion</title>
+  <desc id="d">Illustrative identity medallion for the Tiffany Aliche council seat (financial stability and sustainable commitments): the initials TA and a pediment over three columns, a foundation inside a colored ring on a tinted disc. A designed symbol, not a photograph or likeness.</desc>
+  <circle cx="120" cy="120" r="114" fill="#E5F3F0"/>
+  <circle cx="120" cy="120" r="114" fill="none" stroke="#177E6E" stroke-width="6"/>
+  <circle cx="120" cy="120" r="102" fill="none" stroke="#177E6E" stroke-width="1.5" opacity="0.45"/>
+  
+  <g fill="none" stroke="#0C5546" stroke-width="5" stroke-linecap="round">
+    <path d="M82 56 120 40l38 16"/>
+    <path d="M92 64v24M120 64v24M148 64v24"/>
+    <path d="M82 96h76"/>
+  </g>
+  <text x="120" y="172" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-size="56" font-weight="600" letter-spacing="1" fill="#0C5546">TA</text>
+  <g fill="#177E6E">
+    <circle cx="104" cy="196" r="3.5"/>
+    <circle cx="120" cy="196" r="3.5"/>
+    <circle cx="136" cy="196" r="3.5"/>
+  </g>
+</svg>

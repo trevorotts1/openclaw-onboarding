@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="t d">
+  <title id="t">T. D. Jakes medallion</title>
+  <desc id="d">Illustrative identity medallion for the T. D. Jakes council seat (instinct, reinvention, and communication): the initials TJ and a microphone inside a colored ring on a tinted disc. A designed symbol, not a photograph or likeness.</desc>
+  <circle cx="120" cy="120" r="114" fill="#F0EAF9"/>
+  <circle cx="120" cy="120" r="114" fill="none" stroke="#6C4AB0" stroke-width="6"/>
+  <circle cx="120" cy="120" r="102" fill="none" stroke="#6C4AB0" stroke-width="1.5" opacity="0.45"/>
+  
+  <g fill="none" stroke="#472C7E" stroke-width="5" stroke-linecap="round">
+    <rect x="111" y="38" width="18" height="32" rx="9" fill="#472C7E" stroke="none"/>
+    <path d="M102 58a18 18 0 0 0 36 0"/>
+    <path d="M120 78v14M106 94h28"/>
+  </g>
+  <text x="120" y="172" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-size="56" font-weight="600" letter-spacing="1" fill="#472C7E">TJ</text>
+  <g fill="#6C4AB0">
+    <circle cx="104" cy="196" r="3.5"/>
+    <circle cx="120" cy="196" r="3.5"/>
+    <circle cx="136" cy="196" r="3.5"/>
+  </g>
+</svg>
