@@ -1,0 +1,49 @@
+{
+  "record_version": 1,
+  "tenant": "XCgFTEA1oDvsPnTqqgoB",
+  "recorded_at": "2026-10-19",
+  "authority": "GU-004 3.2 rules 2-3 (GHL-140 amendment)",
+  "note": "enabled=true with provisional=true means the record authorizes dispatch on offline evidence (contract, adapter, tests) only. activation=UNVERIFIED means no real 200 has been observed for this tenant. The record never asserts tenant capability.",
+  "capabilities": {
+    "locations.get": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": false,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "UNVERIFIED",
+      "provisional": true
+    },
+    "contacts.list": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": false,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "UNVERIFIED",
+      "provisional": true
+    },
+    "contacts.search": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": false,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "UNVERIFIED",
+      "provisional": true
+    },
+    "custom_fields.list": {
+      "contract_verified": true,
+      "adapter_built": true,
+      "offline_tests_passed": true,
+      "read_verified": false,
+      "canary_verified": false,
+      "enabled": true,
+      "activation": "UNVERIFIED",
+      "provisional": true
+    }
+  }
+}
