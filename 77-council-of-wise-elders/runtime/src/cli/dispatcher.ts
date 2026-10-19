@@ -53,6 +53,7 @@ import {
   handleAuthorizationCommand,
   mirrorSession,
 } from './authorization.js';
+import { runConvene, runRoutes } from './convene.js';
 import { exportVerdictReport } from './report-export.js';
 import { resolveDataDir } from './paths.js';
 
@@ -276,6 +277,9 @@ const USAGE = [
   '  replay SESSION [--json]             Committed event history (read only, spends nothing)',
   '  export SESSION --format md|json|pdf [--out FILE]',
   '  authorization preview|approve|status|revoke   Run authorization service (CWE-049)',
+  '  routes [--origin URL] [--json]      Model routes and harness defaults from the council service',
+  '  convene (--sample | --brief FILE) [--route ID] [--model ID] [--harness H] [--fresh-facts FILE] [--mode M] [--origin URL]',
+  '                                      Convene a council on the running service (convening is the approval)',
   '',
   'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
 ].join('\n');
@@ -449,6 +453,16 @@ export async function runCli(
           data,
         );
         return 0;
+      }
+
+      case 'routes':
+      case 'convene': {
+        // W28: client over the service HTTP API; handles its own errors.
+        const rest = [...argv];
+        rest.splice(rest.indexOf(command), 1);
+        return command === 'routes'
+          ? runRoutes(rest, { io })
+          : runConvene(rest, { io });
       }
 
       case 'probe': {
