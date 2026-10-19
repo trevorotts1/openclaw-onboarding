@@ -920,6 +920,26 @@
       "class": "non_caller",
       "reason": "retention test added with the B2 fix (#2300): it asserts the retirement tool and its dependencies survive the prune; it names the retired rail only to prove the tool is retained and inert",
       "exempt_lines": []
+    },
+    "platform/vps/contabo/README.md": {
+      "class": "non_caller",
+      "reason": "retirement documentation from #2302: states the boot path never runs the retired autostart",
+      "exempt_lines": []
+    },
+    "platform/vps/hostinger/install-startup-hook.sh": {
+      "class": "non_caller",
+      "reason": "retirement hook from #2302: states the retired service is never restored",
+      "exempt_lines": []
+    },
+    "tests/unit/ghl-mcp-deployment-parity.test.sh": {
+      "class": "non_caller",
+      "reason": "distribution parity test from #2302: names the retired rail only to prove the boot paths cannot start or resurrect it",
+      "exempt_lines": []
+    },
+    "platform/README.md": {
+      "class": "non_caller",
+      "reason": "platform overview from #2302: records that the retired service is never started by any boot path",
+      "exempt_lines": []
     }
   }
 }

@@ -207,18 +207,51 @@ def check_alias_fixture(operations) -> int:
     return errors
 
 
-def check_matrix_document(manifest: dict) -> int:
+def check_matrix_document(manifest: dict, operations) -> int:
     path = ROOT / "evidence" / "W11" / "operation-routing-matrix.md"
     if not path.is_file():
         print("FAIL operation-routing-matrix.md missing")
         return 1
     text = path.read_text(encoding="utf-8")
+    rows: dict[str, str] = {}
+    for line in text.splitlines():
+        m = re.match(r"^\|\s*([A-Z][A-Z0-9]*)\s*\|", line)
+        if m:
+            rows.setdefault(m.group(1), line)
     errors = 0
     for caller in manifest["callers"] + manifest.get("domain_references", []):
         cid = caller["id"]
         if f"| {cid} |" not in text:
             print(f"FAIL matrix document has no row for {cid}")
             errors += 1
+            continue
+        # The document's headline claim is the per-row METHOD / path / Version
+        # literal. Assert it against the frozen registry instead of trusting it:
+        # every operation id named in the row must have its row method and path
+        # present in that same row, and its Version literal present in the row.
+        row_line = rows.get(cid, "")
+        cells = [c.strip() for c in row_line.split("|")]
+        # cells[0] is empty (leading pipe): ID cells[1], Former caller cells[2],
+        # Operation performed cells[3], Replacement cells[4], Version cells[5].
+        # Assert exactly the two CLAIM columns, not prose elsewhere in the row.
+        replacement_cell = cells[4] if len(cells) > 4 else ""
+        version_cell = cells[5] if len(cells) > 5 else ""
+        for operation_id in re.findall(r"`([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)`", replacement_cell):
+            if operation_id not in operations:
+                continue  # membership is reported by check_replacement for manifest ids
+            row = operations[operation_id]
+            if row.method not in replacement_cell or row.path_template not in replacement_cell:
+                print(
+                    f"FAIL matrix row {cid}: {operation_id} is {row.method} {row.path_template} "
+                    f"in the registry but the Replacement cell does not state that method/path"
+                )
+                errors += 1
+            if row.version and row.version not in version_cell:
+                print(
+                    f"FAIL matrix row {cid}: {operation_id} registry Version is {row.version!r} "
+                    f"but the Version cell does not state it"
+                )
+                errors += 1
     return errors
 
 
@@ -229,7 +262,7 @@ def main() -> int:
     errors = 0
     errors += check_files(manifest, scanned)
     errors += check_callers(manifest, operations)
-    errors += check_matrix_document(manifest)
+    errors += check_matrix_document(manifest, operations)
     errors += check_alias_fixture(operations)
 
     callers = len(manifest["callers"])
