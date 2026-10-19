@@ -61,6 +61,8 @@ MODULES = [
     "test_sync_allowlist.py",
     # Signature Launch S71 A23: per-provider image-generation-qc gate.
     "test_provider_gate_a23.py",
+    # Design styles A Block, B Circle, C Hybrid: circle-image pipeline, style choice, shape QC.
+    "test_design_style.py",
 ]
 
 def skip_reason(stdout):

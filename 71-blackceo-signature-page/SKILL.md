@@ -62,6 +62,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 
 - **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages). Brand fonts are the one fail-open key: when they are still MUST_SUPPLY, `font_policy` says derive-document — derive the best display/body/accent for the job, document the rationale in the bible (`fonts_source: "derived"` + `font_rationale` + `font_reviewer`), reviewer approves. Never blocked on fonts; every other MUST_SUPPLY value still blocks. At intake, declare the brand's mandated editorial structures (full-width rows separated by rules, ordinary letter prose) in the brand file at `layout_thresholds.card_grid_allowlist`, so the card-grid metric passes them by declaration instead of discovering them by failure.
 - Production order / gates: `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md`
+- Design style (every wireframe, mockup and image stage): `references/design-styles.md`; data and the intake question in `references/design-styles.json`
 - Standard copy: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
 - Long-Form copy: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
 - Image planning / art direction / prompts / visual QC: `references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md`
@@ -118,6 +119,17 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Keep exact approved copy unless the owner explicitly authorizes copy changes.
 
 For multi-part review exports, keep individual PNGs and use ordered manifests with `scripts/combine_review_pdf.py` and `scripts/validate_review_pdf.py` for separate desktop/mobile wireframe/mockup PDFs.
+
+## Design style: A Block, B Circle, C Hybrid
+
+At intake the client chooses one page design style after seeing an example link for each: ask with
+`python3 scripts/design_style.py question`, record with `scripts/write_intake.py ... --design-style A|B|C`.
+A production run cannot close `intake` without the choice (`gate:intake_design_style`). The choice drives the
+wireframe and mockup prompts (`scripts/stage_executor.py` adds the style block), each image slot's `shape`
+(`rect` or `circle`), and the shape QC check. Circle slots are generated SQUARE (subject centered, safe margins),
+then masked by `scripts/circle_image.py` into an RGBA PNG with a transparent outside, so any agent can place
+a round photo as an ordinary square file. Colors always come from the client's brand file, never from the examples.
+Full definitions: `references/design-styles.md`.
 
 ## Page-level Creative Direction
 

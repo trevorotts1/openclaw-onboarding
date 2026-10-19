@@ -756,7 +756,9 @@ class StageGateTest(unittest.TestCase):
         proc = run_gate("close", str(run), "intake", expect=1, env=env)
         self.assertIn("image_engine", proc.stdout + proc.stderr)
         subprocess.run([PY, str(ROOT / "scripts" / "write_intake.py"), str(run), "--page-version", "standard",
-                        "--brand-owner", "blackceo", "--brand-file", "private/brand.json", "--image-cap", "1"],
+                        "--brand-owner", "blackceo", "--brand-file", "private/brand.json", "--image-cap", "1",
+                        # a production intake also needs the client's design style (gate:intake_design_style)
+                        "--design-style", "A"],
                        check=True, capture_output=True)
         run_gate("close", str(run), "intake", expect=0, env=env)
 

@@ -69,6 +69,7 @@ for f in \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
   scripts/calibrate_grade.py scripts/check_authority_pins.py \
   scripts/install_local.py scripts/write_intake.py \
+  scripts/circle_image.py scripts/design_style.py \
   tests/run_tests.py tests/test_scripts.py \
   assets/brand/blackceo-brand.json assets/brand/brand.schema.json \
   assets/brand/client-brand.template.json assets/brand/signature-grade-block.txt \
@@ -86,6 +87,7 @@ for f in \
   references/run-events-schema.md references/run-events.schema.json \
   references/run-events.example.jsonl references/report-json.schema.json \
   references/report-json.example.json references/style-selection.md \
+  references/design-styles.md references/design-styles.json tests/test_design_style.py \
   references/style-selection.schema.json references/prompt-budget-policy.json \
   references/runner-profiles.json references/item-gate-spec.md \
   references/browser-hygiene.md references/funnel-completion-checklist.md \
