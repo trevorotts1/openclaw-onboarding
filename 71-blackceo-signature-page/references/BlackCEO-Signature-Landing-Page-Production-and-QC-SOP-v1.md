@@ -2,7 +2,7 @@
 
 **Version:** 1.0 | **Date:** September 30, 2026  
 **Owner:** Trevor Otts / BlackCEO  
-**Scope:** A universal process for funnel-type pages: landing pages, opt-in/squeeze pages, event/registration pages, challenge pages, sales pages, booking pages and comparable focused visitor journeys. In OpenClaw, direct-response / VSL sales-page stacks route to Skill 56; this SOP's sales-page notes apply only to a single BlackCEO Signature page the owner explicitly assigns here. A multi-page marketing website whose governing copy contract is not this BlackCEO single-page system is website-craft work, not a signature page, however similar the pages look.  
+**Scope:** A universal process for funnel-type pages: landing pages, opt-in/squeeze pages, event/registration pages, challenge pages, sales pages, booking pages and comparable focused visitor journeys. Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`. This SOP's sales-page notes apply only to a single BlackCEO Signature page the owner explicitly assigns here. A multi-page marketing website whose governing copy contract is not this BlackCEO single-page system is website-craft work, not a signature page, however similar the pages look.  
 
 **Product-creation scope (Update Plan Item 24 / proposal P3):** Creating a missing GHL product is inside this job's scope exactly once per missing product: only after an existence check proves it absent, only the product the funnel's order form binds, and always recorded in the funnel-completion receipt (Item 32). Everything else about products (pricing changes, catalog management) stays outside this job.
 **Status:** Production instructions. Creating this document does not publish a page, update GitHub, authorize payment, or certify a live implementation.
@@ -22,7 +22,7 @@ Set for Life supplied lessons for this workflow. Its name, founder, free attenda
 
 **The governing order:** confirm the page and action -> write and QC/repair the copy -> font intelligence and action plan -> full desktop wireframe -> full mobile wireframe and tablet rules -> visual bible and internal layout proof -> individual image prompts and QC/repair -> generate and QC/repair images -> upload and complete Image Map -> the mockup: finalize the layout proof per section with the real assets (the single client-judged mockup) -> responsive HTML and QC/repair -> install/test in GHL -> publish when authorized and verify the public result -> wire the follow-up automations when the intake's automation scope includes them (conditional Stage 15).
 
-The default deliverables for one selected page version are **one full desktop wireframe and one full mobile wireframe**, plus their mockups. Four wireframes apply when explicitly creating the reusable standard/long-form template set: standard desktop, standard mobile, long-form desktop, long-form mobile. Exporting a long wireframe in Parts A-M does not create thirteen different pages.
+Every selected page version gets **four images: desktop wireframe, mobile wireframe, desktop mockup, and mobile mockup**. The mobile wireframe and the mobile mockup are each produced at the mobile width, never a desktop image resized to mobile. Creating the reusable standard/long-form template set means producing that set's four images for each page version: standard desktop, standard mobile, long-form desktop, long-form mobile. Exporting a long wireframe in Parts A-M does not create thirteen different pages.
 
 ## Non-negotiable rules
 
@@ -89,7 +89,7 @@ The AI can state its understanding of the selected standard/long-form version fr
 
 For opt-in, event and registration pages: "Have you already created the form in GoHighLevel? If so, send the embed code." Then, only if unknown: "Should people see the form on the page, or should it pop open when they click a button?" Use the client's existing separate form-page link if that is their chosen flow.
 
-For sales pages: "Do you already have a checkout page or payment link for this offer? Send that link. If customers should pay directly on this page or in a popup, send the supported checkout embed code, if available."
+For a single BlackCEO Signature sales page the owner has explicitly assigned here: "Do you already have a checkout page or payment link for this offer? Send that link. If customers should pay directly on this page or in a popup, send the supported checkout embed code, if available."
 
 A checkout URL is sufficient when the button goes to a checkout page. Do not demand a widget too. Do not assume every native GHL order form has portable embed code. If no checkout exists, collect the actual product, price/currency, one-time or recurring schedule and configured payment provider as a separate setup task. Do not put a homemade credit-card form into the landing-page HTML. [W5]
 

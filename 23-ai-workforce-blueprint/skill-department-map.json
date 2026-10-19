@@ -1317,7 +1317,7 @@
    "slug": "blackceo-signature-page",
    "name": "blackceo-signature-page",
    "client_facing": true,
-   "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6.",
+   "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6. The four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) for upsell, downsell, thank-you, product selection and the sales page are produced by Skill 71 `blackceo-signature-page`'s shared image service (`scripts/shared_page_service.py`) and called from the owning skill's wrapper.",
    "departments": [
     "web-development",
     "marketing",

@@ -48,6 +48,10 @@
     "assigned_skill": {
       "type": "integer"
     },
+    "shared_image_service": {
+      "const": "71-blackceo-signature-page",
+      "description": "Fix 3 shared-service marker: set only by Skill 71 scripts/shared_page_service.py. Present means the four image stages for this page role are produced by Skill 71's shared image service and called from the owning skill's wrapper; absent means scripts/launch_context.py keeps the landing-only refusals."
+    },
     "approval_ref": {
       "type": "string",
       "minLength": 1
