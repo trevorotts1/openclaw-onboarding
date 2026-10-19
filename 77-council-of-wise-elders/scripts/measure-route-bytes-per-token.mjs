@@ -178,6 +178,7 @@ async function measureLive(opts, rb) {
   return {
     pairs,
     measured_at: new Date().toISOString(),
+    pinned_model: resolved.snapshot.requestedModelOrAlias ?? null,
     capability: resolved.snapshot.capabilitySnapshot ?? {},
   };
 }
@@ -204,25 +205,37 @@ let rec = opts.measurements ? readMeasurements(opts.measurements) : null;
 const routeId = opts.route ?? rec?.route_id;
 if (!routeId) die(2, '--route ID is required');
 if (rec?.route_id && rec.route_id !== routeId) die(2, 'measurements file is for a different route');
-const model = opts.model ?? (opts.route ? null : (rec?.model ?? null));
-opts.route = routeId;
-if (model !== null) opts.model = model;
-
-let base = null;
+let model;
+let capability = {};
+let configEntries = [];
 try {
-  base =
-    rb.loadRouteBudgetConfig(configPath).entries.find(
-      (e) => e.route_id === routeId && e.model === model,
-    ) ?? null;
+  configEntries = rb.loadRouteBudgetConfig(configPath).entries;
 } catch (err) {
   if (opts.write) die(2, `cannot update config: ${err.message}`);
 }
-
-let capability = {};
-if (!rec) {
+if (rec) {
+  // Offline: the recording names the model it was taken on.
+  const recModel = rec.model ?? null;
+  if (opts.model && 'model' in rec && opts.model !== recModel) {
+    die(2, `--model ${opts.model} conflicts with the recording's model ${recModel}`);
+  }
+  model = opts.model ?? recModel;
+} else {
   rec = await measureLive(opts, rb);
   capability = rec.capability;
+  const pinned = rec.pinned_model ?? null;
+  if (opts.model && opts.model !== pinned) {
+    die(2, `--model ${opts.model} conflicts with the resolved route model ${pinned}`);
+  }
+  // Fill the entry the runtime resolver will read: exact model first, then
+  // the route's model:null entry (for example deepseek, whose model id is
+  // resolved from the provider list at each run).
+  const has = (m) => configEntries.some((e) => e.route_id === routeId && e.model === m);
+  model = has(pinned) ? pinned : has(null) ? null : pinned;
 }
+opts.route = routeId;
+if (model !== null) opts.model = model;
+const base = configEntries.find((e) => e.route_id === routeId && e.model === model) ?? null;
 
 const entry = rb.proposeRouteBudgetEntry({
   base,

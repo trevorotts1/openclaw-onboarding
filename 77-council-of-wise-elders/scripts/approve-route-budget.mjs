@@ -13,7 +13,7 @@
 
 import { existsSync, mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
+import { dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const skillRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -62,7 +62,7 @@ function realTarget(p) {
 }
 const dataDir = realTarget(opts['data-dir']);
 const rel = relative(realpathSync(skillRoot), dataDir);
-if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) {
+if (rel === '' || !(rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel))) {
   die('--data-dir is inside the skill folder; approvals must live in the service data dir');
 }
 

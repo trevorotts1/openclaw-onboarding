@@ -405,6 +405,47 @@ test('approve script refuses unmeasured entries, unknown routes, and a data dir 
   assert.equal(existsSync(join(skillRoot, 'config', 'route-budget-approvals.json')), false);
 });
 
+test('approve script refuses a skill-folder child whose name starts with two dots', () => {
+  const dir = tmp();
+  const cfg = join(dir, 'config.json');
+  writeConfig(cfg, [entry()]);
+  const evil = join(skillRoot, '..evil-approval-must-not-exist');
+  const r = run(approveScript, ['--route', 'r1', '--approved-by', 'T', '--data-dir', evil], { WISE_ELDERS_ROUTE_BUDGETS: cfg });
+  const wrote = existsSync(evil);
+  rmSync(evil, { recursive: true, force: true }); // only matters if the guard regresses
+  assert.equal(wrote, false);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /inside the skill folder/);
+  // A sibling outside the skill folder whose name starts with two dots is fine.
+  const ok = run(approveScript, ['--route', 'r1', '--approved-by', 'T', '--data-dir', join(dir, '..svc')], { WISE_ELDERS_ROUTE_BUDGETS: cfg });
+  assert.equal(ok.code, 0, ok.err);
+});
+
+test('measure script: the recording model selects the entry, with or without --route', () => {
+  const dir = tmp();
+  const cfg = join(dir, 'config.json');
+  const blank = { measured_min_bytes_per_token: null, measured_at: null } as const;
+  writeConfig(cfg, [entry({ model: null, ...blank }), entry({ model: 'sonnet', ...blank })]);
+  const m = join(dir, 'sonnet.json');
+  writeFileSync(m, JSON.stringify({ route_id: 'r1', model: 'sonnet', measured_at: '2026-10-19T00:00:00.000Z', pairs: PAIRS }));
+  const env = { WISE_ELDERS_ROUTE_BUDGETS: cfg };
+
+  const withRoute = run(measureScript, ['--route', 'r1', '--measurements', m, '--write'], env);
+  assert.equal(withRoute.code, 0, withRoute.err);
+  assert.equal((JSON.parse(withRoute.out) as RouteBudgetEntry).model, 'sonnet');
+  const entries = loadRouteBudgetConfig(cfg).entries;
+  assert.equal(entries.length, 2);
+  assert.equal(entries.find((e) => e.model === 'sonnet')?.measured_min_bytes_per_token, 2);
+  assert.equal(entries.find((e) => e.model === null)?.measured_min_bytes_per_token, null);
+
+  const without = run(measureScript, ['--measurements', m], env);
+  assert.equal(without.out, withRoute.out);
+
+  const conflict = run(measureScript, ['--route', 'r1', '--model', 'opus', '--measurements', m], env);
+  assert.equal(conflict.code, 2);
+  assert.match(conflict.err, /conflicts with the recording/);
+});
+
 test('scripts never print a credential', () => {
   const dir = tmp();
   const cfg = join(dir, 'config.json');
