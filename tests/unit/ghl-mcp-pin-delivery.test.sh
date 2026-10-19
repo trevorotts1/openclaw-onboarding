@@ -79,6 +79,18 @@ _make_box() {
 # whole guardrail is dead. (v21.6.0 asserted the same rc=1 for the missing pin;
 # v22.0.0's box branch asserts the delivered tree, not config/.)
 BOX="$(_make_box no-config)"
+# GHL-101 (B2): the RETIREMENT TOOL is now retained on the box by design, and it
+# carries the retirement marker, so the gate correctly treats it as inert. To
+# still prove the gate NOTICES an armed box, strip the marker from the planted
+# copy: without it the same file is a live launcher and must hard-fail. The
+# retained-tombstone path is covered by case (B) below.
+python3 - "$BOX/.openclaw/scripts/ghl-mcp-autostart.sh" <<'PY'
+import re, sys
+p = sys.argv[1]
+t = open(p).read()
+t = re.sub(r'.*(GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED).*\n?', '', t)
+open(p, 'w').write(t)
+PY
 RC=0
 HOME="$BOX" bash "$BOX/.openclaw/scripts/qc-assert-ghl-mcp-supervised.sh" --quiet >/dev/null 2>&1 || RC=$?
 if [ "$RC" = "1" ]; then
@@ -124,8 +136,18 @@ else
   [ "$RC" = "0" ] || _B_PROBLEMS="$_B_PROBLEMS gate rc=$RC"
   [ -e "$RBOX/.openclaw/config/ghl-mcp-pin.env" ] \
     && _B_PROBLEMS="$_B_PROBLEMS (the pin was delivered — a stale pin is an active resurrection trigger)"
-  [ -e "$RBOX/.openclaw/scripts/ghl-mcp-autostart.sh" ] \
-    && _B_PROBLEMS="$_B_PROBLEMS (the launcher survived the prune)"
+  # GHL-101 (B2) INVERTED THIS ASSERTION DELIBERATELY. The retirement tool must
+  # SURVIVE on the box: the updater deletes its own source checkout, so pruning
+  # ghl-mcp-autostart.sh would leave the box unable to ever run --retire again.
+  # The contract is no longer "the launcher is gone"; it is "the launcher is
+  # retained AND inert". A retained launcher without the retirement marker is
+  # an armed box and still fails here.
+  if [ ! -e "$RBOX/.openclaw/scripts/ghl-mcp-autostart.sh" ]; then
+    _B_PROBLEMS="$_B_PROBLEMS (the retirement tool was pruned — the box can no longer run --retire)"
+  elif ! grep -qE 'GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED' \
+       "$RBOX/.openclaw/scripts/ghl-mcp-autostart.sh" 2>/dev/null; then
+    _B_PROBLEMS="$_B_PROBLEMS (the retained launcher carries no retirement marker — it is an armed box)"
+  fi
   if [ -z "$_B_PROBLEMS" ]; then
     pass "(B) a retired box — supervision surfaces pruned, community pin NOT delivered — passes the static gate rc=0"
   else

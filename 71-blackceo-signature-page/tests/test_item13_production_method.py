@@ -45,10 +45,13 @@ def make_stage(tmp, garbled=None, drop_qc=False, lie_clean=False, attempts=None)
     """Build a synthetic stage folder: slices + production-record.json."""
     from PIL import Image
     stage = Path(tmp)
+    layout_dir = stage / "desktop-wireframe"
+    layout_dir.mkdir(exist_ok=True)
     records = []
     for idx, (sid, color, height, copy_text) in enumerate(SECTIONS, start=1):
         name = f"section-{idx:02d}.png"
         Image.new("RGB", (WIDTH, height), color).save(stage / name)
+        Image.new("RGB", (WIDTH, height), color).save(layout_dir / name)
         readback = copy_text
         garbled_words = []
         if garbled == sid:
@@ -65,7 +68,7 @@ def make_stage(tmp, garbled=None, drop_qc=False, lie_clean=False, attempts=None)
                 "route": "kie-gpt-image",
                 "model_id": "resolved-at-build-time-fixture",
                 "model_source": "latest-family",
-                "layout_reference": f"approved wireframe section {sid}",
+                "layout_reference": f"desktop-wireframe/{name}",
                 "style_input": "visual-mockup/page-visual-bible.json",
                 "native_aspect": f"{WIDTH}x{height}",
             },

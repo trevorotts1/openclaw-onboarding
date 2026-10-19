@@ -4,8 +4,10 @@
 #   bash install-startup-hook.sh /docker/openclaw-<id>            # install
 #   bash install-startup-hook.sh /docker/openclaw-<id> --check    # report only
 #
-# Makes the openclaw container resurrect pm2 (Command Center, GHL MCP, tunnels)
-# whenever it is recreated. It copies container-startup.sh (beside this file)
+# Makes the openclaw container resurrect pm2 (Command Center and tunnels) whenever
+# it is recreated. The RETIRED community GHL MCP is never restored: the startup
+# script strips `ghl-community-mcp` out of dump.pm2 before the resurrect, and
+# never runs the retired autostart. It copies container-startup.sh (beside this file)
 # into the project's data volume and sets the openclaw service's compose
 # `command:` to run it. The compose file is backed up first. A compose that
 # already runs `pm2 resurrect` in its own command is left exactly as it is; a

@@ -18,11 +18,19 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.parse import quote
 
 from .auth import AuthContext, AuthKind, TenantBinding, auth_headers
-from .capability import DEFAULT_BLOCK, ActivationBlock, Capability, CapabilityGate
+from .capability import (
+    ACTIVATION_UNVERIFIED,
+    DEFAULT_BLOCK,
+    ActivationBlock,
+    Capability,
+    CapabilityGate,
+    load_capability_record,
+)
 from .errors import ContractViolation, CredentialMissing, ReconciliationRequired
 from .idempotency import IdempotencyKey, IdempotencyLedger, canonical_intent
 from .readback import (
@@ -110,6 +118,7 @@ class PublicGhlAdapter:
         operations: "OperationRegistry" = OPERATIONS,
         transport: Transport | None = None,
         capability: CapabilityGate | None = None,
+        capability_record: str | Path | None = None,
         readbacks: ReadbackRegistry = READBACKS,
         default_timeout_s: float = 30.0,
         max_attempts: int = 1,
@@ -127,7 +136,11 @@ class PublicGhlAdapter:
         self._auth = auth
         self._operations = operations
         self._transport: Transport = transport if transport is not None else RequestsTransport()
-        self._capability = capability if capability is not None else CapabilityGate()
+        # An explicit gate always wins.  Otherwise the checked-in capability
+        # record is loaded per call tenant; no file still means default-deny.
+        self._capability = capability
+        self._capability_record = capability_record
+        self._record_gates: dict[str, CapabilityGate] = {}
         self._readbacks = readbacks if readbacks is not None else ReadbackRegistry()
         self._default_timeout_s = float(default_timeout_s)
         self._max_attempts = int(max_attempts)
@@ -451,11 +464,13 @@ class PublicGhlAdapter:
             )
 
         # 3.2 rule 7 -- the gate refuses before transport, with a receipt.
+        capability_evidence: dict[str, Any] | None = None
         if not _gate_skips(route_class):
-            capability = self._capability.get(operation_id)
+            gate = self._gate_for(tenant.location_id)
+            capability = gate.get(operation_id)
             # MAJOR 4: a gate (or the capability record itself) authorized for
             # one tenant never authorizes a call for another.
-            gate_tenant = self._capability.tenant
+            gate_tenant = gate.tenant
             record_tenant = getattr(capability, "tenant", None)
             wrong_tenant = next(
                 (
@@ -506,6 +521,9 @@ class PublicGhlAdapter:
                         },
                     },
                 )
+            # Enabled by record is not verified by tenant: the receipt says
+            # which state authorized the dispatch and never upgrades it.
+            capability_evidence = _capability_evidence(capability)
 
         headers = auth_headers(self._auth)
         if key is not None:
@@ -585,6 +603,18 @@ class PublicGhlAdapter:
             "response_headers": redact_headers(response.headers),
             "elapsed_s": response.elapsed_s,
         }
+        if capability_evidence is not None:
+            # A 401/403 CONTRADICTS a record's read_verified claim for this
+            # tenant. The receipt must not keep claiming a verified read after
+            # the service refused the token: downgrade activation and
+            # tenant_verified so the receipt never over-claims.
+            if http_status in (401, 403):
+                capability_evidence["activation"] = ACTIVATION_UNVERIFIED
+                capability_evidence["tenant_verified"] = False
+            # ``activation`` is the record state, not this call's outcome.  A
+            # 200 is surfaced as observed, never written back as VERIFIED.
+            capability_evidence["observed_http_status"] = http_status
+            extra["capability"] = capability_evidence
         if transport_exception is not None:
             # The class name only: an exception object can carry payload.
             extra["transport_exception"] = transport_exception
@@ -704,7 +734,9 @@ class PublicGhlAdapter:
             error=error,
         )
 
-    def capability(self, operation_id: str) -> Capability:
+    def capability(
+        self, operation_id: str, *, tenant: str | None = None
+    ) -> Capability:
         row = self._resolve_row(operation_id)
         if _gate_skips(_row_attr(row, "route_class")):
             return Capability(
@@ -719,7 +751,27 @@ class PublicGhlAdapter:
                     unblock="n/a",
                 ),
             )
-        return self._capability.get(operation_id)
+        if tenant is not None:
+            return self._gate_for(str(tenant)).get(operation_id)
+        if self._capability is not None:
+            return self._capability.get(operation_id)
+        if len(self._record_gates) == 1:
+            return next(iter(self._record_gates.values())).get(operation_id)
+        # No tenant and no single loaded record: the honest answer is deny.
+        return CapabilityGate().get(operation_id)
+
+    def _gate_for(self, tenant: str) -> CapabilityGate:
+        """Explicit gate, else the checked-in record bound to this tenant."""
+
+        if self._capability is not None:
+            return self._capability
+        gate = self._record_gates.get(tenant)
+        if gate is None:
+            gate = load_capability_record(
+                tenant=tenant, path=self._capability_record
+            )
+            self._record_gates[tenant] = gate
+        return gate
 
     # ------------------------------------------------------------------
     # internals
@@ -940,6 +992,18 @@ def _row_attr(row: Any, name: str, default: Any = None) -> Any:
 def _gate_skips(route_class: Any) -> bool:
     text = route_class.value if hasattr(route_class, "value") else route_class
     return str(text) in _GATE_SKIPPED_ROUTES
+
+
+def _capability_evidence(capability: Capability) -> dict[str, Any]:
+    """The descriptor's honest state; never a claim of tenant capability."""
+
+    return {
+        "operation_id": capability.operation_id,
+        "enabled": bool(capability.enabled),
+        "activation": capability.activation,
+        "tenant_verified": capability.tenant_verified(),
+        "provisional": bool(capability.provisional),
+    }
 
 
 def _format_path(template: str, values: Mapping[str, str]) -> str:
