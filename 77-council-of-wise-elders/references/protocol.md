@@ -57,7 +57,7 @@ the binding rules the shipped runtime follows.
 - A seat that cannot answer honestly abstains with a reason. A timeout
   is recorded as a timeout, never dressed up as an abstention.
 
-## Budget arithmetic
+## Request count arithmetic
 
 Planned full council: 27 seat requests (9 openings, 9 challenges, 9
 responses) + 4 chair requests (brief, two syntheses, verdict) + 2

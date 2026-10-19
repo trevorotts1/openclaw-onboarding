@@ -12,7 +12,7 @@
   sizes involved and stop; do not silently truncate the brief or drop
   seats to make it fit.
 - **RUN_AUTHORIZATION_REQUIRED.** No valid purpose-bound run grant
-  covers this run. Show the preview (scope, budget, validity window)
+  covers this run. Show the preview (scope, spend limit, validity window)
   and wait for the client's decision. Never self-approve, and never
   widen an existing grant to cover a new purpose.
 

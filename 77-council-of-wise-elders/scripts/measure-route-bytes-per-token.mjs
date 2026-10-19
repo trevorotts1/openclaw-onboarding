@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Measures the smallest observed bytes / usage.input_tokens ratio for one
-// route and prints the PROPOSED route-budget entry as JSON on stdout.
+// route and prints the resulting entry as JSON on stdout. Optional
+// engineering tool: the council convenes without it, using built-in defaults.
 //
 //   node scripts/measure-route-bytes-per-token.mjs --route ID [--model M]
 //        [--samples N] [--measurements FILE] [--save-measurements FILE]
@@ -12,9 +13,8 @@
 // (bytes, input_tokens) pairs and makes no provider call.
 //
 // --write updates the route-budgets config only (WISE_ELDERS_ROUTE_BUDGETS
-// or config/route-budgets.json). This script never reads or writes route
-// budget approvals, and it prints no credential: errors are scrubbed of
-// any secret-looking environment value first.
+// or config/route-budgets.json). It prints no credential: errors are
+// scrubbed of any secret-looking environment value first.
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -295,5 +295,5 @@ if (opts.write) {
   const tmp = `${configPath}.tmp-${process.pid}`;
   writeFileSync(tmp, `${JSON.stringify(config, null, 2)}\n`);
   renameSync(tmp, configPath);
-  console.error(`updated proposed entry in ${configPath === join(skillRoot, 'config', 'route-budgets.json') ? 'config/route-budgets.json' : 'the configured route budgets file'}; approval is a separate step`);
+  console.error(`updated proposed entry in ${configPath === join(skillRoot, 'config', 'route-budgets.json') ? 'config/route-budgets.json' : 'the configured route budgets file'}`);
 }

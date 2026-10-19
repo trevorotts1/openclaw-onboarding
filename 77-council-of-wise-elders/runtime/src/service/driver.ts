@@ -25,7 +25,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TrustedPrincipal } from '../authorization/index.js';
-import { routeBudgetRecovery } from '../budgets/route-budget.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import { buildSampleSession } from '../cli/fixture-transport.js';
 import type { Clock, IdSource, StoredSession } from '../cli/host-ports.js';
@@ -320,29 +319,12 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     const readiness = deps.deliberation.readiness();
     if (!readiness.ready) {
       const unbound = readiness.checks.filter((c) => !c.bound);
-      const budget = unbound.find((c) => c.name === 'route_budget');
-      // Resolve the route first: a route that does not exist is refused as such,
-      // and a real route refuses with its own budget state and recovery.
-      let perRoute: { recovery?: string; detail?: Record<string, unknown> } = {};
-      let routeId: string | undefined;
-      if (budget) {
-        try {
-          routeId = (await route(input.route ?? {})).snapshot.routeId;
-        } catch (error) {
-          if (errorCode(error) !== 'COMPOSITION_NOT_READY') throw error;
-          perRoute = error as typeof perRoute;
-        }
-      }
       throw new DriverRefusal(
         'COMPOSITION_NOT_READY',
         `The council is not ready to convene: ${unbound.map((c) => c.name).join(', ')} not bound.`,
-        budget
-          ? (perRoute.recovery ?? routeBudgetRecovery(routeId))
-          : 'Bind the missing services (see detail.checks), then convene again.',
+        'Bind the missing services (see detail.checks), then convene again.',
         503,
         {
-          ...(budget ? { summary: budget.detail } : {}),
-          ...perRoute.detail,
           unbound: unbound.map((c) => c.name),
           checks: unbound.map((c) => ({ name: c.name, detail: c.detail })),
         },

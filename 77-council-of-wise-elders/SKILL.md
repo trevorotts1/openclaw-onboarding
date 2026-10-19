@@ -115,19 +115,10 @@ operational reference for a follow-up or an existing-session control.
    route, the exact model label, whether the model was the client's
    choice or the harness default, and the session and live events links.
    Tell the client which model is running.
-   If convening is refused with COMPOSITION_NOT_READY, the route has no
-   operator-approved token budget yet (a fresh install ships every route
-   unmeasured, on purpose). Read the refusal to the client in plain words:
-   the council will not start on that route until the operator measures it
-   and approves the numbers, nothing is approved automatically, and you
-   cannot approve it for them. If the route is "not measured", the operator runs
-   `scripts/measure-route-bytes-per-token.mjs --route ID --write` (a few
-   small real model calls, writes PROPOSED numbers into the skill folder's
-   `config/route-budgets.json`, which a fleet skill update replaces); if it
-   is already "awaiting approval", the operator must not measure again. The
-   operator reviews the numbers, then runs `scripts/approve-route-budget.mjs --route ID --approved-by
-   NAME --data-dir DIR`. No restart is needed. Offer a route that already
-   has an approved budget in the meantime; never simulate a session.
+   A fresh install convenes immediately on any usable route; there is
+   no setup or approval step. If convening is refused for any other
+   reason, read the refusal to the client in plain words and never
+   simulate a session.
 5. Use the exact approved roster and the requested mode. Keep openings
    isolated, challenges evidence-based, ratification bounded, and all
    source claims honest. A session never exceeds 50 provider requests.

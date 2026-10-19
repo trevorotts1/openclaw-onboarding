@@ -1,6 +1,6 @@
 ## [v27.1.42]  -  2026-10-19  -  Council (Skill 77) v1.0.26: live council with a client-chosen model per run, a service driver that actually deliberates a convened session, convening as approval, operator-approved measured budgets, and Book-to-Persona elders with labelled web research
 
-- Real-run fixes, in plain English: a second worker can no longer cut off an answer that was already paid for; the model is now sent the exact card shape on every request so seats stop failing validation; the journal records which knowledge (live persona, shipped brief, or none) each seat used; and a first run with no approved budget explains the operator steps instead of a raw error.
+- Real-run fixes, in plain English: a second worker can no longer cut off an answer that was already paid for; the model is now sent the exact card shape on every request so seats stop failing validation; the journal records which knowledge (live persona, shipped brief, or none) each seat used; and a new install now convenes immediately; no approval step.
 
 ## [v27.1.41]  -  2026-10-19  -  Council (Skill 77) v1.0.25: first-status pre-warm, upstreamed service launcher, installed-binary skill root, and live chamber view over real sessions
 

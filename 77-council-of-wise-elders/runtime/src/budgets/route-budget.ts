@@ -1,26 +1,24 @@
 /**
- * Measured, operator-approved token-to-byte conversion per route
- * (W28 decision 3).
+ * Token-to-byte conversion per route (W28 decision 3).
  *
  * The context assembler works in canonical bytes; providers publish
  * limits in tokens. This module converts one into the other from a
- * MEASURED, conservative bytes-per-token ratio, and uses it only after
- * the operator approves the exact numbers:
+ * conservative bytes-per-token ratio so a request never overflows the
+ * model's window. There is no approval step: a convene on any route
+ * just works.
  *
- * - The shipped config (config/route-budgets.json) holds PROPOSED
- *   entries. Any number not yet measured is null; nothing is guessed.
- * - Approvals live in the service data dir, outside the skill folder,
- *   because update sync replaces skill folders. Each approval is bound
- *   to the sha256 of the exact proposed entry, so changed numbers need
- *   a fresh approval.
- * - The resolver returns null for any route that is unmeasured or
- *   unapproved, so planning reports the seat unplannable and dispatch
- *   refuses before any provider call (Section 9.5).
+ * - The shipped config (config/route-budgets.json) holds the numbers
+ *   measured so far (DeepSeek Flash). A route without measured numbers
+ *   uses the built-in conservative defaults below, so it still convenes.
+ * - The window and answer limits come from the shipped entry, else from
+ *   the limits the route itself reports, else from a safe fallback.
+ * - The measurement script is an optional engineering tool that refines
+ *   the numbers; nothing requires running it.
  */
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { canonicalHash, canonicalStringify } from '../contracts/index.js';
+import { canonicalStringify } from '../contracts/index.js';
 import type { PinnedRouteSnapshot } from './route-snapshot.js';
 
 export const ROUTE_BUDGET_SCHEMA = 'wise-elders.route-budgets/v1';
@@ -44,14 +42,6 @@ export interface RouteBudgetEntry {
 export interface RouteBudgetConfig {
   schema: typeof ROUTE_BUDGET_SCHEMA;
   entries: RouteBudgetEntry[];
-}
-
-export interface RouteBudgetApproval {
-  route_id: string;
-  model: string | null;
-  entry_sha256: string;
-  approved_by: string;
-  approved_at: string;
 }
 
 export interface ComputedRouteBudget {
@@ -78,40 +68,6 @@ export function routeBudgetConfigPath(
     : join(skillRoot, 'config', 'route-budgets.json');
 }
 
-/**
- * What a refusal for a missing route budget tells the client. One text for
- * every refusal path, so the first-run message never says less than the
- * per-route one. Nothing here approves anything.
- */
-export function routeBudgetRecovery(
-  routeId: string = '<route_id>',
-  state?: 'awaiting_approval' | 'not_measured' | 'no_entry',
-): string {
-  const approve =
-    `run "node scripts/approve-route-budget.mjs --route ${routeId} --approved-by <name> --data-dir <council service data folder>" to record the approval. ` +
-    'No restart is needed: convene again afterwards. A route that already has an approved budget can be used meanwhile.';
-  if (state === 'awaiting_approval') {
-    // Already measured: measuring again would overwrite the numbers under review.
-    return (
-      `This route is measured and waiting for the operator to approve the proposed numbers (shown above). Do not measure it again: that replaces the numbers under review. ` +
-      'Nothing is approved automatically, and a client cannot approve it. ' +
-      `The operator, from the council skill folder: (1) review the proposed numbers; (2) ${approve}`
-    );
-  }
-  return (
-    'This route cannot start a council until its token budget is measured and approved by the operator. ' +
-    'Nothing is approved automatically, and a client cannot approve it. ' +
-    'The operator, from the council skill folder: ' +
-    `(1) run "node scripts/measure-route-bytes-per-token.mjs --route ${routeId} --write" (a few small real model calls; it writes PROPOSED numbers into this skill folder's config/route-budgets.json, or the file named by WISE_ELDERS_ROUTE_BUDGETS, and approves nothing; a fleet skill update replaces that file, so the approved numbers must also be committed to the shipped config); ` +
-    '(2) review the proposed numbers it prints; ' +
-    `(3) ${approve}`
-  );
-}
-
-export function routeBudgetApprovalsPath(serviceDataDir: string): string {
-  return join(serviceDataDir, 'route-budget-approvals.json');
-}
-
 // ---------------------------------------------------------------- parsing
 
 const ENTRY_KEYS = [
@@ -124,13 +80,6 @@ const ENTRY_KEYS = [
   'response_schema_bytes',
   'measured_at',
   'measurement_basis',
-] as const;
-const APPROVAL_KEYS = [
-  'route_id',
-  'model',
-  'entry_sha256',
-  'approved_by',
-  'approved_at',
 ] as const;
 
 function fail(where: string, what: string): never {
@@ -240,121 +189,75 @@ export function loadRouteBudgetConfig(path: string): RouteBudgetConfig {
   return { schema: ROUTE_BUDGET_SCHEMA, entries };
 }
 
-/** Missing file -> []. A present but malformed file throws (fail closed). */
-export function loadRouteBudgetApprovals(path: string): RouteBudgetApproval[] {
-  let raw: unknown;
-  try {
-    raw = readJson(path, 'route budget approvals');
-  } catch (err) {
-    if (err instanceof RouteBudgetConfigError) throw err;
-    return [];
-  }
-  if (!Array.isArray(raw)) fail('route budget approvals', 'must be an array');
-  return (raw as unknown[]).map((a, i) => {
-    const where = `approvals[${i}]`;
-    if (!isRecord(a)) fail(where, 'must be an object');
-    const o = a as Record<string, unknown>;
-    exactKeys(o, APPROVAL_KEYS, where);
-    return {
-      route_id: str(o.route_id, where, 'route_id'),
-      model: strOrNull(o.model, where, 'model'),
-      entry_sha256: str(o.entry_sha256, where, 'entry_sha256'),
-      approved_by: str(o.approved_by, where, 'approved_by'),
-      approved_at: str(o.approved_at, where, 'approved_at'),
-    };
-  });
-}
-
 // ------------------------------------------------------------ computation
 
-/** sha256 over the canonical form of the WHOLE entry: any changed number changes it. */
-export function entrySha256(entry: RouteBudgetEntry): string {
-  return canonicalHash(entry);
-}
+/** Built-in conservative defaults for a route with no measured numbers. */
+export const DEFAULT_BYTES_PER_TOKEN = 1.0;
+export const DEFAULT_SAFETY_FACTOR = 0.8;
+export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 16_384;
+export const DEFAULT_RESPONSE_SCHEMA_BYTES = 10_159;
 
 /**
- * Null when any measured field is null. b = measured_min_bytes_per_token
- * * safety_factor; the context limit rounds down and the output reserve
- * rounds up, so both errors favour a smaller prompt.
+ * b = bytes-per-token * safety_factor; the context limit rounds down and
+ * the output reserve rounds up, so both errors favour a smaller prompt.
+ * Window: entry, else what the route reports, else the fallback. An
+ * answer limit that is not smaller than the window becomes a quarter of it.
  */
-export function computeRouteBudget(entry: RouteBudgetEntry): ComputedRouteBudget | null {
-  if (
-    entry.context_window_tokens === null ||
-    entry.max_output_tokens === null ||
-    entry.measured_min_bytes_per_token === null
-  ) {
-    return null;
-  }
-  const b = entry.measured_min_bytes_per_token * entry.safety_factor;
+export function computeRouteBudget(
+  entry: RouteBudgetEntry | null,
+  reported?: { contextWindowTokens: number | null; maxOutputTokens: number | null },
+): ComputedRouteBudget {
+  const window =
+    entry?.context_window_tokens ?? reported?.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const reportedOutput =
+    entry?.max_output_tokens ?? reported?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  const output = reportedOutput < window ? reportedOutput : Math.floor(window / 4);
+  const b =
+    (entry?.measured_min_bytes_per_token ?? DEFAULT_BYTES_PER_TOKEN) *
+    (entry?.safety_factor ?? DEFAULT_SAFETY_FACTOR);
   return {
-    context_limit_bytes: Math.floor(entry.context_window_tokens * b),
-    response_schema_bytes: entry.response_schema_bytes,
-    output_reserve_bytes: Math.ceil(entry.max_output_tokens * b),
+    context_limit_bytes: Math.floor(window * b),
+    response_schema_bytes: entry?.response_schema_bytes ?? DEFAULT_RESPONSE_SCHEMA_BYTES,
+    output_reserve_bytes: Math.ceil(output * b),
   };
 }
 
-export type RouteBudgetState =
-  | { state: 'approved'; budget: ComputedRouteBudget | null }
-  | {
-      state: 'awaiting_approval' | 'not_measured' | 'no_entry';
-      proposed: RouteBudgetEntry | null;
-    };
-
 /**
- * Exact model entry first, then the model:null entry for the route. The
- * first entry found decides; an unmeasured exact entry does not fall
- * through to a broader one.
+ * Exact model entry first, then the model:null entry for the route; null
+ * when the shipped config has neither (the defaults then apply).
  */
-export function routeBudgetStatus(
-  config: RouteBudgetConfig,
-  approvals: RouteBudgetApproval[],
+export function findRouteBudgetEntry(
+  config: RouteBudgetConfig | null,
   routeId: string,
   model: string | null,
-): RouteBudgetState {
-  const forRoute = config.entries.filter((e) => e.route_id === routeId);
-  const entry =
+): RouteBudgetEntry | null {
+  const forRoute = (config?.entries ?? []).filter((e) => e.route_id === routeId);
+  return (
     (model === null ? undefined : forRoute.find((e) => e.model === model)) ??
-    forRoute.find((e) => e.model === null);
-  if (!entry) return { state: 'no_entry', proposed: null };
-  const budget = computeRouteBudget(entry);
-  if (budget === null) return { state: 'not_measured', proposed: entry };
-  const sha = entrySha256(entry);
-  const approved = approvals.some(
-    (a) => a.route_id === entry.route_id && a.model === entry.model && a.entry_sha256 === sha,
-  );
-  return approved ? { state: 'approved', budget } : { state: 'awaiting_approval', proposed: entry };
-}
-
-/** Reads both files fresh; throws RouteBudgetConfigError when either is malformed. */
-export function routeBudgetStatusFromFiles(
-  input: { configPath: string; approvalsPath: string },
-  routeId: string,
-  model: string | null,
-): RouteBudgetState {
-  return routeBudgetStatus(
-    loadRouteBudgetConfig(input.configPath),
-    loadRouteBudgetApprovals(input.approvalsPath),
-    routeId,
-    model,
+    forRoute.find((e) => e.model === null) ??
+    null
   );
 }
 
 /**
- * Re-reads both files on every call (cheap), so an approval written
- * while the service runs is picked up without a restart. Anything not
- * approved, and any unreadable or malformed file, yields null.
+ * Always returns limits. Re-reads the shipped config on every call
+ * (cheap); a missing or malformed file falls back to the defaults.
  */
 export function routeBudgetResolver(input: {
-  configPath: string;
-  approvalsPath: string;
-}): (snapshot: PinnedRouteSnapshot) => ComputedRouteBudget | null {
+  configPath: string | null;
+}): (snapshot: PinnedRouteSnapshot) => ComputedRouteBudget {
   return (snapshot) => {
+    let config: RouteBudgetConfig | null = null;
     try {
-      const s = routeBudgetStatusFromFiles(input, snapshot.routeId, snapshot.requestedModelOrAlias);
-      return s.state === 'approved' ? s.budget : null;
+      if (input.configPath) config = loadRouteBudgetConfig(input.configPath);
     } catch {
-      return null;
+      // ponytail: unreadable config means the conservative defaults, never a refusal
     }
+    return computeRouteBudget(
+      findRouteBudgetEntry(config, snapshot.routeId, snapshot.requestedModelOrAlias),
+      snapshot.capabilitySnapshot,
+    );
   };
 }
 
@@ -401,7 +304,7 @@ export function minBytesPerToken(pairs: readonly BytesTokensPair[]): number | nu
 /**
  * Deterministic proposed entry from recorded pairs. Keeps the base
  * entry's window, output limit, safety factor and schema bytes; only
- * the measured fields change. Never touches approvals.
+ * the measured fields change. 
  */
 export function proposeRouteBudgetEntry(input: {
   base: RouteBudgetEntry | null;

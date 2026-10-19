@@ -8,7 +8,7 @@ not-ready states when they do not.
 - **Install:** supported host runtime, writable per-user prefix,
   verified bundle, correct schema, core, and source-pack versions.
 - **Run:** valid client scope, approved source packs, a selected
-  functioning route, a data store, budget and permission, sufficient
+  functioning route, a data store, spend limit and permission, sufficient
   context and capacity.
 - **Visual managed mode:** compatible Command Center, authenticated
   pairing and scope, council migration applied through the Command
