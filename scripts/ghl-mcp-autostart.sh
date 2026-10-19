@@ -640,7 +640,7 @@ PYEOF
 _ghl_ret_archive_secret_scan() {
   local d="$1" val rc=0
   # 1. No credential-shaped FILE may survive the excludes.
-  if find "$d" -type f \( -name '.env' -o -name '.ghl-mcp.env' -o -name '*.pem' \
+  if find "$d" -type f -not -path '*node_modules*' \( -name '.env' -o -name '.ghl-mcp.env' -o -name '*.pem' \
        -o -name '*.key' -o -name 'credentials.json' -o -name 'cookies*' -o -name 'token*' \) \
        2>/dev/null | grep -q .; then
     return 1
@@ -648,7 +648,7 @@ _ghl_ret_archive_secret_scan() {
   # 2. No live secret VALUE may appear anywhere in the archived bytes.
   while IFS= read -r val; do
     [ -n "$val" ] || continue
-    if grep -rIlF -- "$val" "$d" 2>/dev/null | grep -q .; then
+    if grep -rIlF --exclude-dir="*node_modules*" -- "$val" "$d" 2>/dev/null | grep -q .; then
       rc=1
       break
     fi
@@ -657,7 +657,7 @@ $(_ghl_ret_secret_values)
 EOF
   [ "$rc" = "0" ] || return 1
   # 3. No private-key block.
-  if grep -rIlE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$d" 2>/dev/null | grep -q .; then
+  if grep -rIlE --exclude-dir="*node_modules*" -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$d" 2>/dev/null | grep -q .; then
     return 1
   fi
   return 0
@@ -673,6 +673,7 @@ _ghl_ret_archive() {
     payload="$dest/community-mcp.tar"
     ( cd "$src" && tar -cf "$payload" \
         --exclude 'node_modules' --exclude '*/node_modules' --exclude './node_modules' \
+        --exclude '*node_modules*' \
         --exclude '.env' --exclude './.env' --exclude '.ghl-mcp.env' --exclude './.ghl-mcp.env' \
         --exclude '.git' --exclude './.git' \
         --exclude '*.log' --exclude 'logs' --exclude './logs' \
