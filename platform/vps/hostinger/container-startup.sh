@@ -45,6 +45,17 @@ LOGS="$DATA/.openclaw/logs"
 CC_DIR="$DATA/projects/command-center"
 mkdir -p "$LOGS" 2>/dev/null || true
 
+# MODERN GHL CLIENT (Skill 44, Tier 0) — GHL-163. caf/convertandflow/ghl live
+# under the PERSISTENT /data mount at $DATA/.openclaw/tools/convert-and-flow-cli.
+# Boot only REPORTS readiness: it never executes the credentials-bearing CLI and
+# never starts the RETIRED community MCP.
+CAF_DIR="${CAF_DIR:-$DATA/.openclaw/tools/convert-and-flow-cli}"
+if [ -x "$CAF_DIR/caf" ]; then
+  echo "[ghl] modern client present: $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+else
+  echo "[ghl] modern client not installed yet (the update path builds it): $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+fi
+
 # Headquarters persistent roots (SPEC S10: "Outbox and bridge identity use
 # existing persistent workspace locations. Verify container replacement retains
 # them"). These are exactly the vps-docker paths in CC src/lib/platform.ts:

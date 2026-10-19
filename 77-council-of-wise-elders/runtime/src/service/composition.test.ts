@@ -11,7 +11,9 @@
  *
  * Proven here:
  * - the composition root binds discovery/executable/packs/ui truthfully and
- *   leaves store/route/worker `unknown` with READINESS_PROBE_NOT_BOUND;
+ *   (W22-U001) opens the real backend: store and worker are observed ready,
+ *   and route reports its named configuration state instead of the old
+ *   unbound probe;
  * - with no probes bound the readiness output keeps exactly the pre-change
  *   six-unknown + UI_NOT_BUNDLED shape;
  * - identity and health routes behave byte-identically to a bare front door;
@@ -43,6 +45,11 @@ function options(dataDir: string) {
     startedAt: FIXED_NOW,
     nowUtc,
     ports: [0],
+    // Deterministic, hermetic route discovery: an empty home means no
+    // configured route, so `route` reports a named blocker rather than
+    // whichever route this machine happens to have.
+    routeHomeDir: join(dataDir, 'empty-route-home'),
+    routeEnv: {} as NodeJS.ProcessEnv,
   };
 }
 
@@ -62,6 +69,7 @@ async function withComposed<T>(
     return await body({ composition, origin: outcome.origin, dataDir });
   } finally {
     await composition.door.stop();
+    await composition.stop();
     rmSync(dataDir, { recursive: true, force: true });
   }
 }
@@ -72,12 +80,12 @@ function byLayer(
   return new Map(result.layers.map((layer) => [layer.layer, layer]));
 }
 
-test('composition root binds four truthful probes and leaves the rest unknown', async () => {
+test('composition root binds the real backend and the W20 probes', async () => {
   await withComposed(async ({ composition, origin }) => {
     const readiness = await composition.door.readiness({ offline: true });
     assert.equal(readiness.origin, origin);
     assert.equal(readiness.provider_calls, 0);
-    assert.equal(readiness.usable, false, 'unknown layers keep usable honest');
+    assert.equal(readiness.usable, false, 'a blocked route keeps usable honest');
 
     const layers = byLayer(readiness);
     for (const layer of ['discovery', 'executable', 'packs', 'ui']) {
@@ -85,14 +93,17 @@ test('composition root binds four truthful probes and leaves the rest unknown', 
       assert.equal(layers.get(layer)?.blocker, null, `${layer} names no blocker`);
     }
 
-    for (const layer of ['store', 'route', 'worker']) {
-      assert.equal(layers.get(layer)?.state, 'unknown', `${layer} stays unknown`);
-      assert.equal(
-        layers.get(layer)?.blocker?.code,
-        'READINESS_PROBE_NOT_BOUND',
-        `${layer} names the unbound probe`,
-      );
-    }
+    // W22-U001: the backend is real, not unbound.
+    assert.equal(layers.get('store')?.state, 'ready');
+    assert.match(layers.get('store')?.artifact ?? '', /18\/18 canonical tables/);
+    assert.equal(layers.get('worker')?.state, 'ready');
+    assert.match(layers.get('worker')?.artifact ?? '', /durable ledger readable/);
+    assert.equal(layers.get('route')?.state, 'blocked');
+    assert.equal(
+      layers.get('route')?.blocker?.code,
+      'ROUTE_NOT_CONFIGURED',
+      'route reports its named configuration state, never the unbound probe',
+    );
 
     assert.equal(
       layers.get('ui')?.artifact,
@@ -100,7 +111,6 @@ test('composition root binds four truthful probes and leaves the rest unknown', 
     );
     assert.ok((layers.get('packs')?.artifact ?? '').includes('9/9 advisor packs'));
     assert.ok((layers.get('discovery')?.artifact ?? '').includes(origin));
-    assert.deepEqual(readiness.blocked_layers, []);
   });
 });
 
@@ -188,6 +198,7 @@ test('an admission sink supplied to the root receives admissions', async () => {
     ]);
   } finally {
     await composition.door.stop();
+    await composition.stop();
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
