@@ -122,11 +122,15 @@ SECTION IMAGE PROMPT — WIREFRAME (stage: {{stage}}; mirror: {{purpose}})
    under it: {{type_specs}}, drawn from {{font_map}} and these tokens:
    {{type_tokens_for_this_slice}}.
 
-6. SLOTS — for every image slot print the slot label, its ratio, and its
-   art direction:
+6. SLOTS — for every image slot print the slot label (slot id, pixel box,
+   ratio, treatment) and its art direction:
    {{slots}}
    Each ratio is one of the planned values; a slot's ratio label is
-   printed once and matches the rectangle drawn.
+   printed once and matches the shape drawn. DRAW each slot's treatment from
+   the slot record, never a default rectangle beside a text column: the text
+   box ON the placeholder for an overlay, a mask drawn as its real shape, a
+   full-width tint for a light field, an overlap drawn as an overlap
+   (`references/composition-treatments.json`).
 
 7. BEHAVIOR NOTES — print the behavior note for this slice where it
    governs, not in a legend: {{behavior_notes}} (mobile-specific
@@ -161,9 +165,11 @@ SECTION IMAGE PROMPT — WIREFRAME (stage: {{stage}}; mirror: {{purpose}})
     Do not garble any label or annotation: no "BIGNEFIT", "BTEP 7",
     "DISCIFIONAL", "FREIDOM", "Folow Gnlume Sno Home", "widhh", and no
     invented, dropped, doubled, or substituted characters anywhere.
-    Do not print any text that is not in the verbatim copy above; no
-    placeholder tokens, no lorem, no bracketed markers, no captions,
-    watermarks, or production labels.
+    Do not print any text that is not in the verbatim copy above or in
+    the wireframe annotations this template asks for (section number and
+    name, type specs, slot labels with pixel size, ratio and treatment,
+    behavior notes); no placeholder tokens, no lorem, no bracketed markers,
+    no watermarks.
 ```
 
 ---
@@ -203,9 +209,18 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
    {{slots}}
    Tier R: ~9 portraits per frame, consistent Black-professional casting,
    hand-chin and upward-gaze poses, jewel and earth blazers, gold hoops,
-   golden-hour bokeh; layered, arched, or diagonal shapes that bleed.
-   Tier H: sparse square rectangles, photos only where planned; founder
-   slot stays the planned portrait or supplied asset.
+   golden-hour bokeh; shapes bleed out of their frames where the slot's
+   treatment says so.
+   Tier H: sparse photos, only where planned; founder slot stays the
+   planned portrait or supplied asset.
+   Treatment, per slot from the slot record (not per tier): each slot keeps
+   the treatment the wireframe declared (`{{slots}}` carries it). State the
+   layering for that treatment: an overlay photo spans the full section
+   width as the BACKGROUND with the headline ON it inside the scrim zone; a
+   mask (circle, arch, pill, angled cut) is visible against the section
+   background; a light field runs the full width behind the words; a card
+   overlaps its photo. Add "Do not split this section into an image column
+   and a text column" for every non-split treatment.
 
 7. BEHAVIOR NOTES — {{behavior_notes}}; CTA strips keep the first-person
    outcome label and the microcopy line directly under the button.
@@ -220,7 +235,8 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
 
 10. DENSITY TARGET — Tier R photo-dense (about nine portraits per frame
     where the section is photographic); Tier H sparse, one photo per
-    planned band at most. Script overlay on the photo in Tier R; move it
+    planned band at most; the per-page composition budget still holds
+    (`references/composition-treatments.json`). Script overlay on the photo in Tier R; move it
     to the caption bar in Tier H.
 
 11. NATIVE ASPECT — this slice at {{native_width}} x {{native_height}} px
@@ -242,5 +258,6 @@ SECTION IMAGE PROMPT — MOCKUP (stage: {{stage}}; mirror: {{purpose}})
     characters anywhere.
     Do not print any text that is not in the verbatim copy above; no
     placeholder tokens, no agent notes, no lorem, no bracketed markers,
-    no captions, watermarks, or production labels.
+    no captions, watermarks, or production labels. A caption set on a photo
+    (treatment caption-over-photo) is verbatim copy, never an addition.
 ```

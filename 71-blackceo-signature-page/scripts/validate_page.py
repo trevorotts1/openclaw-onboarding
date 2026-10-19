@@ -54,6 +54,7 @@ Python 3 stdlib + Pillow + Playwright only.
 import argparse
 import base64
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -62,6 +63,9 @@ import tempfile
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import composition  # noqa: E402  composition treatments: budget and pixel checks
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -379,11 +383,31 @@ LAYOUT_JS = """() => {
       return {selector: selOf(ch), rect: rectOf(ch), textAlign: cst.textAlign,
               display: cst.display, hasText: hasDirectText(ch)};
     });
+    const radiusPx = (st, key, r) => {
+      const v = (st[key] || '0').split(' ')[0];
+      const n = parseFloat(v) || 0;
+      const cap = Math.min(r.width, r.height) / 2;
+      const px = v.endsWith('%') ? Math.min(n / 100 * r.width, n / 100 * r.height) : n;
+      return Math.min(px, cap);
+    };
     const images = Array.from(sec.querySelectorAll('img')).filter(vis).map(im => {
       const r = rectOf(im);
+      const ist = getComputedStyle(im);
+      const tr = im.closest('[data-treatment]');
       return {selector: selOf(im), rect: r, width: r.width, height: r.height,
-              slot: im.getAttribute('data-image-slot')};
+              slot: im.getAttribute('data-image-slot'),
+              treatment: tr ? tr.getAttribute('data-treatment') : null,
+              subjectZone: im.getAttribute('data-subject-zone'),
+              clipPath: ist.clipPath,
+              radii: ['borderTopLeftRadius', 'borderTopRightRadius',
+                      'borderBottomRightRadius', 'borderBottomLeftRadius']
+                .map(k => radiusPx(ist, k, r))};
     });
+    const bgImages = [sec].concat(Array.from(sec.querySelectorAll('*'))).filter(vis)
+      .filter(el => (getComputedStyle(el).backgroundImage || '').includes('url('))
+      .map(el => rectOf(el));
+    const headRects = Array.from(sec.querySelectorAll('h1,h2,h3,h4,h5,h6')).filter(vis)
+      .slice(0, 1).map(h => rectOf(h));
     const texts = Array.from(sec.querySelectorAll('*'))
       .filter(el => vis(el) && hasDirectText(el))
       .map(el => {
@@ -410,6 +434,8 @@ LAYOUT_JS = """() => {
             gridColumns: st.gridTemplateColumns,
             flexDirection: st.flexDirection,
             children: children, images: images, texts: texts,
+            bgImages: bgImages, headRects: headRects,
+            treatment: sec.getAttribute('data-treatment'),
             headingFontSize: heads.length ? heads[0] : null,
             bodyFontSize: paras.length ? paras[Math.floor(paras.length / 2)] : null,
             contentRects: contentRects};
@@ -452,6 +478,112 @@ LAYOUT_JS = """() => {
   return {sections: sectionData, siblingGroups: groups, ctas: ctas,
           contentImages: contentImages};
 }"""
+
+COMPOSITION_JS = """() => {
+  const vis = (el) => { const st = getComputedStyle(el);
+    return st.display !== 'none' && st.visibility !== 'hidden'; };
+  const rect = (el) => { const r = el.getBoundingClientRect();
+    return {left: r.left + scrollX, right: r.right + scrollX, top: r.top + scrollY,
+            bottom: r.bottom + scrollY, width: r.width, height: r.height}; };
+  const rgbOf = (c) => { const m = (c || '').match(/rgba?\\(([^)]+)\\)/);
+    return m ? m[1].split(',').slice(0, 3).map(Number) : null; };
+  const bgOf = (el) => { let n = el;
+    while (n) { const c = getComputedStyle(n).backgroundColor;
+      const m = c.match(/rgba?\\(([^)]+)\\)/);
+      if (m) { const p = m[1].split(',').map(Number);
+        if (p.length < 4 || p[3] > 0.99) return p.slice(0, 3); }
+      n = n.parentElement; }
+    return [255, 255, 255]; };
+  return Array.from(document.querySelectorAll('[data-treatment]')).filter(vis).map(el => {
+    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+    const texts = Array.from(el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,figcaption,a,button,span,li'))
+      .filter(t => vis(t) && Array.from(t.childNodes).some(n => n.nodeType === 3 && n.textContent.trim()))
+      .slice(0, 8).map(t => { const st = getComputedStyle(t);
+        return {rect: rect(t), color: rgbOf(st.color), fontSize: parseFloat(st.fontSize),
+                bold: parseInt(st.fontWeight, 10) >= 700,
+                words: (t.innerText || '').trim().split(/\\s+/).filter(Boolean).length}; });
+    return {treatment: el.getAttribute('data-treatment'), frame: rect(el),
+            slot: img ? img.getAttribute('data-image-slot') : el.getAttribute('data-image-slot'),
+            img: img ? rect(img) : null, imgBackground: img ? bgOf(img.parentElement || img) : null,
+            surface: bgOf(el), subjectZone: img ? img.getAttribute('data-subject-zone') : null,
+            texts: texts};
+  });
+}"""
+
+HIDE_TEXT_CSS = "*{color:transparent!important;text-shadow:none!important}"
+TEXT_OVER_PHOTO = ("overlay-light", "overlay-dark-scrim", "caption-over-photo", "band-over-texture")
+
+
+def composition_pixel_failures(page):
+    """Q2, Q3, Q4 and Q6 on a built page, for elements that declare
+    data-treatment. Pages that declare none are not touched. Two passes:
+    the backdrop under each text box is sampled in a render with all text
+    transparent, because sampling the normal render reads the glyphs."""
+    from PIL import Image
+
+    items = page.evaluate(COMPOSITION_JS)
+    if not items:
+        return []
+
+    def shot(box):
+        clip = {"x": max(0, int(box["left"])), "y": max(0, int(box["top"])),
+                "width": max(1, int(box["right"] - box["left"])),
+                "height": max(1, min(4000, int(box["bottom"] - box["top"])))}
+        return Image.open(io.BytesIO(page.screenshot(full_page=True, clip=clip))).convert("RGB")
+
+    out = []
+    handle = page.add_style_tag(content=HIDE_TEXT_CSS)
+    try:
+        for item in items:
+            tid, slot = item["treatment"], item.get("slot") or "section"
+            where = f"COMPOSITION: slot {slot} treatment {tid}"
+            if tid not in composition.treatments():
+                out.append(f"{where}: unknown treatment id")
+                continue
+            if tid in ("mask-circle", "mask-pill", "mask-arch") and item.get("img"):
+                ok, detail = composition.corner_test(
+                    shot(item["img"]), tuple(item["imgBackground"]), tid.split("-")[1])
+                if not ok:
+                    out.append(f"{where}: shape check failed: {detail}")
+            if tid == "band-light-field":
+                surface = tuple(item["surface"])
+                dark = composition.luminance(surface) < 0.18
+                ok, detail = composition.light_field_check(
+                    shot(item["frame"]), surface if dark else None)
+                if not ok:
+                    out.append(f"{where}: light-field check failed: {detail}")
+            zone = None
+            if item.get("subjectZone"):
+                try:
+                    zone = [float(v) for v in item["subjectZone"].split(",")]
+                except ValueError:
+                    zone = None
+            frame = item.get("img") or item["frame"]
+            for text in item.get("texts") or []:
+                over = tid in TEXT_OVER_PHOTO
+                if over and text.get("color"):
+                    display = text["fontSize"] >= 24 or (text["fontSize"] >= 18.66 and text["bold"])
+                    ok, ratio, need = composition.backdrop_contrast(
+                        shot(text["rect"]), tuple(text["color"]), display)
+                    if not ok:
+                        out.append(f"{where}: text at {int(text['rect']['left'])},"
+                                   f"{int(text['rect']['top'])} has contrast {ratio}:1 over its backdrop, "
+                                   f"needs {need}:1")
+                if over and text["words"] > composition.library()["thresholds"]["long_copy_words"]:
+                    out.append(f"{where}: {text['words']} words sit directly on the photo "
+                               f"(over {composition.library()['thresholds']['long_copy_words']}); "
+                               "move long copy to a card, the scrim side, or a plain band")
+                if over and not composition.safe_margin_ok(text["rect"], item["frame"]):
+                    out.append(f"{where}: text sits inside the 5 percent safe margin of its frame")
+                if zone and composition.face_zone_overlap(text["rect"], frame, zone):
+                    out.append(f"{where}: text overlaps the subject zone (words over a face)")
+    finally:
+        try:
+            handle.evaluate("e => e.remove()")
+        except Exception:
+            pass
+    return out
+
 
 WRAP_JS = """() => {
   const out = {scrollWidth: document.scrollingElement.scrollWidth,
@@ -1715,6 +1847,10 @@ def main():
                             exemptions=declared_exemptions)
                         width_results[width]["layout"] = layout_report
                         errors.extend(layout_report["failures"])
+                        comp_lines = (composition.page_failures(layout_data)
+                                      + composition_pixel_failures(page))
+                        width_results[width]["composition"] = {"failures": comp_lines}
+                        errors.extend(comp_lines)
                         layout_pass_lines = layout_report["passes"]
                         layout_declared_lines = layout_report["declared"]
 

@@ -80,3 +80,28 @@ references/qc-contract.md`) reach the installed copy at the next sync;
 Fix 10 keeps the sync and the parity check in front of every later
 change, and Fix 11 adds the 44 image entries to `verify.sh` so a missing
 image fails verification instead of passing.
+
+## Hosted reference catalog (composition library)
+
+`reference-catalog.json` lists the images hosted in the BlackCEO operator
+media library (folder `sigpage-reference-images`), typed so an agent picks
+references by what each one is:
+
+| type | what it is | use it for |
+|---|---|---|
+| `wireframe` | grey structure sheet, real copy, slot labels | wireframe stages: structure and labelling |
+| `hybrid-image-map` | sheet printing each slot's id, pixel size and ratio | wireframe stages: slot labelling |
+| `mockup` | full-colour finish | mockup stages: finish and look |
+| `mood-board` | brand direction board | brand direction only |
+| `mockup-crop` | one band cut from a real page | one composition technique (light field, text over a dark photo, shaped mask) |
+
+Each row carries its section list, viewport, the composition traits it shows
+(ids from `references/composition-treatments.json`), the `pair` that
+completes it, the hosted `url` and the `sha256` of the uploaded bytes.
+`scripts/composition.py` `typed_references()` picks a structure sheet that
+matches the stage and section plus one real example per non-split treatment;
+rows tagged `counter-example-composition` (the Gen 1 pair, the mobile
+mockup slices) show the split default and are skipped for non-split sections.
+Read `references/composition-patterns.md` for the vocabulary. Everything here
+is for structure and look only: never carry a reference's brand, palette,
+people, copy, signatures or dates into a client page.

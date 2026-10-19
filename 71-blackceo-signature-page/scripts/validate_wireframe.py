@@ -48,7 +48,13 @@ reference_traits: [...]}. Checks, all deterministic:
      and matches the inventory's declared ratio (within 2 percent) and
      whose art direction (what the image must show) is a real direction
      string. Each unlabeled or mislabeled slot FAILs by name.
-  7. Brand-color trait (W4): the measured colors of every section slice
+  7. Composition treatments (references/composition-treatments.json): every
+     slot's declared `treatment` is a known id, and a plan with six or more
+     photo-bearing sections meets the per-page composition budget (split at
+     most 40 percent, a words-over-image hero, a full-width band, two shaped
+     crops with one circle, an intersecting treatment, no adjacent repeat of
+     a non-split treatment). A slot with no treatment counts as split.
+  8. Brand-color trait (W4): the measured colors of every section slice
      sit in the run's brand palette. The brand file resolves from
      --brand, else the run's private/brand.json pin, else intake.json's
      brand_file, else the skill's own brand file. Pixels are sampled
@@ -81,6 +87,9 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import composition  # noqa: E402
 
 EXPECTED_WIDTH = {"desktop-wireframe": 1440, "mobile-tablet": 390}
 WIDTH_TOLERANCE_PX = 2
@@ -670,6 +679,10 @@ def main(argv):
     w3_failures = slot_label_failures(plan, inventory_by_id)
     failures.extend(w3_failures)
 
+    # (6b) Composition treatments and the per-page budget.
+    comp_failures = composition.budget_failures(composition.plan_sections(plan))
+    failures.extend(comp_failures)
+
     # (7) Brand-color trait W4 (Item 15): measured slice colors.
     brand_path = resolve_brand_path(run_dir, brand_arg)
     try:
@@ -714,7 +727,8 @@ def main(argv):
     verdicts = {}
     for trait, lines in (("W1", annotation["W1"]), ("W2", annotation["W2"]),
                          ("W3", w3_failures), ("W4", w4_failures),
-                         ("W5", annotation["W5"]), ("W6", annotation["W6"])):
+                         ("W5", annotation["W5"]), ("W6", annotation["W6"]),
+                         ("COMP", comp_failures)):
         verdicts[trait] = {"verdict": "fail" if lines else "pass",
                            "failures": list(lines)}
     write_run_record(run_dir, stage, verdicts, len(plan), len(slices))

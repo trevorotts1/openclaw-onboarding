@@ -88,7 +88,12 @@ image, in the client's brand colors):
   sizes, desktop and mobile).
 - W3: every image slot is a deliberate placeholder (a
   black-and-white photographic plate or a crossed box), labeled with
-  its aspect ratio AND its art direction (what the image must show).
+  its aspect ratio AND its art direction (what the image must show),
+  printed with its pixel box (for example `IMG-01 Hero portrait 1600 x
+  1800 8:9`) and its composition treatment (`references/composition-
+  treatments.json`). The wireframe DRAWS the treatment: the text box ON
+  the placeholder for an overlay, a mask drawn as its real shape, a
+  full-width tint for a light field, an overlap drawn as an overlap.
 - W4: the sheet is rendered in the client's brand colors.
 - W5: a header strip states the page width and the content width.
 - W6: behavior notes are printed per section (for example "CTA
@@ -133,7 +138,10 @@ B1, photo wireframe (the standard and long-form teaching sheets):
 - two-tone headlines (black then red, or white then red on a black band);
 - alternating white and black full-bleed bands;
 - a thin red edge bar on most photographs, left or right edge;
-- asymmetric alternating 2-3 column rows (text, photo, details);
+- asymmetric alternating 2-3 column rows (text, photo, details), one allowed
+  option among the composition treatments, capped by the per-page budget in
+  `references/composition-treatments.json` (split at most 40 percent of
+  photo-bearing sections);
 - pains use "!" bullets or black checkmark circles; benefits use
   checkmarks;
 - the 7-step sequence as red circles joined by chevrons or a dotted line on
@@ -176,8 +184,9 @@ fails review outright.
   rules, hairline dividers; rust and green pills with arrow glyphs and
   shadows; script overlays on photos; slogans printed on objects (mugs,
   books).
-- Tier H (flat, sparse, same copy): square plain-rectangle photography
-  (about 7 photos with 7 content bands photo-free), no botanicals and no
+- Tier H (flat, sparse, same copy): plain-rectangle photography is allowed
+  (about 7 photos with 7 content bands photo-free; the composition budget
+  still applies to the photo-bearing sections), no botanicals and no
   script on photos (the script moves to a caption bar), square green or
   cream buttons with an arrow glyph and gray microcopy, six cream icon
   cards, rust or peach number badges, hairline dividers and gold left or top
@@ -226,16 +235,22 @@ generic page fails several of them.
 4. layered-tier photo density (about 9 portraits per frame) against
    flat-tier or generic sparseness;
 5. consistent casting, pose and styling;
-6. gold script on the photo (flat tier: the caption bar);
+6. gold script on the photo (flat tier: the caption bar); measured, not only
+   reviewed, for pages that declare `caption-over-photo` or an overlay: the
+   text sits inside the slot's `copy_zone`, clear of `subject_zone`, with the
+   contrast in `references/composition-treatments.json` (checks Q2 and Q6);
 7. slogans on props (mugs, books);
 8. hue-shifting full-width bands;
 9. arches and diagonal masks, monstera and palm, leaf texture (layered
-   tier);
+   tier); the masks are measured (check Q3: corner patches match the
+   section background, computed radius or clip-path agrees with the declared
+   `mask-*` treatment);
 10. red edge bars plus red offset blocks and bracket frames;
 11. varied image ratios with art direction ("never a defeated stereotype");
 12. a CTA after nearly every block, first-person outcome labels with
     microcopy;
-13. asymmetric alternating rows;
+13. asymmetric alternating rows (one allowed option, capped by the per-page
+    composition budget);
 14. six icon cards in tinted circles plus peach or rust sequence badges;
 15. the four-line brand system reused in header, overlay, props and footer;
 16. founder close: portrait, script signature, capitals name and title,

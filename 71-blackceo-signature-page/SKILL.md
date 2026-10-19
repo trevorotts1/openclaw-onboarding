@@ -110,6 +110,7 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 
 - Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
 - The `desktop-wireframe` and `mobile-tablet` stages must produce `section-plan.json` as a required output.
+- Every image slot in `section-plan.json` declares a composition `treatment` (`references/composition-treatments.json`; read `references/composition-patterns.md`): words over images, shaped crops (circle, arch, pill, angled cut) and a very light full-width field are first-class, and a photo column beside a text column is only one of the allowed treatments. The wireframe draws the treatment, the prompts ask for it, the mockup keeps it, the HTML builds it in CSS with `data-treatment`, and the per-page budget gates it. Typed hosted reference images are in `assets/visual-standards/reference-catalog.json`.
 - The `visual-mockup` stage produces the page visual bible and an internal layout proof only. The layout proof is never presented to the client as the mockup and is never client-judged.
 - Image generation (prompts, generation/QC, image map) completes before the mockup stage opens. `final-mockups` is the single client-judged mockup: produced per section with real photography in every slot, with supplied assets placed as files and never generated.
 - Build complete desktop first, then intentionally reflow mobile/tablet; do not merely shrink desktop.

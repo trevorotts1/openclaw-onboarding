@@ -367,5 +367,9 @@
    "width_px": 780,
    "height_px": 48894
   }
- ]
+ ],
+ "hosted_catalog": {
+  "file": "reference-catalog.json",
+  "note": "Typed list of the images hosted in the BlackCEO operator media library (wireframe, mockup, hybrid-image-map, mood-board, mockup-crop) with url, sha256, viewport, sections, traits and pair. Not part of the bundled-file count above: hosted images are not bundled here."
+ }
 }

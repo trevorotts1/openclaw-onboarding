@@ -91,6 +91,9 @@ for f in \
   references/browser-hygiene.md references/funnel-completion-checklist.md \
   references/browser-engine-contract.md references/automation-handoff.md \
   references/deliverables-manifest.md references/layout-trait-vocabulary.json \
+  references/composition-treatments.json references/composition-patterns.md \
+  scripts/composition.py assets/visual-standards/reference-catalog.json \
+  tests/test_composition_library.py \
   references/copy-specs/standard-v6.json references/copy-specs/long-form-v6.json \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \

@@ -185,7 +185,10 @@
         "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
         "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
         "references/qc-contract.md",
-        "references/section-image-prompt.md"
+        "references/section-image-prompt.md",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false
     },
@@ -237,7 +240,10 @@
         "assets/page-references/substitutions.json (the standing house-default registry: per reference, the approved default and its ruling, Item 17)",
         "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
         "references/qc-contract.md",
-        "references/section-image-prompt.md"
+        "references/section-image-prompt.md",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false
     },
@@ -288,7 +294,10 @@
         "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)",
         "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
         "references/qc-contract.md",
-        "references/section-image-prompt.md"
+        "references/section-image-prompt.md",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false
     },
@@ -327,7 +336,9 @@
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
         "assets/brand/signature-grade-block.txt",
-        "references/qc-contract.md"
+        "references/qc-contract.md",
+        "desktop-wireframe/section-plan.json (each slot's treatment, mask, copy_zone and subject_zone: the photo prompt gets its copy-space or crop-safe sentence from the slot's treatment)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)"
       ],
       "may_be_not_authorized": false
     },
@@ -464,7 +475,10 @@
         "font-action-plan/font-map.json (the typography spec record the section guide's specs are drawn from)",
         "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)",
         "references/qc-contract.md",
-        "references/section-image-prompt.md"
+        "references/section-image-prompt.md",
+        "references/composition-patterns.md (composition vocabulary: words over images, shaped crops, light full-width fields; the per-section treatment and the per-page budget)",
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
       "may_be_not_authorized": false,
       "approval_artifact": "final-mockups/hybrid-board.png"
@@ -516,7 +530,8 @@
         "copy/copy-manifest.json (the CTA entries and their handoff types; the primary CTA)",
         "intake.json (funnel_handoff: the named form the primary CTA pops, or the recorded missing input)",
         "font-action-plan/font-map.json",
-        "references/html-qc-rubric.md"
+        "references/html-qc-rubric.md",
+        "references/composition-treatments.json (build each slot's treatment in CSS and emit data-image-slot and data-treatment on every slot element)"
       ],
       "may_be_not_authorized": false
     },
