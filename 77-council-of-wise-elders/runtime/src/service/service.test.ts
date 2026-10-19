@@ -40,7 +40,13 @@ import {
   type ReadinessObservation,
 } from './readiness.js';
 import { resolveSessionTarget, sessionUrl } from './sessions.js';
-import type { AdmissionRequest, ServiceIdentity } from './types.js';
+import type {
+  AdmissionRequest,
+  CouncilConveningPort,
+  CouncilRoutesResponse,
+  ServiceIdentity,
+} from './types.js';
+import type { ConveneAccepted, ConveneInput } from './driver.js';
 
 const FIXED_NOW = '2026-10-18T12:00:00.000Z';
 const nowUtc = (): string => FIXED_NOW;
@@ -507,4 +513,253 @@ test('a failed browser open still returns the usable session URL', async () => {
   assert.match(opened.browser?.recovery ?? '', /Open this URL manually/);
 
   await service.stop();
+});
+
+// ---------------------------------------------------------------- convening
+
+const ROUTES_BODY: CouncilRoutesResponse = {
+  routes: [
+    {
+      route_id: 'claude-nine-configured',
+      provider_slug: 'claude-nine',
+      kind: 'harness',
+      composable: true,
+      failure_code: null,
+      default_for: ['claude-nine'],
+    },
+  ],
+  harness_defaults: {
+    'claude-nine': { route_id: 'claude-nine-configured', model: 'harness_default' },
+    'claude-code': { route_id: 'claude-configured', model: 'sonnet' },
+    deepseek: { route_id: 'deepseek-configured', model: 'latest_deepseek_flash' },
+  },
+  budgets: [{ route_id: 'claude-nine-configured', model: null, state: 'approved' }],
+};
+
+const ACCEPTED: ConveneAccepted = {
+  session_id: 'sess-1',
+  state: 'DRAFT',
+  sample: true,
+  route_id: 'claude-nine-configured',
+  model_label: 'claude-nine configured default',
+  selection_source: 'explicit',
+  grant_id: 'grant-1',
+  session_path: '/council/sess-1',
+  events_path: '/api/council/sessions/sess-1/events',
+};
+
+function conveningStub(
+  convene: (input: ConveneInput) => Promise<ConveneAccepted> = async () => ACCEPTED,
+): { port: CouncilConveningPort; seen: ConveneInput[] } {
+  const seen: ConveneInput[] = [];
+  return {
+    seen,
+    port: {
+      routes: () => ROUTES_BODY,
+      convene: async (input) => {
+        seen.push(input);
+        return convene(input);
+      },
+    },
+  };
+}
+
+async function withConveningDoor<T>(
+  port: CouncilConveningPort | undefined,
+  body: (input: { door: CouncilFrontDoor; origin: string }) => Promise<T>,
+): Promise<T> {
+  const door = new CouncilFrontDoor({ identity: identity(), ports: [0], convening: port });
+  const started = await door.start();
+  assert.equal(started.outcome, 'started');
+  if (started.outcome !== 'started') throw new Error('unreachable');
+  try {
+    return await body({ door, origin: started.origin });
+  } finally {
+    await door.stop();
+  }
+}
+
+function postConvene(origin: string, body: string, contentType = 'application/json'): Promise<Response> {
+  return fetch(`${origin}/api/council/convene`, {
+    method: 'POST',
+    headers: { 'content-type': contentType },
+    body,
+  });
+}
+
+test('GET /api/council/routes serves the bound routes, harness defaults and budget states', async () => {
+  await withConveningDoor(conveningStub().port, async ({ origin }) => {
+    const response = await fetch(`${origin}/api/council/routes`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), ROUTES_BODY);
+  });
+});
+
+test('with no convening driver bound both routes answer 501 CONVENING_NOT_BOUND', async () => {
+  await withConveningDoor(undefined, async ({ origin }) => {
+    const routes = await fetch(`${origin}/api/council/routes`);
+    assert.equal(routes.status, 501);
+    assert.equal(((await routes.json()) as { code: string }).code, 'CONVENING_NOT_BOUND');
+    const convene = await postConvene(origin, '{"sample":true}');
+    assert.equal(convene.status, 501);
+    assert.equal(((await convene.json()) as { code: string }).code, 'CONVENING_NOT_BOUND');
+  });
+});
+
+test('POST /api/council/convene forwards a validated request and answers 202', async () => {
+  const stub = conveningStub();
+  await withConveningDoor(stub.port, async ({ origin }) => {
+    const response = await postConvene(
+      origin,
+      JSON.stringify({
+        sample: true,
+        route_id: 'claude-nine-configured',
+        model: 'm1',
+        harness: 'claude-nine',
+        mode: 'quick',
+        seat_ids: ['les-brown'],
+        visibility: 'private',
+        requested_by: 'tester',
+        fresh_facts: [
+          {
+            claim: 'A current fact',
+            url: 'https://example.test/a',
+            retrieved_at: '2026-10-19T12:00:00Z',
+          },
+        ],
+      }),
+    );
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), ACCEPTED);
+    assert.deepEqual(stub.seen, [
+      {
+        sample: true,
+        route: { route_id: 'claude-nine-configured', model: 'm1', harness: 'claude-nine' },
+        mode: 'quick',
+        seat_ids: ['les-brown'],
+        visibility: 'private',
+        requested_by: 'tester',
+        fresh_facts: [
+          {
+            claim: 'A current fact',
+            url: 'https://example.test/a',
+            title: null,
+            retrieved_at: '2026-10-19T12:00:00Z',
+          },
+        ],
+      },
+    ]);
+
+    const bare = await postConvene(origin, '{"sample":true}');
+    assert.equal(bare.status, 202);
+    assert.equal(stub.seen[1].requested_by, 'service_client');
+    assert.deepEqual(stub.seen[1].route, { route_id: undefined, model: undefined, harness: undefined });
+  });
+});
+
+test('a malformed convene body is a typed 422 and never reaches the driver', async () => {
+  const stub = conveningStub();
+  await withConveningDoor(stub.port, async ({ origin }) => {
+    const cases: Array<[string, string, string]> = [
+      ['not json', '{nope', 'CONVENE_BODY_INVALID_JSON'],
+      ['empty body', '', 'CONVENE_BODY_EMPTY'],
+      ['array body', '[]', 'CONVENE_BODY_INVALID'],
+      ['null body', 'null', 'CONVENE_BODY_INVALID'],
+      ['neither sample nor brief', '{}', 'CONVENE_BODY_INVALID'],
+      ['sample and brief', '{"sample":true,"brief":{}}', 'CONVENE_BODY_INVALID'],
+      ['sample not boolean', '{"sample":"yes"}', 'CONVENE_BODY_INVALID'],
+      ['unknown field', '{"sample":true,"route":"x"}', 'CONVENE_BODY_INVALID'],
+      ['unknown harness', '{"sample":true,"harness":"gpt"}', 'CONVENE_BODY_INVALID'],
+      ['unknown mode', '{"sample":true,"mode":"loud"}', 'CONVENE_BODY_INVALID'],
+      ['unknown seat', '{"sample":true,"seat_ids":["nobody"]}', 'CONVENE_BODY_INVALID'],
+      ['empty route id', '{"sample":true,"route_id":" "}', 'CONVENE_BODY_INVALID'],
+      ['fresh fact without url', '{"sample":true,"fresh_facts":[{"claim":"c","retrieved_at":"2026-10-19"}]}', 'CONVENE_BODY_INVALID'],
+      ['fresh fact with a bad date', '{"sample":true,"fresh_facts":[{"claim":"c","url":"https://e.test","retrieved_at":"yesterday"}]}', 'CONVENE_BODY_INVALID'],
+    ];
+    for (const [label, raw, code] of cases) {
+      const response = await postConvene(origin, raw);
+      assert.equal(response.status, 422, label);
+      const body = (await response.json()) as { code: string; detail: string; recovery: string };
+      assert.equal(body.code, code, label);
+      assert.ok(body.detail.length > 0 && body.recovery.length > 0, label);
+    }
+    assert.equal(stub.seen.length, 0);
+
+    const wrongType = await postConvene(origin, '{"sample":true}', 'text/plain');
+    assert.equal(wrongType.status, 415);
+    assert.equal(((await wrongType.json()) as { code: string }).code, 'CONVENE_CONTENT_TYPE');
+    assert.equal(stub.seen.length, 0, 'a cross-site form post never reaches the driver');
+  });
+});
+
+test('typed driver refusals keep their status; other failures are a plain 500', async () => {
+  const refusal = (code: string, status: number | undefined) =>
+    Object.assign(new Error(`refused ${code} at /Users/someone/secret`), {
+      code,
+      recovery: 'do the thing',
+      detail: { path: '/Users/someone/secret', note: 'n' },
+      http_status: status,
+    });
+  const queue: unknown[] = [
+    refusal('COMPOSITION_NOT_READY', 503),
+    refusal('CONVENE_INPUT_INVALID', 422),
+    refusal('ROUTE_NOT_COMPOSABLE', 409),
+    refusal('ROUTE_CHOICE_REQUIRED', undefined),
+    new Error('disk exploded at /Users/someone/secret'),
+  ];
+  const stub = conveningStub(async () => {
+    throw queue.shift();
+  });
+  await withConveningDoor(stub.port, async ({ origin }) => {
+    const expected: Array<[number, string]> = [
+      [503, 'COMPOSITION_NOT_READY'],
+      [422, 'CONVENE_INPUT_INVALID'],
+      [409, 'ROUTE_NOT_COMPOSABLE'],
+      [422, 'ROUTE_CHOICE_REQUIRED'],
+    ];
+    for (const [status, code] of expected) {
+      const response = await postConvene(origin, '{"sample":true}');
+      assert.equal(response.status, status, code);
+      const text = await response.text();
+      const body = JSON.parse(text) as { code: string; recovery: string };
+      assert.equal(body.code, code);
+      assert.equal(body.recovery, 'do the thing');
+      assert.ok(!text.includes('/Users/someone'), 'host paths are redacted');
+    }
+    const failed = await postConvene(origin, '{"sample":true}');
+    assert.equal(failed.status, 500);
+    const failedBody = await failed.text();
+    assert.equal((JSON.parse(failedBody) as { code: string }).code, 'SERVICE_REQUEST_FAILED');
+    assert.ok(!failedBody.includes('/Users/someone'), 'host paths are redacted in a 500 too');
+  });
+});
+
+test('convene sits behind the admission fence: draining and reused handles refuse it', async () => {
+  const stub = conveningStub();
+  await withConveningDoor(stub.port, async ({ door, origin }) => {
+    // Loopback-only: the same listener rule the admission route lives under.
+    const remote = new CouncilFrontDoor({ identity: identity(), host: '0.0.0.0', ports: [0], convening: stub.port });
+    const refused = await remote.start();
+    assert.equal(refused.outcome, 'refused');
+
+    door.drain();
+    const fenced = await postConvene(origin, '{"sample":true}');
+    assert.equal(fenced.status, 503);
+    assert.equal(((await fenced.json()) as { code: string }).code, 'SERVICE_DRAINING');
+    assert.equal(stub.seen.length, 0, 'a draining service convenes nothing');
+    // Existing reads stay reachable while draining, like the session routes.
+    assert.equal((await fetch(`${origin}/api/council/routes`)).status, 200);
+  });
+
+  await withConveningDoor(stub.port, async ({ origin: ownerOrigin }) => {
+    const port = Number(new URL(ownerOrigin).port);
+    const reuser = new CouncilFrontDoor({ identity: identity(), ports: [port], convening: stub.port });
+    const reused = await reuser.start();
+    assert.equal(reused.outcome, 'reused');
+    // A reusing handle owns no listener, so convene cannot even arrive; the
+    // shared fence is the same one admissions answer through.
+    const admission = await reuser.admit({ session_id: 's', operation_id: 'o' });
+    assert.equal(admission.accepted, false);
+    assert.equal(stub.seen.length, 0);
+  });
 });

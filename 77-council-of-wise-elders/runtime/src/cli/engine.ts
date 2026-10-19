@@ -62,7 +62,6 @@
 
 import {
   canonicalHash,
-  cardAuthorJsonSchema,
   computeOptionScore,
   labelForScore,
   validateCard,
@@ -97,6 +96,7 @@ import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/index.js';
 import { deriveHardConstraintFindings } from '../scoring/decision.js';
 import {
   cardContractInstruction,
+  cardOutputContract,
   cardRepairInstruction,
 } from './card-contract.js';
 import { parseCardResponseText } from './card-text.js';
@@ -864,11 +864,7 @@ export class CouncilEngine {
             )
             .filter((v): v is string => v !== null)
         : null;
-    const outputContract = {
-      card_kind: purpose,
-      instruction: cardContractInstruction(purpose, challengeIds),
-      json_schema: cardAuthorJsonSchema(purpose),
-    };
+    const outputContract = cardOutputContract(purpose, challengeIds);
     const systemWithContract = `${system}\n${outputContract.instruction}`;
     const requestInput: Record<string, unknown> = {
       brief: session.brief,

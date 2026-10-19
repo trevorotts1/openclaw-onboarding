@@ -58,7 +58,11 @@ export interface StartCouncilWorkersOptions {
    * silently supporting what it cannot do.
    */
   durable_worker_capability?: boolean;
-  on_error?: (error: unknown) => void;
+  /**
+   * Every claim, reconcile or execution failure is reported here with the
+   * session it concerns (when known); never swallowed.
+   */
+  on_error?: (error: unknown, context?: { session_id?: string }) => void;
 }
 
 export interface CouncilWorkerHandle {
@@ -123,6 +127,14 @@ class CouncilWorkerSupervisor implements CouncilWorkerHandle {
     this.cycles_started += 1;
     try {
       for (const scope of this.options.scopes) {
+        // Recover expired leases every cycle, not only at boot: a stuck
+        // running job / dispatched attempt resolves truthfully once its
+        // lease lapses (live leases are never touched).
+        try {
+          this.options.runner.reconcileScope(scope.envelope, scope.worker_id);
+        } catch (error) {
+          this.options.on_error?.(error);
+        }
         this.pollScope(scope);
       }
     } finally {
@@ -145,7 +157,7 @@ class CouncilWorkerSupervisor implements CouncilWorkerHandle {
             scope.worker_id,
           );
         } catch (error) {
-          this.options.on_error?.(error);
+          this.options.on_error?.(error, { session_id: session.spec.session_id });
           break;
         }
         if (!claim) break;
@@ -154,7 +166,7 @@ class CouncilWorkerSupervisor implements CouncilWorkerHandle {
           .catch((error: unknown) => {
             // A simulated (or real) crash leaves durable state for
             // reconciliation; other errors are reported, never hidden.
-            this.options.on_error?.(error);
+            this.options.on_error?.(error, { session_id: session.spec.session_id });
             return null;
           });
         this.inFlight.add(execution);

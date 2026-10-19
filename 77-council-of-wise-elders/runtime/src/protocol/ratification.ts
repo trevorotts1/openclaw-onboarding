@@ -111,6 +111,11 @@ import {
 } from '../cli/engine.js';
 import { parseCardResponseText } from '../cli/card-text.js';
 import {
+  cardOutputContract,
+  cardRequestSystem,
+} from '../cli/card-contract.js';
+import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
+import {
   SimulatedCrashError,
   type OperationDispatchContext,
   type OperationDispatchResult,
@@ -572,7 +577,7 @@ export function evaluateQuickModeSkip(input: QuickSkipInput): QuickSkipEvaluatio
  * consolidation: the single source is RATIFICATION_SYSTEM in
  * cli/engine.ts; this name is kept as the protocol surface.
  */
-export const RATIFICATION_ROUND_SYSTEM = RATIFICATION_SYSTEM;
+export const RATIFICATION_ROUND_SYSTEM = `${RATIFICATION_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a Round 3 ratification input manifest. */
 export const RATIFICATION_INPUT_KIND = 'wise-elders.ratification-input/v1';
@@ -754,7 +759,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
     const round1Cards = this.deps
@@ -764,10 +769,12 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
     const ownRound2 = round2Cards.find((c) => c.seat_id === seatId) ?? null;
     const briefView = payloadBriefView(context);
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${RATIFICATION_ROUND_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : RATIFICATION_ROUND_SYSTEM;
+    const system = cardRequestSystem(
+      RATIFICATION_ROUND_SYSTEM,
+      'ratification',
+      null,
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -795,6 +802,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
           // each seat sees the draft, the relevant challenges, and the
           // frozen evidence).
           relevant_cruxes: assignedCruxesFor(cruxes, seatId),
+          output_contract: cardOutputContract('ratification', null),
         },
       });
     } catch (error) {
@@ -997,7 +1005,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
  * single source is CONSULT_SYSTEM in cli/engine.ts; re-exported under
  * the same name for this module's existing surface.
  */
-export const CONSULT_SYSTEM = ENGINE_CONSULT_SYSTEM;
+export const CONSULT_SYSTEM = `${ENGINE_CONSULT_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a consult input manifest. */
 export const CONSULT_INPUT_KIND = 'wise-elders.consult-input/v1';
@@ -1139,14 +1147,16 @@ export class ConsultExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
     const briefView = payloadBriefView(context);
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${CONSULT_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : CONSULT_SYSTEM;
+    const system = cardRequestSystem(
+      CONSULT_SYSTEM,
+      'consult',
+      null,
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -1167,6 +1177,7 @@ export class ConsultExecutor implements OperationExecutorPort {
           pack_briefing: pack?.briefing_text ?? null,
           input_manifest_sha256: plan.input_manifest_sha256,
           pack_version: plan.pack_version,
+          output_contract: cardOutputContract('consult', null),
         },
       });
     } catch (error) {
