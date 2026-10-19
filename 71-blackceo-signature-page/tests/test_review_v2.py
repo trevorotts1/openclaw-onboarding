@@ -609,7 +609,9 @@ class WireframeValidatorTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.td, ignore_errors=True)
 
-    def write_png(self, path, width, height=300):
+    def write_png(self, path, width, height=9000):
+        # 9,000px per slice: the desktop page floor is 16,736px summed, so the
+        # compliant two-slice fixture is a real long-scroll page, not a card.
         path.parent.mkdir(parents=True, exist_ok=True)
         self.Image.new("RGB", (width, height), self.NAVY).save(path)
 
@@ -659,6 +661,15 @@ class WireframeValidatorTest(unittest.TestCase):
         proc = self.validate()
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn("width 800px, expected 1440px", proc.stdout)
+
+    def test_short_desktop_page_fails_height_floor(self):
+        # Fix 14: a long-scroll page is delivered at full height, so the
+        # summed section heights must reach the 16,736px standard sheet.
+        self.write_png(self.run / "desktop-wireframe" / "section-01.png", 1440, 4000)
+        self.write_png(self.run / "desktop-wireframe" / "section-02.png", 1440, 4000)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("page height 8000px is under the 16736px floor", proc.stdout)
 
     def test_ratio_mismatch_fails(self):
         plan = json.loads(json.dumps(self.good_plan))

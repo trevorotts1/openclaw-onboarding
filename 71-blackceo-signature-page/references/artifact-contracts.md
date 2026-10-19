@@ -688,8 +688,19 @@ stage folder:
 
 The stitched PNG and the combined PDF match the slices section for
 section: every section appears exactly once, in order, in each form. A
-private assembly map records the slice order and each slice's file. The
-set is produced by the pinned production method and carries the
+private assembly map records the slice order and each slice's file.
+
+Page height is measured, not implied. The desktop wireframe's summed
+section heights must reach 16,736px, the height of the standard set's
+own desktop wireframe sheet (six 1440px slices in
+`assets/visual-standards/manifest.json`); `scripts/validate_wireframe.py`
+fails a shorter desktop set by name. A long-scroll page cannot be
+expressed by an aspect ratio, so the page is delivered at its full
+height. Mobile has no height floor and none is asserted: the standard
+set contains no full-height mobile wireframe sheet (the 48,894px sheet
+is a mockup, not a wireframe), so the mobile floor is undetermined.
+
+The set is produced by the pinned production method and carries the
 per-section build record defined in "Production method and per-section
 build record" below (`production-record.json`): per-section generation
 inputs, native-aspect outputs, and the pre-stitching text-QC record.
@@ -853,7 +864,16 @@ method (SOP Stage 4D and Stage 11C):
   section, the section plan and the run's copy; in both cases the page
   visual bible (palette, fonts, grade) is the style input;
 - each section generated at its native aspect: the stage's full page
-  width and the section's own height;
+  width and the section's own height, never a cropped or stretched fit.
+  The generation request carries the nearest aspect ratio the chosen
+  route actually offers and the highest resolution tier that ratio
+  allows (`4K` where it allows it; otherwise the nearest tier the route
+  offers). The record carries the slice's real width and height from
+  the filed bytes, never an intended size;
+- a slot designed at 3:1, 1:3 or 9:21 records `model_source:
+  explicit-request` with its `evidence` (or records
+  `legacy-ratio-route`), so the N43 ratio rule never rewrites the
+  designed ratio silently before generation;
 - assembly by deterministic code, never by hand:
   `scripts/stitch_sections.py` stitches the slices into the full-page
   PNG in record order and writes `stitch-receipt.json`;
@@ -887,6 +907,7 @@ and refuses to stitch a record that does not pass):
         "route": "kie-gpt-image",
         "model_id": "<id resolved from the registry at build time>",
         "model_source": "latest-family | explicit-request | department-pin | legacy-ratio-route",
+        "resolution": "<highest tier the route's ratio allows; 4K where it allows it>",
         "layout_reference": "<approved wireframe section slice (mockup) or section plan (wireframe)>",
         "reference_urls": ["<reference image URL(s); empty when the section has none>"],
         "style_input": "<page visual bible file>",
@@ -906,8 +927,14 @@ and refuses to stitch a record that does not pass):
 ```
 
 Field rules: `sections` is in section order and names every slice exactly
-once; `width`/`height` are the slice's actual pixel dimensions and
-`generation.native_aspect` equals them; `text_qc.garbled_words` is the set
+once; `width`/`height` are the slice's REAL pixel dimensions read from
+the filed bytes and `generation.native_aspect` equals them;
+`generation.resolution` records the tier requested at generation time
+(`4K` where the chosen route's ratio allows it, otherwise the nearest
+tier the route offers; no `resolution` value was recorded before this
+rule); a slot designed at 3:1, 1:3 or 9:21 records `model_source`
+`explicit-request` with its `evidence` (or `legacy-ratio-route`), so
+N43 never rewrites it silently; `text_qc.garbled_words` is the set
 of read-back tokens that do not appear in `expected_text` (the validator
 recomputes it, so a record cannot claim a pass over garbled text);
 `text_qc.attempts` counts the section's generations, so a section that
@@ -942,6 +969,7 @@ resolved from the registry at build time, never a name typed from memory.
         "route": "kie-gpt-image",
         "model_id": "gpt-image-2-5-sunburst-text-to-image",
         "model_source": "latest-family",
+        "resolution": "4K",
         "layout_reference": "desktop-wireframe/section-01.png",
         "reference_urls": [],
         "style_input": "visual-mockup/page-visual-bible.json",
@@ -965,6 +993,7 @@ resolved from the registry at build time, never a name typed from memory.
         "route": "kie-gpt-image",
         "model_id": "gpt-image-2-5-sunburst-text-to-image",
         "model_source": "latest-family",
+        "resolution": "4K",
         "layout_reference": "desktop-wireframe/section-02.png",
         "reference_urls": [],
         "style_input": "visual-mockup/page-visual-bible.json",
