@@ -71,4 +71,13 @@ echo m > "$T/h7/999-setup/mine.txt"; git -C "$T/h7/999-setup" add -A; git -C "$T
 out="$(run "$T/h7")"
 [ "$(git -C "$T/h7/999-setup" rev-parse --abbrev-ref HEAD)" = batch/y ] && ok "B6 unmerged branch untouched" || bad "B6 unmerged branch moved: $out"
 echo "$out" | grep -q "UNTOUCHED.*batch/y.*1 commit" && ok "B6 reason names branch and commit count" || bad "B6 no reason: $out"
+# B6 clash: ff to the default branch fails (untracked file would be overwritten) -> clone stays on the gone branch, file intact.
+mkdir -p "$T/h8"; clone "$T/h8/999-setup"; R8="$T/h8/999-setup"; git -C "$R8" checkout -q -b batch/z
+git -C "$R8" config branch.batch/z.remote origin; git -C "$R8" config branch.batch/z.merge refs/heads/batch/z
+sha8="$(git -C "$R8" rev-parse HEAD)"
+echo origin > "$O/clash"; git -C "$O" add -A; git -C "$O" -c user.email=a@b -c user.name=t commit -qm clash
+echo mine > "$R8/clash"
+out="$(run "$T/h8")"
+[ "$(git -C "$R8" rev-parse --abbrev-ref HEAD)" = batch/z ] && [ "$(git -C "$R8" rev-parse HEAD)" = "$sha8" ] && ok "B6 failed ff leaves clone on gone branch" || bad "B6 clash moved clone: $out"
+[ "$(cat "$R8/clash")" = mine ] && ok "B6 untracked file unchanged" || bad "B6 untracked file changed"
 exit $fail

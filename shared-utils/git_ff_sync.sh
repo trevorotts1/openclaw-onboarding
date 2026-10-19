@@ -37,7 +37,10 @@ if [ -n "$br" ] && [ "$(g config --get "branch.$br.remote")" = origin ]; then
       echo "branch $br: upstream gone, but local $def has $(g rev-list --count "origin/$def..$def") commit(s) not in origin/$def; left untouched"; exit 3
     fi
     out=$(g checkout --quiet "$def" 2>&1) || { echo "checkout $def failed: $out"; exit 1; }
-    out=$(g merge --ff-only --quiet "origin/$def" 2>&1) || { echo "ff $def failed: $out"; exit 1; }
+    # All-or-nothing: if the ff fails (e.g. untracked file clashes), go back to $br.
+    out=$(g merge --ff-only --quiet "origin/$def" 2>&1) || {
+      g checkout --quiet "$br" >/dev/null 2>&1
+      echo "left on $br (ff $def failed): $out"; exit 1; }
     echo "switched $br -> $def (upstream gone, 0 unmerged commits); $br kept"
     exit 0
   fi

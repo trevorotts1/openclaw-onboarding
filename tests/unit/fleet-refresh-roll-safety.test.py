@@ -714,7 +714,7 @@ class Update999(unittest.TestCase):
         (self.home / ".claude/skills/nine-router-setup").symlink_to(repo / ".claude/skills/nine-router-setup")
         self.assertEqual(fr._find_999_checkout().resolve(), repo.resolve())
 
-    def gone_upstream(self, local_commit=False):
+    def gone_upstream(self, local_commit=False, clash=False):
         """CAN005: clone sits on a branch whose upstream was merged into main and deleted on origin."""
         repo, marker, new_sha = self.make_999("Downloads/999-setup")
         origin = self.tmp / "gh" / "trevorotts1" / "999-setup.git"
@@ -730,6 +730,10 @@ class Update999(unittest.TestCase):
         git(seed, "push", "-q", "origin", "--delete", "batch/x")
         if local_commit:
             commit(repo, {"mine.txt": "unpushed"}, "local only")
+        if clash:   # origin/main gains a tracked file the clone holds as an untracked one
+            commit(seed, {"clash": "from origin"}, "add clash")
+            git(seed, "push", "-q", "origin", "main")
+            (repo / "clash").write_text("mine")
         return repo, marker
 
     def test_gone_upstream_clean_branch_moves_to_main_and_fast_forwards(self):
@@ -752,6 +756,17 @@ class Update999(unittest.TestCase):
         self.assertEqual(git(repo, "rev-parse", "HEAD"), before)
         self.assertEqual(git(repo, "rev-parse", "--abbrev-ref", "HEAD"), "batch/x")
         self.assertFalse(marker.exists())
+
+    def test_gone_upstream_failed_ff_leaves_clone_on_original_branch(self):
+        repo, _marker = self.gone_upstream(clash=True)
+        before = git(repo, "rev-parse", "HEAD")
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_update_999(res, dry_run=False)
+        self.assertNotEqual(res.steps["update-999"], "ok")
+        self.assertEqual(git(repo, "rev-parse", "--abbrev-ref", "HEAD"), "batch/x")   # all-or-nothing
+        self.assertEqual(git(repo, "rev-parse", "HEAD"), before)
+        self.assertEqual((repo / "clash").read_text(), "mine")
+        self.assertIn("left on batch/x", " ".join([res.steps["update-999"], *map(str, res.errors)]))
 
     def test_dry_run_does_not_pull(self):
         repo, _marker, _sha = self.make_999("Documents/999-setup")
