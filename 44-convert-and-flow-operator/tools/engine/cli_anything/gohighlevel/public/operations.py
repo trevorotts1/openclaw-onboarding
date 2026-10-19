@@ -55,6 +55,11 @@ SUPPORTED_VERSIONS: frozenset[str] = frozenset(
     {"v3", "2023-02-21", "2021-07-28", "2021-04-15", "legacy"}
 )
 
+#: Documented ``type`` values for ``GET /medias/files`` (fetch-media-content).
+#: Live 200s were observed for ``file`` on 2026-10-19; the other four are the
+#: documented set, not separately probed.
+MEDIA_FILE_TYPES: tuple[str, ...] = ("file", "image", "video", "audio", "document")
+
 DocumentedLevel = Literal["D", "S", "internal", "undocumented"]
 RouteClass = Literal[
     "public_direct",
@@ -118,8 +123,67 @@ class OperationRow:
     doc_fetch_date: str | None
     blocker: str | None
     readback_plan: str | None
+    #: Query parameters the operation cannot be issued without.  A row that
+    #: names one here makes the adapter refuse an omission before transport
+    #: instead of letting the service answer 422 (live evidence, GHL-150:
+    #: ``GET /medias/files`` without ``type`` -> 422 "type must be a string").
+    required_query: tuple[str, ...] = ()
+    #: Documented closed value sets for required query parameters, as
+    #: ``((name, (allowed, ...)), ...)``.  The adapter refuses any other value.
+    query_enums: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def __post_init__(self) -> None:
+        for field_name in ("required_query",):
+            value = getattr(self, field_name)
+            if not isinstance(value, tuple):
+                raise ContractViolation(
+                    "row_required_query_invalid", operation_id=self.operation_id
+                )
+        seen_required: set[str] = set()
+        for name in self.required_query:
+            if not isinstance(name, str) or not name.strip():
+                raise ContractViolation(
+                    "row_required_query_invalid", operation_id=self.operation_id
+                )
+            if name in seen_required:
+                raise ContractViolation(
+                    "row_required_query_duplicate",
+                    operation_id=self.operation_id,
+                    detail={"query": name},
+                )
+            seen_required.add(name)
+        seen_enums: set[str] = set()
+        for entry in self.query_enums:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                raise ContractViolation(
+                    "row_query_enum_invalid", operation_id=self.operation_id
+                )
+            name, allowed = entry
+            if not isinstance(name, str) or not name.strip() or name not in seen_required:
+                # An enum for a parameter the row does not require is a silent
+                # no-op: the adapter would never check it.
+                raise ContractViolation(
+                    "row_query_enum_invalid",
+                    operation_id=self.operation_id,
+                    detail={"query": str(name)},
+                )
+            if name in seen_enums:
+                raise ContractViolation(
+                    "row_query_enum_duplicate",
+                    operation_id=self.operation_id,
+                    detail={"query": name},
+                )
+            seen_enums.add(name)
+            if (
+                not isinstance(allowed, tuple)
+                or not allowed
+                or any(not isinstance(value, str) or not value for value in allowed)
+            ):
+                raise ContractViolation(
+                    "row_query_enum_invalid",
+                    operation_id=self.operation_id,
+                    detail={"query": name},
+                )
         if not isinstance(self.operation_id, str) or not _OPERATION_ID.match(
             self.operation_id
         ):
@@ -174,6 +238,8 @@ def _R(
     alternates: tuple[str, ...] = (),
     scopes: tuple[str, ...] = (),
     readback: str | None = None,
+    required_query: tuple[str, ...] = (),
+    query_enums: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> OperationRow:
     return OperationRow(
         operation_id=operation_id,
@@ -192,6 +258,8 @@ def _R(
         doc_fetch_date=DOC_FETCH_DATE if doc_url else None,
         blocker=blocker,
         readback_plan=readback,
+        required_query=required_query,
+        query_enums=query_enums,
     )
 
 
@@ -596,7 +664,13 @@ _CONTENT: tuple[OperationRow, ...] = (
        DOCS + "/ghl/medias/create-media-folder"),
     _R("media.files.list", "GET", "/medias/files", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/medias/fetch-media-content"),
+       DOCS + "/ghl/medias/fetch-media-content",
+       # Live evidence 2026-10-19 (Mct54Bwi1KlNouGXQcDX): the route answers
+       # 422 {"message":["type must be a string","type should not be empty"]}
+       # with no ``type``, and 200 {files,count,traceId} with &type=file.  The
+       # documented set is the five accepted literals.
+       required_query=("type",),
+       query_enums=(("type", MEDIA_FILE_TYPES),)),
     _R("forms.authoring", UNKNOWN, UNKNOWN, None, "undocumented", S06, NO_AUTH,
        "n/a", True, False, "B-NO-CONTRACT", None),
     _R("surveys.authoring", UNKNOWN, UNKNOWN, None, "undocumented", S06,
@@ -883,5 +957,6 @@ __all__ = [
     "OPERATIONS",
     "DOC_FETCH_DATE",
     "SUPPORTED_VERSIONS",
+    "MEDIA_FILE_TYPES",
     "UNKNOWN",
 ]
