@@ -976,6 +976,8 @@ function composeBackend(input: {
       : null,
     loadSeatBriefing: elderKnowledge.loadSeatBriefing,
     workerId: WORKER_ID,
+    // A fenced settle is reported like any worker failure (declared below).
+    onFencedSettle: (error, context) => recordWorkerError(error, context),
   });
 
   // The resolver is always callable, so the protocol's own readiness would

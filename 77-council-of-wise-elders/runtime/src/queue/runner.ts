@@ -442,6 +442,12 @@ export interface DurableJobRunnerDeps {
   heartbeatMs?: number;
   /** Route-specific deadline when known; default 600s (Section 15.8). */
   providerDeadlineMs?: number;
+  /**
+   * Called when a paid response is discarded because the settle was
+   * fenced (a newer lease epoch, or a revoked grant). Never swallowed:
+   * the host logs and journals it. A throw here is ignored.
+   */
+  onFencedSettle?: (error: JobRunnerError, context: { session_id: string }) => void;
 }
 
 export class DurableJobRunner {
@@ -459,6 +465,7 @@ export class DurableJobRunner {
   private readonly leaseTtlMs: number;
   private readonly heartbeatMs: number;
   private readonly providerDeadlineMs: number;
+  private readonly onFencedSettle: DurableJobRunnerDeps['onFencedSettle'];
   private readonly capacityTokens = new Map<string, CapacityToken>();
 
   constructor(deps: DurableJobRunnerDeps) {
@@ -473,6 +480,7 @@ export class DurableJobRunner {
     this.executor = deps.executor;
     this.timers = deps.timers ?? systemTimers;
     this.capacity = deps.capacity ?? null;
+    this.onFencedSettle = deps.onFencedSettle;
     this.leaseTtlMs = deps.leaseTtlMs ?? OPERATION_LEASE_TTL_MS;
     this.heartbeatMs = deps.heartbeatMs ?? OPERATION_LEASE_HEARTBEAT_MS;
     this.providerDeadlineMs = deps.providerDeadlineMs ?? DEFAULT_PROVIDER_DEADLINE_MS;
@@ -1292,6 +1300,7 @@ export class DurableJobRunner {
       ) {
         throw error;
       }
+      this.keepFencedReservationCounted(envelope, claim, dispatchOperationId);
     }
     this.updateAttempt(envelope, dispatchOperationId, 'provider_completion_unknown', 'completion_unknown');
     this.saveCheckpoint(envelope, claim, session, 'provider_completion_unknown', null, {
@@ -1398,6 +1407,35 @@ export class DurableJobRunner {
   }
 
   /**
+   * A fenced settle cannot finalize money, but the provider call was
+   * paid for: mark the still-reserved hold 'unknown' under the session's
+   * current epoch so it stays counted at its estimate. Left alone it
+   * would lapse to 'expired' and free its allowance, dropping a paid
+   * call from the ledger.
+   */
+  private keepFencedReservationCounted(
+    envelope: AuthorizationEnvelope,
+    claim: JobClaim,
+    operationId: string,
+  ): void {
+    const sessionId = claim.job.session_id;
+    const reservation = this.budget.getReservation(envelope, sessionId, operationId);
+    const fresh = this.repositories.getSession(envelope, sessionId);
+    if (!reservation || reservation.state !== 'reserved' || !fresh) return;
+    try {
+      this.admission.recordConsumption(envelope, {
+        grant_id: claim.descriptor.grant_id,
+        session_id: sessionId,
+        operation_id: operationId,
+        lease_epoch: fresh.state.lease_epoch,
+        outcome: 'unknown',
+      });
+    } catch {
+      // the epoch moved again; the hold remains reserved for the current owner's recovery
+    }
+  }
+
+  /**
    * Discard a late or authority-less result: no card is committed,
    * nothing downstream can build a verdict on it, and the job ends.
    * The consumption is still recorded whenever this worker's fencing
@@ -1435,6 +1473,7 @@ export class DurableJobRunner {
       ) {
         throw error;
       }
+      this.keepFencedReservationCounted(envelope, claim, dispatchOperationId);
     }
     this.updateAttempt(envelope, dispatchOperationId, 'cancelled', reason, {
       actual_minor: result.actual_minor,
@@ -1464,6 +1503,22 @@ export class DurableJobRunner {
       cancelled ? 'cancelled' : 'failed',
       reason,
     );
+    // A discarded paid response is surfaced, never swallowed. A user
+    // cancel is expected and is not an error.
+    if (!cancelled) {
+      try {
+        this.onFencedSettle?.(
+          new JobRunnerError(
+            'OPERATION_LEASE_FENCED',
+            `The paid response for ${dispatchOperationId} was discarded (${reason}); its reservation stays counted.`,
+            { detail: { session_id: claim.job.session_id, operation_id: dispatchOperationId, reason } },
+          ),
+          { session_id: claim.job.session_id },
+        );
+      } catch {
+        // reporting must never break settling
+      }
+    }
     return {
       status: 'fenced',
       operation_id: claim.operation_id,
