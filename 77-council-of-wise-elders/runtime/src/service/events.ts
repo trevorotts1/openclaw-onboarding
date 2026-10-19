@@ -18,6 +18,7 @@
  */
 
 import type { StoredSession } from '../cli/host-ports.js';
+import type { CouncilCard, Verdict } from '../contracts/index.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
 import type { JournalEvent } from '../persistence/journal.js';
 
@@ -95,6 +96,10 @@ export interface CouncilSessionSource {
   getSession(envelope: AuthorizationEnvelope, sessionId: string): StoredSession | null;
   /** Optional: a source without it yields a reader that does not list. */
   listSessions?(envelope: AuthorizationEnvelope): StoredSession[];
+  /** Optional: when present, the session read carries the cards (the chamber needs their content). */
+  listCards?(envelope: AuthorizationEnvelope, sessionId: string): CouncilCard[];
+  /** Optional: when present, the session read carries the verdict (null until one exists). */
+  getVerdict?(envelope: AuthorizationEnvelope, sessionId: string): Verdict | null;
 }
 
 /** Map one canonical journal row to the served frame. */
@@ -184,7 +189,7 @@ export function repositorySessionReader(options: {
     read(sessionId: string): CouncilSessionRecord | null {
       const session = repositories.getSession(envelope, sessionId);
       if (session === null) return null;
-      return {
+      const record: CouncilSessionRecord = {
         session_id: session.spec.session_id,
         authority: 'standalone',
         spec: session.spec,
@@ -193,6 +198,11 @@ export function repositorySessionReader(options: {
         state: session.state,
         sample: session.sample,
       };
+      // card_accepted frames carry only seat and round, so the card content
+      // and the verdict reach the page through this read.
+      if (repositories.listCards) record.cards = repositories.listCards(envelope, sessionId);
+      if (repositories.getVerdict) record.verdict = repositories.getVerdict(envelope, sessionId) ?? null;
+      return record;
     },
   };
   if (repositories.listSessions) {
