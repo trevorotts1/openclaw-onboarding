@@ -76,7 +76,7 @@ cat > "$RESTART_SCRIPT" << 'RESTART_EOF'
 # Run the update script — fetch to temp file first so partial downloads do not
 # execute half a script (the classic curl|bash truncation hazard).
 UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
-_UPDATE_TMP="$(mktemp /tmp/openclaw-update-XXXXXX.sh)"
+_UPDATE_TMP="$(mktemp /tmp/openclaw-update-XXXXXX)"
 trap 'rm -f "$_UPDATE_TMP"' EXIT
 if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.openclaw/skills/.update-log"; then
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: failed to download weekly-full-update.sh — skipping update" >> "$HOME/.openclaw/skills/.update-log"
@@ -350,7 +350,7 @@ elif ! command -v python3 >/dev/null 2>&1; then
     # absence is not an absence -- refuse the upgrade rather than assume clean.
     OC_GATE_BLOCK="python3 unavailable -- the config could not be inspected at all"
 else
-    OC_DETECT_PY="$(mktemp "${TMPDIR:-/tmp}/oc-agents-list.XXXXXX.py")"
+    OC_DETECT_PY="$(mktemp "${TMPDIR:-/tmp}/oc-agents-list.XXXXXX")"
     cat > "$OC_DETECT_PY" <<'PYDETECT'
 import json, sys
 try:

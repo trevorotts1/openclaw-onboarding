@@ -120,7 +120,7 @@ fi
 # repo's dev boxes run Homebrew bash 5.x, so a heredoc form that parses fine
 # during authoring can abort on every client box. Same two-step, and the same
 # reason, as scripts/qc-assert-legacy-agents-list.sh.
-QC_PY_DOC="$(mktemp "${TMPDIR:-/tmp}/qc-fail-closed-doctrine.XXXXXX.py")"
+QC_PY_DOC="$(mktemp "${TMPDIR:-/tmp}/qc-fail-closed-doctrine.XXXXXX")"
 cat > "$QC_PY_DOC" <<'PYEOF'
 import io
 import sys
@@ -311,7 +311,7 @@ if [ ! -f "$DETECTOR_DIR/loop_detectors.py" ]; then
   exit 3
 fi
 
-QC_PY_ENF="$(mktemp "${TMPDIR:-/tmp}/qc-fail-closed-enforce.XXXXXX.py")"
+QC_PY_ENF="$(mktemp "${TMPDIR:-/tmp}/qc-fail-closed-enforce.XXXXXX")"
 cat > "$QC_PY_ENF" <<'PYEOF'
 import sys
 

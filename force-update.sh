@@ -122,7 +122,7 @@ PYEOF
 CHECK_TMP=$(mktemp)
 # Fetch check-updates.sh to a temp file before executing — prevents partial-download
 # execution (the classic curl|bash truncation hazard).
-_CHECK_SCRIPT_TMP="$(mktemp /tmp/openclaw-check-XXXXXX.sh)"
+_CHECK_SCRIPT_TMP="$(mktemp /tmp/openclaw-check-XXXXXX)"
 trap 'rm -f "$_CHECK_SCRIPT_TMP"' EXIT
 if ! curl -fsSL --max-time 30 "${GH_RAW}/check-updates.sh" -o "$_CHECK_SCRIPT_TMP" 2>/dev/null; then
   echo "[force-update] ERROR: failed to download check-updates.sh" >&2
@@ -303,7 +303,7 @@ fi
 #    replaces this script's own final JSON verdict.
 # ----------------------------------------------------------
 if [ "$FU_APPLY" = "1" ]; then
-  _FU_UPDATER="$(mktemp /tmp/openclaw-update-skills-XXXXXX.sh)"
+  _FU_UPDATER="$(mktemp /tmp/openclaw-update-skills-XXXXXX)"
   trap 'rm -f "$_CHECK_SCRIPT_TMP" "$_FU_UPDATER"' EXIT
   if ! curl -fsSL --max-time 60 "${GH_RAW}/update-skills.sh" -o "$_FU_UPDATER" 2>/dev/null; then
     echo "[force-update] ERROR: failed to download update-skills.sh — nothing applied" >&2

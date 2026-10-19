@@ -107,7 +107,7 @@ fi
 # `$(...)`. bash 3.2 (macOS stock /bin/bash, 3.2.57) mis-scans parens in that
 # nesting and aborts at PARSE time. Same two-step, same reason, as
 # scripts/qc-assert-legacy-agents-list.sh.
-QC_PY="$(mktemp "${TMPDIR:-/tmp}/qc-telegram-streaming.XXXXXX.py")"
+QC_PY="$(mktemp "${TMPDIR:-/tmp}/qc-telegram-streaming.XXXXXX")"
 cat > "$QC_PY" <<'PYEOF'
 import io
 import json

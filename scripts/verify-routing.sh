@@ -344,7 +344,7 @@ fi
 # INCREMENTAL reader desync: `bash -n` (whole-file parse) accepts it, but a
 # real run misparses everything after it. Write the body to a temp file with
 # a plain redirect instead; both gate bodies exec(compile(open(path)...)).
-VERIFY_ROUTING_RESOLVE_FILE="$(mktemp "${TMPDIR:-/tmp}/onb-w1-PRF-002-resolver.XXXXXX.py")"
+VERIFY_ROUTING_RESOLVE_FILE="$(mktemp "${TMPDIR:-/tmp}/onb-w1-PRF-002-resolver.XXXXXX")"
 trap 'rm -f "$VERIFY_ROUTING_RESOLVE_FILE"' EXIT
 cat > "$VERIFY_ROUTING_RESOLVE_FILE" <<'PYEOF'
 import json, os, re, subprocess, sys
