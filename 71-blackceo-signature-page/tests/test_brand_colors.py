@@ -43,8 +43,8 @@ def run(td, owner, brand=None, brand_file="brand/b.json"):
 
 
 def preflight(d):
-    return subprocess.run([sys.executable, str(ROOT / "scripts/stage_executor.py"), str(d), "--preflight"],
-                          capture_output=True, text=True)
+    return subprocess.run([sys.executable, str(ROOT / "scripts/stage_executor.py"), str(d), "--preflight", "--stages", "visual-mockup"],
+                          capture_output=True, text=True)  # the board gate guards final-mockups, not the palette check
 
 
 class BrandColorsTest(unittest.TestCase):

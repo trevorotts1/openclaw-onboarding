@@ -28,6 +28,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from brand_fixture import give_blackceo_colors  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "copy_examples"
 SCRIPTS = ROOT / "scripts"
@@ -57,6 +60,7 @@ class SectionCountTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.run = Path(self.tmp.name)
+        give_blackceo_colors(self.run)  # image stages and the builder start from the client's colors
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -130,7 +134,8 @@ class SectionCountTests(unittest.TestCase):
         with self.assertRaises(exe.ExecutorError):
             exe.load_request(self.run, "production-request.json")
         proc = subprocess.run([sys.executable, str(SCRIPTS / "stage_executor.py"),
-                               str(self.run), "--preflight"], capture_output=True, text=True)
+                               str(self.run), "--preflight", "--stages", "visual-mockup"],
+                              capture_output=True, text=True)  # final-mockups would stop first at the unapproved design board
         self.assertEqual(proc.returncode, 1)
         self.assertIn("FAIL: section count", proc.stdout)
 
@@ -156,12 +161,14 @@ class SectionCountTests(unittest.TestCase):
 
     def test_multi_paragraph_copy_prints_once(self):
         copy = "First paragraph here.\n\nSecond paragraph here."
-        request = {"model": "STUB-NO-MODEL", "stage_prompts": {"visual-mockup": "Draw it.\n{copy}"}}
+        request = {"model": "STUB-NO-MODEL", "stage_prompts": {"visual-mockup": "Draw it.\n{copy}"},
+                   "_hypersat": exe.hypersaturation.roles_for_run(self.run)}
         prompt = exe.stage_prompt("visual-mockup", {"section_id": "1", "copy": copy}, 1, 1440, request, "3:4")
         self.assertEqual(prompt.count("Second paragraph here."), 1)
 
     def test_under_floor_is_refused_when_strict_and_warned_otherwise(self):
-        request = {"model": "gpt-image-2-5-sunburst", "stage_prompts": {"visual-mockup": "{copy}"}}
+        request = {"model": "gpt-image-2-5-sunburst", "stage_prompts": {"visual-mockup": "{copy}"},
+                   "_hypersat": exe.hypersaturation.roles_for_run(self.run)}
         section = {"section_id": "1", "copy": "A finished sentence."}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4", strict_floor=True)
@@ -182,8 +189,16 @@ class SectionCountTests(unittest.TestCase):
 
 
 class BuilderTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run = Path(self.tmp.name)
+        give_blackceo_colors(self.run)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
     def build(self, version, text, stage="visual-mockup"):
-        return builder.build(stage, version, text, {}, {}, [], "STUB-NO-MODEL", "")
+        return builder.build(stage, version, text, {}, {}, [], "STUB-NO-MODEL", "", self.run)
 
     def test_builder_emits_one_section_per_canonical_section(self):
         for version, ids in (("standard", STANDARD), ("long-form", LONG)):
@@ -235,9 +250,17 @@ def design_prose(chars=14500):
 class BandTests(unittest.TestCase):
     """The builder lands every section in the 95 to 100 percent band, or refuses."""
 
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run = Path(self.tmp.name)
+        give_blackceo_colors(self.run)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
     def build(self, version, prose, stage="visual-mockup", slots=None):
         text = (FIXTURES / f"{version}-path-b.md").read_text(encoding="utf-8")
-        return builder.build(stage, version, text, slots or {}, prose, [], REAL_MODEL, "")
+        return builder.build(stage, version, text, slots or {}, prose, [], REAL_MODEL, "", self.run)
 
     def test_every_section_is_in_band_for_both_forms_and_both_mockup_stages(self):
         for version in ("standard", "long-form"):
@@ -249,6 +272,7 @@ class BandTests(unittest.TestCase):
 
     def test_builder_output_passes_a_strict_preflight_prompt_for_prompt(self):
         request = self.build("long-form", design_prose())
+        builder.run_blocks(request, self.run)  # the executor re-resolves the run's palette, as load_request does
         for index, section in enumerate(request["sections"], start=1):
             for _t, width, _h in exe.LAYOUT["visual-mockup"]:
                 prompt = exe.stage_prompt("visual-mockup", section, index, width, request,
@@ -269,7 +293,8 @@ class BandTests(unittest.TestCase):
         self.assertNotRegex(layouts, r"(?i)\b(pain|solution) \d")
         self.assertIn("Answer the first cost in place", layouts)
         prose = design_prose()
-        prose["rules_md"] += "\n| Pain 01 | 394 | 525 | 132 |\n| Pain 02 | 526 | 649 | 124 |"
+        # the table leads: a block too big for the budget is trimmed from its tail
+        prose["rules_md"] = "| Pain 01 | 394 | 525 | 132 |\n| Pain 02 | 526 | 649 | 124 |\n" + prose["rules_md"]
         template = self.build("long-form", prose)["stage_prompts"]["visual-mockup"]
         self.assertNotRegex(template, r"(?i)\bpain \d")
         self.assertIn("| the first cost | 394", template)
@@ -298,6 +323,7 @@ class RunDirTests(unittest.TestCase):
         (self.run / "copy").mkdir(parents=True)
         (self.run / "copy" / "internal-manuscript.md").write_text(
             (FIXTURES / "standard-path-b.md").read_text(encoding="utf-8"), encoding="utf-8")
+        give_blackceo_colors(self.run)
         self.elsewhere = Path(self.tmp.name) / "elsewhere"
         self.elsewhere.mkdir()
 
@@ -335,6 +361,7 @@ class RunDirTests(unittest.TestCase):
     def test_run_dir_flag_overrides_the_default(self):
         other = Path(self.tmp.name) / "other-run"
         (other / "copy").mkdir(parents=True)
+        give_blackceo_colors(other)
         (other / "copy" / "copy-manifest.json").write_text(json.dumps({"sections": STANDARD[:3]}))
         proc = self.cli("--run-dir", str(other))
         self.assertEqual(proc.returncode, 1, proc.stdout)

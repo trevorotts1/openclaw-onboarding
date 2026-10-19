@@ -37,6 +37,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from brand_fixture import give_blackceo_colors  # noqa: E402
 
 
 def _load(name):
@@ -232,14 +234,21 @@ class TreatmentLibraryTests(unittest.TestCase):
 
 SECTION = {"section_id": "1", "section_name": "The Big Bold Claim",
            "copy": "You are doing every job yourself. CTA: SAVE MY SEAT.",
-           "slots": [{"slot_id": "IMG-01", "aspect_ratio": "8:5", "art_direction": "Founder at a desk.",
+           "slots": [{"slot_id": "IMG-01", "aspect_ratio": "3:2", "art_direction": "Founder at a desk.",
                       "copy_zone": [4, 20, 55, 80], "subject_zone": [62, 5, 98, 95]}]}
 MOCKUP_TEMPLATE = "Mockup section {section_number} {section_name} at {width}px. {copy} {slots}"
 
 
+def _roles():
+    """The page color system roles of a run with BlackCEO's colors; mockup prompts refuse without."""
+    with tempfile.TemporaryDirectory() as tmp:
+        give_blackceo_colors(tmp)
+        return exe.hypersaturation.roles_for_run(Path(tmp))
+
+
 def _request(sections, stage_prompt_stage="final-mockups"):
     return {"model": "gpt-image-2-5-sunburst-image-to-image", "style": "warm editorial",
-            "sections": sections,
+            "sections": sections, "_hypersat": _roles(),
             "stage_prompts": {s: MOCKUP_TEMPLATE for s in exe.STAGES}}
 
 

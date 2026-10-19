@@ -13,7 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_overview_board as bob  # noqa: E402
+from brand_fixture import give_blackceo_colors  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("stage_executor", SCRIPTS / "stage_executor.py")
 exe = importlib.util.module_from_spec(spec)
@@ -38,6 +40,7 @@ def make_run(tmp, stage="final-mockups", n=4, drop=None, mh=520):
         {"section_id": f"S0{i}", "section_name": f"Name {i}", "cta": "GO NOW" if i == 1 else None}
         for i in range(1, n + 1)]}), encoding="utf-8")
     (run / "brand.json").write_text(json.dumps(BRAND), encoding="utf-8")
+    give_blackceo_colors(run)  # the executor hook resolves the run's brand colors, as every image stage does
     return run
 
 
@@ -180,6 +183,7 @@ class OverviewBoardTests(unittest.TestCase):
             (run / "production-request.json").write_text(json.dumps({"sections": [
                 {"section_id": f"S0{i}", "section_name": f"Name {i}"} for i in (1, 2, 3)]}), encoding="utf-8")
             (run / "brand.json").write_text(json.dumps(BRAND), encoding="utf-8")
+            give_blackceo_colors(run)
             for stage, w, h in (("desktop-wireframe", 1440, 810), ("mobile-tablet", 390, 900)):
                 for i in (1, 2, 3):
                     path = run / stage / f"section-{i:02d}.png"

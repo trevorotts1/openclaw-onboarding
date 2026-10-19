@@ -33,6 +33,8 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import circle_image  # noqa: E402
 import design_style  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from brand_fixture import give_blackceo_colors  # noqa: E402
 
 
 def load(name):
@@ -233,6 +235,7 @@ class ExecutorTests(unittest.TestCase):
         self.run_dir = Path(self.tmp.name) / "run"
         (self.run_dir / "desktop-wireframe").mkdir(parents=True)
         (self.run_dir / "image-inventory-prompts").mkdir()
+        give_blackceo_colors(self.run_dir)  # every image stage starts from the client's colors
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -265,7 +268,8 @@ class ExecutorTests(unittest.TestCase):
         self.write_request(request(None))
         loaded = EXEC.load_request(self.run_dir, "production-request.json")
         prompt = EXEC.stage_prompt("desktop-wireframe", loaded["sections"][0], 1, 1440, loaded, "16:9")
-        self.assertNotIn("STYLE", prompt)
+        # the wireframe build spec's own "STYLE REFERENCE" line is not a design-style block
+        self.assertNotRegex(prompt, r"STYLE [ABC]\b")
 
     def test_style_resolves_from_intake_json(self):
         self.write_request(request(None, circle=False))
@@ -302,6 +306,7 @@ class ExecutorTests(unittest.TestCase):
                           for i, sh in enumerate(shapes, start=1)]}
         (self.run_dir / "desktop-wireframe" / "image-inventory.json").write_text(json.dumps(inv))
         (self.run_dir / "intake.json").write_text(json.dumps({"design_style": style}))
+        give_blackceo_colors(self.run_dir)
         clause = design_style.circle_clause()
         for i in range(1, len(shapes) + 1):
             (self.run_dir / "image-inventory-prompts" / f"IMG-{i:03d}.txt").write_text(f"A photo. {clause}")
@@ -337,6 +342,7 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(run("design_style.py", "validate-inventory", self.run_dir).returncode, 0)
         EXEC.run_item(self.run_dir, "image-generation-qc", "IMG-001", {}, EXEC.StubProvider(), False)
         (self.run_dir / "intake.json").write_text(json.dumps({"test_run": True}))
+        give_blackceo_colors(self.run_dir)
         self.assertEqual(run("design_style.py", "validate-inventory", self.run_dir).returncode, 0)
 
     def test_gate_contract_runs_the_inventory_validator_on_both_stages(self):

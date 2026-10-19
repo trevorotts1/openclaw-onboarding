@@ -174,11 +174,13 @@ class WiringTests(unittest.TestCase):
             self.assertEqual(r["hero"], "#0B5FFF")
 
     def test_run_resolves_the_same_brand_file_as_the_stage_gate(self):
-        # owner order: intake names only the owner -> the skill's bundled file for that owner; a pinned
-        # private/brand.json wins; another client's owner never gets the bundled palette.
+        # owner order: intake names the owner and the skill's bundled file (SPF019: the run's palette is
+        # always named, never assumed from the owner alone); a pinned private/brand.json wins; another
+        # client's owner never gets the bundled palette.
         with tempfile.TemporaryDirectory() as d:
             run = Path(d)
-            (run / "intake.json").write_text(json.dumps({"brand_owner": "blackceo"}))
+            (run / "intake.json").write_text(json.dumps(
+                {"brand_owner": "blackceo", "brand_file": "assets/brand/blackceo-brand.json"}))
             r = hs.roles_for_run(run)
             self.assertIsNotNone(r)
             self.assertEqual((r["hero"], r["dark"], r["light"]), ("#C9A227", "#1A1A2E", "#F5F0E8"))

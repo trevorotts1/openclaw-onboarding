@@ -49,14 +49,13 @@ LEADS = {
     "mobile-tablet": "Mobile wireframe sheet, section {section_number} of {section_total}, "
                      "{section_name}, at {width}px.",
     "visual-mockup": "Styled desktop and mobile mockup, section {section_number} of "
-                     "{section_total}, {section_name}, at {width}px. Full colour presentation "
-                     "render in the brand file's palette and type.",
+                     "{section_total}, {section_name}, at {width}px.",
     "final-mockups": "Final production mockup, section {section_number} of {section_total}, "
-                     "{section_name}, at {width}px. Photographic editorial finish in the brand "
-                     "file's palette and type.",
+                     "{section_name}, at {width}px. Photographic editorial finish.",
 }
 BLOCKS = (("notes", "LAYOUT NOTES"), ("traits", "VISUAL STANDARD TRAITS"),
           ("rules_md", "DESIGN SYSTEM, MEASURED"), ("rules_json", "DESIGN TOKENS"))
+MD_BLOCKS = ("notes", "traits", "rules_md")
 SECTION_TAIL = ("SECTION {section_number} of {section_total}: {section_name} at {width}px\n"
                 "{layout}\nLAYOUT AND COPY:\n{copy}\nIMAGE SLOTS:\n{slots}")
 
@@ -154,9 +153,9 @@ STAGE_CANON = {
     "final-mockups": [
         "FINISH PURPOSE: the final production mockup the client judges. It repeats the "
         "approved copy and layout exactly, and raises only the finish: photographic "
-        "editorial quality, crisp type and an exact brand palette.",
+        "editorial quality and crisp type.",
         "PHOTOGRAPHY: natural skin texture, believable hands and fabric, consistent "
-        "lighting direction inside one image, warm editorial grade; no plastic "
+        "lighting direction inside one image; no plastic "
         "smoothing, no warped fingers, no duplicated limbs.",
         "TYPOGRAPHY AS IMAGE: headlines and buttons are sharp vector-clean letterforms; "
         "small text keeps its weight and spacing instead of smearing into texture.",
@@ -174,7 +173,7 @@ STAGE_CHECK = {
                      "there is one, spans the content column; no desktop-width layout survives.",
     "visual-mockup": "SELF-CHECK before finishing: every word of the verbatim block prints and nothing else does; "
                      "no slot is a placeholder; the button label is spelled exactly; the layout matches the "
-                     "wireframe band; the palette is the design system's, with no colour borrowed from the wireframe.",
+                     "wireframe band.",
     "final-mockups": "SELF-CHECK before finishing: every word of the verbatim block prints and nothing else does; "
                      "faces, hands and fabric hold up at full size; small text is crisp; the button label is "
                      "spelled exactly; the slice would sit flush against its neighbours.",
@@ -249,6 +248,10 @@ def section_fragments(stage, section, index, sections, spec, table):
                if x and not PRIVATE_TEXT.search(x)]
     if purpose:
         out.append("PURPOSE: " + "; ".join(purpose) + ".")
+    # first, so the run's planned slots win the budget the new contract blocks left
+    if row.get("slots") and section.get("slots"):  # the run's IMAGE SLOTS list governs; no plan, no canon
+        out.append("SLOT CANON: the usual slots for this kind of section are " + row["slots"].rstrip(".") +
+                   ". Each planned slot keeps its stated ratio and is drawn once.")
     out.append("PAGE ORDER: " + ", ".join(f"{i}. {name}" for i, name in enumerate(names, 1)) +
                ". The numbered sections never merge and never renumber.")
     if lines:
@@ -267,9 +270,6 @@ def section_fragments(stage, section, index, sections, spec, table):
         out.append("BUTTON: this section carries no button, no chip and no button-shaped pill; a button here is a defect.")
     else:
         out.append("BUTTON: none planned; draw a button only if the copy block above prints a label for it.")
-    if row.get("slots") and section.get("slots"):  # the run's IMAGE SLOTS list governs; no plan, no canon
-        out.append("SLOT CANON: the usual slots for this kind of section are " + row["slots"].rstrip(".") +
-                   ". Each planned slot keeps its stated ratio and is drawn once.")
     out.extend(COMMON_CANON[:1])
     out.extend(STAGE_CANON[stage][:2])
     if lines:
@@ -410,6 +410,15 @@ def sizes_for(request: dict, stage: str, quiet: bool = False, strict: bool = Fal
     return out
 
 
+def run_blocks(request, run_dir):
+    """Give the request what load_request gives the executor (the run's resolved client palette,
+    page color system roles and design style), so every size measured here includes the blocks the
+    executor adds. No palette means no honest size: refuse by name, never size without them."""
+    request["_brand_block"] = exe.require_brand_colors(Path(run_dir))
+    request["_hypersat"] = exe.hypersaturation.roles_for_run(run_dir)
+    exe.resolve_design_style(Path(run_dir), request)
+
+
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
     spec = json.loads((exe.SPEC_DIR / f"{version}-v6.json").read_text(encoding="utf-8"))
     sections = sections_from_manuscript(manuscript_text, spec, slots)
@@ -417,19 +426,36 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
                "stage_prompts": {stage: template_for(stage, {})}}
+    run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
+
+    def fits(trial):
+        request["stage_prompts"][stage] = template_for(stage, trial)
+        try:
+            return not budget or max(sizes_for(request, stage, quiet=True).values()) <= budget["target_chars"]
+        except exe.ExecutorError:
+            return False
+
     for key, _heading in BLOCKS:
         if not prose.get(key):
             continue
-        trial = dict(chosen, **{key: prose[key]})
-        request["stage_prompts"][stage] = template_for(stage, trial)
-        try:
-            fits = not budget or max(sizes_for(request, stage, quiet=True).values()) <= budget["target_chars"]
-        except exe.ExecutorError:
-            fits = False
-        if fits:
-            chosen = trial
+        text = prose[key]
+        if key in MD_BLOCKS:
+            # The palette lines (any #hex row) are superseded by the BRAND COLORS and PAGE COLOR
+            # SYSTEM blocks the executor adds; the rest is trimmed from the tail, whole lines only,
+            # until the worst section fits. Design prose gives way, never the verbatim copy.
+            lines = [l for l in text.splitlines() if not exe.hypersaturation.ANY_HEX.search(l)]
+            lo, hi = 0, len(lines)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if fits(dict(chosen, **{key: "\n".join(lines[:mid])})):
+                    lo = mid
+                else:
+                    hi = mid - 1
+            text = "\n".join(lines[:lo])
+        if text and fits(dict(chosen, **{key: text})):
+            chosen[key] = text
     request["stage_prompts"][stage] = template_for(stage, chosen)
     fill_to_band(request, stage, spec)
     try:  # raises by section name: copy alone over the maximum, or a section under the floor
@@ -442,6 +468,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         "stage": stage, "copy_version": version, "section_count": len(sections),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
+        "trimmed_blocks": [k for k in chosen if chosen[k] != prose[k]],
         "char_budget": {"target": budget and budget["target_chars"],
                         "max": budget and budget["max_chars"],
                         "min_seen": min(sizes.values()), "max_seen": max(sizes.values()),
@@ -450,6 +477,9 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
     padding_check(request, stage)
     # Fail closed on our own output, against the run this manuscript belongs to.
     request["metadata"]["checked_against"] = exe.check_section_count(run_dir, request, paid=True)[2]
+    # The run's palette is re-resolved by the executor; it is never written into the request.
+    for key in ("_brand_block", "_hypersat"):
+        request.pop(key, None)
     return request
 
 

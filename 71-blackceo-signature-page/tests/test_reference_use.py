@@ -23,6 +23,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from brand_fixture import give_blackceo_colors  # noqa: E402
 try:
     from PIL import Image
 except ImportError:
@@ -47,6 +49,16 @@ SECTION = {"section_id": "S01", "section_name": "Hero",
            "slots": [{"slot_id": "IMG-001", "aspect_ratio": "3:4", "art_direction": "Desk."}]}
 REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image", "style": "warm editorial",
            "stage_prompts": {"visual-mockup": "Mockup {section_name} at {width}px. {copy}"}}
+
+
+def resolved_roles():
+    """The page color system roles of a run with BlackCEO's colors (mockup prompts refuse without)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        give_blackceo_colors(tmp)
+        return exe.hypersaturation.roles_for_run(Path(tmp))
+
+
+REQUEST["_hypersat"] = resolved_roles()
 
 
 def bands(path, colors, size=(600, 400)):
@@ -98,6 +110,7 @@ class BlockTests(unittest.TestCase):
     def test_item_prompt_gets_block_and_cap_is_enforced(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)
+            give_blackceo_colors(run)  # an item image is graded in the client's palette
             (run / "image-inventory-prompts").mkdir()
             (run / "image-inventory-prompts" / "IMG-001.txt").write_text("A desk.", encoding="utf-8")
             seen = {}
@@ -204,6 +217,7 @@ class BleedCheckTests(unittest.TestCase):
                     job["out"].write_text("junk", encoding="utf-8")
                 return {"provider": "kie", "mode": "paid", "model": "m"}
 
+        give_blackceo_colors(self.dir)
         prompts = self.dir / "image-inventory-prompts"
         prompts.mkdir()
         (prompts / "IMG-001.txt").write_text("A desk.", encoding="utf-8")

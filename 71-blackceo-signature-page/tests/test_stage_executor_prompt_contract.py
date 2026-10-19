@@ -130,7 +130,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
             (run / "copy.json").write_text(json.dumps({"sections": [
                 {"id": "S01", "cta": {"label": "SAVE MY SEAT"}},
                 {"id": "S02", "headline": "No button here"}]}), encoding="utf-8")
-            (run / "intake.json").write_text(json.dumps({"brand_owner": "blackceo"}), encoding="utf-8")
+            (run / "intake.json").write_text(json.dumps({"brand_owner": "blackceo", "brand_file": "assets/brand/blackceo-brand.json"}), encoding="utf-8")
             (run / "production-request.json").write_text(json.dumps({
                 "model": "stub", "sections": [
                     {"section_id": "S01", "section_name": "Hero",

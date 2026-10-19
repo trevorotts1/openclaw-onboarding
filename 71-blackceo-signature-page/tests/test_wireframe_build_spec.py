@@ -65,6 +65,17 @@ def request(form="long-form", sections=None):
                  "cta": "SAVE MY SEAT", "slots": []}]}
 
 
+def canonical(req, form=None):
+    """Pad a short fixture request to the declared form's canonical sections (SPF018: a request
+    with a declared copy_version carries exactly the form's sections, in order)."""
+    form = form or req["copy_version"]
+    sequence = json.loads((exe.SPEC_DIR / f"{form}-v6.json").read_text(encoding="utf-8"))["sequence"]
+    have = {exe.canon_section_id(x["section_id"]): x for x in req["sections"]}
+    return dict(req, sections=[have.get(i) or {"section_id": i, "section_name": f"Section {i}",
+                                               "copy": "Copy of the section.", "slots": []}
+                               for i in sequence])
+
+
 def png(path, width, height, base, chip=None):
     from PIL import Image, ImageDraw
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,13 +237,13 @@ class RepairRound1Tests(unittest.TestCase):
             run = Path(tmp)
             (run / "intake.json").write_text(json.dumps({"copy_version": "standard"}))
             (run / "production-request.json").write_text(json.dumps(
-                {"sections": [{"section_id": "hero", "copy": "x"}]}))
+                canonical({"sections": [{"section_id": "1", "copy": "x"}]}, "standard")))
             req = exe.load_request(run, "production-request.json")
             self.assertEqual(w.form_of(req, strict=True), "standard")
             self.assertTrue(w.reference_urls("desktop-wireframe", req, strict=True)[0]
                             .endswith("chatgpt-wireframe-1.png"))
             (run / "production-request.json").write_text(json.dumps(
-                {"copy_version": "long-form", "sections": [{"section_id": "hero", "copy": "x"}]}))
+                canonical({"copy_version": "long-form", "sections": [{"section_id": "1", "copy": "x"}]})))
             self.assertEqual(w.form_of(exe.load_request(run, "production-request.json"), strict=True),
                              "long-form")
 
@@ -271,7 +282,7 @@ class ExecutorWiringTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def write(self, req):
-        (self.run_dir / "production-request.json").write_text(json.dumps(req), encoding="utf-8")
+        (self.run_dir / "production-request.json").write_text(json.dumps(canonical(req)), encoding="utf-8")
 
     def execute(self, *args):
         return subprocess.run([sys.executable, str(SCRIPTS / "stage_executor.py"),
@@ -281,6 +292,7 @@ class ExecutorWiringTests(unittest.TestCase):
         req = request()
         section = req["sections"][0]
         wire = exe.stage_prompt("desktop-wireframe", section, 1, 1440, req, "16:9")
+        req["_hypersat"] = exe.hypersaturation.roles_for_run(self.run_dir)  # mockups need the resolved palette
         mock = exe.stage_prompt("visual-mockup", section, 1, 1440, req, "3:4")
         self.assertIn("WIREFRAME BUILD SPEC", wire)
         self.assertNotIn("WIREFRAME BUILD SPEC", mock)
