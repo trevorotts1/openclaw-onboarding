@@ -1,8 +1,16 @@
-## [v27.1.45]  -  2026-10-19  -  Council (Skill 77) v1.0.28: Roast-Room chamber screen with the full reference structure (top bar and stepper, decision header, seated room, key points, advisor card), BlackCEO colors and Pixar-style portraits
+## [v27.1.45]  -  2026-10-19  -  Merge train: #2342 Council (Skill 77) v1.0.26: live council — client-chosen model,…; #2344 Council (Skill 77): Roast-Room chamber screen — full reference…; #2353 CAN014: workshop autonomous mode follows the installed OpenClaw…
 
-## [v27.1.43]  -  2026-10-19  -  Council (Skill 77) v1.0.26: live council with a client-chosen model per run, a service driver that actually deliberates a convened session, convening as approval, and Book-to-Persona elders with labelled web research
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #2342 — [v27.1.43]  -  2026-10-19  -  Council (Skill 77) v1.0.26: live council with a client-chosen model per run, a service driver that actually deliberates a convened session, convening as approval, and Book-to-Persona elders with labelled web research
 
 - Real-run fixes, in plain English: a second worker can no longer cut off an answer that was already paid for; the model is now sent the exact card shape on every request so seats stop failing validation; the journal records which knowledge (live persona, shipped brief, or none) each seat used; and a new install now convenes immediately; no approval step.
+
+### #2344 — [v27.1.45]  -  2026-10-19  -  Council (Skill 77) v1.0.28: Roast-Room chamber screen with the full reference structure (top bar and stepper, decision header, seated room, key points, advisor card), BlackCEO colors and Pixar-style portraits
+
+### #2353 — CAN014: workshop autonomous mode follows the installed OpenClaw build; atomic upgrade validates config with the new binary
+
+(This pull request carried no CHANGELOG entry of its own.)
 
 ## [v27.1.42]  -  2026-10-19  -  Fleet-roll fixes: self-update 999-setup step syncs and verifies its checkout (#2349); local-Ollama persona index no longer fails the prebuilt-index re-assertion (#2350)
 
