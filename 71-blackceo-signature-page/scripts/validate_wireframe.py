@@ -60,6 +60,12 @@ reference_traits: [...]}. Checks, all deterministic:
      color (no brand color present), or when more than 25 percent of
      its chromatic pixels measure off-palette.
 
+The measured verdicts (W1-W6) are written into the run record at
+`<run_dir>/private/wireframe-verdicts.json`, one entry per wireframe
+stage. Every verdict is computed here from the plan record, the
+measured slice width, and the sampled pixels; nothing is copied from a
+self-reported "annotated" flag in the plan.
+
 What this script deliberately does NOT do: judge whether the wireframe
 is beautiful, or read the printed annotations off the pixels (no OCR:
 the plan entry is the annotation record, the reviewer verifies the
@@ -69,8 +75,11 @@ reviewer (Item 2 machinery).
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
 import json
+import os
 import re
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 EXPECTED_WIDTH = {"desktop-wireframe": 1440, "mobile-tablet": 390}
@@ -311,10 +320,13 @@ def measure_slice_colors(path, palette, allowed):
             dominant)
 
 
-def annotation_failures(plan, stage):
+def annotation_failures(plan, stage, measured_width=None):
     """Item 15 annotation traits (W1, W2, W5, W6), one named line per
-    section per missing annotation."""
-    failures = []
+    section per missing annotation, returned per trait so the caller can
+    emit a verdict per trait. `measured_width` is the width actually
+    measured off the first section slice (None when unreadable); W5 is
+    judged against the sheet, not only against the stage constant."""
+    failures = {"W1": [], "W2": [], "W5": [], "W6": []}
     want_width = EXPECTED_WIDTH[stage]
     for i, section in enumerate(plan):
         if not isinstance(section, dict):
@@ -323,18 +335,18 @@ def annotation_failures(plan, stage):
         position = i + 1
         number = section.get("section_number")
         if number != position:
-            failures.append(
+            failures["W1"].append(
                 f"section {sid!r}: missing annotation W1 (sections numbered "
                 f"and named): section_number is {number!r}, expected {position} "
                 f"(the section's position in the plan)")
         name = section.get("section_name")
         if not isinstance(name, str) or not name.strip():
-            failures.append(
+            failures["W1"].append(
                 f"section {sid!r}: missing annotation W1 (sections numbered "
                 f"and named): no section_name recorded")
         specs = section.get("type_specs")
         if not isinstance(specs, dict):
-            failures.append(
+            failures["W2"].append(
                 f"section {sid!r}: missing annotation W2 (type specs printed): "
                 f"no type_specs record (h1, h2, body, cta sizes)")
         else:
@@ -342,7 +354,7 @@ def annotation_failures(plan, stage):
             for key in ("h1", "h2", "body", "cta"):
                 value = lowered.get(key)
                 if not isinstance(value, str) or not value.strip():
-                    failures.append(
+                    failures["W2"].append(
                         f"section {sid!r}: missing annotation W2 (type specs "
                         f"printed): type_specs has no {key} entry")
         notes = section.get("behavior_notes")
@@ -353,13 +365,13 @@ def annotation_failures(plan, stage):
         else:
             notes_ok = False
         if not notes_ok:
-            failures.append(
+            failures["W6"].append(
                 f"section {sid!r}: missing annotation W6 (behavior notes "
                 f"printed per section): no behavior_notes recorded")
         if i == 0:
             strip = section.get("header_strip")
             if not isinstance(strip, dict):
-                failures.append(
+                failures["W5"].append(
                     f"section {sid!r}: missing annotation W5 (header strip "
                     f"stating page width and content width): the first "
                     f"section carries no header_strip record")
@@ -367,13 +379,20 @@ def annotation_failures(plan, stage):
                 page_w = strip.get("page_width_px")
                 content_w = strip.get("content_width_px")
                 if page_w != want_width:
-                    failures.append(
+                    failures["W5"].append(
                         f"section {sid!r}: annotation W5 (header strip) "
                         f"page_width_px is {page_w!r}, expected {want_width} "
                         f"for stage {stage}")
+                if (measured_width is not None and page_w == want_width
+                        and abs(page_w - measured_width) > WIDTH_TOLERANCE_PX):
+                    failures["W5"].append(
+                        f"section {sid!r}: annotation W5 (header strip) "
+                        f"page_width_px is {page_w!r} but the section slice "
+                        f"measurably renders {measured_width}px wide; the strip "
+                        f"states a page width the sheet contradicts")
                 if (not isinstance(content_w, int) or isinstance(content_w, bool)
                         or not 0 < content_w <= want_width):
-                    failures.append(
+                    failures["W5"].append(
                         f"section {sid!r}: annotation W5 (header strip) "
                         f"content_width_px is {content_w!r}; it must be a "
                         f"positive width no wider than the page width "
@@ -423,6 +442,54 @@ def slot_label_failures(plan, inventory_by_id):
                     f"carries no art direction (what the image must show)")
     return failures
 
+
+VERDICTS_REL = "private/wireframe-verdicts.json"
+
+def write_run_record(run_dir, stage, traits, section_count, slice_count):
+    """Write this wireframe stage's W1-W6 verdicts into the run record.
+
+    The run-scoped record is `private/wireframe-verdicts.json`; each
+    wireframe stage writes its own entry, so both stages coexist. Every
+    verdict is computed from the plan record, the measured slice width,
+    and the sampled pixels by the checks above. A record that cannot be
+    written is an error, never a silent pass."""
+    path = run_dir / VERDICTS_REL
+    try:
+        record = load_json(path) if path.exists() else {}
+        if not isinstance(record, dict):
+            record = {}
+    except Exception:
+        record = {}
+    stages = record.get("stages")
+    if not isinstance(stages, dict):
+        stages = {}
+    overall = ("fail" if any(entry.get("verdict") == "fail"
+                             for entry in traits.values()) else "pass")
+    stages[stage] = {
+        "stage": stage,
+        "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "plan": f"{stage}/section-plan.json",
+        "sections": section_count,
+        "slices": slice_count,
+        "traits": traits,
+        "verdict": overall,
+    }
+    payload = {"schema": "skill71.wireframe-verdicts/1", "stages": stages}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".verdicts-",
+                                    suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, indent=2) + "\n")
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+    summary = ", ".join(f"{t} {traits[t]['verdict']}" for t in sorted(traits))
+    print(f"WROTE: {VERDICTS_REL} ({stage}: {summary})")
 
 def main(argv):
     args = list(argv[1:])
@@ -585,11 +652,23 @@ def main(argv):
                 failures.append(f"image slot {slot_id!r}: plan ratio {plan_ratio:.3f} "
                                 f"does not match inventory ratio {inv_ratio:.3f}")
 
-    # (5) Annotation traits W1, W2, W5, W6 (Item 15).
-    failures.extend(annotation_failures(plan, stage))
+    # (5) Annotation traits W1, W2, W5, W6 (Item 15), judged from the
+    # plan record plus the width the sheet itself measures.
+    measured_width = None
+    if slices:
+        try:
+            from PIL import Image
+            with Image.open(slices[0]) as img:
+                measured_width = img.size[0]
+        except Exception:
+            measured_width = None
+    annotation = annotation_failures(plan, stage, measured_width)
+    for trait in ("W1", "W2", "W5", "W6"):
+        failures.extend(annotation[trait])
 
     # (6) Slot-label trait W3 (Item 15).
-    failures.extend(slot_label_failures(plan, inventory_by_id))
+    w3_failures = slot_label_failures(plan, inventory_by_id)
+    failures.extend(w3_failures)
 
     # (7) Brand-color trait W4 (Item 15): measured slice colors.
     brand_path = resolve_brand_path(run_dir, brand_arg)
@@ -605,6 +684,7 @@ def main(argv):
         print(f"ERROR: unreadable input: brand file {brand_path} declares no palette")
         return 2
     plan_by_index = list(plan)
+    w4_failures = []
     for idx, p in enumerate(slices):
         measured = measure_slice_colors(p, palette, allowed)
         if measured is None:
@@ -614,18 +694,30 @@ def main(argv):
         sid = section.get("section_id") if isinstance(section, dict) else None
         where = f"section {sid!r} slice {p.name}" if sid else f"slice {p.name}"
         if palette_share < PALETTE_MIN_SHARE:
-            failures.append(
+            w4_failures.append(
                 f"{where}: off-brand colors W4 (wireframe rendered in the "
                 f"client's brand colors): measured palette share "
                 f"{palette_share:.1%} of sampled pixels; no brand palette "
                 f"color from {brand_path.name} is present on the slice")
         elif off_share > OFF_BRAND_MAX_SHARE:
-            failures.append(
+            w4_failures.append(
                 f"{where}: off-brand colors W4 (wireframe rendered in the "
                 f"client's brand colors): {off_share:.0%} of chromatic "
                 f"pixels measure off-palette (dominant off-brand "
                 f"{dominant}); measured colors must sit in the brand "
                 f"palette from {brand_path.name}")
+
+    failures.extend(w4_failures)
+
+    # (8) Emit the measured W1-W6 verdicts into the run record, pass or
+    # fail: the record is what later readers trust, never a plan flag.
+    verdicts = {}
+    for trait, lines in (("W1", annotation["W1"]), ("W2", annotation["W2"]),
+                         ("W3", w3_failures), ("W4", w4_failures),
+                         ("W5", annotation["W5"]), ("W6", annotation["W6"])):
+        verdicts[trait] = {"verdict": "fail" if lines else "pass",
+                           "failures": list(lines)}
+    write_run_record(run_dir, stage, verdicts, len(plan), len(slices))
 
     if failures:
         print("FAIL")
