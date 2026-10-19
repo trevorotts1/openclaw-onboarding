@@ -76,10 +76,11 @@ class WireframeArtifactTest(unittest.TestCase):
             self.assertIn("combined pdf", purpose)
 
     def test_stage_list_and_dependencies_unchanged(self):
-        self.assertEqual(len(ORDER), 14)
+        self.assertEqual(len(ORDER), 15)
         self.assertLess(ORDER.index("font-action-plan"), ORDER.index("desktop-wireframe"))
         self.assertLess(ORDER.index("desktop-wireframe"), ORDER.index("mobile-tablet"))
-        self.assertEqual(STAGES["desktop-wireframe"]["depends_on"], ["font-action-plan"])
+        self.assertEqual(STAGES["desktop-wireframe"]["depends_on"],
+                         ["font-action-plan", "design-board"])
         self.assertEqual(STAGES["mobile-tablet"]["depends_on"], ["desktop-wireframe"])
         for stage in WIREFRAME_STAGES:
             self.assertEqual(STAGES[stage]["validators"],

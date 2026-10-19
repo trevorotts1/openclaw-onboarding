@@ -23,6 +23,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import board_fixture as bf  # noqa: E402  (SPF021: every image stage needs an approved design board)
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "stage_executor.py"
 
@@ -48,15 +51,15 @@ class StageExecutorTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
         self.run_dir.mkdir()
-        (self.run_dir / "production-request.json").write_text(
-            json.dumps(REQUEST), encoding="utf-8")
+        bf.make_run(self.run_dir, base_request=REQUEST)  # writes production-request.json
+        bf.seed_board(self.run_dir)
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def execute(self, *extra):
         proc = subprocess.run([sys.executable, str(SCRIPT), str(self.run_dir), *extra],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=bf.subprocess_env())
         return proc
 
     def test_stub_writes_four_stages_and_no_receipts(self):
@@ -95,7 +98,7 @@ class StageExecutorTests(unittest.TestCase):
         proc = self.execute("--provider", "kie")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("--allow-paid", proc.stdout)
-        env = dict(os.environ)
+        env = bf.subprocess_env()
         env.pop("KIE_API_KEY", None)
         proc = subprocess.run([sys.executable, str(SCRIPT), str(self.run_dir),
                                "--provider", "kie", "--allow-paid"],

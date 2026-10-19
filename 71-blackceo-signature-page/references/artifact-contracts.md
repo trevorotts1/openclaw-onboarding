@@ -45,6 +45,7 @@ Use the exact ordered stage IDs defined in `references/stage-contract.json` (enf
     "intake": {"status": "ready", "attempts": 0},
     "copy": {"status": "working", "attempts": 0},
     "font-action-plan": {"status": "blocked", "attempts": 0},
+    "design-board": {"status": "blocked", "attempts": 0},
     "desktop-wireframe": {"status": "blocked", "attempts": 0},
     "mobile-tablet": {"status": "blocked", "attempts": 0},
     "visual-mockup": {"status": "blocked", "attempts": 0},
@@ -62,7 +63,7 @@ Use the exact ordered stage IDs defined in `references/stage-contract.json` (enf
 
 `attempts` counts focused repair attempts after failure. Valid range is 0-3.
 
-The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional (Item 31): it is required only
+The workflow has FIFTEEN stage IDs. The last, `automation-wiring`, is conditional (Item 31): it is required only
 when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the
 gate records the stage with status `not_applicable` and a reason citing the intake values (also printed in
 REPORT.md); a `not_applicable` stage is complete for report purposes and is never silently absent. The gate's own
@@ -1091,6 +1092,22 @@ the stage contract's `final-mockups` entry names
 board is in the stage's review cover (review item `hybrid-board`),
 and the stage receipt records
 `approval_artifact: "final-mockups/hybrid-board.png"`.
+
+## Design board record (stage `design-board`; SPF021)
+
+`design-board/design-board.png` and `design-board/production-record.json`, one pair per page
+role, written by `scripts/stage_executor.py --stages design-board` and completed by
+`scripts/design_board.py finalize` and `approve`. The record carries `artifact: "design-board"`,
+`page_role`, `revision`, `brand` (name, positioning line, logo file and sha256), `palette`
+(`role`, `name`, `hex`) with `palette_sha256`, `typography`, `image_set` (slots with
+`section_id`, `slot_id`, `source`, `file`, `sha256`, and the set's `sha256`), `expected`
+(required blocks, per-block text, palette hexes), `board` (file, sha256, ratio), `generation`
+(provider, model, task id, prompt hash, references), `readback` (native resolution text, reader,
+time) and `approval` (`decision`, `party`, `approved_by`, `evidence_ref`, `approved_at`, and the
+`board_sha256`, `image_set_sha256`, `palette_sha256`, `page_role` it is bound to). Field rules,
+the block list and the QC floor: `references/design-board.md` and `references/qc-contract.md`.
+The stage contract's `design-board` entry names the board as its `approval_artifact`; the stage
+cannot close without a current approval, and `desktop-wireframe` depends on it.
 
 ## Parity evidence (stage `responsive-html`; Update Plan Item 16)
 

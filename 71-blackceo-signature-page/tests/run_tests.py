@@ -15,6 +15,8 @@ MODULES = [
     "test_scripts.py",
     "test_stage_executor.py",
     "test_stage_executor_prompt_contract.py",
+    # SPF021: Design Board contract, QC floor, approval binding and gates.
+    "test_design_board.py",
     "test_validate_visual_direction.py",
     "test_validate_manifest_grade.py",
     "test_stage_gate.py",

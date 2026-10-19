@@ -50,7 +50,7 @@ SCHEMA_PATH = SKILL_ROOT / "references" / "page-result.schema.json"
 sys.path.insert(0, str(SCRIPTS))
 import page_result  # noqa: E402
 
-ORDER = ["intake", "copy", "font-action-plan", "desktop-wireframe",
+ORDER = ["intake", "copy", "font-action-plan", "design-board", "desktop-wireframe",
          "mobile-tablet", "visual-mockup", "image-inventory-prompts",
          "image-generation-qc", "image-map-upload", "final-mockups",
          "responsive-html", "ghl-install-test", "publish-verify",

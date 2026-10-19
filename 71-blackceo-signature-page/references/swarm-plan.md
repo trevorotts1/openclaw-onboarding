@@ -42,6 +42,7 @@ specification is written on the item-level side of it.
 | intake | 1 item: intake assembly from the client's answers | Single item; the run's source of truth is never parallel-edited |
 | copy | 1 writer item, then 1 reviewer item | Strictly ordered; the reviewer is a different session |
 | font-action-plan | 1 item | Single |
+| design-board | 1 item: the page's board, then 1 reviewer item; the client approval is recorded after review | Single per page; nothing downstream starts before the approval is recorded |
 | desktop-wireframe | 1 layout-lead item producing `section-plan.json`, then per-part renderer items, then 1 reviewer item | Parts render in parallel once the plan lands; the reviewer waits for all parts |
 | mobile-tablet | Same pattern as desktop-wireframe | Parts in parallel after its section plan |
 | visual-mockup | 1 bible item (`page-visual-bible`), then desktop and mobile renderer items | Renderers in parallel after the bible; prompt items unlock per Item 20 as soon as the bible artifact lands, without waiting for the stage to close |

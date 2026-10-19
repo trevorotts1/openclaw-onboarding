@@ -1,8 +1,8 @@
 # Signature-Page-Craft SOP Cluster (`universal-sops/signature-page-craft/`)
 
 The SHARED, cross-department procedure for how any department discovers and drives the **BlackCEO
-Signature Page engine (Skill 71)** end to end, through the contract's 14 stages in order:
-intake -> copy -> font-action-plan -> desktop-wireframe -> mobile-tablet -> visual-mockup ->
+Signature Page engine (Skill 71)** end to end, through the contract's 15 stages in order:
+intake -> copy -> font-action-plan -> design-board -> desktop-wireframe -> mobile-tablet -> visual-mockup ->
 image-inventory-prompts -> image-generation-qc -> image-map-upload -> final-mockups ->
 responsive-html -> ghl-install-test -> publish-verify -> automation-wiring (conditional:
 it runs only when the intake records a GHL publish target with automation scope "workflows";

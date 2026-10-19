@@ -302,7 +302,7 @@ def test_events_and_report_twin():
         validate(twin, "report-json.schema.json")
         assert twin["run_id"] == state["run_id"]
         assert twin["overall"] == "test-run"  # fixture intake is a test run
-        assert len(twin["stages"]) == 14
+        assert len(twin["stages"]) == 15
         intake_row = [s for s in twin["stages"] if s["stage"] == "intake"][0]
         assert intake_row["status"] == "PASS"
         assert intake_row["duration_s"] == 1800

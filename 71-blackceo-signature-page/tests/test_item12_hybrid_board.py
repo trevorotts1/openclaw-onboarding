@@ -108,7 +108,7 @@ class ContractTest(unittest.TestCase):
         self.assertIn("hybrid board", fm["purpose"].lower())
 
     def test_stage_shape_unchanged(self):
-        self.assertEqual(len(CONTRACT["stage_order"]), 14)
+        self.assertEqual(len(CONTRACT["stage_order"]), 15)
         self.assertEqual(CONTRACT["stages"]["final-mockups"]["depends_on"],
                          ["visual-mockup", "image-map-upload"])
 

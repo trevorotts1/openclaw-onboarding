@@ -70,6 +70,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 - Visual-artist direction: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
 - Visual companion: `assets/BlackCEO-Master-Visual-Reference-Guide.png` — an image-style menu only, never a page-layout or page-color reference
 - Image and video generation route (KIE): `references/kie-generation-route.md` (policy then transport; read it for any generation stage)
+- Design Board (stage `design-board`): `references/design-board.md`
 - Artifact and QC contracts: `references/artifact-contracts.md`, `references/qc-contract.md`, `references/stage-contract.json`, `references/html-qc-rubric.md`
 - Swarm plan: `references/swarm-plan.md`
 
@@ -85,9 +86,9 @@ Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Be
 
 Stage IDs (canonical, from `references/stage-contract.json`):
 
-`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
+`intake, copy, font-action-plan, design-board, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify, automation-wiring`
 
-The workflow has FOURTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
+The workflow has FIFTEEN stage IDs. The last, `automation-wiring`, is conditional: it is required only when the intake records `publish_target: "ghl"` and `automation_scope: "workflows"`. When it does not apply, the gate records the stage `not_applicable` in state and REPORT.md, citing the intake values; it is never silently absent.
 
 Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages. For itemized stages the gate also exposes the item commands `check-item` / `close-item` / `block-item` (see `references/item-gate-spec.md`): an item closes only from its own validators and reviews, and a stage close fans in its items by name. Review scores are Review Receipt v2 records: they live in `private/reviews/<stage>/<item-id>.review.json`, written by `scripts/write_review.py` from the reviewing session, and the gate validates them at close. A browser-using stage cannot close with unaccounted sessions; REPORT.md carries the hygiene line (see `references/browser-hygiene.md`).
 
@@ -105,6 +106,13 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 
 - Intake records the handoff (`scripts/write_intake.py --handoff-form-name/--handoff-form-id`, or `--handoff-missing-reason` when no form identity exists): the Convert and Flow form's name and object id, the pop behavior, and the step order (signature page, then product selection page, then order form page). A placeholder destination is never a handoff; it is the recorded missing input or a defect.
 - The copy manifest's CTA entries carry each button's handoff type (`form_pop`, `in_page_anchor`, `external_link`); the primary CTA's type is `form_pop`. `scripts/validate_handoff.py` verifies the built page against the record at the responsive-html stage, and the funnel-completion receipt proves the pop live at install.
+
+### Design Board (before any wireframe)
+
+- Every page the funnel has (landing, order, checkout, upsell, downsell, thank-you) gets one Design Board: the client's brand colors, logo and the page's section images on one sheet, approved by the client first. Contract: `references/design-board.md`.
+- Stage `design-board` follows `font-action-plan` and precedes `desktop-wireframe`. Colors come from the brand-color resolution (`scripts/brand_colors.py`); the board never picks them.
+- No wireframe, mockup or image stage starts for a page without a current recorded client approval of that page's board: `stage_gate.py` refuses `desktop-wireframe` until `design-board` closes, and `stage_executor.py` refuses every image stage on the same record (`scripts/design_board.py gate`).
+- Record the approval with `scripts/design_board.py approve <run_dir> --by <client> --evidence <ref>`; it is bound to the board, image set and palette hashes, so a remade board or changed image needs a fresh approval.
 
 ### Design / wireframes / mockups
 

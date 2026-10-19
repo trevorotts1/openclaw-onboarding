@@ -79,6 +79,14 @@ The assembly scripts `stitch_sections.py` and `build_hybrid_board.py` are
 unchanged by this wire: they were already content-height. No assembly-canvas
 fix is claimed here or in this change's history.
 
+## Design board (stage `design-board`)
+
+`--stages design-board` produces the page's Design Board (`references/design-board.md`): one
+4:3 image, the client logo and the page's existing section images attached as references, the
+resolved palette and the contract blocks in the prompt. It runs alone, `--preflight` composes
+and checks it for free, and the stub board never validates. The four image stages and item mode
+refuse to start until `design_board.py gate` passes (a current recorded client approval).
+
 ## Composition
 
 `stitch_sections.py` (wireframe full-page PNG) and `build_hybrid_board.py` (mockup board) are
