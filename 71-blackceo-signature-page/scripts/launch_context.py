@@ -45,6 +45,14 @@ from pathlib import Path
 PROFILE_NAME = "signature_launch_landing"
 SKILL_NUMBER = 71
 
+# Fix 3 shared image service: the four image stages for every page role
+# are produced by this skill. A page-request carries this marker only
+# when it enters through scripts/shared_page_service.py; the two
+# landing-only refusals below lift for those requests and no others.
+SHARED_SERVICE_MARKER = "shared_image_service"
+SHARED_SERVICE_ID = "71-blackceo-signature-page"
+SHARED_SERVICE_SKILLS = (71, 78, 79, 80, 81, 82)
+
 SCHEMA_FILES = {
     "page-request": "page-request.schema.json",
     "launch": "launch.schema.json",
@@ -320,13 +328,27 @@ def derive_next_role(request, graph, launch):
     """Return (next_role, next_page_id, basis). Refuses a graph whose
     landing routing contradicts the approved vocabulary or journey."""
     nodes = {n["page_id"]: n for n in graph["nodes"]}
+    shared = (request.get(SHARED_SERVICE_MARKER) == SHARED_SERVICE_ID)
     landing = nodes.get(request["page_id"])
     if landing is None:
         raise LaunchContextError(
             f"route graph: no node carries the request's page_id "
             f"{request['page_id']!r}; the request's page is not in the "
             f"approved route graph")
+    if shared and landing["role"] != request["page_role"]:
+        raise LaunchContextError(
+            f"route graph: the request's page {request['page_id']!r} has "
+            f"role {landing['role']!r} in the graph, not the request's "
+            f"{request['page_role']!r}")
     if landing["role"] != "landing":
+        if shared:
+            # Fix 3 shared image service: a non-landing page has no
+            # intake-time next role; its page result reads the route
+            # graph at report time (scripts/page_result.py).
+            return None, None, (
+                "non-landing shared-service page: no intake-time next "
+                "role; the report-time page-result emitter reads the "
+                "route graph")
         raise LaunchContextError(
             f"route graph: the request's page {request['page_id']!r} has "
             f"role {landing['role']!r} in the graph, not 'landing'")
@@ -441,15 +463,19 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
                         label="page-request")
     if problems:
         raise LaunchContextError("; ".join(problems))
-    if request["page_role"] != "landing":
+    shared = (request.get(SHARED_SERVICE_MARKER) == SHARED_SERVICE_ID)
+    if request["page_role"] != "landing" and not shared:
         raise LaunchContextError(
             f"page-request: page_role is {request['page_role']!r}; this "
             f"import is Skill 71's landing import (profile "
             f"{PROFILE_NAME}); other roles belong to their own skills")
     if request["assigned_skill"] != SKILL_NUMBER:
-        raise LaunchContextError(
-            f"page-request: assigned_skill is {request['assigned_skill']!r}; "
-            f"this import serves Skill {SKILL_NUMBER} only")
+        if not (shared
+                and request["assigned_skill"] in SHARED_SERVICE_SKILLS):
+            raise LaunchContextError(
+                f"page-request: assigned_skill is "
+                f"{request['assigned_skill']!r}; this import serves "
+                f"Skill {SKILL_NUMBER} only")
     # The prompt-policy pair rule (adoption map section 1.1; the same
     # rule the landed PP-T2 switch enforces in
     # dispatch_launch.validate_request): the 1.1 label exists to carry

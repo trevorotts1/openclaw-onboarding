@@ -253,6 +253,8 @@ STEP 0 (engine-first): resolve the page family BEFORE any selector call.
   (c) If a single BlackCEO page request ever returns NO_ENGINE_MATCH from the selector, that is
   NOT a template-first fallback and NOT a hand-author case: it confirms Skill 71 ownership.
   Never hand-author a single BlackCEO page in this stage.
+
+The four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) for upsell, downsell, thank-you, product selection and the sales page are produced by Skill 71 `blackceo-signature-page`'s shared image service (`scripts/shared_page_service.py`) and called from the owning skill's wrapper.
 Run v2-autonomous-build-sop.md (06-ghl-install-pages).
 Inputs: approved copy.md (P2) + assets-manifest.json (P3) + funnel-spec.json (P1).
 Gate-3 verbatim copy match required.
