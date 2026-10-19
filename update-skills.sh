@@ -6759,6 +6759,16 @@ PYEOF
       fi
     fi
 
+    # VERIFY AFTER COPY (Fix 11.3). Sits AFTER the stamp-pin block on purpose:
+    # a skill whose pin was just restamped must be verified against the new
+    # pin, not the stale one. FAIL-SAFE: warn and continue, matching the
+    # stamp-pin rule above — one skill's check never takes down the roll.
+    if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
+      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >>"${LOG_FILE:-/dev/null}" 2>&1; then
+        echo "    [verify] WARN: $SKILL_NAME post-copy verify.sh FAILED -- continuing (run 'bash $SKILLS_DIR/$SKILL_NAME/verify.sh' by hand)"
+      fi
+    fi
+
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
