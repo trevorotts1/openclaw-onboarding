@@ -438,10 +438,26 @@ test('stepperModel: a completed session (every step done) still has exactly one 
   assert.deepEqual(model.slice(0, 5).map((s) => s.status), ['done', 'done', 'done', 'done', 'done']);
 });
 
-test('chamber-shell.css: the single row starts at 1240px and the stepper strip is a positioned box', () => {
+test('chamber-shell.css: the single row starts at 1280px, the compact phone rule at 374px and the stepper strip is a positioned box', () => {
   const css = readFileSync(join(chamberDir, 'chamber-shell.css'), 'utf8');
-  assert.match(css, /@media \(min-width: 1240px\)\s*\{\s*\.ch-top \{/);
+  assert.match(css, /@media \(min-width: 1280px\)\s*\{\s*\.ch-top \{/);
   assert.match(css, /\.ch-top-steps \{[^}]*position: relative/);
+  assert.match(css, /@media \(max-width: 374px\)\s*\{\s*\.ch-top-actions \{ gap: 4px/);
+});
+
+test('index.html: every sr-only span in the stepper is the one the renderer reuses, so (current) is never announced twice', () => {
+  const html = readFileSync(join(chamberDir, 'index.html'), 'utf8');
+  const nav = html.slice(html.indexOf('id="ch-stepper"'), html.indexOf('</nav>', html.indexOf('id="ch-stepper"')));
+  const spans = nav.match(/<span class="[^"]*ch-sr-only[^"]*"/g) ?? [];
+  assert.ok(spans.length > 0);
+  for (const span of spans) assert.match(span, /ch-step-sr/);
+  const brief = nav.slice(nav.indexOf('data-step="brief"'), nav.indexOf('</li>', nav.indexOf('data-step="brief"')));
+  assert.equal((brief.match(/\(current\)/g) ?? []).length, 1);
+});
+
+test('chamber-shell.js: a past-sessions error never doubles its full stop', () => {
+  const js = readFileSync(join(chamberDir, 'chamber-shell.js'), 'utf8');
+  assert.ok(js.includes("String(list.error).replace(/\\.+\\s*$/, '')"));
 });
 
 test('chamber-shell.js never shows a literal {} or raw JSON as a refusal detail', () => {

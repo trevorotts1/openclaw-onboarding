@@ -266,7 +266,7 @@
     var message = '';
     if (list.status === 'loading') message = 'Loading council sessions...';
     else if (list.status === 'unbound') message = 'Session history is not available: this service has no session list connected, so it cannot show past sessions.';
-    else if (list.status === 'error') message = 'Could not load past sessions' + (list.error ? ': ' + String(list.error) : '') + '. Choose Refresh to try again.';
+    else if (list.status === 'error') message = (list.error ? String(list.error).replace(/\.+\s*$/, '') : 'Could not load past sessions') + '. Choose Refresh to try again.';
     else if (sessions.length === 0) message = 'No council sessions yet. Choose New question to convene one.';
     else message = sessions.length + (sessions.length === 1 ? ' session' : ' sessions') + ', newest first.';
     els.sessionsStatus.textContent = message;

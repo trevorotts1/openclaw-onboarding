@@ -48,7 +48,7 @@
 }
 
 /* Wide: one 56px row, stepper centred between brand and buttons. */
-@media (min-width: 1240px) {
+@media (min-width: 1280px) {
   .ch-top {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     grid-template-areas: "brand steps actions";
@@ -70,10 +70,13 @@
   .ch-step-list { width: max-content; margin: 0 auto; padding: 0 var(--ch-space-2); }
 }
 
-/* Very narrow phones (320px): tighten so the three buttons still share one row. */
-@media (max-width: 359px) {
+/* Narrow phones (up to 374px): tighten so the three buttons still share one row. */
+@media (max-width: 374px) {
   .ch-top-actions { gap: 4px; }
   .ch-top-actions .ch-btn { padding-left: 7px; padding-right: 7px; font-size: 12px; }
+}
+@media (max-width: 330px) {
+  .ch-top-actions .ch-btn { padding-left: 6px; padding-right: 6px; }
 }
 
 /* ------------------------------------------------------------- stepper */
