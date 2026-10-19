@@ -23,12 +23,30 @@ from pathlib import Path
 SKILL_NUMBER = "83"
 SKILL_DIR_NAME = SKILL_NUMBER + "-black-friday-launcher"
 SKILL_NAME = "black-friday-launcher"
-SKILL_VERSION = "0.2.1"
+SKILL_VERSION = "0.2.2"
 
 # The Launcher's own tree, derived from this file's location and never from a
 # directory name, so the skill works under either naming convention.
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-REPO_ROOT = SKILL_ROOT.parent
+
+
+def repo_root_for(start: Path | str) -> Path:
+    """Nearest ancestor that looks like a checkout, for both layouts.
+
+    The onboarding layout puts skills at the repo root; a deployed tree puts
+    them under .claude/skills, so ``<skill>.parent`` is NOT the repository root
+    there. Both layouts have shared-utils at the root, so that is the marker.
+    Falls back to the skill's parent so a lone tree still works.
+    """
+    start = Path(start)
+    for candidate in (start, *start.parents):
+        if (candidate / "shared-utils").is_dir() and (
+                (candidate / ".claude").is_dir() or (candidate / "CONTROL").is_dir()):
+            return candidate
+    return start.parent
+
+
+REPO_ROOT = repo_root_for(SKILL_ROOT)
 
 SCHEMA_VERSION = "1.0"
 PENDING_FAILED_PAYMENT_BEHAVIOR = "retain_current_purchase_state_until_resolved_or_explicit_decline"
@@ -121,9 +139,14 @@ def resolve_skill_dir(slug: str, root: Path | str | None = None) -> Path:
     base = Path(root) if root is not None else REPO_ROOT
     if not base.is_dir():
         raise SkillResolutionError(f"skill root {base} is not a directory")
+    # Skills live at the repo root in the onboarding layout and under
+    # .claude/skills in a deployed tree, so both bases are searched.
+    bases = [base] + [base / sub for sub in (".claude/skills", "skills")]
     candidates = sorted(
-        path for path in base.iterdir()
+        path for search in bases if search.is_dir()
+        for path in search.iterdir()
         if path.is_dir() and (path.name == slug or path.name.endswith("-" + slug))
+        and (path / "SKILL.md").is_file()
     )
     if not candidates:
         raise SkillResolutionError(
@@ -151,6 +174,11 @@ def resolve_ref(rel_path: str, root: Path | str | None = None) -> Path:
     returned as a plain repository-relative path.
     """
     base = Path(root) if root is not None else REPO_ROOT
+    # An already repository-relative path that exists wins, so callers may pass
+    # a resolved path back in without it being re-interpreted.
+    direct = base / str(rel_path)
+    if direct.exists():
+        return direct
     first, sep, rest = str(rel_path).partition("/")
     slug = skill_slug(first)
     if slug in SKILL_SLUGS:

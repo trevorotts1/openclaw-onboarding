@@ -107,14 +107,32 @@ class ConstantsTest(unittest.TestCase):
             root = Path(tmp)
             bare = root / "signature-funnel"
             numeric = root / "49-signature-funnel"
+            # The fixtures are pretending to be skill trees, and a skill tree
+            # carries SKILL.md; resolution requires it so a stale or partial
+            # directory can never win over a real one.
             bare.mkdir()
+            (bare / "SKILL.md").write_text("# fixture\n", encoding="utf-8")
             self.assertEqual(resolve_skill_dir("signature-funnel", root), bare)
             numeric.mkdir()
+            (numeric / "SKILL.md").write_text("# fixture\n", encoding="utf-8")
             self.assertEqual(resolve_skill_dir("signature-funnel", root), numeric)
             self.assertEqual(resolve_ref("49-signature-funnel/scripts/x.py", root),
                              numeric / "scripts" / "x.py")
             self.assertEqual(resolve_ref("signature-funnel/scripts/x.py", root),
                              numeric / "scripts" / "x.py")
+
+    def test_resolver_ignores_a_directory_that_is_not_a_skill_tree(self):
+        # A stale or partial <number>-<slug> directory carries no SKILL.md; it
+        # must never win resolution over the real tree, or a 999 package whose
+        # .claude/skills holds both would silently load the partial one.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stale = root / "83-black-friday-launcher"
+            real = root / "black-friday-launcher"
+            stale.mkdir()
+            real.mkdir()
+            (real / "SKILL.md").write_text("# real\n", encoding="utf-8")
+            self.assertEqual(resolve_skill_dir("black-friday-launcher", root), real)
 
     def test_resolver_fails_closed_by_name(self):
         with tempfile.TemporaryDirectory() as tmp:
