@@ -25,8 +25,8 @@ runtime and packs land.
 
 Required to run (later units, stated here so nobody mistakes an installed
 scaffold for a working council): a valid client scope, approved source
-packs, a selected functioning route, a data store, spend limit and permission,
-and sufficient context and capacity.
+packs, a selected functioning route, a data store, and sufficient context and
+capacity.
 
 Required for visual managed mode: a compatible Command Center, an
 authenticated pairing and scope, the council migration applied through the
@@ -189,23 +189,21 @@ From the INSTALLED folder (not only the source tree):
 
 ## Step 9: Permitted live acceptance
 
-Only with explicit authorization, a real client-selected route, and a
-recorded spend limit:
+Only with a real client-selected route:
 
 - The runtime and all nine advisor packs are built and ship in this
   package. Live acceptance convenes one bounded council on a
   synthetic, unmistakably labeled fixture decision through the
-  installed runtime, under the run-authorization lifecycle (preview,
-  approve, start), and verifies the full report order in
-  references/report-template.md, the saved session readback, and the
-  provider usage against the recorded spend limit.
-- Without that authorization, record the installation as
+  installed runtime (convening is the approval; there is no separate
+  approval step), and verifies the full report order in
+  references/report-template.md and the saved session readback.
+- Without a live route, record the installation as
   INSTALLED_NOT_LIVE_VERIFIED: installed and offline-verified, live
   unverified. Never simulate a session or invent a verdict to fill
   the gap.
 - The not-ready report is still the correct result wherever a named
   prerequisite is actually missing (no client-selected route, no
-  compatible Command Center release for managed mode, no run grant);
+  compatible Command Center release for managed mode);
   it names the missing prerequisite precisely rather than claiming
   the council itself is unbuilt.
 

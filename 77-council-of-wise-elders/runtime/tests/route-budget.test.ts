@@ -357,4 +357,9 @@ test('no approval script ships and no client-facing text asks for an approval', 
     assert.doesNotMatch(text, /budget/i, f);
     assert.doesNotMatch(text, /approve-route/i, f);
   }
+  for (const f of ['EXAMPLES.md', 'references/troubleshooting.md', 'references/install-matrix.md']) {
+    const text = readFileSync(join(skillRoot, f), 'utf8');
+    assert.doesNotMatch(text, /budget|spend limit|run grant/i, f);
+  }
+  assert.doesNotMatch(readFileSync(join(skillRoot, 'INSTALL.md'), 'utf8'), /spend limit|run grant/i);
 });

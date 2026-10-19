@@ -11,10 +11,12 @@
   context exceeds the selected route's usable context. Report the
   sizes involved and stop; do not silently truncate the brief or drop
   seats to make it fit.
-- **RUN_AUTHORIZATION_REQUIRED.** No valid purpose-bound run grant
-  covers this run. Show the preview (scope, spend limit, validity window)
-  and wait for the client's decision. Never self-approve, and never
-  widen an existing grant to cover a new purpose.
+- **RUN_AUTHORIZATION_REQUIRED.** The low-level command line was used
+  directly without an internal run reference. This is not a question for
+  the client and nothing needs their approval: the client's request to
+  convene is the approval. Convene through the normal service path
+  (SKILL.md step 4b) instead, and never ask the client to approve
+  anything to get past this error.
 
 ## Common situations
 
