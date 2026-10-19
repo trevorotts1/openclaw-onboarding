@@ -12,6 +12,7 @@ stale evidence.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -175,23 +176,51 @@ check(
 # ---------------------------------------------------------------------------
 # 3. The checked-in record admits nothing and carries no V4 row.
 # ---------------------------------------------------------------------------
-record_gate = load_capability_record(tenant="Mct54Bwi1KlNouGXQcDX")
-check(len(record_gate) == 0, "checked-in record must not load for BlackCEO LLC (tenant mismatch)")
+RECORD_TENANT = "Mct54Bwi1KlNouGXQcDX"
+record_text = source(
+    "44-convert-and-flow-operator/tools/engine/state/ghl-public-capabilities.json"
+)
+record_document = json.loads(record_text)
+record_rows = record_document.get("capabilities") or {}
+
+# The record is bound to one location: any other tenant must fail closed to
+# default-deny rather than reuse this tenant's live 200s.
 check(
-    len(load_capability_record(tenant="XCgFTEA1oDvsPnTqqgoB")) == 4,
-    "checked-in record must still carry its four disabled rows for its recorded tenant",
+    len(load_capability_record(tenant="XCgFTEA1oDvsPnTqqgoB")) == 0,
+    "checked-in record must not load for a foreign tenant (tenant mismatch)",
+)
+record_gate = load_capability_record(tenant=RECORD_TENANT)
+check(
+    len(record_gate) == 6
+    and len(record_rows) == 6
+    and all(
+        row.get("read_verified") is True
+        and row.get("enabled") is True
+        and row.get("canary_verified") is False
+        for row in record_rows.values()
+    ),
+    "checked-in record must carry its six live read-verified rows for its recorded tenant",
+)
+check(
+    record_document.get("tenant") == RECORD_TENANT,
+    "record tenant changed without evidence refresh",
+)
+# A read probe is not a write canary: the record may enable only non-write
+# registry rows, so no admitted row can authorize a dispatch as a write.
+record_write_rows = [
+    operation_id
+    for operation_id in record_rows
+    if OPERATIONS.get(operation_id) is None or OPERATIONS[operation_id].write
+]
+check(
+    not record_write_rows,
+    f"record enables rows outside the read-only registry: {record_write_rows}",
 )
 for operation_id in V4_PUBLIC:
     check(
         not record_gate.get(operation_id).enabled,
         f"{operation_id}: no V4 capability may be enabled by the checked-in record",
     )
-
-record_text = source(
-    "44-convert-and-flow-operator/tools/engine/state/ghl-public-capabilities.json"
-)
-check('"tenant": "XCgFTEA1oDvsPnTqqgoB"' in record_text, "record tenant changed without evidence refresh")
-check('"enabled": false' in record_text, "record must keep enabled=false rows")
 for operation_id in V4_PUBLIC:
     check(
         f'"{operation_id}"' not in record_text,
@@ -300,12 +329,27 @@ expect_line(
     "from cli_anything.gohighlevel.utils import ghl_client as api",
 )
 # Skill 06 products/media: raw REST rails, its own Version constant, no adapter.
-expect_line(
-    "06-ghl-install-pages/tools/ghl_media.py", 135, 'GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"'
+media_source = source("06-ghl-install-pages/tools/ghl_media.py")
+check(
+    'GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"'
+    in line_at("06-ghl-install-pages/tools/ghl_media.py", 136)
+    and 'GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH' in media_source,
+    "ghl_media.py:136 must keep the documented upload path and send it to the services origin",
 )
-expect_line("06-ghl-install-pages/tools/ghl_media.py", 140, 'GHL_MEDIA_VERSION = "2021-07-28"')
+check(
+    'GHL_MEDIA_VERSION = "2021-07-28"'
+    in line_at("06-ghl-install-pages/tools/ghl_media.py", 149)
+    and 'req.add_header("Version", GHL_MEDIA_VERSION)' in media_source,
+    "ghl_media.py:149 must keep Skill 06's own legacy Version constant and send it",
+)
 expect_line("06-ghl-install-pages/tools/ghl_object_router.py", 369, 'm["media"] = ObjectRoute(')
-expect_line("06-ghl-install-pages/tools/ghl_object_router.py", 387, 'm["product"] = ObjectRoute(')
+check(
+    'm["product"] = ObjectRoute('
+    in line_at("06-ghl-install-pages/tools/ghl_object_router.py", 389)
+    and "raw HTTPS services.* /products"
+    in source("06-ghl-install-pages/tools/ghl_object_router.py"),
+    "ghl_object_router.py:389 must keep the product row on the raw services rail",
+)
 # Signature funnel consumers: injected protocol only, no production binding.
 expect_line(
     "44-convert-and-flow-operator/tools/siglaunch/provisioning/provisioning.py",
@@ -430,15 +474,24 @@ for rel, number, needle in SKILL06_INTERNAL:
 
 # The private trigger rewire is the second call of a two-call freeze row; the
 # registry records only the first call and says so.
-expect_line(
-    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
-    672,
-    "``workflows.private.trigger.link`` is a two-call row in the freeze",
+operations_rel = (
+    "44-convert-and-flow-operator/tools/engine/"
+    "cli_anything/gohighlevel/public/operations.py"
 )
-expect_line(
-    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
-    726,
-    '_R("workflows.private.publish", "PUT", "/workflow/{loc}/{wf}",',
+check(
+    "``workflows.private.trigger.link`` is a two-call row in the freeze"
+    in line_at(operations_rel, 746)
+    and OPERATIONS["workflows.private.trigger.link"].method == "POST"
+    and OPERATIONS["workflows.private.trigger.link"].path_template
+    == "/workflow/{loc}/trigger",
+    "operations.py:746 must keep the two-call note and trigger.link's POST first call",
+)
+check(
+    '_R("workflows.private.publish", "PUT", "/workflow/{loc}/{wf}",'
+    in line_at(operations_rel, 800)
+    and OPERATIONS["workflows.private.publish"].method == "PUT"
+    and OPERATIONS["workflows.private.publish"].path_template == "/workflow/{loc}/{wf}",
+    "operations.py:800 must keep the Skill 44 private publish PUT row",
 )
 
 # ---------------------------------------------------------------------------
