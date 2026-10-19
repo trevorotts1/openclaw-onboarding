@@ -29,10 +29,10 @@ bibliographic_only coverage: no seat is quality_qualified, and seats
 abstain on claims their coverage does not support. Portable PDF export
 from the standalone runtime is not ready by design and refuses with a
 typed error; the Command Center side renders PDFs. Wherever a named
-prerequisite is genuinely missing (no client-selected route, no run
-grant, no compatible Command Center release for managed mode), this
-skill's front door must report that precise state (a typed not-ready
-result), never simulate a council session, never invent a verdict, and
+prerequisite is genuinely missing (no usable model route, a council
+service that reports not ready, no compatible Command Center release for
+managed mode), this skill's front door must report that precise state
+(a typed not-ready result), never simulate a council session, never invent a verdict, and
 never fabricate advisor output.
 
 ## The nine seats
@@ -86,17 +86,42 @@ operational reference for a follow-up or an existing-session control.
    controls first.
 3. Retrieve permitted context before asking for facts. Ask only the next
    material missing question. Preserve unknowns and show the prepared brief.
-4. Confirm the explicitly selected route and existing applicable run
-   authority. Resolve a real purpose-bound run grant through the installed
-   tested runtime; do not self-approve or improvise a parallel council. The
-   client selects their model, or their configured default applies. This
-   skill never prescribes a specific model; it may recommend with reasons.
+4. Ask the client which model the council should use. Run
+   `blackceo-council routes` and list the options it returns, then offer
+   the default for the harness you are running in, and say which it is:
+   the claude-nine configured default on claude-nine, Sonnet on Claude
+   Code, or the latest DeepSeek Flash on DeepSeek (the exact id is
+   resolved from the provider's model list at the moment of the run, so
+   it is never an older pinned Flash). Never pick a model silently. If
+   the client names a route or model, pass it with `--route` and
+   `--model`. If the client says to use the default, pass nothing and the
+   detected harness decides (`--harness` overrides detection).
+4a. When the question depends on current facts (prices, laws, markets,
+   news, a competitor, anything that changes), research the web before
+   convening. Use your own web tools, keep each finding as a short claim
+   with its URL, title and retrieved time, and save them as a JSON array
+   of `{claim, url, title, retrieved_at}` passed with `--fresh-facts
+   FILE`. The council stores them apart from the elders' books. In your
+   own answer to the client keep the two kinds of material separate under
+   the headings "From the elder's books" and "From the web today", and
+   never present a web fact as something the elder taught. Never
+   fabricate a finding, a URL or a date: if the research finds nothing,
+   convene without fresh facts and say so.
+4b. Convene with `blackceo-council convene --brief FILE` (or `--sample`
+   for the harmless built-in sample decision). Convening is the
+   approval: the client chose the model and pays for it, so there is no
+   grant to resolve and no approval step to run or wait for. Do not
+   improvise a parallel council. The command prints the session id, the
+   route, the exact model label, whether the model was the client's
+   choice or the harness default, and the session and live events links.
+   Tell the client which model is running.
 5. Use the exact approved roster and the requested mode. Keep openings
    isolated, challenges evidence-based, ratification bounded, and all
    source claims honest. A session never exceeds 50 provider requests.
 6. Present one recommendation, the strongest objection, critical
    conditions, and the next useful step. Link to the durable validated
-   result.
+   result. When fresh facts were used, keep "From the elder's books" and
+   "From the web today" as separate sections of your answer.
 7. Treat the result as advice. Preview action conversion and use the
    existing approval and execution controls; a favorable vote is not
    permission. Preview does not approve, approve does not create or
