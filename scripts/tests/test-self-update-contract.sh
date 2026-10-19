@@ -47,19 +47,30 @@ src="$FIXTURES/$(basename "$url")"
 cp "$src" "$dest"
 EOF
 
+# CAN012: self-update now PROVES the 999 checkout is origin/main, so the stub git
+# hands every command to the real git, except that a clone of the GitHub URL is
+# redirected to a local bare fixture remote (nothing leaves this machine).
+REAL_GIT="$(command -v git)"
+export REAL_GIT
+R999="$T/remote999.git"; W999="$T/work999"
+mkdir -p "$W999/.claude/skills/nine-router-setup/scripts/macos"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] setup-macos $*"' 'exit 0' \
+  > "$W999/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] 9router-guards $*"' 'exit 0' \
+  > "$W999/.claude/skills/nine-router-setup/scripts/macos/install-9router-guards.sh"
+"$REAL_GIT" init -q --bare -b main "$R999"
+( cd "$W999" && "$REAL_GIT" init -q -b main && "$REAL_GIT" add -A \
+  && "$REAL_GIT" -c user.name=t -c user.email=t@t commit -q -m init \
+  && "$REAL_GIT" push -q "$R999" main ) || { echo "FAIL: could not build the 999 fixture remote" >&2; exit 1; }
+export R999
 cat > "$T/bin/git" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = "--version" ]; then echo "git version 2.0"; exit 0; fi
 if [ "$1" = "clone" ]; then
   for last; do :; done
-  mkdir -p "$last/.claude/skills/nine-router-setup/scripts/macos" || exit 1
-  printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] setup-macos $*"' 'exit 0' \
-    > "$last/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
-  printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] 9router-guards $*"' 'exit 0' \
-    > "$last/.claude/skills/nine-router-setup/scripts/macos/install-9router-guards.sh"
-  exit 0
+  exec "$REAL_GIT" clone -q "$R999" "$last"
 fi
-exit 0
+exec "$REAL_GIT" "$@"
 EOF
 
 cat > "$T/bin/uname" <<'EOF'
