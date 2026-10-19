@@ -787,6 +787,16 @@ export class CouncilFrontDoor {
     const identityLink = `${origin}${SERVICE_IDENTITY_PATH}`;
     const sessionLink = `${origin}/council/your-session-id`;
     const eventsLink = `${origin}/api/council/sessions/your-session-id/events`;
+    // The notice and the route list must describe THIS composition. A bound
+    // reader/adapter means the old unbound wording would be false.
+    const eventsBound = Boolean(this.options.eventsAdapter);
+    const readerBound = Boolean(this.options.sessionReader);
+    const eventsRouteNote = eventsBound
+      ? 'durable event stream; an unknown session answers <code>404 SESSION_NOT_FOUND</code>'
+      : 'event stream (501, adapter not bound)';
+    const sessionRouteNote = readerBound
+      ? 'durable session record (200); an unknown id answers <code>404 SESSION_NOT_FOUND</code>'
+      : 'session record; reports <code>ui: "not_bundled"</code> with blocker <code>UI_NOT_BUNDLED</code> (200)';
 
     return `<!doctype html>
 <html lang="en">
@@ -814,7 +824,7 @@ ul{margin:.25rem 0;padding-left:1.25rem}
 <h1>Council of Wise Elders — service landing</h1>
 <p class="ok">This is the Council service status and session landing page. It is <strong>not</strong> the full Council chamber UI.</p>
 <div class="notice"><strong>UI_NOT_BUNDLED</strong> — the full Council chamber UI is not packaged by this service slice. Packaging the accepted shared Council UI build (WER-021 full packaging) is the path to it, then re-run service-readiness.</div>
-<div class="notice"><strong>EVENT_STREAM_ADAPTER_NOT_BOUND</strong> — the durable event stream adapter is not bound here. <code>GET /api/council/sessions/&lt;id&gt;/events</code> answers 501 until the integration root binds the canonical journal/outbox adapter.</div>
+${eventsBound ? '' : '<div class="notice"><strong>EVENT_STREAM_ADAPTER_NOT_BOUND</strong> — the durable event stream adapter is not bound here. <code>GET /api/council/sessions/&lt;id&gt;/events</code> answers 501 until the integration root binds the canonical journal/outbox adapter.</div>'}
 <h2>Service identity</h2>
 <table>${identityRows}</table>
 <h2>Readiness (${escapeHtml(readiness.observed_at)}, usable: ${readiness.usable ? 'yes' : 'no'})</h2>
@@ -825,8 +835,8 @@ ul{margin:.25rem 0;padding-left:1.25rem}
 <h2>Routes that work</h2>
 <ul>
 <li><a href="${escapeHtml(identityLink)}"><code>GET /api/council/service/identity</code></a> — service identity JSON (200)</li>
-<li><a href="${escapeHtml(sessionLink)}"><code>GET /council/&lt;sessionId&gt;</code></a> — session record; reports <code>ui: "not_bundled"</code> with blocker <code>UI_NOT_BUNDLED</code> (200)</li>
-<li><a href="${escapeHtml(eventsLink)}"><code>GET /api/council/sessions/&lt;id&gt;/events</code></a> — event stream (501, adapter not bound)</li>
+<li><a href="${escapeHtml(sessionLink)}"><code>GET /council/&lt;sessionId&gt;</code></a> — ${sessionRouteNote}</li>
+<li><a href="${escapeHtml(eventsLink)}"><code>GET /api/council/sessions/&lt;id&gt;/events</code></a> — ${eventsRouteNote}</li>
 </ul>
 </main>
 </body>
