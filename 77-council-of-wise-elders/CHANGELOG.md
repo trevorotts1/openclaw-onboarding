@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.20: a real event-stream adapter injection point, and a falsifiable session route
+## v1.0.21: a real event-stream adapter injection point, and a falsifiable session route
 
 - The merged service answered `GET /api/council/sessions/<id>/events` with an unconditional `501 EVENT_STREAM_ADAPTER_NOT_BOUND`, and `GET /council/<id>` with `200 ui: "not_bundled"` for ANY id including `does-not-exist-123`, which made an earlier "real session URL" proof unfalsifiable.
 - `runtime/src/service/front-door.ts`: `FrontDoorOptions` gains optional `eventsAdapter` and `sessionReader` injection points. With an adapter bound, the events route serves `200 text/event-stream` from committed frames only (replay plus optional follow) in the accepted Command Center SSE wire (`id: <sequence>` / `event: <type>` / `data: <json>`). Unbound, the exact `501 EVENT_STREAM_ADAPTER_NOT_BOUND` response is unchanged.
