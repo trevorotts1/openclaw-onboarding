@@ -37,6 +37,17 @@ export MASTER_FILES_DIR="${MASTER_FILES_DIR:-$OC/openclaw-master-files}"
 LOGS="$OC/logs"
 mkdir -p "$LOGS" "$PM2_HOME" 2>/dev/null || true
 
+# MODERN GHL CLIENT (Skill 44, Tier 0) — GHL-163. caf/convertandflow/ghl live
+# under the PERSISTENT volume at $OC/tools/convert-and-flow-cli, so a recreate
+# keeps the installed CLI. Boot only REPORTS readiness: it never executes the
+# credentials-bearing CLI and never starts the RETIRED community MCP.
+CAF_DIR="${CAF_DIR:-$OC/tools/convert-and-flow-cli}"
+if [ -x "$CAF_DIR/caf" ]; then
+  echo "[ghl] modern client present: $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+else
+  echo "[ghl] modern client not installed yet (the update path builds it): $CAF_DIR/caf" >> "$LOGS/container-startup.log" 2>/dev/null || true
+fi
+
 # A login shell (the fleet roll's `docker exec ... bash -l`) takes PATH from
 # /etc/profile, which drops the npm-global bin, so pm2 is "not found" unless
 # ~/.profile puts it back. HOME is ephemeral: write it on every start.
