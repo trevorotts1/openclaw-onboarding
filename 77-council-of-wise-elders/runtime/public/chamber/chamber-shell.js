@@ -377,17 +377,6 @@
     clear(els.error);
   }
 
-  function budgetText(routeId, budgets) {
-    var parts = [];
-    for (var i = 0; i < budgets.length; i += 1) {
-      if (budgets[i] && budgets[i].route_id === routeId) {
-        var state = String(budgets[i].state).replace(/_/g, ' ');
-        parts.push(budgets[i].model ? budgets[i].model + ': ' + state : state);
-      }
-    }
-    return parts.length ? parts.join('; ') : 'not listed';
-  }
-
   function defaultModelText(routeId, defaults) {
     var keys = defaults ? Object.keys(defaults) : [];
     for (var i = 0; i < keys.length; i += 1) {
@@ -404,7 +393,6 @@
   function renderRoutes(body) {
     clear(els.routesList);
     var list = Array.isArray(body.routes) ? body.routes : [];
-    var budgets = Array.isArray(body.budgets) ? body.budgets : [];
     if (list.length === 0) {
       els.routesStatus.textContent = 'This service offers no routes, so it cannot convene yet. Configure a model route for the council, then reopen this window.';
       return;
@@ -425,10 +413,8 @@
       label.appendChild(make('span', 'ch-composer-route-name', ns.state.routeLabel(route.route_id, null)));
       if (usable) {
         label.appendChild(make('span', 'ch-composer-route-line', 'Default model: ' + defaultModelText(route.route_id, body.harness_defaults)));
-        label.appendChild(make('span', 'ch-composer-route-line', 'Budget: ' + budgetText(route.route_id, budgets)));
       } else {
         label.appendChild(make('span', 'ch-composer-route-line', 'Cannot be used now: ' + (route.failure_code || 'unknown reason')));
-        label.appendChild(make('span', 'ch-composer-route-line', 'Budget: ' + budgetText(route.route_id, budgets)));
       }
       els.routesList.appendChild(label);
     }

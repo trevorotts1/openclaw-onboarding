@@ -363,7 +363,9 @@ test('no approval script ships and no client-facing text asks for an approval', 
   }
   assert.doesNotMatch(readFileSync(join(skillRoot, 'INSTALL.md'), 'utf8'), /spend limit|run grant/i);
   const chamber = join(skillRoot, 'runtime', 'public', 'chamber');
-  for (const f of readdirSync(chamber).filter((n) => n.endsWith('.html'))) {
+  for (const f of readdirSync(chamber).filter((n) => n.endsWith('.html') || n.endsWith('.js'))) {
     assert.doesNotMatch(readFileSync(join(chamber, f), 'utf8'), /grant-ref|budget|spend limit/i, f);
   }
+  // demo-replay.json is recorded sample data; checked separately for the budget line the client would see.
+  assert.doesNotMatch(readFileSync(join(chamber, 'demo-replay.json'), 'utf8'), /Budget: /, 'demo-replay.json');
 });

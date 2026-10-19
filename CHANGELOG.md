@@ -1,4 +1,4 @@
-## [v27.1.44]  -  2026-10-19  -  Council (Skill 77) v1.0.27: Roast-Room chamber screen with the full reference structure (top bar and stepper, decision header, seated room, key points, advisor card), BlackCEO colors and Pixar-style portraits
+## [v27.1.45]  -  2026-10-19  -  Council (Skill 77) v1.0.28: Roast-Room chamber screen with the full reference structure (top bar and stepper, decision header, seated room, key points, advisor card), BlackCEO colors and Pixar-style portraits
 
 ## [v27.1.43]  -  2026-10-19  -  Council (Skill 77) v1.0.26: live council with a client-chosen model per run, a service driver that actually deliberates a convened session, convening as approval, and Book-to-Persona elders with labelled web research
 

@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.27: Roast-Room chamber screen (full reference structure, brand colors, Pixar portraits)
+## v1.0.28: Roast-Room chamber screen (full reference structure, brand colors, Pixar portraits)
 
 Eight Opus-passed pieces, integrated once on top of v1.0.26 (W29-U001). In plain English: the chamber page is rebuilt as the full Roast-Room screen. A sticky top bar, a decision header with live option bars, a room of nine seated advisors with typing bubbles and a round headline, a key-points rail, and a click-to-open advisor card, all in BlackCEO colors, with 3D Pixar-style portraits.
 
@@ -13,7 +13,8 @@ Eight Opus-passed pieces, integrated once on top of v1.0.26 (W29-U001). In plain
 - **Brand theme** (`patch/W29-G-theme`): one set of BlackCEO color tokens (black, cream, gold) used everywhere; no navy.
 - **Live state** (`patch/W29-H-state`): turns the live event stream into what the screen shows, keeps a clearly labelled demo replay, and adds card details to the stream so bars, lines and the advisor card come from real cards.
 - **Full names and no model codes** (`W29-fullnames`): each advisor's name pill now shows the full name (Simon Sinek, Russell Brunson, Dennis Kimbro and so on; it wraps to two lines on narrow phones), and the screen shows a friendly model label such as "Sample replay" or "Claude Code" instead of an internal route code. On phones the front row of advisors now sits a little lower so a two-line full name never hides behind the row below.
-- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.43).
+- **No budget line on the client page**: the New question window no longer shows a "Budget: ..." line under each route (the service stopped sending budgets when the approval step was removed, so it always read "not listed"); the route-budget test now scans the chamber scripts too.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.45).
 
 ## v1.0.26: live council (client-chosen model, service driver, Book-to-Persona elders)
 
