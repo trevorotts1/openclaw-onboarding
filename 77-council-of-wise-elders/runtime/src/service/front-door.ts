@@ -349,6 +349,11 @@ export class CouncilFrontDoor {
           blockers: [],
         };
         this.startResult = result;
+        // The first readiness pass pays one-time costs (lazy fetch init,
+        // cold filesystem reads for the pack/route/executable probes). Pay
+        // them here, at start, so the first GET /status does not block on
+        // them; a probe failure is just that layer's observed state.
+        await this.readiness().catch(() => undefined);
         return result;
       }
 
