@@ -55,7 +55,10 @@ from cli_anything.gohighlevel.public.result import Status  # noqa: E402
 
 REPRESENTATIVE = ("contacts.list", "contacts.search", "custom_fields.list")
 LOCATION_OPERATION = "locations.get"
-CHECKED_IN_TENANT = "XCgFTEA1oDvsPnTqqgoB"
+#: GHL-150: the checked-in record is bound to the tenant that returned real
+#: 200s on 2026-10-19.  The previous tenant stays default-deny.
+CHECKED_IN_TENANT = "Mct54Bwi1KlNouGXQcDX"
+PREVIOUS_TENANT = "XCgFTEA1oDvsPnTqqgoB"
 
 
 def _capability_row(**overrides: object) -> dict[str, object]:
@@ -475,21 +478,23 @@ class RegistryRowTest(unittest.TestCase):
         }
         self.assertEqual(versions, {"2021-07-28", "v3"})
 
-    def test_the_checked_in_record_declares_rows_without_admitting_them(self) -> None:
-        # GU-004 3.2 rule 2 is literal: no real 200 has been observed for this
-        # tenant, so the checked-in record MUST NOT enable anything. It exists
-        # so the loader and the operation rows are testable.
+    def test_the_checked_in_record_admits_only_the_live_verified_operations(self) -> None:
+        # GHL-150: real 200s were observed on 2026-10-19 for these six
+        # operations on CHECKED_IN_TENANT, so the record enables exactly them.
+        # Anything else, and any other tenant, stays default-deny.
         gate = load_capability_record(tenant=CHECKED_IN_TENANT)
-        for operation_id in (LOCATION_OPERATION, *REPRESENTATIVE):
+        for operation_id in (LOCATION_OPERATION, *REPRESENTATIVE, "pipelines.list"):
             with self.subTest(operation_id=operation_id):
                 capability = gate.get(operation_id)
-                self.assertFalse(capability.enabled)
-                self.assertFalse(capability.read_verified)
-                self.assertFalse(capability.tenant_verified())
-                self.assertFalse(capability.evidence_ok())
+                self.assertTrue(capability.enabled)
+                self.assertTrue(capability.read_verified)
+                self.assertTrue(capability.tenant_verified())
+                self.assertTrue(capability.evidence_ok())
         # Default-deny is untouched for everything else.
         self.assertFalse(gate.get("contacts.get").enabled)
         self.assertIsNotNone(gate.get("contacts.get").activation_blocked)
+        # The record is bound to one tenant: the previous one admits nothing.
+        self.assertEqual(len(load_capability_record(tenant=PREVIOUS_TENANT)), 0)
         self.assertTrue(capability_record_path().is_file())
 
 
