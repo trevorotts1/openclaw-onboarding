@@ -1,3 +1,8 @@
+## [v27.1.42]  -  2026-10-19  -  Fleet-roll fixes: self-update 999-setup step syncs and verifies its checkout (#2349); local-Ollama persona index no longer fails the prebuilt-index re-assertion (#2350)
+
+- CAN012 (#2349): the self-update 999-setup step now syncs its checkout to origin/main and verifies HEAD (and the --999-sha pin) or exits 23; the 9Router step refuses an unverified checkout with exit 24.
+- CAN013 (#2350): a local-Ollama-mode persona index no longer fails the prebuilt-index re-assertion and currency probe; failed index downloads now name their reason.
+
 ## [v27.1.41]  -  2026-10-19  -  Council (Skill 77) v1.0.25: first-status pre-warm, upstreamed service launcher, installed-binary skill root, and live chamber view over real sessions
 
 ## [v27.1.36]  -  2026-10-18  -  Register four supplied Oprah and Les Skill22 book personas and integrate their traceable Council evidence; preserve separate teaching gaps.
