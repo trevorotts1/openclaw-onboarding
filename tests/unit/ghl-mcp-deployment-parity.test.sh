@@ -298,6 +298,27 @@ bash -c 'set -u; . "$1"; prune_retired_ghl_mcp_surfaces "$2" "$3"' _ "$TMP/prune
   && ok "the retirement tool survives BOTH the pulled bundle and the delivered destination (B2)" \
   || bad "the retirement tool is missing from the pulled bundle or the destination — the roll cannot retire"
 
+# COMBINED-TREE: repeated updates must be idempotent — a second prune run on the
+# same destination removes nothing and still leaves the retained tooling intact.
+_out2="$(bash -c 'set -u; . "$1"; prune_retired_ghl_mcp_surfaces "$2" "$3"' _ "$TMP/prune2.sh" "$DST" "$TMP/no-platform" 2>&1)"
+if printf '%s' "$_out2" | grep -q 'nothing to prune'; then
+  ok "repeated update: a second prune on an already-pruned destination removes nothing (idempotent)"
+else
+  bad "repeated update is not idempotent: second prune said: $(printf '%s' "$_out2" | tail -1)"
+fi
+for keep in ghl-mcp-autostart.sh lib/ghl-mcp-paths.sh ghl-mcp-pin-digest.sh; do
+  [ -e "$DST/$keep" ] \
+    && ok "repeated update: $keep still present after two prunes" \
+    || bad "repeated update dropped $keep on the second pass"
+done
+# The retained tool must remain INERT in the delivered copy: it carries the
+# retirement refusal, so a scheduled start cannot resurrect the server.
+if grep -q 'START_REFUSED_RETIRED' "$DST/ghl-mcp-autostart.sh" 2>/dev/null; then
+  ok "delivered retirement tool still refuses to start (START_REFUSED_RETIRED) after repeated updates"
+else
+  bad "delivered retirement tool lost its START_REFUSED_RETIRED refusal — it could start the server again"
+fi
+
 # ── 4. [SIMULATED BOOT] dump strip is load-bearing on both platforms ───────
 if command -v node >/dev/null 2>&1; then
   for pair in "contabo:$CT" "hostinger:$HG"; do
