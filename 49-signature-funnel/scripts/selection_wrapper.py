@@ -25,10 +25,12 @@ this wrapper is retired and dispatch points at the native entrypoint.
 WHAT THE WRAPPER DOES (dispatch adapter command for role
 product_selection; invoked with {request}/{result}/{work_dir}
 substitution by dispatch_launch.executor_from_config):
-  1. Loads the S49 page-request (1.0) and the launch record the request
-     references; cross-checks identity (tenant/location/launch/revision,
-     test_only) and that the request's offer_refs are exactly the launch
-     record's main-slot offer IDs. Any disagreement fails closed.
+  1. Loads the S49 page-request (schema 1.0, or 1.1 when dispatch has
+     stamped a prompt_policy_id under the prompt-policy adoption map)
+     and the launch record the request references; cross-checks identity
+     (tenant/location/launch/revision, test_only) and that the request's
+     offer_refs are exactly the launch record's main-slot offer IDs.
+     Any disagreement fails closed.
   2. ENRICHES checkout_targets (the Skill 78 selection-request profile
      additionally requires native product/price IDs per offer) from a
      configured mappings input: the native mapping rows the S44/S79 side
@@ -42,12 +44,16 @@ substitution by dispatch_launch.executor_from_config):
      the only derived value is target_ref when a row carries none, built
      as "mappings:<offer_id>:<native_product_id>:<native_price_id>", a
      reference into the mappings input, never a native ID itself.
-  3. Builds the enriched Skill 78 selection-request (the request's 20
+  3. Builds the enriched Skill 78 selection-request (the request's
      fields with copy_profile set to the profile const
      "signature-product-selection", plus checkout_targets) and checks it
      against the profile requirements read from
-     schema/selection-request.schema.json; writes it to the work dir as
-     evidence (selection-request.enriched.json). Nothing in Skill 78
+     schema/selection-request.schema.json, including the profile's
+     dual-accept pair rule: a 1.1 request's prompt_policy_id passes
+     through into the enriched document verbatim (never dropped, never
+     altered), a 1.0 request carries no such field. The enriched
+     document is written to the work dir as evidence
+     (selection-request.enriched.json). Nothing in Skill 78
      consumes this document at runtime today (see BUILD-REPORT flow map);
      it is the seam artifact S78's profile defines, produced and
      validated here so the enrichment is real, checked, and inspectable.
@@ -55,9 +61,13 @@ substitution by dispatch_launch.executor_from_config):
      launch record, capturing its stdout plan into the work dir
      (selection-plan.json). A builder violation or error fails closed
      with the builder's stderr passed through.
-  5. Runs Skill 78's REAL emitter (emit_page_result.py) on that plan
-     with --request-id set to the request's own request_id and the plan
-     file as the result artifact, capturing stdout.
+  5. Runs Skill 78's REAL emitter (emit_page_result.py) on that plan,
+     with --output naming a work-dir file for the emitted document and
+     --request naming the dispatch request the wrapper holds, so the
+     emitter echoes page_id and input_hash from the request itself;
+     the wrapper reads the emitted file back. (The emitter's current
+     CLI takes the result as an --output file and prints nothing on
+     success; it is the CLI form the shipped native chain uses.)
   6. VERIFIES the emitter actually answered this request: request_id,
      tenant_id, location_id, launch_id, revision in the emitted document
      must equal the request's. A mismatch (a tampered or confused
@@ -111,8 +121,12 @@ LEVELS = ("L0", "L1", "L2", "L3", "L4", "L5")
 LOCAL_STATUSES = ("authored", "locally_verified", "blocked")
 
 # The Skill 78 selection-request profile requirements, mirrored from
-# schema/selection-request.schema.json as read in full from main
-# (blob 4ab5d62f78): required field list, consts, and minimum lengths.
+# schema/selection-request.schema.json as read in full from main:
+# required field list, consts, and minimum lengths at the pre-adoption
+# profile (blob 4ab5d62f78), extended by the dual-accept pair rule of
+# the landed revised profile (blob c84b04d765): schema_version accepts
+# "1.0" or "1.1"; a "1.1" document must carry prompt_policy_id as a
+# non-empty string; a "1.0" document must not carry the field.
 PROFILE_REQUIRED = (
     "schema_version", "tenant_id", "location_id", "launch_id", "revision",
     "request_id", "page_id", "page_role", "assigned_skill", "approval_ref",
@@ -224,8 +238,20 @@ def validate_selection_request(sel: Dict[str, Any]) -> List[str]:
              for f in PROFILE_REQUIRED if f not in sel]
     if fails:
         return fails
-    if sel["schema_version"] != "1.0":
-        fails.append("selection request schema_version is not 1.0")
+    version = sel["schema_version"]
+    if version not in ("1.0", "1.1"):
+        fails.append(f"selection request schema_version {version!r} is "
+                     "not \"1.0\" or \"1.1\"")
+    elif version == "1.1":
+        pid = sel.get("prompt_policy_id")
+        if not isinstance(pid, str) or len(pid) < 1:
+            fails.append("selection request schema_version is 1.1 but "
+                         "prompt_policy_id is missing or is not a "
+                         "non-empty string")
+    elif "prompt_policy_id" in sel:
+        fails.append("selection request schema_version is 1.0 but "
+                     "carries prompt_policy_id, which the profile "
+                     "forbids for 1.0")
     if sel["page_role"] != ROLE:
         fails.append(f"selection request page_role is not {ROLE}")
     if sel["assigned_skill"] != SKILL:
@@ -356,18 +382,20 @@ def run_wrapper(args: argparse.Namespace) -> int:
         plan_path = work_dir / "selection-plan.json"
         plan_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
 
+        emitted_path = work_dir / "selection-result.emitted.json"
         emit_argv = [sys.executable, emitter, str(plan_path),
+                     "--output", str(emitted_path),
                      "--author-session", args.author_session,
-                     "--request-id", request["request_id"],
+                     "--request", str(Path(args.request)),
                      "--status", args.status,
                      "--artifact", str(plan_path)]
-        if request.get("test_only"):
-            emit_argv.append("--test-only")
-        raw_text = _run(emit_argv, "Skill 78 emitter")
-        try:
-            raw = json.loads(raw_text)
-        except ValueError as exc:
-            raise WrapperError(f"emitter stdout is not JSON: {exc}")
+        _run(emit_argv, "Skill 78 emitter")
+        if not emitted_path.is_file():
+            raise WrapperError("Skill 78 emitter exited 0 but wrote no "
+                               f"result file at {emitted_path}")
+        raw = _load(emitted_path, "emitter result")
+        if not isinstance(raw, dict):
+            raise WrapperError("emitter result is not a JSON object")
         projected = project_result(raw, request)
         fails = validate_projection(projected, request)
         if fails:

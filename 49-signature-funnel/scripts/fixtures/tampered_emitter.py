@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """TEST STUB ONLY. Stands in for a tampered or confused Skill 78 emitter:
-it prints a result in the real emitter's exact stdout shape (the
-selection-result profile fields, pretty-printed JSON) but with a
-request_id that is NOT the --request-id it was invoked with. The wrapper
-must refuse it (fail closed), never correct an identity it cannot vouch
-for. Used by tests/test_selection_wrapper.py case D only; the real
-emitter from main is used in every other case."""
+it writes a result in the real emitter's exact output shape (the
+selection-result profile fields, delivered at the --output path the
+real emitter's current CLI uses) but with a request_id that is NOT the
+request it was invoked with. The wrapper must refuse it (fail closed),
+never correct an identity it cannot vouch for. Used by
+tests/test_selection_wrapper.py case D only; the real emitter from main
+is used in every other case."""
 import json
 import sys
 from pathlib import Path
@@ -33,7 +34,14 @@ def main(argv):
         "native_bindings_ref": None,
         "test_only": True,
     }
-    print(json.dumps(result, indent=2))
+    text = json.dumps(result, indent=2)
+    if "--output" in argv:
+        out = Path(argv[argv.index("--output") + 1])
+        if out.parent and str(out.parent) not in ("", "."):
+            out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text + "\n")
+    else:
+        print(text)
     return 0
 
 

@@ -21,10 +21,13 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
   1. ENRICH  builds the superset request from the S49 page-request, the
      launch record, the compiled route graph (hash-verified against the
      request), the staged copy document and the verified journey state.
-     The incoming request must be exactly page-request 1.0-shaped: any
-     key outside the packet schema's fields fails closed by name here
-     rather than being forwarded, because Skill 80's runtime validator
-     does not enforce its schema's additionalProperties: false.
+     The incoming request must be exactly page-request shaped: the
+     1.0 fields, plus, on a request stamped schema_version "1.1", the
+     one 1.1 field (prompt_policy_id, admitted under the pair rule by
+     the flip-time seam, adoption map 1.4 item 4). Any other key fails
+     closed by name here rather than being forwarded, because Skill
+     80's runtime validator does not enforce its schema's
+     additionalProperties: false.
      Every block is sourced from a named input (see BUILD-REPORT.md for
      the block-by-block table). A block with NO honest source fails the
      run closed with a named error BEFORE produce.py is invoked: the
@@ -89,18 +92,27 @@ RESULT_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                  "native_bindings_ref", "test_only")
 # The page-request 1.0 fields: exactly the properties of the packet
 # page-request schema (19 fields; the schema is additionalProperties:
-# false). This wrapper consumes 1.0-shaped requests ONLY: enrich()
-# fails closed on any other incoming key instead of forwarding it to
-# Skill 80, whose runtime validator (adapter_common.validate_request)
-# is a stdlib mirror that does NOT enforce the schema's
-# additionalProperties: false. The test suite pins this tuple to the
-# packet schema's properties, so the two cannot diverge silently.
+# false). enrich() fails closed on any other incoming key instead of
+# forwarding it to Skill 80, whose runtime validator
+# (adapter_common.validate_request) is a stdlib mirror that does NOT
+# enforce the schema's additionalProperties: false. The test suite
+# pins this tuple to the packet schema's properties, so the two
+# cannot diverge silently.
 REQUEST_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                   "revision", "request_id", "page_id", "page_role",
                   "assigned_skill", "approval_ref", "input_hash", "brand_ref",
                   "brand_hash", "route_graph_ref", "route_graph_hash",
                   "offer_refs", "copy_profile", "allowed_write_target",
                   "test_only")
+# The one field the 1.1 shape adds, admitted by the flip-time seam
+# (adoption map 1.4 item 4, executed under map 2.3 step 3(a)): on a
+# request stamped schema_version "1.1" this key is admitted and
+# carried into the enriched request unchanged; on any other version
+# its presence fails closed, as does a "1.1" request without a
+# non-empty string value (the pair rule, in the consumers' wording).
+# It is deliberately NOT part of REQUEST_FIELDS, which stays pinned
+# to the packet page-request 1.0 schema's properties.
+POLICY_FIELD = "prompt_policy_id"
 ECHO_FIELDS = ("request_id", "input_hash", "page_id", "launch_id",
                "revision", "tenant_id", "location_id", "test_only")
 
@@ -519,16 +531,40 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     naming every block that has no honest source."""
     problems: List[str] = []
     # Input shape (DEFECT 1 cure): the request must be exactly
-    # page-request 1.0-shaped. Any key outside REQUEST_FIELDS (for
-    # example the schema 1.1 prompt_policy_id) fails closed by name
-    # here, before the enriched request is built, instead of being
-    # silently forwarded to a consumer whose runtime validator does
-    # not enforce its schema's additionalProperties: false.
-    for key in sorted(set(request) - set(REQUEST_FIELDS)):
+    # page-request shaped. Any key outside REQUEST_FIELDS fails closed
+    # by name here, before the enriched request is built, instead of
+    # being silently forwarded to a consumer whose runtime validator
+    # does not enforce its schema's additionalProperties: false.
+    # The one admission beyond the 1.0 fields is the flip-time seam
+    # (adoption map 1.4 item 4): POLICY_FIELD is admitted on a request
+    # stamped "1.1" and carried through unchanged (the enriched request
+    # below starts as a copy of the request, so an admitted id rides
+    # it verbatim). The pair rule is enforced with the consumers' own
+    # wording: the field on any other version fails closed, and a
+    # "1.1" request without a non-empty string id fails closed, so a
+    # mislabeled request is refused here by name rather than
+    # forwarded. Genuinely unknown keys fail exactly as before.
+    for key in sorted(set(request) - set(REQUEST_FIELDS) - {POLICY_FIELD}):
         problems.append(
             f"request: field {key!r} is not part of page-request 1.0; "
             "this wrapper consumes 1.0-shaped requests only (refused, "
             "never forwarded)")
+    version = request.get("schema_version")
+    if POLICY_FIELD in request:
+        if version != "1.1":
+            problems.append(
+                "request: prompt_policy_id requires request "
+                "schema_version 1.1 (the 1.0 schema forbids the field)")
+        elif not isinstance(request[POLICY_FIELD], str) \
+                or not request[POLICY_FIELD]:
+            problems.append(
+                "request: a 1.1 request must carry a non-empty "
+                "prompt_policy_id (the 1.1 label exists to carry "
+                "the field)")
+    elif version == "1.1":
+        problems.append(
+            "request: a 1.1 request must carry a non-empty "
+            "prompt_policy_id (the 1.1 label exists to carry the field)")
     _check_sidecar(sidecar, problems)
     if request.get("page_role") != instance:
         problems.append(f"instance: request page_role "

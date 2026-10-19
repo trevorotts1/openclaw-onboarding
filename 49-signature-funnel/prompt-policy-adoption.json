@@ -2,18 +2,18 @@
   "schema": "signature-launch-prompt-policy-adoption/v1",
   "roles": {
     "landing": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 71,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.1 (landing, Lane B B-343); consumer candidate 1.1 landed in train #2268, SWARM-verified blob-exact.",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "product_selection": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 78,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.4 (product_selection, Lane B B-343); consumer candidate 1.2 landed in train #2268, SWARM-verified blob-exact; seam carried in this commit: rooms/S71/review-scratch/FLIPTIME-SELECTION-SEAM-CANDIDATE-2026-10-18.md (B-344, review B-360 PASS).",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "checkout": {
       "state": "never_by_design",
@@ -23,32 +23,32 @@
       "flipped_at": null
     },
     "upsell_1": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 80,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.2 (upsell_1, Lane B B-343); consumer candidate 1.4 landed in train #2268, SWARM-verified blob-exact; seam carried in this commit: rooms/S71/review-scratch/FLIPTIME-UPSELL-SEAM-CANDIDATE-2026-10-18.md (B-345, review B-370 PASS).",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "downsell_1": {
-      "state": "blocked_no_consumer",
+      "state": "ready",
       "consumer_skill": 81,
-      "evidence_ref": "no 81-* directory on main",
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Skill 81 downsell contract landed (train #2268, main 4b870ad778109e09504d475ea5560b457788a914): 81-signature-downsell/schemas/downsell-request.schema.json dual-accept, pair rule in 81-signature-downsell/validators/validate_request.py, consumer 49-signature-funnel/scripts/downsell_wrapper.py (CR-S49-005); readiness note rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "upsell_2": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 80,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.3 (upsell_2, Lane B B-343); consumer candidate 1.4 landed in train #2268, SWARM-verified blob-exact; wrapper allowlist landed with the upsell_1 flip and re-verified at this flip.",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     },
     "thank_you": {
-      "state": "not_ready",
+      "state": "ready",
       "consumer_skill": 82,
-      "evidence_ref": null,
-      "verified_against_main": null,
-      "flipped_at": null
+      "evidence_ref": "Flip-time readiness note: rooms/S71/review-scratch/FLIPTIME-READINESS-NOTES-2026-10-18.md section 3.5 (thank_you, Lane B B-343); consumer candidate 1.6 (S49 translator dual-accept) landed in train #2268, SWARM-verified blob-exact.",
+      "verified_against_main": "4b870ad778109e09504d475ea5560b457788a914",
+      "flipped_at": "2026-10-18"
     }
   }
 }
