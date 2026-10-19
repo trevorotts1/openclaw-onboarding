@@ -56,12 +56,29 @@ export interface CouncilSessionRecord {
   [key: string]: unknown;
 }
 
+/** One row of `GET /api/council/sessions`: enough to pick a session, nothing more. */
+export interface CouncilSessionSummary {
+  session_id: string;
+  state: string;
+  mode: string;
+  question: string;
+  created_at: string;
+  /** True for labeled synthetic sample sessions; the chamber says so. */
+  sample: boolean;
+}
+
 /** The session source the integration root binds to the front door. */
 export interface CouncilSessionReader {
   /** Null means the store does not know the session (the route 404s). */
   read(
     sessionId: string,
   ): CouncilSessionRecord | null | Promise<CouncilSessionRecord | null>;
+  /**
+   * Newest-first summaries of the sessions visible to the reader. Absent
+   * means this reader cannot list (the list route answers 501, never an
+   * empty list that would read as "no sessions").
+   */
+  list?(): readonly CouncilSessionSummary[] | Promise<readonly CouncilSessionSummary[]>;
 }
 
 /** The exact JournalEvent list surface; a fake is enough for tests. */
@@ -76,6 +93,8 @@ export interface JournalEventStreamSource {
 /** The exact repository session surface; a fake is enough for tests. */
 export interface CouncilSessionSource {
   getSession(envelope: AuthorizationEnvelope, sessionId: string): StoredSession | null;
+  /** Optional: a source without it yields a reader that does not list. */
+  listSessions?(envelope: AuthorizationEnvelope): StoredSession[];
 }
 
 /** Map one canonical journal row to the served frame. */
@@ -160,9 +179,10 @@ export function repositorySessionReader(options: {
   repositories: CouncilSessionSource;
   envelope: AuthorizationEnvelope;
 }): CouncilSessionReader {
-  return {
+  const { repositories, envelope } = options;
+  const reader: CouncilSessionReader = {
     read(sessionId: string): CouncilSessionRecord | null {
-      const session = options.repositories.getSession(options.envelope, sessionId);
+      const session = repositories.getSession(envelope, sessionId);
       if (session === null) return null;
       return {
         session_id: session.spec.session_id,
@@ -175,4 +195,16 @@ export function repositorySessionReader(options: {
       };
     },
   };
+  if (repositories.listSessions) {
+    reader.list = (): CouncilSessionSummary[] =>
+      (repositories.listSessions?.(envelope) ?? []).map((session) => ({
+        session_id: session.spec.session_id,
+        state: session.state.state,
+        mode: session.spec.mode,
+        question: session.brief.question,
+        created_at: session.spec.created_at,
+        sample: session.sample,
+      }));
+  }
+  return reader;
 }

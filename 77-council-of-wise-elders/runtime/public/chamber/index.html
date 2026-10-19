@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
-<title>Council of Wise Elders — chamber (fictional sample)</title>
+<title>Council of Wise Elders — chamber</title>
 <link rel="stylesheet" href="./council-theme.css">
 <link rel="stylesheet" href="./council-room.css">
 <link rel="stylesheet" href="./council-journey.css">
@@ -17,6 +17,18 @@
   .chamber-reading-card dl { margin:.5rem 0 0; }
   .chamber-reading-card dt { font-weight:700; margin-top:.5rem; }
   .chamber-reading-card dd { margin:.15rem 0 0; }
+  .live-sessions { list-style:none; margin:.5rem 0 1rem; padding:0; display:grid; gap:.5rem; }
+  .council-session-btn { display:flex; flex-direction:column; gap:.25rem; width:100%; min-height:var(--council-touch-target); padding:.6rem .85rem; text-align:left; font:inherit; color:inherit; background:var(--council-surface); border:1px solid var(--council-line); border-radius:var(--council-radius-control); cursor:pointer; overflow-wrap:anywhere; }
+  .council-session-btn[aria-pressed="true"] { border-color:var(--council-accent-ink); box-shadow:0 0 0 2px var(--council-accent-ink); }
+  .council-session-btn:focus-visible, .live-action:focus-visible, #room-question:focus-visible { outline:3px solid var(--council-accent-ink); outline-offset:2px; }
+  .live-action { min-height:var(--council-touch-target); padding:.5rem 1rem; font:inherit; cursor:pointer; }
+  .live-empty, .live-error { border-left:.25rem solid #c98a00; background:#c98a001a; padding:.75rem 1rem; margin:1rem 0; }
+  .live-error { border-color:#b42318; background:#b423181a; }
+  .live-seats, .live-events { padding-left:1.25rem; overflow-wrap:anywhere; }
+  .live-seat[data-status="waiting"] { opacity:.75; }
+  .live-events { max-height:24rem; overflow:auto; }
+  #live-room h3 { overflow-wrap:anywhere; }
+  @media (max-width:600px) { .live-action { width:100%; } }
 </style>
 </head>
 <body>
@@ -33,9 +45,37 @@
     <header class="council-journey-head">
       <p class="council-eyebrow">Council of Wise Elders</p>
       <h1 class="council-display">The chamber</h1>
-      <p class="council-lede">Nine advisors, one frozen brief, a verdict you can inspect. This page is a self-contained, fixture-driven view of the locked chamber design. It is not a live council session.</p>
+      <p class="council-lede">Nine advisors, one frozen brief, a verdict you can inspect. This page lists the real council sessions this service holds and follows the one you choose as its committed events arrive. A clearly labelled fictional sample of the chamber design is available separately and is never mixed with real sessions.</p>
     </header>
 
+    <section id="live-root" aria-labelledby="live-heading">
+      <div class="council-shell-head">
+        <h2 class="council-heading" id="live-heading">Council sessions</h2>
+        <button type="button" class="live-action" id="live-refresh">Refresh</button>
+      </div>
+      <p id="live-status" role="status" aria-live="polite">Loading council sessions...</p>
+      <noscript><div class="live-error" role="note">The live chamber needs JavaScript. Without it this page cannot read council sessions, and it shows nothing in their place.</div></noscript>
+      <div id="live-error" class="live-error" role="alert" hidden></div>
+      <div id="live-empty" class="live-empty" hidden>
+        <p style="margin:0"><strong>No council sessions yet.</strong></p>
+        <p style="margin:.5rem 0 0">A session starts when you ask your agent to convene the Council of Wise Elders, or from the command line: <code>blackceo-council create --spec FILE --brief FILE</code>, then <code>blackceo-council start SESSION --grant-ref REF</code>. It appears here as soon as it is created, and its events stream in once it runs.</p>
+      </div>
+      <ul id="session-list" class="live-sessions" aria-label="Council sessions"></ul>
+      <section id="live-room" aria-labelledby="room-question" hidden>
+        <h3 class="council-heading" id="room-question" tabindex="-1"></h3>
+        <p id="room-meta"></p>
+        <p id="room-conn" role="status" aria-live="polite"></p>
+        <button type="button" class="live-action" id="room-reconnect" hidden>Reconnect</button>
+        <h4>The nine seats</h4>
+        <ul id="room-seats" class="live-seats"></ul>
+        <h4>Committed events (newest first)</h4>
+        <ol id="room-events" class="live-events" reversed></ol>
+      </section>
+    </section>
+
+    <p><button type="button" class="live-action" id="sample-toggle" aria-expanded="false" aria-controls="sample-root" hidden>Show the fictional sample (not real data)</button></p>
+
+    <div id="sample-root" role="region" aria-label="Fictional sample, not real data" hidden>
     <div class="chamber-static-note" role="note">
       <strong>Fictional sample.</strong> The decision, the advisor cards and every quotation on
       this page come from the synthetic fixture in the Command Center council component set.
@@ -239,11 +279,14 @@
       </div>
     </section>
 
+      <p class="council-meta">Fictional sample fixture. No live session, client data or model output is represented.</p>
+    </div>
+
     <footer class="council-journey-foot">
       <p class="council-meta">Each council member is an AI perspective inspired by the published work of the named author. Not the individual and not an endorsement.</p>
-      <p class="council-meta">Fictional sample fixture. No live session, client data or model output is represented. Live council journeys require the authenticated Command Center council API; see RECEIPT.md for the exact blocking dependency per route.</p>
     </footer>
   </div>
 </div>
+<script src="./chamber-live.js"></script>
 </body>
 </html>
