@@ -37,8 +37,8 @@ This skill is shipped as an MVP. Every component is marked below as REAL (works 
 |---|---|---|
 | Build With AI prompt template (standardized 8-section) | REAL | templates/build-with-ai-prompt-template.md -- the canonical output format |
 | Dependency-first protocol (tags/fields/values FIRST) | REAL | protocols/dependency-creation-protocol.md -- enforced before every build |
-| GHL triggers catalog | REAL | references/ghl-triggers-catalog.md -- 14 categories, 80+ triggers |
-| GHL actions catalog | REAL | references/ghl-actions-catalog.md -- 14 categories, 100+ actions |
+| GHL triggers catalog | REAL | references/ghl-triggers-catalog.md -- catalog snapshot organized by category; every entry carries a use case and its filters. Category and entry counts are NOT a completeness claim: availability is tenant- and capability-version-gated |
+| GHL actions catalog | REAL | references/ghl-actions-catalog.md -- catalog snapshot organized by category; every entry carries a use case. Category and entry counts are NOT a completeness claim: availability is tenant- and capability-version-gated |
 | GHL conditions reference | REAL | references/ghl-conditions-reference.md -- If/Else + trigger filters |
 | GHL Workflow AI Builder guide | REAL | references/ghl-workflow-ai-builder.md -- how the AI builder works |
 | Webhook configuration protocol | REAL | protocols/webhook-configuration-protocol.md -- Custom Webhook action deep-dive |
@@ -48,6 +48,12 @@ This skill is shipped as an MVP. Every component is marked below as REAL (works 
 | QC rubric | REAL | references/qc-rubric.md -- 10-category QC for every generated prompt |
 | Install scripts (00--06) | REAL | scripts/ -- prerequisite verify, master-files locate, seed playbook, init JSONL sinks, update core files |
 | Library scripts | REAL | scripts/lib-master-files.sh -- shared helpers for master-files resolution |
+
+**Catalog availability is capability-version-aware.** A trigger or action is callable only when its
+operation row is enabled for the tenant at the capability version in force; a catalog entry never
+proves availability on the operator's plan, and a catalog snapshot is never a complete action list.
+Discover the live surface before promising a build step, and report the honest gap when an entry is
+unavailable.
 
 ## How Skill 41 fits in the pipeline
 
@@ -171,8 +177,8 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | protocols/dependency-creation-protocol.md | How to create tags, fields, values via GHL API in correct order |
 | protocols/webhook-configuration-protocol.md | Custom Webhook action: method, URL, headers, raw body, merge fields |
 | protocols/trigger-filters-protocol.md | How to set trigger filters correctly: per-trigger fields, Any of / None of, re-fire guards |
-| references/ghl-triggers-catalog.md | 14 categories, 80+ triggers, each with a use case and its filters |
-| references/ghl-actions-catalog.md | 14 categories, 100+ actions, each with a use case |
+| references/ghl-triggers-catalog.md | Catalog snapshot organized by category, each trigger with a use case and its filters; NOT a completeness claim -- availability is tenant- and capability-version-gated |
+| references/ghl-actions-catalog.md | Catalog snapshot organized by category, each action with a use case; NOT a completeness claim -- availability is tenant- and capability-version-gated |
 | references/ghl-conditions-reference.md | Deep If/Else: branches, AND/OR, None fallback, dynamic values, filtering use cases |
 | references/ghl-workflow-ai-builder.md | How the GHL Workflow AI Builder works (v3 features, limitations) |
 | references/ghl-webhook-reference.md | Webhook action deep reference: CUSTOM/POST/GET modes, headers, raw JSON |

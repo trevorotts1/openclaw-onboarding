@@ -248,6 +248,16 @@ def _normalize_export(obj: dict, workflow_id: str) -> dict:
 
 
 class CafExecutor:
+    # Evidence fields this adapter can actually fill (GU-018). The
+    # receiver intersects this with its own producible set, so the
+    # carrier declares exactly what exists. Fields absent here — the QC
+    # checklist instance/complete/WF-item detail, ghl_pack_version, the
+    # conversational trigger set — have no surface in this adapter and
+    # are declared unproducible, never filled with a placeholder.
+    EVIDENCE_FIELDS = frozenset({
+        "build_stats", "readback", "qc.exit_code", "qc.rubric",
+    })
+
     def __init__(self, caf_path: str = "caf",
                  runner: Runner = _subprocess_runner,
                  provisioning_ledger: Optional[str] = None,
@@ -335,6 +345,10 @@ class CafExecutor:
         return skill_root / "qc-built-workflow.sh"
 
     def _run_qc(self, workflow_id: str, result: dict) -> None:
+        # Only the exit code and the rubric floor are captured. The
+        # checklist instance path / completion flag / WF item count the
+        # stage-14 contract asks for are NOT produced here; the receiver
+        # declares them unproducible (GU-018) rather than inventing them.
         qc_path = self._qc_script_path()
         if not qc_path.exists():
             # Honest recording, never a fabricated pass: the receiver

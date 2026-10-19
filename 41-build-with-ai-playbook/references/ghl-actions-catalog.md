@@ -2,6 +2,13 @@
 
 Source: https://help.gohighlevel.com/support/solutions/articles/155000002294-what-are-workflow-actions-complete-list-
 
+**Snapshot, not a complete list.** This catalog is a planning aid. Action availability is
+tenant-specific and **capability-version-gated**: an entry here may be unavailable on the
+operator's plan, and an action absent here may still exist. The authoritative contract for
+what is callable is the public V4 adapter's per-operation registry; use the official MCP
+`search_operations` / `describe_operation` tools to discover the live surface. Report an
+honest gap rather than promising an action the catalog cannot prove.
+
 Each action carries what it does and what to use it for (Use when). The If Else action is the
 filtering workhorse and has its own deep treatment in references/ghl-conditions-reference.md and
 protocols/trigger-filters-protocol.md.
