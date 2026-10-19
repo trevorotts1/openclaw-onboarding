@@ -288,7 +288,8 @@
         "the layout references as resolved per assets/page-references/README.md and substitutions.json (Item 13 as amended by Item 17: the original file, else the registered house default)",
         "assets/visual-standards/README.md (the visual standard set, Item 14: Trevor's wireframe, mockup, and hybrid examples; reviewers score the qc-contract trait lists against it)",
         "references/qc-contract.md",
-        "references/section-image-prompt.md"
+        "references/section-image-prompt.md",
+        "references/hypersaturation-framework.md (SPF020: the page color system and image grade; the executor adds both blocks in the client's colors, scripts/validate_page_color.py measures the stitched page)"
       ],
       "may_be_not_authorized": false
     },
@@ -464,7 +465,8 @@
         "font-action-plan/font-map.json (the typography spec record the section guide's specs are drawn from)",
         "final-mockups/production-record.json (where the mockup is delivered as section images: the guide's sections match its sections)",
         "references/qc-contract.md",
-        "references/section-image-prompt.md"
+        "references/section-image-prompt.md",
+        "references/hypersaturation-framework.md (SPF020: the page color system and image grade; the executor adds both blocks in the client's colors, scripts/validate_page_color.py measures the stitched page)"
       ],
       "may_be_not_authorized": false,
       "approval_artifact": "final-mockups/hybrid-board.png"

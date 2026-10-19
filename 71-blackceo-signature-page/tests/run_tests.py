@@ -61,6 +61,8 @@ MODULES = [
     "test_sync_allowlist.py",
     # Signature Launch S71 A23: per-provider image-generation-qc gate.
     "test_provider_gate_a23.py",
+    # SPF020: page color system + image grade blocks and the page-level pixel check.
+    "test_hypersaturation.py",
 ]
 
 def skip_reason(stdout):

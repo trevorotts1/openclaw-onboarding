@@ -65,6 +65,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 DEFAULT_REQUEST = "production-request.json"
@@ -475,6 +477,11 @@ def load_request(run_dir: Path, name: str) -> dict:
     sections = data.get("sections")
     if not isinstance(sections, list) or not sections:
         raise ExecutorError("production request needs a non-empty 'sections' array")
+    data["_hypersat"] = hypersaturation.roles_for_run(run_dir)
+    if data["_hypersat"] is None:
+        print("WARN hypersaturation: no resolved client palette, so the page color system and image "
+              "grade blocks are omitted; resolve the client's brand colors first "
+              "(scripts/brand_colors.py)", file=sys.stderr)
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -559,12 +566,15 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block()
-    blocks = [b for b in (copy_block, frame_block, neg_block) if b]
+    page_color, image_grade = hypersaturation.stage_blocks(
+        stage, index, section, request.get("_hypersat"))
+    blocks = [b for b in (copy_block, page_color, image_grade, frame_block, neg_block) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
-        "contract_chars": len(frame_block) + len(neg_block),
+        "contract_chars": len(frame_block) + len(neg_block) + len(page_color) + len(image_grade),
+        "hypersaturation_chars": len(page_color) + len(image_grade),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
@@ -829,6 +839,15 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         raise ExecutorError(f"cannot read the item prompt {prompt_path}: {exc}")
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
+    roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
+    graded = hypersaturation.item_prompt(prompt, roles)
+    if graded != prompt:
+        cap = prompt_cap(request.get("model"))
+        if cap and len(graded) > cap:
+            raise ExecutorError(
+                f"item {item}: prompt with the image color grade is {len(graded)} chars, over the "
+                f"{cap}-char model maximum; cut item prose, never the grade")
+        prompt = graded
     digits = "".join(ch for ch in item if ch.isdigit())
     if not digits:
         raise ExecutorError(f"item id {item!r} carries no number; cannot derive the delivered name")
@@ -916,6 +935,10 @@ def main(argv=None) -> int:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
                             continue
+                        if sizes.get("hypersaturation_chars"):
+                            print(f"PREFLIGHT_HYPERSAT {stage} {name} "
+                                  f"ground={hypersaturation.ground_for(index, section)} "
+                                  f"chars={sizes['hypersaturation_chars']}")
                         print(f"PREFLIGHT {stage} {name} ratio={ratio} "
                               f"chars={sizes['chars']} copy={sizes['copy_chars']} "
                               f"contract={sizes['contract_chars']} "

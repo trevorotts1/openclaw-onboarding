@@ -79,6 +79,24 @@ The assembly scripts `stitch_sections.py` and `build_hybrid_board.py` are
 unchanged by this wire: they were already content-height. No assembly-canvas
 fix is claimed here or in this change's history.
 
+## Color: hypersaturation, built in
+
+Trevor's order: the images are hypersaturated, always in the client's brand colors. The
+executor adds two blocks, both from `scripts/hypersaturation.py` and filled from the run's
+resolved client palette (never a default, never another client's colors):
+
+- `visual-mockup` and `final-mockups` prompts carry the **PAGE COLOR SYSTEM** block (this
+  section's ground, the hero, dark, light and accent slots, the rules) and the **IMAGE COLOR
+  GRADE** block. Both are counted in `contract_chars`; `hypersaturation_chars` reports their
+  size, and `--preflight` prints `PREFLIGHT_HYPERSAT` per prompt.
+- every image-inventory item prompt (`--item`) gets the **IMAGE COLOR GRADE** block unless it
+  already carries one, and is refused rather than trimmed if prompt plus block passes the model
+  maximum.
+
+With no resolved client palette the blocks are omitted and a `WARN hypersaturation` line names
+why. The rules and evidence are `references/hypersaturation-framework.md`; the page-level pixel
+check is `scripts/validate_page_color.py`.
+
 ## Composition
 
 `stitch_sections.py` (wireframe full-page PNG) and `build_hybrid_board.py` (mockup board) are

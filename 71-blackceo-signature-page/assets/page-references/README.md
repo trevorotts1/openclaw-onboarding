@@ -160,3 +160,33 @@ present in full; no pricing anywhere on the page.
 The non-substitutes warning above stands for everything else: no
 other file may be fabricated, generated, or substituted without its
 own recorded owner ruling.
+
+## Hosted links for the GoFullPage PDFs (2026-10-19, SPF020)
+
+The two PDFs (108 MB together) are never bundled in the skill. They are
+bundled as links: downscaled renders hosted in the operator media library
+(BlackCEO LLC, folder `sigpage-reference-images`), each link re-downloaded
+and compared byte for byte at upload. The machine-readable record, with the
+SHA-256 of every file, is `hosted_links` in `substitutions.json`; a run reads
+the links, not the binaries.
+
+| Variant | What it is | Long stack (1000 px wide, 14 pages) | Overview sheet |
+|---|---|---|---|
+| VA | clean and graphic: flat white, hero and black bands, one headline treatment | https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/14843a81-8078-4f9a-8114-7238642d7e5e.jpg | https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/c2fe1ba2-6b8f-4e39-82b6-6b9cc5ccca1d.jpg |
+| VB | layered and maximal: arched and rounded crops, patterned grounds, a second accent | https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/08a32404-9d2c-4143-bd3d-fd72a01236b4.jpg | https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/30936148-dc9b-4fe7-815f-6b4c7ad6d3d4.jpg |
+
+Each variant also has its 14 pages as separate 1000 px renders (`hosted_links`
+in `substitutions.json`), for jobs that attach a few pages instead of the
+whole stack.
+
+**What these teach.** The page-level color system and section rhythm, as
+roles: one hero color as full-bleed grounds, hard dark and light grounds,
+two-tone heavy headlines, photos graded to the page. The rules are
+`references/hypersaturation-framework.md`. They are STRUCTURE ONLY, under
+`references/reference-image-use.md`: the pages' own red, black and white, the
+green and tan buttons, the brand name and the copy never reach a client page.
+The sampled colors and brand strings are recorded in `hosted_links` so the
+reference bleed check can flag them. Use VA for structure and VB for its accent
+use and shape vocabulary (its arches and rounded crops map to the circle and
+arch treatments of the design styles and composition library), never VB's many
+type faces.
