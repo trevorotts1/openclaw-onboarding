@@ -70,7 +70,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "public/chamber"
   ],
   "license": "UNLICENSED",
   "main": "dist/index.js",
