@@ -61,6 +61,8 @@ MODULES = [
     "test_sync_allowlist.py",
     # Signature Launch S71 A23: per-provider image-generation-qc gate.
     "test_provider_gate_a23.py",
+    # SPF022: reference images are structure only (prompt block + bleed QC).
+    "test_reference_use.py",
 ]
 
 def skip_reason(stdout):

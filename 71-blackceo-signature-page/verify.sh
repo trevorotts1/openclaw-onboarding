@@ -81,6 +81,7 @@ for f in \
   CHANGELOG.md VERSION START-HERE.md EVALUATION-CHECKLIST.md \
   references/runtime-adapters.md references/kie-generation-route.md agents/openai.yaml \
   scripts/swarm_runner.py scripts/browser_sessions.py scripts/ship_run_events.py \
+  scripts/reference_use.py references/reference-image-use.md references/reference-library.json \
   scripts/validate_copy_structure.py scripts/validate_install.py \
   scripts/validate_funnel_completion.py scripts/check_deliverables.py \
   references/run-events-schema.md references/run-events.schema.json \
