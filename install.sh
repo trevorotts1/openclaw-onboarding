@@ -3987,6 +3987,15 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
         esac
     done
     
+    # FIX 11.3: verify what was copied. Every post-copy verify.sh call in this
+    # file used to sit inside `|| true`, so a skill that landed incomplete was
+    # silent. Warn (never fail) on the same "continuing" rule update-skills.sh
+    # uses — an install must not stop over one skill's own check.
+    if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
+        bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >/dev/null 2>&1 \
+            || warn "Skill $SKILL_NAME failed its post-copy verify.sh — review $SKILLS_DIR/$SKILL_NAME"
+    fi
+
     add_to_list "installed" "$SKILL_NAME"
     SKILL_COUNT=$((SKILL_COUNT + 1))
 done
@@ -7884,11 +7893,16 @@ oc_ghl_mcp_scan() {
     #    still run after the source checkout is deleted), so their presence is
     #    expected and is NOT a resurrection signal.
     if [ -n "$_launcher_dir" ] && [ -d "$_launcher_dir" ]; then
-        for _lf in ${_OC_GHL_MCP_RETIRED_SCRIPTS:-}; do
-            if [ -f "$_launcher_dir/$_lf" ]; then
-                OC_GHL_MCP_V_LAUNCHER=present
-                break
-            fi
+        # GLOB, not the named list: the named list only covers the five files we
+        # know about, so a NEWLY added ghl-mcp-*.sh resurrection surface would be
+        # invisible here. The retained retirement tooling is exempted by its
+        # retirement marker (same rule the delivery gate uses), so any OTHER
+        # ghl-mcp-*.sh that reappears is still caught.
+        for _lf in "$_launcher_dir"/ghl-mcp-*.sh; do
+            [ -f "$_lf" ] || continue
+            grep -qE 'GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED' "$_lf" 2>/dev/null && continue
+            OC_GHL_MCP_V_LAUNCHER=present
+            break
         done
         unset _lf
     fi

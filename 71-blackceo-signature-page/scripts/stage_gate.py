@@ -3355,6 +3355,43 @@ def compute_review_mode(run_dir):
             f"{len(author_sessions)} author sessions, no overlap)")
 
 
+# Fix 12.4 (task 4.3): the four-image rule, enforced at report time.
+# The per-stage artifacts prove presence per glob; this proves the SET
+# exists for every page role the run declares. A run missing any of the
+# four can never report complete.
+FOUR_IMAGE_GLOBS = (
+    "desktop-wireframe/section-*.png",
+    "mobile-tablet/section-*.png",
+    "final-mockups/desktop/part-*.png",
+    "final-mockups/mobile/part-*.png",
+)
+
+def declared_page_roles(run_dir):
+    """The page roles this run declares (references/page-request.schema.json
+    enum). A launch-context run records intake.json's launch.page_role and
+    places the same request at run_dir/page-request.json; a classic run with
+    neither builds the signature landing page, the skill's one page role."""
+    intake = intake_data(run_dir)
+    launch = intake.get("launch")
+    if isinstance(launch, dict) and isinstance(launch.get("page_role"), str) \
+            and launch["page_role"]:
+        return [launch["page_role"]]
+    try:
+        request = json.loads((run_dir / "page-request.json").read_text(encoding="utf-8"))
+    except Exception:
+        request = None
+    if isinstance(request, dict) and isinstance(request.get("page_role"), str) \
+            and request["page_role"]:
+        return [request["page_role"]]
+    return ["landing"]
+
+def four_image_gaps(run_dir):
+    """(page_role, glob) pairs whose glob resolves to no file in the run."""
+    return [(role, pattern)
+            for role in declared_page_roles(run_dir)
+            for pattern in FOUR_IMAGE_GLOBS
+            if not any(run_dir.glob(pattern))]
+
 def cmd_report(run_dir):
     state, _ = load_state(run_dir)
     now = datetime.now(timezone.utc)
@@ -3476,6 +3513,11 @@ def cmd_report(run_dir):
         lines.append("Browser hygiene: not recorded.")
     lines.append("")
 
+    # Fix 12.4: the four-image rule forces incomplete; it never refuses the
+    # report, because the report is where the absence must be visible.
+    image_gaps = four_image_gaps(run_dir)
+    if image_gaps:
+        required_closed = False
     overall = "RUN COMPLETE" if required_closed else "RUN INCOMPLETE"
     # Item 6, rule 1: a test run's report never reads as a production
     # delivery, even when every stage closed (a test run cannot close
@@ -3499,7 +3541,14 @@ def cmd_report(run_dir):
     if not required_closed:
         missing = [s for s in ORDER
                    if stage_line(run_dir, s, state) in ("FAIL", "BLOCKED", NOT_RUN)]
-        lines.append(f"**{overall}** — not closed: {', '.join(missing)}")
+        reasons = []
+        if missing:
+            reasons.append(f"not closed: {', '.join(missing)}")
+        if image_gaps:
+            reasons.append("four-image rule not satisfied: "
+                           + ", ".join(f"{role} missing {pattern}"
+                                       for role, pattern in image_gaps))
+        lines.append(f"**{overall}** — " + "; ".join(reasons))
     else:
         lines.append(f"**{overall}**")
     rm_line = compute_review_mode(run_dir)
