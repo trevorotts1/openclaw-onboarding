@@ -82,6 +82,7 @@ Read the supplied transcript, copy, brand guide, references and existing page. S
 | Intended action | "What should people do: sign up, get something free, buy, book, or something else?" |
 | Hosting | "Will we build it directly in GoHighLevel, or build it on Vercel and embed it into GoHighLevel?" |
 | Existing materials | "Send any copy, recording/transcript, brand guide, logo or page example you already have." |
+| Design style | The question printed by `python3 scripts/design_style.py question`: A Block, B Circle or C Hybrid, each with a one-line description and an example link. Never reworded per run. |
 
 The AI can state its understanding of the selected standard/long-form version from the assignment. Ask the client to choose only when that is unresolved. A squeeze page does not authorize silently removing required sections from the chosen signature system; clarify an explicitly shorter alternative once when necessary.
 
@@ -102,6 +103,8 @@ Resolve the client's brand colors here, before any wireframe, mockup or image. F
 Record the image-engine answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
 Record the funnel handoff in the same intake record: the Convert and Flow form's name and object id (`--handoff-form-name` / `--handoff-form-id`), the pop behavior, and the step order (signature page, then product selection page, then order form page). When no form identity exists yet, record the handoff as the explicit missing input with its reason (`--handoff-missing-reason`) instead. A placeholder destination (a `#join`-style link) is never a handoff: it is either the recorded missing input or a defect the page build must repair.
+
+Record the design style answer in the same intake record (`--design-style A|B|C`, with `--design-style-source client_choice`, or `recommended_accepted` after the client accepts a recommendation). `gate:intake_design_style` closes intake only with it on a production run. The style drives every wireframe, mockup, image-slot shape and the shape QC check (`references/design-styles.md`); circle slots are generated square and masked to a transparent-outside PNG by `scripts/circle_image.py`. The per-section production record carries `design_style` too.
 
 Record what successful action produces: confirmation, download, event access, booking or checkout success. Reuse existing workflows; do not fabricate bonuses, SMS flows or communities. Collect exact founder/brand names and usable logo/identity assets where required.
 

@@ -70,6 +70,8 @@ MODULES = [
     "test_reference_use.py",
     # SPF020: page color system + image grade blocks and the page-level pixel check.
     "test_hypersaturation.py",
+    # Design styles A Block, B Circle, C Hybrid: circle-image pipeline, style choice, shape QC.
+    "test_design_style.py",
 ]
 
 def skip_reason(stdout):

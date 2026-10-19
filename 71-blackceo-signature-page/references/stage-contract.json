@@ -30,7 +30,8 @@
       ],
       "validators": [
         "gate:must_supply --brand {brand}",
-        "gate:intake_engine"
+        "gate:intake_engine",
+        "gate:intake_design_style"
       ],
       "handoff": {
         "intake_field": "funnel_handoff",
@@ -172,6 +173,7 @@
       ],
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
+        "python3 scripts/design_style.py validate-inventory {run_dir}",
         "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json"
       ],
       "review_required": true,
@@ -356,6 +358,8 @@
       "transport_required": true,
       "validators": [
         "python3 scripts/validate_image_grade.py {file} --brand {brand}",
+        "python3 scripts/circle_image.py check {file} --inventory {run_dir}/desktop-wireframe/image-inventory.json",
+        "python3 scripts/design_style.py validate-inventory {run_dir}",
         "gate:image_grade_full_set image-generation-qc",
         "gate:grade_calibrated"
       ],

@@ -48,7 +48,7 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop",
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:noop",
                  "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
 
 
@@ -609,6 +609,25 @@ def run_builtin(name, args, run_dir):
         if not isinstance(intake, dict) or intake.get("image_engine") not in ("kie", "agnes"):
             return ("gate:intake_engine: intake.json must carry image_engine \"kie\" or \"agnes\" "
                     "(write it with scripts/write_intake.py)")
+        return None
+    if name == "gate:intake_design_style":
+        # The client chooses A Block, B Circle or C Hybrid before any wireframe
+        # (references/design-styles.md). A production run cannot close intake
+        # without a recorded choice; test runs are exempt and carry no style.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"gate:intake_design_style: intake.json unreadable ({exc})"
+        if not isinstance(intake, dict):
+            return "gate:intake_design_style: intake.json is not an object"
+        if intake.get("test_run") is True and not intake.get("design_style"):
+            return None
+        if intake.get("design_style") not in ("A", "B", "C") or intake.get(
+                "design_style_source") not in ("client_choice", "recommended_accepted"):
+            return ("gate:intake_design_style: intake.json must carry design_style A, B or C and "
+                    "design_style_source client_choice or recommended_accepted; ask the client with "
+                    "`python3 scripts/design_style.py question`, then record it with "
+                    "scripts/write_intake.py --design-style (references/design-styles.md)")
         return None
     if name == "gate:noop":
         # Test-only builtin: always passes.

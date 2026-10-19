@@ -71,6 +71,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import circle_image  # noqa: E402  design styles B and C: circle slots
+import design_style  # noqa: E402
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import reference_use  # noqa: E402  SPF022: reference images are structure only
@@ -256,7 +260,10 @@ def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
         if _platform(stage, template) == "mobile" and width > height:
             continue  # never carry a landscape mobile slice forward
         return nearest_ratio(width, height)
-    slot = (section.get("slots") or [{}])[0]
+    # A circle slot is generated 1:1 for its mask; that is the slot's ratio, never the
+    # section slice's, so the slice ratio comes from the first non-circle slot.
+    flat = [s for s in section.get("slots") or [] if design_style.slot_shape(s) != "circle"]
+    slot = (flat or [{}])[0]
     ratio = slot.get("aspect_ratio")
     if ratio and ratio != "auto":
         try:
@@ -598,6 +605,35 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def style_id_for(run_dir: Path, request: dict):
+    """The run's design style letter: the request's own wins, else intake.json's, else None
+    (older runs and test runs carry none). An unknown letter is refused."""
+    style_id = request.get("design_style")
+    if not style_id:
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            intake = {}
+        style_id = intake.get("design_style") if isinstance(intake, dict) else None
+    if style_id and style_id not in design_style.STYLE_IDS:
+        raise ExecutorError(f"design_style {style_id!r} is not one of {list(design_style.STYLE_IDS)}")
+    return style_id
+
+
+def resolve_design_style(run_dir: Path, request: dict) -> None:
+    """Carry the client's design style (A, B or C) into the request and refuse slot
+    shapes the style does not allow."""
+    style_id = style_id_for(run_dir, request)
+    if not style_id:
+        return
+    request["design_style"] = style_id
+    slots = [slot for sec in request.get("sections") or [] if isinstance(sec, dict)
+             for slot in sec.get("slots") or [] if isinstance(slot, dict)]
+    failures = design_style.slot_failures(style_id, slots)
+    if failures:
+        raise ExecutorError("design style slot shapes refused: " + "; ".join(failures))
+
+
 def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
     path = run_dir / name
     try:
@@ -615,6 +651,7 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
     if data["_hypersat"] is None:
         print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
               "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
+    resolve_design_style(run_dir, data)
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
@@ -725,14 +762,17 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 f"({', '.join(foreign)}); remove them or use the client's own hex values, the "
                 "PAGE COLOR SYSTEM block carries the palette")
     page_color, image_grade = hypersaturation.stage_blocks(stage, index, section, roles)
+    style_blk = (design_style.style_block(request["design_style"], stage, slots)
+                 if request.get("design_style") else "")
     blocks = [b for b in (copy_block, color_block, page_color, image_grade, ref_block,
-                          frame_block, neg_block) if b]
+                          frame_block, neg_block, style_blk) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
         "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
-                           + len(color_block) + len(page_color) + len(image_grade)),
+                           + len(color_block) + len(page_color) + len(image_grade)
+                           + len(style_blk)),
         "hypersaturation_chars": len(page_color) + len(image_grade),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
@@ -1105,6 +1145,41 @@ def run_board(run_dir: Path, request: dict, provider, overwrite: bool) -> dict:
     return record
 
 
+def inventory_slot(run_dir: Path, item: str) -> dict:
+    """The item's entry in desktop-wireframe/image-inventory.json, or {} when absent."""
+    path = run_dir / "desktop-wireframe" / "image-inventory.json"
+    if not path.is_file():
+        return {}
+    try:
+        return circle_image.inventory_entry(path, item)
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {path}: {exc}")
+
+
+def mask_circle_slot(out: Path, run_dir: Path, stage: str, slot: dict) -> dict:
+    """Mask a generated square to a circle PNG in place (RGBA, transparent outside),
+    keep the raw square under <stage>/raw-square/, and fail unless the result passes
+    the shape check. Runs before the delivered file is hashed for the record."""
+    raw = run_dir / stage / "raw-square" / out.name
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(out, raw)
+    try:
+        from PIL import Image
+        with Image.open(raw) as src:
+            masked = circle_image.make_circle(
+                src, None, circle_image.parse_focus(slot.get("crop_focal")), slot.get("ring"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"circle mask failed for {out.name}: {exc}")
+    masked.save(out, format="PNG")
+    stats = circle_image.alpha_stats(out)
+    failures = circle_image.shape_failures(stats)
+    if failures:
+        raise ExecutorError(f"{out.name} failed the circle shape check after masking: "
+                            + "; ".join(failures))
+    return {"raw_file": str(raw.relative_to(run_dir)), "raw_sha256": sha256(raw),
+            "ring": slot.get("ring"), "alpha": stats}
+
+
 def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              overwrite: bool) -> dict:
     prompt_path = run_dir / "image-inventory-prompts" / f"{item}.txt"
@@ -1141,16 +1216,38 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
     out = run_dir / stage / f"Image-{int(digits):02d}.png"
     if out.exists() and not overwrite:
         raise ExecutorError(f"{out} exists; pass --overwrite to replace it")
+    slot = inventory_slot(run_dir, item)
+    circle = circle_image.entry_shape(slot) == "circle"
+    # The inventory, not the request, decides which slots are circles, so the style is
+    # checked against the whole inventory here (the request path never sees these slots).
+    style_id = style_id_for(run_dir, request)
+    inventory = run_dir / "desktop-wireframe" / "image-inventory.json"
+    if style_id and inventory.is_file():
+        try:
+            failures = design_style.slot_failures(style_id, design_style.inventory_slots(inventory))
+        except (OSError, ValueError) as exc:
+            raise ExecutorError(f"cannot read {inventory}: {exc}")
+        if failures:
+            raise ExecutorError(f"design style slot shapes refused for {item}: " + "; ".join(failures))
+    if circle and design_style.circle_clause().split(":")[0].lower() not in prompt.lower():
+        raise ExecutorError(
+            f"{item} is a circle slot but its prompt lacks the circle clause "
+            f"(design_style.circle_clause(): 'CIRCLE CROP SAFE FRAME ...'); author it into the prompt "
+            "within the model's band, never as a silent edit here")
     job = {"stage": stage, "index": int(digits), "section": {"section_id": item},
-           "out": out, "width": 1440, "height": 760, "label": f"{item} {stage}",
-           "ratio": request.get("item_ratio"), "references": [],
+           "out": out, "width": 1024 if circle else 1440, "height": 1024 if circle else 760,
+           "label": f"{item} {stage}",
+           "ratio": "1:1" if circle else request.get("item_ratio"), "references": [],
            "prompt": prompt}
     result = provider.generate(job, request)
+    circle_record = mask_circle_slot(out, run_dir, stage, slot) if circle else None
     entry = {"stage": stage, "item": item, "file": str(out.relative_to(run_dir)),
              "sha256": sha256(out), "provider": result.get("provider"),
              "mode": result.get("mode"), "model": result.get("model"),
              "task_id": result.get("task_id"), "at": now_iso()}
     record_bleed(entry, out, request, provider, stage)
+    if circle_record:
+        entry["circle"] = circle_record
     record_path = run_dir / stage / RECORD
     record = {"stage": stage, "provider": provider.name, "mode": provider.mode,
               "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
