@@ -23,4 +23,8 @@ printf 'raise RuntimeError("boom-from-module")\n' > "$W/broken.py"
 out="$(OPENCLAW_ROOT="$W" bash -c 'source "$1"; frontdoor_run_stage "$2" 2>/dev/null; echo "STATUS=$FRONTDOOR_STATUS"' _ "$LIB" "$W/broken.py")"
 case "$out" in *STATUS=failed*boom-from-module*|*boom-from-module*STATUS=failed*) ok "crash reason carries the real exception";; *) bad "crash reason: $out";; esac
 
+# an unusable interpreter (rc=127) must still leave failure JSON on stdout (plain-shell fallback)
+out="$(OC_FRONTDOOR_PYTHON=/nonexistent/python3 OPENCLAW_ROOT="$W" bash -c 'source "$1"; frontdoor_run_stage "$2" 2>/dev/null; echo "STATUS=$FRONTDOOR_STATUS"' _ "$LIB" "$PY")"
+case "$out" in *'"status":"failed"'*'module errored (exit 127)'*STATUS=failed*) ok "unusable interpreter still prints failure JSON";; *) bad "unusable interpreter output: $out";; esac
+
 [ "$fail" = 0 ] && echo "PASS" || { echo "REGRESSED"; exit 1; }

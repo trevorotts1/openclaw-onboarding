@@ -78,7 +78,8 @@ frontdoor_run_stage() {
     [ "$errf" = /dev/null ] || rm -f "$errf"
     echo "[front-door] WARN: shared stage could not run: $reason" >&2
     FRONTDOOR_STATUS="failed"
-    printf '%s' "$reason" | "$py" -c 'import json,sys; print(json.dumps({"frontdoor":{"status":"failed","reason":sys.stdin.read()}}))'
+    printf '%s' "$reason" | "$py" -c 'import json,sys; print(json.dumps({"frontdoor":{"status":"failed","reason":sys.stdin.read()}}))' 2>/dev/null \
+      || echo "{\"frontdoor\":{\"status\":\"failed\",\"reason\":\"module errored (exit $rc): interpreter unusable, no JSON encoder: $lib\"}}"
     return 1
   fi
   [ "$errf" = /dev/null ] || { [ ! -s "$errf" ] || cat "$errf" >&2; rm -f "$errf"; }
