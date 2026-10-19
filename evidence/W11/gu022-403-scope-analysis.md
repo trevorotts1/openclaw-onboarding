@@ -6,6 +6,14 @@ Scope: READ ONLY. No write, no mutation, no credential substitution, no token va
 Credential used: `GOHIGHLEVEL_API_KEY` only (40 characters, `pit-` prefix — Private Integration
 Token shape). No other credential was read into a request.
 
+> **GHL-150 amendment (2026-10-19).** Real 200s were later observed on location
+> `Mct54Bwi1KlNouGXQcDX` ("BlackCEO LLC", companyId `DAD7unnJpNUFc36952Xp`) for
+> `locations.get`, `contacts.list`, `contacts.search`, `custom_fields.list`,
+> `pipelines.list` and `media.files.list`. `state/ghl-public-capabilities.json` is now bound to
+> that tenant and enables exactly those six reads. The tenant probed in this analysis,
+> `XCgFTEA1oDvsPnTqqgoB`, is **not** the verified tenant: the record loads nothing for it, so
+> every probe below still fails closed at the gate.
+
 ## 1. Answer first
 
 The 403 is an authorization-layer rejection of the **credential-to-location binding**, plus a
@@ -129,9 +137,11 @@ scopes. The response text alone cannot separate them; the correction is the same
    | `contacts.search` | denied | none | `capability_disabled` |
    | `custom_fields.list` | denied | none | `capability_disabled` |
 
-   No `state/ghl-public-capabilities.json` exists in the worktree, the run root, or
-   `~/.openclaw`, and no loader for it exists in the adapter. Enablement is therefore not a
-   credential problem: it is the W04 capability-record build item.
+   The record and its loader now exist (`state/ghl-public-capabilities.json`,
+   `public/capability.py:load_capability_record`). The record is bound to the verified tenant
+   `Mct54Bwi1KlNouGXQcDX` (GHL-150, 2026-10-19); for the `XCgFTEA1oDvsPnTqqgoB` calls in this
+   table the tenant does not match, the gate is empty and the result is still default-deny —
+   the row above is the state this analysis measured, not a stale absence.
 
 Consequently: **no representative operation can be proven through the client path with the
 current credential**, and the reason is not only the 403. Both a corrected credential and a
@@ -180,12 +190,14 @@ No token, no secret, and no customer data appear in this document.
 
 ```
 python3 evidence/W11/check-gu022-scope-analysis.py
-OK: registry, scopes, default-deny gate and no-secret checks passed
+OK: registry, scopes, default-deny gate, capability record and no-secret checks passed
 ```
 
-The check is offline, asserts the registry facts above, asserts the adapter denies the three
-probed operations before transport, and asserts that no credential value from the operator's env
-stores appears in either evidence file.
+The check is offline. It asserts the registry facts above, asserts the adapter denies the three
+probed operations before transport, asserts the checked-in capability record admits exactly the
+six live-verified operations for `Mct54Bwi1KlNouGXQcDX` and loads nothing for
+`XCgFTEA1oDvsPnTqqgoB`, and asserts that no credential value from the operator's env stores
+appears in either evidence file.
 
 ```
 cd 44-convert-and-flow-operator/tools/engine
