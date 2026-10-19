@@ -673,6 +673,23 @@ async function runRound2(s: Setup, seats: readonly SeatId[]): Promise<void> {
   }
 }
 
+/**
+ * W30 response-schema: every service-path request carries the exact
+ * card contract (kind, instruction, JSON Schema) in the input and the
+ * instruction in the system text, so the model is never left to
+ * invent a card shape. Returns the repair-or-initial request count.
+ */
+function assertCardContract(request: TransportRequest): void {
+  const input = request.input as {
+    output_contract?: { card_kind?: string; instruction?: string; json_schema?: { required?: string[] } };
+  };
+  const contract = input.output_contract;
+  assert.ok(contract, `${request.seat_id} round ${request.round} carries output_contract`);
+  assert.equal(contract.card_kind, request.purpose);
+  assert.ok(Array.isArray(contract.json_schema?.required) && contract.json_schema.required.length > 0, 'the JSON Schema rides in the request');
+  assert.ok(request.system.includes(contract.instruction ?? '\0'), 'the contract instruction rides in the system text');
+}
+
 // ------------------------------------------------------------------ tests
 
 test('golden pipeline: nine seats through all three rounds assemble a publishable golden verdict (T021, T146, T149)', async () => {
@@ -768,6 +785,8 @@ test('golden pipeline: nine seats through all three rounds assemble a publishabl
   );
   assert.equal(support.opposition, 0);
   assert.equal(outcome.ratification_status, 'ratified');
+  assert.equal(transport.requests.length, 27);
+  for (const request of transport.requests) assertCardContract(request);
   const budget = s.ctx.budget.snapshot(s.worker, SESSION_ID, s.grantId);
   assert.equal(budget.consumed.provider_requests, 27, 'three rounds, counted once in CWE-028\'s ledger');
   assert.equal(budget.consumed.output_repairs, 0);
@@ -828,6 +847,10 @@ test('T038: a fabricated crux answer is rejected to honest failure; another seat
     'no card, and no fabricated abstention, is stored',
   );
   assert.equal(transportA.forSeat('simon-sinek', 2).length, 2, 'one repair, no more');
+  const repairRequest = transportA.forSeat('simon-sinek', 2)[1];
+  assertCardContract(repairRequest);
+  assert.ok(repairRequest.system.includes('Your previous output failed validation'), 'the repair names the validation issues');
+  assert.ok(repairRequest.system.includes('The contract for this call, restated in full'), 'the repair restates the contract');
 
   // Scenario B: simon answers crux-2 (assigned to brene-brown and
   // td-jakes, not to simon) first; the repair returns a proper card.
@@ -1071,6 +1094,7 @@ test('consult pipeline: one seat, one card, a discriminated result with no inven
   assert.equal(transport.requests.length, 1, 'exactly one provider request');
   assert.equal(transport.requests[0].purpose, 'consult');
   assert.equal(transport.requests[0].round, null);
+  assertCardContract(transport.requests[0]);
 
   const cards = s.ctx.repositories.listCards(s.worker, SESSION_ID);
   assert.equal(cards.length, 1);

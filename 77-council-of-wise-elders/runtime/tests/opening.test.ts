@@ -872,9 +872,10 @@ test('context too small: the typed readiness outcome refuses dispatch with zero 
     deps: {
       // A real but tiny budget: the reserves fit, the minimum context
       // (brief plus the seat's first item) does not, which is exactly
-      // the Section 9.5 CONTEXT_TOO_SMALL case.
+      // the Section 9.5 CONTEXT_TOO_SMALL case. The limit covers the
+      // system text with its card-contract prose (about 7.5 KB).
       routeBudget: () => ({
-        context_limit_bytes: 2000,
+        context_limit_bytes: 9500,
         response_schema_bytes: 500,
         output_reserve_bytes: 500,
       }),

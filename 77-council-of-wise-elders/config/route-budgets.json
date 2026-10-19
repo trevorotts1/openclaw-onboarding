@@ -1,0 +1,38 @@
+{
+  "schema": "wise-elders.route-budgets/v1",
+  "entries": [
+    {
+      "route_id": "claude-nine-configured",
+      "model": null,
+      "context_window_tokens": null,
+      "max_output_tokens": null,
+      "measured_min_bytes_per_token": null,
+      "safety_factor": 0.8,
+      "response_schema_bytes": 10159,
+      "measured_at": null,
+      "measurement_basis": "not measured; the built-in conservative default applies (1.0 bytes per token, safety factor 0.8, the route's own window and output limits). response_schema_bytes=10159 is the compact JSON size of the largest card schema (CouncilCard) in schemas/json-schemas.json, an upper bound and not a measurement"
+    },
+    {
+      "route_id": "claude-configured",
+      "model": "sonnet",
+      "context_window_tokens": null,
+      "max_output_tokens": null,
+      "measured_min_bytes_per_token": null,
+      "safety_factor": 0.8,
+      "response_schema_bytes": 10159,
+      "measured_at": null,
+      "measurement_basis": "not measured; the built-in conservative default applies (1.0 bytes per token, safety factor 0.8, the route's own window and output limits). response_schema_bytes=10159 is the compact JSON size of the largest card schema (CouncilCard) in schemas/json-schemas.json, an upper bound and not a measurement"
+    },
+    {
+      "route_id": "deepseek-configured",
+      "model": null,
+      "context_window_tokens": 1048576,
+      "max_output_tokens": 393216,
+      "measured_min_bytes_per_token": 1.429,
+      "safety_factor": 0.8,
+      "response_schema_bytes": 10159,
+      "measured_at": "2026-10-19T18:07:00Z",
+      "measurement_basis": "wise-elders.route-bytes-samples/v1, 8 of 8 payloads with a usable token count, min of bytes/usage.input_tokens, ratio floored to 4 decimals; measured live on deepseek-flash 2026-10-19 (smallest ratio from random base64 text, prose was 5.3); window and output limit as reported by the route. response_schema_bytes=10159 is the compact JSON size of the largest card schema (CouncilCard), an upper bound and not a measurement"
+    }
+  ]
+}

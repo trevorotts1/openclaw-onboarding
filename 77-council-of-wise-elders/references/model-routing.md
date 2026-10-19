@@ -2,12 +2,40 @@
 
 ## The selection rule
 
-The client selects their model, or their configured default applies.
-This skill never prescribes a specific named model, in its docs, its
-configuration, or its runtime behavior. It may present recommendations
-with reasons as guidance; a recommendation is never a hidden
-prescription, a silent default, or a fallback that swaps models behind
-the client's back.
+The model is the client's choice, per run. The convening agent asks the
+client which model to use, lists the options from
+`blackceo-council routes`, and offers the default for the harness it is
+running in. It never picks a model silently, and no route is hard-wired
+for everyone. The client's explicit route and model always win. Only
+when the client defers does the harness default below apply, and the
+agent says which model that is. A recommendation with reasons is
+allowed; it is never a hidden prescription or a fallback that swaps
+models behind the client's back.
+
+## Harness defaults
+
+| Harness the council is convened from | Route | Model |
+|---|---|---|
+| claude-nine | claude-nine-configured | the launcher's own configured default (no model is passed) |
+| Claude Code | claude-configured | Sonnet |
+| DeepSeek direct | deepseek-configured | the latest DeepSeek Flash, resolved at run time |
+
+The harness is detected from the environment of the command
+(`CLAUDE_CONFIG_DIR` ending in `.claude-nine` means claude-nine;
+`CLAUDECODE=1` otherwise means Claude Code). DeepSeek direct has no
+reliable marker, so it is chosen with `--harness deepseek`. When no
+route is given and the harness is unknown, the council refuses with a
+typed error rather than guessing.
+
+### The latest-DeepSeek-Flash rule
+
+The DeepSeek Flash model id is resolved from the provider's live model
+list (`GET {baseUrl}/models`) at each run, and the newest Flash in that
+list is used. It is never pinned in this skill, in configuration, or in
+code, and the single id written in a client's provider configuration is
+not trusted for this purpose. If the list cannot be fetched or contains
+no Flash model, the run refuses with a typed error. It never falls back
+to the configured id or to an older Flash.
 
 ## Fallback policy
 

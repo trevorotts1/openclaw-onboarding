@@ -143,9 +143,9 @@ test('composed readiness observes store, route and worker from real state', asyn
     assert.match(worker?.artifact ?? '', /durable ledger readable/);
 
     assert.deepEqual(readiness.blocked_layers, []);
-    // The deliberation host bindings are honestly unbound; the service
-    // readiness never claims a completed deliberation.
-    assert.equal(composition.backend.deliberation.readiness().ready, false);
+    // Token limits are always bound now (built-in defaults), so the
+    // deliberation host is ready without any approval step.
+    assert.equal(composition.backend.deliberation.readiness().ready, true);
   } finally {
     await composition.door.stop();
     await composition.stop();

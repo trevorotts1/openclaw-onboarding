@@ -13,7 +13,7 @@ location this year, or put the same money into the online store?"
 Agent behavior: resolve the client and any existing session for this
 decision, gather permitted context (cash position, lease constraints,
 current store performance), show the prepared brief with unknowns
-marked, confirm the selected route and run grant, then convene.
+marked, confirm the selected route (model), then convene.
 
 ## A named-seat consult
 

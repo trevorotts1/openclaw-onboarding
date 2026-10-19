@@ -83,10 +83,10 @@ function checkedDerivedFile(root: string, path: string): PersonaFileReceipt | nu
   };
 }
 
-export function inventoryCouncilSkill22Personas(skill22Root: string): Skill22CouncilInventory {
+export function inventoryCouncilSkill22Personas(skill22Root: string, categoriesPath?: string): Skill22CouncilInventory {
   const root = resolve(skill22Root);
   const personaRoot = join(root, 'personas');
-  const seed = JSON.parse(readFileSync(join(root, 'persona-categories.json'), 'utf8')) as {
+  const seed = JSON.parse(readFileSync(categoriesPath ?? join(root, 'persona-categories.json'), 'utf8')) as {
     personas?: Record<string, { author?: unknown; book?: unknown }>;
   };
   if (!seed.personas || Array.isArray(seed.personas) || typeof seed.personas !== 'object') {

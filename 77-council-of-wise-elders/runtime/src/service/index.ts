@@ -17,3 +17,12 @@ export * from './readiness.js';
 export * from './sessions.js';
 export * from './front-door.js';
 export * from './composition.js';
+export {
+  HARNESS_DEFAULTS,
+  RouteChoiceError,
+  listRouteOptions,
+  pickLatestFlash,
+  resolveSessionRoute,
+  transportForSnapshot,
+} from './route-choice.js';
+export * from './driver.js';

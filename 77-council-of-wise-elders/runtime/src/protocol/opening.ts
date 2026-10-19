@@ -80,7 +80,13 @@ import type {
   TransportResponse,
 } from '../cli/host-ports.js';
 import { OPENING_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
+import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import { parseCardResponseText } from '../cli/card-text.js';
+import {
+  cardOutputContract,
+  cardRequestSystem,
+  cardSystemBytes,
+} from '../cli/card-contract.js';
 import {
   SimulatedCrashError,
   TransportDispatchError,
@@ -97,7 +103,7 @@ import { validateCardSourceUse } from '../sources/packs.js';
  * (the module this file already imports SEAT_FOCUS from); this name is
  * kept as the protocol surface for the same text.
  */
-export const OPENING_ROUND_SYSTEM = OPENING_SYSTEM;
+export const OPENING_ROUND_SYSTEM = `${OPENING_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a Round 1 opening input manifest. */
 export const OPENING_INPUT_KIND = 'wise-elders.opening-input/v1';
@@ -204,6 +210,7 @@ export interface OpeningRoundDeps {
    */
   readonly loadSeatBriefing?: (
     seatId: SeatId,
+    session?: StoredSession,
   ) => Promise<{ briefing_text: string } | null>;
   /**
    * Optional actual-charge pricer for transports that meter money.
@@ -376,13 +383,15 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${OPENING_ROUND_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : OPENING_ROUND_SYSTEM;
+    const system = cardRequestSystem(
+      OPENING_ROUND_SYSTEM,
+      'advisor',
+      [],
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
@@ -408,6 +417,8 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
           pack_briefing: pack?.briefing_text ?? null,
           input_manifest_sha256: plan.input_manifest_sha256,
           pack_version: plan.pack_version,
+          // The exact card schema; Round 1 issues no challenges.
+          output_contract: cardOutputContract('advisor', []),
         },
       });
     } catch (error) {
@@ -618,7 +629,7 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
     }
     const route: RouteContextBudget = {
       ...limits,
-      system_rules_bytes: new TextEncoder().encode(OPENING_ROUND_SYSTEM).length,
+      system_rules_bytes: cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor'),
     };
     const seatBudgets: Partial<Record<SeatId, number>> = {};
     for (const other of SEAT_IDS) {
