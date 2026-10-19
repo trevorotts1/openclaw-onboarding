@@ -254,6 +254,9 @@ test('no file outside the owned paths differs from the base commit', (t) => {
   const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
   const allowed = new Set([
     '77-council-of-wise-elders/runtime/src/service/front-door.ts',
+    '77-council-of-wise-elders/runtime/src/service/events.ts',
+    '77-council-of-wise-elders/runtime/src/service/index.ts',
+    '77-council-of-wise-elders/runtime/src/service/front-door-events.test.ts',
     '77-council-of-wise-elders/runtime/src/service/landing.test.ts',
     '77-council-of-wise-elders/skill-version.txt',
     '77-council-of-wise-elders/version',

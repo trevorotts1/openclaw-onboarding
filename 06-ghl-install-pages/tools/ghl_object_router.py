@@ -378,10 +378,12 @@ def _matrix() -> Dict[str, ObjectRoute]:
         idempotency_key="folder_per_funnel_name",
         create_api_exists=True,
         verify="CDN URL fetch 200",
-        note="Public REST covers upload (upload_media) and folder "
-        "(create_media_folder). Media LIST has no implementation in ghl_media.py "
-        "and no community route — named gap, UNSUPPORTED until a public list "
-        "read is declared.",
+        note="Public REST covers upload (upload_media), folder "
+        "(create_media_folder), and LIST (list_media). Media LIST IS supported "
+        "by the API and implemented: GET /medias/files REQUIRES a `type` query "
+        "parameter (without it the API returns 422 'type must be a string / type "
+        "should not be empty'); documented values are file, image, video, audio, "
+        "document. There is no community route for media.",
     )
 
     m["product"] = ObjectRoute(

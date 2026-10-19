@@ -82,6 +82,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -137,7 +138,24 @@ GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"
 # in their own named folder; the "upload to root with a name prefix" fallback
 # (media_folder_name_prefix) covers a GHL plan that does not expose this endpoint.
 GHL_MEDIA_FOLDER_PATH = "/medias/folder"
+# Media LIST (live-verified 2026-10-19): GET /medias/files REQUIRES a `type`
+# query parameter. Without it the API answers 422 "type must be a string / type
+# should not be empty"; with type=file it answers 200 {files,count,traceId}.
+GHL_MEDIA_LIST_PATH = "/medias/files"
+GHL_MEDIA_LIST_TYPES = ("file", "image", "video", "audio", "document")
+# The LIST read is the v3 media surface (live-verified 2026-10-19); upload and
+# folder creation stay on the proven 2021-07-28 tier below.
+GHL_MEDIA_LIST_VERSION = "v3"
 GHL_MEDIA_VERSION = "2021-07-28"
+
+# services.* sits behind a Cloudflare edge WAF that 403s (error code 1010) the
+# bare-Python default ``Python-urllib/3.x`` User-Agent (repo evidence:
+# FIX11-QC-EVIDENCE.md). The list read sets a browser UA so the call is not
+# signature-blocked before it reaches GHL.
+_GHL_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
 
 # The mandatory English/Latin-only pin — appended VERBATIM to every prompt that
 # renders copy (carried verbatim from kie_generate.py's module docstring so the
@@ -901,6 +919,130 @@ def upload_media(
     }
 
 
+# ── 3a) list_media — REQUIRED-type media list (GET /medias/files) ─────────────
+
+class MediaListTypeError(ValueError):
+    """Media LIST refused before any HTTP: ``type`` missing or outside the set.
+
+    ``type`` is a REQUIRED ``GET /medias/files`` query parameter (a call without
+    it returns 422, not a list), so this is raised BEFORE a Request is built or
+    an opener is touched. Subclasses ``ValueError`` so existing "bad argument"
+    handling keeps working while callers can catch the precise class.
+    """
+
+
+class MediaListError(RuntimeError):
+    """The media LIST call itself failed (non-2xx, non-JSON, or no ``files``)."""
+
+
+def list_media(
+    location_id: str,
+    pit: str,
+    *,
+    media_type: str | None = None,
+    timeout: int = 60,
+    opener: Callable[[urllib.request.Request, int], Any] | None = None,
+) -> dict:
+    """List one media category in the GHL media library.
+
+    Live-verified contract (2026-10-19): ``GET services.leadconnectorhq.com/
+    medias/files`` REQUIRES a ``type`` query parameter. Without it the API
+    returns 422 ``type must be a string / type should not be empty``; with
+    ``type=file`` it returns 200 ``{files, count, traceId}``. Documented values
+    observed working: ``file``, ``image``, ``video``, ``audio``, ``document``.
+    The request carries ``Version: v3`` (the media v3 surface), the LOCATION
+    Bearer PIT, and a browser User-Agent (bare urllib UA is WAF-1010 blocked).
+
+    FAIL-LOUD: a missing/invalid ``media_type`` raises ``MediaListTypeError``
+    BEFORE any HTTP attempt; non-2xx, non-JSON, or a body without a ``files``
+    list raises ``MediaListError`` (never a fabricated empty listing).
+
+    Sits on the bare-Python side of the auth split with the same auth model as
+    ``upload_media`` (``services.*`` + Bearer LOCATION PIT).
+
+    Args:
+        location_id: The GHL sub-account location id.
+        pit: The LOCATION Private Integration Token (Bearer).
+        media_type: REQUIRED category — one of ``GHL_MEDIA_LIST_TYPES``
+            (``file``, ``image``, ``video``, ``audio``, ``document``); case and
+            surrounding whitespace are ignored.
+        timeout: HTTP timeout seconds.
+        opener: Optional ``(Request, timeout) -> response-like`` for tests (mock
+            the HTTP). Default = ``urllib.request.urlopen`` (real call).
+
+    Returns:
+        ``{files, count, traceId, http}``.
+
+    Raises:
+        MediaListTypeError: ``media_type`` missing or outside the documented set.
+        MediaListError: non-2xx HTTP, non-JSON body, or a body with no ``files``.
+        ValueError: missing ``location_id`` / ``pit``.
+    """
+    normalized = str(media_type).strip().lower() if media_type is not None else ""
+    if not normalized:
+        raise MediaListTypeError(
+            "media LIST requires an explicit type: pass media_type= one of "
+            f"{', '.join(GHL_MEDIA_LIST_TYPES)}. `type` is a REQUIRED "
+            "GET /medias/files query parameter — omitting it yields HTTP 422 "
+            "'type must be a string / type should not be empty'."
+        )
+    if normalized not in GHL_MEDIA_LIST_TYPES:
+        raise MediaListTypeError(
+            f"media LIST type {media_type!r} is not supported; use one of "
+            f"{', '.join(GHL_MEDIA_LIST_TYPES)} (the values observed working "
+            "against GET /medias/files)."
+        )
+    _require(location_id, "location_id")
+    _require(pit, "pit")
+
+    query = urllib.parse.urlencode({"type": normalized, "locationId": location_id})
+    url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_LIST_PATH + "?" + query
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {pit}")
+    req.add_header("Version", GHL_MEDIA_LIST_VERSION)
+    req.add_header("User-Agent", _GHL_UA)
+    req.add_header("Accept", "application/json")
+
+    _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
+    try:
+        resp = _opener(req, timeout)
+        code = resp.getcode()
+        raw = resp.read()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace") if hasattr(exc, "read") else ""
+        raise MediaListError(
+            f"media list HTTP {exc.code} for type={normalized!r}: {detail[:300]} "
+            "(media reads REQUIRE the LOCATION PIT with medias.read scope; the "
+            "Agency PIT 401s)"
+        ) from exc
+
+    if not (200 <= int(code) < 300):
+        raise MediaListError(
+            f"media list returned HTTP {code} for type={normalized!r}: {raw[:300]}"
+        )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise MediaListError(
+            f"media list {code} but body is not JSON for type={normalized!r}: {raw[:300]}"
+        ) from exc
+    files = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(files, list):
+        raise MediaListError(
+            f"media list {code} but response has no `files` list for "
+            f"type={normalized!r}: {json.dumps(data)[:300] if isinstance(data, dict) else str(data)[:300]} "
+            "— refusing to report a listing the API did not return"
+        )
+    return {
+        "files": files,
+        "count": data.get("count", len(files)),
+        "traceId": data.get("traceId"),
+        "http": int(code),
+    }
+
+
 # ── 3b) create_media_folder — per-run named folder (Skill 48 addition) ────────
 
 def media_folder_name_prefix(folder_name: str) -> str:
@@ -1251,7 +1393,12 @@ __all__ = [
     "GHL_SERVICES_ORIGIN",
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
+    "GHL_MEDIA_LIST_PATH",
+    "GHL_MEDIA_LIST_TYPES",
+    "GHL_MEDIA_LIST_VERSION",
     "GHL_MEDIA_VERSION",
+    "MediaListTypeError",
+    "MediaListError",
     "ENGLISH_LATIN_PIN",
     "TEXT_ABSENT_PIN",
     "PNG_MAGIC",
@@ -1266,6 +1413,7 @@ __all__ = [
     "verify_png",
     "generate_images",
     "upload_media",
+    "list_media",
     "create_media_folder",
     "media_folder_name_prefix",
     "funnel_media_folder_plan",
