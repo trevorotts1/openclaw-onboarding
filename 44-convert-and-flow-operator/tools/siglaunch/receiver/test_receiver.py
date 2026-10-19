@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "store"))
 from receiver import (EXIT_BLOCKED, EXIT_GATE, EXIT_OK, EXIT_VALIDATION,
-                      Receiver, judge_receipt, plan_hash)
+                      Receiver, judge_receipt, plan_hash, stage14_outcome)
 from store import Store
 
 
@@ -91,6 +91,27 @@ class ReceiverTests(unittest.TestCase):
         self.assertNotIn("_meta", sent)
         # judge agrees with the claim because read-backs are present
         self.assertEqual(judge_receipt(receipt)["overall"], "VERIFIED")
+
+    def test_mechanism_derived_from_plan_tag(self):
+        """R71H reconciliation: when the envelope declares no mechanism,
+        the plan's own `tag` — the verbatim tag workflow_builder.py sends
+        to POST /workflow/{loc}/trigger — produces the mechanism."""
+        req = make_request()
+        del req["workflows"][0]["trigger"]  # envelope declares none
+        code, receipt = self.rx.dispatch(req)
+        self.assertEqual(code, EXIT_OK)
+        op = receipt["operations"][0]
+        self.assertEqual(op["mechanism"],
+                         {"type": "contact_tag",
+                          "tag": "email-engine:welcome"})
+        # the derived mechanism is what the stage-14 record carries, and
+        # it is no longer named as unproducible
+        outcome = stage14_outcome(req, code, receipt)
+        wf = outcome["workflows"][0]
+        self.assertEqual(wf["mechanism"],
+                         {"type": "contact_tag",
+                          "tag": "email-engine:welcome"})
+        self.assertNotIn("workflows[0].mechanism", outcome["unproducible"])
 
     def test_redispatch_returns_prior_receipt_without_rebuild(self):
         code1, r1 = self.rx.dispatch(make_request())
