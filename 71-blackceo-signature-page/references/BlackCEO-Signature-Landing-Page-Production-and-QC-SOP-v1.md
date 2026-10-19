@@ -22,7 +22,7 @@ Set for Life supplied lessons for this workflow. Its name, founder, free attenda
 
 **The governing order:** confirm the page and action -> write and QC/repair the copy -> font intelligence and action plan -> full desktop wireframe -> full mobile wireframe and tablet rules -> visual bible and internal layout proof -> individual image prompts and QC/repair -> generate and QC/repair images -> upload and complete Image Map -> the mockup: finalize the layout proof per section with the real assets (the single client-judged mockup) -> responsive HTML and QC/repair -> install/test in GHL -> publish when authorized and verify the public result -> wire the follow-up automations when the intake's automation scope includes them (conditional Stage 15).
 
-The default deliverables for one selected page version are **one full desktop wireframe and one full mobile wireframe**, plus their mockups. Four wireframes apply when explicitly creating the reusable standard/long-form template set: standard desktop, standard mobile, long-form desktop, long-form mobile. Exporting a long wireframe in Parts A-M does not create thirteen different pages.
+Every selected page version gets **four images: desktop wireframe, mobile wireframe, desktop mockup, and mobile mockup**. The mobile wireframe and the mobile mockup are each produced at the mobile width, never a desktop image resized to mobile. Creating the reusable standard/long-form template set means producing that set's four images for each page version: standard desktop, standard mobile, long-form desktop, long-form mobile. Exporting a long wireframe in Parts A-M does not create thirteen different pages.
 
 ## Non-negotiable rules
 

@@ -10,10 +10,10 @@ Pins four things:
    references/qc-contract.md, the wireframe/mockup review criteria
    name them, and the stages whose artifacts a trait list governs
    read the set's README (desktop-wireframe, mobile-tablet,
-   final-mockups). visual-mockup deliberately does not: after
-   Item 5 it is the internal layout-proof stage, no trait list
-   applies to its artifacts, and its former reads entry was removed
-   by the Item 14 reconcile cure (review defects R1 and R2).
+   visual-mockup, final-mockups). visual-mockup reads it because
+   Fix 7 (spec signature-page-fixes, task 2.1) puts the set in front
+   of the layout-proof stage as well; the mockup trait list itself
+   still binds at final-mockups only (see 3).
 3. The reconcile cure's scoping holds: mockup_trait_fidelity applies
    to final-mockups ONLY, so a layout proof with solid-block image
    slots at visual-mockup is not failed by the mockup trait list,
@@ -117,13 +117,10 @@ def main():
     check("mockup review criteria name the trait criterion",
           "mockup_trait_fidelity" in qc)
     contract = json.loads((ROOT / "references" / "stage-contract.json").read_text())
-    for stage in ("desktop-wireframe", "mobile-tablet", "final-mockups"):
+    for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups"):
         reads = contract["stages"][stage].get("reads", [])
         check(f"stage {stage} reads the visual standard set",
               any("assets/visual-standards/README.md" in r for r in reads))
-    check("stage visual-mockup does not read the visual standard set (cure R2)",
-          not any("assets/visual-standards/README.md" in r
-                  for r in contract["stages"]["visual-mockup"].get("reads", [])))
 
     # 2b. Reconcile cure R1: mockup_trait_fidelity is scoped to
     # final-mockups only, as the qc-contract's criterion blocks state.
