@@ -59,6 +59,34 @@ def line_at(rel: str, number: int) -> str:
 def expect_line(rel: str, number: int, needle: str) -> None:
     check(needle in line_at(rel, number), f"{rel}:{number} no longer contains {needle!r}")
 
+def def_body(text: str, name: str) -> str:
+    """Source of ``def <name>(`` through the next same-indent def/class.
+
+    Anchors an invariant to a named definition instead of a frozen line number,
+    so an unrelated insertion above it cannot fail the check.
+    """
+    lines = text.splitlines()
+    start = indent = None
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith(f"def {name}("):
+            start = index
+            indent = len(line) - len(stripped)
+            break
+    if start is None:
+        return ""
+    body: list[str] = []
+    for line in lines[start + 1:]:
+        stripped = line.lstrip()
+        if stripped and (len(line) - len(stripped)) <= indent and (
+            stripped.startswith("def ")
+            or stripped.startswith("class ")
+            or stripped.startswith("@")
+        ):
+            break
+        body.append(line)
+    return "\n".join(body)
+
 
 # ---------------------------------------------------------------------------
 # 1. Every public V4 row is staging level, v4, B-V4-S, and v4 is not a supported
@@ -257,29 +285,52 @@ check(
     "the declared unreachable evidence_ok branch changed; re-review it",
 )
 
-for number, operation in (
-    (387, "create"),
-    (518, "update"),
-    (792, "status change"),
-    (923, "delete"),
+# GHL-168 F1 fixed the unbound probe: each V4 write now gates on the
+# tenant-bound ``_enabled(operation_id, tenant)`` and refuses through
+# ``_disabled_result``. The invariant is the gate, not a line number.
+WORKFLOW_V4 = (
+    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/workflow_v4.py"
+)
+workflow_v4_text = source(WORKFLOW_V4)
+unbound_gate_absent = "if not self._enabled(operation_id):" not in workflow_v4_text
+for method, key in (
+    ("create_workflow", "create"),
+    ("update_definition", "update"),
+    ("set_status", "status.change"),
+    ("delete_workflow", "delete"),
 ):
-    expect_line(
-        "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/workflow_v4.py",
-        number,
-        "if not self._enabled(operation_id):",
+    body = def_body(workflow_v4_text, method)
+    check(
+        unbound_gate_absent
+        and f'key = "{key}"' in body
+        and "if not self._enabled(operation_id, tenant):" in body
+        and "self._disabled_result(" in body,
+        f"workflow_v4.{method} must gate on the tenant-bound _enabled and refuse "
+        "through _disabled_result (the unbound gate must stay gone)",
     )
 
-# Declared defect F1: the write gate probes capability without a tenant, so a
-# fresh adapter answers "disabled" even when the record admits the operation.
-expect_line(
-    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/workflow_v4.py",
-    289,
-    "return bool(self._public.capability(operation_id).enabled)",
+# The unbound probe answers default-deny, and ``_enabled`` refuses without a
+# location: no capability can be borrowed across tenants.
+_enabled_body = def_body(workflow_v4_text, "_enabled")
+_capability_body = def_body(workflow_v4_text, "capability")
+check(
+    "tenant" in _enabled_body.split(") -> bool:")[0]
+    and "if location_id is None:" in _enabled_body
+    and "return False" in _enabled_body
+    and "self._public.capability(operation_id, tenant=location_id).enabled"
+    in _enabled_body
+    and "return CapabilityGate().get(operation_id)" in _capability_body,
+    "workflow_v4 must keep tenant-bound _enabled and the default-deny unbound probe",
 )
-expect_line(
-    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py",
-    121,
-    "capability = v4.capability(key)",
+
+_builder_text = source(
+    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py"
+)
+_route_body = def_body(_builder_text, "workflow_route")
+check(
+    "capability = v4.capability(key, tenant=tenant)" in _route_body
+    and "if capability.enabled:" in _route_body,
+    "workflow_builder.workflow_route must probe capability with the tenant it routes",
 )
 expect_line(
     "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py",
@@ -328,27 +379,28 @@ expect_line(
     12,
     "from cli_anything.gohighlevel.utils import ghl_client as api",
 )
-# Skill 06 products/media: raw REST rails, its own Version constant, no adapter.
+# Skill 06 products/media stay on raw REST rails with Skill 06's own legacy
+# Version constant (multipart upload has no adapter row — declared gap).
 media_source = source("06-ghl-install-pages/tools/ghl_media.py")
 check(
-    'GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"'
-    in line_at("06-ghl-install-pages/tools/ghl_media.py", 136)
+    'GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"' in media_source
     and 'GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH' in media_source,
-    "ghl_media.py:136 must keep the documented upload path and send it to the services origin",
+    "ghl_media.py must keep the documented upload path and send it to the services origin",
 )
 check(
-    'GHL_MEDIA_VERSION = "2021-07-28"'
-    in line_at("06-ghl-install-pages/tools/ghl_media.py", 149)
+    'GHL_MEDIA_VERSION = "2021-07-28"' in media_source
     and 'req.add_header("Version", GHL_MEDIA_VERSION)' in media_source,
-    "ghl_media.py:149 must keep Skill 06's own legacy Version constant and send it",
+    "ghl_media.py must keep Skill 06's own legacy Version constant and send it",
 )
-expect_line("06-ghl-install-pages/tools/ghl_object_router.py", 369, 'm["media"] = ObjectRoute(')
+_router_source = source("06-ghl-install-pages/tools/ghl_object_router.py")
 check(
-    'm["product"] = ObjectRoute('
-    in line_at("06-ghl-install-pages/tools/ghl_object_router.py", 389)
-    and "raw HTTPS services.* /products"
-    in source("06-ghl-install-pages/tools/ghl_object_router.py"),
-    "ghl_object_router.py:389 must keep the product row on the raw services rail",
+    'm["media"] = ObjectRoute(' in _router_source,
+    "ghl_object_router.py must keep the media object route",
+)
+check(
+    'm["product"] = ObjectRoute(' in _router_source
+    and "raw HTTPS services.* /products" in _router_source,
+    "ghl_object_router.py must keep the product row on the raw services rail",
 )
 # Signature funnel consumers: injected protocol only, no production binding.
 expect_line(
@@ -372,10 +424,9 @@ expect_line(
     'adapter.call(operation_id="workflows.definition.read", tenant=tenant,',
 )
 
-# No named consumer outside the engine may construct the public adapter yet.
+# Consumers with no adapter wiring must stay that way.
 for rel_root in (
     "35-social-media-planner",
-    "06-ghl-install-pages",
     "49-signature-funnel",
     "44-convert-and-flow-operator/tools/siglaunch",
 ):
@@ -388,6 +439,54 @@ for rel_root in (
         if "PublicGhlAdapter" in text:
             hits.append(str(path.relative_to(REPO)))
     check(not hits, f"{rel_root}: unexpected public-adapter wiring appeared: {hits}")
+
+# Skill 06 routes through the frozen adapter BY DESIGN (merged #2329). The
+# invariant is exclusivity, not absence: ``ghl_public_client`` is the one
+# transport owner, and every raw-REST marker left in the five caller files is a
+# declared named gap whose anchor still exists. Silence is not a route.
+SKILL06 = REPO / "06-ghl-install-pages"
+_skill06_tools = str(SKILL06 / "tools")
+if _skill06_tools not in sys.path:
+    sys.path.insert(0, _skill06_tools)
+
+import ast as _ast  # noqa: E402
+
+import ghl_route_gaps as _route_gaps  # noqa: E402
+
+def _test_allowed_raw_lines() -> "frozenset[str] | None":
+    """The pinned ALLOWED_RAW_LINES the Skill 06 negative-control test uses."""
+    tree = _ast.parse(
+        (SKILL06 / "tests" / "test_ghl_public_routes.py").read_text(encoding="utf-8")
+    )
+    for node in tree.body:
+        if isinstance(node, _ast.Assign) and any(
+            isinstance(target, _ast.Name) and target.id == "ALLOWED_RAW_LINES"
+            for target in node.targets
+        ):
+            return frozenset(_ast.literal_eval(node.value))
+    return None
+
+_skill06_client = source("06-ghl-install-pages/tools/ghl_public_client.py")
+_skill06_gaps = source("06-ghl-install-pages/tools/ghl_route_gaps.py")
+_allowed_raw = _test_allowed_raw_lines()
+_missing_anchors = _route_gaps.missing_anchors(str(SKILL06))
+_undeclared = _route_gaps.undeclared_raw_lines(str(SKILL06), _allowed_raw)
+_unfiltered = _route_gaps.undeclared_raw_lines(str(SKILL06), None)
+check(
+    "from cli_anything.gohighlevel.public import PublicGhlAdapter" in _skill06_client
+    and 'seams["PublicGhlAdapter"](' in _skill06_client
+    and "adapter.call(**kwargs)" in _skill06_client
+    and "CALLER_FILES" in _skill06_gaps
+    and "NAMED_GAPS" in _skill06_gaps
+    and "RAW_MARKERS" in _skill06_gaps
+    and bool(_allowed_raw)
+    and not _missing_anchors
+    and not _undeclared
+    and bool(_unfiltered),
+    "06 public transport must be the frozen adapter only: every raw-REST caller "
+    f"line declared as a named gap (undeclared={_undeclared}, "
+    f"missing_anchors={_missing_anchors})",
+)
 
 # ---------------------------------------------------------------------------
 # 6. Routes with no registry row, or a retired row a caller still uses.
@@ -466,11 +565,29 @@ SKILL06_INTERNAL = (
     ("06-ghl-install-pages/tools/ghl_rest_canvas.py", 218, '/funnels/funnel/fetch/{funnel_id}'),
     ("06-ghl-install-pages/tools/ghl_rest_canvas.py", 228, '/funnels/page/list?funnelId={funnel_id}&locationId={location_id}'),
     ("06-ghl-install-pages/tools/ghl_rest_canvas.py", 240, '/funnels/funnel/delete'),
-    ("06-ghl-install-pages/tools/ghl_funnels_read.py", 138, 'FUNNEL_LIST_PATH = "/funnels/funnel/list"'),
-    ("06-ghl-install-pages/tools/ghl_funnels_read.py", 139, 'PAGE_LIST_PATH = "/funnels/page"'),
 )
 for rel, number, needle in SKILL06_INTERNAL:
     expect_line(rel, number, needle)
+
+# The two funnel reads are named gaps, not public rows: the constants must
+# exist, be used by the read path, and never equal a registry path template.
+_funnels_text = source("06-ghl-install-pages/tools/ghl_funnels_read.py")
+for constant, value in (
+    ("FUNNEL_LIST_PATH", "/funnels/funnel/list"),
+    ("PAGE_LIST_PATH", "/funnels/page"),
+):
+    check(
+        f'{constant} = "{value}"' in _funnels_text
+        and _funnels_text.count(constant) >= 2
+        and value
+        not in {
+            row.path_template
+            for row in OPERATIONS.values()
+            if isinstance(row.path_template, str)
+        },
+        f"{constant} must stay the documented gap path {value!r}, used by the "
+        "read path and absent from the frozen registry",
+    )
 
 # The private trigger rewire is the second call of a two-call freeze row; the
 # registry records only the first call and says so.
@@ -506,7 +623,7 @@ if FAILURES:
 print(f"RESULT: PASS - {CHECKS} checks")
 print("V4 rows: 5 public rows at level S, Version v4, blocker B-V4-S, staging doc URLs")
 print("Gate: default-deny; a V4 write additionally requires canary_verified")
-print("Consumers: 44 wired (route probe unbound, declared F1); 58 direct read wired;")
-print("           35, 06, signature = legacy/raw rails or protocol-only (declared gaps)")
+print("Consumers: 44 wired (tenant-bound gate + tenant-bound route probe); 58 direct read wired;")
+print("           06 = adapter-only with declared named gaps; 35, signature = legacy rails")
 print("Routes: 8 declared no-row callers; 1 retired-row caller; Skill 06 internal authoring gaps")
 raise SystemExit(0)
