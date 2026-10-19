@@ -129,7 +129,7 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
 #     pointed at an untouched copy are repointed. Symlinks only, nothing deleted.
 frontdoor_update_999() {
   local _home canon cand real repo="" origin before after pull_out
-  local _seen=" " _fail=0 _untouched=""
+  local _seen=" " _fail=0 _untouched="" _ffs _ffrc
   _home="$HOME"
   [ -d /data/.openclaw ] && _home="/data"
   canon="$_home/999-setup"
@@ -180,7 +180,13 @@ $cand"
       _untouched="$_untouched $real (local changes)"; continue
     fi
     before="$(git -C "$real" rev-parse HEAD || true)"
-    if ! pull_out="$(git -C "$real" pull --ff-only --quiet 2>&1)"; then
+    # CAN005: git_ff_sync.sh handles a gone upstream (rc 3 = left untouched, named below).
+    _ffs="$(dirname "${BASH_SOURCE[0]}")/git_ff_sync.sh"
+    if [ -f "$_ffs" ]; then pull_out="$(sh "$_ffs" "$real" 2>&1)"; _ffrc=$?
+    else pull_out="$(git -C "$real" pull --ff-only --quiet 2>&1)"; _ffrc=$?; fi
+    if [ "$_ffrc" = 3 ]; then
+      _untouched="$_untouched $real ($pull_out)"; continue
+    elif [ "$_ffrc" != 0 ]; then
       if [ "$(git -C "$real" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" != 0 ] \
          && [ "$(git -C "$real" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)" != 0 ]; then
         _untouched="$_untouched $real (diverged)"; continue
