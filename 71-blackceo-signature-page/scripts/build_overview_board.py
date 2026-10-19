@@ -652,20 +652,27 @@ def build_device(run_dir, stage, device, template, secs, c, title, viewport, out
 def build_combined(run_dir, stage, secs, c, title, viewport, out_dir, expect, required):
     """The all-in-one board: desktop and mobile of the same sections on one image.
 
-    Returns None (skipped) when the stage's other device has delivered nothing
-    yet and `required` is False; raises BoardError for any real fault, including
-    a desktop and a mobile section count that differ."""
+    Returns None (skipped) when the other wireframe stage's set is not complete
+    yet (nothing, a gap, or fewer images than sections) and `required` is False:
+    its own run builds the board. Raises BoardError for any fault in this stage's
+    own images, with `required`, or when the sibling holds more images than
+    sections (a real count mismatch)."""
     name, (d_stage, d_tpl), (m_stage, m_tpl) = COMBINED_SETS[stage]
     want = expect if expect is not None else len(secs)
     loaded = {}
     for dv, st, tpl in (("desktop", d_stage, d_tpl), ("mobile", m_stage, m_tpl)):
         try:
             loaded[dv] = load_images(run_dir, st, tpl, want)
-        except BoardError as exc:
-            if st != stage and not required and not any(
-                    f.is_file() for f in (run_dir / st / tpl).parent.glob("*.png")) :
-                return None  # the sibling stage has not run yet; its own run builds the board
-            raise
+        except BoardError:
+            if st == stage or required:
+                raise
+            try:
+                surplus = len(discover(run_dir, st, tpl)) > want
+            except BoardError:
+                surplus = False  # none or a gap: not delivered yet
+            if surplus:
+                raise
+            return None  # sibling set incomplete; the stage that finishes it builds the board
     board, geometry = build_desktop(loaded["desktop"][1], secs, c, title, d_stage, loaded["mobile"][1], viewport)
     write_board(board, f"{name}-combined-overview", out_dir)
     write_receipt(out_dir, f"{name}-combined-overview", board, name, "combined", secs,
@@ -705,6 +712,9 @@ def build_stage(run_dir, stage, device=None, request=DEFAULT_REQUEST, brand=None
                                       required=device == "combined")
             if combined:
                 built.append(combined)
+            else:  # skipped: an older combined board no longer matches this stage's images
+                for ext in ("png", "json"):
+                    (out / f"{cname}-combined-overview.{ext}").unlink(missing_ok=True)
         return built
     except BoardError:
         for n in [f"{stage}-{d}-overview" for d, _t in sets] + [f"{cname}-combined-overview"]:

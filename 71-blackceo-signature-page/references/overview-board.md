@@ -110,9 +110,11 @@ order everywhere:
   desktop stage's records first (see below).
 - It needs both devices. `visual-mockup` and `final-mockups` carry both in one
   stage. For the wireframe pair the board is built by whichever of the two
-  stages runs once the other has delivered images; before that it is skipped
-  without error. A desktop and a mobile section count that differ, or any
-  fault in either device's images, fails the board and the stage.
+  stages runs once the other has delivered its full set; until then (nothing,
+  a gap, or fewer images than sections) it is skipped without error and any
+  older combined board is deleted, so a stale one never ships. `--device
+  combined`, a fault in the stage's own images, or a sibling with more images
+  than sections fails the board and the stage.
 - Layout constants live at the top of the script (`C_*`). Everything else
   (chrome colors, receipts, determinism, no crop) is as for the other boards.
 

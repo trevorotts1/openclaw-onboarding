@@ -3,6 +3,7 @@
 to the long PDF): scripts/build_overview_board.py, references/overview-board.md."""
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -147,8 +148,8 @@ class OverviewBoardTests(unittest.TestCase):
             mobile = run / "mobile-tablet"
             mobile.mkdir()
             Image.new("RGB", (390, 900), COLORS[0]).save(mobile / "section-01.png")
-            with self.assertRaises(bob.BoardError):  # a half-delivered sibling is a fault, not a skip
-                bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")
+            half = bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")  # half-delivered sibling: skip
+            self.assertEqual([p.name for p, _ in half], ["desktop-wireframe-desktop-overview.png"])
             Image.new("RGB", (390, 900), COLORS[1]).save(mobile / "section-02.png")
             built = bob.build_stage(run, "mobile-tablet", brand=run / "brand.json")
             self.assertEqual([p.name for p, _ in built],
@@ -168,6 +169,44 @@ class OverviewBoardTests(unittest.TestCase):
             self.assertEqual([p.name for p, _ in built], ["desktop-wireframe-desktop-overview.png"])
             with self.assertRaises(bob.BoardError):  # asked for explicitly, it must fail, not skip
                 bob.build_stage(run, "desktop-wireframe", device="combined", brand=run / "brand.json")
+
+    def test_wireframe_partial_or_stale_sibling_never_costs_the_desktop_board(self):
+        from PIL import Image
+
+        class Provider:
+            name = "kie"
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "production-request.json").write_text(json.dumps({"sections": [
+                {"section_id": f"S0{i}", "section_name": f"Name {i}"} for i in (1, 2, 3)]}), encoding="utf-8")
+            (run / "brand.json").write_text(json.dumps(BRAND), encoding="utf-8")
+            for stage, w, h in (("desktop-wireframe", 1440, 810), ("mobile-tablet", 390, 900)):
+                for i in (1, 2, 3):
+                    path = run / stage / f"section-{i:02d}.png"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    Image.new("RGB", (w, h), COLORS[i - 1]).save(path)
+            out = run / "review-pdfs"
+            both = bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")
+            self.assertEqual(len(both), 2)
+            combined = out / "wireframe-combined-overview.png"
+            self.assertTrue(combined.is_file())
+            (run / "mobile-tablet/section-03.png").unlink()  # interrupted run: 2 of 3
+            done = exe.overview_boards("desktop-wireframe", run, Provider(), "production-request.json", 3)
+            self.assertEqual(done["status"], "pass", done["output"])
+            self.assertTrue((out / "desktop-wireframe-desktop-overview.png").is_file())
+            self.assertFalse(combined.exists())  # stale combined board removed on the skip
+            self.assertFalse(combined.with_suffix(".json").exists())
+            Image.new("RGB", (390, 900), COLORS[0]).save(run / "mobile-tablet/section-03.png")
+            Image.new("RGB", (390, 900), COLORS[0]).save(run / "mobile-tablet/section-04.png")
+            with self.assertRaises(bob.BoardError):  # sibling holds more images than sections: real mismatch
+                bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")
+            (run / "mobile-tablet/section-04.png").unlink()
+            shutil.rmtree(run / "mobile-tablet")  # empty sibling with a stale combined board present
+            (out / "wireframe-combined-overview.png").write_bytes(b"old")
+            (out / "wireframe-combined-overview.json").write_text("{}")
+            bob.build_stage(run, "desktop-wireframe", brand=run / "brand.json")
+            self.assertFalse((out / "wireframe-combined-overview.png").exists())
+            self.assertFalse((out / "wireframe-combined-overview.json").exists())
 
     def test_mobile_note_never_covers_subtitle_with_short_title(self):
         # 3 frames + the brand-id title (shorter than the subtitle) was the overlap case
