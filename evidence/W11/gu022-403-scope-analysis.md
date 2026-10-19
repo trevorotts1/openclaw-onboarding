@@ -114,7 +114,7 @@ scopes. The response text alone cannot separate them; the correction is the same
 ## 5. The actual client path cannot prove anything yet — two independent blockers
 
 1. **Registry.** `GET /locations/{locationId}` is **not an operation in the frozen registry**
-   (`public/operations.py`, 139 rows, zero `locations.*` rows). `GET /contacts/` **is** the row
+   (`public/operations.py`; at analysis time 139 rows with zero `locations.*` rows — GHL-140 has since registered `locations.get`, which is registration, not access). `GET /contacts/` **is** the row
    `contacts.list`, whose route class is `retired` with blocker `B-DEPRECATED`. So neither
    GU-022 probe is a valid client-path operation: one has no row, the other is retired. The
    supported read is `POST /contacts/search` (`v3`, `contacts.readonly`, blocker

@@ -196,12 +196,28 @@ def _R(
 
 
 # ---------------------------------------------------------------------------
+# 5.0 Locations (GHL-140 amendment, 2026-10-19)
+#
+# The family freeze recorded no ``locations.*`` row, so no client path could
+# reach ``GET /locations/{locationId}`` at all.  This row transcribes the
+# official document ``apps/locations.json`` (operation ``get-location``,
+# fetched 2026-10-19): Version ``2021-07-28`` and scope ``locations.readonly``
+# (Location-Access / Agency-Access).  Nothing else is inferred.
+# ---------------------------------------------------------------------------
+_LOCATIONS: tuple[OperationRow, ...] = (
+    _R("locations.get", "GET", "/locations/{locationId}", "2021-07-28", "D", PUB,
+       PIT_OR_OAUTH, "path.locationId", False, False, "A-UNVERIFIED",
+       DOCS + "/ghl/locations/get-location", scopes=("locations.readonly",)),
+)
+
+# ---------------------------------------------------------------------------
 # 5.1 Contacts, tags, custom fields, custom values (GU-003-contacts)
 # ---------------------------------------------------------------------------
 _CONTACTS: tuple[OperationRow, ...] = (
     _R("contacts.list", "GET", "/contacts/", "2021-07-28", "D", RET, PIT_OR_OAUTH,
        "query.locationId", False, False, "B-DEPRECATED",
-       DOCS + "/2021-07-28/ghl/contacts/get-contacts"),
+       DOCS + "/2021-07-28/ghl/contacts/get-contacts",
+       scopes=("contacts.readonly",)),
     _R("contacts.get", "GET", "/contacts/{contactId}", "v3", "D", PUB, PIT_OR_OAUTH,
        "path.contactId", False, False, "A-UNVERIFIED",
        DOCS + "/ghl/contacts/get-contact"),
@@ -219,7 +235,8 @@ _CONTACTS: tuple[OperationRow, ...] = (
        DOCS + "/ghl/contacts/delete-contact"),
     _R("contacts.search", "POST", "/contacts/search", "v3", "D", PUB, PIT_OR_OAUTH,
        "body.locationId", False, False, "B-FILTER-SCHEMA",
-       DOCS + "/ghl/contacts/search-contacts-advanced"),
+       DOCS + "/ghl/contacts/search-contacts-advanced",
+       scopes=("contacts.readonly",)),
     _R("contacts.tags.add", "POST", "/contacts/{contactId}/tags", "v3", "D", PUB,
        PIT_OR_OAUTH, "path.contactId", True, False, "A-UNVERIFIED",
        DOCS + "/ghl/contacts/add-tags"),
@@ -231,7 +248,8 @@ _CONTACTS: tuple[OperationRow, ...] = (
        DOCS + "/ghl/contacts/lookup-contact"),
     _R("custom_fields.list", "GET", "/locations/{locationId}/customFields", "v3",
        "D", PUB, PIT_OR_OAUTH, "path.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/locations/get-custom-fields"),
+       DOCS + "/ghl/locations/get-custom-fields",
+       scopes=("locations/customFields.readonly",)),
     _R("custom_fields.get", "GET", "/locations/{locationId}/customFields/{id}",
        "v3", "D", PUB, PIT_OR_OAUTH, "path.locationId", False, False,
        "A-UNVERIFIED", DOCS + "/ghl/locations/get-custom-field"),
@@ -726,7 +744,8 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
 )
 
 _ROWS: tuple[OperationRow, ...] = (
-    _CONTACTS
+    _LOCATIONS
+    + _CONTACTS
     + _OPPORTUNITIES
     + _CONVERSATIONS_CALENDARS
     + _PAYMENTS

@@ -32,9 +32,13 @@ TENANT = "XCgFTEA1oDvsPnTqqgoB"
 
 
 def check_registry() -> None:
-    assert not [k for k in OPERATIONS if k.startswith("locations.")], (
-        "a locations.* row appeared; the analysis says there is none"
-    )
+    # GHL-140 registered the read the analysis said was missing. Registration is
+    # not access: the row may exist while the tenant still refuses the token.
+    loc = OPERATIONS["locations.get"]
+    assert loc.method == "GET", loc.method
+    assert loc.path_template == "/locations/{locationId}", loc.path_template
+    assert loc.version == "2021-07-28", loc.version
+    assert "locations.readonly" in loc.scopes_candidate, loc.scopes_candidate
     row = OPERATIONS["contacts.list"]
     assert row.route_class == "retired", row.route_class
     assert row.blocker == "B-DEPRECATED", row.blocker
