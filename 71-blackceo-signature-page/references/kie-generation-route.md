@@ -87,7 +87,9 @@ the default for the rest. `model_source` is one of `latest-family`, `explicit-re
 `legacy-ratio-route`. The gate checks the N43 ratio rule on every task: a requested 3:1, 1:3 or 9:21 must be
 generated as asked on the legacy route; on the default route 5:4, 4:5, 2:1 and 1:2 must be generated as
 4:3, 3:4, 16:9 and 9:16; every other ratio must be generated as requested. An explicit request or a pin may
-override the substitution.
+override the substitution. A slot designed at 3:1, 1:3 or 9:21 records
+`model_source: explicit-request` with its `evidence` (or records `legacy-ratio-route`), so the
+designed ratio is never rewritten silently before generation.
 Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.json` (a successful active Skill 74 result, recorded with the Skill 49/56 `kie74_receipt.py` pattern or written by the run's own recorder) and be unique across tasks and files. A task whose `model_source` is `explicit-request` or `department-pin` carries `evidence` (the request text or the pin id); without it the N43 substitution cannot be skipped. `evidence` must be at least 12 characters and not a placeholder. The intake stage writes `intake.json` with `scripts/write_intake.py`, whose `--image-engine` is `kie` (default) or `agnes`; the Agnes route is accepted only when `intake.json` has `image_engine: "agnes"`.
 `credits_before` and `credits_after` come from `kie_live_adapter.py credits`, never from an estimate.
 When the client selected Agnes, `skill` and `policy` are both `63-agnes-image` and `cost.provider` is `agnes`.

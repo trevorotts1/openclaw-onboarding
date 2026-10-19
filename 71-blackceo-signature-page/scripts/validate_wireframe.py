@@ -21,9 +21,16 @@ reference_traits: [...]}. Checks, all deterministic:
      (section-*.png) per planned section, the stitched full-page PNG
      (wireframe-full.png), and the combined PDF (wireframe.pdf). Slice
      widths match the stage: 1440px for desktop-wireframe, 390px for
-     mobile-tablet, tolerance +/-2px, read with Pillow. (This replaces
-     the retired part-*.png numbering/width checks, which targeted the
-     pre-Item-11 HTML-render export form.)
+     mobile-tablet, tolerance +/-2px, read with Pillow. The summed
+     section heights of a desktop wireframe must reach the 16,736px
+     floor derived from the standard set's own desktop wireframe sheet
+     (assets/visual-standards/manifest.json: six 1440px slices summing
+     to 16,736px); a short page FAILs by name. Mobile has NO height
+     floor and none is asserted: the standard set contains no
+     full-height mobile wireframe sheet, so the mobile floor is
+     undetermined. (This replaces the retired part-*.png
+     numbering/width checks, which targeted the pre-Item-11 HTML-render
+     export form.)
   4. Slot ratio consistency: where the plan assigns an aspect ratio to
      a slot, it matches the ratio the inventory declares for that slot
      (within 2 percent).
@@ -68,6 +75,11 @@ from pathlib import Path
 
 EXPECTED_WIDTH = {"desktop-wireframe": 1440, "mobile-tablet": 390}
 WIDTH_TOLERANCE_PX = 2
+# Summed section heights must reach the floor in this map. desktop-wireframe
+# takes 16,736px from the standard set's own desktop wireframe sheet. There is
+# deliberately no mobile-tablet entry: the 48,894px standard is a mockup, not a
+# wireframe, so the mobile height floor is undetermined and unasserted.
+HEIGHT_FLOOR = {"desktop-wireframe": 16736}
 RATIO_TOLERANCE = 0.02
 BRAND_PIXEL_TOLERANCE = 32
 PALETTE_MIN_SHARE = 0.02
@@ -537,16 +549,24 @@ def main(argv):
             print(f"ERROR: unreadable input: Pillow is required to read PNG widths ({exc})")
             return 2
         want = EXPECTED_WIDTH[stage]
+        floor = HEIGHT_FLOOR.get(stage)
+        total_height = 0
         for p in slices:
             try:
                 with Image.open(p) as img:
-                    width = img.size[0]
+                    width, height = img.size
             except Exception as exc:
                 failures.append(f"section slice {p.name}: unreadable PNG ({exc})")
                 continue
+            total_height += height
             if abs(width - want) > WIDTH_TOLERANCE_PX:
                 failures.append(f"section slice {p.name}: width {width}px, expected "
                                 f"{want}px (+/-{WIDTH_TOLERANCE_PX}px) for stage {stage}")
+        if floor is not None and total_height < floor:
+            failures.append(f"{stage} page height {total_height}px is under the "
+                            f"{floor}px floor (summed section heights); a "
+                            f"long-scroll page cannot be expressed by an aspect "
+                            f"ratio, so the page is delivered at full height")
 
     # (4) Slot ratio consistency, only where the plan assigns ratios.
     for section in plan:
