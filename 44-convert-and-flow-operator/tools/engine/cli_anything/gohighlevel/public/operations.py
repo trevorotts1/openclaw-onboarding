@@ -817,6 +817,13 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
        DOCS + "/other/mcp"),
 )
 
+# F6 (GHL-168): ``workflows.list`` above declares Version ``v3``, but the
+# recorded live 200 for GET /workflows/ used ``2021-07-28``
+# (GHL_UPDATES_live-ledger.md line 759).  Which Version the endpoint requires
+# is NOT determinable without a new live call, so the row is deliberately
+# unchanged.  Named blocker: B-WORKFLOWS-LIST-VERSION
+# (evidence/W23/f6-workflows-list-version.md).
+
 _ROWS: tuple[OperationRow, ...] = (
     _LOCATIONS
     + _CONTACTS
