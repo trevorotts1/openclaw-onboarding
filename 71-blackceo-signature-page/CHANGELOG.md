@@ -4,6 +4,24 @@
 
 - `tests/`: two fixture-dependent modules (browser hygiene, swarm runner) now report SKIPPED with a named reason instead of a false PASS when their fixtures are not shipped; `test_validate_page.py` pins the 18px mobile anchor floor. Suite: 40 passed, 2 skipped. No production behavior changed.
 
+## 1.3.0 - 2026-10-19 - signature page fidelity batch: design board, brand colors, reference use, review PDFs
+
+One batch of the signature page fixes from the SPF020, SPF025 and SPF026 test runs, plain-English summary:
+
+- Reference images are structure only. Pictures a client likes are used to copy layout and composition, never their content, and a bleed check fails the run when reference content shows up in a delivered image. A typed reference catalog with media-library links backs this.
+- Brand colors are resolved first. The client's palette is looked up (exact owner match) and read from one place before any wireframe, mockup or image stage starts, and every later check reads that same palette.
+- Go Full Page framework. A page color system, an image grade and a page pixel check are required; the hypersaturation step is never optional, a missing palette is refused, and colors outside the palette are refused in prose.
+- Section count. One request section per canonical copy section; a mismatch fails closed, and prompts no longer carry "Pain N" framework names or slot canon text for slots that are not planned.
+- Design Board. One client-approved board per page is made from the page's real images, after the image chain and before any wireframe; it sends only its own pictures and checks each declared text on the image.
+- Design style choice. The client picks A Block, B Circle or C Hybrid, and the chosen style is checked against the image inventory (a circle check needs a real PNG).
+- Composition library. Words over images, shaped crops and light fields, with flags, a light-field check and catalog URLs.
+- Wireframe standard. Wireframe stages send the owner's liked sheets and an annotated build-spec prompt in the client's colors; a prompt that names no color is refused only when the plates are its subject; a half-delivered wireframe sibling skips the combined board instead of failing the stage.
+- Combined overview boards. Every image stage also produces one all-in-one board (desktop page, guide and mobile parts), with the mobile head sized from the subtitle.
+- Client PDF. Each image stage combines into validator-gated desktop and mobile review PDFs automatically; `validate_review_pdf.py --delivered` proves the client's section images and the delivered PDF are the exact validated build, and `--deliver` copies and re-validates it.
+- Prompt budget. Composed prompts reach the 16,000 character floor, truncated copy is always refused, and with every new block added the composed prompts still fit the 20,000 maximum by dropping superseded palette and style prose.
+- Tests: new modules for each unit are registered in `tests/run_tests.py`, and older tests follow the merged gates.
+- Version bumped to 1.3.0 (`SKILL.md` frontmatter, `skill-version.txt`, `VERSION`).
+
 ## 1.2.24 - 2026-10-19 - fidelity wire: copy-source CTA, tier strip, prompt budget
 
 - `scripts/stage_executor.py` carries the generation-wire repairs from 757ce86c0 and 770086e57, plus this repair round:
