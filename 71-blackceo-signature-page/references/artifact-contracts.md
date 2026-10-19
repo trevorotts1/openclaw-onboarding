@@ -888,6 +888,7 @@ and refuses to stitch a record that does not pass):
         "model_id": "<id resolved from the registry at build time>",
         "model_source": "latest-family | explicit-request | department-pin | legacy-ratio-route",
         "layout_reference": "<approved wireframe section slice (mockup) or section plan (wireframe)>",
+        "reference_urls": ["<reference image URL(s); empty when the section has none>"],
         "style_input": "<page visual bible file>",
         "native_aspect": "1440x900"
       },
@@ -914,6 +915,77 @@ failed the QC leg and was regenerated records `attempts` of 2 or more.
 A section whose recomputed garble set is non-empty, whose verdict is not
 `pass`, or whose text-QC record is missing fails validation by name, and
 the stitcher produces nothing from such a record.
+
+A complete worked example follows. It is the record the Item 13
+test fixture writes (`tests/test_item13_production_method.py`), filled in
+for a mockup delivered as two section images. The file it describes is
+`<stage>/production-record.json`; a stage folder that delivers a section
+image set carries exactly this record, the stage gate requires it, and
+`scripts/stitch_sections.py` reads `stitched_output` from it. The model
+id shown is illustrative: the record carries whatever id Skill 66
+resolved from the registry at build time, never a name typed from memory.
+
+```json
+{
+  "artifact": "mockup",
+  "stage": "final-mockups",
+  "page_width": 1440,
+  "stitched_output": "wireframe-full.png",
+  "pdf_output": "wireframe.pdf",
+  "sections": [
+    {
+      "section_id": "S01",
+      "slice": "section-01.png",
+      "width": 1440,
+      "height": 900,
+      "generation": {
+        "route": "kie-gpt-image",
+        "model_id": "gpt-image-2-5-sunburst-text-to-image",
+        "model_source": "latest-family",
+        "layout_reference": "desktop-wireframe/section-01.png",
+        "reference_urls": [],
+        "style_input": "visual-mockup/page-visual-bible.json",
+        "native_aspect": "1440x900"
+      },
+      "text_qc": {
+        "checked_at_native_resolution": true,
+        "expected_text": "Build your desktop command center",
+        "readback_text": "Build your desktop command center",
+        "garbled_words": [],
+        "verdict": "pass",
+        "attempts": 1
+      }
+    },
+    {
+      "section_id": "S02",
+      "slice": "section-02.png",
+      "width": 1440,
+      "height": 760,
+      "generation": {
+        "route": "kie-gpt-image",
+        "model_id": "gpt-image-2-5-sunburst-text-to-image",
+        "model_source": "latest-family",
+        "layout_reference": "desktop-wireframe/section-02.png",
+        "reference_urls": [],
+        "style_input": "visual-mockup/page-visual-bible.json",
+        "native_aspect": "1440x760"
+      },
+      "text_qc": {
+        "checked_at_native_resolution": true,
+        "expected_text": "Every section in its place",
+        "readback_text": "Every section in its place",
+        "garbled_words": [],
+        "verdict": "pass",
+        "attempts": 2
+      }
+    }
+  ]
+}
+```
+
+S02 records `attempts` of 2: its first generation failed the text-QC leg
+and it was regenerated before stitching, exactly as the field rules above
+require.
 
 ## Hybrid board (`final-mockups/hybrid-board.png`; Item 12)
 
