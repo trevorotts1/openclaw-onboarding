@@ -30,7 +30,7 @@ OPENCLAW_PLATFORM=vps  bash install.sh   # force VPS path
 | Backups | `~/Downloads/openclaw-backups` | `/data/.openclaw/backups` |
 | Downloads | `~/Downloads` | `/data/Downloads` |
 | Service mgmt | launchd | pm2 + `pm2 save` + `@reboot pm2 resurrect` (container) |
-| GHL MCP start | `scripts/ghl-mcp-autostart.sh` (launchd KeepAlive plist, `PORT` pinned) | `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` (pm2 ecosystem + save + resurrect; NO bare nohup; `PORT`+`MCP_SERVER_PORT` pinned) |
+| GHL community MCP (`ghl-community-mcp`) | **RETIRED** — `GHL_MCP_RETIRED=1`; no launchd plist, no start/supervision. `scripts/ghl-mcp-autostart.sh` is the retirement tool (start refuses; `--retire` removes the old unit). | **RETIRED** — `GHL_MCP_RETIRED=1`; no pm2 app, no systemd unit. `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` is an inert tombstone (exit 69), and container boot strips the app from `dump.pm2` before `pm2 resurrect`. |
 | Container re-exec | n/a | `platform/vps/bootstrap.sh` |
 | **Ollama provider** | **Signed-in LOCAL daemon** — `baseUrl: http://127.0.0.1:11434`, `apiKey: ollama-local`; serves BOTH local + `:cloud` (see `docs/OLLAMA-PROVIDER-BY-PLATFORM.md`) | **Cloud-direct** — `baseUrl: https://ollama.com` + client's `OLLAMA_API_KEY`; no local daemon |
 | **STT (speech-to-text)** | LOCAL `oc-faster-whisper` primary + OpenAI cloud fallback (`docs/STT-TRANSCRIPTION.md`) | Cloud transcription only (`platform/vps/STT-TRANSCRIPTION.md`) |
@@ -51,7 +51,8 @@ OPENCLAW_PLATFORM=vps  bash install.sh   # force VPS path
 - `VPS-ENVIRONMENT-SETUP.md` — hPanel environment variable guide
 - `INSTALL-GOTCHAS.md` — Hostinger Docker edge cases
 - `STT-TRANSCRIPTION.md` — VPS speech transcription reference
-- `36-ghl-mcp-setup-scripts/` — GHL MCP server supervision (nohup + healthcheck)
+- `36-ghl-mcp-setup-scripts/` — INERT tombstone for the RETIRED community GHL MCP
+  (`GHL_MCP_RETIRED=1`; exits 69; no start, no supervision, no ecosystem)
 - `service-selfheal/install-host-watchdog-cron.sh` — operator-run HOST installer
   for the gateway HTTP-health watchdog (`*/5` host crontab; `docker restart`s the
   openclaw container when the gateway health fails). Runs on the Docker HOST, not

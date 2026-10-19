@@ -99,6 +99,27 @@ for f in \
   need_file "$f"
 done
 
+# Fix 11.1: every standard image named by the manifest is a required file.
+# A shell loop over manifest.json's files[].file keeps this from being 44
+# hand-typed lines; one fix only, no shell-out to test_visual_standards.py.
+VS_LIST="$(python3 - "$ROOT/assets/visual-standards/manifest.json" <<'VSPYEOF'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    for entry in json.load(fh)["files"]:
+        print(entry["file"])
+VSPYEOF
+)" || { printf '[FAIL] cannot read assets/visual-standards/manifest.json\n' >&2; fail=1; VS_LIST=""; }
+if [ -z "$VS_LIST" ]; then
+  printf '[FAIL] assets/visual-standards/manifest.json lists no image files\n' >&2
+  fail=1
+else
+  while IFS= read -r vs_file; do
+    [ -n "$vs_file" ] && need_file "assets/visual-standards/$vs_file"
+  done <<VSLISTEOF
+$VS_LIST
+VSLISTEOF
+fi
+
 front_ver="$(awk 'BEGIN{x=0} /^---$/{x++; next} x==1 && /^version:/{sub(/^version:[[:space:]]*/,""); print; exit}' "$ROOT/SKILL.md" | tr -d '"\r')"
 file_ver="$(tr -d 'vV\r[:space:]' < "$ROOT/skill-version.txt")"
 front_ver="${front_ver#v}"
