@@ -5015,13 +5015,28 @@ main() {
     echo "  ⚠ lib-onboarding-state.sh absent from the pulled bundle ($ONBOARDING_DIR) -- onboarding gate oc_* functions will be unavailable box-side unless an older copy is still present." >&2
   fi
 
+# The prune helper must exist before any delivery that can re-ship a retired
+# surface. This assert sits OUTSIDE the block the portable-bootstrap test
+# extracts, so deleting the helper fails a real roll loudly instead of being
+# swallowed by the slice guard below.
+if ! declare -F prune_retired_ghl_mcp_surfaces >/dev/null 2>&1; then
+    echo "FATAL: community-MCP retirement prune helper is missing; refusing to deliver scripts that could resurrect it" >&2
+    exit 9
+fi
+
 # Platform helpers are runtime dependencies of the delivered Skill32 resume command.
 if [ -d "$ONBOARDING_DIR/platform" ]; then
     mkdir -p "$SKILLS_DIR/../platform"
     cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
     # Retire-by-prune: the platform copy re-delivers the retired VPS start
     # script above. Prune it from the destination immediately after the copy.
-    prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST" "$SKILLS_DIR/../platform"
+    # Guarded for callers that source only this delivery slice (tests extract
+    # the block between the platform-helpers marker and the config-delivery
+    # marker, where the helper is not defined). In a real roll the function is
+    # always present; retire_prune_helper_asserted() below proves that.
+    if declare -F prune_retired_ghl_mcp_surfaces >/dev/null 2>&1; then
+        prune_retired_ghl_mcp_surfaces "$_OC_SCRIPTS_DEST" "$SKILLS_DIR/../platform"
+    fi
 fi
 if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
     echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
