@@ -94,6 +94,84 @@ from ghl_receipts import (  # noqa: E402,F401
 
 ROUTER_VERSION = "v1.0.0"
 
+# ── Public-adapter operation routing (GHL-169) ──────────────────────────────
+# The router stays dependency-injected (it performs no I/O), but the operation
+# IDs it may hand to a public-adapter runner are named here instead of being
+# implied by a free-text rail label. Every ID is a frozen registry row
+# (44-convert-and-flow-operator/.../public/operations.py); the guard test fails
+# on an unknown ID.
+#
+# ``routed``    — a Skill 06 client calls it through ghl_public_client today.
+# ``declared``  — a registry row exists but no adapter-capable client path does
+#                 (multipart/readback/internal shape); the reason lives in
+#                 ghl_route_gaps.py. Never a live route by declaration alone.
+PUBLIC_OPERATION_ROUTES = {
+    "media": {
+        "routed": ("media.files.list",),
+        "declared": ("media.upload", "media.folders.create"),
+    },
+    "survey": {
+        "routed": ("surveys.list",),
+        "declared": ("surveys.get", "surveys.write"),
+    },
+    "funnel": {
+        "routed": (),
+        "declared": (
+            "funnels.list", "funnels.pages.list", "funnels.create",
+            "funnels.steps.create", "funnels.get", "funnels.delete",
+            "funnels.pages.get", "funnels.pages.autosave",
+            "funnels.pages.list_internal",
+        ),
+    },
+    "website": {
+        "routed": (),
+        "declared": ("funnels.list", "funnels.pages.list"),
+    },
+    "page": {
+        "routed": (),
+        "declared": ("funnels.pages.list", "funnels.pages.get",
+                     "funnels.pages.autosave"),
+    },
+    "product": {
+        "routed": (),
+        "declared": (
+            "products.list", "products.get", "products.create",
+            "products.update", "products.delete", "products.prices.create",
+            "products.prices.list",
+        ),
+    },
+    "custom_field": {
+        "routed": (),
+        "declared": ("custom_fields.list", "custom_fields.get",
+                     "custom_fields.create"),
+    },
+    "tag": {
+        "routed": (),
+        "declared": ("tags.list", "tags.create"),
+    },
+    "contact": {
+        "routed": (),
+        "declared": ("contacts.get", "contacts.create", "contacts.upsert",
+                     "contacts.update", "contacts.search", "contacts.delete"),
+    },
+    # Authoring-only object types: no public operation row exists at all.
+    "community": {"routed": (), "declared": ()},
+    "course": {"routed": (), "declared": ()},
+    "channel": {"routed": (), "declared": ()},
+}
+
+
+def public_operation_route(object_type: str) -> Dict[str, tuple]:
+    """The public-adapter operation IDs for one router object type.
+
+    Returns ``{"routed": (...), "declared": (...)}``. An unknown object type
+    returns two empty tuples — never an invented operation.
+    """
+    entry = PUBLIC_OPERATION_ROUTES.get(str(object_type))
+    if entry is None:
+        return {"routed": (), "declared": ()}
+    return {"routed": tuple(entry["routed"]), "declared": tuple(entry["declared"])}
+
 
 # ---------------------------------------------------------------------------
 # Tiers (Skill 36) — the disclosure number N in [GHL tier used: N — tool]
@@ -378,12 +456,11 @@ def _matrix() -> Dict[str, ObjectRoute]:
         idempotency_key="folder_per_funnel_name",
         create_api_exists=True,
         verify="CDN URL fetch 200",
-        note="Public REST covers upload (upload_media), folder "
-        "(create_media_folder), and LIST (list_media). Media LIST IS supported "
-        "by the API and implemented: GET /medias/files REQUIRES a `type` query "
-        "parameter (without it the API returns 422 'type must be a string / type "
-        "should not be empty'); documented values are file, image, video, audio, "
-        "document. There is no community route for media.",
+        note="Media LIST is routed through the frozen public adapter as "
+        "media.files.list (ghl_media.list_media; required `type`, refused before "
+        "transport when omitted). Upload and folder create have registry rows "
+        "but no adapter-capable route (JSON-only transport; no readback plan) "
+        "and are declared named gaps in ghl_route_gaps.py. No community route.",
     )
 
     m["product"] = ObjectRoute(

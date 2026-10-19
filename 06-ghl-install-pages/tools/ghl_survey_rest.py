@@ -44,6 +44,13 @@ if _TOOLS_DIR not in sys.path:
 SURVEY_BACKEND_ORIGIN = "https://backend.leadconnectorhq.com"      # GET <id> (owner token-id) — proven
 SURVEY_SERVICES_ORIGIN = "https://services.leadconnectorhq.com"    # list GET (PIT + browser UA) — proven
 
+# GHL-169: the list read is routed through the frozen public adapter as
+# `surveys.list` (GET /surveys/). Callers must use
+# `ghl_public_client.list_surveys`, which takes the Version and path from the
+# registry row; `survey_list_path` remains only as the contract-shape reference
+# the guard test compares against the row.
+SURVEY_LIST_OPERATION_ID = "surveys.list"
+
 # The capture receipt filename the builder writes and this lane gates on.
 CAPTURE_RECEIPT_NAME = "survey-save-capture.json"
 
@@ -62,7 +69,10 @@ class CaptureRequired(RuntimeError):
 # ---------------------------------------------------------------------------
 
 def survey_read_path(survey_id: str) -> str:
-    """``GET backend.leadconnectorhq.com/surveys/<id>`` — proven with owner token-id."""
+    """``GET backend.leadconnectorhq.com/surveys/<id>`` — proven with owner token-id.
+
+    NAMED GAP (GHL-169): ``surveys.get`` is an internal skill06_authoring row
+    (firebase token-id), not a public adapter route. See ghl_route_gaps.py."""
     if not survey_id or not str(survey_id).strip():
         raise ValueError("survey_id required")
     return f"/surveys/{str(survey_id).strip()}"
@@ -70,7 +80,11 @@ def survey_read_path(survey_id: str) -> str:
 
 def survey_list_path(location_id: str, limit: int = 50) -> str:
     """``GET services.leadconnectorhq.com/surveys/?locationId=…&limit=…`` — proven
-    with a LOCATION PIT + a real browser User-Agent (default urllib UA → CF 1010)."""
+    with a LOCATION PIT + a real browser User-Agent (default urllib UA → CF 1010).
+
+    GHL-169: this builder is the contract-shape reference only. The live call is
+    ``ghl_public_client.list_surveys`` (operation ``surveys.list``); the guard
+    test asserts this path still matches that frozen registry row."""
     if not location_id or not str(location_id).strip():
         raise ValueError("location_id required")
     return f"/surveys/?locationId={str(location_id).strip()}&limit={int(limit)}"
@@ -146,7 +160,11 @@ def require_capture(evidence_root_or_path: str) -> dict:
 def survey_save_route(capture: dict) -> Tuple[str, str, str]:
     """Derive ``(origin, path, verb)`` for the survey save from a CAPTURED request
     record ONLY. Never returns a hardcoded default — a capture without a real
-    ``url``+``method`` raises ``CaptureRequired`` (anti-blind-POST)."""
+    ``url``+``method`` raises ``CaptureRequired`` (anti-blind-POST).
+
+    NAMED GAP (GHL-169): ``surveys.write`` is an undocumented skill06_authoring
+    row with no path/auth class; the capture-gated SPA write cannot be a
+    registry-driven adapter call. See ghl_route_gaps.py."""
     rec = _extract_record(capture) if capture is not None else {}
     url = str(rec.get("url", "")).strip()
     verb = str(rec.get("method", "")).strip().upper()
