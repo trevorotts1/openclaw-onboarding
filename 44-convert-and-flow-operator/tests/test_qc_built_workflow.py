@@ -155,6 +155,68 @@ EOF
     return env, tmp_path
 
 
+@pytest.fixture()
+def stub_caf_with_custom_export(tmp_path):
+    """Factory fixture: write a stub `caf` that exports a caller-supplied
+    workflow object, so WF-7 can be exercised against arbitrary step types.
+
+    Usage: env, tmp = stub_caf_with_custom_export({"steps": [...]})
+    """
+    def _make(export_obj: dict):
+        caf_bin = tmp_path / "caf"
+        payload = json.dumps(export_obj)
+        assert "EOF_WF_EXPORT" not in payload
+        caf_bin.write_text(textwrap.dedent("""\
+            #!/usr/bin/env bash
+            echo "$@" >> "$(dirname "$0")/caf_argv.txt"
+            OUT_FILE=""
+            i=1
+            while [ $i -le $# ]; do
+                arg="${!i}"
+                case "$arg" in
+                    --out) i=$((i+1)); OUT_FILE="${!i}" ;;
+                esac
+                i=$((i+1))
+            done
+            if [ -n "$OUT_FILE" ]; then
+                cat > "$OUT_FILE" <<'EOF_WF_EXPORT'
+%s
+EOF_WF_EXPORT
+            fi
+            exit 0
+        """) % payload)
+        caf_bin.chmod(caf_bin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir(parents=True, exist_ok=True)
+
+        env = os.environ.copy()
+        env["PATH"] = str(tmp_path) + ":" + env.get("PATH", "")
+        env["HOME"] = str(fake_home)
+        env["OPENCLAW_PLATFORM"] = "mac"
+        return env, tmp_path
+
+    return _make
+
+
+def _builder_verified_actions() -> list[str]:
+    """Read VERIFIED_ACTIONS from the engine builder (the source the QC
+    script derives its action types from)."""
+    import re
+
+    builder = (
+        Path(__file__).parent.parent
+        / "tools" / "engine" / "cli_anything" / "gohighlevel"
+        / "utils" / "workflow_builder.py"
+    )
+    src = builder.read_text(encoding="utf-8")
+    match = re.search(
+        r"VERIFIED_ACTIONS\s*=\s*frozenset\(\s*\[(.*?)\]\s*\)",
+        src, re.S)
+    assert match, "VERIFIED_ACTIONS not found in workflow_builder.py"
+    return [t for t in re.findall(r'["\']([^"\']+)["\']', match.group(1)) if t]
+
+
 def _bash_bin() -> str:
     """Return a bash >= 4.0 binary path (needed for ^^ and declare -A)."""
     # macOS ships bash 3.2 at /bin/bash. Homebrew installs 5.x.
@@ -413,3 +475,282 @@ class TestJsonOutputShape:
                 assert key in item_data, (
                     f"Item {item_id} missing key {key!r}. Got: {item_data}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# TEST GROUP 5: WF-7 action-node recognition (valid-node + invalid-node tests)
+# ---------------------------------------------------------------------------
+# Regression background: the original WF-7 grep recognised only 12 legacy
+# uppercase names (SMS|EMAIL|WAIT|IF_ELSE|ADD_TAG|REMOVE_TAG|UPDATE_CONTACT|
+# WEBHOOK|CREATE_TASK|CREATE_NOTE|REMOVE_FROM_WORKFLOW|END). The builder's
+# VERIFIED_ACTIONS uses GHL's snake_case types — add_contact_tag, for example,
+# matched none of them, so a tag-only build reported 0 action nodes and WF-7
+# failed. The documented route-around (inserting a WAIT node) masked the bug.
+# The fix derives the recognition list from the builder's VERIFIED_ACTIONS.
+
+def _stub_caf_env_with_export(tmp_path, export_json: str):
+    """stub_caf_env variant whose caf writes the given export JSON."""
+    caf_bin = tmp_path / "caf"
+    caf_bin.write_text(textwrap.dedent("""\
+        #!/usr/bin/env bash
+        OUT_FILE=""
+        i=1
+        while [ $i -le $# ]; do
+            arg="${!i}"
+            case "$arg" in
+                --out) i=$((i+1)); OUT_FILE="${!i}" ;;
+            esac
+            i=$((i+1))
+        done
+        if [ -n "$OUT_FILE" ]; then
+            cat > "$OUT_FILE" <<'EXPORT_EOF'
+        """ + export_json + """
+EXPORT_EOF
+        fi
+        exit 0
+    """))
+    caf_bin.chmod(caf_bin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["PATH"] = str(tmp_path) + ":" + env.get("PATH", "")
+    env["HOME"] = str(fake_home)
+    env["OPENCLAW_PLATFORM"] = "mac"
+    return env, tmp_path
+
+
+def _export_with_steps(steps: list) -> str:
+    return json.dumps(
+        {
+            "id": "WFTEST005",
+            "name": "ZHC-wf7-node-test",
+            "status": "draft",
+            "triggers": [{"id": "T1", "type": "form_submitted"}],
+            "steps": steps,
+            "allowMultiple": False,
+            "active": False,
+        }
+    )
+
+
+class TestWF7ValidNodeRecognition:
+    """Valid-node tests: every builder VERIFIED_ACTIONS type must be counted."""
+
+    @pytest.mark.parametrize(
+        "step_type",
+        [
+            "add_contact_tag",        # the regression case (was invisible)
+            "remove_contact_tag",     # was invisible
+            "update_contact_field",
+            "create_update_contact",
+            "webhook",
+            "custom_webhook",
+            "custom_code",
+            "sms",                    # lowercase GHL spelling
+            "wait",                   # recognised; no longer REQUIRED
+        ],
+    )
+    def test_verified_action_type_counts_as_action_node(self, step_type, tmp_path):
+        env, _ = _stub_caf_env_with_export(
+            tmp_path, _export_with_steps([{"id": "A1", "type": step_type}])
+        )
+        result = _run_qc(["WFTEST005", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "PASS", (
+            f"WF-7 must PASS for builder-verified action type {step_type!r}. "
+            f"Got: {data['items']['WF-7']}"
+        )
+
+    @pytest.mark.parametrize("legacy_type", ["SMS", "END", "EMAIL"])
+    def test_legacy_uppercase_names_still_recognized(self, legacy_type, tmp_path):
+        """Back-compat: old export shapes with uppercase types keep passing."""
+        env, _ = _stub_caf_env_with_export(
+            tmp_path, _export_with_steps([{"id": "A1", "type": legacy_type}])
+        )
+        result = _run_qc(["WFTEST005", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "PASS", (
+            f"WF-7 must keep recognising legacy name {legacy_type!r}. "
+            f"Got: {data['items']['WF-7']}"
+        )
+
+    def test_add_contact_tag_only_workflow_passes_without_wait_node(self, tmp_path):
+        """The regression scenario itself: a build whose only action node is
+        add_contact_tag must pass WF-7 WITHOUT any WAIT node (the old
+        route-around is no longer necessary and is not a fix)."""
+        env, _ = _stub_caf_env_with_export(
+            tmp_path, _export_with_steps(
+                [{"id": "A1", "type": "add_contact_tag", "tag": "ZHC-wf7-test"}]
+            )
+        )
+        result = _run_qc(["WFTEST005", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "PASS", (
+            f"Tag-only build must pass WF-7 with no wait node. Got: {data['items']['WF-7']}"
+        )
+        assert data["mechanical_fail"] == 0, (
+            f"Tag-only build must have zero mechanical failures. "
+            f"items={data['items']}"
+        )
+
+
+class TestWF7InvalidNodeRejection:
+    """Invalid-node tests: exports with no recognisable action node must FAIL."""
+
+    def test_trigger_only_export_fails_wf7(self, tmp_path):
+        env, _ = _stub_caf_env_with_export(
+            tmp_path,
+            json.dumps(
+                {
+                    "id": "WFTEST006",
+                    "name": "ZHC-wf7-no-action",
+                    "status": "draft",
+                    "triggers": [{"id": "T1", "type": "form_submitted"}],
+                    "steps": [],
+                    "allowMultiple": False,
+                    "active": False,
+                }
+            ),
+        )
+        result = _run_qc(["WFTEST006", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "FAIL", (
+            f"A trigger-only export must FAIL WF-7. Got: {data['items']['WF-7']}"
+        )
+
+    def test_unknown_type_only_export_fails_wf7(self, tmp_path):
+        """A step whose type is not a verified GHL action must not be counted."""
+        env, _ = _stub_caf_env_with_export(
+            tmp_path,
+            _export_with_steps([{"id": "B1", "type": "totally_bogus_action"}]),
+        )
+        result = _run_qc(["WFTEST006", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "FAIL", (
+            f"Unknown step types must not satisfy WF-7. Got: {data['items']['WF-7']}"
+        )
+
+
+class TestWF7BuilderFallback:
+    """When workflow_builder.py is absent, the inline fallback list must still
+    recognise every VERIFIED action (recognition can never regress to the old
+    12-name list)."""
+
+    def test_fallback_recognises_add_contact_tag_without_builder_file(self, tmp_path):
+        iso_root = tmp_path / "iso-skill"
+        iso_root.mkdir()
+        iso_script = iso_root / "qc-built-workflow.sh"
+        iso_script.write_text(_SCRIPT.read_text())
+        assert not (iso_root / "tools").exists(), "iso dir must not contain the engine"
+
+        env, _ = _stub_caf_env_with_export(
+            tmp_path,
+            _export_with_steps([{"id": "A1", "type": "add_contact_tag"}]),
+        )
+        result = _run_qc_with_script(str(iso_script), ["WFTEST007", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "PASS", (
+            "Inline fallback must still count add_contact_tag without the "
+            f"builder file. Got: {data['items']['WF-7']}"
+        )
+
+
+def _run_qc_with_script(script_path: str, args: list, env: dict) -> subprocess.CompletedProcess:
+    """_run_qc bound to an arbitrary script path (for the fallback test)."""
+    _skip_if_no_bash()
+    bash = _bash_bin()
+    return subprocess.run(
+        [bash, script_path] + args,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=15,
+    )
+
+
+# ---------------------------------------------------------------------------
+# TEST GROUP 5: WF-7 recognises every type the builder can emit
+# ---------------------------------------------------------------------------
+
+class TestWF7ActionTypeDerivation:
+    """WF-7's action-type set must come from the builder's VERIFIED_ACTIONS.
+
+    Regression pinned: the old hand-written regex omitted add_contact_tag —
+    a node the builder legitimately emits — so a correct build got WF-7 FAIL.
+    Unknown types must still FAIL (the fix must not become a wildcard).
+    """
+
+    @staticmethod
+    def _export(step_types: list[str]) -> dict:
+        return {
+            "id": "WFTEST001",
+            "name": "ZHC-test-workflow",
+            "status": "draft",
+            "triggers": [{"id": "T1", "type": "form_submitted"}],
+            "steps": [
+                {"id": f"A{i}", "type": t, "order": i,
+                 "targetActionId": "exit"}
+                for i, t in enumerate(step_types)
+            ],
+            "allowMultiple": False,
+            "active": False,
+        }
+
+    def test_wf7_passes_for_add_contact_tag(self, stub_caf_with_custom_export):
+        env, tmp = stub_caf_with_custom_export(self._export(["add_contact_tag"]))
+        result = _run_qc(["WFTEST001", "--json"], env)
+        data = json.loads(result.stdout)
+        wf7 = data["items"]["WF-7"]
+        assert wf7["status"] == "PASS", (
+            f"add_contact_tag is a VERIFIED_ACTIONS type and must PASS WF-7. "
+            f"Got: {wf7}"
+        )
+        assert result.returncode == 0, (
+            f"a workflow whose only action is add_contact_tag must pass QC "
+            f"(exit 0). Got {result.returncode}\nstdout={result.stdout}"
+        )
+
+    def test_wf7_fails_for_unknown_action_type(
+            self, stub_caf_with_custom_export):
+        env, tmp = stub_caf_with_custom_export(self._export(["MAGIC_BEAM"]))
+        result = _run_qc(["WFTEST001", "--json"], env)
+        data = json.loads(result.stdout)
+        wf7 = data["items"]["WF-7"]
+        assert wf7["status"] == "FAIL", (
+            f"an unknown action type must still FAIL WF-7. Got: {wf7}"
+        )
+        assert result.returncode == 1, (
+            f"WF-7 FAIL must exit 1. Got {result.returncode}\n"
+            f"stdout={result.stdout}"
+        )
+
+    def test_wf7_rejects_a_verified_prefix_with_unknown_suffix(
+            self, stub_caf_with_custom_export):
+        """Matching is exact: 'add_contact_tag_extra' is NOT a verified type."""
+        env, tmp = stub_caf_with_custom_export(
+            self._export(["add_contact_tag_extra"]))
+        result = _run_qc(["WFTEST001", "--json"], env)
+        data = json.loads(result.stdout)
+        assert data["items"]["WF-7"]["status"] == "FAIL", (
+            f"an unknown suffix on a known prefix must FAIL WF-7. "
+            f"Got: {data['items']['WF-7']}"
+        )
+        assert result.returncode == 1
+
+    def test_wf7_recognises_every_verified_action(self,
+                                                  stub_caf_with_custom_export):
+        types = _builder_verified_actions()
+        assert types, "builder advertises no VERIFIED_ACTIONS"
+        env, tmp = stub_caf_with_custom_export(self._export(types))
+        result = _run_qc(["WFTEST001", "--json"], env)
+        data = json.loads(result.stdout)
+        wf7 = data["items"]["WF-7"]
+        assert wf7["status"] == "PASS", (
+            f"every VERIFIED_ACTIONS type must be recognised by WF-7. Got: {wf7}"
+        )
+        assert wf7["observed"].startswith(f"{len(types)}_"), (
+            f"expected all {len(types)} builder types counted, got: "
+            f"{wf7['observed']}"
+        )
