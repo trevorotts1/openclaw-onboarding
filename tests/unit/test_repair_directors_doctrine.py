@@ -111,7 +111,9 @@ class TestRepairDirectorsDoctrine(unittest.TestCase):
         gate_cmd = ["bash", str(gate), "--workspace", str(self.box.ws),
                     "--departments-dir", str(self.box.depts), "--company-config", str(self.box.cfg)]
         before = subprocess.run(gate_cmd, capture_output=True, text=True).stdout
-        self.assertIn("directors: FAIL - 2 of 3 departments have no director", before)
+        # main's gate (CAN004) only WARNs on a role-less department; it must not hide them.
+        self.assertIn("directors: PASS - all 1 departments have a director", before)
+        self.assertIn("empty-departments: WARN - 2 departments have no role folders", before)
         rc, rep, err = self.box.run()
         self.assertEqual(rc, 0, err)
         self.assertEqual(sorted(d["department"] for d in rep["directors_created"]),
