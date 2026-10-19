@@ -994,7 +994,11 @@ BlackCEO media library (folder `sigpage-reference-images`), which hosts the
 typed reference catalog `assets/visual-standards/reference-catalog.json`: one
 row per hosted image with `{id, type (wireframe|mockup|hybrid-image-map|
 mood-board|mockup-crop), viewport, form, sections, traits, pair, use,
-tags, contains_reference_only_text, sha256, url, source}`. Wireframe and
+tags, contains_reference_only_text, sha256, media_path, source}`; the url is
+assembled at run time as `<SKILL71_REFERENCE_MEDIA_BASE>/<media_path>` (the
+base is operator-injected; the library's account identifier is never
+committed) and a row with `contains_reference_only_text: true` is never sent as
+a reference. Wireframe and
 mockup rows pair by `pair` (and mobile slices by section number); a row's
 `sha256` is the hash of the uploaded bytes, so a run re-checks a URL with a
 HEAD request and a re-download before a paid call. Rows tagged

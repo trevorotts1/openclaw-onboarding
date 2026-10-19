@@ -63,7 +63,11 @@ treatment.
 | Closing call to action | `band-over-texture` | `band-light-field` |
 
 A brand's mood board may favor or forbid treatments through `composition_cues`
-(see the hand-off below); the defaults apply when it says nothing.
+(see the hand-off below); the defaults apply when it says nothing. The code reads
+them: `composition.assign_treatments` never picks a forbidden treatment and puts a
+preferred one first in the role's own pool, the wireframe budget gate fails a slot
+that declares a forbidden treatment and waives a minimum that only forbidden
+treatments could meet, and `imagery_direction` fills the light-field motifs.
 
 ## Per-page budget (a gate, from the section plan and again on the built page)
 
@@ -143,9 +147,11 @@ record a deterministic crop from the generation to `delivery_px`.
 4. Body copy over a photo needs a scrim or solid block at 55 percent opacity or
    more.
 5. More than 60 words never sit directly on a photo.
-6. A light field stays light: minimum luminance 235 of 255 on a light brand
-   surface (or field-to-surface contrast at most 1.15:1), and textured (standard
-   deviation at least 1.5), never a flat fill.
+6. A light field stays light: field-to-surface contrast at most 1.15:1 on every
+   palette (white, beige or near-black; measured on the field behind the type with
+   buttons and cards hidden), and textured (standard deviation at least 1.5),
+   never a flat fill. The absolute floor of 235 of 255 applies only when no brand
+   surface color is known.
 7. Busyness under text is measured and reported as a warning until calibrated.
 
 ## QC checks
@@ -170,4 +176,7 @@ section, a viewport and the traits each shows. Attach a structure sheet that
 matches the stage and section, plus one real example per non-split treatment.
 Everything in the catalog is for structure and look only. Never carry its
 brand, palette, people, copy, signatures or dates into a client page. Rows
-tagged `counter-example-composition` show the split default.
+tagged `counter-example-composition` show the split default. A row flagged
+`contains_reference_only_text` (placeholder tokens, a signature, a person's
+name) is never attached to a prompt. Rows store `media_path`; the url is
+assembled from the operator-injected `SKILL71_REFERENCE_MEDIA_BASE`.

@@ -93,11 +93,20 @@ references by what each one is:
 | `hybrid-image-map` | sheet printing each slot's id, pixel size and ratio | wireframe stages: slot labelling |
 | `mockup` | full-colour finish | mockup stages: finish and look |
 | `mood-board` | brand direction board | brand direction only |
-| `mockup-crop` | one band cut from a real page | one composition technique (light field, text over a dark photo, shaped mask) |
+| `mockup-crop` | one band cut from a real page | one composition technique (light field, text over a dark photo, a rounded photo cut; the generated `gen-*` rows show the circle, arch and pill crops and a light hero) |
 
 Each row carries its section list, viewport, the composition traits it shows
 (ids from `references/composition-treatments.json`), the `pair` that
-completes it, the hosted `url` and the `sha256` of the uploaded bytes.
+completes it, the file's `media_path` and the `sha256` of the uploaded bytes.
+The url is assembled at run time from `media_path` and the operator-injected
+environment value `SKILL71_REFERENCE_MEDIA_BASE` (the library's account
+identifier is never committed); with no base set no hosted reference is attached
+and the prompt text still carries the rules. A row with
+`contains_reference_only_text: true` (placeholder tokens, a signature or a
+person's name; the `reference_only_text` field says which) is never picked by
+`typed_references()` and must not be sent to an image model. The `gen-*` rows
+are HTML renders of an invented demo brand with illustrated stand-in subjects
+(no image model); take their composition, not their rendering style.
 `scripts/composition.py` `typed_references()` picks a structure sheet that
 matches the stage and section plus one real example per non-split treatment;
 rows tagged `counter-example-composition` (the Gen 1 pair, the mobile

@@ -680,7 +680,9 @@ def main(argv):
     failures.extend(w3_failures)
 
     # (6b) Composition treatments and the per-page budget.
-    comp_failures = composition.budget_failures(composition.plan_sections(plan))
+    comp_failures = composition.budget_failures(
+        composition.plan_sections(plan),
+        composition.composition_cues(composition.load_brand(run_dir, brand_arg)))
     failures.extend(comp_failures)
 
     # (7) Brand-color trait W4 (Item 15): measured slice colors.

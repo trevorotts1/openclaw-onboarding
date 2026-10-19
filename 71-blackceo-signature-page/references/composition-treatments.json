@@ -20,7 +20,9 @@
     "{copy_pct}": "width of the reserved copy space as a whole percent of the frame",
     "{subject_pct}": "width of the subject area as a whole percent of the frame",
     "{corner}": "the quiet corner of the frame that holds a caption (top-left, top-right, bottom-left or bottom-right)",
-    "{motifs}": "the motifs from the mood board's imagery direction"
+    "{motifs}": "the motifs from the slot, else the brand composition_cues imagery_direction, else a stated default",
+    "{surface_color}": "the brand's light ground as a hex value, filled at run time from the run's brand file (never stored in this file)",
+    "{line_color}": "the surface color shifted toward the ink color as far as the light-field contrast limit allows, a hex value computed at run time"
   },
   "treatments": [
     {
@@ -115,9 +117,9 @@
       "counts_as": ["band"],
       "when": "Solutions, what you get, how to, and the closing call to action alternate. A full-width, very light image or line-art pattern behind the type, edge to edge.",
       "wireframe_drawing": "Draw a light tint across the full page width behind the type block, with a faint pattern hint, and label it as a light field.",
-      "photo_prompt": "Flat single-weight 1px line-art pattern of {motifs}, drawn in the brand surface color shifted slightly toward the ink color on the brand surface color, no shading, no photography, seamless tile, evenly spread with no focal point.",
+      "photo_prompt": "Flat single-weight 1px line-art pattern of {motifs}, drawn as hairlines in {line_color} on a flat {surface_color} background, no shading, no photography, seamless tile, evenly spread with no focal point.",
       "section_prompt": "A very light line-art or image field runs the full page width, edge to edge, behind the headline and copy. The field is so light that the type reads at full contrast; it has no focal point and no subject.",
-      "css": "background: var(--brand-surface) url(field.png); field pre-tinted so it passes the luminance rule; or ::before with opacity 0.06 to 0.15",
+      "css": "background: var(--brand-surface) url(field.png); field pre-tinted so it stays within the field-to-surface contrast limit; or ::before with opacity 0.06 to 0.15",
       "legibility": [3, 6, 7],
       "qc": ["Q1", "Q4"]
     },
@@ -238,7 +240,7 @@
     "3": "Contrast at the worse of the p5 and p95 backdrop luminance under the text box: body text under 24px at least 4.5:1; display text 24px or larger (or 18.66px bold) at least 3:1.",
     "4": "Body copy over a photo needs a scrim or solid block at 55 percent opacity or more under it.",
     "5": "Long body copy (more than 60 words) never sits directly on a photo; it goes on a card, the scrim side, or a plain band.",
-    "6": "Light field: on a light brand surface the field behind text has minimum luminance 235/255 (Go Full Page measures 239); palette independent form: field-to-surface contrast at most 1.15:1 and text-to-field contrast meets rule 3. Dark brand surfaces use the same ratios inverted.",
+    "6": "Light field: the field behind the type (type and foreground elements hidden) is within field-to-surface contrast 1.15:1 of the brand surface and textured; text-to-field contrast meets rule 3. The ratio is the rule on every palette, light or dark; the absolute luminance 235 floor applies only when no surface color is known (Go Full Page measures 239 on its page).",
     "7": "Busyness under text (standard deviation of the blurred backdrop, sigma 0.5 times the font size): at most 18/255 for body and 30/255 for display of 48px or larger. Ships as a warning until calibrated on the SPF015 set."
   },
   "thresholds": {
@@ -265,7 +267,7 @@
     "Q1": "Section classifier from element boxes: OVERLAY when 60 percent or more of the headline box lies over an img or a box with a CSS background-image; SPLIT when image and text boxes do not overlap horizontally but share 50 percent or more vertically; STACK otherwise. The measured class must agree with the declared treatment, and the page must meet the budget.",
     "Q2": "Two-pass legibility render: render normally, then again with all text transparent. Sample the backdrop under each text box in the text-hidden render (the normal render gives false readings) and compute contrast against the computed text color, plus busyness.",
     "Q3": "Shape check for mask-circle, mask-arch, mask-pill and mask-diagonal: the four 8x8 corner patches of the img box match the section background (delta E under 3) and the center patch differs; also computed border-radius at least 50 percent or a clip-path other than none. Arch checks the top corners only.",
-    "Q4": "Light-field check: zone minimum luminance at least 235 (or the palette independent ratio) and luminance standard deviation at least 1.5, which proves the texture is present and not a flat fill.",
+    "Q4": "Light-field check on the field behind the type, sampled in a render with the text and the foreground elements (buttons, cards, icons) hidden: field-to-surface contrast at most 1.15:1 on every palette, and luminance standard deviation at least 1.5, which proves the texture is present and not a flat fill.",
     "Q5": "Copy-space check on the raw generated photo, before the build: mean gradient magnitude inside copy_zone at most 25 percent of the frame mean. A failure means regenerate that slot (at most 2 retries, then flag).",
     "Q6": "Face-zone check: the text box and the slot's subject_zone do not intersect, with the slot geometry mapped to rendered pixels."
   }

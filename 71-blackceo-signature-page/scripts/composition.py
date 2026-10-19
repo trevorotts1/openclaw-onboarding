@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -69,11 +70,114 @@ def counts_as(treatment_id: str) -> set:
     return set((treatments().get(treatment_id) or {}).get("counts_as") or [])
 
 
+MEDIA_BASE_ENV = "SKILL71_REFERENCE_MEDIA_BASE"
+DEFAULT_MOTIFS = "abstract concentric arcs, small dots and fine grid lines"
+
+
+def media_base() -> str:
+    """Base URL of the operator media-library folder that holds the reference
+    sheets, injected at runtime (the catalog stores only each file's path, so the
+    library's account identifier is never committed)."""
+    return os.environ.get(MEDIA_BASE_ENV, "").strip().rstrip("/")
+
+
 def load_catalog(path: Path | None = None) -> dict:
+    """The reference catalog with every row's url assembled from the injected
+    media base and the row's media_path. With no base set the rows carry no url,
+    so no hosted reference is attached and the prompt text still carries the
+    composition rules."""
     try:
-        return json.loads((path or CATALOG_PATH).read_text(encoding="utf-8"))
+        cat = json.loads((path or CATALOG_PATH).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"rows": []}
+    base = media_base()
+    rows = []
+    for row in cat.get("rows") or []:
+        row = dict(row)
+        if row.get("media_path") and not row.get("url"):
+            if base:
+                row["url"] = base + "/" + str(row["media_path"]).lstrip("/")
+        rows.append(row)
+    cat["rows"] = rows
+    return cat
+
+
+# --------------------------------------------------------------------------
+# brand: composition cues and color tokens
+# --------------------------------------------------------------------------
+def load_brand(run_dir=None, explicit=None) -> dict:
+    """The run's brand file, same order as validate_wireframe.resolve_brand_path:
+    explicit path, the run's private/brand.json pin, intake.json brand_file, the
+    skill's own brand file. {} when none parses."""
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+    if run_dir:
+        run_dir = Path(run_dir)
+        candidates.append(run_dir / "private" / "brand.json")
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+            bf = intake.get("brand_file") if isinstance(intake, dict) else None
+            if bf:
+                candidates.append(Path(bf) if Path(bf).is_absolute() else run_dir / bf)
+        except (OSError, ValueError):
+            pass
+    candidates.append(SKILL_ROOT / "assets" / "brand" / "blackceo-brand.json")
+    for cand in candidates:
+        try:
+            data = json.loads(cand.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def composition_cues(brand: dict | None) -> dict:
+    """{preferred, forbidden, imagery_direction} from the brand's composition_cues;
+    unknown treatment ids are dropped so a typo never silently forbids nothing
+    or everything."""
+    raw = (brand or {}).get("composition_cues")
+    raw = raw if isinstance(raw, dict) else {}
+    known = treatments()
+    pick = lambda key: [t for t in raw.get(key) or [] if isinstance(t, str) and t in known]  # noqa: E731
+    forbidden = set(pick("forbidden"))
+    return {"preferred": [t for t in pick("preferred") if t not in forbidden],
+            "forbidden": sorted(forbidden),
+            "imagery_direction": str(raw.get("imagery_direction") or "").strip()}
+
+
+def _hex_rgb(value):
+    text = str(value or "").strip().lstrip("#")
+    if re.fullmatch(r"[0-9a-fA-F]{6}", text):
+        return tuple(int(text[i:i + 2], 16) for i in (0, 2, 4))
+    return None
+
+
+def brand_surface_and_ink(brand: dict | None):
+    """(surface_rgb, ink_rgb) from the brand's light and dark palette slots
+    (cream = light ground, navy = dark ink); None for a slot not yet supplied."""
+    palette = (brand or {}).get("palette") or {}
+    return _hex_rgb(palette.get("cream")), _hex_rgb(palette.get("navy"))
+
+
+def line_color(surface, ink, max_ratio: float | None = None):
+    """The surface color shifted toward the ink color as far as the light-field
+    rule allows: field-to-surface contrast at most max_ratio (default the
+    library's field_to_surface_max_ratio less a 0.03 margin)."""
+    limit = (max_ratio or library()["thresholds"]["field_to_surface_max_ratio"]) - 0.03
+    best = tuple(surface)
+    for step in range(1, 101):
+        t = step / 100
+        mix = tuple(round(s + (i - s) * t) for s, i in zip(surface, ink))
+        if contrast_ratio(mix, surface) > limit:
+            break
+        best = mix
+    return best
+
+
+def _rgb_hex(rgb) -> str:
+    return "#{:02X}{:02X}{:02X}".format(*rgb)
 
 
 # --------------------------------------------------------------------------
@@ -99,8 +203,11 @@ def _role_entry(role: str | None) -> dict:
     return {}
 
 
-def choose_treatment(role: str | None, previous: str | None, seen_in_role: int = 0) -> str:
-    """Role default, rotated so no two adjacent sections share a non-split treatment."""
+def choose_treatment(role: str | None, previous: str | None, seen_in_role: int = 0,
+                     cues: dict | None = None) -> str:
+    """Role default, rotated so no two adjacent sections share a non-split
+    treatment. The brand's composition cues apply first: a forbidden treatment is
+    never chosen and a preferred one in the role's own pool moves to the front."""
     entry = _role_entry(role)
     pool = []
     rotate = entry.get("rotate")
@@ -110,6 +217,12 @@ def choose_treatment(role: str | None, previous: str | None, seen_in_role: int =
         pool.append(entry["default"])
     pool += list(entry.get("alternates") or [])
     pool.append(library()["fallback_treatment"])
+    cues = cues or {}
+    forbidden = set(cues.get("forbidden") or [])
+    allowed = [t for t in pool if t not in forbidden]
+    pool = allowed or [t for t in ("split", library()["fallback_treatment"]) if t not in forbidden] or pool
+    liked = [t for t in cues.get("preferred") or [] if t in pool]
+    pool = liked + [t for t in pool if t not in liked]
     for candidate in pool:
         if candidate == "split" or candidate != previous:
             return candidate
@@ -126,7 +239,7 @@ def _zone(slot: dict, key: str):
     return None
 
 
-def zone_words(slot: dict, treatment_id: str) -> dict:
+def zone_words(slot: dict, treatment_id: str, brand: dict | None = None) -> dict:
     """copy side, subject side, percents and quiet corner for the prompt sentences."""
     side, copy_pct, subject_pct, corner = ZONE_DEFAULTS.get(treatment_id, DEFAULT_ZONE)
     copy_zone, subject_zone = _zone(slot, "copy_zone"), _zone(slot, "subject_zone")
@@ -140,9 +253,15 @@ def zone_words(slot: dict, treatment_id: str) -> dict:
         subject_side = "left" if (subject_zone[0] + subject_zone[2]) / 2 < 50 else "right"
     else:
         subject_side = "right" if side == "left" else "left"
-    return {"copy_side": side, "subject_side": subject_side, "copy_pct": str(copy_pct),
-            "subject_pct": str(subject_pct), "corner": corner,
-            "motifs": str(slot.get("motifs") or "the motifs named in the mood board's imagery direction")}
+    cues = composition_cues(brand)
+    surface, ink = brand_surface_and_ink(brand)
+    words = {"copy_side": side, "subject_side": subject_side, "copy_pct": str(copy_pct),
+             "subject_pct": str(subject_pct), "corner": corner,
+             "motifs": str(slot.get("motifs") or cues["imagery_direction"] or DEFAULT_MOTIFS)}
+    if surface and ink:
+        words["surface_color"] = _rgb_hex(surface)
+        words["line_color"] = _rgb_hex(line_color(surface, ink))
+    return words
 
 
 def _fill(template: str, words: dict) -> str:
@@ -152,13 +271,14 @@ def _fill(template: str, words: dict) -> str:
     return out
 
 
-def assign_treatments(sections: list) -> list:
+def assign_treatments(sections: list, cues: dict | None = None) -> list:
     """One resolved record per section, in order. A slot's declared treatment
     wins; a slot without one takes its section role's default, rotated so no
     two adjacent sections repeat a non-split treatment. Returns
     [{section_id, role, slots: [{slot, treatment, source}]}]. A section with
     no slots whose role default is a full-width band carries a section-level
-    backdrop record (slot_id None)."""
+    backdrop record (slot_id None). `cues` is composition_cues(brand): forbidden
+    treatments are never picked by a role default."""
     resolved, previous, seen = [], None, {}
     for section in sections:
         if not isinstance(section, dict):
@@ -174,12 +294,12 @@ def assign_treatments(sections: list) -> list:
             if declared in treatments():
                 chosen, source = declared, "declared"
             else:
-                chosen = first_choice or choose_treatment(role, previous, seen.get(role, 0))
+                chosen = first_choice or choose_treatment(role, previous, seen.get(role, 0), cues)
                 source = "role-default"
             first_choice = first_choice or (chosen if chosen != "split" else None)
             entry["slots"].append({"slot": slot, "treatment": chosen, "source": source})
         if not slots:
-            backdrop = choose_treatment(role, previous, seen.get(role, 0))
+            backdrop = choose_treatment(role, previous, seen.get(role, 0), cues)
             if "band" in counts_as(backdrop):
                 entry["slots"].append({"slot": {"slot_id": None}, "treatment": backdrop,
                                        "source": "role-default"})
@@ -207,12 +327,19 @@ def slot_words(slot: dict, treatment_id: str) -> str:
     return "(" + "; ".join(parts) + ")"
 
 
-def photo_rules(slot: dict, treatment_id: str) -> str:
+def photo_rules(slot: dict, treatment_id: str, brand: dict | None = None) -> str:
     """The photo-generation sentences for one slot: the treatment's own
-    copy-space or crop-safe framing plus the universal negative."""
+    copy-space or crop-safe framing plus the universal negative. Every
+    placeholder is filled; a prompt that still holds one raises ValueError, so
+    a model is never sent a sentence it cannot act on."""
     t = treatments().get(treatment_id) or {}
-    words = zone_words(slot, treatment_id)
-    return (_fill(t.get("photo_prompt", ""), words) + " " + library()["universal_photo_prompt"]).strip()
+    words = zone_words(slot, treatment_id, brand)
+    text = (_fill(t.get("photo_prompt", ""), words) + " " + library()["universal_photo_prompt"]).strip()
+    left = re.search(r"\{[a-z_]+\}", text)
+    if left:
+        raise ValueError(f"treatment {treatment_id}: the photo rules still hold {left.group(0)}; the run's brand "
+                         "file must supply its light and dark palette colors (cream and navy) before this slot is generated")
+    return text
 
 
 def _label(slot: dict, treatment_id: str) -> str:
@@ -304,8 +431,11 @@ def typed_references(stage: str, platform: str, section_id, treatment_ids_for_se
     sheet that matches the stage and section (wireframe for wireframe stages,
     mockup for mockup stages), then one real example per non-split treatment.
     Rows tagged counter-example-composition are skipped when the section's
-    treatment is not split: they teach the split default."""
-    rows = [r for r in (catalog or load_catalog()).get("rows") or [] if r.get("url")]
+    treatment is not split: they teach the split default. Rows flagged
+    contains_reference_only_text are never picked."""
+    # a row holding placeholder copy, a signature or a person's name is never sent
+    rows = [r for r in (catalog or load_catalog()).get("rows") or []
+            if r.get("url") and not r.get("contains_reference_only_text")]
     if not rows:
         return []
     token = _section_token(section_id)
@@ -375,17 +505,23 @@ def plan_sections(plan: list) -> list:
     return rows
 
 
-def budget_failures(rows: list) -> list:
+def budget_failures(rows: list, cues: dict | None = None) -> list:
     """Named COMPOSITION failures for [(section_id, [treatments], photo_bearing)].
-    Unknown treatment ids always fail; the budget itself applies from
-    budget.applies_from_photo_sections photo-bearing sections."""
+    Unknown treatment ids always fail, and so does a treatment the brand's
+    composition_cues forbid; the budget itself applies from
+    budget.applies_from_photo_sections photo-bearing sections, and a minimum
+    that only forbidden treatments could meet is waived."""
     cfg = library()["budget"]
+    forbidden = set((cues or {}).get("forbidden") or [])
     failures = []
     for sid, ts, _photo in rows:
         for t in ts:
             if t not in treatments():
                 failures.append(f"COMPOSITION: section {sid!r}: unknown treatment {t!r}; allowed: "
                                 + ", ".join(treatment_ids()))
+            elif t in forbidden:
+                failures.append(f"COMPOSITION: section {sid!r}: treatment {t!r} is forbidden by the brand's "
+                                "composition_cues")
     photo = [(sid, ts) for sid, ts, p in rows if p]
     if len(photo) < cfg["applies_from_photo_sections"]:
         return failures
@@ -401,16 +537,19 @@ def budget_failures(rows: list) -> list:
     def count(flag):
         return sum(1 for t in flat if flag in counts_as(t))
 
-    if count("hero-overlay") < cfg["min_words_over_image_hero"]:
+    def possible(flag):
+        return any(flag in counts_as(t) for t in treatments() if t not in forbidden)
+
+    if possible("hero-overlay") and count("hero-overlay") < cfg["min_words_over_image_hero"]:
         failures.append("COMPOSITION: no words-over-image hero (overlay-light or overlay-dark-scrim)")
-    if count("band") < cfg["min_full_width_bands"]:
+    if possible("band") and count("band") < cfg["min_full_width_bands"]:
         failures.append("COMPOSITION: no full-width band (band-over-texture or band-light-field)")
-    if count("mask") < cfg["min_shaped_crops"]:
+    if possible("mask") and count("mask") < cfg["min_shaped_crops"]:
         failures.append(f"COMPOSITION: {count('mask')} shaped crops, need at least "
                         f"{cfg['min_shaped_crops']} (mask-circle, mask-arch, mask-pill, mask-diagonal)")
-    if count("circle") < cfg["min_circle_crops"]:
+    if possible("circle") and count("circle") < cfg["min_circle_crops"]:
         failures.append("COMPOSITION: no mask-circle crop")
-    if count("intersect") < cfg["min_intersecting"]:
+    if possible("intersect") and count("intersect") < cfg["min_intersecting"]:
         failures.append("COMPOSITION: no intersecting treatment (card-overlaps-photo, "
                         "break-the-frame or section-intersect)")
     if cfg.get("no_adjacent_repeat_of_non_split"):
@@ -486,8 +625,8 @@ def page_rows(layout_data: dict) -> list:
         sid = section.get("id") or str(idx + 1)
         measured = classify_section(section)
         declared = [i.get("treatment") for i in section.get("images") or [] if i.get("treatment")]
-        if section.get("treatment"):
-            declared.append(section["treatment"])
+        if section.get("treatment") and section["treatment"] not in declared:
+            declared.append(section["treatment"])   # one count per slot: a section tag repeating its images' tag adds none
         ts = list(declared)
         for img in section.get("images") or []:
             if not img.get("treatment"):
@@ -512,9 +651,9 @@ def page_rows(layout_data: dict) -> list:
     return rows, mismatches
 
 
-def page_failures(layout_data: dict) -> list:
+def page_failures(layout_data: dict, cues: dict | None = None) -> list:
     rows, mismatches = page_rows(layout_data)
-    return mismatches + budget_failures(rows)
+    return mismatches + budget_failures(rows, cues)
 
 
 def face_zone_overlap(text_box: dict, frame_box: dict, subject_zone) -> bool:
@@ -604,9 +743,12 @@ def corner_test(img, background_rgb, shape: str) -> tuple:
 
 
 def light_field_check(img, surface_rgb=None) -> tuple:
-    """Q4: the zone (text hidden) is light enough AND textured (std at least 1.5).
-    On a dark brand surface the same ratios hold inverted: pass surface_rgb and
-    the check uses field-to-surface contrast instead of absolute luminance."""
+    """Q4: the zone behind the type (text and foreground hidden) is within the
+    field-to-surface contrast limit of the brand surface AND textured (std at
+    least 1.5). The ratio form is palette independent: it holds for a white, a
+    beige or a near-black surface alike. Without a surface color the check falls
+    back to the absolute luminance floor, which is only right for a near-white
+    page."""
     cfg = library()["thresholds"]
     gray = list(img.convert("L").getdata())
     mean = sum(gray) / len(gray)

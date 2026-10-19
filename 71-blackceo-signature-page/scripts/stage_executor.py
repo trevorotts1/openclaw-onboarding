@@ -509,6 +509,8 @@ def load_request(run_dir: Path, name: str) -> dict:
             s["cta"] = source
         if required:
             s.setdefault("cta_required", True)
+    # the run's brand file, read once: composition cues and light-field colors
+    data["_composition_brand"] = composition.load_brand(run_dir)
     return data
 
 
@@ -541,14 +543,19 @@ def render_template(template: str, values: dict, stage: str) -> str:
             f"{leftover.group(0)!r} after rendering; refusing before any provider call")
     return body
 
+def request_cues(request: dict) -> dict:
+    """The brand's composition cues for this run (empty when it declares none)."""
+    return composition.composition_cues(request.get("_composition_brand") or composition.load_brand())
+
+
 def resolve_composition(section: dict, index: int, request: dict) -> dict:
     """This section's composition record: declared slot treatments, else the
     section role's default, rotated against the neighbouring sections."""
     sections = request.get("sections")
     if (isinstance(sections, list) and 0 < index <= len(sections)
             and sections[index - 1].get("section_id") == section.get("section_id")):
-        return composition.assign_treatments(sections)[index - 1]
-    return composition.assign_treatments([section])[0]
+        return composition.assign_treatments(sections, request_cues(request))[index - 1]
+    return composition.assign_treatments([section], request_cues(request))[0]
 
 
 def section_typed_references(stage: str, width: int, resolved: dict, section: dict) -> list:
@@ -870,14 +877,18 @@ def with_photo_rules(prompt: str, item: str, request: dict) -> str:
     sections = request.get("sections") if isinstance(request, dict) else None
     if not isinstance(sections, list):
         return prompt
-    resolved = composition.assign_treatments(sections)
+    resolved = composition.assign_treatments(sections, request_cues(request))
     for entry in resolved:
         for rec in entry["slots"]:
             if str(rec["slot"].get("slot_id")) != item:
                 continue
             if rec["treatment"] == "split":
                 return prompt
-            rules = composition.photo_rules(rec["slot"], rec["treatment"])
+            try:
+                rules = composition.photo_rules(
+                    rec["slot"], rec["treatment"], request.get("_composition_brand") or composition.load_brand())
+            except ValueError as exc:
+                raise ExecutorError(f"{item}: {exc}; refusing before any provider call")
             if rules in prompt:
                 return prompt
             merged = prompt + "\n\n" + rules

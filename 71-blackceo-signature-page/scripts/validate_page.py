@@ -494,13 +494,37 @@ COMPOSITION_JS = """() => {
         if (p.length < 4 || p[3] > 0.99) return p.slice(0, 3); }
       n = n.parentElement; }
     return [255, 255, 255]; };
+  // band-light-field: everything painted in front of the field (buttons, cards,
+  // icons, pictures) is marked so the field can be sampled with it hidden. A
+  // descendant that covers 60 percent or more of the band is the field itself
+  // (a full-bleed image or tint layer), and so is any ancestor of one.
+  const markForeground = (el) => {
+    const fr = el.getBoundingClientRect(); const frameArea = fr.width * fr.height;
+    const isField = (d) => { const r = d.getBoundingClientRect();
+      return frameArea > 0 && r.width * r.height >= 0.6 * frameArea; };
+    const fields = Array.from(el.querySelectorAll('*')).filter(isField);
+    Array.from(el.querySelectorAll('*')).forEach(d => {
+      if (fields.some(f => f === d || f.contains(d) || d.contains(f))) return;
+      const st = getComputedStyle(d); const bg = rgbOf(st.backgroundColor);
+      const a = (st.backgroundColor.match(/rgba\\(([^)]+)\\)/) || [])[1];
+      const alpha = a ? parseFloat(a.split(',')[3]) : 1;
+      const solid = bg && alpha > 0.05;
+      const bordered = ['Top', 'Right', 'Bottom', 'Left'].some(k =>
+        parseFloat(st['border' + k + 'Width']) > 0 && st['border' + k + 'Style'] !== 'none');
+      const media = ['IMG', 'SVG', 'VIDEO', 'CANVAS', 'PICTURE'].includes(d.tagName.toUpperCase());
+      const bgImage = (st.backgroundImage || '').includes('url(') || (st.backgroundImage || '').includes('gradient');
+      if (solid || bordered || media || bgImage || (st.boxShadow && st.boxShadow !== 'none'))
+        d.setAttribute('data-comp-fg', '1');
+    });
+  };
+  Array.from(document.querySelectorAll('[data-treatment="band-light-field"]')).filter(vis).forEach(markForeground);
   return Array.from(document.querySelectorAll('[data-treatment]')).filter(vis).map(el => {
     const img = el.tagName === 'IMG' ? el : el.querySelector('img');
     const texts = Array.from(el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,figcaption,a,button,span,li'))
       .filter(t => vis(t) && Array.from(t.childNodes).some(n => n.nodeType === 3 && n.textContent.trim()))
       .slice(0, 8).map(t => { const st = getComputedStyle(t);
         return {rect: rect(t), color: rgbOf(st.color), fontSize: parseFloat(st.fontSize),
-                bold: parseInt(st.fontWeight, 10) >= 700,
+                bold: parseInt(st.fontWeight, 10) >= 700, onField: !t.closest('[data-comp-fg]'),
                 words: (t.innerText || '').trim().split(/\\s+/).filter(Boolean).length}; });
     return {treatment: el.getAttribute('data-treatment'), frame: rect(el),
             slot: img ? img.getAttribute('data-image-slot') : el.getAttribute('data-image-slot'),
@@ -510,7 +534,8 @@ COMPOSITION_JS = """() => {
   });
 }"""
 
-HIDE_TEXT_CSS = "*{color:transparent!important;text-shadow:none!important}"
+HIDE_TEXT_CSS = ("*{color:transparent!important;text-shadow:none!important}"
+                 "[data-comp-fg]{visibility:hidden!important}")
 TEXT_OVER_PHOTO = ("overlay-light", "overlay-dark-scrim", "caption-over-photo", "band-over-texture")
 
 
@@ -546,10 +571,10 @@ def composition_pixel_failures(page):
                 if not ok:
                     out.append(f"{where}: shape check failed: {detail}")
             if tid == "band-light-field":
-                surface = tuple(item["surface"])
-                dark = composition.luminance(surface) < 0.18
+                # the field behind the type: text and foreground elements are
+                # hidden in this render, and the ratio form holds on any palette
                 ok, detail = composition.light_field_check(
-                    shot(item["frame"]), surface if dark else None)
+                    shot(item["frame"]), tuple(item["surface"]))
                 if not ok:
                     out.append(f"{where}: light-field check failed: {detail}")
             zone = None
@@ -560,6 +585,14 @@ def composition_pixel_failures(page):
                     zone = None
             frame = item.get("img") or item["frame"]
             for text in item.get("texts") or []:
+                if tid == "band-light-field" and text.get("onField") and text.get("color"):
+                    display = text["fontSize"] >= 24 or (text["fontSize"] >= 18.66 and text["bold"])
+                    ok, ratio, need = composition.backdrop_contrast(
+                        shot(text["rect"]), tuple(text["color"]), display)
+                    if not ok:
+                        out.append(f"{where}: text at {int(text['rect']['left'])},"
+                                   f"{int(text['rect']['top'])} has contrast {ratio}:1 over the light field, "
+                                   f"needs {need}:1")
                 over = tid in TEXT_OVER_PHOTO
                 if over and text.get("color"):
                     display = text["fontSize"] >= 24 or (text["fontSize"] >= 18.66 and text["bold"])
@@ -580,6 +613,8 @@ def composition_pixel_failures(page):
     finally:
         try:
             handle.evaluate("e => e.remove()")
+            page.evaluate("() => document.querySelectorAll('[data-comp-fg]')"
+                          ".forEach(e => e.removeAttribute('data-comp-fg'))")
         except Exception:
             pass
     return out
@@ -1847,7 +1882,7 @@ def main():
                             exemptions=declared_exemptions)
                         width_results[width]["layout"] = layout_report
                         errors.extend(layout_report["failures"])
-                        comp_lines = (composition.page_failures(layout_data)
+                        comp_lines = (composition.page_failures(layout_data, composition.composition_cues(brand))
                                       + composition_pixel_failures(page))
                         width_results[width]["composition"] = {"failures": comp_lines}
                         errors.extend(comp_lines)

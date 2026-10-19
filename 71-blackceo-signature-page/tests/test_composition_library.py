@@ -26,6 +26,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import re
 import shutil
 import sys
@@ -45,6 +46,8 @@ def _load(name):
     return mod
 
 
+# the hosted-reference base is operator-injected at run time; tests use a fake one
+os.environ["SKILL71_REFERENCE_MEDIA_BASE"] = "https://media.example.test/demo-account"
 comp = _load("composition")
 exe = _load("stage_executor")
 vp = _load("validate_page")
@@ -53,7 +56,12 @@ VS = ROOT / "assets" / "visual-standards"
 CATALOG = json.loads((VS / "reference-catalog.json").read_text(encoding="utf-8"))
 LIB = json.loads((ROOT / "references" / "composition-treatments.json").read_text(encoding="utf-8"))
 SCHEMA_FIELDS = ("id", "type", "viewport", "form", "sections", "traits", "pair", "use",
-                 "contains_reference_only_text", "sha256", "url", "source")
+                 "contains_reference_only_text", "sha256", "media_path", "source")
+# rows that hold a signature, a person's name or placeholder tokens (verified by eye and OCR)
+MUST_BE_FLAGGED = (["std-hybrid-board", "desktop-annotated-mockup", "lf-desktop-mockup-c",
+                    "set-for-life-desktop-mockup", "set-for-life-desktop-wireframe"]
+                   + [f"lf-mobile-{k}-{n}" for k in ("wireframe", "mockup")
+                      for n in ("s01", "s07a", "s07b", "s07c", "s07d", "s12a", "s12b", "s12c")])
 # first 16 hex of the sha256 of the sources the plan keeps OUT of the library
 ANTI_EXAMPLE_PREFIXES = ("b6fda360817fa4ed", "3fae3fb2ac4c978f", "cbb23ced83920755")
 NAMED_COLORS = ("black", "white", "red", "green", "blue", "gold", "grey", "gray", "yellow",
@@ -68,7 +76,8 @@ class CatalogTests(unittest.TestCase):
         for row in self.rows:
             for field in SCHEMA_FIELDS:
                 self.assertIn(field, row, f"{row.get('id')} lacks {field}")
-            self.assertTrue(row["url"].startswith("https://"), row["id"])
+            self.assertRegex(row["media_path"], r"^media/[0-9a-f-]+\.png$", row["id"])
+            self.assertNotIn("url", row, row["id"])
             self.assertRegex(row["sha256"], r"^[0-9a-f]{64}$", row["id"])
             self.assertIn(row["type"], CATALOG["types"], row["id"])
 
@@ -112,6 +121,68 @@ class CatalogTests(unittest.TestCase):
         for row in self.rows:
             if row["pair"]:
                 self.assertEqual(by_id[row["pair"]]["pair"], row["id"], row["id"])
+
+
+class CatalogSafetyTests(unittest.TestCase):
+    """Signature flags, the account identifier, and the gfp row corrections."""
+
+    def test_no_account_identifier_or_host_is_committed(self):
+        text = (VS / "reference-catalog.json").read_text(encoding="utf-8")
+        self.assertNotIn("filesafe", text)
+        self.assertNotIn("https://", text)
+
+    def test_load_catalog_assembles_urls_from_the_injected_base(self):
+        rows = comp.load_catalog()["rows"]
+        self.assertTrue(all(r["url"] == "https://media.example.test/demo-account/" + r["media_path"] for r in rows))
+        saved = os.environ.pop("SKILL71_REFERENCE_MEDIA_BASE")
+        try:
+            bare = comp.load_catalog()["rows"]
+            self.assertTrue(all("url" not in r for r in bare))
+            self.assertEqual(comp.typed_references("final-mockups", "desktop", "1", ["overlay-light"]), [])
+        finally:
+            os.environ["SKILL71_REFERENCE_MEDIA_BASE"] = saved
+
+    def test_rows_with_a_signature_or_placeholder_are_flagged_and_described(self):
+        by_id = {r["id"]: r for r in CATALOG["rows"]}
+        for rid in MUST_BE_FLAGGED:
+            self.assertTrue(by_id[rid]["contains_reference_only_text"], rid)
+            self.assertTrue(by_id[rid].get("reference_only_text"), rid)
+
+    def test_typed_references_never_return_a_flagged_row(self):
+        flagged = {r["id"] for r in CATALOG["rows"] if r["contains_reference_only_text"]}
+        every = [t for t in comp.treatment_ids()]
+        for stage in comp.WIREFRAME_STAGES + comp.MOCKUP_STAGES:
+            for platform in ("desktop", "mobile"):
+                for sid in [str(n) for n in range(1, 13)] + ["2A", "5B", "12"]:
+                    for tids in (["split"], every, ["overlay-light"]):
+                        for ref in comp.typed_references(stage, platform, sid, tids):
+                            self.assertNotIn(ref["id"], flagged, (stage, platform, sid))
+
+    def test_founder_letter_mockup_does_not_get_the_signature_sheet(self):
+        for stage in comp.MOCKUP_STAGES:
+            ids = [r["id"] for r in comp.typed_references(stage, "desktop", "12", ["overlay-light"])]
+            self.assertNotIn("desktop-annotated-mockup", ids)
+            self.assertIn("gen-hero-overlay-light", ids)
+
+    def test_gfp_shaped_mask_is_not_tagged_as_an_arch_or_a_frame_break(self):
+        row = next(r for r in CATALOG["rows"] if r["id"] == "gfp-shaped-mask")
+        self.assertNotIn("mask-arch", row["traits"])
+        self.assertNotIn("break-the-frame", row["traits"])
+        picked = comp.typed_references("final-mockups", "desktop", "8", ["mask-arch"])
+        self.assertNotIn("gfp-shaped-mask", [r["id"] for r in picked])
+
+    def test_every_non_split_treatment_with_a_row_has_an_unflagged_example(self):
+        for tid in ("overlay-light", "overlay-dark-scrim", "band-light-field", "mask-circle", "mask-arch", "mask-pill"):
+            got = comp.typed_references("final-mockups", "desktop", "99", [tid])
+            self.assertTrue(any(tid in (r.get("traits") or []) for r in got), tid)
+
+    def test_generated_references_exist_and_are_marked(self):
+        gen = [r for r in CATALOG["rows"] if r["id"].startswith("gen-")]
+        self.assertEqual({r["id"] for r in gen}, {"gen-hero-overlay-light", "gen-hero-light-field",
+                                                  "gen-circle-persona-band", "gen-arch-pill-band"})
+        for r in gen:
+            self.assertIn("generated-reference", r["tags"])
+            self.assertFalse(r["contains_reference_only_text"])
 
 
 class TreatmentLibraryTests(unittest.TestCase):
@@ -181,7 +252,7 @@ class PromptContractTests(unittest.TestCase):
                   "break-the-frame": "cut-out friendly", "card-overlaps-photo": "solid card",
                   "mask-diagonal": "angled", "section-intersect": "straddle"}
         for tid, needle in probes.items():
-            text = comp.photo_rules({"slot_id": "IMG-9"}, tid)
+            text = comp.photo_rules({"slot_id": "IMG-9"}, tid, comp.load_brand())
             self.assertIn(needle, text, tid)
             self.assertIn("do not leave a blank column", text, tid)
             self.assertNotIn("{", text, tid)
@@ -237,6 +308,96 @@ class PromptContractTests(unittest.TestCase):
         huge = "x" * 19900
         with self.assertRaises(exe.ExecutorError):
             exe.with_photo_rules(huge, "IMG-01", request)
+
+
+BRAND = {"palette": {"cream": "#F5F0E8", "navy": "#1A1A2E", "gold": "#C9A227"},
+         "composition_cues": {"imagery_direction": "fine botanical leaves and small dots"}}
+FIELD_SECTION = {"section_id": "7", "section_name": "What you get", "copy": "Here is what is included.",
+                 "slots": [{"slot_id": "IMG-07", "aspect_ratio": "16:5", "art_direction": "Pattern.",
+                            "treatment": "band-light-field"}]}
+
+
+class ConcretePromptAndCuesTests(unittest.TestCase):
+    def test_light_field_photo_prompt_names_the_motifs_and_the_color_values(self):
+        text = comp.photo_rules({"slot_id": "IMG-07"}, "band-light-field", BRAND)
+        self.assertIn("fine botanical leaves and small dots", text)
+        self.assertIn("#F5F0E8", text)
+        self.assertNotIn("{", text)
+        self.assertNotIn("brand surface color", text)
+        line = re.findall(r"#[0-9A-F]{6}", text)
+        self.assertEqual(len(line), 2, text)
+        rgb = lambda h: tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))  # noqa: E731
+        self.assertLessEqual(comp.contrast_ratio(rgb(line[0]), rgb(line[1])), 1.15)
+        self.assertNotEqual(line[0], line[1])
+
+    def test_slot_motifs_beat_the_brand_and_a_default_is_stated_when_none_are_given(self):
+        slot = {"slot_id": "IMG-07", "motifs": "paper planes and clouds"}
+        self.assertIn("paper planes and clouds", comp.photo_rules(slot, "band-light-field", BRAND))
+        bare = {"palette": BRAND["palette"]}
+        text = comp.photo_rules({"slot_id": "IMG-07"}, "band-light-field", bare)
+        self.assertIn(comp.DEFAULT_MOTIFS, text)
+        self.assertNotIn("{", text)
+
+    def test_unsupplied_brand_colors_refuse_instead_of_sending_a_placeholder(self):
+        unset = {"palette": {"cream": "CLIENT_MUST_SUPPLY", "navy": "CLIENT_MUST_SUPPLY", "gold": "CLIENT_MUST_SUPPLY"}}
+        with self.assertRaises(ValueError):
+            comp.photo_rules({"slot_id": "IMG-07"}, "band-light-field", unset)
+        request = dict(_request([FIELD_SECTION]), _composition_brand=unset)
+        with self.assertRaises(exe.ExecutorError):
+            exe.with_photo_rules("Pattern.", "IMG-07", request)
+
+    def test_executor_sends_a_section_7_field_slot_a_filled_prompt(self):
+        request = dict(_request([FIELD_SECTION]), _composition_brand=BRAND)
+        merged = exe.with_photo_rules("Pattern.", "IMG-07", request)
+        self.assertIn("botanical leaves", merged)
+        self.assertRegex(merged, r"#[0-9A-F]{6}")
+        self.assertNotIn("{", merged)
+
+    def test_composition_cues_drop_unknown_ids_and_never_prefer_a_forbidden_one(self):
+        cues = comp.composition_cues({"composition_cues": {"preferred": ["mask-pill", "nope", "mask-arch"],
+                                                          "forbidden": ["mask-arch", "also-nope"]}})
+        self.assertEqual(cues["preferred"], ["mask-pill"])
+        self.assertEqual(cues["forbidden"], ["mask-arch"])
+        self.assertEqual(comp.composition_cues({}), {"preferred": [], "forbidden": [], "imagery_direction": ""})
+
+    def test_a_forbidden_treatment_is_never_a_role_default(self):
+        hero = {"section_id": "1", "section_name": "The Big Bold Claim", "slots": [{"slot_id": "IMG-01"}]}
+        self.assertEqual(comp.assign_treatments([hero])[0]["slots"][0]["treatment"], "overlay-light")
+        cues = comp.composition_cues({"composition_cues": {"forbidden": ["overlay-light"]}})
+        self.assertEqual(comp.assign_treatments([hero], cues)[0]["slots"][0]["treatment"], "overlay-dark-scrim")
+        everything = comp.composition_cues({"composition_cues": {"forbidden": [
+            "overlay-light", "overlay-dark-scrim", "break-the-frame", "caption-over-photo"]}})
+        self.assertEqual(comp.assign_treatments([hero], everything)[0]["slots"][0]["treatment"], "split")
+
+    def test_a_preferred_treatment_in_the_roles_pool_goes_first(self):
+        benefit = {"section_id": "8", "section_name": "Benefits", "slots": [{"slot_id": "IMG-08"}]}
+        cues = comp.composition_cues({"composition_cues": {"preferred": ["mask-diagonal"]}})
+        self.assertEqual(comp.assign_treatments([benefit], cues)[0]["slots"][0]["treatment"], "mask-diagonal")
+
+    def test_the_stage_prompt_follows_the_brand_cues(self):
+        hero = {"section_id": "1", "section_name": "The Big Bold Claim", "copy": "A claim.",
+                "slots": [{"slot_id": "IMG-01", "aspect_ratio": "3:2", "art_direction": "A person."}]}
+        brand = {"palette": BRAND["palette"], "composition_cues": {"forbidden": ["overlay-light"]}}
+        request = dict(_request([hero]), _composition_brand=brand)
+        prompt = exe.stage_prompt("final-mockups", hero, 1, 1440, request, "3:2")
+        self.assertIn("treatment overlay-dark-scrim", prompt)
+        self.assertNotIn("treatment overlay-light", prompt)
+
+    def test_budget_rejects_a_forbidden_declared_treatment_and_waives_what_only_it_could_meet(self):
+        cues = comp.composition_cues({"composition_cues": {"forbidden": ["mask-circle"]}})
+        rows = comp.plan_sections(_plan(MEETS))
+        out = comp.budget_failures(rows, cues)
+        self.assertTrue(any("'mask-circle' is forbidden" in line for line in out), out)
+        no_masks = comp.composition_cues({"composition_cues": {"forbidden": [
+            "mask-circle", "mask-arch", "mask-pill", "mask-diagonal"]}})
+        spec = [(sid, ["split"] if any(t.startswith("mask-") for t in ts) else ts) for sid, ts in
+                [(r[0], r[1]) for r in MEETS if not isinstance(r[1], str)]]
+        spec = [("1", ["overlay-light"]), ("2", ["card-overlaps-photo"]), ("3", ["caption-over-photo"]),
+                ("4", ["split"]), ("5", ["band-over-texture"]), ("6", ["split"]), ("7", ["split"]),
+                ("8", ["caption-over-photo"]), ("9", ["card-overlaps-photo"]), ("10", ["split"])]
+        rows = comp.plan_sections(_plan(spec))
+        self.assertTrue(any("shaped crops" in l for l in comp.budget_failures(rows)))
+        self.assertEqual([l for l in comp.budget_failures(rows, no_masks) if "mask" in l], [])
 
 
 class ThreeRolesPreflightTests(unittest.TestCase):
@@ -333,7 +494,8 @@ class WireframeBudgetGateTests(unittest.TestCase):
 
     def test_validate_wireframe_runs_the_gate(self):
         text = (SCRIPTS / "validate_wireframe.py").read_text(encoding="utf-8")
-        self.assertIn("composition.budget_failures(composition.plan_sections(plan))", text)
+        self.assertIn("composition.budget_failures(", text)
+        self.assertIn("composition.composition_cues(composition.load_brand(run_dir, brand_arg))", text)
         self.assertIn('("COMP", comp_failures)', text)
 
 
@@ -400,6 +562,25 @@ class PixelCheckTests(unittest.TestCase):
         loud = _flat((200, 120), (120, 120, 120))
         self.assertFalse(comp.light_field_check(loud, surface)[0])
 
+    def test_light_field_on_a_beige_surface_passes_by_the_ratio_not_the_absolute_floor(self):
+        import random
+        rng = random.Random(5)
+        surface = (228, 220, 206)
+        field = Image.new("RGB", (200, 120))
+        field.putdata([(228 + o, 220 + o, 206 + o) for o in (rng.randint(0, 6) for _ in range(200 * 120))])
+        ok, detail = comp.light_field_check(field, surface)
+        self.assertTrue(ok, detail)
+        ok, detail = comp.light_field_check(field)       # no surface known: the old floor
+        self.assertFalse(ok)
+        self.assertIn("under 235", detail)
+
+    def test_line_color_stays_inside_the_contrast_limit_on_any_palette(self):
+        for surface, ink in (((245, 240, 232), (26, 26, 46)), ((228, 220, 206), (40, 30, 20)),
+                             ((22, 26, 34), (240, 236, 226))):
+            line = comp.line_color(surface, ink)
+            self.assertLessEqual(comp.contrast_ratio(line, surface), 1.15)
+            self.assertNotEqual(line, tuple(surface))
+
     def test_contrast_and_zone_geometry(self):
         self.assertAlmostEqual(comp.contrast_ratio((0, 0, 0), (255, 255, 255)), 21.0, places=1)
         ok, ratio, need = comp.backdrop_contrast(_flat((50, 20), (250, 250, 250)), (20, 20, 20), False)
@@ -426,6 +607,7 @@ class PixelCheckTests(unittest.TestCase):
 
 TOKENS = {
     "light": {"--brand-surface": "rgb(244,240,232)", "--brand-ink": "rgb(28,32,44)", "--brand-dark": "rgb(20,24,30)"},
+    "beige": {"--brand-surface": "rgb(228,220,206)", "--brand-ink": "rgb(40,30,20)", "--brand-dark": "rgb(20,14,8)"},
     "dark": {"--brand-surface": "rgb(22,26,34)", "--brand-ink": "rgb(240,236,226)", "--brand-dark": "rgb(8,10,14)"},
 }
 
@@ -467,6 +649,9 @@ class BuiltPageTests(unittest.TestCase):
             img = Image.new("RGB", (400, 300))
             img.putdata([(min(255, base + rng.randint(0, spread)),) * 3 for _ in range(400 * 300)])
             setattr(cls, name.replace("-", "_"), _png(cls.tmp / f"{name}.png", img))
+        beige = Image.new("RGB", (400, 300))        # a faint 0-6 texture on the beige brand surface
+        beige.putdata([(228 + o, 220 + o, 206 + o) for o in (rng.randint(0, 6) for _ in range(400 * 300))])
+        cls.field_beige = _png(cls.tmp / "field-beige.png", beige)
         cls.pw = sync_playwright().start()
         cls.browser = cls.pw.chromium.launch()
 
@@ -549,6 +734,45 @@ class BuiltPageTests(unittest.TestCase):
         self.assertEqual(self.checks(self.field("field_light"))[1], [])
         out = self.checks(self.field("field_flat"))[1]
         self.assertTrue(any("flat fill" in line for line in out), out)
+
+    BUTTON = ('<a style="display:inline-block;margin-top:24px;padding:14px 28px;background:rgb(15,15,15);'
+              'color:rgb(250,250,250);font-weight:700">Reserve my seat</a>')
+    CARDS = ('<div style="display:flex;gap:20px;margin-top:24px"><div style="background:rgb(30,30,30);color:white;'
+             'padding:24px;width:200px">Card one</div><div style="border:3px solid rgb(10,10,10);padding:24px;'
+             'width:200px">Card two</div></div>')
+
+    def test_light_field_on_a_beige_brand_surface_passes(self):
+        # the field behind the type is within the contrast limit of the surface; the old 235 floor failed this at 219
+        self.assertEqual(self.checks(self.field("field_beige"), "beige")[1], [])
+
+    def test_dark_buttons_and_cards_in_front_of_the_field_do_not_fail_it(self):
+        body = self.field("field_light", text="Pick one.")[:-len("</section>")] + self.BUTTON + self.CARDS + "</section>"
+        self.assertEqual(self.checks(body, "light")[1], [])
+        beige = self.field("field_beige", text="Pick one.")[:-len("</section>")] + self.BUTTON + self.CARDS + "</section>"
+        self.assertEqual(self.checks(beige, "beige")[1], [])
+
+    def test_a_flat_fill_with_a_button_still_fails_the_texture_floor(self):
+        body = self.field("field_flat", text="Pick one.")[:-len("</section>")] + self.BUTTON + "</section>"
+        out = self.checks(body, "light")[1]
+        self.assertTrue(any("flat fill" in line for line in out), out)
+
+    def test_a_field_too_far_from_the_surface_fails_on_the_ratio(self):
+        out = self.checks(self.field("field_dark"), "light")[1]
+        self.assertTrue(any("field-to-surface contrast" in line for line in out), out)
+
+    def test_a_full_bleed_image_field_is_not_mistaken_for_foreground(self):
+        body = (f'<section data-treatment="band-light-field" style="position:relative;padding:60px 80px">'
+                f'<img data-image-slot="IMG-7" src="{self.field_light}" style="position:absolute;inset:0;'
+                'width:100%;height:100%;object-fit:cover"><div style="position:relative">'
+                '<h2 style="margin:0">Pick one.</h2>' + self.BUTTON + '</div></section>')
+        self.assertEqual(self.checks(body, "light")[1], [])
+
+    def test_type_that_is_too_pale_for_its_light_field_fails(self):
+        body = (f'<section data-treatment="band-light-field" style="padding:60px 80px;'
+                f'background:var(--brand-surface) url({self.field_light})">'
+                '<h2 style="margin:0;color:rgb(215,212,205)">Washed out.</h2></section>')
+        out = self.checks(body, "light")[1]
+        self.assertTrue(any("over the light field" in line for line in out), out)
 
     def test_palette_independence_light_and_dark_brand_sets(self):
         self.assertEqual(self.checks(self.circle(), "light")[1], [])
