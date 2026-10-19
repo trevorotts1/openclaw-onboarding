@@ -3,290 +3,144 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="data:,">
-<title>Council of Wise Elders — chamber</title>
-<link rel="stylesheet" href="./council-theme.css">
-<link rel="stylesheet" href="./council-room.css">
-<link rel="stylesheet" href="./council-journey.css">
-<style>
-  .chamber-nav { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; font-size:.875rem; margin:0 0 1rem; padding:0; list-style:none; }
-  .chamber-nav a { color: var(--council-accent-ink); }
-  .chamber-static-note { border-left:.25rem solid #b42318; background:#b423181a; padding:.75rem 1rem; margin:1rem 0; }
-  .chamber-reading-card { border:1px solid var(--council-line); border-radius:var(--council-radius-control); padding:.75rem 1rem; background:var(--council-surface); }
-  .chamber-reading-card summary { cursor:pointer; min-height:var(--council-touch-target); }
-  .chamber-reading-card dl { margin:.5rem 0 0; }
-  .chamber-reading-card dt { font-weight:700; margin-top:.5rem; }
-  .chamber-reading-card dd { margin:.15rem 0 0; }
-  .live-sessions { list-style:none; margin:.5rem 0 1rem; padding:0; display:grid; gap:.5rem; }
-  .council-session-btn { display:flex; flex-direction:column; gap:.25rem; width:100%; min-height:var(--council-touch-target); padding:.6rem .85rem; text-align:left; font:inherit; color:inherit; background:var(--council-surface); border:1px solid var(--council-line); border-radius:var(--council-radius-control); cursor:pointer; overflow-wrap:anywhere; }
-  .council-session-btn[aria-pressed="true"] { border-color:var(--council-accent-ink); box-shadow:0 0 0 2px var(--council-accent-ink); }
-  .council-session-btn:focus-visible, .live-action:focus-visible, #room-question:focus-visible { outline:3px solid var(--council-accent-ink); outline-offset:2px; }
-  .live-action { min-height:var(--council-touch-target); padding:.5rem 1rem; font:inherit; cursor:pointer; }
-  .live-empty, .live-error { border-left:.25rem solid #c98a00; background:#c98a001a; padding:.75rem 1rem; margin:1rem 0; }
-  .live-error { border-color:#b42318; background:#b423181a; }
-  .live-seats, .live-events { padding-left:1.25rem; overflow-wrap:anywhere; }
-  .live-seat[data-status="waiting"] { opacity:.75; }
-  .live-events { max-height:24rem; overflow:auto; }
-  #live-room h3 { overflow-wrap:anywhere; }
-  @media (max-width:600px) { .live-action { width:100%; } }
-</style>
+<title>The chamber - Council of Wise Elders</title>
+<link rel="stylesheet" href="./chamber-theme.css">
+<link rel="stylesheet" href="./chamber-shell.css">
+<link rel="stylesheet" href="./chamber-decision.css">
+<link rel="stylesheet" href="./chamber-room.css">
+<link rel="stylesheet" href="./chamber-keypoints.css">
+<link rel="stylesheet" href="./chamber-seatcard.css">
 </head>
-<body>
-<div class="council-theme">
-  <div class="council-journey-wrap">
-    <nav aria-label="Chamber pages">
-      <ul class="chamber-nav">
-        <li><a href="./">Chamber</a></li>
-        <li><a href="./advisors.html">The nine advisors</a></li>
-        <li><a href="/">Service status</a></li>
-      </ul>
+<body class="ch">
+<div class="ch-app">
+
+  <header id="ch-topbar" class="ch-top">
+    <div class="ch-top-brand">
+      <span class="ch-top-logo" role="img" aria-label="BlackCEO"></span>
+      <span class="ch-top-divider" aria-hidden="true"></span>
+      <p class="ch-top-name">Council of Wise Elders</p>
+    </div>
+
+    <nav id="ch-stepper" class="ch-top-steps" aria-label="Council phases">
+      <ol class="ch-step-list">
+        <li class="ch-step" data-step="brief" data-status="current" aria-current="step"><span class="ch-step-dot" aria-hidden="true"></span><span class="ch-step-label">Brief</span><span class="ch-sr-only"> (current)</span></li>
+        <li class="ch-step" data-step="openings" data-status="todo"><span class="ch-step-dot" aria-hidden="true"></span><span class="ch-step-label">Openings</span></li>
+        <li class="ch-step" data-step="fault_lines" data-status="todo"><span class="ch-step-dot" aria-hidden="true"></span><span class="ch-step-label">Fault lines</span></li>
+        <li class="ch-step" data-step="debate" data-status="todo"><span class="ch-step-dot" aria-hidden="true"></span><span class="ch-step-label">Debate</span></li>
+        <li class="ch-step" data-step="vote" data-status="todo"><span class="ch-step-dot" aria-hidden="true"></span><span class="ch-step-label">Vote</span></li>
+        <li class="ch-step" data-step="verdict" data-status="todo"><span class="ch-step-dot" aria-hidden="true"></span><span class="ch-step-label">Verdict</span></li>
+      </ol>
     </nav>
 
-    <header class="council-journey-head">
-      <p class="council-eyebrow">Council of Wise Elders</p>
-      <h1 class="council-display">The chamber</h1>
-      <p class="council-lede">Nine advisors, one frozen brief, a verdict you can inspect. This page lists the real council sessions this service holds and follows the one you choose as its committed events arrive. A clearly labelled fictional sample of the chamber design is available separately and is never mixed with real sessions.</p>
-    </header>
-
-    <section id="live-root" aria-labelledby="live-heading">
-      <div class="council-shell-head">
-        <h2 class="council-heading" id="live-heading">Council sessions</h2>
-        <button type="button" class="live-action" id="live-refresh">Refresh</button>
-      </div>
-      <p id="live-status" role="status" aria-live="polite">Loading council sessions...</p>
-      <noscript><div class="live-error" role="note">The live chamber needs JavaScript. Without it this page cannot read council sessions, and it shows nothing in their place.</div></noscript>
-      <div id="live-error" class="live-error" role="alert" hidden></div>
-      <div id="live-empty" class="live-empty" hidden>
-        <p style="margin:0"><strong>No council sessions yet.</strong></p>
-        <p style="margin:.5rem 0 0">A session starts when you ask your agent to convene the Council of Wise Elders, or from the command line: <code>blackceo-council create --spec FILE --brief FILE</code>, then <code>blackceo-council start SESSION --grant-ref REF</code>. It appears here as soon as it is created, and its events stream in once it runs.</p>
-      </div>
-      <ul id="session-list" class="live-sessions" aria-label="Council sessions"></ul>
-      <section id="live-room" aria-labelledby="room-question" hidden>
-        <h3 class="council-heading" id="room-question" tabindex="-1"></h3>
-        <p id="room-meta"></p>
-        <p id="room-conn" role="status" aria-live="polite"></p>
-        <button type="button" class="live-action" id="room-reconnect" hidden>Reconnect</button>
-        <h4>The nine seats</h4>
-        <ul id="room-seats" class="live-seats"></ul>
-        <h4>Committed events (newest first)</h4>
-        <ol id="room-events" class="live-events" reversed></ol>
-      </section>
-    </section>
-
-    <p><button type="button" class="live-action" id="sample-toggle" aria-expanded="false" aria-controls="sample-root" hidden>Show the fictional sample (not real data)</button></p>
-
-    <div id="sample-root" role="region" aria-label="Fictional sample, not real data" hidden>
-    <div class="chamber-static-note" role="note">
-      <strong>Fictional sample.</strong> The decision, the advisor cards and every quotation on
-      this page come from the synthetic fixture in the Command Center council component set.
-      No real client, session or model output appears here. Live council pages require the
-      authenticated Command Center council API and its database; the exact blocking
-      dependencies are recorded in this package's RECEIPT.md.
+    <div class="ch-top-actions">
+      <button type="button" class="ch-btn" id="ch-open-how" aria-haspopup="dialog">How it works</button>
+      <button type="button" class="ch-btn" id="ch-open-sessions" aria-haspopup="dialog">Past sessions</button>
+      <button type="button" class="ch-btn" id="ch-open-composer" aria-haspopup="dialog">New question</button>
     </div>
+  </header>
 
-    <div class="council-shell-head">
-      <h2 class="council-heading">Council of Wise Elders</h2>
-      <span class="council-mode-badge">Fictional sample</span>
-    </div>
-
-    <p class="council-meta" style="margin:0 0 1rem">Room view below 920px becomes a designed grid; nothing is scaled down to illegibility. The same committed state is repeated in full text in the reading view.</p>
-
-    <section class="council-stage" aria-label="Council room" style="padding:1.5rem">
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.75rem 1rem;margin-bottom:1rem">
-        <p style="margin:0" aria-live="polite"><strong>Round 2 of 3: Challenge</strong>
-          <span style="color:var(--council-stage-muted)">6 of 9 perspectives are in. Nothing here is final until the verdict is validated.</span>
-        </p>
-        <span class="council-mode-badge">Fictional sample</span>
-      </div>
-
-      <ol class="council-stepper" aria-label="Council rounds">
-        <li data-step-state="done"><span class="council-step-marker" aria-hidden="true">✓</span><span>Round 1: Opening perspectives (done)</span></li>
-        <li data-step-state="current" aria-current="step"><span class="council-step-marker" aria-hidden="true">2</span><span>Round 2: Challenge (current)</span></li>
-        <li data-step-state="todo"><span class="council-step-marker" aria-hidden="true">3</span><span>Round 3: Ratification</span></li>
-      </ol>
-
-      <div class="council-room" style="margin-top:1rem">
-        <div class="council-room-frame">
-          <div class="council-room-center">
-            <p class="council-meta" style="margin:0 0 .5rem">THE DECISION</p>
-            <p class="council-room-center-decision">Pilot the revised coaching offer with new clients next month?</p>
-            <p class="council-meta" style="margin:.75rem 0 0">Current crux: demand evidence versus delivery capacity</p>
-          </div>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="simon-sinek" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Simon Sinek, purpose and strategic alignment, current state: Supports" style="left:50.0%;top:16.4%">
-            <img src="./portraits/simon-sinek-sm.svg" alt="Illustrative medallion for Simon Sinek, the purpose and strategic alignment seat: a colored ring around a warm tinted disc with three concentric circles and the initials SS. A designed symbol, not a photograph of Simon Sinek." width="36" height="36">
-            <span class="council-seat-name">Simon Sinek</span>
-            <span class="council-state council-state-support">Supports</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="td-jakes" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="T. D. Jakes, instinct, reinvention, and communication, current state: Conditional" style="left:73.8%;top:24.3%">
-            <img src="./portraits/td-jakes-sm.svg" alt="Illustrative medallion for T. D. Jakes, the instinct, reinvention, and communication seat: a colored ring around a warm tinted disc with a microphone and the initials TJ. A designed symbol, not a photograph of T. D. Jakes." width="36" height="36">
-            <span class="council-seat-name">T. D. Jakes</span>
-            <span class="council-state council-state-conditional">Conditional</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="oprah-winfrey" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Oprah Winfrey, intention, significance, and human connection, current state: Supports" style="left:86.4%;top:44.2%">
-            <img src="./portraits/oprah-winfrey-sm.svg" alt="Illustrative medallion for Oprah Winfrey, the intention, significance, and human connection seat: a colored ring around a warm tinted disc with an open book beneath a small sun and the initials OW. A designed symbol, not a photograph of Oprah Winfrey." width="36" height="36">
-            <span class="council-seat-name">Oprah Winfrey</span>
-            <span class="council-state council-state-support">Supports</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="tiffany-aliche" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Tiffany Aliche, financial stability and sustainable commitments, current state: Opposes" style="left:82.0%;top:66.8%">
-            <img src="./portraits/tiffany-aliche-sm.svg" alt="Illustrative medallion for Tiffany Aliche, the financial stability and sustainable commitments seat: a colored ring around a warm tinted disc with a pediment over three columns, a foundation and the initials TA. A designed symbol, not a photograph of Tiffany Aliche." width="36" height="36">
-            <span class="council-seat-name">Tiffany Aliche</span>
-            <span class="council-state council-state-oppose">Opposes</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="russell-brunson" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Russell Brunson, offers, acquisition, and conversion, current state: Supports" style="left:62.6%;top:81.6%">
-            <img src="./portraits/russell-brunson-sm.svg" alt="Illustrative medallion for Russell Brunson, the offers, acquisition, and conversion seat: a colored ring around a warm tinted disc with a funnel and the initials RB. A designed symbol, not a photograph of Russell Brunson." width="36" height="36">
-            <span class="council-seat-name">Russell Brunson</span>
-            <span class="council-state council-state-support">Supports</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="michelle-obama" data-status="started" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Michelle Obama, grounded leadership, identity, and community, current state: In progress" style="left:37.4%;top:81.6%">
-            <img src="./portraits/michelle-obama-sm.svg" alt="Illustrative medallion for Michelle Obama, the grounded leadership, identity, and community seat: a colored ring around a warm tinted disc with a sunrise over two horizon lines and the initials MO. A designed symbol, not a photograph of Michelle Obama." width="36" height="36">
-            <span class="council-seat-name">Michelle Obama</span>
-            <span class="council-seat-status">In progress</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="brene-brown" data-status="completed" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Brené Brown, courage, trust, and accountable behavior, current state: Conditional" style="left:18.0%;top:66.8%">
-            <img src="./portraits/brene-brown-sm.svg" alt="Illustrative medallion for Brené Brown, the courage, trust, and accountable behavior seat: a colored ring around a warm tinted disc with a heart outline and the initials BB. A designed symbol, not a photograph of Brené Brown." width="36" height="36">
-            <span class="council-seat-name">Brené Brown</span>
-            <span class="council-state council-state-conditional">Conditional</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="dennis-kimbro" data-status="queued" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Dr. Dennis Kimbro, ownership, wealth creation, and achievement, current state: Waiting in queue" style="left:13.6%;top:44.2%">
-            <img src="./portraits/dennis-kimbro-sm.svg" alt="Illustrative medallion for Dr. Dennis Kimbro, the ownership, wealth creation, and achievement seat: a colored ring around a warm tinted disc with a key and the initials DK. A designed symbol, not a photograph of Dr. Dennis Kimbro." width="36" height="36">
-            <span class="council-seat-name">Dr. Dennis Kimbro</span>
-            <span class="council-seat-status">Waiting in queue</span>
-          </button>
-
-          <button type="button" class="council-seat council-room-seat council-seat-room" data-seat-id="les-brown" data-status="queued" data-variant="room" data-selected="false" aria-pressed="false" aria-label="Les Brown, self-belief, resilience, and committed action, current state: Waiting in queue" style="left:26.2%;top:24.3%">
-            <img src="./portraits/les-brown-sm.svg" alt="Illustrative medallion for Les Brown, the self-belief, resilience, and committed action seat: a colored ring around a warm tinted disc with a rising arrow over a ground line and the initials LB. A designed symbol, not a photograph of Les Brown." width="36" height="36">
-            <span class="council-seat-name">Les Brown</span>
-            <span class="council-seat-status">Waiting in queue</span>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <section aria-label="Council reading view" style="margin-top:1.5rem">
-      <p class="council-eyebrow">Round 2 of 3: Challenge</p>
-      <h2 class="council-heading" style="margin:.5rem 0">Pilot the revised coaching offer with new clients next month?</h2>
-      <p aria-live="polite">6 of 9 perspectives are in. Current crux: demand evidence versus delivery capacity. Nothing here is final until the verdict is validated. This session is shown as: Fictional sample.</p>
-
-      <div class="council-reading-list" style="margin-top:1rem">
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Simon Sinek</span> — <span class="council-state council-state-support">Supports</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>purpose and strategic alignment</dd>
-            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
-            <dt>Decisive argument</dt><dd>The pilot tests the revised offer without breaking the promise the current offer already makes to clients.</dd>
-            <dt>Strongest objection</dt><dd>If the pilot is framed as a discount rather than a purpose-led test, it dilutes the WHY.</dd>
-            <dt>What would change this seat&#39;s mind</dt><dd>Evidence that the revised offer contradicts the stated purpose.</dd>
-            <dt>Evidence strength</dt><dd>medium</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">T. D. Jakes</span> — <span class="council-state council-state-conditional">Conditional</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>instinct, reinvention, and communication</dd>
-            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
-            <dt>Decisive argument</dt><dd>The message has to fit the moment: a test offered with confidence, not an apology for changing.</dd>
-            <dt>Strongest objection</dt><dd>If the announcement sounds uncertain, new clients will hear risk instead of intention.</dd>
-            <dt>Conditions</dt><dd>Rewrite the announcement so the reason for the pilot leads.</dd>
-            <dt>What would change this seat&#39;s mind</dt><dd>A message test showing the current announcement already lands clearly.</dd>
-            <dt>Evidence strength</dt><dd>low</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Oprah Winfrey</span> — <span class="council-state council-state-support">Supports</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>intention, significance, and human connection</dd>
-            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
-            <dt>Decisive argument</dt><dd>New clients experience the revised offer first, so the people affected by the change are the ones who chose it.</dd>
-            <dt>Strongest objection</dt><dd>Existing clients must hear the intention plainly, or the pilot reads as favoritism.</dd>
-            <dt>Conditions</dt><dd>Tell existing clients why the pilot starts with new clients.</dd>
-            <dt>What would change this seat&#39;s mind</dt><dd>Feedback that existing clients experience the pilot as exclusion.</dd>
-            <dt>Evidence strength</dt><dd>low</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Tiffany Aliche</span> — <span class="council-state council-state-oppose">Opposes</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>financial stability and sustainable commitments</dd>
-            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
-            <dt>Decisive argument</dt><dd>A broad launch commits cash before delivery capacity is proven; the bounded pilot prices that risk in advance.</dd>
-            <dt>Strongest objection</dt><dd>Delivery capacity is unproven at twice the volume, and the reserve does not cover a failed broad launch.</dd>
-            <dt>What would change this seat&#39;s mind</dt><dd>A measured pilot showing delivery hours per client at the revised price.</dd>
-            <dt>Evidence strength</dt><dd>medium</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Russell Brunson</span> — <span class="council-state council-state-support">Supports</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>offers, acquisition, and conversion</dd>
-            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
-            <dt>Decisive argument</dt><dd>A capped pilot produces real conversion evidence instead of another forecast.</dd>
-            <dt>Strongest objection</dt><dd>Without a cap, early demand can oversell seats the team cannot deliver.</dd>
-            <dt>Conditions</dt><dd>Cap pilot seats at what the team can actually deliver.</dd>
-            <dt>Critical unknowns</dt><dd>Conversion rate of the revised price page.</dd>
-            <dt>What would change this seat&#39;s mind</dt><dd>Pilot conversion data showing the revised price underperforms the current offer.</dd>
-            <dt>Evidence strength</dt><dd>medium</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Michelle Obama</span> — <span class="council-seat-status">In progress</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>grounded leadership, identity, and community</dd>
-            <dt>State</dt><dd>Started; no validated perspective committed yet.</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Brené Brown</span> — <span class="council-state council-state-conditional">Conditional</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>courage, trust, and accountable behavior</dd>
-            <dt>Preferred option</dt><dd>Pilot the revised offer with new clients</dd>
-            <dt>Decisive argument</dt><dd>The pilot works only if the team can say plainly what is being tested and what would stop it.</dd>
-            <dt>Strongest objection</dt><dd>Unclear stop conditions turn a bounded test into quiet overcommitment.</dd>
-            <dt>Conditions</dt><dd>Write the pilot stop conditions down before launch.</dd>
-            <dt>What would change this seat&#39;s mind</dt><dd>A team agreement on explicit stop conditions and honest reporting.</dd>
-            <dt>Evidence strength</dt><dd>low</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Dr. Dennis Kimbro</span> — <span class="council-seat-status">Waiting in queue</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>ownership, wealth creation, and achievement</dd>
-            <dt>State</dt><dd>Waiting in the queue; no perspective committed yet.</dd>
-          </dl>
-        </details>
-
-        <details class="chamber-reading-card">
-          <summary><span class="council-seat-name">Les Brown</span> — <span class="council-seat-status">Waiting in queue</span></summary>
-          <dl>
-            <dt>Responsibility</dt><dd>self-belief, resilience, and committed action</dd>
-            <dt>State</dt><dd>Waiting in the queue; no perspective committed yet.</dd>
-          </dl>
-        </details>
-      </div>
-    </section>
-
-      <p class="council-meta">Fictional sample fixture. No live session, client data or model output is represented.</p>
-    </div>
-
-    <footer class="council-journey-foot">
-      <p class="council-meta">Each council member is an AI perspective inspired by the published work of the named author. Not the individual and not an endorsement.</p>
-    </footer>
+  <div id="ch-banner" class="ch-banner" role="status" hidden>
+    <p class="ch-banner-text"></p>
+    <button type="button" class="ch-btn ch-banner-exit" id="ch-banner-exit">Exit demo</button>
   </div>
+
+  <noscript><p class="ch-noscript" role="note">The chamber needs JavaScript. Without it this page cannot read council sessions, and it shows nothing in their place.</p></noscript>
+
+  <main class="ch-main">
+    <section id="ch-decision" class="ch-panel" aria-label="The decision"></section>
+    <div class="ch-stage-grid">
+      <section id="ch-room" class="ch-panel" aria-label="The council room"></section>
+      <aside id="ch-keypoints" class="ch-panel" aria-label="Key points"></aside>
+    </div>
+  </main>
+
+  <footer class="ch-foot">
+    <p class="ch-foot-text">Each council member is an AI perspective inspired by the published work of the named author. Not the individual and not an endorsement.</p>
+  </footer>
 </div>
+
+<dialog id="ch-seatcard" class="ch-dialog"></dialog>
+
+<dialog id="ch-how" class="ch-dialog ch-how" aria-labelledby="ch-how-title">
+  <h2 id="ch-how-title" class="ch-how-title">How it works</h2>
+  <p class="ch-how-intro">You ask one question and name the options. Nine advisors work through it in six phases, and the council ends with one recommendation and the reasons behind it. Nothing is final until the last phase.</p>
+  <ol class="ch-how-phases">
+    <li><strong>Brief.</strong> The chair reads your question and freezes it with your options, so every advisor answers the same thing.</li>
+    <li><strong>Openings.</strong> Each advisor writes an independent first position, without seeing what the others wrote.</li>
+    <li><strong>Fault lines.</strong> The chair finds the points where the advisors really disagree.</li>
+    <li><strong>Debate.</strong> The advisors answer those disagreements and may change their minds.</li>
+    <li><strong>Vote.</strong> The chair drafts a resolution, and each advisor supports it, supports it with conditions, opposes it or abstains.</li>
+    <li><strong>Verdict.</strong> The chair checks the result, and the council gives one recommendation with its reasons.</li>
+  </ol>
+  <p class="ch-how-note">A consult skips the fault lines, debate and vote. Each advisor is an AI perspective inspired by the published work of the named author. Not the individual.</p>
+  <div class="ch-how-actions">
+    <button type="button" class="ch-btn ch-btn--primary" id="ch-how-demo">Watch a demo replay</button>
+    <a class="ch-btn" href="./advisors.html">The nine advisors</a>
+    <a class="ch-btn" href="/status">Service status</a>
+    <button type="button" class="ch-btn ch-dialog-close" data-ch-close>Close</button>
+  </div>
+</dialog>
+
+<dialog id="ch-sessions" class="ch-dialog ch-sessions" aria-labelledby="ch-sessions-title">
+  <h2 id="ch-sessions-title" class="ch-sessions-title">Past sessions</h2>
+  <p id="ch-sessions-status" class="ch-sessions-status" role="status"></p>
+  <ul id="ch-sessions-list" class="ch-sessions-list"></ul>
+  <div class="ch-sessions-actions">
+    <button type="button" class="ch-btn" id="ch-sessions-refresh">Refresh</button>
+    <button type="button" class="ch-btn ch-dialog-close" data-ch-close>Close</button>
+  </div>
+</dialog>
+
+<dialog id="ch-composer" class="ch-dialog ch-composer" aria-labelledby="ch-composer-title">
+  <form id="ch-composer-form" class="ch-composer-form" novalidate>
+    <h2 id="ch-composer-title" class="ch-composer-title">New question</h2>
+
+    <div class="ch-composer-field">
+      <label for="ch-composer-question" class="ch-composer-label">Your question</label>
+      <textarea id="ch-composer-question" class="ch-composer-input" rows="2" maxlength="600" autocomplete="off"></textarea>
+    </div>
+
+    <fieldset class="ch-composer-options">
+      <legend class="ch-composer-label">Options (at least two, up to four)</legend>
+      <div id="ch-composer-option-rows" class="ch-composer-option-rows"></div>
+    </fieldset>
+
+    <div class="ch-composer-field">
+      <label for="ch-composer-context" class="ch-composer-label">What should the council know? (optional, one fact per line)</label>
+      <textarea id="ch-composer-context" class="ch-composer-input" rows="3" autocomplete="off"></textarea>
+    </div>
+
+    <fieldset class="ch-composer-routes">
+      <legend class="ch-composer-label">Which route runs the council</legend>
+      <p id="ch-composer-routes-status" class="ch-composer-hint" role="status">Loading routes...</p>
+      <div id="ch-composer-routes-list" class="ch-composer-routes-list"></div>
+    </fieldset>
+
+    <div class="ch-composer-field">
+      <label for="ch-composer-model" class="ch-composer-label">Model (optional)</label>
+      <input id="ch-composer-model" class="ch-composer-input" type="text" autocomplete="off" spellcheck="false" aria-describedby="ch-composer-model-hint">
+      <p id="ch-composer-model-hint" class="ch-composer-hint">Leave empty to use this route's default.</p>
+    </div>
+
+    <div id="ch-composer-error" class="ch-composer-error" role="alert" hidden></div>
+
+    <div class="ch-composer-actions">
+      <button type="submit" class="ch-btn ch-btn--primary" id="ch-composer-submit" disabled>Convene</button>
+      <p class="ch-composer-approval">Convening starts the run now on the route you chose, and it uses that route's model allowance. Convening is your approval.</p>
+      <button type="button" class="ch-btn ch-dialog-close" data-ch-close>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="./chamber-seats.js"></script>
+<script src="./chamber-state.js"></script>
 <script src="./chamber-live.js"></script>
+<script src="./chamber-shell.js"></script>
+<script src="./chamber-decision.js"></script>
+<script src="./chamber-room.js"></script>
+<script src="./chamber-keypoints.js"></script>
+<script src="./chamber-seatcard.js"></script>
 </body>
 </html>
