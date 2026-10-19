@@ -1,6 +1,8 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v27.1.42 - Council (Skill 77) v1.0.26: live council.** The client picks the model for each council run (the running harness default if they do not), a convened session is deliberated end to end with live events, convening is the approval (every run is still audited), token budgets go live only after the operator approves the measured numbers, and the elders speak from the client's own Book-to-Persona material with labelled web research for current facts. Existing compatibility pin: **v7.6.112**.
+> **v27.1.43 - Council (Skill 77) v1.0.26: live council.** The client picks the model for each council run (the running harness default if they do not), a convened session is deliberated end to end with live events, convening is the approval (every run is still audited), token budgets go live only after the operator approves the measured numbers, and the elders speak from the client's own Book-to-Persona material with labelled web research for current facts. Existing compatibility pin: **v7.6.112**.
+>
+> **v27.1.42 - Council (Skill 77) v1.0.25: W27 hardening.** First-status pre-warm so the first Council status call answers from a warm cache, the service launcher upstreamed into the skill, the skill root resolved from the installed binary, and a live chamber view over real sessions. Existing compatibility pin: **v7.6.112**.
 >
 > **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
 >
