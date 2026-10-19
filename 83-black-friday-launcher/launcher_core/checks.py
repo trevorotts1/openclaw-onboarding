@@ -12,7 +12,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .constants import PLACEHOLDER_TOKENS, ROUTE_ROLES, SCHEMA_VERSION
+from .constants import (PLACEHOLDER_TOKENS, ROUTE_ROLES, SCHEMA_VERSION,
+                        repo_root_for)
 
 
 def _sha256_file(path: Path) -> str:
@@ -35,6 +36,11 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
                                     skill_root: Path) -> List[str]:
     """The owner decisions LAUNCH-02b implemented, each checked by name."""
     fails: List[str] = []
+    # Cross-tree refs are recorded repository-relative. ``skill_root.parent`` is
+    # the repository root only in the onboarding layout; in a deployed tree the
+    # skill sits under .claude/skills, so the root must be discovered, or the
+    # recorded path is re-based under .claude/skills/.claude/skills and fails.
+    repo_root = repo_root_for(skill_root)
 
     # 4. Verified offer facts only: nothing commercial may be defaulted.
     facts = manifest.get("offer_facts")
@@ -97,7 +103,7 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
     if checkout.get("dispatch_adapter") is not False:
         fails.append("AF-LAUNCH-CHECKOUT: checkout must never be a dispatch adapter")
     contract = checkout.get("contract")
-    contract_target = skill_root.parent / str(contract)
+    contract_target = repo_root / str(contract)
     if not contract or not contract_target.is_file():
         fails.append(f"AF-LAUNCH-CHECKOUT: contract {contract!r} does not resolve")
     elif _sha256_file(contract_target) != checkout.get("contract_sha256"):
@@ -142,7 +148,7 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
         if not path:
             fails.append(f"AF-LAUNCH-DEPENDENCY: {name} names no path")
             continue
-        target = skill_root.parent / str(path)
+        target = repo_root / str(path)
         if not target.is_file():
             fails.append(f"AF-LAUNCH-DEPENDENCY: {name}={path!r} does not resolve")
         elif digest is not None and _sha256_file(target) != digest:

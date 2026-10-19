@@ -16,7 +16,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .constants import SkillResolutionError, resolve_ref, resolve_skill_dir
+from .constants import (REPO_ROOT, SkillResolutionError, resolve_ref,
+                        resolve_skill_dir)
 
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 
@@ -26,7 +27,10 @@ class DependencyError(Exception):
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent.parent
+    # Every manifest ref is repository-relative, and the repository root is the
+    # discovered checkout root, never the skill's grandparent: in a deployed
+    # tree the grandparent is .claude/skills, not the root.
+    return REPO_ROOT
 
 
 def load_manifest() -> Dict[str, Any]:
