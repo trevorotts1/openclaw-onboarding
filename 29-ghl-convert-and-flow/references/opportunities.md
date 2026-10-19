@@ -1,7 +1,7 @@
 # opportunities.md - Opportunities Module Reference (12 Endpoints)
 
 Base URL: `https://services.leadconnectorhq.com`
-Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-07-28`
+Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY`, plus the **operation's own** `Version` header. Pipeline CRUD is documented at `v3`; other operations keep their documented date. Never send one value for every call — see `references/api-generations.md`.
 
 > **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
 > (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one

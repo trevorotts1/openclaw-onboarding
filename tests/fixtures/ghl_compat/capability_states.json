@@ -1,0 +1,239 @@
+{
+  "_meta": {
+    "source_freeze": "44-convert-and-flow-operator/tools/engine/tests/test_public_capability_gate.py",
+    "contract_revision": "GU-004-CONTRACT-FREEZE@2026-10-18",
+    "purpose": "Legal and illegal capability-descriptor combinations with the expected validation result for each, per freeze section 3."
+  },
+  "descriptor_fields": {
+    "operation_id": "str",
+    "contract_verified": "official page fetched + literal version + schema recorded",
+    "adapter_built": "code exists at its frozen path",
+    "offline_tests_passed": "the operation's fixture test is green",
+    "read_verified": "one authorized read returned 200 in the target tenant",
+    "canary_verified": "one authorized, approved write proven by readback",
+    "enabled": "bool; default False for every operation at freeze",
+    "activation_blocked": "ActivationBlock | null",
+    "activation_block_fields": ["reason", "owner", "unblock"]
+  },
+  "rules": [
+    {"id": "3.2.1", "text": "Default for every operation at freeze: enabled = False."},
+    {"id": "3.2.2", "text": "Read operations may be enabled only when contract_verified AND adapter_built AND offline_tests_passed AND read_verified."},
+    {"id": "3.2.3", "text": "Write operations may be enabled only when rule 2 holds and canary_verified."},
+    {"id": "3.2.4", "text": "Every V4 workflow write is DISABLED until enabled by evidence, and additionally requires a production contract page, the supported-version table listing v4, and an explicit approval token on every call. Staging documentation can set contract_verified=True; it can never set read_verified or canary_verified."},
+    {"id": "3.2.5", "text": "enabled = True together with activation_blocked != None is a contract violation; the test asserts it is impossible for any row."},
+    {"id": "3.2.6", "text": "Enablement is per (operation_id, tenant). A global enabled flag computed from docs alone is forbidden."},
+    {"id": "3.2.7", "text": "The gate refuses before transport with status=denied, error.rule=capability_disabled, and echoes the descriptor. A disabled call still produces a receipt."},
+    {"id": "3.2.8", "text": "Internal/private rows (skill44_private) are not governed by this gate."},
+    {"id": "3.2.9", "text": "Skill 06 authoring rows are not HTTP operations and carry no capability descriptor."}
+  ],
+  "cases": [
+    {
+      "case_id": "legal_disabled_with_blocker",
+      "legality": "legal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "contacts.get",
+        "contract_verified": false,
+        "adapter_built": false,
+        "offline_tests_passed": false,
+        "read_verified": false,
+        "canary_verified": false,
+        "enabled": false,
+        "activation_blocked": {
+          "reason": "Version/auth acceptance in the target tenant not proven",
+          "owner": "operator (account authority) + W08",
+          "unblock": "one authorized read per operation, exact header, 200 recorded; 401/403 distinguishes scope vs edge"
+        }
+      },
+      "expected": {
+        "valid": true,
+        "status": "disabled",
+        "error_rule": null,
+        "note": "Default state; a call is refused before transport with status=denied, error.rule=capability_disabled, and still produces a receipt."
+      }
+    },
+    {
+      "case_id": "legal_disabled_without_blocker",
+      "legality": "legal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "opportunities.followers.add",
+        "contract_verified": false,
+        "adapter_built": false,
+        "offline_tests_passed": false,
+        "read_verified": false,
+        "canary_verified": false,
+        "enabled": false,
+        "activation_blocked": null
+      },
+      "expected": {
+        "valid": true,
+        "status": "disabled",
+        "error_rule": null,
+        "note": "Legal combination: disabled with no blocker (registry blocker NONE). This row is excluded from adapter scope (YAGNI) and is used only to exercise the legal no-blocker state."
+      }
+    },
+    {
+      "case_id": "legal_enabled_read_with_evidence",
+      "legality": "legal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "contacts.get",
+        "contract_verified": true,
+        "adapter_built": true,
+        "offline_tests_passed": true,
+        "read_verified": true,
+        "canary_verified": false,
+        "enabled": true,
+        "activation_blocked": null
+      },
+      "expected": {
+        "valid": true,
+        "status": "enabled",
+        "error_rule": null,
+        "note": "Rule 3.2.2 satisfied: read operation may be enabled without canary_verified."
+      }
+    },
+    {
+      "case_id": "legal_enabled_write_with_canary",
+      "legality": "legal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "contacts.upsert",
+        "contract_verified": true,
+        "adapter_built": true,
+        "offline_tests_passed": true,
+        "read_verified": true,
+        "canary_verified": true,
+        "enabled": true,
+        "activation_blocked": null
+      },
+      "expected": {
+        "valid": true,
+        "status": "enabled",
+        "error_rule": null,
+        "note": "Rule 3.2.3 satisfied: write operation enabled with canary evidence."
+      }
+    },
+    {
+      "case_id": "illegal_enabled_and_blocked",
+      "legality": "illegal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "workflows.definition.update",
+        "contract_verified": true,
+        "adapter_built": true,
+        "offline_tests_passed": true,
+        "read_verified": true,
+        "canary_verified": true,
+        "enabled": true,
+        "activation_blocked": {
+          "reason": "v4 is staging-only; absent from the supported list",
+          "owner": "operator + W05",
+          "unblock": "production page and the supported-version table listing v4"
+        }
+      },
+      "expected": {
+        "valid": false,
+        "status": "contract_violation",
+        "error_rule": "capability_contract_violation",
+        "rule_id": "3.2.5",
+        "note": "enabled = True together with activation_blocked != None is impossible for any row."
+      }
+    },
+    {
+      "case_id": "illegal_enabled_read_without_read_verified",
+      "legality": "illegal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "contacts.get",
+        "contract_verified": true,
+        "adapter_built": true,
+        "offline_tests_passed": true,
+        "read_verified": false,
+        "canary_verified": false,
+        "enabled": true,
+        "activation_blocked": null
+      },
+      "expected": {
+        "valid": false,
+        "status": "enablement_evidence_missing",
+        "error_rule": "capability_enablement_evidence_missing",
+        "rule_id": "3.2.2",
+        "missing_evidence": ["read_verified"],
+        "note": "A global enabled flag computed from docs alone is forbidden (3.2.6); enablement is per (operation_id, tenant)."
+      }
+    },
+    {
+      "case_id": "illegal_enabled_write_without_canary",
+      "legality": "illegal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "contacts.upsert",
+        "contract_verified": true,
+        "adapter_built": true,
+        "offline_tests_passed": true,
+        "read_verified": true,
+        "canary_verified": false,
+        "enabled": true,
+        "activation_blocked": null
+      },
+      "expected": {
+        "valid": false,
+        "status": "enablement_evidence_missing",
+        "error_rule": "capability_enablement_evidence_missing",
+        "rule_id": "3.2.3",
+        "missing_evidence": ["canary_verified"],
+        "note": "A write may be enabled only when the read rule holds and canary_verified is true."
+      }
+    },
+    {
+      "case_id": "illegal_enabled_from_docs_only",
+      "legality": "illegal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "workflows.definition.create",
+        "contract_verified": true,
+        "adapter_built": false,
+        "offline_tests_passed": false,
+        "read_verified": false,
+        "canary_verified": false,
+        "enabled": true,
+        "activation_blocked": null
+      },
+      "expected": {
+        "valid": false,
+        "status": "enablement_evidence_missing",
+        "error_rule": "capability_enablement_evidence_missing",
+        "rule_id": "3.2.2",
+        "missing_evidence": ["adapter_built", "offline_tests_passed", "read_verified", "canary_verified"],
+        "note": "Staging documentation can set contract_verified=True; it can never set read_verified, canary_verified or enabled (3.2.4, 3.2.6)."
+      }
+    },
+    {
+      "case_id": "legal_v4_read_disabled_staging_contract",
+      "legality": "legal",
+      "tenant": "LOCATION_ID_EXAMPLE",
+      "capability": {
+        "operation_id": "workflows.definition.read",
+        "contract_verified": true,
+        "adapter_built": true,
+        "offline_tests_passed": true,
+        "read_verified": false,
+        "canary_verified": false,
+        "enabled": false,
+        "activation_blocked": {
+          "reason": "v4 is staging-only; absent from the supported list",
+          "owner": "operator + W05",
+          "unblock": "production page and the supported-version table listing v4"
+        }
+      },
+      "expected": {
+        "valid": true,
+        "status": "disabled",
+        "error_rule": null,
+        "note": "Staging documentation may set contract_verified=True while the row stays disabled (3.2.4)."
+      }
+    }
+  ]
+}

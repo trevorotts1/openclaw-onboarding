@@ -87,8 +87,19 @@ PRIMITIVE="$SELF_DIR/ghl-mcp-pin-digest.sh"
 # $OC_CONFIG/config/). scripts/qc-assert-pin-delivery-paths.sh asserts that
 # relationship in CI for every consumer, this file included, so the gate can
 # never end up judging a file no installer produces.
+#
+# $OC_ROOT/config is the ROOT-DERIVED spelling of that same destination: both
+# installers deliver config/ as the SIBLING of scripts/ under the OpenClaw
+# root, and ghl-mcp-autostart.sh --retire resolves the pin from exactly this
+# path (ARCHIVE copies it, DISABLE removes it as a resurrection surface), so
+# the box can hold a file at this path while this gate judges another one.
+# OPENCLAW_ROOT is honoured the way scripts/lib/ghl-mcp-paths.sh honours it;
+# a data-rooted box is covered by the literal /data/.openclaw/config candidate
+# below, and a /data symlinked back into $HOME canonicalizes to this default.
+OC_ROOT="${OPENCLAW_ROOT:-${HOME}/.openclaw}"
 if [ -z "$PIN_FILE" ]; then
   for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
+            "$OC_ROOT/config/ghl-mcp-pin.env" \
             "$HOME/.openclaw/config/ghl-mcp-pin.env" \
             "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
             "/data/.openclaw/config/ghl-mcp-pin.env" \

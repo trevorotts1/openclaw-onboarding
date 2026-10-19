@@ -93,7 +93,7 @@ RULE 3: NEVER MODIFY THESE WITHOUT PERMISSION
 - API keys / PITs / Location IDs — copy them exactly, character for character
 - Terminal commands — run them exactly as written, no edits
 - Config values — use the exact values specified
-- Port numbers — 8765 is the canonical Tier 2 port; never substitute
+- Port numbers — 8765 was the retired community port; the required end state is **no listener**. Never start a service there to "match the docs"
 - File paths — use the exact paths specified for the detected platform
 If you are unsure whether something should be changed, the answer is NO.
 Ask the operator. Do not guess. Do not assume.
@@ -126,9 +126,13 @@ When finished, give the user a clear summary:
 > **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
 
 
-This guide enables AI agent autonomous setup of the 6-tier GHL access chain.
+This guide enables AI agent autonomous setup of the GHL access chain.
 After completing these steps, the agent will route GHL requests through:
-Convert and Flow CLI (Tier 0, skill 44) → Official MCP → Community MCP (on-demand) → REST API → agent-browser/Playwright → Codex Computer Use.
+Convert and Flow CLI (Tier 0, skill 44) → Official MCP → REST API → agent-browser/Playwright → Codex Computer Use.
+The self-hosted community MCP (the old "Tier 2") is **retired**: fresh installs omit it, and
+updated boxes must verify it is off. It is not a fallback and must not be cloned, built,
+supervised, or probed. The only retained MCP surfaces are the official connection and the
+custom courier MCP.
 
 ## Important Things to Know Before You Start
 
@@ -137,9 +141,14 @@ Same platform, same backend, same login. The client may use the white-label
 brand name — verify with the client which name they use in customer-facing
 communications, then use that name in any user-facing output.
 
-### GHL Uses a Private Integration Token, NOT an API Key
-Same PIT works for both MCPs and for the raw API. Required scopes for FULL
-MCP coverage (Tier 1 + Tier 2):
+### Credential classes are separate — PIT for REST, OAuth for the official MCP
+GHL uses a **Private Integration Token (PIT), not an API key**, for the REST API (Tier 0 CLI
+and Tier 3). The **official MCP uses OAuth**; a PIT bearer sent to an MCP endpoint is an
+unverified compatibility mode and is never equivalent. The PIT scope list below therefore
+describes REST coverage only — it grants nothing on the MCP connection. The retired
+community MCP's own PIT store is gone with it.
+
+Required PIT scopes for the REST surface:
 - contacts.readonly, contacts.write
 - conversations.readonly, conversations.write
 - opportunities.readonly, opportunities.write
@@ -321,6 +330,27 @@ fi
 
 ### Action 3: Register Tier 1 — Official GHL MCP
 
+The **documented** path is a client-specific OAuth endpoint. Register the connection for the
+client the box actually runs:
+
+| Client | Documented endpoint | Auth |
+|---|---|---|
+| Claude Code / Claude MCP client | `https://services.leadconnectorhq.com/mcp/anthropic/v2` | OAuth |
+| ChatGPT / Codex / OpenAI clients | `https://services.leadconnectorhq.com/mcp/openai/v2/` | OAuth |
+| OpenClaw gateway | see the `openclaw mcp set` registration below — **transitional** | see below |
+
+```bash
+# Claude Code registration (documented endpoint, OAuth):
+claude mcp add --transport http leadconnector https://services.leadconnectorhq.com/mcp/anthropic/v2
+```
+
+**Preserved OpenClaw registration.** The `openclaw mcp set ghl-mcp` connection stays. It
+points at the original `/mcp/` endpoint and carries a PIT bearer; that endpoint is
+**transitional** during the migration, and the PIT bearer is an unverified compatibility mode
+against an OAuth-documented service. Do not remove this connection. Do not describe a Claude
+model routed *through* the gateway as proof of a Claude MCP client — the gateway registers
+servers itself, and its transport is not established by this repo.
+
 ```bash
 openclaw mcp set ghl-mcp '{
   "url": "https://services.leadconnectorhq.com/mcp/",
@@ -333,11 +363,33 @@ openclaw mcp set ghl-mcp '{
   "connectionTimeoutMs": 30000
 }'
 
-# Verify
-openclaw mcp list | grep ghl-mcp
+# Verify the connection exists (exact name — never string-match a bare "ghl-mcp"
+# when operating on the retired community systemd unit of the same name)
+openclaw mcp list | grep -w ghl-mcp
 ```
 
+### Four evidence levels for MCP — do not collapse them
+
+| Level | What it means | Can this repo assert it? |
+|---|---|---|
+| **1. Documented endpoint** | Vendor docs publish the URL for a named client | **Yes** — cite the docs page and fetch date |
+| **2. Documented catalog** | Vendor docs publish exactly four tool names: `list_locations`, `search_operations`, `describe_operation`, `execute_operation` | **Yes** — names only |
+| **3. Account / tenant grant** | The target account actually authorizes the connection, with the scopes and sub-account(s) claimed | **No** — requires an authorized OAuth connect |
+| **4. Actually observed on this box** | This box completed `tools/list` and one real call, captured | **No** — requires a per-box receipt |
+
+The repo can assert levels 1 and 2. Levels 3 and 4 are per-account and per-box facts.
+
 ### Action 4: Tier 1 Smoke Test
+
+**The four documented tool names are the catalog.** Do not gate setup on a tool count. A
+count from the transitional endpoint is not an interface and proves nothing about the v2
+endpoints or about entitlement.
+
+For Claude Code (documented path), authorize OAuth in the client, then confirm the four
+documented tools appear in the client's server view (or record `tools/list` yourself if the
+client exposes it). Save the capture as the level-4 evidence for this box.
+
+For the transitional OpenClaw registration, this probe is a reachability check only:
 
 ```bash
 source "$SECRETS_ENV"
@@ -349,388 +401,118 @@ curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | grep "^data:" | head -1 | sed 's/^data: //' \
-  | python3 -c "import json,sys; print('Tier 1 tool count:', len(json.load(sys.stdin).get('result',{}).get('tools',[])))"
-
-# Expected output: Tier 1 tool count: 36
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print('transitional /mcp/ tools:', [t.get('name') for t in d.get('result',{}).get('tools',[])])"
 ```
 
-If this returns fewer than 36, STOP — credentials may be wrong or scopes missing.
+Record the names. Expected documented names for the official catalog are the four above;
+anything else is a legacy surface and is **UNVERIFIED** as current catalog. Do not STOP on a
+count. If the call fails, distinguish auth/scope (401/403) from transport (DNS/TLS/406) and
+report the exact failure.
 
-### Action 5: Deploy Tier 2 — Community GHL MCP
+### Action 5: Verify the retired community MCP is OFF — do not install it
 
-#### 5.1 Pick a free port (8765 is canonical)
+The self-hosted community MCP (`ghl-community-mcp`) is **retired from the update and install
+paths**. Fresh installs omit it. Updated boxes must verify it is off, not repair it.
+
+**Do not** clone it, check out its pin, run `npm install` / `npm run build`, write its `.env`,
+install a launchd / pm2 / systemd unit for it, or run its autostart / probe scripts. There is
+no tool-count target to chase: the old 588 / 858 / 500 figures describe other profiles or
+history and prove nothing about parity. (For the record, the last vetted profile was
+`curated` = **43 crm tools**, smoke tool `crm_list_workspaces`, loopback `127.0.0.1:8765` —
+but that describes a service that must now be **absent**.)
+
+#### 5.1 Required end state (verify each line)
 
 ```bash
-for p in 8765 8766 8888 8001; do
-  if ! lsof -i :$p >/dev/null 2>&1; then export GHL_MCP_PORT=$p; break; fi
-done
-echo "Using port $GHL_MCP_PORT"
+# 1. No registration (exact name)
+openclaw mcp list | grep -w ghl-community-mcp && echo "STILL REGISTERED" || echo "registration: absent"
+
+# 2. URL env var gone
+openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>&1 | grep -q "http" && echo "ENV VAR STILL SET" || echo "env var: absent"
+
+# 3. macOS — job not loaded, plist archived (not deleted; archive is evidence)
+launchctl print gui/$(id -u)/com.clawd.ghl-mcp >/dev/null 2>&1 && echo "LAUNCHD JOB STILL LOADED" || echo "launchd: not loaded"
+launchctl print-disabled gui/$(id -u) | grep -q '"com.clawd.ghl-mcp" => disabled' && echo "launchd: disabled" || echo "launchd: check disabled state"
+
+# 4. VPS — no pm2 app, no enabled systemd unit
+pm2 list 2>/dev/null | grep -w ghl-community-mcp && echo "PM2 APP STILL PRESENT" || echo "pm2: absent"
+systemctl is-enabled ghl-mcp 2>/dev/null | grep -qx enabled && echo "SYSTEMD UNIT STILL ENABLED" || echo "systemd: not enabled"
+
+# 5. No listener on the canonical loopback port
+lsof -nP -iTCP:8765 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN && echo "LISTENER STILL PRESENT" || echo "listener: absent"
+
+# 6. Probe job gone or retirement-aware
+launchctl print gui/$(id -u)/com.clawd.ghl-mcp-probe >/dev/null 2>&1 && echo "PROBE JOB STILL LOADED" || echo "probe: not loaded"
+crontab -l 2>/dev/null | grep -q "ghl-mcp-probe" && echo "PROBE CRON STILL PRESENT" || echo "probe cron: absent"
 ```
 
-#### 5.2 Clone, install, build (idempotent)
+A `RunAtLoad=true` job that is merely stopped will resurface at the next login. Stopped is not
+retired. Unload **and** disable it, and remove or make retirement-aware every probe that would
+kickstart it.
+
+#### 5.2 De-registration (exact verbs)
 
 ```bash
-if [ "$PLATFORM" = "vps" ]; then
-  export MCP_DIR="/data/mcp-servers/ghl-community-mcp"
-else
-  export MCP_DIR="$HOME/mcp-servers/ghl-community-mcp"
-fi
+# The verb is `unset`, not `remove`. `openclaw mcp remove` exits 1 on OpenClaw 2026.7.1-2
+# ("Too many arguments for this command"), and every old call site swallowed that with
+# `|| true` — which is why Tier 2 was never actually de-registered on any box.
+openclaw mcp unset ghl-community-mcp
 
-mkdir -p "$(dirname "$MCP_DIR")"
+# Remove the URL var (it belonged to the retired service)
+openclaw config unset env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null || true
 
-# PINNED COMMIT — reproducibility + supply-chain/drift protection.
-# The pin, the tool profile and the port now live in ONE place that every launch
-# surface reads: the repo's `config/ghl-mcp-pin.env`. Do not hardcode a second copy.
-#
-#   GHL_MCP_VETTED_COMMIT   full 40-char upstream SHA (never a branch, never a
-#                           short SHA — upstream force-pushes rewritten history,
-#                           so a floating checkout is supply-chain roulette)
-#   GHL_MCP_TOOL_PROFILE    curated | official | stable | raw | full
-#   GHL_MCP_PORT            8765 canonical
-#
-# ⚠️ Do not bump the pin without a CLEAN commit-vetting verdict recorded in that
-# file (GHL_MCP_PIN_VETTED_*). The installer refuses to run an unpinned tree, but
-# it cannot tell you whether the pinned tree is trustworthy.
-. "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env"
-
-# BUILD HYGIENE (2026-08 outage): upstream's build script (scripts/build-server.mjs)
-# `rmSync(dist)` FIRST and then transpiles every .ts it finds by walking src/
-# recursively — including any node_modules that ever landed inside src/. One
-# diagnostic anywhere in that walk exits 1 AFTER dist was already deleted, leaving
-# a broken partial dist and a server that cannot start at all.
-# So: never build the working tree, and never delete dist/ before a good build.
-# Build a `git archive` of the PINNED commit in a temp dir, verify the artifact,
-# then swap it into dist/.
-if [ ! -d "$MCP_DIR/.git" ]; then
-  # NOT --depth 1: a shallow clone frequently cannot resolve an arbitrary pinned SHA.
-  git clone --no-checkout "$GHL_MCP_REPO_URL" "$MCP_DIR"
-fi
-git -C "$MCP_DIR" fetch -q origin "$GHL_MCP_VETTED_COMMIT" || git -C "$MCP_DIR" fetch -q origin
-git -C "$MCP_DIR" checkout -q --detach --force "$GHL_MCP_VETTED_COMMIT"
-[ "$(git -C "$MCP_DIR" rev-parse HEAD)" = "$GHL_MCP_VETTED_COMMIT" ] || { echo "PIN MISMATCH — refusing to build"; return 1 2>/dev/null || exit 1; }
-
-BUILD_TMP="$(mktemp -d)"
-git -C "$MCP_DIR" archive "$GHL_MCP_VETTED_COMMIT" | tar -x -C "$BUILD_TMP"
-( cd "$BUILD_TMP" && npm ci --no-audit --no-fund && npm run build )
-# ARTIFACT ASSERTION: a compiled dist that lacks the transport wiring is the
-# stale-dist deafness that hung every agent init for 30s, on every box, for 2 days.
-grep -q 'connect(transport)' "$BUILD_TMP/dist/main.js" || { echo "BUILT ARTIFACT INVALID — keeping the existing dist"; exit 1; }
-[ -d "$MCP_DIR/dist" ] && mv "$MCP_DIR/dist" "$MCP_DIR/dist.bak-prev"
-mv "$BUILD_TMP/dist" "$MCP_DIR/dist"
-( cd "$MCP_DIR" && npm install --no-audit --no-fund --omit=dev )
-rm -rf "$BUILD_TMP"
-
-# In practice you do NOT run the above by hand — `scripts/ghl-mcp-autostart.sh`
-# is the EXECUTED form of all of §5 and does exactly this, idempotently.
+# RE-READ: the gateway can rewrite openclaw.json from memory and undo a file-level removal.
+openclaw mcp list
 ```
 
-#### 5.3 Write the .env
+**Name collision — do not break the official connection.** The official `mcp.servers` entry is
+also named `ghl-mcp`, and the retired community **systemd unit** is named `ghl-mcp` too. They
+are different things. Never stop, delete, or disable anything by matching the bare string
+`ghl-mcp`; de-register only `ghl-community-mcp`, and stop only the unit you have first proven
+belongs to the community service.
 
-```bash
-cat > "$MCP_DIR/.env" <<EOF
-GHL_API_KEY=${GOHIGHLEVEL_API_KEY}
-GHL_BASE_URL=https://services.leadconnectorhq.com
-GHL_LOCATION_ID=${GOHIGHLEVEL_LOCATION_ID}
-# main.js reads PORT BEFORE MCP_SERVER_PORT (src/main.ts:55) — pin BOTH.
-PORT=${GHL_MCP_PORT}
-MCP_SERVER_PORT=${GHL_MCP_PORT}
-# TOOL PROFILE — the upstream default is \`full\`, i.e. the entire 858-tool
-# catalogue (src/tool-registry.ts:509). Pin it explicitly on every surface.
-GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}
-NODE_ENV=production
-EOF
-chmod 600 "$MCP_DIR/.env"
-```
+**Preserved surfaces.** Retirement must not touch:
+- the official MCP connection (`ghl-mcp` / `leadconnector`)
+- the custom courier MCP
+- shared credentials and customer data
+- `~/.openclaw/secrets/.env` (do not delete the PIT; Tier 0/3 still use it)
 
-#### 5.4 Set the canonical URL env var (CRITICAL — prevents hardcoded-port failures)
+#### 5.3 Historical manual rollback (operator decision only)
 
-```bash
-openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}"
-```
+The community tier can be restored only by an explicit operator decision, never by an
+installer, an update script, or an agent "repairing" a box.
 
-#### 5.5 Install service — macOS (launchd)
+- Mirror: `https://github.com/trevorotts1/ghl-community-mcp-mirror.git`
+- Vetted pin: `32628c979dd8f46e7952f85ce2d98f8028a26c32`
+- Vetted profile: `curated` (43 crm tools), smoke tool `crm_list_workspaces`
+- Loopback: `127.0.0.1:8765`
+- Archive path: the path recorded in that box's retirement receipt (archive path + digest).
+  The source tree it captures is `~/mcp-servers/ghl-community-mcp` (Mac) or
+  `/data/mcp-servers/ghl-community-mcp` (VPS). Never archive a secret-bearing `.env`; archive
+  a redacted manifest (key names only).
 
-> **v10.15.48 — AUTOSTART IS NOW EXECUTED, NOT PROSE.** The steps in 5.1–5.7
-> below are the canonical reference, but you no longer have to run them by hand:
-> `install.sh` (Step 14a) and `update-skills.sh` (GHL MCP wiring) both run
-> `scripts/ghl-mcp-autostart.sh`, which builds the server if needed, writes this
-> exact `com.clawd.ghl-mcp` launchd plist, boots it with KeepAlive on :8765,
-> health-checks `/health`, and registers the MCP. It is idempotent and prints a
-> `STATUS:` line. Run it manually only to re-verify:
->
-> **v12.24.0 — SUPERVISION HARDENED (fleet incident: 12/19 boxes went down/unsupervised).**
-> Two root causes are now fixed in `scripts/ghl-mcp-autostart.sh` and the VPS
-> overlay `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh`, and a
-> hard QC gate (`scripts/qc-system-integrity.sh` **CHECK X.13**, backed by
-> `scripts/qc-assert-ghl-mcp-supervised.sh`) blocks any regression from shipping:
->
-> 1. **PORT IS PINNED EXPLICITLY.** The community MCP's `main.js` reads
->    `process.env.PORT` **before** `process.env.MCP_SERVER_PORT` (`src/main.ts:55`).
->    Without an explicit `PORT`, a stray inherited `PORT` made the server bind a
->    random port (49032/63703) instead of 8765. Every launch surface (launchd
->    plist, pm2 env, systemd `Environment=`, the server `.env`, the supervisor
->    loop) now pins **BOTH** `PORT=8765` **and** `MCP_SERVER_PORT=8765`.
-> 2. **NO BARE NOHUP.** A bare `nohup node …` does NOT survive session/exec
->    teardown and is never restarted on crash. VPS now runs under **pm2**
->    (`ecosystem.config.js` + `pm2 save` + an `@reboot pm2 resurrect` hook) so it
->    survives reboot/container restart; systemd is the non-container fallback; a
->    detached `setsid` **supervised relaunch loop** is the last resort. Mac uses
->    the launchd `KeepAlive` + `RunAtLoad` plist below (now with `PORT` pinned).
->
-> ```bash
-> bash ~/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh
-> # STATUS: ghl-mcp-autostart=HEALTHY (server on :8765 healthy + registered ...)
-> ```
->
-> Registration WITHOUT a running server = GHL tools that never resolve. The
-> server MUST be up (this is what 5.5 starts) AND registered (5.7).
+Restoration is an explicit, recorded operator decision. It must be proven on one box first,
+and it must restore supervision, the probe, and registration together — a half-restored
+service is the deaf-server failure this retirement ends.
 
-```bash
-if [ "$PLATFORM" = "desktop" ]; then
-  mkdir -p ~/Library/Logs/ghl-mcp
-  NODE_PATH=$(which node)
-  cat > ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.clawd.ghl-mcp</string>
-    <key>ProgramArguments</key><array>
-        <string>${NODE_PATH}</string>
-        <string>${MCP_DIR}/dist/main.js</string>
-    </array>
-    <key>WorkingDirectory</key><string>${MCP_DIR}</string>
-    <key>EnvironmentVariables</key><dict>
-        <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>NODE_ENV</key><string>production</string>
-        <!-- main.js reads PORT before MCP_SERVER_PORT (src/main.ts:55). Pin BOTH
-             to ${GHL_MCP_PORT} so a stray inherited PORT can never bind random. -->
-        <key>PORT</key><string>${GHL_MCP_PORT}</string>
-        <key>MCP_SERVER_PORT</key><string>${GHL_MCP_PORT}</string>
-        <!-- Upstream default is the FULL 858-tool surface. Pin the profile. -->
-        <key>GHL_TOOL_PROFILE</key><string>${GHL_MCP_TOOL_PROFILE}</string>
-        <!-- LOG ROTATION. Nothing in the fleet ever rotated this server's logs:
-             ghl-mcp/stderr.log reached 5.4 MB on the operator box and 2.2 MB on
-             a second fleet box, both growing since May. The generated
-             .ghl-mcp-launch.sh copytruncates these at every (re)start and the
-             periodic probe repeats
-             it every 15 min, so a long-lived process is covered too. Rotation is
-             copytruncate (copy then truncate IN PLACE) because launchd holds an
-             open fd — renaming would leave the server writing to an orphaned
-             inode and the visible log frozen at 0 bytes. -->
-        <key>GHL_MCP_LOG_DIR</key><string>${HOME}/Library/Logs/ghl-mcp</string>
-        <key>GHL_MCP_LOG_MAX_BYTES</key><string>${GHL_MCP_LOG_MAX_BYTES}</string>
-        <key>GHL_MCP_LOG_KEEP</key><string>${GHL_MCP_LOG_KEEP}</string>
-    </dict>
-    <key>RunAtLoad</key><true/>
-    <!-- CRASH-ONLY. Never the unconditional boolean form of KeepAlive: main.js
-         calls process.exit(1) when GHL rejects the PIT at boot, so an
-         unconditional restart policy turns a rotated token into a relaunch loop
-         every ThrottleInterval seconds, forever. The autostart script additionally
-         launches through .ghl-mcp-launch.sh, which exits CLEANLY (0) on an auth
-         rejection so this policy actually stops it. -->
-    <key>KeepAlive</key><dict>
-        <key>SuccessfulExit</key><false/>
-        <key>Crashed</key><true/>
-    </dict>
-    <!-- 300s — the CANONICAL fleet shape (matches the reference plist verified
-         on a fleet box). Long enough that even a mis-classified crash can
-         never become a hot relaunch loop. -->
-    <key>ThrottleInterval</key><integer>300</integer>
-    <key>StandardOutPath</key><string>${HOME}/Library/Logs/ghl-mcp/stdout.log</string>
-    <key>StandardErrorPath</key><string>${HOME}/Library/Logs/ghl-mcp/stderr.log</string>
-    <key>ProcessType</key><string>Background</string>
-</dict>
-</plist>
-EOF
+### Action 6: Verify the retirement on this box
 
-  # Boot service
-  launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist 2>/dev/null
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist
-fi
-```
+Run the six checks in 5.1 and record the output as the box's retirement receipt. Expected:
 
-#### 5.6 Install service — Linux/VPS (pm2 preferred; systemd fallback)
+- registration, env var, pm2 app, systemd enablement, listener, and probe: **absent**
+- official MCP connection: **present**
+- custom courier MCP: **present and untouched**
 
-> **v12.24.0:** On a Hostinger Docker VPS there is NO systemd and NO launchd, so
-> the legacy systemd unit never ran and the old fallback was a bare `nohup` that
-> died on teardown — the fleet-killer. The canonical VPS path is now **pm2**
-> (the fleet-standard supervisor) with `pm2 save` + an `@reboot pm2 resurrect`
-> hook (and the Docker `command:` override below for `docker compose restart`).
-> `PORT` and `MCP_SERVER_PORT` are BOTH pinned. `scripts/ghl-mcp-autostart.sh`
-> and `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` write the
-> `ecosystem.config.js` and run pm2 for you — these blocks are the reference.
-
-```bash
-if [ "$PLATFORM" = "vps" ]; then
-  mkdir -p /data/logs
-  # SK1-70: keep the GHL PIT OUT of the world-readable ecosystem.config.js — write it to
-  # a 600-perm env file that pm2 loads at launch. (This mirrors start-ghl-mcp-server.sh,
-  # which is the canonical reference these blocks track.)
-  ( umask 077; printf 'GHL_API_KEY=%s\n' "$GOHIGHLEVEL_API_KEY" > "${MCP_DIR}/.ghl-mcp.env" )
-  chmod 600 "${MCP_DIR}/.ghl-mcp.env"
-  # PORT + MCP_SERVER_PORT BOTH pinned (main.js reads PORT first → random bind otherwise).
-  cat > "${MCP_DIR}/ecosystem.config.js" <<ECO
-// SK1-70: the GHL PIT is loaded at launch from the 600-perm .ghl-mcp.env, NOT inlined
-// into this world-readable config.
-const fs = require('fs');
-const path = require('path');
-function _loadEnvFile(f) {
-  const out = {};
-  try {
-    fs.readFileSync(f, 'utf8').split('\n').forEach(function (line) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)/);
-      if (m) out[m[1]] = m[2].trim();
-    });
-  } catch (e) {}
-  return out;
-}
-const _secret = _loadEnvFile(path.join(__dirname, '.ghl-mcp.env'));
-module.exports = {
-  apps: [{
-    name: "ghl-community-mcp",
-    cwd: "${MCP_DIR}",
-    script: "dist/main.js",
-    interpreter: "node",
-    autorestart: true,
-    // Crash-only: a clean exit 0 is the launcher saying "the PIT is bad/absent,
-    // do not restart me". Without stop_exit_codes that becomes a restart loop.
-    stop_exit_codes: [0],
-    max_restarts: 10,
-    restart_delay: 5000,
-    exp_backoff_restart_delay: 5000,
-    env: Object.assign({
-      NODE_ENV: "production",
-      PORT: "${GHL_MCP_PORT}",
-      MCP_SERVER_PORT: "${GHL_MCP_PORT}",
-      GHL_TOOL_PROFILE: "${GHL_MCP_TOOL_PROFILE}",
-      GHL_MCP_LOG_DIR: "/data/logs",
-      GHL_MCP_LOG_MAX_BYTES: "${GHL_MCP_LOG_MAX_BYTES}",
-      GHL_MCP_LOG_KEEP: "${GHL_MCP_LOG_KEEP}",
-      GHL_BASE_URL: "https://services.leadconnectorhq.com",
-      GHL_LOCATION_ID: "${GOHIGHLEVEL_LOCATION_ID}"
-    }, _secret),
-    out_file: "/data/logs/ghl-mcp.log",
-    error_file: "/data/logs/ghl-mcp.err.log"
-  }]
-};
-ECO
-  cd "${MCP_DIR}" && pm2 startOrReload ecosystem.config.js
-  pm2 save
-  pm2 startup >/dev/null 2>&1 || true
-  # Reboot/container-restart survival: @reboot resurrect + Docker command override.
-  ( crontab -l 2>/dev/null | grep -Fq "pm2 resurrect" ) || \
-    ( crontab -l 2>/dev/null; echo "@reboot $(command -v pm2) resurrect >/data/logs/pm2-resurrect.log 2>&1" ) | crontab -
-fi
-```
-
-For a Hostinger Docker box, also add a delayed `pm2 resurrect` to the project's
-`command:` override (same pattern the Command Center uses, so the MCP returns
-after `docker compose restart` — see skill 32 INSTALL.md Phase 6c).
-
-**Log rotation on VPS (three layers, all fail-soft):**
-
-1. Always: the generated `.ghl-mcp-launch.sh` copytruncates `/data/logs/ghl-mcp*.log`
-   at every (re)start, and `scripts/ghl-mcp-probe.sh` repeats it every 15 minutes.
-   No root, no daemon, works inside a bare container.
-2. `pm2-logrotate` — the autostart installs/configures it best-effort
-   (`max_size 10M`, `retain 3`, `compress true`).
-3. `logrotate` — `/etc/logrotate.d/ghl-mcp` is written when `logrotate` exists AND
-   a passwordless sudo is available. It uses `copytruncate` for the same
-   open-fd reason.
-
-On a Docker box, ALSO cap the container driver in compose (this is the layer that
-catches anything written to stdout by the container itself):
-
-```yaml
-logging:
-  driver: "json-file"
-  options:
-    max-size: "10m"
-    max-file: "3"
-```
-
-> **systemd fallback (non-container VPS only):** if pm2 is genuinely unavailable
-> and the box has systemd, install a unit with `Environment=PORT=${GHL_MCP_PORT}`
-> and `Environment=MCP_SERVER_PORT=${GHL_MCP_PORT}` (the autostart script does
-> this automatically). Never fall back to a bare `nohup`.
-
-#### 5.7 Tier 2 = ON-DEMAND via curl (NO native registration)
-
-As of skill 36 v1.1.0 the community MCP is NOT registered under
-`mcp.servers` — its 588 tool schemas would ride in every session's context
-whether or not GHL is touched (measurement recorded in CHANGELOG). The local
-service still runs (launchd/systemd from 5.5/5.6, unchanged); only the
-registration mode changes. The agent invokes Tier 2 tools on demand:
-
-```bash
-# Discover the tool surface live (no standing context cost):
-curl -sS "$GHL_COMMUNITY_MCP_URL/tools" | python3 -m json.tool
-
-# Invoke a tool via JSON-RPC over HTTP:
-curl -sS -X POST "$GHL_COMMUNITY_MCP_URL/execute" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"ghl_list_products","arguments":{"limit":3}}'
-```
-
-If a prior install registered `ghl-community-mcp`, de-register it:
-`openclaw mcp unset ghl-community-mcp` (the migration in the wire.sh does this on
-live boxes).
-
-> **The verb is `unset`, not `remove`.** `openclaw mcp remove` is not a command on
-> OpenClaw 2026.7.1-2 — it exits 1 with `Too many arguments for this command`. Every
-> de-registration call site in this repo used `remove`, swallowed by `|| true`, so
-> Tier 2 was never actually de-registered on any box. After running it, RE-READ
-> `openclaw mcp list`: the gateway can rewrite `openclaw.json` from memory and undo a
-> file-level removal.
-
-### Action 6: Tier 2 Smoke Test
-
-```bash
-sleep 5   # allow server to boot
-URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL | tr -d '\n')
-
-# Health — NOTE: /health is served by express BEFORE the MCP transport is wired,
-# so a stale/deaf server returns "healthy" while answering nothing. It is a
-# reachability check, NOT a liveness check.
-curl -sS "$URL/health"
-# Expected: {"status":"healthy","tools":<N>,...} where N matches the configured
-# GHL_TOOL_PROFILE (curated ≈ 43, full ≈ 858). A curated box reporting ~858
-# means the profile did not take effect — re-run scripts/ghl-mcp-autostart.sh.
-
-# LIVENESS — the alive-not-just-listening test. This is the assertion the
-# 2026-08 outage would have failed: a JSON-RPC response must actually arrive.
-bash ~/.openclaw/onboarding/scripts/ghl-mcp-probe.sh --once
-# Expected: STATUS: ghl-mcp-probe=OK (... answers JSON-RPC; tools=N, profile=...)
-# exit 0 = OK | 2 = no listener | 3 = DEAF (listening, answering nothing)
-# | 4 = tool-profile drift | 5 = unhealthy
-
-# Real-data call — the tool MUST exist inside the configured GHL_TOOL_PROFILE.
-# MEASURED 2026-08-03: under `curated` the server exposes 43 crm_* tools and NO
-# ghl_* tools, so the historic `ghl_list_products` smoke test fails there. Use
-# the profile-appropriate name from config/ghl-mcp-pin.env (GHL_MCP_SMOKE_TOOL):
-#   curated          -> crm_list_workspaces
-#   stable/raw/full  -> ghl_list_products
-curl -sS -X POST "$URL/execute" \
-  -H "Content-Type: application/json" \
-  -d "{\"name\":\"${GHL_MCP_SMOKE_TOOL}\",\"arguments\":{}}" \
-  | python3 -m json.tool | head -20
-# Expected: success:true with real data
-
-# ⚠️ CAPABILITY NOTE: Tier 2 exists in this skill for products, invoices,
-# billing, subscriptions, estimates, store, coupons, Voice AI, Phone System and
-# Agent Studio. Those are ghl_* tools and they are NOT in the `curated` profile.
-# If the box needs them, set GHL_MCP_TOOL_PROFILE=stable (not `full`) in
-# config/ghl-mcp-pin.env and widen GHL_MCP_EXPECT_MAX_TOOLS.
-```
-
-If `/health` returns Cognee's response (`status:ready, version:0.5.3-local`), you hit the wrong port. Move to a different port from the 5.1 list.
+There is no Tier 2 smoke test any more. If `/health` on 8765 answers, the box is not retired.
+Do not "fix" that by restarting the service; finish the retirement. If something else owns
+8765, that is not a GHL service — do not kill it (port 8000 belongs to Cognee on most boxes;
+8765 can be claimed by unrelated processes after the fact).
 
 ### Action 7: Update Core .md Files
 
 Read `CORE_UPDATES.md` for exact text to add to:
 - AGENTS.md (canonical state block + 🔴 Tier Escalation Protocol + tier order + anti-patterns + disclosure protocol)
-- TOOLS.md (community MCP tool reference)
+- TOOLS.md (official MCP surface + retirement state; no community tool reference)
 - MEMORY.md (install record)
 
 SOUL.md — NO UPDATE NEEDED (the Tier Escalation Protocol is OPERATING LAW and lives in the shared AGENTS.md so sub-agents inherit it; leave SOUL.md byte-identical).
@@ -765,29 +547,32 @@ Ask the user to test in their main chat or Telegram with this prompt:
 
 > "How many products do I have in my store right now, and what are the 3 most recently created ones?"
 
-Expected response opens with `[GHL tier used: 2 — ghl_list_products]` and lists real products.
+Expected operator-channel response opens with a Tier 0 or Tier 3 disclosure — e.g.
+`[GHL tier used: 0 — convertandflow products list]` or
+`[GHL tier used: 3 (Tier 1 lacked operation: products.list) — raw API GET /products/]` — and
+lists real products. There is no Tier 2 route; a Tier 2 disclosure means stale docs are loaded.
 
-If the response uses Tier 3 or has no disclosure header, the agent isn't loading AGENTS.md properly. Investigate channel routing.
+If the response has no disclosure header, the agent isn't loading AGENTS.md properly.
+Investigate channel routing.
 
 ---
 
 ## Done When
 
-- [ ] Tier 1 (`ghl-mcp`) registered, `/tools` returns >= 36
-- [ ] Tier 2 service running and ANSWERING: `scripts/ghl-mcp-probe.sh --once` exits 0
-      (a JSON-RPC response arrives — an open socket and a green `/health` prove nothing)
-- [ ] Tier 2 tool count matches the configured `GHL_TOOL_PROFILE` (curated ≈ 43,
-      full ≈ 858) — a curated box serving the full surface means the profile is not applied
-- [ ] Tier 2 NOT registered in mcp.servers (on-demand curl)
-- [ ] Working tree checked out at `GHL_MCP_VETTED_COMMIT`; `.ghl-mcp-build.json`
-      records the same commit as the built dist
-- [ ] `GHL_COMMUNITY_MCP_URL` env var set
-- [ ] launchd plist (Mac) or pm2/systemd (VPS) running, CRASH-ONLY (no unconditional KeepAlive)
-- [ ] Periodic liveness probe installed (`com.clawd.ghl-mcp-probe` on Mac, `*/15` cron on VPS)
-- [ ] Log rotation active: `ghl-mcp/stderr.log` (Mac) / `/data/logs/ghl-mcp*.log` (VPS)
-      is under 10 MB, and the launcher/probe rotation env is present in the service
-      definition. Historic state on an unpatched box: 5.4 MB and growing since May.
+- [ ] Official MCP connection present (`ghl-mcp` / `leadconnector`), authorized on the
+      client-appropriate v2 endpoint where the client supports it; documented four-tool
+      catalog recorded; `tools/list` capture saved as this box's level-4 evidence
+- [ ] **Community MCP retired**: `ghl-community-mcp` absent from `openclaw mcp list`
+- [ ] `GHL_COMMUNITY_MCP_URL` env var absent
+- [ ] No listener on `127.0.0.1:8765`; no loaded/enabled launchd / pm2 / systemd unit
+      (`com.clawd.ghl-mcp`, `ghl-community-mcp`, `ghl-mcp.service`) — the
+      `RunAtLoad=true` job must be unloaded and disabled, not merely stopped
+- [ ] Probe job removed or retirement-aware (no kickstart of the retired service)
+- [ ] Custom courier MCP present and untouched; shared credentials and customer data intact
+- [ ] No community `.env` remains unarchived with a secret in it; archived material is a
+      redacted manifest (key names only)
 - [ ] AGENTS.md / TOOLS.md / MEMORY.md updated per CORE_UPDATES.md (SOUL.md unchanged)
 - [ ] Full reference copied to `$MASTER_FILES_DIR/36-ghl-mcp-setup/`
-- [ ] `qc-ghl-mcp-setup.sh` exits 0
+- [ ] `qc-ghl-mcp-setup.sh` exits 0 (or its community assertions are the known-stale W07
+      set and are recorded as such — do not reinstall the service to make them pass)
 - [ ] User verification prompt returns correct disclosure header

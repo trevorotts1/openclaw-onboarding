@@ -27,14 +27,19 @@ class HandoffError(ValueError):
     pass
 
 
-# Schema 1.2 acceptance (CR-S44-003): the packet reference now carries
-# the 1.2 schema beside the 1.0 one, so both versions resolve. The 1.0
-# file and what this fixture emits are unchanged — it still stamps 1.0.
-# Unknown versions fail closed.
+# Schema 1.1 and 1.2 acceptance: the packet reference carries both beside
+# the 1.0 one, so every version that ships resolves. 1.1 (CR-S44-001, the
+# normalized 44 producer stamps it whenever a contact_ref is present) adds
+# OPTIONAL contact_ref; 1.2 (CR-S44-003) adds OPTIONAL parent_order_ref.
+# The 1.0 file and what this fixture emits are unchanged — it still stamps
+# 1.0. Unknown versions fail closed.
+PACKET_EVENT_SCHEMA_V11 = (PACKET_EVENT_SCHEMA.parent
+                           / "purchase-event.v1.1.schema.json")
 PACKET_EVENT_SCHEMA_V12 = (PACKET_EVENT_SCHEMA.parent
                            / "purchase-event.v1.2.schema.json")
 _PACKET_EVENT_SCHEMAS = {
     "1.0": PACKET_EVENT_SCHEMA,
+    "1.1": PACKET_EVENT_SCHEMA_V11,
     "1.2": PACKET_EVENT_SCHEMA_V12,
 }
 
@@ -56,9 +61,10 @@ def load_packet_event_schema(version: str) -> dict:
 
 def validate_packet_event(event: dict) -> dict:
     """Validate an event against the packet schema for its stamped
-    schema_version. 1.0 validates exactly as before; 1.2 is accepted
-    with its optional parent_order_ref; an unknown, missing, or
-    non-string version fails closed."""
+    schema_version. 1.0 validates exactly as before; 1.1 is accepted
+    with its optional contact_ref; 1.2 is accepted with its optional
+    parent_order_ref; an unknown, missing, or non-string version fails
+    closed."""
     version = event.get("schema_version") if isinstance(event, dict) else None
     schema = load_packet_event_schema(version)
     jsonschema.validate(event, schema)

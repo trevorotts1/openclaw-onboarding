@@ -1,8 +1,9 @@
-"""CR-S44-003 packet acceptance: the reference carries the 1.0 and 1.2
-purchase-event schemas side by side and both resolve. 1.0 keeps its
-path and bytes; 1.2 is a byte-identical copy of
-shared-utils/signature_launch/events/purchase-event.v1.2.schema.json.
-Unknown versions fail closed.
+"""Purchase-event packet acceptance: the reference carries the 1.0, 1.1
+and 1.2 schemas side by side and all three resolve. 1.0 keeps its path
+and bytes; 1.1 (CR-S44-001, optional contact_ref) and 1.2 (CR-S44-003,
+optional parent_order_ref) are byte-identical copies of
+shared-utils/signature_launch/domain/purchase-event.v1.1.schema.json and
+purchase-event.schema.json respectively. Unknown versions fail closed.
 
 L1 deterministic evidence only: no native GHL/payment behavior.
 """
@@ -18,10 +19,12 @@ sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 import jsonschema  # noqa: E402
 
 from purchase_event import (EntitlementGrantor, HandoffError,  # noqa: E402
-                            PACKET_EVENT_SCHEMA, PACKET_EVENT_SCHEMA_V12,
+                            PACKET_EVENT_SCHEMA, PACKET_EVENT_SCHEMA_V11,
+                            PACKET_EVENT_SCHEMA_V12,
                             load_packet_event_schema, validate_packet_event)
 
 SHA_10 = "c346bbb539927dc109189fb6454bea0fe495eb52f668a632d01c6fc9e779fd20"
+SHA_11 = "311d04820360193a892929e6cf12788372db85977caf1e1277a8f3024515806a"
 SHA_12 = "4f9e8122b2767d098ab980be9f33e4503bb1f9e3cc4f4bda17a3990e325378c0"
 
 
@@ -57,6 +60,18 @@ class PacketSchemaResolutionTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["schema_version"]["const"], "1.0")
         self.assertNotIn("parent_order_ref", schema["properties"])
 
+    def test_1_1_resolves_beside_1_0(self):
+        self.assertEqual(PACKET_EVENT_SCHEMA_V11.name,
+                         "purchase-event.v1.1.schema.json")
+        self.assertEqual(PACKET_EVENT_SCHEMA_V11.parent,
+                         PACKET_EVENT_SCHEMA.parent)
+        self.assertEqual(hashlib.sha256(
+            PACKET_EVENT_SCHEMA_V11.read_bytes()).hexdigest(), SHA_11)
+        schema = load_packet_event_schema("1.1")
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "1.1")
+        self.assertIn("contact_ref", schema["properties"])
+        self.assertNotIn("parent_order_ref", schema["properties"])
+
     def test_1_2_resolves_beside_1_0(self):
         self.assertEqual(PACKET_EVENT_SCHEMA_V12.name,
                          "purchase-event.v1.2.schema.json")
@@ -74,10 +89,14 @@ class PacketSchemaResolutionTests(unittest.TestCase):
             with self.assertRaises(HandoffError) as caught:
                 load_packet_event_schema(bad)
             self.assertIn("fail closed", str(caught.exception))
-            self.assertIn("['1.0', '1.2']", str(caught.exception))
+            self.assertIn("['1.0', '1.1', '1.2']", str(caught.exception))
 
-    def test_validate_accepts_both_and_rejects_bad_payloads(self):
+    def test_validate_accepts_all_and_rejects_bad_payloads(self):
         validate_packet_event(event("1.0"))
+        # 1.1 is what the normalized 44 producer stamps when the read-back
+        # supplies an opaque contact_ref; with or without it, it is valid.
+        validate_packet_event(event("1.1"))
+        validate_packet_event(event("1.1", contact_ref="SYNTH-CONTACT-0001"))
         validate_packet_event(event("1.2"))
         validate_packet_event(event("1.2", parent_order_ref=None))
         validate_packet_event(event("1.2", parent_order_ref="SYNTH-ORDER-0000"))

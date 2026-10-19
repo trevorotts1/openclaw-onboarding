@@ -54,7 +54,8 @@ it can ship.
    automation pre-bind its triggers.
 5. **The eight tag-triggered release-notification workflows** (contract
    `workflows.release_notifications`), built once in the template location in ONE workflow
-   folder named `Anthology Engine` via the Skill 44 caf Convert and Flow Firebase build rail.
+   folder named `Anthology Engine` via the Skill 44 public status/definition adapter when
+   its capability is enabled for the tenant, else the bounded internal Firebase build rail.
    Each fires on ONE release tag added to a contact and sends the AUTHOR both a
    producer-branded **email** and a **link-only SMS**:
    `Anthology Release: Avatar` (`anthology-release-avatar`), `... Tone`
@@ -115,9 +116,10 @@ location `2HIKGNgsixWx0yds7Qnx`, never in a client account:
    Do not put real values here — the placeholders are what ships.
 4. Seed the eight release tags.
 5. Build the eight tag-triggered release-notification workflows (contract
-   `workflows.release_notifications`) in one folder named `Anthology Engine`, via the Skill 44
-   caf Firebase build rail (`caf --experimental workflows build --from-plan <plan>` against
-   location `2HIKGNgsixWx0yds7Qnx`). Each is a contact-tag-added trigger on one release slug →
+   `workflows.release_notifications`) in one folder named `Anthology Engine`, through the
+   Skill 44 public status/definition adapter when its capability is enabled, else the
+   bounded internal Firebase build rail (`caf --experimental workflows build --from-plan
+   <plan>`), against location `2HIKGNgsixWx0yds7Qnx`. Each is a contact-tag-added trigger on one release slug →
    producer-branded email (PDF-view + Doc-edit links from the matching contact custom fields,
    From name `{{ custom_values.producer }}`) → link-only SMS. Copy law: "editors" never "AI",
    zero em-dashes. Publish each and enable the three LIVE slug triggers (avatar / tone /
@@ -263,15 +265,25 @@ constant, ported byte-for-byte from the Podcast gate's proven-live string
 (`verify-podcast-ghl-workflows.py`).
 
 If the edge block persists even with the corrected UA, `verify_imported`'s pipeline read
-automatically falls back to the Firebase-JWT internal rail — also ported from the Podcast
-gate's proven pattern — PROVIDED the client's own Firebase refresh token is exported under
-one of `ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN` / `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` /
+falls back to the Firebase-JWT internal rail — also ported from the Podcast gate's proven
+pattern — PROVIDED the client's own Firebase refresh token is exported under one of
+`ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN` / `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` /
 `GHL_FIREBASE_REFRESH_TOKEN` (per-client, client-owned — never a shared operator token, per
-the 2026-07-14 ruling on U69/U70/U71). Without that token configured, behavior is unchanged:
-HELD, retryable, with the same honest surface as before. The custom-fields read has NO such
-fallback — no internal-API path for it has been proven live anywhere in this repo, so
-inventing one would violate the Skill 44 doctrine against un-verified endpoints; it stays on
-the corrected-UA public v2 (PIT) surface only.
+the 2026-07-14 ruling on U69/U70/U71). The route order is explicit (GU-004 sections 2.5
+and 5.7; `config/anthology-snapshot-contract.json` -> `transport_policy`): the public
+status/definition adapter is the PRIMARY read route once its capability is enabled for the
+tenant, and the internal Firebase rail is a BOUNDED fallback, not a parity claim. The
+public and internal payload shapes have never been proven equivalent. Without that token
+configured, behavior is unchanged: HELD, retryable, with the same honest surface as
+before. The custom-fields read has NO such fallback — no internal-API path for it has been
+proven live anywhere in this repo, so inventing one would violate the Skill 44 doctrine
+against un-verified endpoints; it stays on the corrected-UA public v2 (PIT) surface only.
+
+The route decision changes no gate: `caf_credential_gate.py` (PIT + Location pairing,
+per-client `ANTHOLOGY_GATE_TOKEN_SECRET`, anti-commingling fingerprint) still runs first,
+the HMAC participant gate still mints and verifies scoped tokens per client, and the
+no-commingling rule still exits 4 on an operator/shared/foreign-client collision.
+Provisioning stays client-scoped.
 
 This clears the CODE/offline tier of GK-09. The LIVE tier — actually running
 `verify-imported --location-id 2HIKGNgsixWx0yds7Qnx` against the real template location and
