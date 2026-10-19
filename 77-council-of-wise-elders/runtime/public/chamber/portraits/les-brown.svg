@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="t d">
+  <title id="t">Les Brown medallion</title>
+  <desc id="d">Illustrative identity medallion for the Les Brown council seat (self-belief, resilience, and committed action): the initials LB and a rising arrow over a ground line inside a colored ring on a tinted disc. A designed symbol, not a photograph or likeness.</desc>
+  <circle cx="120" cy="120" r="114" fill="#FBEEE0"/>
+  <circle cx="120" cy="120" r="114" fill="none" stroke="#C05E0A" stroke-width="6"/>
+  <circle cx="120" cy="120" r="102" fill="none" stroke="#C05E0A" stroke-width="1.5" opacity="0.45"/>
+  
+  <g fill="none" stroke="#7E3C04" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M84 90 114 62l14 13 24-30"/>
+    <path d="M138 43h15v15"/>
+    <path d="M80 102h80"/>
+  </g>
+  <text x="120" y="172" text-anchor="middle" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-size="56" font-weight="600" letter-spacing="1" fill="#7E3C04">LB</text>
+  <g fill="#C05E0A">
+    <circle cx="104" cy="196" r="3.5"/>
+    <circle cx="120" cy="196" r="3.5"/>
+    <circle cx="136" cy="196" r="3.5"/>
+  </g>
+</svg>

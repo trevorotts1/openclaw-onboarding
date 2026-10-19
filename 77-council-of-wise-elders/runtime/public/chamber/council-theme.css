@@ -1,0 +1,346 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Council of Wise Elders: scoped visual system (CWE-031, Skill 77)
+   ───────────────────────────────────────────────────────────────────────────
+   EVERYTHING in this file is scoped under .council-theme (light product
+   scope) or .council-stage (the nested room-stage scope). No global :root
+   variable is declared or overridden here, and no global Command Center
+   color changes: the council rides the client's own brand through the
+   same --brand-* variables that <BrandTheme/> rewrites per client, with
+   the BlackCEO palette as the fallback (the pattern set by the interview
+   feature's --iv-* layer in globals.css).
+
+   Design law for this feature (owner direction + Directive Sections 21,
+   22, 23):
+   - Bright, real, human-looking. The product scope is a warm light paper
+     theme. The ONLY dark surface is the council room stage itself (the
+     Section 22.2 chamber backdrop), nested inside the light product, the
+     same way the interview feature nests .iv-dark panels.
+   - Names are never smaller than 16px in primary seat views, never
+     clipped into initials; long names wrap to two lines.
+   - Accent color is never used as small body text unless it is the
+     text-safe --council-accent-ink step. Gold/metallic detail is
+     decoration only, never text.
+   - State is never carried by color alone: every state also has a text
+     label and a shape marker (see .council-state-* below).
+   - Motion is 160 to 260ms, follows committed events only, and is
+     removed under prefers-reduced-motion without removing information.
+
+   Contrast: every text pairing in this system is computed in the CWE-031
+   test run (contrast table in visual-benchmark.md). Ordinary text pairs
+   meet 4.5:1; qualifying large text and meaningful graphics meet 3:1.
+   Per-client brand values are re-checked by CWE-042/CWE-044 against the
+   actual client theme (acceptance test T100); the fallback values below
+   are the BlackCEO defaults and are the values verified by CWE-031.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.council-theme {
+  /* Type: reuse the app's families. No new font download (Section 22.3). */
+  --council-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --council-font-display: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+
+  /* Type scale (Section 22.3). Display clamps 28px (phone) to 44px (desktop). */
+  --council-text-display: clamp(1.75rem, 1.3rem + 2.2vw, 2.75rem);
+  --council-text-heading: 1.625rem;   /* 26px, inside the 24-28px band */
+  --council-text-body: 1.125rem;     /* 18px primary body */
+  --council-text-body-sm: 1rem;      /* 16px compact secondary body */
+  --council-text-meta: 0.875rem;     /* 14px source/status metadata */
+  --council-text-name: 1rem;         /* 16px floor: seat names in primary views */
+  --council-leading: 1.55;           /* inside the 1.45-1.65 band */
+
+  /* Light product scope: warm paper canvas over the client's surfaces. */
+  --council-canvas: #FAF7F0;
+  --council-surface: var(--bcc-white, #FFFFFF);
+  --council-surface-2: #F4F1EA;
+  --council-line: #E7E1D3;
+  --council-line-strong: #CFC7B4;
+  --council-ink: var(--bcc-text, #1A1D26);
+  --council-ink-soft: #54575F;
+  --council-ink-faint: #5F646D;      /* metadata text; still 4.5:1 on its surfaces */
+
+  /* Accent: rides the live per-client brand scale (BrandTheme). */
+  --council-accent: var(--brand-600, #43A047);        /* fills, rings, graphics, large text */
+  --council-accent-strong: var(--brand-700, #388E3C); /* large text and strong graphics */
+  --council-accent-ink: var(--brand-800, #256528);    /* the ONLY accent step for ordinary text */
+  --council-accent-deep: var(--brand-900, #1B4D1E);   /* primary-action hover fill */
+  --council-accent-wash: var(--brand-50, #E8F5E9);    /* selected/soft fills behind ink text */
+  /* Ink on the primary-action fill. CWE-044 fix (defect D-044-2): the
+     brand scale fixes the 600 step at 42% lightness for every client
+     primary, so no single ink color reaches 4.5:1 on that fill across
+     themes (near-black fails dark primaries such as navy and purple;
+     white fails light ones such as gold and yellow). The primary
+     action therefore fills with the accent-ink step (800) at rest and
+     the deep step (900) on hover, with white ink: white on the 800
+     step measures 5.12:1 to 12.55:1 across the eight gauntlet client
+     themes, and the 900 step is darker still. The T100 contrast
+     suite in the CWE-044 gauntlet is the standing proof. */
+  --council-on-accent: #FFFFFF;
+
+  /* Seat state colors. Always paired with a label and a shape marker. */
+  --council-state-support: #1E7B34;
+  --council-state-oppose: #B42318;
+  --council-state-uncertain: #8A5A00;
+  --council-state-info: #1D4ED8;
+
+  /* Shape */
+  --council-radius-card: 20px;
+  --council-radius-control: 12px;
+  --council-shadow: 0 1px 2px rgba(20, 22, 26, 0.04), 0 12px 32px rgba(20, 22, 26, 0.06);
+
+  /* Targets and room geometry (Sections 22.4, 23). */
+  --council-touch-target: 44px;
+  --council-room-frame-w: 920px;
+  --council-room-frame-h: 640px;
+  --council-seat-w: 140px;
+  --council-seat-h: 104px;
+
+  /* Motion (Section 22.7). */
+  --council-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --council-dur: 220ms;
+  --council-dur-fast: 160ms;
+
+  background: var(--council-canvas);
+  color: var(--council-ink);
+  font-family: var(--council-font-sans);
+  font-size: var(--council-text-body);
+  line-height: var(--council-leading);
+}
+
+/* ── Room stage scope (Section 22.2 chamber backdrop, nested only) ─────────
+   The stage is a dark green-black chamber surface inside the light product.
+   All stage text pairs are verified in the CWE-031 contrast table. Seat
+   names on the stage use --council-stage-ink at 16px or above. */
+.council-theme .council-stage {
+  --council-stage: #111713;
+  --council-stage-raised: #1B241E;
+  --council-stage-ink: #F5F1E8;
+  --council-stage-muted: #C5CCC4;
+  --council-stage-line: #33413A;
+  --council-stage-accent: var(--brand-400, #66BB6A);
+  --council-stage-detail: #C9A227;   /* embossed council mark only; never text */
+  /* State colors lighten on the stage so state text keeps 4.5:1 on the
+     dark chamber surfaces (the light-scope steps measure under 3:1 here). */
+  --council-state-support: #7BD88F;
+  --council-state-oppose: #F2A2A2;
+  --council-state-uncertain: #E8B54D;
+  --council-state-info: #9DB9F2;
+  background: var(--council-stage);
+  color: var(--council-stage-ink);
+  border-radius: var(--council-radius-card);
+}
+.council-stage .council-state-abstain { color: var(--council-stage-muted); }
+.council-stage .council-state-abstain::before { border-color: var(--council-stage-muted); }
+
+/* ── Typography ──────────────────────────────────────────────────────────── */
+.council-display {
+  font-family: var(--council-font-display);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: var(--council-text-display);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin: 0;
+}
+.council-heading {
+  font-family: var(--council-font-display);
+  font-weight: 500;
+  font-size: var(--council-text-heading);
+  line-height: 1.2;
+  margin: 0;
+}
+.council-lede { font-size: var(--council-text-body); color: var(--council-ink-soft); margin: 0; }
+/* Meta lines carry unbroken identifiers (verdict content hashes,
+   brief hashes) that must wrap at phone widths instead of forcing
+   the page to scroll sideways (CWE-044 fix, defect D-044-1). */
+.council-meta { font-size: var(--council-text-meta); color: var(--council-ink-faint); overflow-wrap: anywhere; }
+.council-eyebrow {
+  font-size: var(--council-text-meta);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--council-accent-ink);
+  margin: 0;
+}
+
+/* ── Surfaces and controls ───────────────────────────────────────────────── */
+.council-card {
+  background: var(--council-surface);
+  border: 1px solid var(--council-line);
+  border-radius: var(--council-radius-card);
+  box-shadow: var(--council-shadow);
+  padding: 1.5rem;
+}
+.council-btn {
+  font-family: var(--council-font-sans);
+  font-weight: 600;
+  font-size: var(--council-text-body-sm);
+  min-height: var(--council-touch-target);
+  min-width: var(--council-touch-target);
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--council-radius-control);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color var(--council-dur-fast) var(--council-ease),
+              border-color var(--council-dur-fast) var(--council-ease);
+}
+.council-btn-primary { background: var(--council-accent-ink); color: var(--council-on-accent); }
+/* Hover deepens one more scale step to the deep fill; white label
+   text keeps 4.5:1 under every client theme (CWE-044, D-044-2; the
+   pairing rationale is recorded at --council-on-accent above). */
+.council-btn-primary:hover { background: var(--council-accent-deep); color: var(--council-on-accent); }
+.council-btn-secondary {
+  background: var(--council-surface);
+  color: var(--council-accent-ink);
+  border-color: var(--council-line-strong);
+}
+.council-btn-quiet { background: transparent; color: var(--council-accent-ink); }
+
+/* ── Verdict scorecard table (CouncilVerdict) ──────────────────────────────
+   Full width with wrapping cells at every size. At phone widths the
+   table switches to fixed layout with explicit column shares, so the
+   five columns fit the available width and every value stays
+   readable instead of the table forcing sideways page scroll
+   (CWE-044 fix, defect D-044-1; Section 23, T098). */
+.council-scorecard-table { width: 100%; border-collapse: collapse; }
+.council-scorecard-table th,
+.council-scorecard-table td {
+  border-bottom: 1px solid var(--council-line);
+  padding: 0.5rem 0.375rem;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+@media (max-width: 640px) {
+  .council-scorecard-table { table-layout: fixed; font-size: var(--council-text-meta); }
+  .council-scorecard-table th:nth-child(1), .council-scorecard-table td:nth-child(1) { width: 30%; }
+  .council-scorecard-table th:nth-child(2), .council-scorecard-table td:nth-child(2) { width: 12%; }
+  .council-scorecard-table th:nth-child(3), .council-scorecard-table td:nth-child(3) { width: 23%; }
+  .council-scorecard-table th:nth-child(4), .council-scorecard-table td:nth-child(4) { width: 20%; }
+  .council-scorecard-table th:nth-child(5), .council-scorecard-table td:nth-child(5) { width: 15%; }
+  .council-scorecard-table th, .council-scorecard-table td { overflow-wrap: anywhere; }
+}
+/* Form textareas take their width from the cols attribute when no
+   CSS width applies (48 columns measures 407px), overflowing phone
+   widths (CWE-044 fix, defect D-044-1). Council textareas fill
+   their container instead, which the page padding caps at every
+   width. Scoped to the council theme root, which wraps every
+   council surface (session, verdict, follow-up, outcome, journey). */
+.council-theme textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+.council-theme :focus-visible {
+  outline: 3px solid var(--council-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Seats ───────────────────────────────────────────────────────────────── */
+.council-seat {
+  /* Every seat is a real button (Section 23.1) with a 44px minimum target. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: var(--council-touch-target);
+  min-width: var(--council-touch-target);
+  padding: 0.75rem;
+  background: var(--council-surface);
+  border: 1px solid var(--council-line);
+  border-radius: var(--council-radius-card);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color var(--council-dur) var(--council-ease),
+              box-shadow var(--council-dur) var(--council-ease);
+}
+.council-seat-name {
+  font-size: var(--council-text-name); /* never below 16px in primary views */
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: break-word;          /* long names wrap to two lines */
+}
+.council-seat-role { font-size: var(--council-text-meta); color: var(--council-ink-soft); line-height: 1.35; }
+.council-stage .council-seat {
+  background: var(--council-stage-raised);
+  border-color: var(--council-stage-line);
+  color: var(--council-stage-ink);
+}
+.council-stage .council-seat-role { color: var(--council-stage-muted); }
+.council-seat[data-selected='true'] {
+  border-color: var(--council-accent);
+  box-shadow: 0 0 0 2px var(--council-accent);
+  background: var(--council-accent-wash);
+}
+.council-stage .council-seat[data-selected='true'] {
+  background: var(--council-stage-raised);
+  box-shadow: 0 0 0 2px var(--council-stage-accent);
+}
+
+/* State badges: color + shape marker + text label, never color alone. */
+.council-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--council-text-meta);
+  font-weight: 600;
+}
+.council-state::before { content: ''; width: 0.625rem; height: 0.625rem; flex: none; }
+.council-state-support { color: var(--council-state-support); }
+.council-state-support::before { background: var(--council-state-support); border-radius: 50%; }
+.council-state-conditional { color: var(--council-state-uncertain); }
+.council-state-conditional::before {
+  background: var(--council-state-uncertain);
+  border-radius: 50%;
+  clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%); /* half-filled circle */
+  box-shadow: inset 0 0 0 2px var(--council-state-uncertain);
+}
+.council-state-oppose { color: var(--council-state-oppose); }
+.council-state-oppose::before { background: var(--council-state-oppose); } /* square */
+.council-state-abstain { color: var(--council-ink-soft); }
+.council-state-abstain::before {
+  border: 2px solid var(--council-ink-soft);
+  border-radius: 50%;
+  background: transparent; /* open circle */
+}
+
+/* ── Room geometry (Section 22.4) ────────────────────────────────────────── */
+/* At container widths of roughly 920px and up, seats sit on an ellipse
+   (radii 340px by 215px inside a 920x640 frame) placed by CWE-032 using
+   per-seat slot custom properties keyed to the stable seat ID. Below that
+   width the room becomes a designed grid; the table is never scaled down
+   to illegibility. */
+.council-room { container-type: inline-size; }
+.council-room-frame { position: relative; width: 100%; max-width: var(--council-room-frame-w); aspect-ratio: 920 / 640; margin-inline: auto; }
+.council-room-seat { position: absolute; width: var(--council-seat-w); min-height: var(--council-seat-h); transform: translate(-50%, -50%); }
+.council-seat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+@container (max-width: 919px) {
+  .council-room-frame { aspect-ratio: auto; }
+  .council-room-seat { position: static; width: auto; transform: none; }
+}
+@media (max-width: 640px) {
+  .council-seat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Phone reading view (Section 22.5) ───────────────────────────────────── */
+.council-reading-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.council-reading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-height: var(--council-touch-target);
+  padding: 0.75rem 1rem;
+  background: var(--council-surface);
+  border: 1px solid var(--council-line);
+  border-radius: var(--council-radius-control);
+}
+.council-reading-row .council-seat-name { font-size: var(--council-text-name); }
+
+/* ── Motion: committed events only; reduced motion keeps information ────── */
+@media (prefers-reduced-motion: reduce) {
+  .council-theme *, .council-theme *::before, .council-theme *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
