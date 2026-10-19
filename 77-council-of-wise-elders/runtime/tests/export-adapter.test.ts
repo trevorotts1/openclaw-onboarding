@@ -16,6 +16,8 @@
  *   quotes verification_status 'candidate' (zero verified quotations).
  */
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +37,21 @@ const EXPORTS_DIR =
   process.env.CWE011_EXPORTS_DIR ??
   fileURLToPath(new URL('../../../../../cwe-011/exports', import.meta.url));
 
+// The real CWE-011 export package is external data: it is not in this
+// repository and must never be fabricated. When it is genuinely absent
+// these real-data tests SKIP naming the exact missing path, instead of
+// erroring or passing on absent data. Set CWE011_EXPORTS_DIR to point
+// at a real package to run them.
+const EXPORT_MANIFEST = join(EXPORTS_DIR, 'export-manifest.json');
+
+function skipWithoutRealExport(t: { skip(reason?: string): void }): boolean {
+  if (existsSync(EXPORT_MANIFEST)) return false;
+  t.skip(
+    `real CWE-011 export unavailable: ${EXPORTS_DIR} (first required file ${EXPORT_MANIFEST}; set CWE011_EXPORTS_DIR to a real export package; it is external data and is never fabricated)`,
+  );
+  return true;
+}
+
 const SCOPE = {
   tenant_id: 'tenant-a',
   company_id: 'company-a',
@@ -53,7 +70,8 @@ function ownerPrincipal(): TrustedPrincipal {
   };
 }
 
-test('adapter: real CWE-011 exports adapt under the strict schema, unloosened', () => {
+test('adapter: real CWE-011 exports adapt under the strict schema, unloosened', (t) => {
+  if (skipWithoutRealExport(t)) return;
   const adapted = adaptSkill22Export(EXPORTS_DIR);
   const { report } = adapted;
   assert.equal(report.records_seen, 26);
@@ -91,7 +109,8 @@ test('adapter: real CWE-011 exports adapt under the strict schema, unloosened', 
   }
 });
 
-test('adapter: retrieved_at basis is honest (one verbatim, the rest the export date)', () => {
+test('adapter: retrieved_at basis is honest (one verbatim, the rest the export date)', (t) => {
+  if (skipWithoutRealExport(t)) return;
   const adapted = adaptSkill22Export(EXPORTS_DIR);
   const nms = adapted.records.find(
     (r) => r.source_id === 'src-russell-brunson-network-marketing-secrets',
@@ -113,7 +132,8 @@ test('adapter: retrieved_at basis is honest (one verbatim, the rest the export d
   for (const record of adapted.records) assert.equal(record.quality, 'unverified');
 });
 
-test('adapter: candidate quote text is withheld; concepts load as paraphrase', () => {
+test('adapter: candidate quote text is withheld; concepts load as paraphrase', (t) => {
+  if (skipWithoutRealExport(t)) return;
   const adapted = adaptSkill22Export(EXPORTS_DIR);
   assert.equal(adapted.report.units_seen, 1317);
   assert.equal(adapted.report.units_adapted, 1317);
@@ -136,7 +156,8 @@ test('adapter: candidate quote text is withheld; concepts load as paraphrase', (
   assert.equal(catalog.listCandidateHeaders().length, 240);
 });
 
-test('adapter: adapted material loads through the accepted CWE-022 context path', () => {
+test('adapter: adapted material loads through the accepted CWE-022 context path', (t) => {
+  if (skipWithoutRealExport(t)) return;
   const adapted = adaptSkill22Export(EXPORTS_DIR);
   const catalog = createAdaptedMaterialCatalog(adapted, { scope: SCOPE });
   // Pick a shared_pack concept unit (Brunson Traffic Secrets) and an

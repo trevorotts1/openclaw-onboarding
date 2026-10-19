@@ -5,6 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { DEFAULT_COUNCIL_SETTINGS } from '../src/contracts/index.js';
@@ -20,11 +21,28 @@ import { grantHost, tempDataDir } from './helpers.js';
 // ---------------------------------------------------------------- paths
 
 test('paths: XDG default, env override, explicit override, skill-tree rejection', () => {
+  // src/cli/paths.ts documents and implements a per-platform default:
+  // macOS ~/Library/Application Support/BlackCEO/WiseElders, Windows
+  // %LOCALAPPDATA%\BlackCEO\WiseElders, XDG elsewhere. Assert the
+  // contract for the platform actually running; XDG is the default only
+  // on the non-darwin/non-win32 branch, and on darwin the same env must
+  // NOT steer the default away from the documented macOS location.
   const env = { XDG_DATA_HOME: '/tmp/xdg-test' } as NodeJS.ProcessEnv;
-  assert.equal(
-    defaultDataDir(env),
-    join('/tmp/xdg-test', 'blackceo', 'wise-elders'),
-  );
+  const xdgDefault = join('/tmp/xdg-test', 'blackceo', 'wise-elders');
+  if (platform() === 'darwin') {
+    assert.equal(
+      defaultDataDir(env),
+      join(homedir(), 'Library', 'Application Support', 'BlackCEO', 'WiseElders'),
+    );
+    assert.notEqual(defaultDataDir(env), xdgDefault);
+  } else if (platform() === 'win32') {
+    assert.equal(
+      defaultDataDir({ LOCALAPPDATA: '/tmp/local-appdata' } as NodeJS.ProcessEnv),
+      join('/tmp/local-appdata', 'BlackCEO', 'WiseElders'),
+    );
+  } else {
+    assert.equal(defaultDataDir(env), xdgDefault);
+  }
   assert.equal(
     resolveDataDir({ env: { BLACKCEO_COUNCIL_DATA_DIR: '/tmp/from-env' } as NodeJS.ProcessEnv }),
     '/tmp/from-env',
