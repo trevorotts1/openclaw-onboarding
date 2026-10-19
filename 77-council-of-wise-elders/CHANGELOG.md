@@ -1,5 +1,12 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.17: a real landing page at GET / (WER-023 authenticated origin)
+
+- The authenticated public origin returned a JSON 404 at `/` - observed live as `{"code":"SERVICE_ROUTE_NOT_FOUND","detail":"No service route for GET /."}` - because the merged WER-021 slice ships no UI and never had a root route.
+- `runtime/src/service/front-door.ts` now serves `GET /` as a self-contained HTML status and session page: service identity and readiness from the data the service already holds, the routes that actually work as links, and an explicit `UI_NOT_BUNDLED` notice naming WER-021 full packaging as the path to the real chamber. The catch-all 404 is unchanged for every other unknown path, and all existing routes keep byte-identical behaviour (identity 200, session 200, events 501).
+- The page loads **no external asset**: no `<script>`, no `<link>`, no CDN, no font, no network fetch - it renders offline. Independent QC injected a hostile readiness detail carrying an absolute operator home path and an external `evil.example.com` URL; both were redacted in the served HTML (path to `~`, URL to `[external-url-redacted]`), proving operator paths cannot reach the page.
+- New suite `landing.test.ts` 4/4; `service.test.ts` still 13/13; typecheck 0.
+
 ## v1.0.16: WER-028 final cohort receipt, and a manifest-drift fix
 
 - Records the WER-028 final integration receipt under `evidence/wer028/`: cohort presence proven by tree/blob comparison rather than ancestry (squash and merge-commit merges make ancestry the wrong test), all four version markers asserted equal, required-check state captured per repository with SKIPPED separated from pass, branch-protection state captured for all three repositories including the 999-setup 404, MALCOM's books/personas/portraits proven byte-identical against the pre-session baseline, Skill 76 proven untouched, cross-repository seam schema hashes compared on both sides, and a deferred list naming every item that remains unproven on this hardware.
