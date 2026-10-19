@@ -1032,7 +1032,7 @@ def workflows_get(ctx, workflow_id):
     try:
         from cli_anything.gohighlevel.utils.workflow_builder import workflow_route
         v4, _route_reason = _get_public_v4(ctx)
-        route = workflow_route(v4, "definition.read")
+        route = workflow_route(v4, "definition.read", tenant=_loc(ctx))
         if route.public:
             doc_result, payload = v4.read_definition_document(
                 tenant=_v4_tenant(_loc(ctx)), workflow_id=workflow_id
@@ -1071,7 +1071,7 @@ def workflows_export(ctx, workflow_id, out_file):
     try:
         from cli_anything.gohighlevel.utils.workflow_builder import workflow_route
         v4, _route_reason = _get_public_v4(ctx)
-        route = workflow_route(v4, "definition.read")
+        route = workflow_route(v4, "definition.read", tenant=_loc(ctx))
         if route.public:
             doc_result, payload = v4.read_definition_document(
                 tenant=_v4_tenant(_loc(ctx)), workflow_id=workflow_id
@@ -1133,7 +1133,8 @@ def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
             workflow_route,
         )
         v4, _route_reason = _get_public_v4(ctx)
-        route = workflow_route(v4, "update")
+        location_id = _loc(ctx)
+        route = workflow_route(v4, "update", tenant=location_id)
         if route.public:
             from cli_anything.gohighlevel.public.result import Status
             from cli_anything.gohighlevel.public.workflow_v4_intent import (
@@ -1142,7 +1143,6 @@ def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
             )
             from cli_anything.gohighlevel.utils.snapshot_manager import capture_payload
 
-            location_id = _loc(ctx)
             tenant = _v4_tenant(location_id)
             with open(json_file) as f:
                 desired_raw = json.load(f)
