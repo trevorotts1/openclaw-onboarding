@@ -499,8 +499,8 @@ function consultSession(r: Rig, sessionId: string) {
     route_snapshot: snap,
     route_policy_sha256: canonicalHash({ route_snapshot: snap }),
     ceilings: {
-      max_provider_requests: 50,
-      max_output_repairs: 9,
+      max_provider_requests: 62,
+      max_output_repairs: 27,
       max_transport_retries: 8,
       max_input_tokens: null,
       max_output_tokens: null,

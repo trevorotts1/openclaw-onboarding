@@ -59,6 +59,16 @@ export function requiredCardFields(purpose: CardContractPurpose): string[] {
 }
 
 /**
+ * Two validator rules the contract never told the model (real-run
+ * acceptance, session sess-3d85c907): evidence reference fields accept
+ * only evidence manifest IDs, and lenses_used belongs to td-jakes only.
+ */
+export const EVIDENCE_ID_RULE =
+  'Evidence reference arrays (evidence_ids, option_scores[].evidence_ids, framework_applications[].case_evidence_ids) may hold only evidence_id values copied from the evidence manifest in the supplied input. The brief\'s own fact, assumption, unknown, and constraint IDs (for example fact-1, asm-1, unk-1, con-1) are NOT evidence IDs and fail validation if used there. When the evidence manifest is empty or no entry fits, those arrays must be [].';
+export const LENSES_RULE =
+  'lenses_used: omit this field entirely unless seat_id is "td-jakes". Any other seat that includes lenses_used fails validation.';
+
+/**
  * The contract lines for one operation.
  *
  * `challengeIds` is the per-call challenge issuance: for advisor
@@ -77,8 +87,10 @@ export function cardContractLines(
     `Include every required field, with a value for each: ${fields.join(', ')}. A card missing any of these fields fails validation; a partial card is not accepted.`,
     'Copy schema_version, session_id, brief_revision, seat_id, input_manifest_sha256, and pack_version exactly from the supplied input; do not invent or alter them.',
     'Every ID string in the card must be an opaque ID: letters, digits, and the characters . _ : - only, with no spaces. Copy IDs exactly from the supplied input where one is supplied. Never put a person\'s name, a framework name, a title, or a sentence in an ID field.',
+    EVIDENCE_ID_RULE,
   ];
   if (purpose === 'advisor') {
+    lines.push(LENSES_RULE);
     if (challengeIds !== null && challengeIds.length > 0) {
       lines.push(
         `challenges_answered must contain exactly the challenge IDs issued to you for this call, copied verbatim, and nothing else: ${challengeIds.join(', ')}.`,

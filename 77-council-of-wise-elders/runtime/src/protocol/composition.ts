@@ -452,6 +452,38 @@ export class DeliberationService {
       }
     };
 
+    // A round that ended with its work unfinished must not feed the next
+    // round's plan: a job still queued/leased/running (the grant refused
+    // it, or the loop gave up) would later commit a card and change the
+    // draft input hash, so every Round 3 dispatch would refuse as input
+    // drift. In full mode a seat with no card can only end BLOCKED, so
+    // continuing would spend paid Round 2/3 calls on a session that cannot
+    // produce a verdict. Stop in place (BLOCKED is resumable).
+    const stalledRound = (round: 1 | 2): RunSessionResult | null => {
+      const prefix = `round-${round}:`;
+      const unfinished = this.runner
+        .listSessionJobs(envelope, sessionId)
+        .some(
+          (job) =>
+            job.phase_job_key.startsWith(prefix) &&
+            (job.state === 'queued' || job.state === 'leased' || job.state === 'running'),
+        );
+      const cards = this.repositories.listCards(envelope, sessionId);
+      const missing = session.spec.seat_ids.filter(
+        (seatId) => !cards.some((c) => c.card_kind === 'advisor' && c.round === round && c.seat_id === seatId),
+      );
+      if (!unfinished && !(session.spec.mode === 'full' && missing.length > 0)) return null;
+      transition('BLOCKED');
+      return {
+        status: 'incomplete',
+        detail: unfinished
+          ? `round ${round} ended with unfinished work (a job is still queued or running); the session is blocked and resumable instead of planning round ${round + 1} from a partial record`
+          : `full mode keeps all nine seats: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`,
+        missing: missing.map((seat_id) => ({ round, seat_id })),
+        budget: snapshotBudget(),
+      };
+    };
+
     if (session.spec.mode === 'consult') {
       transition('CONSULTING');
       const plan = this.consult.planConsult(current(), options.route_snapshot);
@@ -512,6 +544,9 @@ export class DeliberationService {
       ),
     );
 
+    const stalledAfterRound1 = stalledRound(1);
+    if (stalledAfterRound1) return stalledAfterRound1;
+
     // Round 2: challenge.
     transition('CRUX_REVIEW');
     transition('ROUND_2');
@@ -536,6 +571,9 @@ export class DeliberationService {
         ]),
       ),
     );
+
+    const stalledAfterRound2 = stalledRound(2);
+    if (stalledAfterRound2) return stalledAfterRound2;
 
     // Draft + Round 3 (ratification), with the quick-mode skip rule.
     transition('DRAFT_RESOLUTION');

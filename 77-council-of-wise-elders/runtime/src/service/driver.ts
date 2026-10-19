@@ -145,10 +145,16 @@ export interface CouncilDriverDeps {
 const APPROVAL_BASIS = 'convening_is_approval (Trevor decision 2026-10-19)';
 const DEFAULT_PACK_VERSION = 'live-elder-knowledge/v1';
 
-/** Protocol runaway guard only; money and token ceilings stay unset. */
+/**
+ * Protocol runaway guard only; money and token ceilings stay unset.
+ * Sized for the nine-seat, three-round council: 27 operations, each
+ * allowed its one repair (27), plus the 8 transport retries = 62, so a
+ * real model that needs a repair on most operations cannot starve the
+ * session (real run: 9 repairs were spent by mid Round 2).
+ */
 const CONVENING_CEILINGS: RunCeilings = {
-  max_provider_requests: 50,
-  max_output_repairs: 9,
+  max_provider_requests: 62,
+  max_output_repairs: 27,
   max_transport_retries: 8,
   max_input_tokens: null,
   max_output_tokens: null,

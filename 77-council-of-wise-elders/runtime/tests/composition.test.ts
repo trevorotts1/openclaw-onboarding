@@ -725,3 +725,66 @@ test('composition: follow-up runs as a linked consult under its own purpose gran
   const parentVerdict = h.service.repositories.getVerdict(h.owner, session.spec.session_id);
   assert.equal(parentVerdict?.content_sha256, run.status === 'completed' ? run.verdict.content_sha256 : '');
 });
+
+// ----------------------------------------- W30 acceptance fix round 1
+
+test('composition: a refused Round 2 job stops the session; Round 3 is never planned from a partial record', async () => {
+  // Real run: the grant refused one Round 2 repair, the round loop stopped,
+  // the refused job stayed queued, Round 3 was planned from 8 cards, and the
+  // leftover job later committed a card that changed the draft hash, so all
+  // nine Round 3 dispatches refused as input drift.
+  const h = harness('round2-refused', { recordedFindings: RECORDED_PASS });
+  const session = storedSession('full', SEAT_IDS, 'sess-w30-r2-refused');
+  h.service.repositories.createSession(h.owner, session);
+  const grantId = h.grantFor(session.spec.session_id, {
+    ...CEILINGS,
+    max_provider_requests: 12, // 9 Round 1 + 3 Round 2, then refusal
+  });
+  const result = await h.service.runSession(h.worker, session.spec.session_id, {
+    grant_id: grantId,
+    route_snapshot: h.snapshot,
+  });
+  assert.equal(result.status, 'incomplete');
+  const stored = h.service.repositories.getSession(h.worker, session.spec.session_id);
+  assert.equal(stored?.state.state, 'BLOCKED');
+  const jobs = h.service.runner.listSessionJobs(h.worker, session.spec.session_id);
+  assert.equal(
+    jobs.filter((j) => j.phase_job_key.startsWith('round-3:')).length,
+    0,
+    'no Round 3 job is enqueued while Round 2 work is unfinished',
+  );
+  assert.ok(jobs.some((j) => j.phase_job_key.startsWith('round-2:') && j.state === 'queued'));
+});
+
+test('composition: full mode stops after a Round 1 seat produced no card, spending no Round 2 call', async () => {
+  const transport = new RecordingTransport(async (request) => {
+    if (request.round === 1 && request.seat_id === 'oprah-winfrey') {
+      return {
+        text: '{"not":"a card"}',
+        provider_request_id: `bad-${request.seat_id}`,
+        reported_model_id: 'scripted-transport',
+        usage: { input_tokens: null, output_tokens: null },
+      };
+    }
+    return new DeterministicFixtureTransport().generate(request);
+  });
+  const h = harness('round1-missing', { transport, recordedFindings: RECORDED_PASS });
+  const session = storedSession('full', SEAT_IDS, 'sess-w30-r1-missing');
+  h.service.repositories.createSession(h.owner, session);
+  const result = await h.service.runSession(h.worker, session.spec.session_id, {
+    grant_id: h.grantFor(session.spec.session_id),
+    route_snapshot: h.snapshot,
+  });
+  assert.equal(result.status, 'incomplete');
+  if (result.status !== 'incomplete') return;
+  assert.deepEqual(result.missing, [{ round: 1, seat_id: 'oprah-winfrey' }]);
+  assert.equal(
+    transport.requests.filter((r) => r.round === 2 || r.round === 3).length,
+    0,
+    'no paid Round 2 or Round 3 call after Round 1 is already short a seat',
+  );
+  assert.equal(
+    h.service.repositories.getSession(h.worker, session.spec.session_id)?.state.state,
+    'BLOCKED',
+  );
+});
