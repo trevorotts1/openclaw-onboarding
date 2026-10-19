@@ -176,6 +176,19 @@ export interface RunAuthorizationComposition {
  * the host's session store by mirrorSession before preview, so the
  * journal, budget, and grant records share one durable home.
  */
+/**
+ * Compose the standalone run authorization stack over the installation's
+ * ONE canonical council database (`<dataDir>/council.db`).
+ *
+ * Store-seam law (W25-U001 Lane E): the CLI host store, this authorization
+ * composition and the service composition engine all open the same file.
+ * A separate `council-authorization.db` made `mirrorSession` write canonical
+ * `council_sessions`/`council_events` rows into a database the service never
+ * reads, so a session created by `blackceo-council create` was invisible to
+ * `GET /council/<id>` and its event stream. The local foundation tables
+ * (`sessions`, `events`, ...) and the canonical `council_*` tables share the
+ * file without collision because their names are disjoint.
+ */
 export function createStandaloneRunAuthorization(options: {
   dataDir: string;
   clock?: { nowUtc(): string };
@@ -184,7 +197,7 @@ export function createStandaloneRunAuthorization(options: {
   const clock = options.clock ?? { nowUtc: () => new Date().toISOString() };
   const ids = options.ids ?? { newId: () => randomUUID() };
   const installation = resolveStandaloneInstallation(options.dataDir);
-  const db = CouncilDatabase.open(join(options.dataDir, 'council-authorization.db'), {
+  const db = CouncilDatabase.open(join(options.dataDir, 'council.db'), {
     busyTimeoutMs: 500,
     busyMaxAttempts: 3,
     busyBaseDelayMs: 10,
