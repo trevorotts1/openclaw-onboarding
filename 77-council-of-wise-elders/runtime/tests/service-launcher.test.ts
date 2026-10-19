@@ -40,6 +40,7 @@ test('launcher loads the composition module inside the try block', () => {
 
 test('launcher documents and uses only the tsx run path', () => {
   const raw = readFileSync(new URL('../scripts/service-launch.mjs', import.meta.url), 'utf8');
-  assert.match(raw, /node --import tsx runtime\/scripts\/service-launch\.mjs/);
+  assert.match(raw, /runtime\/node_modules\/\.bin\/tsx runtime\/scripts\/service-launch\.mjs/);
+  assert.doesNotMatch(raw, /node --import tsx runtime\/scripts/);
   assert.doesNotMatch(source, /dist\//);
 });

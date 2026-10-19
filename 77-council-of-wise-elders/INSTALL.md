@@ -246,9 +246,10 @@ root `startCouncilService(...)`, never a bare `CouncilFrontDoor`: a bare
 door leaves the event, admission and session adapters unbound (events
 answer 501). It binds loopback only, defaults to port 8787, takes the data
 directory from `COUNCIL_SERVICE_DATA_DIR` or the platform default, logs one
-JSON object per stdout line, and stops on SIGTERM or SIGINT. Run it only as
-`node --import tsx runtime/scripts/service-launch.mjs`; plain `node` cannot
-load the extensionless imports in the tsc `dist/` output.
+JSON object per stdout line, and stops on SIGTERM or SIGINT. From the skill root, run it only as
+`runtime/node_modules/.bin/tsx runtime/scripts/service-launch.mjs` (tsx is
+installed inside `runtime/` only, so a bare `node --import tsx` from the skill
+root cannot find it); plain `node` cannot load the extensionless imports in the tsc `dist/` output.
 
 ## Restarts
 

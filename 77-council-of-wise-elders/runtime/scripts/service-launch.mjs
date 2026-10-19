@@ -9,8 +9,8 @@
 // installed Skill 22 export) and routeBudget (needs a verified token->byte
 // conversion) remain honestly null, so readiness reports them not-ready.
 //
-// Run:   node --import tsx runtime/scripts/service-launch.mjs
-//        (tsx is required: the launcher imports src/, and the tsc output in
+// Run (from the skill root): runtime/node_modules/.bin/tsx runtime/scripts/service-launch.mjs
+//        (tsx is installed inside runtime/ only; it is required: the launcher imports src/, and the tsc output in
 //        dist/ uses extensionless imports that plain node cannot load)
 // Env (all optional):
 //   COUNCIL_SERVICE_DATA_DIR   durable data dir (default: platform default)
