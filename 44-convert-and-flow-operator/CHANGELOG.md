@@ -1,6 +1,6 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
-## [2.1.17] - 2026-10-19 - fix(ghl): bind the V4 route/enable probe to the call tenant
+## [2.1.18] - 2026-10-19 - fix(ghl): bind the V4 route/enable probe to the call tenant
 
 GHL-168. The independent W18 QC found the V4 route/enable probe was
 tenant-unbound: a fresh adapter denied every surface admitted by a capability
@@ -20,7 +20,8 @@ depended on call order.
   authorized live v3 call.
 - Tests: `tests/test_workflow_v4_tenant_binding.py` (fresh-adapter enablement,
   foreign-tenant denial, order independence, unbound deny, F6 record).
-- skill-version v2.1.16 -> v2.1.17.
+- skill-version v2.1.16 -> v2.1.18. Main already carried v2.1.17 from GHL-166
+  (PR #2315), so this change re-bumps above it to satisfy G3.
 
 ## [2.1.6] - 2026-10-14 - docs(skill44): Consumers section states verified handoffs only
 
