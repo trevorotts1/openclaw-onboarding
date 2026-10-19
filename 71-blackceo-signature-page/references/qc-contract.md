@@ -89,7 +89,11 @@ image, in the client's brand colors):
 - W3: every image slot is a deliberate placeholder (a
   black-and-white photographic plate or a crossed box), labeled with
   its aspect ratio AND its art direction (what the image must show).
-- W4: the sheet is rendered in the client's brand colors.
+- W4: the sheet is rendered in the client's brand colors. The palette it
+  is measured against is the one `scripts/brand_colors.py` resolved for
+  this client (never a default or another client's palette), and the same
+  palette is written into the wireframe prompt; with no resolved client
+  palette W4 has nothing to measure against and the stage does not start.
 - W5: a header strip states the page width and the content width.
 - W6: behavior notes are printed per section (for example "CTA
   before portrait on mobile", "No CTA", "Typography-only response").
@@ -182,7 +186,10 @@ fails review outright.
   cream buttons with an arrow glyph and gray microcopy, six cream icon
   cards, rust or peach number badges, hairline dividers and gold left or top
   rules.
-- Palette, measured: cream #f7f2e9, ivory #fffdf9, deep green #28513f,
+- Palette, measured (the canon example set's own colors, a structure and
+  tonal-weight benchmark only; a client's mockup is judged against that
+  client's resolved brand palette per W4/M2, never against these hexes):
+  cream #f7f2e9, ivory #fffdf9, deep green #28513f,
   blush #f0dedb, rose #93504f, brick #bc5248; gold (#c49a45, #e2c98f) is an
   accent only; neither tier uses the wireframe red family.
 - Type: a two-tone statement-turn headline (the one exception is an upright

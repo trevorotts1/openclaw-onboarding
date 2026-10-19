@@ -97,6 +97,8 @@ For booking: request the existing booking link or supported booking embed. For a
 
 ### C. Record the outcome and only the needed image questions
 
+Resolve the client's brand colors here, before any wireframe, mockup or image. First look for colors the run already holds (the supplied brand guide or logo, the run's brand file `private/brand.json`, then `intake.json` -> `brand_file`): `python3 scripts/brand_colors.py check <run_dir>` reports which source answered. Only when none are known, ask in plain language: "What are your brand colors? Please send your main color, your second color, any accent colors, your background color or colors, and your text color. A color code like #1A2B3C is best; a brand guide or logo file works too." Record the answer with `scripts/brand_colors.py record <run_dir> --primary #HEX --text #HEX --background #HEX [--secondary #HEX] [--accent #HEX]` (a color name is not a color: ask for the code or read it from their file). Never guess, never use a default palette, never use another client's palette: a brand file whose `brand_id` does not equal this run's `brand_owner` is not this client's (a name that merely contains the other does not match). The gate, the prompts and every QC check read that one resolved file. No image stage starts until `brand_colors.py check` exits 0; `stage_gate.py` and `stage_executor.py` refuse otherwise, and the resolved colors are written into every wireframe and mockup prompt.
+
 Record the image-engine answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
 Record the funnel handoff in the same intake record: the Convert and Flow form's name and object id (`--handoff-form-name` / `--handoff-form-id`), the pop behavior, and the step order (signature page, then product selection page, then order form page). When no form identity exists yet, record the handoff as the explicit missing input with its reason (`--handoff-missing-reason`) instead. A placeholder destination (a `#join`-style link) is never a handoff: it is either the recorded missing input or a defect the page build must repair.
@@ -153,7 +155,7 @@ Record on-page form versus button-triggered popup versus separate page. Specify 
 
 ### A. Build the annotated spec sheet around the exact public copy
 
-The desktop wireframe is a designed, annotated build spec rendered as images, in the client's brand colors from the brand file. It is not an HTML render and is never a screenshot of a web page. Build it section by section around the full copy at its mapped type scale: show real headlines, paragraphs, titles, descriptions, benefits, complete steps and the letter. Preserve live-copy priority above the fold.
+The desktop wireframe is a designed, annotated build spec rendered as images, in the client's brand colors from the brand file (resolved by `scripts/brand_colors.py`, Stage 1 C; the same colors are written into every wireframe prompt). It is not an HTML render and is never a screenshot of a web page. Build it section by section around the full copy at its mapped type scale: show real headlines, paragraphs, titles, descriptions, benefits, complete steps and the letter. Preserve live-copy priority above the fold.
 
 Every section is one spec image (a section slice), and each slice carries, printed on the sheet:
 

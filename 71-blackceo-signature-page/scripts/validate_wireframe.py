@@ -227,25 +227,13 @@ def slot_labels(section):
 
 
 def resolve_brand_path(run_dir, explicit):
-    """Brand file for the W4 measurement: --brand, else the run's pinned
-    private/brand.json, else intake.json's brand_file, else the skill's
-    own brand file (the stage gate's own resolution order)."""
+    """Brand file for the W4 measurement: --brand, else the file scripts/brand_colors.py
+    resolved for the run (the same palette the prompts and the stage gate carry)."""
     if explicit:
         return Path(explicit)
-    pinned = run_dir / "private" / "brand.json"
-    if pinned.exists():
-        return pinned
-    intake_path = run_dir / "intake.json"
-    if intake_path.exists():
-        try:
-            intake = load_json(intake_path)
-            bf = intake.get("brand_file") if isinstance(intake, dict) else None
-            if bf:
-                p = Path(bf)
-                return p if p.is_absolute() else (run_dir / bf)
-        except Exception:
-            pass
-    return Path(__file__).resolve().parents[1] / "assets" / "brand" / "blackceo-brand.json"
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import brand_colors  # SPF019: one resolution, no silent BlackCEO palette for a client's sheet
+    return brand_colors.brand_path(run_dir)
 
 
 def hex_to_rgb(value):

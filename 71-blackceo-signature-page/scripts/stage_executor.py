@@ -67,6 +67,7 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import reference_use  # noqa: E402  SPF022: reference images are structure only
+import brand_colors  # noqa: E402  SPF019: client brand colors gate
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -453,6 +454,15 @@ class ExecutorError(Exception):
     """A named failure; the message is printed and the run stops."""
 
 
+def require_brand_colors(run_dir: Path) -> str:
+    """Fail closed: no image stage starts without the client's resolved brand colors.
+    Returns the color block every wireframe and mockup prompt carries."""
+    res = brand_colors.resolve(run_dir)
+    if not res.ok:
+        raise ExecutorError(brand_colors.failure(run_dir))
+    return res.block()
+
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -564,12 +574,14 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     neg_block = negative_block()
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
-    blocks = [b for b in (copy_block, ref_block, frame_block, neg_block) if b]
+    color_block = str(request.get("_brand_block") or "")
+    blocks = [b for b in (copy_block, color_block, ref_block, frame_block, neg_block) if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
-        "contract_chars": len(frame_block) + len(neg_block) + len(ref_block),
+        "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
+                           + len(color_block)),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
@@ -956,8 +968,10 @@ def main(argv=None) -> int:
             print(f"FAIL: unknown stage {stage!r}; expected one of {list(STAGES)}")
             return 2
     try:
+        brand_block = require_brand_colors(run_dir)
         if args.preflight:
             request = load_request(run_dir, args.request)
+            request["_brand_block"] = brand_block
             refused = 0
             refs = list(dict.fromkeys(str(r) for r in request.get("references") or []))
             known = [r for r in refs if reference_use.lookup(r)]
@@ -980,6 +994,9 @@ def main(argv=None) -> int:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
                             continue
+                        for line in prompt.splitlines():
+                            if line.startswith("BRAND COLORS"):
+                                print(f"PREFLIGHT_COLORS {stage} {name} {line}")
                         print(f"PREFLIGHT {stage} {name} ratio={ratio} "
                               f"chars={sizes['chars']} copy={sizes['copy_chars']} "
                               f"contract={sizes['contract_chars']} "
@@ -997,6 +1014,7 @@ def main(argv=None) -> int:
                   f"mode={entry['mode']}")
             return 0
         request = load_request(run_dir, args.request)
+        request["_brand_block"] = brand_block
         for stage in stages:
             record = run_stage(stage, run_dir, request, provider, args.request)
             files = len(record["images"])

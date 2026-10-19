@@ -574,6 +574,7 @@ class WireframeValidatorTest(unittest.TestCase):
     def setUp(self):
         self.td = Path(tempfile.mkdtemp(prefix="wireframe-"))
         self.run = self.td / "run"
+        write(self.run / "intake.json", json.dumps({"brand_owner": "blackceo"}))  # SPF019
         from PIL import Image
         self.Image = Image
         write(self.run / "copy" / "copy-manifest.json", json.dumps(

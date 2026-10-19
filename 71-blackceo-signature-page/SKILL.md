@@ -77,7 +77,7 @@ Do not load all three style libraries at once. Load only the selected family/sty
 
 ### Design / wireframes / mockups
 
-Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens.
+Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
 
 ## Governing production order
 
@@ -108,7 +108,7 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 
 ### Design / wireframes / mockups
 
-- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
+- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
 - The `desktop-wireframe` and `mobile-tablet` stages must produce `section-plan.json` as a required output.
 - The `visual-mockup` stage produces the page visual bible and an internal layout proof only. The layout proof is never presented to the client as the mockup and is never client-judged.
 - Image generation (prompts, generation/QC, image map) completes before the mockup stage opens. `final-mockups` is the single client-judged mockup: produced per section with real photography in every slot, with supplied assets placed as files and never generated.

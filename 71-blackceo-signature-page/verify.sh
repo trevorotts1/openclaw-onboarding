@@ -68,7 +68,7 @@ for f in \
   scripts/stage_gate.py scripts/render_page.py scripts/compare_sheet.py \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
   scripts/calibrate_grade.py scripts/check_authority_pins.py \
-  scripts/install_local.py scripts/write_intake.py \
+  scripts/install_local.py scripts/write_intake.py scripts/brand_colors.py \
   tests/run_tests.py tests/test_scripts.py \
   assets/brand/blackceo-brand.json assets/brand/brand.schema.json \
   assets/brand/client-brand.template.json assets/brand/signature-grade-block.txt \

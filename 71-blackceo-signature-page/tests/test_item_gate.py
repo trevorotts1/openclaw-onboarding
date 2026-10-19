@@ -135,11 +135,13 @@ class ItemGateTest(unittest.TestCase):
         # applied at assembly) refuses layout-stage closes without the
         # owner-supplied reference files or a recorded waiver; this
         # fixture predates the gate, so it records the waiver.
-        write(self.run / "intake.json", json.dumps({"layout_waivers": [
+        write(self.run / "intake.json", json.dumps({"brand_owner": "Fixture", "layout_waivers": [
             {"gate": "layout-references",
              "reason": "test fixture: owner-supplied Item 13 reference files absent"}]}))
         write(self.run / "private" / "brand.json",
-              json.dumps({"fonts": {"display": "Test", "body": "Test", "accent": "Test"}}))
+              json.dumps({"fonts": {"display": "Test", "body": "Test", "accent": "Test"},
+                          "brand_id": "fixture",
+                          "palette": {"gold": "#C0392B", "navy": "#1B2A41", "cream": "#FAF3E0"}}))
         proc = run_gate(self.contract, "init", str(self.run))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         # Close mobile-tablet directly (close does not consult upstream deps).
@@ -357,11 +359,13 @@ class SuppliedAssetGateTest(unittest.TestCase):
         td.mkdir(parents=True, exist_ok=True)
         contract = fixture_contract(td)
         run = td / "run"
-        write(run / "intake.json", json.dumps({"layout_waivers": [
+        write(run / "intake.json", json.dumps({"brand_owner": "Fixture", "layout_waivers": [
             {"gate": "layout-references",
              "reason": "test fixture: owner-supplied Item 13 reference files absent"}]}))
         write(run / "private" / "brand.json",
-              json.dumps({"fonts": {"display": "Test", "body": "Test", "accent": "Test"}}))
+              json.dumps({"fonts": {"display": "Test", "body": "Test", "accent": "Test"},
+                          "brand_id": "fixture",
+                          "palette": {"gold": "#C0392B", "navy": "#1B2A41", "cream": "#FAF3E0"}}))
         proc = run_gate(contract, "init", str(run))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         # Update Plan Item 11: the stage delivers the spec image set

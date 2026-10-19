@@ -89,25 +89,29 @@ def save_state(run_dir, state):
 
 
 def brand_path_for(run_dir):
-    """Resolve the run's brand file. intake.json names it; fallback is the skill's own BlackCEO file."""
-    intake = run_dir / "intake.json"
-    if intake.exists():
-        try:
-            data = json.loads(intake.read_text(encoding="utf-8"))
-            bf = data.get("brand_file")
-            if bf:
-                p = Path(bf)
-                return p if p.is_absolute() else (run_dir / bf)
-        except Exception:
-            pass
-    return SKILL_ROOT / "assets" / "brand" / "blackceo-brand.json"
+    """The run's brand file: the one scripts/brand_colors.py resolved (see brand_colors.brand_path)."""
+    return _brand_colors().brand_path(run_dir)
 
 
-# Test hook: a run folder may pin its own brand file for gate builtins.
+def _brand_colors():
+    """scripts/brand_colors.py (SPF019): the brand-color resolution every image stage passes."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import brand_colors
+    finally:
+        sys.path.pop(0)
+    return brand_colors
+
+
+def brand_color_failures(run_dir, stage):
+    """Refusal lines when `stage` makes images and the client's brand colors are unresolved."""
+    line = _brand_colors().failure(run_dir, stage)
+    return [f"stage {stage}: {line}"] if line else []
+
+
 def brand_path_for_checked(run_dir):
-    pinned = run_dir / "private" / "brand.json"
-    if pinned.exists():
-        return pinned
+    """Gate builtins read the same resolved file as every other check (a run's private/brand.json
+    pin counts only when brand_colors.resolve accepts it)."""
     return brand_path_for(run_dir)
 
 
@@ -574,6 +578,9 @@ def run_builtin(name, args, run_dir):
     """Built-in gate validators."""
     if name == "gate:must_supply":
         brand = brand_path_for_checked(run_dir)
+        if brand.name == _brand_colors().UNRESOLVED:
+            # no owned, colored brand file: say so (and ask) instead of "file unreadable"
+            return "gate:must_supply: " + _brand_colors().failure(run_dir)
         problems = brand_must_supply(brand)
         if problems:
             return "gate:must_supply: " + "; ".join(problems)
@@ -2218,7 +2225,7 @@ def cmd_check_item(run_dir, stage, item_id):
     if entry.get("status") == "blocked":
         return fail_exit([f"item {item_id} of stage {stage} is blocked: "
                           f"{entry.get('blocked_reason', 'no reason recorded')}"])
-    failures = item_dependency_failures(run_dir, stage, item_id)
+    failures = item_dependency_failures(run_dir, stage, item_id) + brand_color_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: item {item_id} of stage {stage} may start (its own "
@@ -2935,7 +2942,7 @@ def cmd_check(run_dir, stage):
         hygiene_failures = browser_hygiene_pass(run_dir, stage)
         if hygiene_failures:
             return fail_exit(hygiene_failures)
-    failures = check_requires(run_dir, stage)
+    failures = check_requires(run_dir, stage) + brand_color_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: stage {stage} may start (all dependencies closed with matching receipts and artifacts)")
@@ -2960,7 +2967,7 @@ def cmd_close(run_dir, stage):
             record_not_applicable(run_dir, stage, reason)
             print(f"NOT APPLICABLE: stage {stage} recorded in state.json ({reason})")
             return 0
-    failures = []
+    failures = brand_color_failures(run_dir, stage)
     # Item 33: the reaper pass runs before anything else is evaluated,
     # so a run whose runner died still gets its sessions accounted, and
     # the receipt it writes satisfies the stage's artifact contract.
