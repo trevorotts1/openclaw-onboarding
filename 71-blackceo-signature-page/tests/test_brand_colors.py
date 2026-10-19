@@ -15,8 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import brand_colors as bc  # noqa: E402
+import stage_gate  # noqa: E402
+import validate_install  # noqa: E402
+import validate_wireframe  # noqa: E402
 
 TEMPLATE = json.loads((ROOT / "assets/brand/client-brand.template.json").read_text())
+BLACKCEO = ROOT / "assets/brand/blackceo-brand.json"
+GAMMA = dict(TEMPLATE, brand_id="gamma-co",
+             palette={"gold": "#0A7E8C", "navy": "#102A43", "cream": "#FFF8E7"})
 ACME = dict(TEMPLATE, brand_id="acme-coaching",
             palette={"gold": "#C0392B", "navy": "#1B2A41", "cream": "#FAF3E0"})
 REQ = {"model": "stub", "sections": [
@@ -99,6 +105,65 @@ class BrandColorsTest(unittest.TestCase):
         self.assertTrue(res.ok)
         self.assertEqual(res.palette["gold"], "#112233")
         self.assertIn("secondary #445566", res.block())
+
+    # --- D1: the owner check is equality, never containment ---
+    def test_owner_must_equal_brand_id_not_contain_it(self):
+        # P1: "Acme" is a prefix of another client's "acme-coaching"
+        self.assertFalse(bc.resolve(run(self.tmp.name, "Acme", ACME)).ok)
+
+    def test_short_brand_id_does_not_match_a_longer_owner(self):
+        # P2: brand_id "co" is inside "Gamma Co"
+        d = Path(self.tmp.name) / "p2"
+        d.mkdir()
+        self.assertFalse(bc.resolve(run(d, "Gamma Co", dict(GAMMA, brand_id="co"))).ok)
+
+    def test_blackceo_fallback_needs_exact_owner(self):
+        # P6/P7: an owner that merely contains "blackceo" gets neither the file nor resolve
+        d = Path(self.tmp.name) / "p6"
+        d.mkdir()
+        run(d, "BlackCEO client Jane Doe", brand_file="assets/brand/blackceo-brand.json")
+        self.assertFalse(bc.resolve(d).ok)
+        self.assertEqual(bc.fallback_path(d).name, bc.UNRESOLVED)
+        own = Path(self.tmp.name) / "own"
+        own.mkdir()
+        self.assertEqual(bc.fallback_path(run(own, "BlackCEO")).name, BLACKCEO.name)
+
+    def test_record_stamps_the_owner_so_its_own_file_resolves(self):
+        d = run(self.tmp.name, "Beta Studio", dict(TEMPLATE, brand_id="somebody-else"), )
+        bc.record(d, "#112233", "#101010", ["#FFFFFF"])
+        self.assertTrue(bc.resolve(d).ok)
+
+    def test_must_supply_names_unresolved_colors_not_an_unreadable_file(self):
+        d = run(self.tmp.name, "Gamma Co", ACME)  # another client's file
+        msg = stage_gate.run_builtin("gate:must_supply", [], d)
+        self.assertIn("brand colors unresolved", msg)
+
+    # --- D2/D3: prompts, gate and every QC check read the one resolved palette ---
+    def _one_palette(self, d, want):
+        res = bc.resolve(d)
+        self.assertTrue(res.ok)
+        self.assertEqual(res.path.resolve(), want.resolve())
+        self.assertEqual(stage_gate.brand_path_for(d).resolve(), want.resolve())
+        self.assertEqual(stage_gate.brand_path_for_checked(d).resolve(), want.resolve())
+        self.assertEqual(validate_wireframe.resolve_brand_path(d, None).resolve(), want.resolve())
+        self.assertEqual(validate_install.brand_path_for(d).resolve(), want.resolve())
+        cmd, lines = stage_gate.resolve_brand_placeholder("x {brand}", d, "visual-mockup", None)
+        self.assertEqual(lines, [])
+        self.assertEqual(Path(cmd.split(" ", 1)[1].strip("'")).resolve(), want.resolve())
+
+    def test_foreign_pin_is_skipped_by_every_resolver(self):
+        # P3: pin is BlackCEO's file, intake points at Gamma's valid file
+        d = run(self.tmp.name, "Gamma Co", GAMMA)
+        (d / "private").mkdir()
+        (d / "private" / "brand.json").write_text(BLACKCEO.read_text())
+        self._one_palette(d, d / "brand" / "b.json")
+
+    def test_pin_wins_over_a_foreign_intake_file_everywhere(self):
+        # P4b: pin is Gamma's valid palette, intake.brand_file is BlackCEO's absolute path
+        d = run(self.tmp.name, "Gamma Co", brand_file=str(BLACKCEO))
+        (d / "private").mkdir()
+        (d / "private" / "brand.json").write_text(json.dumps(GAMMA))
+        self._one_palette(d, d / "private" / "brand.json")
 
 
 if __name__ == "__main__":

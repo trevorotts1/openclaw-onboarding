@@ -745,6 +745,8 @@ class StageGateTest(unittest.TestCase):
         env = {**os.environ, "STAGE_GATE_CONTRACT": str(ROOT / "references" / "stage-contract.json")}
         run = self.td / "intake-gate"
         write(run / "private" / "brand.json", json.dumps({"fonts": {"display": "T", "body": "T", "accent": "T"},
+              "brand_id": "blackceo",  # SPF019: the pin counts only when owned and colored
+              "palette": {"gold": "#C9A227", "navy": "#1A1A2E", "cream": "#F5F0E8"},
               "logo": {"files": "t.png", "masthead_files": "t.png"},
               # Update plan Item 10: this fixture's own write_intake
               # invocation refuses the old "t.png" value (a founder_photos

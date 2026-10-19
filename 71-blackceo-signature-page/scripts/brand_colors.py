@@ -10,7 +10,8 @@ Ordered resolution (first source that yields a usable, owned palette wins):
   2. intake.json -> brand_file         the brand file the intake recorded
 A source is usable only when (a) it is a readable JSON object, (b) every palette value is
 a #RRGGBB color (no CLIENT_MUST_SUPPLY / TREVOR_MUST_SUPPLY / name / blank), and (c) the
-file belongs to this run's client: the file's brand_id matches intake.json brand_owner.
+file belongs to this run's client: the file's brand_id equals intake.json brand_owner (names compared lowercase, letters and
+digits only; containing is not matching).
 The bundled BlackCEO file therefore resolves for BlackCEO's own pages and for nobody else.
 Nothing else is a source: the skill keeps no prior-run or shared brand store, and SOP
 section "Do not borrow one client's information" forbids carrying one over.
@@ -94,7 +95,7 @@ def _why_unusable(path, owner):
     b, o = _norm(brand.get("brand_id")), _norm(owner)
     if not o:
         return "intake.json has no brand_owner, so the palette cannot be tied to a client"
-    if not b or not (b in o or o in b):
+    if not b or b != o:
         return (f"palette belongs to brand_id {brand.get('brand_id')!r}, but this run is for "
                 f"{owner!r}; another client's palette is never used")
     return None
@@ -142,9 +143,17 @@ def fallback_path(run_dir):
     BlackCEO file for BlackCEO's own runs, else a path that never exists."""
     owner = (_json(Path(run_dir) / "intake.json") or {}).get("brand_owner")
     bundled = _json(BUNDLED) or {}
-    if _norm(owner) and _norm(bundled.get("brand_id")) in _norm(owner):
+    if _norm(owner) and _norm(bundled.get("brand_id")) == _norm(owner):
         return BUNDLED
     return Path(run_dir) / "private" / UNRESOLVED
+
+
+def brand_path(run_dir):
+    """The one brand file every prompt, gate and QC check reads: the file of the palette
+    `resolve` picked. Unresolved: BlackCEO's bundled file for BlackCEO's own run, else a path
+    that never exists. No caller keeps its own pin/intake lookup, so none can disagree."""
+    res = resolve(run_dir)
+    return res.path if res.ok else fallback_path(run_dir)
 
 
 def failure(run_dir, stage=None):
@@ -201,9 +210,8 @@ def record(run_dir, primary, text, backgrounds, secondary=None, accents=()):
         palette[f"background{i}"] = b
     brand["palette"], brand["palette_roles"] = palette, roles
     brand.pop("_palette_note", None)
-    if not in_run:
-        slug = re.sub(r"[^a-z0-9]+", "-", str(intake["brand_owner"]).lower()).strip("-")
-        brand["brand_id"] = slug or brand.get("brand_id")
+    slug = re.sub(r"[^a-z0-9]+", "-", str(intake["brand_owner"]).lower()).strip("-")
+    brand["brand_id"] = slug or brand.get("brand_id")
     brand["source"] = f"client answer recorded {date.today().isoformat()} (brand_colors.py record)"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(brand, indent=2) + "\n", encoding="utf-8")

@@ -68,14 +68,9 @@ def load_intake(run_dir):
 
 
 def brand_path_for(run_dir):
-    intake = load_intake(run_dir)
-    bf = intake.get("brand_file")
-    if bf:
-        p = Path(bf)
-        return p if p.is_absolute() else (run_dir / bf)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import brand_colors  # SPF019: no silent BlackCEO palette for a client's page
-    return brand_colors.fallback_path(run_dir)
+    import brand_colors  # SPF019: the resolved palette, never a silent BlackCEO one
+    return brand_colors.brand_path(run_dir)
 
 
 def placeholder_patterns():
