@@ -1,54 +1,52 @@
 #!/usr/bin/env bash
-# qc-assert-ghl-mcp-supervised.sh — v21.5.0
+# qc-assert-ghl-mcp-supervised.sh — v22.0.0
 #
-# STATIC QC INVARIANT: enforces that the GHL Community MCP (Tier 2, skill 36) is
-# configured for PROPER, REBOOT-SURVIVING, PORT-PINNED supervision on a FRESH
-# install — so the fleet incident (12/19 boxes down/unsupervised) can NEVER ship
-# again. This is the single-source-of-truth logic; scripts/qc-system-integrity.sh
-# CHECK X.12 delegates to it.
+# STATIC QC INVARIANT: the GHL Community MCP (Tier 2, skill 36) is RETIRED.
 #
-# v21.5.0 adds the five INSTALL-TIME invariants that the 2026-08-02/03 outage
-# proved were missing (CHECKS 3-8 below). Supervision alone was never enough:
-# every box was supervised the whole time it was deaf.
+# This file used to enforce that the community service was PROPERLY supervised
+# (launchd KeepAlive / pm2 + resurrect / systemd). That world is gone: the
+# operator decision is that the community MCP is retired, fresh installs omit it
+# entirely, and updated boxes must finish VERIFIED_OFF (or explicitly
+# MIGRATION_FAILED with real residual state). It must not be able to restart
+# itself.
 #
-# THE TWO ROOT CAUSES this gate forbids from ever shipping:
+# The old gate PASSED whenever its own inputs were absent, so DELETING the
+# scripts made it green. This rewrite never treats absence as "nothing to
+# enforce". It asserts the retirement state explicitly:
 #
-#   1. UNSUPERVISED BARE NOHUP.
-#      `nohup node dist/main.js &` does NOT survive session/exec teardown and is
-#      not restarted on crash. The shipped autostart scripts MUST start the
-#      server under a real supervisor:
-#        - Mac : launchd LaunchAgent (com.clawd.ghl-mcp) with KeepAlive + RunAtLoad
-#        - VPS : pm2 (ecosystem.config.js) + `pm2 save` + an @reboot resurrect
-#                hook, OR systemd. A detached `setsid` SUPERVISED relaunch LOOP is
-#                an allowed last-resort fallback; a BARE nohup that is NOT inside a
-#                relaunch loop is a HARD VIOLATION.
+#   REPO LAYOUT (install.sh + update-skills.sh at the repo root):
+#     1. install.sh must not invoke the community start/autostart path — fresh
+#        installs omit the service entirely.
+#     2. update-skills.sh must carry the ORDERED RETIREMENT TRANSACTION
+#        contract: inventory, stage, archive, disable-resurrection, stop,
+#        verify, receipt, and the two terminal states VERIFIED_OFF /
+#        MIGRATION_FAILED. A roll that deletes the old scripts but cannot retire
+#        a live box is a red build, not a green one.
+#     3. Any lifecycle script still shipped must carry the GHL_MCP_RETIRED
+#        refusal marker (an inert tombstone, never a start surface).
+#     4. No shipped script may start, restart, register, schedule or resurrect
+#        the community MCP (launchctl bootstrap/kickstart, pm2 start/restart/
+#        resurrect, systemctl enable/start, openclaw mcp set
+#        ghl-community-mcp, @reboot cron, setsid loop).
+#     5. The OFFICIAL ghl-mcp (Tier 1) registration must still exist — retirement
+#        removes Tier 2 only.
 #
-#   2. RANDOM PORT.
-#      The community MCP's main.js reads `PORT` BEFORE `MCP_SERVER_PORT`
-#      (src/main.ts:55). Without an EXPLICIT PORT, a stray inherited PORT binds a
-#      random port (49032/63703) instead of 8765. Every launch surface the
-#      autostart scripts write (launchd plist, pm2 env, systemd Environment, .env,
-#      supervisor loop) MUST pin BOTH PORT and MCP_SERVER_PORT.
-#
-# This is a STATIC check of the SHIPPED SCRIPTS (not a live process probe), so it
-# runs at install time and on every update — before the server is even started —
-# and fails the build if a regression reintroduces bare nohup or an unpinned PORT.
-#
-# Scripts inspected (first that exists wins per role):
-#   ghl-mcp-autostart.sh  — repo scripts/  | $HOME/.openclaw/skills/scripts/ | /data/.openclaw/skills/scripts/
-#   start-ghl-mcp-server.sh (VPS overlay)  — repo platform/vps/36-ghl-mcp-setup-scripts/ | installed tree
+#   BOX LAYOUT (no repo):
+#     The delivered script trees must contain NO community lifecycle script.
+#     That absence is the explicit assertion (every named tree is checked), not
+#     a silent skip.
 #
 # Exit codes:
-#   0  — supervision + PORT-pinning invariants hold (or the autostart scripts are
-#        genuinely absent — nothing to enforce, reported as INFO)
-#   1  — one or more invariants VIOLATED (FATAL — block the build/QC)
+#   0  retirement state holds
+#   1  retirement state VIOLATED (a resurrection surface still ships, the update
+#      transaction is missing, or the official Tier 1 registration is gone)
 #
 # Usage:
 #   bash qc-assert-ghl-mcp-supervised.sh
 #   bash qc-assert-ghl-mcp-supervised.sh --quiet
 #
 # Wired in:
-#   scripts/qc-system-integrity.sh  (CHECK X.12: GHL MCP supervision standard)
+#   scripts/qc-system-integrity.sh  (CHECK X.12)
 
 set -uo pipefail
 
@@ -62,552 +60,269 @@ _fail() { printf '[qc-ghl-mcp-supervised] FATAL INVARIANT VIOLATED — %s\n' "$*
 _info() { [ "$QUIET" = "0" ] && printf '[qc-ghl-mcp-supervised] INFO  %s\n' "$*"; }
 
 FAILURES=0
+_fail_counts() { FAILURES=$((FAILURES+1)); }
 
-# ── Resolve this script's dir so we can find sibling scripts in the repo ──────
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SELF_DIR/.." 2>/dev/null && pwd || echo "$SELF_DIR")"
+SELF_BASE="$(basename "${BASH_SOURCE[0]}")"
 
-find_first() {
-  # echo the first path that exists from the candidate list
-  local p
-  for p in "$@"; do
-    [ -f "$p" ] && { printf '%s' "$p"; return 0; }
-  done
-  return 1
+# Strip full-line and inline comments while preserving line numbers, so prose
+# documenting a retired launch surface never trips its own gate.
+_code_of() {
+  awk '{ sub(/#.*/, ""); printf "%d:%s\n", NR, $0 }' "$1" 2>/dev/null
 }
 
-AUTOSTART="$(find_first \
-  "$SELF_DIR/ghl-mcp-autostart.sh" \
-  "$HOME/.openclaw/skills/scripts/ghl-mcp-autostart.sh" \
-  "/data/.openclaw/skills/scripts/ghl-mcp-autostart.sh" || true)"
+# ── Resurrection surfaces that must not exist in shipped code ────────────────
+FORBIDDEN_PATTERNS=(
+  'launchctl[[:space:]]+(bootstrap|kickstart)[^|;]*com\.clawd\.ghl-mcp'
+  'pm2[[:space:]]+(start|restart|startOrReload)[^|;]*ghl-community-mcp'
+  'ghl-community-mcp[^|;]*pm2[[:space:]]+(start|restart|startOrReload)'
+  'pm2[[:space:]]+resurrect[^|;]*ghl'
+  'ghl[^|;]*pm2[[:space:]]+resurrect'
+  'systemctl[[:space:]]+(enable|start|restart)[^|;]*ghl-mcp'
+  'openclaw[[:space:]]+mcp[[:space:]]+set[^|;]*ghl-community-mcp'
+  'setsid[^|;]*ghl-community-mcp'
+  '@reboot[^|;]*ghl'
+)
+# A retirement tombstone/tool legitimately contains supervisor verbs (delete,
+# bootout, disable, stop) and historical dead branches. Its guarantee is the
+# refusal marker plus its own behavioural tests, so the generic start-verb scan
+# exempts it. Everything WITHOUT the marker is scanned normally.
+RETIRE_MARKER_RE='GHL_MCP_RETIRED|RETIRED_VERIFIED_OFF|START_REFUSED_RETIRED'
+FORBIDDEN_RE="$(printf '%s|' "${FORBIDDEN_PATTERNS[@]}")"
+FORBIDDEN_RE="${FORBIDDEN_RE%|}"
 
-# The VPS overlay script lives one dir up from scripts/ in the repo
-# (platform/vps/36-ghl-mcp-setup-scripts/), or under the installed skills tree.
-REPO_ROOT="$(cd "$SELF_DIR/.." 2>/dev/null && pwd || echo "$SELF_DIR")"
-VPS_START="$(find_first \
-  "$REPO_ROOT/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" \
-  "$HOME/.openclaw/skills/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" \
-  "/data/.openclaw/skills/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" \
-  "/data/.openclaw/onboarding/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" || true)"
+# True when a file carries a retirement refusal/verified marker.
+# NOTE: never `grep -q` a large producer under `pipefail` — grep -q exits at the
+# first match, the writer takes SIGPIPE, and pipefail turns a MATCH into 141.
+_has_retire_marker() {
+  # Intent declarations legitimately live in the file header, so scan RAW text.
+  # No pipeline here, so pipefail/SIGPIPE cannot turn a match into a failure.
+  grep -qE "$RETIRE_MARKER_RE" "$1" 2>/dev/null
+}
 
-# ── Helper: detect a BARE nohup (a `nohup node …` NOT inside a relaunch loop) ──
-# A supervised relaunch loop writes a `.sh` wrapper containing `while true; do …
-# node … ; sleep …; done` and then `setsid nohup bash "$SUP"` — that nohup wraps
-# the LOOP (a supervisor), which is allowed. A bare `nohup node dist/main.js` with
-# no surrounding loop is the forbidden pattern. We flag `nohup` directly launching
-# `node` and NOT a bash wrapper.
-#
-# IMPORTANT: only inspect EXECUTABLE lines. Comment lines (and the leading-`#`
-# portion of inline comments) are documentation/prose — a script that DOCUMENTS
-# "we removed the bare nohup node" must not trip its own gate. We strip everything
-# from the first `#` onward before matching.
-bare_nohup_offenders() {
-  local f="$1"
-  grep -nE 'nohup' "$f" 2>/dev/null | while IFS= read -r line; do
-    local lineno code
-    lineno="${line%%:*}"
-    code="${line#*:}"
-    code="${code%%#*}"                              # drop inline + full-line comments
-    case "$code" in
-      *nohup*node*)
-        case "$code" in *"nohup bash"*|*"nohup setsid"*) : ;; *) printf '%s:%s\n' "$lineno" "$code" ;; esac ;;
+# Scan a newline-delimited file list from stdin (paths may contain spaces).
+# Prints every offending file:line and returns 1 on a hit.
+_scan_forbidden() {
+  local f hits rc=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in "$SELF_BASE") continue ;; esac
+    if _has_retire_marker "$f"; then
+      continue   # retirement tombstone/tool — allowed to contain stop/delete verbs
+    fi
+    hits="$(_code_of "$f" | grep -E "$FORBIDDEN_RE" 2>/dev/null || true)"
+    if [ -n "$hits" ]; then
+      rc=1
+      printf '%s\n' "$hits" | while IFS= read -r line; do
+        printf '[qc-ghl-mcp-supervised] FATAL INVARIANT VIOLATED — %s:%s is a live community-MCP resurrection surface (RETIRED)\n' "$f" "$line" >&2
+      done
+    fi
+  done
+  return "$rc"
+}
+
+# A tree carrying EITHER installer is a repo layout: a half-deleted repo must
+# not fall through to the box branch and look green.
+REPO_LAYOUT=0
+if [ -f "$REPO_ROOT/install.sh" ] || [ -f "$REPO_ROOT/update-skills.sh" ]; then
+  REPO_LAYOUT=1
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPO LAYOUT — enforce the retirement contract.
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "$REPO_LAYOUT" = "1" ]; then
+  _info "repo layout at $REPO_ROOT — enforcing the community-MCP retirement contract"
+
+  # CHECK 1: fresh installs must OMIT the community MCP entirely.
+  if _code_of "$REPO_ROOT/install.sh" | grep -q 'ghl-mcp-autostart'; then
+    _fail "install.sh still invokes the community MCP start path (ghl-mcp-autostart) — fresh installs must omit Tier 2 entirely (RETIRED)."
+    _fail_counts
+  else
+    _pass "install.sh omits the community MCP start path (fresh installs retired)"
+  fi
+
+  # CHECK 2: the update path must carry the ordered retirement transaction.
+  RETIRE_FILES="$REPO_ROOT/update-skills.sh"
+  for f in "$REPO_ROOT/scripts/ghl-mcp-autostart.sh" \
+           "$REPO_ROOT"/scripts/ghl-mcp-retire*.sh "$REPO_ROOT"/scripts/ghl-mcp-retirement*.sh; do
+    [ -f "$f" ] && RETIRE_FILES="$RETIRE_FILES
+$f"
+  done
+  RETIRE_BODY=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    RETIRE_BODY="$RETIRE_BODY$(_code_of "$f")
+"
+  done <<EOF
+$RETIRE_FILES
+EOF
+
+  RETIRE_BODY_LC="$(printf '%s' "$RETIRE_BODY" | tr '[:upper:]' '[:lower:]')"
+  case "$RETIRE_BODY" in
+    *--retire*|*ghl-mcp-retire*|*retire_ghl_mcp*|*retire_community_mcp*|*GHL_MCP_RETIRED*|*START_REFUSED_RETIRED*)
+      _pass "the update path declares a community-MCP retirement entry point" ;;
+    *)
+      _fail "update-skills.sh (and any scripts/ghl-mcp-retire*.sh) declares NO retirement entry point — deleting the old scripts is not a migration; live boxes would never be retired."
+      _fail_counts ;;
+  esac
+
+  for _token in VERIFIED_OFF MIGRATION_FAILED; do
+    case "$RETIRE_BODY" in
+      *"$_token"*) _pass "the update path can reach the terminal state $_token" ;;
+      *)
+        _fail "the update path never writes the terminal state $_token — the receipt cannot distinguish a verified retirement from a failed migration (RETIRED end state requires both)."
+        _fail_counts ;;
     esac
   done
-}
-has_bare_nohup_node() {
-  [ -n "$(bare_nohup_offenders "$1")" ]
-}
 
-# ── Helper: assert a file pins BOTH PORT and MCP_SERVER_PORT ──────────────────
-pins_both_ports() {
-  local f="$1"
-  grep -qE '(^|[^A-Z_])PORT[=:]' "$f" 2>/dev/null \
-    && grep -qE 'MCP_SERVER_PORT[=:]' "$f" 2>/dev/null
-}
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CHECK 1: ghl-mcp-autostart.sh — supervisor present, no bare nohup, ports pinned
-# ──────────────────────────────────────────────────────────────────────────────
-if [ -z "${AUTOSTART:-}" ]; then
-  _info "ghl-mcp-autostart.sh not found in any known location — nothing to enforce (older bundle or pre-skill-36 box)."
-else
-  _info "inspecting $AUTOSTART"
-
-  # 1a. Mac path MUST install a launchd KeepAlive plist (com.clawd.ghl-mcp).
-  if grep -q 'com.clawd.ghl-mcp' "$AUTOSTART" \
-     && grep -q 'KeepAlive' "$AUTOSTART" \
-     && grep -q 'RunAtLoad' "$AUTOSTART"; then
-    _pass "Mac supervisor: launchd plist com.clawd.ghl-mcp with KeepAlive + RunAtLoad"
-  else
-    _fail "ghl-mcp-autostart.sh Mac path missing launchd KeepAlive/RunAtLoad supervision (com.clawd.ghl-mcp)"
-    FAILURES=$((FAILURES+1))
-  fi
-
-  # 1b. VPS path MUST use pm2 (preferred) and persist it (pm2 save).
-  if grep -qE '\bpm2\b' "$AUTOSTART" && grep -q 'pm2 save' "$AUTOSTART"; then
-    _pass "VPS supervisor: pm2 + 'pm2 save' (fleet-standard, persisted)"
-  else
-    _fail "ghl-mcp-autostart.sh VPS path does not run under pm2 with 'pm2 save' (fleet-standard supervision)"
-    FAILURES=$((FAILURES+1))
-  fi
-
-  # 1c. VPS path MUST wire a reboot-resurrect hook (pm2 resurrect via @reboot/startup).
-  if grep -q 'pm2 resurrect' "$AUTOSTART" || grep -q 'pm2 startup' "$AUTOSTART"; then
-    _pass "VPS reboot-survival: 'pm2 resurrect'/'pm2 startup' hook present"
-  else
-    _fail "ghl-mcp-autostart.sh VPS path has no reboot-resurrect hook (pm2 resurrect / pm2 startup)"
-    FAILURES=$((FAILURES+1))
-  fi
-
-  # 1d. NO bare nohup launching node directly (the fleet-killer pattern).
-  if has_bare_nohup_node "$AUTOSTART"; then
-    _fail "ghl-mcp-autostart.sh contains a BARE 'nohup node …' (unsupervised, dies on teardown). Use pm2/systemd/launchd or a setsid relaunch LOOP wrapped in 'nohup bash'."
-    bare_nohup_offenders "$AUTOSTART" | sed 's/^/    offender: /' >&2 || true
-    FAILURES=$((FAILURES+1))
-  else
-    _pass "ghl-mcp-autostart.sh has no bare 'nohup node …' (no unsupervised launch)"
-  fi
-
-  # 1e. PORT is pinned explicitly (both PORT and MCP_SERVER_PORT appear).
-  if pins_both_ports "$AUTOSTART"; then
-    _pass "ghl-mcp-autostart.sh pins BOTH PORT and MCP_SERVER_PORT (no random-port bind)"
-  else
-    _fail "ghl-mcp-autostart.sh does not pin BOTH PORT and MCP_SERVER_PORT — main.js reads PORT first and will bind a random port."
-    FAILURES=$((FAILURES+1))
-  fi
-fi
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CHECK 2: VPS overlay start-ghl-mcp-server.sh — pm2 + ports + no bare nohup
-# (only enforced when the overlay script ships in this bundle / installed tree)
-# ──────────────────────────────────────────────────────────────────────────────
-if [ -z "${VPS_START:-}" ]; then
-  _info "start-ghl-mcp-server.sh (VPS overlay) not found — skipping VPS-overlay supervision check."
-else
-  _info "inspecting $VPS_START"
-
-  if grep -qE '\bpm2\b' "$VPS_START" && grep -q 'pm2 save' "$VPS_START"; then
-    _pass "VPS overlay runs under pm2 + 'pm2 save'"
-  else
-    _fail "start-ghl-mcp-server.sh (VPS overlay) does not run under pm2 with 'pm2 save'"
-    FAILURES=$((FAILURES+1))
-  fi
-
-  if grep -q 'pm2 resurrect' "$VPS_START" || grep -q 'pm2 startup' "$VPS_START"; then
-    _pass "VPS overlay wires a reboot-resurrect hook"
-  else
-    _fail "start-ghl-mcp-server.sh (VPS overlay) has no reboot-resurrect hook (pm2 resurrect / pm2 startup)"
-    FAILURES=$((FAILURES+1))
-  fi
-
-  if has_bare_nohup_node "$VPS_START"; then
-    _fail "start-ghl-mcp-server.sh (VPS overlay) contains a BARE 'nohup node …' (unsupervised). Use pm2 or a setsid relaunch LOOP."
-    bare_nohup_offenders "$VPS_START" | sed 's/^/    offender: /' >&2 || true
-    FAILURES=$((FAILURES+1))
-  else
-    _pass "VPS overlay has no bare 'nohup node …'"
-  fi
-
-  if pins_both_ports "$VPS_START"; then
-    _pass "VPS overlay pins BOTH PORT and MCP_SERVER_PORT"
-  else
-    _fail "start-ghl-mcp-server.sh (VPS overlay) does not pin BOTH PORT and MCP_SERVER_PORT"
-    FAILURES=$((FAILURES+1))
-  fi
-fi
-
-# ──────────────────────────────────────────────────────────────────────────────
-# v21.5.0 INSTALL-TIME INVARIANTS (CHECKS 3-8)
-#
-# The 2026-08-02/03 outage was NOT a supervision failure: every box stayed
-# supervised, listening and "healthy" for two days while answering nothing.
-# These checks forbid the five installer diseases that produced it.
-# ──────────────────────────────────────────────────────────────────────────────
-
-# Executable lines only (strip full-line and inline comments), so a script that
-# DOCUMENTS a forbidden pattern in prose does not trip its own gate.
-#
-# NOTE: these deliberately capture into a variable and match with a HERESTRING
-# instead of piping `sed | grep -q`. Under this script's `set -o pipefail`, a
-# `grep -q` that matches early closes the pipe, `sed` dies of SIGPIPE (141), and
-# pipefail returns that failure — so a pattern that IS present in a large file
-# reads as ABSENT. That false-negative would silently disable every check below.
-code_lines() { sed 's/#.*$//' "$1" 2>/dev/null; }
-code_has()   { local _out; _out="$(code_lines "$1")"; grep -qE "$2" <<< "$_out"; }
-code_has_f() { local _out; _out="$(code_lines "$1")"; grep -qF "$2" <<< "$_out"; }
-
-# v21.6.0/R1: on a box, SELF_DIR is $OC_CONFIG/scripts so $REPO_ROOT is
-# $OC_CONFIG — the first candidate therefore resolves to $OC_CONFIG/config/,
-# which is exactly where both installers now deliver config/. Before that fix,
-# NONE of the three candidates existed box-side and this gate emitted
-# "config/ghl-mcp-pin.env is missing" as a FATAL, which qc-system-integrity.sh
-# CHECK X.13 turns into a hard fail. Proven: box layout rc=1, repo layout rc=0.
-# The explicit $HOME/… and /data/… entries below make that independent of how
-# the script was invoked.
-#
-# ⚠️ KEEP IN SYNC with the resolver lists in ghl-mcp-autostart.sh,
-# ghl-mcp-probe.sh, ghl-mcp-assert-runtime.sh and the VPS overlay.
-# scripts/qc-assert-pin-delivery-paths.sh fails CI if they drift.
-PIN_FILE="$(find_first \
-  "$REPO_ROOT/config/ghl-mcp-pin.env" \
-  "$HOME/.openclaw/config/ghl-mcp-pin.env" \
-  "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
-  "/data/.openclaw/config/ghl-mcp-pin.env" \
-  "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" || true)"
-
-SCRIPTS_TO_CHECK=""
-[ -n "${AUTOSTART:-}" ] && SCRIPTS_TO_CHECK="$AUTOSTART"
-[ -n "${VPS_START:-}" ] && SCRIPTS_TO_CHECK="$SCRIPTS_TO_CHECK $VPS_START"
-
-# ── CHECK 3: SUPPLY-CHAIN PIN (D-pin) ─────────────────────────────────────────
-# The executed autostart used to `git pull --ff-only` / clone `--depth 1` and run
-# whatever `main` pointed at. Upstream force-pushes rewritten history, so a
-# floating checkout is not reproducible and is not reviewable.
-if [ -z "$SCRIPTS_TO_CHECK" ]; then
-  _info "no autostart scripts present — skipping pin/profile/build invariants."
-else
-  if [ -z "${PIN_FILE:-}" ]; then
-    _fail "config/ghl-mcp-pin.env is missing — there is no single source of truth for the vetted community-MCP commit."
-    FAILURES=$((FAILURES+1))
-  elif grep -qE '^GHL_MCP_VETTED_COMMIT="[0-9a-f]{40}"' "$PIN_FILE"; then
-    _pass "pin config declares a FULL 40-char vetted commit ($(basename "$PIN_FILE"))"
-  else
-    _fail "config/ghl-mcp-pin.env does not declare GHL_MCP_VETTED_COMMIT as a full 40-char SHA (a short SHA or branch name is not a pin)."
-    FAILURES=$((FAILURES+1))
-  fi
-
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" "GHL_MCP_VETTED_COMMIT"; then
-      _pass "$b pins the checkout to GHL_MCP_VETTED_COMMIT"
-    else
-      _fail "$b does not pin the community-MCP checkout to GHL_MCP_VETTED_COMMIT (floating HEAD = supply-chain roulette)."
-      FAILURES=$((FAILURES+1))
-    fi
-    if code_has "$f" 'git .*pull'; then
-      _fail "$b runs 'git pull' on the third-party MCP — that is a floating checkout; check out the pinned commit instead."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b never 'git pull's the third-party MCP"
-    fi
-    if code_has "$f" 'git clone[^|]*--depth'; then
-      _fail "$b clones with --depth (a shallow clone frequently cannot resolve the pinned SHA)."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b does not shallow-clone (pinned SHA stays resolvable)"
-    fi
+  for _token in inventory stage archive disable stop verify receipt; do
+    case "$RETIRE_BODY_LC" in
+      *"$_token"*) _pass "the ordered retirement transaction carries the '$_token' stage" ;;
+      *)
+        _fail "the ordered retirement transaction is missing the '$_token' stage — required sequence: inventory, stage, archive, disable resurrection, stop, verify, receipt."
+        _fail_counts ;;
+    esac
   done
 
-  # ── CHECK 4: TOOL PROFILE PINNED IN EVERY LAUNCH SURFACE (D2) ──────────────
-  # Upstream default GHL_TOOL_PROFILE=full serves the whole 858-tool catalogue.
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" "GHL_TOOL_PROFILE"; then
-      _pass "$b sets GHL_TOOL_PROFILE explicitly (never the 858-tool default)"
-    else
-      _fail "$b does not set GHL_TOOL_PROFILE — the server will serve the FULL 858-tool surface."
-      FAILURES=$((FAILURES+1))
-    fi
-  done
-  if [ -n "${AUTOSTART:-}" ]; then
-    if code_has_f "$AUTOSTART" "<key>GHL_TOOL_PROFILE</key>" && code_has_f "$AUTOSTART" "GHL_TOOL_PROFILE:"; then
-      _pass "autostart pins the tool profile in BOTH the launchd plist and the pm2 ecosystem"
-    else
-      _fail "ghl-mcp-autostart.sh must set GHL_TOOL_PROFILE in EVERY launch surface (launchd plist AND pm2 ecosystem AND systemd AND the server .env)."
-      FAILURES=$((FAILURES+1))
-    fi
-  fi
-
-  # ── CHECK 5: CRASH-ONLY RESTART SEMANTICS (D3) ─────────────────────────────
-  # main.js exits 1 on a bad PIT at boot. An unconditional restart policy turns a
-  # rotated token into a 10s relaunch loop that burns the box.
-  if [ -n "${AUTOSTART:-}" ]; then
-    if code_has_f "$AUTOSTART" "<key>KeepAlive</key><true/>"; then
-      _fail "ghl-mcp-autostart.sh writes an UNCONDITIONAL launchd KeepAlive=true — use the crash-only dict (SuccessfulExit=false / Crashed=true)."
-      FAILURES=$((FAILURES+1))
-    elif code_has_f "$AUTOSTART" "<key>SuccessfulExit</key><false/>"; then
-      _pass "Mac restart policy is CRASH-ONLY (KeepAlive dict, SuccessfulExit=false)"
-    else
-      _fail "ghl-mcp-autostart.sh launchd plist has no crash-only KeepAlive dict (SuccessfulExit=false)."
-      FAILURES=$((FAILURES+1))
-    fi
-  fi
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" "stop_exit_codes"; then
-      _pass "$b pm2 config sets stop_exit_codes (a clean exit is not restarted)"
-    else
-      _fail "$b pm2 config does not set stop_exit_codes: [0] — a bad-token clean exit would relaunch forever."
-      FAILURES=$((FAILURES+1))
-    fi
-    if code_has_f "$f" "Restart=always"; then
-      _fail "$b systemd unit uses Restart=always — use Restart=on-failure (crash-only)."
-      FAILURES=$((FAILURES+1))
-    fi
-  done
-
-  # ── CHECK 6: BUILD HYGIENE (D1 + D4) ───────────────────────────────────────
-  # Upstream's build rm -rf's dist BEFORE compiling and walks every .ts under
-  # src/ (including orphaned node_modules), so a failed build leaves a broken
-  # partial dist. Build a `git archive` of the pinned commit in a temp dir and
-  # swap dist/ only after verifying the artifact.
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" "git -C"  && code_has_f "$f" "archive"; then
-      _pass "$b builds from a 'git archive' of the pinned commit (immune to working-tree junk)"
-    else
-      _fail "$b does not build from a 'git archive' of the pinned commit — a dirty working tree can break the build."
-      FAILURES=$((FAILURES+1))
-    fi
-    if code_has "$f" 'rm -rf [^;]*/dist("|'"'"'|[[:space:]]|$)'; then
-      _fail "$b deletes dist/ outright — never rm -rf dist before a SUCCESSFUL build (that is how a failed build leaves a box with no server at all)."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b never rm -rf's dist/ before a successful build"
-    fi
-    if code_has_f "$f" "connect(transport)"; then
-      _pass "$b asserts the built artifact contains the MCP transport wiring (stale-dist deafness guard)"
-    else
-      _fail "$b does not verify the built dist/main.js contains 'connect(transport)' — a stale compiled dist would ship again."
-      FAILURES=$((FAILURES+1))
-    fi
-  done
-
-  # ── CHECK 7: LIVENESS PROBE EXISTS AND ASSERTS A RESPONSE (D5) ─────────────
-  PROBE="$(find_first \
-    "$SELF_DIR/ghl-mcp-probe.sh" \
-    "$HOME/.openclaw/skills/scripts/ghl-mcp-probe.sh" \
-    "/data/.openclaw/skills/scripts/ghl-mcp-probe.sh" || true)"
-  if [ -z "${PROBE:-}" ]; then
-    _fail "scripts/ghl-mcp-probe.sh is missing — nothing asserts that the MCP ANSWERS (KeepAlive cannot detect alive-but-deaf)."
-    FAILURES=$((FAILURES+1))
-  else
-    if grep -qF '"method":"initialize"' "$PROBE" && grep -qF 'serverInfo' "$PROBE"; then
-      _pass "ghl-mcp-probe.sh POSTs a JSON-RPC initialize and requires a serverInfo response"
-    else
-      _fail "ghl-mcp-probe.sh does not assert a JSON-RPC response (a GET /health is served even by a deaf server)."
-      FAILURES=$((FAILURES+1))
-    fi
-    if [ -n "${AUTOSTART:-}" ]; then
-      if code_has_f "$AUTOSTART" "ghl-mcp-probe.sh"; then
-        _pass "autostart wires the liveness probe (post-install + periodic)"
+  # CHECK 3: any lifecycle script still shipped must be an inert tombstone.
+  LIFECYCLE_RELS="
+scripts/ghl-mcp-autostart.sh
+scripts/ghl-mcp-probe.sh
+scripts/ghl-mcp-assert-runtime.sh
+platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
+"
+  for rel in $LIFECYCLE_RELS; do
+    f="$REPO_ROOT/$rel"
+    if [ -f "$f" ]; then
+      if _has_retire_marker "$f"; then
+        _pass "$rel is an inert retirement tombstone/tool (carries a refusal/verified marker)"
       else
-        _fail "ghl-mcp-autostart.sh does not wire ghl-mcp-probe.sh — the deaf-server state would go undetected again."
-        FAILURES=$((FAILURES+1))
+        _fail "$rel still ships without a retirement refusal marker ($RETIRE_MARKER_RE) — a retired lifecycle script that can still start or heal the service is a resurrection surface."
+        _fail_counts
       fi
+    else
+      _pass "$rel is retired (absent from the shipped tree)"
     fi
+  done
+
+  # CHECK 4: no shipped script may start/register/schedule/resurrect Tier 2.
+  SCAN_FILES=""
+  for f in "$REPO_ROOT/install.sh" "$REPO_ROOT/update-skills.sh" "$REPO_ROOT/force-update.sh"; do
+    [ -f "$f" ] && SCAN_FILES="$SCAN_FILES
+$f"
+  done
+  if [ -d "$REPO_ROOT/scripts" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      case "$(basename "$f")" in "$SELF_BASE") continue ;; esac
+      SCAN_FILES="$SCAN_FILES
+$f"
+    done <<EOF
+$(find "$REPO_ROOT/scripts" -type f -name '*.sh' 2>/dev/null)
+EOF
   fi
-
-  # ── CHECK 9: LOG ROTATION (fleet gap, 2026-08-03) ──────────────────────────
-  # Nothing in the fleet ever rotated this server's logs: 5.4 MB of
-  # ghl-mcp/stderr.log on the operator box and 2.2 MB on a second fleet box,
-  # both growing since May. Rotation MUST be copytruncate-style: the supervisor
-  # holds an open
-  # fd, so renaming the file leaves the server writing to an orphaned inode.
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" "GHL_MCP_LOG_MAX_BYTES"; then
-      _pass "$b caps + rotates the MCP logs (GHL_MCP_LOG_MAX_BYTES)"
-    else
-      _fail "$b does not rotate the MCP logs — ghl-mcp stderr.log grows without bound (5.4 MB observed fleet-side)."
-      FAILURES=$((FAILURES+1))
-    fi
-  done
-  if [ -n "${AUTOSTART:-}" ]; then
-    if code_has_f "$AUTOSTART" "<key>GHL_MCP_LOG_DIR</key>"; then
-      _pass "autostart passes the log dir into the launchd service definition"
-    else
-      _fail "ghl-mcp-autostart.sh does not pass GHL_MCP_LOG_DIR into the launchd plist — the launcher cannot rotate what it cannot find."
-      FAILURES=$((FAILURES+1))
-    fi
+  if [ -d "$REPO_ROOT/platform" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      SCAN_FILES="$SCAN_FILES
+$f"
+    done <<EOF
+$(find "$REPO_ROOT/platform" -type f \( -name '*.sh' -o -name '*.plist' -o -name '*.service' \) 2>/dev/null)
+EOF
   fi
-
-  # ── CHECK 10: LOOPBACK BIND (D6 — P0 SECURITY) ─────────────────────────────
-  # The community MCP holds a client's GHL Private Integration Token and serves
-  # GET /tools to anyone, unauthenticated. Upstream binds 0.0.0.0 from a
-  # hardcoded literal in BOTH entry points (src/main.ts:209,
-  # src/http-server.ts:176) — there is no HOST/MCP_SERVER_HOST variable, so a
-  # launch-surface env var ALONE is not a fix. A fleet survey found 19 Mac client
-  # boxes LAN-exposed in exactly this state.
-  #
-  # The enforceable invariant is therefore about the MECHANISM, not a string:
-  # each script must generate the bind guard AND the launcher must preload it,
-  # AND no launch surface may declare a routable bind host.
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" ".ghl-mcp-bind-guard.cjs" && code_has_f "$f" "net.Server.prototype.listen"; then
-      _pass "$b generates the loopback bind guard (upstream hardcodes 0.0.0.0 in both entry points)"
-    else
-      _fail "$b does not generate the .ghl-mcp-bind-guard.cjs loopback guard — the server would bind ALL INTERFACES, exposing an unauthenticated CRM endpoint to the LAN."
-      FAILURES=$((FAILURES+1))
-    fi
-    if code_has_f "$f" "GHL_MCP_BIND_HOST"; then
-      _pass "$b declares GHL_MCP_BIND_HOST in its launch surfaces"
-    else
-      _fail "$b never sets GHL_MCP_BIND_HOST — the bind guard has no configured loopback address."
-      FAILURES=$((FAILURES+1))
-    fi
-    # The launcher must actually LOAD the guard, or generating it is theatre.
-    if code_has_f "$f" 'NODE_OPTIONS="--require'; then
-      _pass "$b preloads the bind guard into node via NODE_OPTIONS --require"
-    else
-      _fail "$b generates a bind guard but never preloads it (NODE_OPTIONS=--require) — it would have no effect."
-      FAILURES=$((FAILURES+1))
-    fi
-    # A routable bind host anywhere in an executable line is the regression.
-    if code_has "$f" 'GHL_MCP_BIND_HOST=(\"|'"'"')?(0\.0\.0\.0|::)' ; then
-      _fail "$b sets GHL_MCP_BIND_HOST to a ROUTABLE address — the whole point is a loopback bind."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b never declares a routable GHL_MCP_BIND_HOST"
-    fi
-    if code_has_f "$f" "GHL_MCP_ALLOW_PUBLIC_BIND=1"; then
-      _fail "$b sets GHL_MCP_ALLOW_PUBLIC_BIND=1 — that escape hatch is for a deliberate per-box operator decision, never for a shipped launch surface."
-      FAILURES=$((FAILURES+1))
-    fi
-  done
-
-  # ── CHECK 11: NPM SUPPLY-CHAIN HARDENING (R5) ──────────────────────────────
-  # `npm ci … || npm install …` silently discards lockfile pinning at exactly the
-  # moment it matters (package.json and the lockfile disagreeing), which voids the
-  # vetting verdict's "dependency graph unchanged" claim. And without
-  # --ignore-scripts every transitive preinstall/install/postinstall hook runs as
-  # the box user with the GHL PIT in its environment, on every client machine —
-  # the delivery mechanism for essentially every major npm supply-chain incident.
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has "$f" 'npm ci[^|]*\|\|[[:space:]]*npm install'; then
-      _fail "$b falls back to 'npm install' when 'npm ci' fails — that silently discards the lockfile and re-resolves from the registry. A lockfile mismatch must be a BUILD FAILURE."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b has no 'npm ci || npm install' lockfile-defeating fallback"
-    fi
-    if code_has "$f" 'npm (ci|install)' && ! code_has "$f" 'npm (ci|install)[^|&;]*--ignore-scripts'; then
-      _fail "$b runs npm without --ignore-scripts — third-party lifecycle hooks would execute as the box user with the GHL PIT in the environment."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b runs npm with --ignore-scripts (no third-party lifecycle hooks)"
-    fi
-    # The post-build production refresh must be lockfile-pinned too. The old shape
-    # ran `npm install --omit=dev` against the WORKING TREE, outside the temp-dir
-    # build discipline, with no lockfile guarantee — and only WARNed on failure.
-    if code_has "$f" 'npm install[^|&;]*--omit=dev'; then
-      _fail "$b still runs an unpinned 'npm install --omit=dev' — use 'npm ci --omit=dev --ignore-scripts' inside the temp-dir build discipline."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b has no unpinned 'npm install --omit=dev' production refresh"
-    fi
-  done
-
-  # ── CHECK 12: THE VETTING GATE MUST STAY LIVE (v21.6.0 / R9) ───────────────
-  # In v21.5.0 GHL_MCP_PIN_VETTED_VERDICT was SOURCED by three scripts and READ
-  # by none of them, by the QC gate, or by CI. The verdict was not merely
-  # advisory — it was INERT. This check asserts that each launch surface
-  # actually EVALUATES the verdict and the digest in EXECUTABLE lines (comments
-  # are stripped first), so the gate cannot quietly become decorative again.
-  for f in $SCRIPTS_TO_CHECK; do
-    b="$(basename "$f")"
-    if code_has_f "$f" "GHL_MCP_PIN_VETTED_VERDICT"; then
-      _pass "$b evaluates GHL_MCP_PIN_VETTED_VERDICT (the verdict is enforced, not decorative)"
-    else
-      _fail "$b never READS GHL_MCP_PIN_VETTED_VERDICT in an executable line — sourcing a verdict nobody evaluates is what made the v21.5.0 vetting gate inert."
-      FAILURES=$((FAILURES+1))
-    fi
-    if code_has_f "$f" "GHL_MCP_PIN_VETTED_DIGEST"; then
-      _pass "$b evaluates GHL_MCP_PIN_VETTED_DIGEST (self-invalidating vetting)"
-    else
-      _fail "$b never READS GHL_MCP_PIN_VETTED_DIGEST — without it a hand-edited pin SHA is accepted silently."
-      FAILURES=$((FAILURES+1))
-    fi
-    if code_has_f "$f" "PIN_UNVERIFIED" && code_has_f "$f" "PIN_UNVETTED"; then
-      _pass "$b reports the fail-closed states PIN_UNVERIFIED / PIN_UNVETTED"
-    else
-      _fail "$b does not report both PIN_UNVERIFIED and PIN_UNVETTED — a refusal nobody can see is not fail-closed, it is a silent skip."
-      FAILURES=$((FAILURES+1))
-    fi
-    # The silent hardcoded fallback commit is what let every box run a pin the
-    # pin file did not choose. It must be gone from BOTH launch surfaces.
-    if code_has "$f" 'GHL_MCP_VETTED_COMMIT="\$\{GHL_MCP_VETTED_COMMIT:-[0-9a-f]'; then
-      _fail "$b still carries a hardcoded fallback commit for GHL_MCP_VETTED_COMMIT — a silent fallback for a missing source of truth is exactly the split-brain R1/R9 removed. Refuse (PIN_UNVERIFIED) instead."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "$b has NO hardcoded fallback commit (no pin file = refusal, not a silent default)"
-    fi
-    # The override must not be a free pass.
-    if code_has_f "$f" "GHL_MCP_PIN_OVERRIDE"; then
-      if code_has_f "$f" "GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST"; then
-        _pass "$b requires a vetting digest for GHL_MCP_PIN_OVERRIDE (the escape hatch is not a bypass)"
-      else
-        _fail "$b accepts GHL_MCP_PIN_OVERRIDE without requiring GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST — the override is the path a fleet roll uses to change a pin, so an ungated override makes the PRIMARY path the unvetted one."
-        FAILURES=$((FAILURES+1))
-      fi
-    fi
-  done
-
-  # ── CHECK 13: THE PIN MUST ACTUALLY REACH BOXES (v21.6.0 / R1) ─────────────
-  # v21.5.0 called this file "the single source of truth for every launch
-  # surface" and delivered it to zero boxes. The cross-reference gate is the
-  # thing that stops that recurring; assert it is present and passing.
-  DELIVERY_GATE="$(find_first \
-    "$SELF_DIR/qc-assert-pin-delivery-paths.sh" \
-    "$HOME/.openclaw/scripts/qc-assert-pin-delivery-paths.sh" \
-    "/data/.openclaw/scripts/qc-assert-pin-delivery-paths.sh" || true)"
-  if [ -z "${DELIVERY_GATE:-}" ]; then
-    _info "qc-assert-pin-delivery-paths.sh not co-located — the resolver/delivery cross-reference was not run here (it runs in CI from the repo checkout)."
-  elif [ -d "$REPO_ROOT/config" ] && [ -f "$REPO_ROOT/update-skills.sh" ] \
-       && [ -f "$REPO_ROOT/install.sh" ] \
-       && [ -f "$REPO_ROOT/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" ]; then
-    # Only meaningful in a genuine REPO layout: this cross-references the
-    # INSTALLER SOURCES, which a box does not carry at $OC_CONFIG. All four
-    # markers are required so a box that happens to have one of them can never
-    # run this gate against a tree it was not written for and fail spuriously.
-    if bash "$DELIVERY_GATE" --quiet >/dev/null 2>&1; then
-      _pass "every pin-file resolver path is a path an installer actually delivers (qc-assert-pin-delivery-paths.sh)"
-    else
-      _fail "qc-assert-pin-delivery-paths.sh FAILED — a resolver searches for config/ghl-mcp-pin.env somewhere no installer populates. Run: bash scripts/qc-assert-pin-delivery-paths.sh"
-      FAILURES=$((FAILURES+1))
-    fi
+  if [ -d "$REPO_ROOT/36-ghl-mcp-setup" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      SCAN_FILES="$SCAN_FILES
+$f"
+    done <<EOF
+$(find "$REPO_ROOT/36-ghl-mcp-setup" -type f -name '*.sh' 2>/dev/null)
+EOF
+  fi
+  if printf '%s\n' "$SCAN_FILES" | _scan_forbidden; then
+    _pass "no shipped script starts, restarts, registers, schedules or resurrects the community MCP"
   else
-    _info "not a repo layout — skipping the resolver/delivery cross-reference (it needs the installer sources)."
+    _fail "one or more shipped scripts still contain a community-MCP resurrection surface (see file:line above)."
+    _fail_counts
   fi
 
-  # ── CHECK 14: A RUNTIME GATE MUST EXIST (v21.6.0 / R4) ─────────────────────
-  # THIS gate is static by design: it proves what a fresh install WOULD do. It
-  # cannot see a hand-edited plist, a live 859-tool /health, or a still-
-  # registered Tier 2 — and on 2026-08-03 all three were true on a box this
-  # gate would have called PASS. The runtime gate is the other half.
-  RUNTIME_GATE="$(find_first \
-    "$SELF_DIR/ghl-mcp-assert-runtime.sh" \
-    "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
-    "$HOME/.openclaw/skills/scripts/ghl-mcp-assert-runtime.sh" \
-    "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
-    "/data/.openclaw/skills/scripts/ghl-mcp-assert-runtime.sh" || true)"
-  if [ -n "${RUNTIME_GATE:-}" ]; then
-    _pass "the RUNTIME conformance gate ships alongside this static one ($(basename "$RUNTIME_GATE"))"
+  # CHECK 5: official MCP (Tier 1) registration is preserved.
+  OFFICIAL_HIT=0
+  for f in "$REPO_ROOT/install.sh" "$REPO_ROOT/update-skills.sh" \
+           "$REPO_ROOT/36-ghl-mcp-setup/wire.sh" "$REPO_ROOT/36-ghl-mcp-setup/INSTALL.md"; do
+    [ -f "$f" ] || continue
+    grep -qE 'mcp[[:space:]]+set[[:space:]]+ghl-mcp' "$f" 2>/dev/null && OFFICIAL_HIT=1
+  done
+  if [ "$OFFICIAL_HIT" = "1" ]; then
+    _pass "the official ghl-mcp (Tier 1) registration surface is preserved"
   else
-    _fail "scripts/ghl-mcp-assert-runtime.sh is missing — this gate reads only the SHIPPED SCRIPTS and would report PASS on a box whose INSTALLED service is misconfigured (measured: KeepAlive=<true/>, profile=full, 859 tools, Tier 2 registered)."
-    FAILURES=$((FAILURES+1))
+    _fail "no shipped surface registers the official ghl-mcp (Tier 1) — retirement removes Tier 2 ONLY; the official MCP registration must survive."
+    _fail_counts
+  fi
+else
+  # ───────────────────────────────────────────────────────────────────────────
+  # BOX LAYOUT — assert the retired delivered tree explicitly. Every named
+  # location is checked; a stale lifecycle script is a resurrection surface even
+  # when it is not currently loaded.
+  # ───────────────────────────────────────────────────────────────────────────
+  _info "no repo layout at $REPO_ROOT — asserting the RETIRED delivered-tree state"
+
+  LIVE_HITS=""
+  for base in "$HOME/.openclaw" "/data/.openclaw" \
+              "$HOME/.openclaw/skills" "/data/.openclaw/skills"; do
+    for sub in scripts onboarding/scripts; do
+      for name in ghl-mcp-autostart.sh ghl-mcp-probe.sh ghl-mcp-assert-runtime.sh; do
+        [ -f "$base/$sub/$name" ] && LIVE_HITS="$LIVE_HITS
+$base/$sub/$name"
+      done
+    done
+    for name in start-ghl-mcp-server.sh; do
+      [ -f "$base/platform/vps/36-ghl-mcp-setup-scripts/$name" ] \
+        && LIVE_HITS="$LIVE_HITS
+$base/platform/vps/36-ghl-mcp-setup-scripts/$name"
+    done
+  done
+
+  if [ -z "$LIVE_HITS" ]; then
+    _pass "no community MCP lifecycle script is delivered in any named tree (RETIRED)"
+  else
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      _fail "$f is still delivered — a retired lifecycle script can restart the community MCP (RETIRED)."
+      _fail_counts
+    done <<EOF
+$(printf '%s\n' "$LIVE_HITS" | sed '/^$/d')
+EOF
   fi
 
-  # ── CHECK 8: TIER 2 STAYS ON-DEMAND (D2) ──────────────────────────────────
-  # skill 36 v1.1.0 doctrine + qc-ghl-mcp-setup.sh Section D + 36/wire.sh M2 all
-  # require ghl-community-mcp to be ABSENT from mcp.servers. The autostart used
-  # to re-register it seconds after wire.sh removed it, putting the whole tool
-  # catalogue back into every agent init and making every init pay the full
-  # connectionTimeoutMs whenever the server was down or deaf.
-  if [ -n "${AUTOSTART:-}" ]; then
-    if code_has "$AUTOSTART" 'openclaw mcp set +ghl-community-mcp'; then
-      _fail "ghl-mcp-autostart.sh REGISTERS ghl-community-mcp in mcp.servers — Tier 2 is on-demand curl (skill 36 v1.1.0); registration contradicts wire.sh M2 and qc-ghl-mcp-setup.sh Section D."
-      FAILURES=$((FAILURES+1))
-    else
-      _pass "autostart leaves Tier 2 unregistered (on-demand curl, no per-init tool-catalogue tax)"
-    fi
+  # Delivered trees must also carry no supervisor definition that loads it.
+  PLIST_HITS=""
+  for base in "$HOME/.openclaw" "/data/.openclaw" "$HOME"/Library/LaunchAgents; do
+    for name in com.clawd.ghl-mcp.plist com.clawd.ghl-mcp-probe.plist; do
+      [ -f "$base/$name" ] && PLIST_HITS="$PLIST_HITS
+$base/$name"
+    done
+  done
+  if [ -z "$PLIST_HITS" ]; then
+    _pass "no community MCP launchd definition is delivered (RETIRED)"
+  else
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      _fail "$f is still present — RunAtLoad/StartInterval can resurrect the retired community MCP."
+      _fail_counts
+    done <<EOF
+$(printf '%s\n' "$PLIST_HITS" | sed '/^$/d')
+EOF
   fi
 fi
 
 # ── Verdict ───────────────────────────────────────────────────────────────────
 if [ "$FAILURES" -gt 0 ]; then
-  _fail "$FAILURES GHL-MCP install/supervision invariant(s) violated — a fresh install could ship an unsupervised, unpinned, 858-tool, deaf or crash-looping GHL MCP."
+  _fail "$FAILURES community-MCP retirement invariant(s) violated — the retired service can still be installed, started, registered or resurrected."
   exit 1
 fi
-_pass "GHL MCP install + supervision standard holds (supervised, reboot-surviving, PORT pinned, commit pinned, profile pinned, crash-only, build-verified, liveness-probed)."
+_pass "community MCP retirement state holds (no install path, no supervision/resurrection surface, official Tier 1 preserved)."
 exit 0
