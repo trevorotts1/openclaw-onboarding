@@ -188,7 +188,7 @@ class CouncilPlanningTests(unittest.TestCase):
     def test_stub_advice_is_recorded_and_never_permission(self):
         record = council.planning_step(self.intake, runner=stub_council)
         self.assertEqual(record["step"], "council_launch_planning")
-        self.assertEqual(record["skill"], "77-council-of-wise-elders")
+        self.assertEqual(record["skill"], "council-of-wise-elders")
         self.assertEqual(record["status"], "advice_returned")
         self.assertEqual(record["advice_state"], "returned")
         self.assertIs(record["blocks_build"], False)
@@ -563,12 +563,12 @@ class DependencyPackageTests(unittest.TestCase):
         self.assertTrue(report["missing"])
         self.assertFalse(report["would_enable"])
 
-    def test_the_launcher_number_is_still_a_working_parameter(self):
+    def test_the_launcher_number_is_assigned(self):
         report = dependencies.check()
         entry = next(e for e in report["entries"]
                      if e["id"] == "skill-number-assigned")
-        self.assertEqual(entry["status"], "missing")
-        self.assertIn("number_final=False", entry["evidence"])
+        self.assertEqual(entry["status"], "present")
+        self.assertIn("number_final=True", entry["evidence"])
 
 
 if __name__ == "__main__":

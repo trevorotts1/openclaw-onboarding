@@ -11,16 +11,22 @@ description: >
   completeness checks. Ships a 999 dependency package that enables nothing.
   Offline core only: no live payment, no entitlement creation, no paid model
   session.
-version: 0.2.0
+version: 0.2.1
 priority: HIGH
 ---
 
-# Black Friday Launcher (working number 83)
+# Black Friday Launcher (skill 83)
 
-The number **83 is a working parameter, not a final assignment** (the launcher's
-number is unassigned in the owner records). It lives in exactly one constant,
-`launcher_core/constants.py:SKILL_NUMBER`; every other reference derives
-`SKILL_DIR_NAME` from it, so a rename is one edit.
+The number **83 is assigned** (LAUNCH-04, 2026-10-18; the availability evidence
+is recorded in `registration.json:number_assignment`). It lives in exactly one
+constant, `launcher_core/constants.py:SKILL_NUMBER`; every other reference
+derives `SKILL_DIR_NAME` from it, so a rename is one edit.
+
+Dependency trees are resolved by **slug**, not by number:
+`launcher_core.constants.resolve_skill_dir` accepts `<slug>` (a 999 package) or
+`<number>-<slug>` (this repository), prefers the numeric form when both exist,
+and fails closed with `SkillResolutionError` naming the slug. No consumer spells
+a numbered directory, so the same code runs in both layouts.
 
 ## What it does
 
