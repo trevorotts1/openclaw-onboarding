@@ -56,6 +56,7 @@ const CONVENE_FLAGS = new Set([
   'fresh-facts',
   'mode',
   'origin',
+  'public-origin',
   'json',
   'data-dir',
 ]);
@@ -91,6 +92,24 @@ function resolveOrigin(p: Parsed, env: NodeJS.ProcessEnv): string {
     url = new URL(raw);
   } catch {
     throw invalidInput(`The service origin "${raw}" is not a valid URL.`);
+  }
+  return url.origin;
+}
+
+// The address the client opens in a browser (the per-box Cloudflare Access
+// hostname). Links only: API calls keep using resolveOrigin (loopback).
+// Null when unset; otherwise an https origin with no path, query or login.
+function resolvePublicOrigin(p: Parsed, env: NodeJS.ProcessEnv): string | null {
+  const raw = str(p, 'public-origin') ?? env.WISE_ELDERS_PUBLIC_ORIGIN;
+  if (raw === undefined || raw === '') return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw invalidInput(`The public origin "${raw}" is not a valid URL.`);
+  }
+  if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
+    throw invalidInput(`The public origin "${raw}" must be an https origin with no path, query or login, like https://name.example.com.`);
   }
   return url.origin;
 }
@@ -239,6 +258,7 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
       throw usageError(`--harness must be one of ${CHOOSABLE_HARNESSES.join(', ')}.`);
     }
     const origin = resolveOrigin(p, env);
+    const publicOrigin = resolvePublicOrigin(p, env);
 
     const body: Record<string, unknown> = {};
     if (sample) body.sample = true;
@@ -261,8 +281,10 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
     const sessionId = String(res.session_id);
     const sessionUrl = `${origin}${typeof res.session_path === 'string' ? res.session_path : `/council/${sessionId}`}`;
     const eventsUrl = `${origin}${typeof res.events_path === 'string' ? res.events_path : `/api/council/sessions/${sessionId}/events`}`;
+    const chamberUrl = publicOrigin === null ? null : `${publicOrigin}/chamber/#session=${sessionId}`;
     if (json) {
-      opts.io.out(`${JSON.stringify({ ...res, session_url: sessionUrl, events_url: eventsUrl }, null, 2)}\n`);
+      const extra = chamberUrl === null ? {} : { chamber_url: chamberUrl };
+      opts.io.out(`${JSON.stringify({ ...res, session_url: sessionUrl, events_url: eventsUrl, ...extra }, null, 2)}\n`);
       return 0;
     }
     opts.io.out(
@@ -272,6 +294,7 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
         `  route_id: ${res.route_id}`,
         `  model_label: ${res.model_label}`,
         `  selection_source: ${res.selection_source}`,
+        ...(chamberUrl === null ? [] : [`Open the Roast Room: ${chamberUrl}`]),
         `  session: ${sessionUrl}`,
         `  events: ${eventsUrl}`,
         '',
