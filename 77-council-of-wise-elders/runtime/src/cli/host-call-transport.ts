@@ -38,7 +38,9 @@ import type {
 export const DEFAULT_HOST_CALL_TIMEOUT_MS = 600_000;
 const MAX_STDOUT_BYTES = 16 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
-const HELP_PROBE_TIMEOUT_MS = 10_000;
+// A launcher that runs its own guard scripts before handing off needs ~16 s
+// for --help (measured on claude-nine), so 10 s would miss every flag.
+const HELP_PROBE_TIMEOUT_MS = 45_000;
 /** Backoff before retry 1 and retry 2 (at most 2 extra attempts). */
 const RETRY_BACKOFF_MS = [5_000, 15_000];
 const TRANSIENT_PATTERN =
@@ -204,6 +206,8 @@ async function isolationArgs(
     helpCache.set(executable, help);
   }
   const text = await help;
+  // A probe that timed out or printed nothing is retried on the next call.
+  if (text === '') helpCache.delete(executable);
   const out: string[] = [];
   for (const { flag, args } of ISOLATION_FLAGS) {
     if (new RegExp(`(?<![\\w-])${flag}(?![\\w-])`).test(text)) out.push(...args);
