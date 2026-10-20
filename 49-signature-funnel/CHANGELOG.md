@@ -1,5 +1,9 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.18 - 2026-10-20 - batch: a zero-image run is FAILED (Skill 71 1.3.4)
+
+- `scripts/checkout_wrapper.py` passes `--validation-only` to Skill 71 `shared_page_service.py`: that call is the admission seam only, and the stages that follow generate. Skill 71 now FAILS a generation run that produced no images.
+
 ## v2.1.17 - 2026-10-20 - batch: every page type gets designs, landing pages reach the bridge, checkout design path (LANE-49 round 2): the 7-step checkout page gets a design path
 
 - `scripts/legacy_downsell_images.py --checkout-manuscript <file>`: a 7-step funnel's `checkout` page is drawn (desktop and mobile wireframes, visual mockup, five sections each) through Skill 71's own builder and executor from the approved five-section checkout manuscript the owner stages. It does not go through `checkout_wrapper.py`, which needs a Skill 79 request, launch record and route graph that legacy mode does not have. A manuscript that names card, expiry or security-code fields is refused (the same rule as the wrapper). Without the flag the receipt still lists `checkout` as not built and now says what it needs. The tool never writes checkout copy.
