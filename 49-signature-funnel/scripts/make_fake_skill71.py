@@ -48,6 +48,8 @@ REAL_FILES = [
     "scripts/write_intake.py",
     "scripts/design_style.py",  # write_intake imports it (its data file follows)
     "scripts/page_kinds.py",  # write_intake imports it (SPF030: sales vs opt-in page kind)
+    "scripts/copy_forms.py",  # write_intake imports it (the one registry of copy forms)
+    "scripts/page_role.py",  # write_intake imports it (each page type's own section sequence)
     "scripts/page_result.py",
     "scripts/write_page_result.py",
     "references/design-styles.json",
@@ -58,6 +60,10 @@ REAL_FILES = [
     "references/route-graph.schema.json",
     "references/stage-contract.json",
 ]
+
+# the copy specs copy_forms.py and page_role.py read (every page type's canonical sections)
+REAL_FILES += sorted(f"references/copy-specs/{p.name}"
+                     for p in (SRC / "references" / "copy-specs").glob("*.json"))
 
 STAGE_GATE_STUB = '''#!/usr/bin/env python3
 """FAKE stage_gate.py: fixture stand-in for Skill 71's 14-stage gate.

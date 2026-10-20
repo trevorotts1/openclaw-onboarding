@@ -965,7 +965,10 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
         except page_kinds.KindError as exc:
             raise ExecutorError(str(exc))
     if kind and stage in hypersaturation.MOCKUP_STAGES:
-        body = f"{page_kinds.mockup_line(kind, closing)}\n\n{body}"
+        try:
+            body = f"{page_kinds.mockup_line(kind, closing, levels=request.get('folded_levels'))}\n\n{body}"
+        except page_kinds.KindError as exc:
+            raise ExecutorError(str(exc))
     copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
@@ -1094,6 +1097,33 @@ class StubProvider:
                 "saved_paths": [str(job["out"])]}
 
 
+# Graphics hook (SOP-GIP-02): every wireframe and mockup section carries baked text, so a model that
+# cannot render readable text is refused before any spend. Ids are matched as substrings, the same
+# way prompt_budget matches its policy rows; the classes follow Skill 35's non-text model list and
+# the GIP band file's "non-text-bearing (Seedream only)" routing.
+NON_TEXT_MODELS = ("nano-banana", "seedream")
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def require_text_capable(model: str) -> None:
+    lowered = str(model or "").lower()
+    for family in NON_TEXT_MODELS:
+        if family in lowered:
+            raise ExecutorError(
+                f"model {model!r} cannot render readable text ({family} class); wireframe and mockup "
+                f"sections carry baked text, so pick a text-capable model (no API call was made)")
+
+
+def require_png(path: Path) -> None:
+    """The delivered section is a real PNG, whatever the provider saved it as."""
+    with open(path, "rb") as fh:
+        head = fh.read(len(PNG_MAGIC))
+    if head != PNG_MAGIC:
+        raise ExecutorError(
+            f"{path.name} is not a PNG (the provider saved another format); sections are delivered as "
+            f"PNG, so this one is refused instead of being renamed")
+
+
 class KieProvider:
     name = "kie"
     mode = "active"
@@ -1107,6 +1137,7 @@ class KieProvider:
         model = request.get("model")
         if not model:
             raise ExecutorError("--provider kie needs 'model' in the production request")
+        require_text_capable(model)
         slug = f"{job['stage']}-{job['index']:02d}-{len(job['out'].parts)}"
         req_dir = self.run_dir / "generation-requests" / job["stage"]
         req_dir.mkdir(parents=True, exist_ok=True)
@@ -1132,6 +1163,7 @@ class KieProvider:
         source = Path(result["saved_paths"][0])
         if not source.is_file():
             raise ExecutorError(f"Skill 74 reported {source} but it is not on disk")
+        require_png(source)
         job["out"].parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, job["out"])
         self.receipts.mkdir(parents=True, exist_ok=True)

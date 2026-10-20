@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -34,7 +35,16 @@ from .constants import (
 )
 from . import checkout as checkout_module
 from . import council as council_module
+from . import page_designs
+from . import route as route_module
 from .intake import offer_facts
+
+# A second page of a role that the route graph does not repeat. The piece is keyed by its slot
+# (downsell_2), carries the parent role (downsell_1) and the instance, and is one more page of the
+# launch: its designs are required exactly like every other page's.
+EXTRA_SLOTS = {"downsell_2": "downsell_1", "sales": "landing"}
+# "sales" is the signature sales page when the client also has the landing (opt-in) page: two pages of
+# the one landing route node.
 
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _RECEIPTS_REL = "delegation_receipts.jsonl"
@@ -119,7 +129,8 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
         if piece.get(key) != intake[key]:
             raise PackageError("AF-LAUNCH-PKG-PIECE",
                                f"{role}: {key} {piece.get(key)!r} does not match launch {intake[key]!r}")
-    if piece.get("page_id") != node["page_id"]:
+    # A slot page (downsell_2) rides on its parent's Skill 49 request, so a real result echoes the parent's id.
+    if piece.get("page_id") not in (node["page_id"], node.get("echoed_page_id")):
         raise PackageError("AF-LAUNCH-PKG-PIECE",
                            f"{role}: page_id {piece.get('page_id')!r} != route node {node['page_id']!r}")
     for key in ("request_id", "input_hash", "author_session"):
@@ -146,7 +157,7 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
     artifacts = piece.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: at least one artifact is required")
-    clean_artifacts: List[Dict[str, str]] = []
+    clean_artifacts: List[Dict[str, Any]] = []
     for i, art in enumerate(artifacts):
         if not isinstance(art, dict):
             raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: artifacts[{i}] must be an object")
@@ -156,10 +167,21 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
         if not isinstance(digest, str) or not _SHA256_RE.match(digest):
             raise PackageError("AF-LAUNCH-PKG-PIECE",
                                f"{role}: artifacts[{i}].sha256 must be 64 lowercase hex")
-        clean_artifacts.append({"path": path, "sha256": digest})
-    return {
+        clean = {"path": path, "sha256": digest}
+        kind = page_designs.classify(path, art.get("kind"))
+        if kind:
+            clean["kind"] = kind
+        if isinstance(art.get("provider"), str) and art["provider"].strip():
+            clean["provider"] = art["provider"].strip()
+        clean_artifacts.append(clean)
+    instance = node.get("role_instance") or piece.get("role_instance")
+    page_kind = piece.get("page_kind") or role
+    out_piece = {
         "page_id": node["page_id"],
         "role": role,
+        "page_kind": page_kind,
+        "role_instance": instance,
+        "slot": instance or role,
         "request_id": piece["request_id"],
         "input_hash": piece["input_hash"],
         "status": status,
@@ -167,17 +189,32 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
         "independent_review": piece["independent_review"],
         "artifacts": clean_artifacts,
     }
+    if isinstance(piece.get("image_provider"), str) and piece["image_provider"].strip():
+        out_piece["image_provider"] = piece["image_provider"].strip()
+    return out_piece
 
 
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
-             council_runner=None) -> Dict[str, Any]:
+             council_runner=None, require_designs: bool = False,
+             image_plan: Optional[Dict[str, Any]] = None,
+             to_confirm: Optional[List[Dict[str, Any]]] = None,
+             design_approvals: Optional[Dict[str, Any]] = None,
+             landing_pages: Optional[List[str]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
     is self-contained: a manifest entry whose bytes sit outside the package is not
     a delivered piece. The declared sha256 is verified before and after the copy.
+    Each file keeps its folder path inside its page (desktop-wireframes/, review-pdfs/ ...)
+    and its own labeled name, so the client opens "upsell-1_DESKTOP_WIREFRAMES.pdf", not a
+    renamed hash. Two different files that would land on one path are refused.
+
+    require_designs makes AF-LAUNCH-PAGE-DESIGNS part of the package's own checks: every page
+    must carry its full labeled set of desktop and mobile wireframes and mockups. image_plan,
+    to_confirm and design_approvals are recorded so the delivery report can say which choices
+    were defaults awaiting the client's confirmation.
 
     The Council planning step runs here (unless a record is supplied) and its
     result travels into the manifest and the receipt. It is advice: a not-ready
@@ -202,9 +239,28 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             raise PackageError("AF-LAUNCH-PKG-MISSING",
                                f"route node {node['role']} has no delivered piece")
         ordered.append(_validate_piece(piece, node, intake))
+    if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces:
+        raise PackageError("AF-LAUNCH-PKG-MISSING",
+                           "the client's plan has both landing pages but no signature sales page piece "
+                           "was delivered; a package one page short is not delivered")
+    for slot, parent in EXTRA_SLOTS.items():
+        if slot not in pieces:
+            continue
+        parent_node = next((n for n in route["nodes"] if n["role"] == parent), None)
+        if parent_node is None:
+            raise PackageError("AF-LAUNCH-PKG-SLOT",
+                               f"a {slot} piece was delivered but the route has no {parent} page")
+        node = {"role": parent, "role_instance": slot, "echoed_page_id": parent_node["page_id"],
+                "page_id": route_module.route_law._page_id(intake["launch_id"], slot)}
+        ordered.append(_validate_piece(pieces[slot], node, intake))
 
     for piece in ordered:
-        copied: List[Dict[str, str]] = []
+        copied: List[Dict[str, Any]] = []
+        sources = []
+        for art in piece["artifacts"]:
+            src = Path(art["path"])
+            sources.append(src if src.is_absolute() else source_root / src)
+        base = Path(os.path.commonpath([str(p.parent) for p in sources])) if sources else source_root
         for art in piece["artifacts"]:
             src = Path(art["path"])
             if not src.is_absolute():
@@ -218,14 +274,22 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                 raise PackageError("AF-LAUNCH-PKG-HASH",
                                    f"{piece['role']}: artifact {art['path']!r} is {actual}, "
                                    f"declared {art['sha256']}")
-            rel = f"pieces/{piece['page_id']}/{actual[:12]}-{src.name}"
+            inside = src.resolve().relative_to(base.resolve())
+            prefix = Path("pieces") / piece["page_id"]
+            if inside.parts[:2] == prefix.parts:  # already laid out as pieces/<page_id>/...
+                inside = Path(*inside.parts[2:])
+            rel = str(prefix / inside)
             dest = run_dir / rel
+            if dest.exists() and _sha256_file(dest) != actual:
+                raise PackageError("AF-LAUNCH-PKG-COLLISION",
+                                   f"{piece['role']}: two different files would both be delivered as {rel!r}")
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
             if _sha256_file(dest) != art["sha256"]:
                 raise PackageError("AF-LAUNCH-PKG-HASH",
                                    f"{piece['role']}: copied artifact {rel!r} did not verify")
-            copied.append({"path": rel, "sha256": actual})
+            entry = {k: v for k, v in art.items() if k not in ("path", "sha256")}
+            copied.append({"path": rel, "sha256": actual, **entry})
         piece["artifacts"] = copied
 
     intake_path = run_dir / "intake.json"
@@ -276,6 +340,10 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "cross_sales": cross_sales,
         "live_effects": "none",
         "test_only": bool(intake.get("test_only", True)),
+        "designs_required": bool(require_designs),
+        "design_approvals": design_approvals or page_designs.default_approvals(),
+        "image_plan": image_plan,
+        "to_confirm": list(to_confirm or []),
         "assembled_at": _now(),
     }
     manifest_path = run_dir / "package-manifest.json"
@@ -291,7 +359,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "assembled_at": manifest["assembled_at"],
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
         "pieces": [
-            {"page_id": p["page_id"], "role": p["role"], "status": p["status"],
+            {"page_id": p["page_id"], "role": p["role"], "slot": p["slot"], "status": p["status"],
              "proof_class": p["proof_class"], "artifact_count": len(p["artifacts"])}
             for p in ordered
         ],
@@ -328,6 +396,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "cross_sales": cross_sales,
         "seams": [s["id"] for s in SEAMS],
         "decided": [d["id"] for d in DECIDED],
+        "to_confirm": manifest["to_confirm"],
+        "design_approvals": manifest["design_approvals"],
         "live_effects": "none",
         "test_only": manifest["test_only"],
     }

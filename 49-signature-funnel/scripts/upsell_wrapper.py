@@ -78,6 +78,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
+
 EXIT_OK = 0
 EXIT_FAILCLOSED = 2
 EXIT_USAGE = 3
@@ -645,18 +648,25 @@ def project_result(bundle: Mapping[str, Any],
 # ---------------------------------------------------------------------------
 def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path,
                   bundle_path: Path, work_dir: Path) -> List[str]:
-    """The Skill 71 runner command for this slot, from the landing bridge's config.
+    """The Skill 71 runner command for this slot.
 
-    Brand owner, image cap and brand file come from that config only; none is
-    invented here (the same discipline as landing_bridge.py)."""
-    cfg = _load_json(Path(args.bridge_config), "bridge config")
-    root = Path((cfg.get("skill71") or {}).get("root") or "")
+    Brand owner, image cap, brand file and design style come from the shared image inputs file when
+    one is given, else from the landing bridge's config; none is invented here (the same discipline
+    as landing_bridge.py). A value in the inputs file wins over the bridge config."""
+    cfg = _load_json(Path(args.bridge_config), "bridge config") if args.bridge_config else {}
     landing = cfg.get("landing") or {}
-    missing = [k for k in ("brand_owner", "image_cap", "brand_file") if landing.get(k) in (None, "")]
+    inputs = getattr(args, "inputs", None) or {}
+    root = Path(args.skill71_root or (cfg.get("skill71") or {}).get("root") or "")
+
+    def pick(key):
+        value = inputs.get(key)
+        return landing.get(key) if value in (None, "") else value
+
+    missing = [k for k in ("brand_owner", "image_cap", "brand_file") if pick(k) in (None, "")]
     runner = root / "scripts" / "run_page_type.py"
     if missing or not runner.is_file():
-        raise EnrichmentError([f"bridge config: landing.{missing} missing" if missing
-                               else f"bridge config: skill71.root has no {runner.name}"])
+        raise EnrichmentError([f"image inputs / bridge config: {missing} missing" if missing
+                               else f"skill71 root has no {runner.name}"])
     # Dispatch stamps every request with one copy_profile; this page's is the consumer
     # constant, so Skill 71's intake records the upsell form. Nothing else is changed.
     images_request = work_dir / f"page-request-images-{args.slot}.json"
@@ -666,11 +676,13 @@ def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path
     cmd = [sys.executable, str(runner), "--copy-version", "upsell",
            "--copy-json", args.copy, "--bundle", str(bundle_path),
            "--request", str(images_request), "--launch-record", args.launch,
-           "--route-graph", str(graph_path), "--brand-file", str(landing["brand_file"]),
-           "--brand-owner", str(landing["brand_owner"]), "--image-cap", str(landing["image_cap"]),
+           "--route-graph", str(graph_path), "--brand-file", str(pick("brand_file")),
+           "--brand-owner", str(pick("brand_owner")), "--image-cap", str(pick("image_cap")),
            "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider]
-    if landing.get("design_style"):
-        cmd += ["--design-style", str(landing["design_style"])]
+    if pick("design_style"):
+        cmd += ["--design-style", str(pick("design_style"))]
+    if inputs.get("design_prose_ref"):
+        cmd += ["--design-prose", str(inputs["design_prose_ref"])]
     if args.allow_paid:
         cmd.append("--allow-paid")
     return cmd
@@ -706,6 +718,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="landing bridge config JSON (Skill 71 root, brand owner, image "
                          "cap, brand file): produce the page's wireframes and mockups "
                          "through Skill 71. Without it none are made, and the wrapper says so")
+    ap.add_argument("--image-inputs",
+                    help="the shared image inputs file (design style, brand file, owner, image cap, "
+                         "provider); makes the images run without --bridge-config when "
+                         "--skill71-root is given")
+    ap.add_argument("--skill71-root", help="the Skill 71 tree (default: the bridge config's)")
     ap.add_argument("--image-provider", choices=["stub", "kie"], default="stub",
                     help="image provider for --bridge-config (stub is free and draws "
                          "placeholders; kie spends money and needs --allow-paid)")
@@ -715,6 +732,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="where to keep the raw bundle (default: "
                          "bundle-<slot>.json beside the request)")
     args = ap.parse_args(argv)
+    args.inputs = None
+    if args.image_inputs:
+        try:
+            args.inputs = page_set.load_image_inputs(args.image_inputs)
+        except page_set.PageSetError as exc:
+            print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
+            return EXIT_FAILCLOSED
+        if args.image_provider == "stub" and args.inputs["image_provider"] == "kie":
+            args.image_provider, args.allow_paid = "kie", args.inputs["allow_paid"]
 
     request_path = Path(args.request)
     work_dir = request_path.resolve().parent
@@ -761,7 +787,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         for p in exc.problems:
             print(f"FAIL-CLOSED: {p}", file=sys.stderr)
         return EXIT_FAILCLOSED
-    if args.bridge_config:
+    if args.bridge_config or args.image_inputs:
         try:
             cmd = image_command(args, request_path, graph_path, bundle_path, work_dir)
         except EnrichmentError as exc:
@@ -772,6 +798,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("FAIL-CLOSED: Skill 71 page-type runner failed; no page-result written",
                   file=sys.stderr)
             return EXIT_FAILCLOSED
+        # every design file the page made goes into its result, not only the copy
+        images_dir = work_dir / f"images-{args.slot}"
+        page_set.stage_visual_bible(getattr(args, "inputs", None), images_dir)
+        found = {a["path"]: a for a in projected["artifacts"]}
+        found.update({a["path"]: a for a in page_set.design_artifacts(args.slot, images_dir)})
+        projected["artifacts"] = [found[k] for k in sorted(found)]
     else:
         print(f"NOTE images: no --bridge-config, so no wireframes or mockups were made "
               f"for {args.slot}; this result is copy and a TEST ONLY render only",

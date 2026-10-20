@@ -640,6 +640,19 @@ def run_blocks(request, run_dir):
     exe.resolve_design_style(Path(run_dir), request)
 
 
+def folded_levels(run_dir):
+    """N when the run's launch record (<run_dir>/launch.json, staged by write_intake --launch-context)
+    folds N levels into the sales page (journey_mode folded_levels: its N main offers), else None."""
+    try:
+        launch = json.loads((Path(run_dir) / "launch.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(launch, dict) or launch.get("journey_mode") != "folded_levels":
+        return None
+    mains = [o for o in launch.get("offers") or [] if isinstance(o, dict) and o.get("role") == "main"]
+    return len(mains) if len(mains) >= 2 else None
+
+
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
           page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None):
     notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
@@ -687,6 +700,9 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         request["decline_action"] = {"label": page["decline_action"]["label"].strip()}
     if kind:
         request["page_kind"] = kind
+        levels = folded_levels(run_dir) if kind == "sales" else None
+        if levels:  # the sales page closes on an N-card levels panel (wireframe_spec / page_kinds)
+            request["folded_levels"] = levels
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}

@@ -1,0 +1,82 @@
+{
+  "contract": "signature-funnel-page-types/v1",
+  "purpose": "The one list of every page the Signature Funnel and Signature Launch can build. Each page_key says which page it is (role + page_kind + role_instance), which skill and wrapper builds it, what the client sees it called, and the exact design files it must end with: desktop and mobile wireframes, desktop and mobile mockups, review PDFs and overview boards. page_set.py reads this file to plan a funnel, page_swarm.py to plan the parallel lanes, and the completeness check to prove no page is missing its designs. It is data only: page identity is role + page_kind + role_instance everywhere, never a bare role.",
+  "page_identity": "role + page_kind + role_instance",
+  "notes": {
+    "landing_vs_sales": "`landing` is the signature landing (opt-in) page and `sales` is the signature sales page. Both are page role `landing` in the route graph, told apart by page_kind (opt_in or sales); the landing bridge builds either or both from the one landing request.",
+    "downsell_2": "The route graph has one downsell node (owner route law). The second downsell is a design page carried by the downsell_1 request with role_instance downsell_2; it is never a route node.",
+    "checkout": "Checkout gets designs only (wireframes and mockups). The real order form stays the native form installed by Skill 06 (CR-S49-003)."
+  },
+  "device_labels": {"desktop": "DESKTOP", "mobile": "MOBILE"},
+  "deliverables": [
+    {"id": "desktop_wireframe_sections", "device": "desktop", "kind": "wireframe", "stage": "desktop-wireframe", "glob": "desktop-wireframe/section-*.png", "needs": "images"},
+    {"id": "mobile_wireframe_sections", "device": "mobile", "kind": "wireframe", "stage": "mobile-tablet", "glob": "mobile-tablet/section-*.png", "needs": "images"},
+    {"id": "desktop_mockup_sections", "device": "desktop", "kind": "mockup", "stage": "visual-mockup", "glob": "visual-mockup/desktop/part-*.png", "needs": "images"},
+    {"id": "mobile_mockup_sections", "device": "mobile", "kind": "mockup", "stage": "visual-mockup", "glob": "visual-mockup/mobile/part-*.png", "needs": "images"},
+    {"id": "desktop_wireframe_pdf", "device": "desktop", "kind": "wireframe", "stage": "desktop-wireframe", "glob": "review-pdfs/{slug}_DESKTOP_WIREFRAMES.pdf", "needs": "render"},
+    {"id": "mobile_wireframe_pdf", "device": "mobile", "kind": "wireframe", "stage": "mobile-tablet", "glob": "review-pdfs/{slug}_MOBILE_WIREFRAMES.pdf", "needs": "render"},
+    {"id": "desktop_mockup_pdf", "device": "desktop", "kind": "mockup", "stage": "visual-mockup", "glob": "review-pdfs/{slug}_DESKTOP_MOCKUPS-VISUAL.pdf", "needs": "render"},
+    {"id": "mobile_mockup_pdf", "device": "mobile", "kind": "mockup", "stage": "visual-mockup", "glob": "review-pdfs/{slug}_MOBILE_MOCKUPS-VISUAL.pdf", "needs": "render"},
+    {"id": "overview_boards", "device": "desktop+mobile", "kind": "board", "stage": "visual-mockup", "glob": "review-pdfs/{slug}_*-BOARD.*", "needs": "render"}
+  ],
+  "needs_legend": {
+    "images": "the section images; the free stub provider draws placeholders for these",
+    "render": "the review PDFs and overview boards; composed only on the paid provider, so a stub run reports them as pending, never as present"
+  },
+  "pages": {
+    "landing": {
+      "order": 10, "role": "landing", "page_kind": "opt_in", "role_instance": null,
+      "request_role": "landing", "skill": 71, "wrapper": "landing_bridge.py",
+      "label": "Signature Landing Page", "label_role": "landing", "matrix_slug": null,
+      "sections": 15, "design_only": false
+    },
+    "sales": {
+      "order": 20, "role": "landing", "page_kind": "sales", "role_instance": null,
+      "request_role": "landing", "skill": 71, "wrapper": "landing_bridge.py",
+      "label": "Signature Sales Page", "label_role": "sales_page", "matrix_slug": "main",
+      "sections": 12, "long_form_sections": 15, "design_only": false
+    },
+    "product_selection": {
+      "order": 30, "role": "product_selection", "page_kind": null, "role_instance": null,
+      "request_role": "product_selection", "skill": 78, "wrapper": "78 run_image_stages.py (native emitter chain)",
+      "label": "Order Page", "label_role": "product_selection", "matrix_slug": "product_selection",
+      "sections": 5, "design_only": false
+    },
+    "checkout": {
+      "order": 40, "role": "checkout", "page_kind": null, "role_instance": null,
+      "request_role": "checkout", "skill": 79, "wrapper": "checkout_wrapper.py",
+      "label": "Order Form / Checkout", "label_role": "checkout", "matrix_slug": "checkout",
+      "sections": 5, "design_only": true
+    },
+    "upsell_1": {
+      "order": 50, "role": "upsell_1", "page_kind": null, "role_instance": null,
+      "request_role": "upsell_1", "skill": 80, "wrapper": "upsell_wrapper.py",
+      "label": "Upsell 1", "label_role": "upsell_1", "matrix_slug": "upsell",
+      "sections": 8, "design_only": false
+    },
+    "upsell_2": {
+      "order": 60, "role": "upsell_2", "page_kind": null, "role_instance": null,
+      "request_role": "upsell_2", "skill": 80, "wrapper": "upsell_wrapper.py",
+      "label": "Upsell 2", "label_role": "upsell_2", "matrix_slug": "upsell-2",
+      "sections": 8, "design_only": false
+    },
+    "downsell_1": {
+      "order": 70, "role": "downsell_1", "page_kind": null, "role_instance": null,
+      "request_role": "downsell_1", "skill": 81, "wrapper": "downsell_wrapper.py",
+      "label": "Downsell 1", "label_role": "downsell_1", "matrix_slug": "downsell",
+      "sections": 8, "design_only": false
+    },
+    "downsell_2": {
+      "order": 80, "role": "downsell_1", "page_kind": null, "role_instance": "downsell_2",
+      "request_role": "downsell_1", "skill": 81, "wrapper": "downsell_wrapper.py --role-instance downsell_2",
+      "label": "Downsell 2", "label_role": "downsell_2", "matrix_slug": "downsell-2",
+      "sections": 8, "design_only": true
+    },
+    "thank_you": {
+      "order": 90, "role": "thank_you", "page_kind": null, "role_instance": null,
+      "request_role": "thank_you", "skill": 82, "wrapper": "translate_thank_you_result.py (after 71 shared_page_service)",
+      "label": "Thank-You Page", "label_role": "thank_you", "matrix_slug": "thank-you",
+      "sections": 5, "design_only": false
+    }
+  }
+}

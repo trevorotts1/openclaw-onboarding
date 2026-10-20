@@ -1,0 +1,132 @@
+[
+  {
+    "page_key": "landing",
+    "label": "Signature Landing Page",
+    "state": "done",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": true
+    },
+    "labels": true,
+    "qc": "pass"
+  },
+  {
+    "page_key": "sales_page",
+    "label": "Signature Sales Page",
+    "state": "done",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": true
+    },
+    "labels": true,
+    "qc": "pass"
+  },
+  {
+    "page_key": "product_selection",
+    "label": "Order Page",
+    "state": "done",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": true
+    },
+    "labels": true,
+    "qc": "pass"
+  },
+  {
+    "page_key": "checkout",
+    "label": "Order Form / Checkout",
+    "state": "done",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": true
+    },
+    "labels": true,
+    "qc": "pass"
+  },
+  {
+    "page_key": "upsell_1",
+    "label": "Upsell 1",
+    "state": "done",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": true
+    },
+    "labels": true,
+    "qc": "pass"
+  },
+  {
+    "page_key": "upsell_2",
+    "label": "Upsell 2",
+    "state": "working",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": false
+    },
+    "labels": false,
+    "qc": "pending"
+  },
+  {
+    "page_key": "downsell_1",
+    "label": "Downsell 1",
+    "state": "done",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": true
+    },
+    "labels": true,
+    "qc": "pass"
+  },
+  {
+    "page_key": "downsell_2",
+    "label": "Downsell 2",
+    "state": "queued",
+    "wireframe": {},
+    "mockup": {},
+    "labels": false,
+    "qc": "pending"
+  },
+  {
+    "page_key": "thank_you",
+    "label": "Thank-You Page",
+    "state": "failed",
+    "wireframe": {
+      "desktop": true,
+      "mobile": true
+    },
+    "mockup": {
+      "desktop": true,
+      "mobile": false
+    },
+    "labels": true,
+    "qc": "fail",
+    "note": "The mobile mockup did not pass review."
+  }
+]

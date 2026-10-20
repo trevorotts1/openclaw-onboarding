@@ -27,7 +27,8 @@
       "enum": [
         "single_simple",
         "multiple_options",
-        "free_entry"
+        "free_entry",
+        "folded_levels"
       ]
     },
     "status": {

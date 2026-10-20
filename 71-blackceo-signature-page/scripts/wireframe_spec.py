@@ -310,7 +310,8 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     if kind:  # the page kind's head, and its closing band on the last slice
         try:
             label = page_kinds.closing_label(kind, section, request.get("sections"), index, total)
-            lines += page_kinds.wireframe_lines(kind, FORM_LABEL[form], index, total, label)
+            lines += page_kinds.wireframe_lines(kind, FORM_LABEL[form], index, total, label,
+                                                levels=request.get("folded_levels"))
         except page_kinds.KindError as exc:
             raise SpecError(str(exc))
         closing = label if label and not cta else None
