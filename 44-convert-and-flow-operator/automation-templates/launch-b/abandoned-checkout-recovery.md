@@ -15,6 +15,9 @@ through email, SMS, and Messenger over 72 hours.
 **Hard rule:** the purchase tag is checked before every send, and the purchase event stops every
 node in this lane. A contact who buys receives no further abandonment message.
 
+**Draft only:** every workflow and every trigger is written as a draft; `CAF_DRAFT_ONLY` keeps
+`active` off. Nothing sends, nothing goes live. Live switch-on is a separate client approval.
+
 ## TRIGGER — started, unpaid
 
 - **Starts when:** checkout started (Step 1 contact details captured) and still unpaid after 30 minutes.

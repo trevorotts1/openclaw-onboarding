@@ -172,6 +172,9 @@
   },
   "ghl_build": {
     "builder": "Skill 44 - Convert & Flow Operator (caf)",
+    "draft_only": true,
+    "live": false,
+    "draft_only_state": "Every workflow is created as a draft. Triggers are written `status: draft` and `active` stays gated by CAF_DRAFT_ONLY. Nothing sends, nothing goes live. Live switch-on is a separate client approval.",
     "workflow_nodes": [
       "Trigger: Form Submitted (Step 1 order form)",
       "Wait 30 minutes",
