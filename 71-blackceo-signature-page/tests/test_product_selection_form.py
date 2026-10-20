@@ -61,7 +61,7 @@ class FormTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_registry_and_spec(self):
-        self.assertEqual(forms.FORMS, ("standard", "long-form", "product-selection"))
+        self.assertEqual(forms.FORMS[:3], ("standard", "long-form", "product-selection"))  # later forms register after these
         spec = forms.load_spec("product-selection")
         self.assertEqual(spec["sequence"], IDS)
         self.assertEqual(spec["page_role"], "product_selection")
