@@ -640,7 +640,7 @@ _prove_started() {
 }
 
 # ── Epoch seconds a process started (ps etime is [[dd-]hh:]mm:ss on macOS and Linux), and
-# ── the epoch a file's inode last changed (BSD stat -f %c, GNU stat -c %Z). "" on any failure.
+# ── the epoch a file's inode last changed (GNU stat -c %Z, then BSD stat -f %c). "" on any failure.
 _proc_start_epoch() {
   local e d=0 a b c secs
   e="$(ps -o etime= -p "$1" 2>/dev/null | tr -d '[:space:]')"
@@ -650,7 +650,7 @@ _proc_start_epoch() {
   if [ -n "$c" ]; then secs=$((10#$a*3600 + 10#$b*60 + 10#$c)); else secs=$((10#$a*60 + 10#$b)); fi
   printf '%s' "$(( $(date +%s) - 10#$d*86400 - secs ))"
 }
-_file_ctime() { stat -f %c "$1" 2>/dev/null || stat -c %Z "$1" 2>/dev/null; }
+_file_ctime() { stat -c %Z "$1" 2>/dev/null || stat -f %c "$1" 2>/dev/null; }  # GNU first: on GNU, `stat -f %c` succeeds with filesystem info
 
 # ── CAN015: success means the GATEWAY PROCESS runs the target, not that some
 # ── openclaw on PATH reports it. The package the supervisor launches must measure
