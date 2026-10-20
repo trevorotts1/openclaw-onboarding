@@ -9,7 +9,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 LAUNCH_C = HERE.parent
-REPO = LAUNCH_C.parent
+REPO = LAUNCH_C.parent.parent.parent
 FIXTURES = LAUNCH_C / "fixtures"
 PLAN_FIXTURE = REPO / "shared-utils" / "signature_launch_contract" / "fixtures" / "elevation.json"
 
