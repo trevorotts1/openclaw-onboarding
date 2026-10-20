@@ -134,8 +134,18 @@ def lane_plan(graph: Dict[str, Any], workers: Optional[int] = None) -> Dict[str,
     }
 
 
-def _supports_parallel(dispatch_fn) -> bool:
-    return "parallel" in inspect.signature(dispatch_fn).parameters
+def _accepts(dispatch_fn, name: str) -> bool:
+    return name in inspect.signature(dispatch_fn).parameters
+
+
+def _dispatch_image_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """The C3 keys Skill 49's dispatch takes as ``image_inputs`` (what its page_set.load_image_inputs returns)."""
+    keys = ("design_style", "brand_file", "brand_owner", "image_cap", "image_provider",
+            "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only")
+    out = {k: inputs[k] for k in keys}
+    out["image_provider"] = inputs["executor_provider"]  # "kie" on a paid run, "stub" on a free one
+    out["allow_paid"] = inputs["allow_paid"]
+    return out
 
 
 def to_confirm_lines(to_confirm: List[Dict[str, Any]]) -> List[str]:
@@ -188,12 +198,20 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
 
     kwargs: Dict[str, Any] = {}
     parallel_state = "serial"
+    if parallel is None and _accepts(dl.dispatch, "parallel"):
+        parallel = dl.swarm.default_workers()  # no flag: the runner profile's workers, as Skill 49's own "auto"
     if parallel is not None and parallel != 1:
-        if _supports_parallel(dl.dispatch):
+        if _accepts(dl.dispatch, "parallel"):
             kwargs["parallel"] = parallel
             parallel_state = f"parallel x{parallel}"
         else:
             parallel_state = "serial (Skill 49's dispatch has no parallel mode in this checkout)"
+    # Spend ledger and KIE rate limiter: Skill 49 only creates them when it is handed the image inputs
+    # (and, for a paid run, the limiter), exactly as its own command line does.
+    if _accepts(dl.dispatch, "image_inputs"):
+        kwargs["image_inputs"] = _dispatch_image_inputs(inputs)
+    if _accepts(dl.dispatch, "limiter") and inputs["executor_provider"] == "kie":
+        kwargs["limiter"] = dl.swarm.kie_limiter()
     try:
         manifest = dl.dispatch(
             launch, approval,

@@ -254,6 +254,48 @@ class DispatchTests(unittest.TestCase):
             self.assertTrue(report["parallel"].startswith("serial"), report["parallel"])
         self.assertEqual(report["lane_plan"]["phase_1_alone"], ["landing"])
 
+    def _spy_dispatch(self, doc, **kw):
+        """Run the bridge against Skill 49's real dispatch, but stop it at the call and return what it was given."""
+        seen = {}
+        real = substrate.dispatch()
+
+        class Spy:
+            vlp, clr, DispatchError = real.vlp, real.clr, real.DispatchError
+            swarm = real.swarm
+            executor_from_config = staticmethod(real.executor_from_config)
+
+            @staticmethod
+            def dispatch(launch, approval, **kwargs):
+                seen.update(kwargs)
+                raise real.DispatchError("spy: stopped at the call")
+            dispatch.__signature__ = __import__("inspect").signature(real.dispatch)
+
+        with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
+            with self.assertRaises(launch_bridge.BridgeError):
+                run_dispatch(doc, self.out, adapters_config=consumer_config(), **kw)
+        return seen
+
+    @unittest.skipUnless("image_inputs" in __import__("inspect").signature(substrate.dispatch().dispatch).parameters,
+                         "Skill 49's dispatch has no swarm arguments in this checkout")
+    def test_no_parallel_flag_uses_the_runner_workers_and_the_spend_ledger_gets_the_image_inputs(self):
+        seen = self._spy_dispatch(payload("elevation"))
+        self.assertEqual(seen["parallel"], substrate.dispatch().swarm.default_workers())
+        self.assertEqual(seen["image_inputs"]["image_provider"], "stub")
+        self.assertFalse(seen["image_inputs"]["allow_paid"])
+        self.assertNotIn("limiter", seen)  # free stub run: no KIE tokens needed
+
+    @unittest.skipUnless("limiter" in __import__("inspect").signature(substrate.dispatch().dispatch).parameters,
+                         "Skill 49's dispatch has no swarm arguments in this checkout")
+    def test_a_paid_run_hands_skill_49_the_cap_ledger_inputs_and_the_kie_limiter(self):
+        doc = payload("elevation", image_cap=9, paid_render_approval_ref="TEST-APPROVAL-REF")
+        doc["test_only"] = False
+        sentinel = object()
+        with mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=sentinel):
+            seen = self._spy_dispatch(doc, approval={})
+        self.assertIs(seen["limiter"], sentinel)
+        self.assertEqual((seen["image_inputs"]["image_provider"], seen["image_inputs"]["image_cap"],
+                          seen["image_inputs"]["allow_paid"]), ("kie", 9, True))
+
     def test_folded_levels_dispatches_the_page_set_with_no_selection_page(self):
         doc = payload("seven-figure-preneur")
         if "folded_levels" not in substrate.dispatch().vlp.JOURNEY_MODES:

@@ -139,7 +139,8 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--adapters", help="ready Skill 49 adapter configuration (JSON)")
     x.add_argument("--adapter-inputs", help="per-page inputs to build the adapter configuration (JSON)")
     x.add_argument("--parallel", type=int, default=None,
-                   help="build the independent pages as this many parallel lanes (1 = one at a time)")
+                   help="build the independent pages as this many parallel lanes (1 = one at a time; "
+                        "default: this computer's worker count)")
     x.add_argument("--scoped-approvals", help="JSON array of extra scoped approvals")
     x.set_defaults(fn=cmd_dispatch)
 

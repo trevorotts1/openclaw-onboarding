@@ -26,7 +26,8 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
 ## Build order and parallel lanes
 
 The landing page runs alone first because it fixes the visual direction every other page follows. The other
-pages are independent of each other and run together. `--parallel N` is passed to Skill 49's dispatch when
+pages are independent of each other and run together. `--parallel N` (default: the runner profile's worker
+count, the same as Skill 49's own `auto`) is passed to Skill 49's dispatch when
 that dispatcher has a `parallel` argument; if it does not yet, the report says `serial (...)` instead of
 claiming parallel. The plan is always reported: `dispatch-report.json` -> `lane_plan`.
 
