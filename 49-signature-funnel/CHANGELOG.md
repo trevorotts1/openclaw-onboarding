@@ -1,6 +1,6 @@
 # Changelog — Signature Funnel (Skill 49)
 
-## Unreleased - 2026-10-20 - a full funnel gets all its pages: the sales page and the opt-in page (SPF030)
+## v2.1.16 - 2026-10-20 - a full funnel gets all its pages: the sales page and the opt-in page (SPF030)
 
 - `scripts/landing_bridge.py`: a launch with every extra on (upsell_1, downsell_1, upsell_2) is a full funnel. The bridge now refuses a config that does not give it both pages (`landing.page_kind` `sales` plus `landing.opt_in.run_dir`), then stages and produces a Skill 71 run for each from the same request: the sales page, and the signature landing (opt-in) page, which is Long-Form only (so `page_version` and the dispatch `copy_profile` are `long-form`). The one result placed at `{result}` is the weaker of the two with both runs' artifacts listed. Smaller funnels are unchanged. The route graph, request schemas and funnel matrix are untouched: the opt-in page is a second page of the landing role, not a new node.
 - `scripts/test_landing_bridge.py`: `TestFullFunnelGetsAllPages` (refusals before staging, both pages produced, one merged result, smaller funnel unchanged).
