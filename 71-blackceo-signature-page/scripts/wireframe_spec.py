@@ -11,7 +11,7 @@ references/wireframe-build-spec.json.
 What this module owns (everything is data in that JSON file):
   - reference_urls(stage, request): the one style reference a desktop or
     mobile wireframe job attaches, chosen by stage and by the request's form
-    (standard or long-form). It refuses by name a request that still lists the
+    (standard, long-form or upsell). It refuses by name a request that still lists the
     greyscale sheet.
   - prompt_block(...): the annotated build-spec block (section chip and name
     tab, inline type specs, labelled image plates, filled CTA, contiguous
@@ -36,8 +36,8 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 SPEC_FILE = SKILL_ROOT / "references" / "wireframe-build-spec.json"
 STANDARDS = SKILL_ROOT / "assets" / "visual-standards"
 WIREFRAME_STAGES = ("desktop-wireframe", "mobile-tablet")
-FORMS = ("standard", "long-form")
-FORM_LABEL = {"standard": "Standard", "long-form": "Long-Form"}
+FORMS = ("standard", "long-form", "upsell")
+FORM_LABEL = {"standard": "Standard", "long-form": "Long-Form", "upsell": "Upsell"}
 
 
 class SpecError(Exception):
@@ -88,6 +88,8 @@ def form_of(request: dict, strict: bool = False) -> str:
             return "standard"
         if norm in ("longform", "longformv6"):
             return "long-form"
+        if norm in ("upsell", "upsellv6"):
+            return "upsell"
     tags = [canon((s or {}).get("section_id", "")) for s in request.get("sections") or []]
     if any(re.fullmatch(r"\d+[A-Z]", t) for t in tags):
         return "long-form"
@@ -95,7 +97,7 @@ def form_of(request: dict, strict: bool = False) -> str:
         return "standard"
     if strict:
         raise SpecError(
-            "the wireframe form is not known: declare copy_version (standard or long-form) "
+            "the wireframe form is not known: declare copy_version (standard, long-form or upsell) "
             "in the production request, so the right style reference and form rules are used "
             "(a paid run never guesses the form)")
     if "form" not in _NOTED:
@@ -219,6 +221,16 @@ def _cta(section: dict) -> str:
     return str(value or "").strip().rstrip(".")
 
 
+def page_type_lines(form: str, section: dict, tag: str) -> list:
+    """The page type's own build-spec lines for one section (references/
+    wireframe-build-spec.json `page_type_blocks`): the lines every section of
+    the form carries, then the section's own. A form with none returns []."""
+    rules = spec().get("page_type_blocks", {}).get(form) or {}
+    if not rules:
+        return []
+    return [rules[key].format(decline=section.get("decline") or "") for key in ("all", tag) if key in rules]
+
+
 def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
                  request: dict) -> str:
     """The build-spec block for one wireframe slice, composed from the JSON."""
@@ -258,10 +270,11 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     lines.append(blocks["behaviour"].format(note=_note(stage, section, cta)))
     if mobile:
         lines.append(blocks["mobile"].format(width=width))
-        if ref["extra_rule"] and form == "standard":
+        if ref["extra_rule"] and form != "long-form":
             lines.append(ref["extra_rule"])
     else:
-        lines.append(blocks["long_form_desktop" if long_form else "standard_desktop"])
+        lines.append(blocks[form.replace("-", "_") + "_desktop"])
+    lines += page_type_lines(form, section, tag)
     if long_form and tag in ("2", "3", "4"):
         lines.append(blocks["pain"])
     elif long_form and re.fullmatch(r"[234]A", tag):

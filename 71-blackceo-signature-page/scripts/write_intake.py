@@ -394,7 +394,7 @@ def founder_photo_form_problems(brand_path, run_dir):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("run_dir", type=Path)
-    p.add_argument("--page-version", choices=["standard", "long-form"], required=True)
+    p.add_argument("--page-version", choices=["standard", "long-form", "upsell"], required=True)
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--brand-file", default="assets/brand/blackceo-brand.json")
     p.add_argument("--creative-direction", default=None)
@@ -405,7 +405,7 @@ def main(argv=None):
                         "(references/design-styles.md); ask with `design_style.py question`")
     p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
                    help="how the style was chosen (default client_choice when --design-style is given)")
-    p.add_argument("--copy-version", choices=["standard", "long-form"], default=None,
+    p.add_argument("--copy-version", choices=["standard", "long-form", "upsell"], default=None,
                    help="the run's copy selection (required intake decision, "
                         "Amendment 6 Items 18/19); selects the copy guide, spec, "
                         "and emotional-quality extract for the copy stage")

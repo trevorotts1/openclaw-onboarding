@@ -52,6 +52,10 @@ SKILL_NUMBER = 71
 SHARED_SERVICE_MARKER = "shared_image_service"
 SHARED_SERVICE_ID = "71-blackceo-signature-page"
 SHARED_SERVICE_SKILLS = (71, 78, 79, 80, 81, 82)
+# page-request copy_profile -> the copy_version (references/copy-specs/<v>-v6.json) the
+# image stages check section counts against. An unmapped profile records none.
+COPY_PROFILE_VERSION = {"standard": "standard", "long-form": "long-form",
+                        "signature-upsell-eight-section": "upsell"}
 
 SCHEMA_FILES = {
     "page-request": "page-request.schema.json",
@@ -601,9 +605,10 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
                 "only, so an explicitly named other provider must be "
                 "resolved before intake, not silently defaulted")
         updates["image_engine"] = provider
-    copy_mapped = request["copy_profile"] in ("standard", "long-form")
+    copy_version = COPY_PROFILE_VERSION.get(request["copy_profile"])
+    copy_mapped = copy_version is not None
     if copy_mapped:
-        updates["copy_version"] = request["copy_profile"]
+        updates["copy_version"] = copy_version
     if request["test_only"]:
         updates["test_run"] = True
 

@@ -5,7 +5,10 @@ Produces the four image stages (desktop wireframe, mobile wireframe,
 desktop mockup, mobile mockup) for ONE page of a named page_role, for
 every role in the page-request enum. The owning skill's wrapper calls
 this script ONCE per page; the 14-stage production contract is never
-duplicated into Skills 78, 79, 80, 81 or 82.
+duplicated into Skills 78, 79, 80, 81 or 82. Wired today: the upsell roles
+(scripts/run_page_type.py calls this service, then builds and runs the
+stages; Skill 49's upsell_wrapper.py --bridge-config calls that runner).
+The other sharing skills' wrappers do not call it yet.
 
 The service stages the page-request, launch record, route graph and
 brand file where Skill 71's launch-context import expects them, stamps
@@ -76,8 +79,11 @@ def main(argv=None) -> int:
                     "named page_role into the four-image pipeline.")
     p.add_argument("--request", type=Path, required=True)
     p.add_argument("--run-dir", type=Path, required=True)
-    p.add_argument("--page-version", choices=["standard", "long-form"],
+    p.add_argument("--page-version", choices=["standard", "long-form", "upsell"],
                    required=True)
+    p.add_argument("--design-style", choices=["A", "B", "C"], default=None,
+                   help="the client's page design style (A Block, B Circle, "
+                        "C Hybrid); recorded in the intake")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--image-cap", type=int, required=True)
     p.add_argument("--brand-file", type=Path, required=True)
@@ -146,6 +152,8 @@ def main(argv=None) -> int:
                        "--route-graph", str(run_dir / request["route_graph_ref"])]
         if a.consent_statements is not None:
             intake_argv += ["--consent-statements", str(a.consent_statements)]
+        if a.design_style:
+            intake_argv += ["--design-style", a.design_style]
         subprocess.run(intake_argv, check=True)
         if a.pipeline_command:
             subprocess.run(shlex.split(a.pipeline_command), check=True,

@@ -14,7 +14,15 @@ order is refused, and the finished request must pass the same
 check_section_count the executor runs before it is written. Zero provider
 calls; the file is the only output.
 
+The upsell page (Skill 80, page roles upsell_1 and upsell_2) is its own form with 8
+sections (references/copy-specs/upsell-v6.json). Its copy is Skill 80's validated JSON,
+not a manuscript: pass --copy-json and --bundle (Skill 80's result bundle, whose
+page_plan carries the exact amount-and-terms line and the order-confirmed lines) in
+place of --manuscript.
+
 Usage:
+  build_production_request.py --copy-version upsell --copy-json copy-upsell_1.json \
+      --bundle bundle-upsell_1.json --stage visual-mockup --out <run_dir>/production-request.json
   build_production_request.py --copy-version standard|long-form \\
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--slots slots.json] \\
@@ -41,6 +49,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import stage_executor as exe  # noqa: E402
+import wireframe_spec  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
 LEADS = {
@@ -264,7 +273,10 @@ def section_fragments(stage, section, index, sections, spec, table):
     cta = exe._cta_label(section.get("cta"))
     forbidden = {exe.canon_section_id(x) for x in (spec.get("cta_map", {}).get("forbidden_in_sections") or [])}
     if cta:
-        out.append(f'BUTTON: this section carries exactly one button, labelled "{cta}", with the microcopy '
+        # a label of 8 words or more is named by pointing at the CTA LABEL line: quoting it again would
+        # be an 8-word sequence repeated, which the prompt validator reads as padding
+        label = "labelled exactly as the CTA LABEL line above" if len(cta.split()) >= 8 else f'labelled "{cta}"'
+        out.append(f"BUTTON: this section carries exactly one button, {label}, with the microcopy "
                    "line under it when the copy block supplies one; no second button, link row or sticky bar.")
     elif sid in forbidden:
         out.append("BUTTON: this section carries no button, no chip and no button-shaped pill; a button here is a defect.")
@@ -328,7 +340,8 @@ def fill_to_band(request, stage, spec):
     if not budget:
         return
     ceiling = (budget["target_chars"] + budget["max_chars"]) // 2
-    table = skeleton_table()
+    # the skeleton table is the Standard and Long-Form guides' own; another form has none
+    table = skeleton_table() if spec["copy_version"] in ("standard", "long-form") else {}
     for index, section in enumerate(request["sections"], start=1):
         parts = [str(section.get("layout") or "").strip()]
         parts = [p for p in parts if p]
@@ -385,6 +398,59 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
     return out
 
 
+# One image slot per upsell section, IMG-001 to IMG-008 (the page's slot ids are unique), at
+# these ratios. The picture follows the section's own heading, so the plan never invents an
+# offer claim. A run's own plan (--slots) replaces it.
+UPSELL_RATIOS = {"1": "16:9", "2": "4:3", "3": "3:2", "4": "4:3", "5": "3:2", "6": "1:1",
+                 "7": "4:3", "8": "3:2"}
+
+
+def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dict) -> list:
+    """Request sections from Skill 80's validated upsell copy and its result bundle.
+
+    Copy lines per section: heading, body, bullets, numbered reasons, then (section 1) the
+    order-confirmed lines and, last, the exact amount-and-terms line the CTA carries. Each
+    section keeps its own CTA, the decline link label and those lines as fields the
+    wireframe stage prints verbatim (wireframe_spec.page_type_lines)."""
+    plan = bundle.get("page_plan") if isinstance(bundle, dict) else None
+    disclosure = ((plan or {}).get("disclosure") or {}).get("text")
+    ack = [b["text"] for b in (plan or {}).get("acknowledgement_blocks") or [] if b.get("text")]
+    if not disclosure or not ack:
+        raise BuildError("the bundle's page_plan needs disclosure.text and acknowledgement_blocks: "
+                         "the upsell page prints the exact amount and terms under every CTA and "
+                         "acknowledges the original purchase; neither is invented here")
+    docs = copy_doc.get("sections") or []
+    order = [exe.canon_section_id(d.get("number")) for d in docs]
+    sequence = list(spec["sequence"])
+    if order != sequence:
+        raise BuildError(
+            f"section count: the copy has {len(order)} sections {order} but the "
+            f"{spec['copy_version']} copy has {len(sequence)} canonical sections {sequence}; "
+            f"missing {[i for i in sequence if i not in order]}, unexpected "
+            f"{[i for i in order if i not in sequence]}")
+    names = {x["id"]: x["framework_name"] for x in spec["sections"]}
+    out = []
+    for sid, doc in zip(sequence, docs):
+        cta = (doc.get("cta") or {}).get("text")
+        if not cta:
+            raise BuildError(f"section {sid}: the upsell has a CTA in every section and this has none")
+        lines = [doc["heading"], doc["body"]] + list(doc.get("bullets") or [])
+        lines += [f"{n}. {r}" for n, r in enumerate(doc.get("reasons") or [], 1)]
+        if sid == "1":
+            lines += ack
+        lines.append(disclosure)
+        default = [{"slot_id": f"IMG-{int(sid):03d}", "aspect_ratio": UPSELL_RATIOS[sid],
+                    "art_direction": f"Editorial photograph that illustrates: {doc['heading']}"}]
+        entry = {"section_id": sid, "section_name": names[sid], "copy": "\n".join(lines),
+                 "cta": cta, "terms": disclosure, "decline": spec["decline_label"],
+                 "slots": slots.get(sid, default),
+                 "behavior_notes": "One-click accept CTA; decline never charges"}
+        if sid == "1":
+            entry["ack"] = ack
+        out.append(entry)
+    return out
+
+
 def template_for(stage: str, blocks: dict) -> str:
     parts = [LEADS[stage]]
     for key, heading in BLOCKS:
@@ -419,9 +485,17 @@ def run_blocks(request, run_dir):
     exe.resolve_design_style(Path(run_dir), request)
 
 
-def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
+def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
+          sections=None):
     spec = json.loads((exe.SPEC_DIR / f"{version}-v6.json").read_text(encoding="utf-8"))
-    sections = sections_from_manuscript(manuscript_text, spec, slots)
+    if sections is None:
+        sections = sections_from_manuscript(manuscript_text, spec, slots)
+    elif stage not in wireframe_spec.WIREFRAME_STAGES:
+        # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
+        # the mockup stages take them through the section layout.
+        for section in sections:
+            section["layout"] = "\n".join(wireframe_spec.page_type_lines(
+                version, section, wireframe_spec.section_tag(section, 1)))
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
@@ -485,8 +559,10 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--copy-version", choices=["standard", "long-form"], required=True)
-    p.add_argument("--manuscript", type=Path, required=True)
+    p.add_argument("--copy-version", choices=["standard", "long-form", "upsell"], required=True)
+    p.add_argument("--manuscript", type=Path)
+    p.add_argument("--copy-json", type=Path, help="upsell only: Skill 80's validated eight-section copy JSON")
+    p.add_argument("--bundle", type=Path, help="upsell only: Skill 80's result bundle JSON")
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--slots", type=Path)
@@ -499,14 +575,23 @@ def main(argv=None) -> int:
                         "checked against (default: the manuscript's run when it sits in "
                         "<run_dir>/copy/, else the folder of --out)")
     a = p.parse_args(argv)
-    run_dir = a.run_dir or (a.manuscript.resolve().parent.parent
-                            if a.manuscript.resolve().parent.name == "copy"
+    upsell = a.copy_version == "upsell"
+    if (upsell and not (a.copy_json and a.bundle)) or (not upsell and not a.manuscript):
+        p.error("upsell takes --copy-json and --bundle; standard and long-form take --manuscript")
+    source = a.copy_json if upsell else a.manuscript
+    run_dir = a.run_dir or (source.resolve().parent.parent
+                            if source.resolve().parent.name == "copy"
                             else a.out.resolve().parent)
     try:
         load = lambda f: json.loads(f.read_text(encoding="utf-8")) if f else {}
-        request = build(a.stage, a.copy_version, a.manuscript.read_text(encoding="utf-8"),
+        sections = None
+        if upsell:
+            spec = json.loads((exe.SPEC_DIR / "upsell-v6.json").read_text(encoding="utf-8"))
+            sections = sections_from_copy_json(load(a.copy_json), load(a.bundle), spec, load(a.slots))
+        request = build(a.stage, a.copy_version, "" if upsell else a.manuscript.read_text(encoding="utf-8"),
                         load(a.slots), load(a.design_prose),
-                        [r for r in a.references.split(",") if r], a.model, a.style, run_dir)
+                        [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
+                        sections=sections)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1

@@ -1,0 +1,137 @@
+{
+  "spec_id": "copy-spec-upsell-v1",
+  "spec_version": 1,
+  "copy_version": "upsell",
+  "status": "Structure only. The section sequence is the eight-section upsell derived in Skill 80 (profile signature-upsell-eight-section). Skill 80's validate_upsell_copy.py stays the authority on the copy itself; this file lets Skill 71's section-count check and request builder accept the page.",
+  "source": {
+    "profile": "80-signature-upsell/components/80-signature-upsell/profiles/upsell-profile.json",
+    "profile_id": "signature-upsell-eight-section",
+    "sha256": "c7bf8fa0b625dd8f6a67a0ed4bd496f77fd84fc8cc581ef93aefc4eecac47f2a"
+  },
+  "page_roles": [
+    "upsell_1",
+    "upsell_2"
+  ],
+  "decline_label": "No thanks - continue without this extra",
+  "sequence": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8"
+  ],
+  "sections": [
+    {
+      "id": "1",
+      "framework_name": "Opening offer",
+      "job": "Name the extra offer and its added outcome at once; the order is confirmed above it; every section ends in a filled CTA with the exact amount and terms directly under it and a plain decline link.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "2",
+      "framework_name": "First problem",
+      "job": "First distinct remaining challenge the extra offer solves.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "3",
+      "framework_name": "Second problem",
+      "job": "Second distinct remaining challenge.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "4",
+      "framework_name": "Third problem",
+      "job": "Third distinct remaining challenge.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "5",
+      "framework_name": "Why now",
+      "job": "Why this extra offer exists and why it matters now.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "6",
+      "framework_name": "Who it is for",
+      "job": "Who benefits from the upgrade, without shaming anyone who declines.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "7",
+      "framework_name": "What is added",
+      "job": "The exact extra inclusions beside a price-and-terms panel; nothing already in the original purchase is shown as new.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "8",
+      "framework_name": "Seven reasons",
+      "job": "Seven distinct numbered reasons to commit, then the final CTA and terms line.",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    }
+  ],
+  "cta_map": {
+    "required_in_sections": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8"
+    ],
+    "forbidden_in_sections": [],
+    "standalone_total": {
+      "kind": "hard",
+      "value": 8
+    },
+    "note": "A CTA in every section, including Who and What (the main-page no-CTA rules do not apply to an upsell)."
+  },
+  "containment": {
+    "no_extras_rule": "A section id outside 1 to 8, a duplicate, or a lettered child id fails."
+  }
+}

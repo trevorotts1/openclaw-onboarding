@@ -317,6 +317,8 @@ def build_dispatch_config(*, work_dir: str | Path,
                           enrichment: Dict[str, str | Path],
                           skill80_root: str | Path | None = None,
                           skill81_root: str | Path | None = None,
+                          image_provider: str = "stub",
+                          allow_paid: bool = False,
                           python: Optional[str] = None) -> Dict[str, Any]:
     """Bind the real adapter commands for one launch. Fails closed.
 
@@ -397,7 +399,12 @@ def build_dispatch_config(*, work_dir: str | Path,
                         "--journey", str(journey_files[role]),
                         "--enrichment", str(enrichment_files[role]),
                         "--produce", str(root80 / "components" / "adapters"
-                                         / "produce.py")],
+                                         / "produce.py"),
+                        # wireframes and mockups through Skill 71's page-type runner;
+                        # stub is free, kie spends money and needs allow_paid
+                        "--bridge-config", str(bridge_path),
+                        "--image-provider", image_provider,
+                        *(["--allow-paid"] if allow_paid else [])],
             "timeout_s": ADAPTERS[role]["timeout_s"],
         }
     adapters["downsell_1"] = {
