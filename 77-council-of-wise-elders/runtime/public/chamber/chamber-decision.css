@@ -149,58 +149,6 @@
   color: var(--ch-ink);
 }
 
-/* ---- the plain-English Why under the verdict ---- */
-.ch-dec-why {
-  grid-column: 1 / -1;
-  min-width: 0;
-  padding-top: var(--ch-space-4);
-  border-top: 1px solid var(--ch-line);
-}
-.ch-dec-why-head {
-  margin: 0 0 var(--ch-space-3);
-  font: 600 17px / 1.4 var(--ch-font);
-  color: var(--ch-ink);
-  overflow-wrap: anywhere;
-}
-.ch-dec-why-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--ch-space-4) var(--ch-space-6);
-}
-@media (min-width: 768px) {
-  .ch-dec-why-cols { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
-}
-.ch-dec-why-side { min-width: 0; display: grid; gap: var(--ch-space-4); align-content: start; }
-.ch-dec-why-label {
-  margin: 0 0 var(--ch-space-2);
-  font: 700 11px / 1.4 var(--ch-font);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ch-gold-strong);
-}
-.ch-dec-why-steps {
-  margin: 0;
-  padding-left: 1.25rem;
-  display: grid;
-  gap: var(--ch-space-2);
-  font: 400 14px / 1.5 var(--ch-font);
-  color: var(--ch-ink);
-  overflow-wrap: anywhere;
-}
-.ch-dec-why-more { list-style: none; margin-left: -1.25rem; color: var(--ch-ink-muted); }
-.ch-dec-why-text {
-  margin: 0;
-  font: 400 14px / 1.5 var(--ch-font);
-  color: var(--ch-ink);
-  overflow-wrap: anywhere;
-}
-.ch-dec-why-dissent { display: grid; gap: var(--ch-space-2); }
-.ch-dec-why-by {
-  margin: 0;
-  font: 700 13px / 1.4 var(--ch-font);
-  color: var(--ch-ink-muted);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .ch-dec-fill {
     transition: none;
