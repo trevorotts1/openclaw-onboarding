@@ -596,6 +596,85 @@ def _sung_style(style_id):
     except (_MS.MusicStyleError, TypeError):
         return False
 
+def _fit_rap_style_words(D, spoken_words, sung_words, rap_words, style_id):
+    """Size (spoken, sung) so words_fit.preflight passes WITH the rap floor held.
+
+    v2.9.72 (R1). Before this, a rap style's plan kept its rap reservation and
+    its generic sung budget, and the two together missed the style's sung-share
+    floor at 30/45/60 s: R&B Flow planned sung 53 + rap 40 at 60 s and
+    words_fit refused it SHARE_OFF_TARGET (63.5% against 72.9%). The fix sizes
+    the sung allocation from the share the gate actually checks, at the
+    style's own rates, and never raises a word count. Returns
+    (spoken, sung, feasible); feasible False means the reservation and the
+    share floor cannot both hold inside this card length.
+    """
+    r = _WF.rates_for(style_id)
+    vocal_s = max(D - _WF.INTRO_OUTRO_S, 0.0)
+    f = _WF.style_sung_target_pct(style_id, D) / 100.0
+    if not 0.0 < f < 1.0:
+        return spoken_words, sung_words, True
+    orig_spoken, orig_sung = spoken_words, sung_words
+    rap_t = rap_words / float(r["rap"])
+    # Spoken yields first: it is the block the style's own rules let the rap
+    # verses crowd out, and its words are already capped by the opener/CTA.
+    spoken_t = spoken_words / float(r["spoken"])
+    room = vocal_s - rap_t
+    if room < 0:                                 # nothing left for voice
+        return orig_spoken, orig_sung, False
+    # share = sung_t / (sung_t + spoken_t + rap_t) >= f
+    #   => sung_t >= f/(1-f) * (spoken_t + rap_t)
+    k = f / (1.0 - f)
+    need_sung_t = k * (spoken_t + rap_t)
+    if need_sung_t > room:                       # spoken must give ground
+        spoken_t = max(room - need_sung_t, 0.0)
+        spoken_words = int(math.floor(spoken_t * r["spoken"] + 1e-9))
+        need_sung_t = k * (spoken_words / float(r["spoken"]) + rap_t)
+    if need_sung_t > room + 1e-9:
+        # Card too short for this style. Leave the v2.9.71 allocation alone:
+        # the plan is refused up front and a zeroed opener would change what
+        # every other gate sees for no reason.
+        return orig_spoken, orig_sung, False
+    max_sung_t = room - spoken_words / float(r["spoken"])
+    sung_words = min(sung_words,
+                     int(math.floor(max_sung_t * r["sung"] + 1e-9)))
+    need_words = int(math.ceil(need_sung_t * r["sung"] - 1e-9))
+    if sung_words < need_words:
+        sung_words = need_words
+    return spoken_words, sung_words, True
+
+
+def infeasible_length(style_id, spoken_share_pct=None):
+    """-> None, or the card length at which this style first fits both gates.
+
+    Reads the SAME two rules plan() and words_fit use (the rap reservation and
+    the style's sung-share floor), so a refusal names a length that really
+    works. Only a rap style can be infeasible: R&B Flow needs 70 s or more.
+    """
+    if not _rap_style(style_id):
+        return None
+    L = 20
+    while L <= 3600:
+        if _rap_style_words_for(style_id, L, spoken_share_pct)[2]:
+            return L
+        L += 1
+    return None
+
+
+def _rap_style_words_for(style_id, L, spoken_share_pct=None):
+    D = L - END_EARLY_S
+    wb = word_budget(D, spoken_share_pct, 0.0)
+    opener = min(opener_cap_for(D), max(wb["spoken_words"] // 4, 1))
+    spoken = min(wb["spoken_words"], opener + OUTRO_MAX_WORDS)
+    reserve_s = min(rap_reserve_s(D, wb["spoken_s"]), max(D - _WF.INTRO_OUTRO_S, 0.0))
+    rap_words = max(int(math.ceil(reserve_s * _WF.rates_for(style_id)["rap"])),
+                    rap_verse_min_words(style_id) * MIN_RAP_VERSES)
+    sp, sg, ok = _fit_rap_style_words(D, spoken, wb["sung_words"], rap_words, style_id)
+    return sp, sg, ok
+
+
+def opener_cap_for(D):
+    return OPENER_MAX_WORDS_SHORT if D <= 105 else OPENER_MAX_WORDS_LONG
+
 def _fit_style_words(D, spoken_words, sung_words, style_id):
     """Cap (spoken, sung) so words_fit.preflight(D, sung, spoken, style) is ok.
 
@@ -907,6 +986,35 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True,
         # the D15 share counts rap as spoken-style: the plan reaches the
         # requested target by construction, so the caps-bind note never fires.
         planned_share = round((spoken_words / SPOKEN_WPS + rap_s) / D * 100.0, 1)
+    infeasible = None
+    # rap_floor=False is words_fit's own style_sung_target_pct reading: it must
+    # stay the pre-D1 carve (its docstring pins that), and sizing here would
+    # recurse into the very target this function is asked to compute.
+    if _rap_style(style_id) and rap_floor:
+        # v2.9.72 (R1): the rap reservation and the style's sung-share floor are
+        # BOTH binding. Size the sung allocation against the share the gate
+        # checks; when the card is too short to hold both, say so on the plan
+        # with the length that does work, instead of letting stage 3 loop.
+        spoken_words, sung_words, fit = _fit_rap_style_words(
+            D, spoken_words, sung_words, rap_words, style_id)
+        # The opener cap is NOT re-clamped to the spoken count here: a rap
+        # style's reservation can leave zero spoken words while the plan still
+        # reports the opener the sheet is allowed (v2.9.71 behaviour, and what
+        # the shipped sheets rely on).
+        planned_share = round((spoken_words / SPOKEN_WPS + rap_s) / D * 100.0, 1)
+        if not fit:
+            need = infeasible_length(style_id, spoken_share_pct)
+            infeasible = {
+                "chosen_length_s": L,
+                "min_length_s": need,
+                "reason_code": "STYLE_TOO_SHORT_FOR_RAP",
+                "message": ("%s needs the rap reservation and the sung-share "
+                            "floor to both fit; the shortest card that works is "
+                            "%s s%s. Choose a longer card or a style without "
+                            "rap verses before stage 3."
+                            % (style_id, need,
+                               "" if need is None else " (%d s selected)" % L)),
+            }
     if _sung_style(style_id):
         # v2.9.70: a named non-rap style's budget must pass the gate that
         # judges it (words_fit.preflight, at the style's own rates, + intro/
@@ -968,6 +1076,9 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True,
             out["lexical_gate"] = lexical_gate(out, style_id)
             assert_rap_floor(out, style_id)
             assert_lexical_floor(out, style_id)
+    if infeasible is not None:
+        out["infeasible"] = infeasible
+        out["words_fit"] = "infeasible"
     if planned_share + 1.0 < out["spoken_share_pct_requested"]:
         out["note"] = ("spoken block caps bind: set this ad's spoken target to %.1f%%"
                        % planned_share)
