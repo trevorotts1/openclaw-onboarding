@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.3.1 - 2026-10-19 - sync allowlist test passes in the 999 edition
+
+- `tests/test_sync_allowlist.py`: the file that exists only in this repo must be absent in the 999 edition, so the same test passes in both. Version bumped so the G3 gate sees the skill content change. No production behavior changed.
+
 ## Unreleased - 2026-10-19 - test honesty: fixture-dependent modules report SKIPPED, not PASS; mobile anchor floor 18px
 
 - `tests/`: two fixture-dependent modules (browser hygiene, swarm runner) now report SKIPPED with a named reason instead of a false PASS when their fixtures are not shipped; `test_validate_page.py` pins the 18px mobile anchor floor. Suite: 40 passed, 2 skipped. No production behavior changed.
