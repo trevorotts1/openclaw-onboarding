@@ -1,3 +1,7 @@
+## [v27.1.47]  -  2026-10-19  -  Council (Skill 77) v1.0.30: verdict says why + real key points
+
+- In plain English: the Council screen now explains why the verdict is what it is (what has to happen first, how strong the evidence is, where the elders disagree), and the Key Points list shows what each elder actually argued, the fault lines the chair found, the conditions attached and the dissent, each by the elder's full name, instead of only phase headings.
+
 ## [v27.1.46]  -  2026-10-19  -  Council (Skill 77) v1.0.29: client polish on the live Council screen (plain wording, friendly model names, all six steps visible on a phone, no stale notices)
 
 - In plain English: the New question window now says only that convening starts the council on the model you chose; every model has a friendly name and a plain "Not available for the council yet" note instead of a raw code; the six steps (Brief to Verdict) all fit on a phone screen; the service status page no longer claims the Council screen is missing; and the operator command help no longer points anyone to an approval step.

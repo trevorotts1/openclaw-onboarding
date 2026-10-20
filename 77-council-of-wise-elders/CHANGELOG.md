@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.30: the verdict says why, and Key Points show what the elders actually said
+
+In plain English: two gaps found on the first real live council. The screen said "Verdict: Wait" and showed nine of nine votes for Option B, but never said why the answer was Wait. And the Key Points list held only phase headings. Nothing about how a council runs has changed; the screen now shows more of what the session already recorded, with no new model calls.
+
+- **A short "Why" under the verdict**: what has to happen first (the conditions the elders attached), how strong the evidence is in plain words, how the vote went, and where the elders disagree (the strongest dissent, or the sharpest caution when nobody voted against).
+- **Key Points show real content**: each elder's lead argument, the fault lines the chair found, the conditions attached to the resolution, the changes elders asked for and their dissent. Every line names the elder in full. The phase headings stay as small group labels, and long lines show a short version with "Read more".
+- **Proof on real data**: the first live session (verdict Wait, Option B, 27 cards) is saved read-only as a test fixture, and new tests replay it.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.47).
+
 ## v1.0.29: client polish on the live Council screen
 
 In plain English: five small clean-ups on what a client sees, found while checking the live Council screen. Nothing about how a council runs has changed.
