@@ -1,5 +1,15 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.9] - 2026-10-20 - sync createTask models are dispatchable; URL-less save persists the payload
+
+- `_dispatch` no longer reports a SYNCHRONOUS createTask answer as `bad_response`. `ai-music-api/timeStamped-lyrics` returns its finished payload in `data` (the aligned words under `data.data`, `startS`/`endS`) with no `taskId`; the adapter called that "createTask returned no taskId" and those models could never be dispatched. Such an answer now returns `state=success` with `data={"response": data, "sync": true}` and a warning. Proven live on Laya Kelley's box (her takes and word timings came back after the same patch; `~/scratch/dsf-stall-fix/laya/skill74/box-local-74.diff`).
+- A genuinely empty createTask answer (`{}`, a null `data`, no taskId and nothing else) still fails `bad_response`. The failure code is not weakened into a success; the check only yields to an answer that actually carries a payload.
+- `cmd_save` persists a URL-less sync payload as `<save_dir>/<task>_0.json`. Before this, the save step re-queried the local `sync-<hex>` id at KIE, found no such task and wrote zero files, so the aligned words were unreadable. A market task carries no `data.response`, so this never fires for one and no document is invented.
+- CLI `save --info <file>`: accepts the submit envelope (as `kie_dispatch` writes to `sync-info.json`) and saves from `data.response` instead of re-querying the task. Without `--info` the old contract is unchanged: the task is looked up.
+- Redaction, `--allow-host` and the existing failure codes (`bad_response`, `host_not_allowed`, `bad_url`, `no_key`, ...) are untouched.
+- New `tests/test_sync_createtask.py` (9 tests, hermetic, fake transport): sync submit -> success, URL-less save writes `<task>_0.json`, CLI `save --info`, and a genuinely empty answer still fails `bad_response`. Five of the nine fail against the e8be6fe control adapter.
+- Version roll to v1.1.9 (`SKILL.md`, `skill-version.txt`). This branch is scoped to `74-kie-live-adapter/` only, so two mechanical dependents of the bump are NOT in it and are red until they move: `07-kie-setup/tests/test_official_docs_port.py` (`SKILL_VERSIONS["74-kie-live-adapter"]` still pins 1.1.8) and the embedded client block in `47-movie-producer/kie-adapters/tools/graphics/kie_image.py` (`embed_kie_client.py --check` reports STALE). Repair: bump the pin and run `python3 47-movie-producer/scripts/embed_kie_client.py`.
+
 ## [1.1.8] - 2026-10-10 - setup-kie-live-adapter.sh: byte-minimal env.KIE_API_KEY insert, no backup
 
 - New `setup-kie-live-adapter.sh`: installs THIS CLIENT'S OWN `env.KIE_API_KEY` into each Claude config root's `settings.json`. Owner order 2026-10-10.
