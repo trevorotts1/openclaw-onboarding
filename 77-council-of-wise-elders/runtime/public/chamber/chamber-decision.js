@@ -59,7 +59,17 @@
     return out;
   }
 
-  ns.decision = { rowsModel: rowsModel, badgesModel: badgesModel };
+  /**
+   * Pure: the plain-English "Why" under the verdict, or null while there is no verdict
+   * to explain. Every line comes from the verdict record the session returned.
+   */
+  function whyModel(session) {
+    var why = session && session.verdict ? session.verdict.why : null;
+    if (!why || !why.headline) return null;
+    return why;
+  }
+
+  ns.decision = { rowsModel: rowsModel, badgesModel: badgesModel, whyModel: whyModel };
 
   if (typeof document === 'undefined') return;
 
@@ -113,8 +123,13 @@
 
   var list = el('ul', 'ch-dec-options');
   list.setAttribute('aria-label', 'Options');
+  var whyBox = el('section', 'ch-dec-why');
+  whyBox.setAttribute('aria-label', 'Why the council said this');
+  whyBox.hidden = true;
   host.appendChild(titleCol);
   host.appendChild(list);
+  host.appendChild(whyBox);
+  var whySig = '';
 
   var rows = []; // [{li, chip, label, reco, fill, value, sr}]
   var badgeNodes = []; // [{kind, node}]
@@ -163,8 +178,49 @@
     setHidden(badges, model.length === 0);
   }
 
+  function whyBlock(cls, label, body) {
+    var d = el('div', 'ch-dec-why-block ' + cls);
+    d.appendChild(el('h2', 'ch-dec-why-label', label));
+    d.appendChild(body);
+    return d;
+  }
+
+  function renderWhy(why) {
+    var sig = why ? JSON.stringify(why) : '';
+    if (sig === whySig) return;
+    whySig = sig;
+    while (whyBox.firstChild) whyBox.removeChild(whyBox.firstChild);
+    setHidden(whyBox, !why);
+    if (!why) return;
+    whyBox.appendChild(el('p', 'ch-dec-why-head', why.headline));
+    var cols = el('div', 'ch-dec-why-cols');
+    if (why.steps.length) {
+      var ol = el('ol', 'ch-dec-why-steps');
+      why.steps.forEach(function (t) { ol.appendChild(el('li', '', t)); });
+      if (why.moreSteps > 0) ol.appendChild(el('li', 'ch-dec-why-more', 'And ' + why.moreSteps + ' more, listed in Key Points.'));
+      cols.appendChild(whyBlock('ch-dec-why-first', why.stepsHeading || 'What has to happen first', ol));
+    }
+    var side = el('div', 'ch-dec-why-side');
+    if (why.evidence) side.appendChild(whyBlock('ch-dec-why-evidence', 'How strong the evidence is', el('p', 'ch-dec-why-text', why.evidence)));
+    var vote = el('p', 'ch-dec-why-text');
+    if (why.support) vote.textContent = why.support;
+    if (why.dissent) {
+      var dis = el('div', 'ch-dec-why-dissent');
+      if (why.support) dis.appendChild(vote);
+      var quote = el('p', 'ch-dec-why-text', why.dissent.text);
+      dis.appendChild(el('p', 'ch-dec-why-by', why.dissent.by ? why.dissent.lead + ', from ' + why.dissent.by : why.dissent.lead));
+      dis.appendChild(quote);
+      side.appendChild(whyBlock('ch-dec-why-dissent-block', 'Where the elders disagree', dis));
+    } else if (why.support) {
+      side.appendChild(whyBlock('ch-dec-why-dissent-block', 'Where the elders disagree', vote));
+    }
+    if (side.firstChild) cols.appendChild(side);
+    if (cols.firstChild) whyBox.appendChild(cols);
+  }
+
   function render(view) {
     var session = view ? view.session : null;
+    renderWhy(whyModel(session));
     var model = rowsModel(session);
     var empty = !session;
 
