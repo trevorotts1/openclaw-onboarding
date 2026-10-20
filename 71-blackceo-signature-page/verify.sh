@@ -104,6 +104,7 @@ for f in \
   references/copy-specs/upsell-v6.json scripts/run_page_type.py tests/test_page_type_upsell.py \
   references/wireframe-build-spec.json scripts/wireframe_spec.py \
   scripts/copy_forms.py references/copy-specs/product-selection-v1.json tests/test_product_selection_form.py \
+  references/page-structures.json tests/test_page_structures.py \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \

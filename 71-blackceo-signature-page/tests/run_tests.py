@@ -82,6 +82,9 @@ MODULES = [
     "test_composition_library.py",
     # The order page (page_role product_selection) as a third copy form of the one pipeline.
     "test_product_selection_form.py",
+    # SPF030: a non-landing page role's own canonical structure (downsell_1): section count,
+    # wireframe lines, request builder, free preflight.
+    "test_page_structures.py",
 ]
 
 def skip_reason(stdout):

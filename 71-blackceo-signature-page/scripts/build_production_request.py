@@ -42,6 +42,16 @@ Usage:
                section's composed prompt stays at or under the model's 95 percent
                target; copy and contract blocks are never cut.
 
+A non-landing page role with an entry in references/page-structures.json is built
+from that page's own copy document instead of a landing manuscript:
+
+  build_production_request.py --page-role downsell_1 --page-copy <page.json> \
+      --stage visual-mockup --out <run_dir>/production-request.json [--slots ...]
+
+  The page copy is the role's owning-skill page object (for downsell_1, Skill 81's
+  downsell-page schema). One request section per page section, in the entry's
+  sequence; the same check_section_count the executor runs gates the result.
+
 Exit codes: 0 written; 1 named refusal; 2 usage.
 """
 from __future__ import annotations
@@ -518,6 +528,50 @@ def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dic
     return out
 
 
+def sections_from_page(doc: dict, structure: dict, slots: dict, notes: dict) -> list:
+    """Request sections from a non-landing page's own copy document, one per
+    section of the role's structure, in order. A role label used as a heading
+    ("The Big Bold Claim") is a framework name, never public copy: it is
+    dropped and the body prints. A list item without closing punctuation gets
+    a full stop so the executor's truncated-copy guard reads it as finished;
+    both are recorded in `notes`."""
+    page = doc.get("page") if isinstance(doc.get("page"), dict) else doc
+    rows = page.get("sections")
+    wanted = [s["page_role"] for s in structure["sections"]]
+    got = [r.get("role") if isinstance(r, dict) else None for r in rows or []]
+    if got != wanted:
+        raise BuildError(
+            f"section count: the {structure['label']} copy has {len(got)} sections {got} but "
+            f"the {structure['role']} structure has {len(wanted)} sections {wanted}")
+    decline = str(((page.get("decline_action") or {}).get("label")) or "").strip()
+    if not decline:
+        raise BuildError("the page copy carries no decline_action.label; the decline button is "
+                         "part of every band of this page type")
+    out = []
+    for spec_sec, row in zip(structure["sections"], rows):
+        sid = spec_sec["id"]
+        lines = []
+        heading = str(row.get("heading") or "").strip()
+        if heading and not PRIVATE_TEXT.search(heading):
+            lines.append(heading)
+        elif heading:
+            notes["dropped_role_label_headings"].append(sid)
+        lines += [p.strip() for p in re.split(r"\n\s*\n", str(row.get("body") or "")) if p.strip()]
+        for n, item in enumerate(row.get("missed_out_items") or [], start=1):
+            item = str(item).strip()
+            if item[-1:] not in exe.TERMINAL:
+                item += "."
+                notes["terminal_periods_added"].append(f"{sid}.{n}")
+            lines.append(f"{n}. {item}")
+        label = ((row.get("cta") or {}).get("label")) or ""
+        if not str(label).strip():
+            raise BuildError(f"section {sid}: no CTA label; every band of this page type has a button")
+        out.append({"section_id": sid, "section_name": spec_sec["name"], "copy": "\n".join(lines),
+                    "cta": str(label).strip(), "labels": [decline], "layout": spec_sec.get("layout", ""),
+                    "slots": slots.get(sid, spec_sec.get("slots", []))})
+    return out
+
+
 def template_for(stage: str, blocks: dict) -> str:
     parts = [LEADS[stage]]
     for key, heading in BLOCKS:
@@ -553,23 +607,28 @@ def run_blocks(request, run_dir):
 
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
-          page_role="landing", sections=None):
-    spec = role_spec.load(page_role)
-    if spec:
-        version = version or spec["form"]
+          page_role="landing", sections=None, structure=None, page_doc=None):
+    notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
+    if structure:  # a role with its own entry in references/page-structures.json (downsell_1)
+        version, spec = structure["copy_version"], structure
+        sections = sections_from_page(page_doc, structure, slots, notes)
     else:
-        version = version or copy_forms.form_for_role(page_role)
-        if not version:
-            raise BuildError("--copy-version is required for a landing page (standard, long-form, product-selection or upsell)")
-        spec = copy_forms.load_spec(version)
-    if sections is None:
-        sections = sections_from_manuscript(manuscript_text, spec, slots)
-    elif stage not in wireframe_spec.WIREFRAME_STAGES:
-        # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
-        # the mockup stages take them through the section layout.
-        for section in sections:
-            section["layout"] = "\n".join(wireframe_spec.page_type_lines(
-                version, section, wireframe_spec.section_tag(section, 1)))
+        spec = role_spec.load(page_role)
+        if spec:
+            version = version or spec["form"]
+        else:
+            version = version or copy_forms.form_for_role(page_role)
+            if not version:
+                raise BuildError("--copy-version is required for a landing page (standard, long-form, product-selection or upsell)")
+            spec = copy_forms.load_spec(version)
+        if sections is None:
+            sections = sections_from_manuscript(manuscript_text, spec, slots)
+        elif stage not in wireframe_spec.WIREFRAME_STAGES:
+            # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
+            # the mockup stages take them through the section layout.
+            for section in sections:
+                section["layout"] = "\n".join(wireframe_spec.page_type_lines(
+                    version, section, wireframe_spec.section_tag(section, 1)))
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
@@ -578,6 +637,10 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         request["page_role"] = spec["page_role"]
     if spec.get("form"):
         request["_role_spec"] = spec  # the wireframe block reads it; never written out
+    if structure:
+        page = page_doc.get("page") if isinstance(page_doc.get("page"), dict) else page_doc
+        request["page_role"] = structure["role"]
+        request["decline_action"] = {"label": page["decline_action"]["label"].strip()}
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
@@ -620,6 +683,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         "stage": stage, "copy_version": version, "section_count": len(sections),
         **({"page_role": spec["page_role"]} if spec.get("page_role") else {}),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
+        **({"page_role": structure["role"], **notes} if structure else {}),
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
         "trimmed_blocks": [k for k in chosen if chosen[k] != prose[k]],
         "char_budget": {"target": budget and budget["target_chars"],
@@ -643,10 +707,13 @@ def main(argv=None) -> int:
                         "role that has its own spec")
     p.add_argument("--page-role", default="landing",
                    help="page role (default landing); a role with references/copy-specs/roles/<role>.json "
-                        "is built to that role's section sequence")
+                        "is built to that role's section sequence, a role with an entry in "
+                        "references/page-structures.json (downsell_1) to that entry's sequence")
     p.add_argument("--manuscript", type=Path)
     p.add_argument("--copy-json", type=Path, help="upsell only: Skill 80's validated eight-section copy JSON")
     p.add_argument("--bundle", type=Path, help="upsell only: Skill 80's result bundle JSON")
+    p.add_argument("--page-copy", type=Path,
+                   help="a role with a references/page-structures.json entry: that role's own page copy document (JSON)")
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--slots", type=Path)
@@ -660,22 +727,27 @@ def main(argv=None) -> int:
                         "<run_dir>/copy/, else the folder of --out)")
     a = p.parse_args(argv)
     upsell = a.copy_version == "upsell"
-    if (upsell and not (a.copy_json and a.bundle)) or (not upsell and not a.manuscript):
+    structure = exe.page_structure(a.page_role)
+    if structure and not a.page_copy:
+        p.error(f"{a.page_role} takes --page-copy (its own page copy document)")
+    if not structure and ((upsell and not (a.copy_json and a.bundle)) or (not upsell and not a.manuscript)):
         p.error("upsell takes --copy-json and --bundle; every other form and page role takes --manuscript")
-    source = a.copy_json if upsell else a.manuscript
+    source = a.page_copy if structure else a.copy_json if upsell else a.manuscript
     run_dir = a.run_dir or (source.resolve().parent.parent
                             if source.resolve().parent.name == "copy"
                             else a.out.resolve().parent)
     try:
         load = lambda f: json.loads(f.read_text(encoding="utf-8")) if f else {}
-        sections = None
-        if upsell:
+        sections = page_doc = None
+        if structure:
+            page_doc = load(a.page_copy)
+        elif upsell:
             spec = json.loads((exe.SPEC_DIR / "upsell-v6.json").read_text(encoding="utf-8"))
             sections = sections_from_copy_json(load(a.copy_json), load(a.bundle), spec, load(a.slots))
-        request = build(a.stage, a.copy_version, "" if upsell else a.manuscript.read_text(encoding="utf-8"),
+        request = build(a.stage, a.copy_version, "" if (structure or upsell) else a.manuscript.read_text(encoding="utf-8"),
                         load(a.slots), load(a.design_prose),
                         [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
-                        a.page_role, sections=sections)
+                        a.page_role, sections=sections, structure=structure, page_doc=page_doc)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1

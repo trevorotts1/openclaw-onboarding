@@ -76,12 +76,24 @@ def section_tag(section: dict, index: int) -> str:
 _NOTED = set()
 
 
+def profile_of(request: dict):
+    """The page profile (references/wireframe-build-spec.json page_profiles) of a
+    non-landing page role, or None. stage_executor.load_request stamps the role
+    into request["page_role"]; a request built with the role in metadata works too."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    role = request.get("page_role") or metadata.get("page_role")
+    return (spec().get("page_profiles") or {}).get(role) if role and role != "landing" else None
+
+
 def form_of(request: dict, strict: bool = False) -> str:
     """The selected form: request copy_version, metadata.copy_version, the
     section check the executor recorded, else inferred from the section ids
     (a lettered id means long-form, exactly 12 plain ids means standard).
     Undeterminable: a paid run (strict) is refused; a free run uses standard
     and says so once on stderr."""
+    profile = profile_of(request)
+    if profile:  # a page role's own sheet form, never inferred from its section count
+        return profile["sheet_form"]
     metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
     check = request.get("_section_check")
     declared = [request.get("copy_version"), metadata.get("copy_version"),
@@ -233,6 +245,24 @@ def page_type_lines(form: str, section: dict, tag: str) -> list:
     return [rules[key].format(decline=section.get("decline") or "") for key in ("all", tag) if key in rules]
 
 
+def _profile_lines(profile: dict, tag: str, mobile: bool, cta: str, request: dict) -> list:
+    """A page role's own lines: page rules, this section's geometry for the platform,
+    and, where the section has a button, the money-terms line and the decline button."""
+    lines = [profile["page_rules"]]
+    geometry = (profile.get("sections") or {}).get(tag)
+    if geometry:
+        lines.append(geometry["mobile" if mobile else "desktop"])
+    if cta:
+        lines.append(profile["money_terms"])
+        decline = (request.get("decline_action") or {}).get("label")
+        if not decline:
+            raise SpecError(
+                "the page profile needs the decline button: the production request carries no "
+                "decline_action.label (a downsell band without its visible decline button is refused)")
+        lines.append(profile["decline"].format(decline=str(decline).strip().rstrip(".")))
+    return lines
+
+
 def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
                  request: dict) -> str:
     """The build-spec block for one wireframe slice, composed from the JSON."""
@@ -241,6 +271,7 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     s = spec()
     blocks = s["blocks"]
     form = form_of(request)
+    profile = profile_of(request)
     ref = style_reference(stage, form)
     tag = section_tag(section, index)
     name = str(section.get("section_name") or section.get("section_id") or tag)
@@ -254,8 +285,9 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     rspec = request.get("_role_spec")  # a page with its own structure (references/copy-specs/roles/)
     over = (rspec or {}).get("wireframe_blocks") or {}  # replaces the landing-only wording below
     lines = [line.format(form_label=FORM_LABEL[form], platform="mobile" if mobile else "desktop",
-                         width=width, tag=tag, name=name, position=index, total=total, page_kind=page_kind)
-             for line in blocks["intro"]]
+                         width=width, tag=tag, name=name, position=index, total=total, page_kind=page_kind,
+                         page_label=profile["page_label"] if profile else "landing page")
+             for line in (profile["intro"] if profile else blocks["intro"])]
     if rspec:
         lines[0] = lines[0].replace("a landing page", f"a {rspec['page_role']} page")
     lines += [blocks["style_reference"], over.get("colour", blocks["colour"]), blocks["grammar_head"]]
@@ -291,10 +323,14 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
         lines.append(blocks["mobile"].format(width=width))
         if ref["extra_rule"] and form != "long-form":
             lines.append(ref["extra_rule"])
-    elif not layouts:
+    elif not layouts and not profile:
         lines.append(over.get("desktop") or blocks[form.replace("-", "_") + "_desktop"])
     if layouts:
         lines.append(layouts["mobile" if mobile else "desktop"][tag])
+    if profile:
+        lines += _profile_lines(profile, tag, mobile, cta, request)
+        lines.append(blocks["do_not_copy"])
+        return "\n".join(lines)
     lines += page_type_lines(form, section, tag)
     if long_form and tag in ("2", "3", "4"):
         lines.append(blocks["pain"])

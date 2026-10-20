@@ -610,19 +610,53 @@ def allowed_section_sequences(spec: dict) -> list:
     return out
 
 
+STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
+
+
+def page_structure(role):
+    """The canonical section structure of a non-landing page role
+    (references/page-structures.json), or None: the landing page and any role
+    without an entry keep the landing copy-spec behaviour."""
+    if not role or role == "landing":
+        return None
+    try:
+        data = json.loads(STRUCTURES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {STRUCTURES_FILE.name}: {exc}")
+    entry = (data.get("roles") or {}).get(role)
+    return entry if isinstance(entry, dict) else None
+
+
+def page_role_for(run_dir: Path, request: dict) -> str:
+    """The page role of this run: the request's own page_role, else the run's
+    declared role (intake launch.page_role, else the page-request.json that
+    scripts/shared_page_service.py stages), else landing."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    for value in (request.get("page_role"), metadata.get("page_role")):
+        if value:
+            return str(value)
+    return design_board_module().declared_role(run_dir)
+
+
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical section of
     the page it builds, in order: the selected form's copy sections (Standard 12,
     Long-Form 15, Product Selection 5, Upsell 8) for a landing or registered-form run, or the
     page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
-    for a run whose page_role has one.
+    for a run whose page_role has one. A non-landing page role with an entry in
+    references/page-structures.json is checked against that entry's sequence
+    instead (Downsell 8).
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
     """
-    rspec = role_spec.for_request(run_dir, request)
-    version = declared_copy_version(run_dir, request)
-    if rspec:
+    role = page_role_for(run_dir, request)
+    structure = page_structure(role)
+    rspec = None if structure else role_spec.for_request(run_dir, request)
+    version = structure["copy_version"] if structure else declared_copy_version(run_dir, request)
+    if structure:
+        spec, label = structure, f"{structure['label']} page ({role})"
+    elif rspec:
         version = version or rspec["form"]  # the form only picks the style reference sheet
         if version not in role_spec.FORMS:
             raise ExecutorError(
@@ -747,6 +781,9 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
               "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
     resolve_design_style(run_dir, data)
+    role = page_role_for(run_dir, data)
+    if role != "landing":
+        data["page_role"] = role  # wireframe_spec reads the page profile from it
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
     if not (data.get("copy_version") or metadata.get("copy_version")):
         # The run's form is an intake decision (artifact-contracts.md, Intake);
@@ -1532,7 +1569,8 @@ def main(argv=None) -> int:
             request["_brand_block"] = brand_block
             check = request.get("_section_check")
             if check:
-                print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
+                print(f"PREFLIGHT_SECTIONS page_role={request.get('page_role') or 'landing'} "
+                      f"copy_version={check[0]} "
                       f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
                       f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
