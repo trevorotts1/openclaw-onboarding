@@ -5,6 +5,7 @@
 - **Derived from:** `44-convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire` (Audiences C and C2)
 - **Trigger:** sales-page visit with no checkout page visit inside the attribution window
 - **Channels:** Facebook / Instagram retargeting · GHL email nudge · GHL SMS nudge
+- **Draft only:** build as a GHL draft, publish only after the operator approves the copy and the pixel test fires. Buyer suppression (`retarget-b-buyer` + `purchased-[offer-id]`) is permanent and never removed.
 
 ## What it is
 The narrow retarget layer for one drop-off: someone read the sales page and never reached checkout. They get a proof email, an objection email, one optional SMS, and a retargeting ad that changes when they come back to the page.

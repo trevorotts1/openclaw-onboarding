@@ -8,6 +8,7 @@
     "Launch B Page-Visit Retarget Layer"
   ],
   "category": "multichannel-automation",
+  "draft_only": true,
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire",
     "primary": "Behavioral Retargeting — Page-Visit Pixel Fire: Audience C (visited offer/sales page, no purchase) and Audience C2 (repeat visit, high intent).",
