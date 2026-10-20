@@ -346,7 +346,13 @@ test('host-call transport passes --model only when the snapshot pins one', async
     model: 'sonnet',
     spawnImpl: fakeSpawn(withModel),
   }).generate(REQUEST);
-  assert.deepEqual(withModel.args, ['--print', '--output-format', 'json', '--model', 'sonnet']);
+  // The fake never prints a real help text, so every isolation flag is passed.
+  const ISOLATION = [
+    '--no-session-persistence', '--disable-slash-commands', '--strict-mcp-config',
+    '--tools', '', '--settings', '{"disableAllHooks":true}',
+  ];
+  const BASE = ['--print', '--output-format', 'stream-json', '--verbose'];
+  assert.deepEqual(withModel.args, [...BASE, '--model', 'sonnet', ...ISOLATION]);
 
   for (const model of [undefined, null]) {
     const without: { args?: readonly string[] } = {};
@@ -355,7 +361,7 @@ test('host-call transport passes --model only when the snapshot pins one', async
       model,
       spawnImpl: fakeSpawn(without),
     }).generate(REQUEST);
-    assert.deepEqual(without.args, ['--print', '--output-format', 'json']);
+    assert.deepEqual(without.args, [...BASE, ...ISOLATION]);
   }
 });
 
