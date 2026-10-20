@@ -1,0 +1,221 @@
+{
+  "schema_version": "1.0.0",
+  "launch_id": "7figurepreneur-2026-11",
+  "offer": {
+    "name": "7FigurePreneur",
+    "price_usd": 7000,
+    "currency": "USD",
+    "payment_plans": true,
+    "landing_url": "https://example.com/7figurepreneur",
+    "sales_page_url": "https://example.com/7figurepreneur/apply",
+    "checkout_url": "https://example.com/7figurepreneur/order",
+    "thank_you_url": "https://example.com/7figurepreneur/access"
+  },
+  "launch_calendar": {
+    "launch_at": "2026-11-10T19:00:00-05:00",
+    "doors_open_at": "2026-11-04T09:00:00-05:00",
+    "doors_close_at": "2026-11-12T23:59:00-05:00",
+    "timezone": "America/New_York"
+  },
+  "a2p_ready": true,
+  "conversation_ai": {
+    "requested": true,
+    "mode": "booking",
+    "channels": ["sms", "chat"]
+  },
+  "pages": [
+    {
+      "id": "page_landing",
+      "kind": "landing",
+      "url": "https://example.com/7figurepreneur",
+      "waits_for": []
+    },
+    {
+      "id": "page_sales",
+      "kind": "sales",
+      "url": "https://example.com/7figurepreneur/apply",
+      "waits_for": []
+    },
+    {
+      "id": "page_checkout",
+      "kind": "checkout",
+      "url": "https://example.com/7figurepreneur/order",
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "page_access",
+      "kind": "access",
+      "url": "https://example.com/7figurepreneur/login",
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "page_thank_you",
+      "kind": "thank_you",
+      "url": "https://example.com/7figurepreneur/access",
+      "waits_for": ["page_checkout"]
+    }
+  ],
+  "email_sequences": [
+    {
+      "id": "email_pre_launch",
+      "kind": "pre_launch",
+      "provider": "skill50",
+      "email_count": 5,
+      "draft_only": true,
+      "waits_for": ["page_landing"]
+    },
+    {
+      "id": "email_main_launch",
+      "kind": "main_launch",
+      "provider": "skill50",
+      "email_count": 10,
+      "draft_only": true,
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "email_doors_closing",
+      "kind": "doors_closing",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["email_main_launch"]
+    },
+    {
+      "id": "email_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "email_welcome_access",
+      "kind": "welcome_access",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["page_access", "page_thank_you"]
+    }
+  ],
+  "text_sets": [
+    {
+      "id": "text_keyword_opt_in",
+      "kind": "keyword_opt_in",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_landing"]
+    },
+    {
+      "id": "text_event_reminders",
+      "kind": "event_reminder",
+      "messages": 3,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "text_access_link",
+      "kind": "access_link",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_access"]
+    }
+  ],
+  "automations": [
+    {
+      "id": "auto_opt_in",
+      "family": "opt_in",
+      "template": "post-optin-multichannel-stack",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "form_submitted",
+        "detail": "application or waitlist opt-in tags the contact and starts nurture"
+      },
+      "waits_for": ["email_pre_launch", "text_keyword_opt_in"]
+    },
+    {
+      "id": "auto_event_reminders",
+      "family": "event_reminders",
+      "template": "webinar-registration-reminder-replay-stack",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "registration_recorded",
+        "detail": "one week, three days, one day, morning, one hour and fifteen minutes before the live event"
+      },
+      "waits_for": ["text_event_reminders", "email_main_launch"]
+    },
+    {
+      "id": "auto_post_sale",
+      "family": "post_sale",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "payment_succeeded",
+        "detail": "access and log-in delivery, promotional sends stop"
+      },
+      "waits_for": ["email_welcome_access", "text_access_link"]
+    },
+    {
+      "id": "auto_onboarding_review",
+      "family": "onboarding_review",
+      "template": "membership-stick-retention",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "purchase_completed",
+        "detail": "first hour, day and week check-ins then review and referral ask"
+      },
+      "waits_for": ["auto_post_sale"]
+    },
+    {
+      "id": "auto_failed_payment",
+      "family": "failed_payment",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "payment_failed",
+        "detail": "payment-plan recovery"
+      },
+      "waits_for": ["auto_post_sale"]
+    },
+    {
+      "id": "auto_ai_reply",
+      "family": "conversation_ai_reply",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "customer_replied",
+        "detail": "SMS and chat replies route to Conversation AI, which answers from offer facts and books calls"
+      },
+      "waits_for": ["auto_opt_in", "text_keyword_opt_in"]
+    }
+  ]
+}

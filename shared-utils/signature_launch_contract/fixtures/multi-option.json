@@ -1,0 +1,282 @@
+{
+  "schema_version": "1.0.0",
+  "launch_id": "multi-option-2026-11",
+  "offer": {
+    "name": "Multi-Option Launch",
+    "price_usd": 297,
+    "currency": "USD",
+    "payment_plans": true,
+    "landing_url": "https://example.com/multi-option",
+    "sales_page_url": "https://example.com/multi-option/offer",
+    "checkout_url": "https://example.com/multi-option/order",
+    "thank_you_url": "https://example.com/multi-option/access"
+  },
+  "launch_calendar": {
+    "launch_at": "2026-11-17T12:00:00-05:00",
+    "doors_open_at": "2026-11-17T09:00:00-05:00",
+    "doors_close_at": "2026-11-24T23:59:00-05:00",
+    "timezone": "America/New_York"
+  },
+  "a2p_ready": true,
+  "conversation_ai": {
+    "requested": true,
+    "mode": "checkout",
+    "channels": ["sms", "chat"]
+  },
+  "pages": [
+    {
+      "id": "page_landing",
+      "kind": "landing",
+      "url": "https://example.com/multi-option",
+      "waits_for": []
+    },
+    {
+      "id": "page_sales",
+      "kind": "sales",
+      "url": "https://example.com/multi-option/offer",
+      "waits_for": []
+    },
+    {
+      "id": "page_checkout",
+      "kind": "checkout",
+      "url": "https://example.com/multi-option/order",
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "page_upsell_strategy",
+      "kind": "upsell",
+      "url": "https://example.com/multi-option/upsell-strategy",
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "page_upsell_implementation",
+      "kind": "upsell",
+      "url": "https://example.com/multi-option/upsell-implementation",
+      "waits_for": ["page_upsell_strategy"]
+    },
+    {
+      "id": "page_downsell_group",
+      "kind": "downsell",
+      "url": "https://example.com/multi-option/downsell-group",
+      "waits_for": ["page_upsell_strategy"]
+    },
+    {
+      "id": "page_downsell_diy",
+      "kind": "downsell",
+      "url": "https://example.com/multi-option/downsell-diy",
+      "waits_for": ["page_upsell_implementation"]
+    },
+    {
+      "id": "page_thank_you",
+      "kind": "thank_you",
+      "url": "https://example.com/multi-option/access",
+      "waits_for": ["page_downsell_group", "page_downsell_diy"]
+    }
+  ],
+  "email_sequences": [
+    {
+      "id": "email_main_launch",
+      "kind": "main_launch",
+      "provider": "skill50",
+      "email_count": 10,
+      "draft_only": true,
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "email_upsell_strategy",
+      "kind": "upsell_followup",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_upsell_strategy"]
+    },
+    {
+      "id": "email_upsell_implementation",
+      "kind": "upsell_followup",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_upsell_implementation"]
+    },
+    {
+      "id": "email_downsell_group",
+      "kind": "downsell_followup",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_downsell_group"]
+    },
+    {
+      "id": "email_downsell_diy",
+      "kind": "downsell_followup",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_downsell_diy"]
+    },
+    {
+      "id": "email_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "email_welcome_access",
+      "kind": "welcome_access",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_thank_you"]
+    }
+  ],
+  "text_sets": [
+    {
+      "id": "text_optin_confirmation",
+      "kind": "opt_in_confirmation",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_landing"]
+    },
+    {
+      "id": "text_doors_open",
+      "kind": "doors_open",
+      "messages": 1,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "text_last_call",
+      "kind": "last_call",
+      "messages": 2,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "text_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "messages": 2,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_checkout"]
+    }
+  ],
+  "automations": [
+    {
+      "id": "auto_pre_launch",
+      "family": "pre_launch",
+      "template": "indoctrination-multichannel-preframe",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "launch_calendar",
+        "detail": "teaser and countdown schedule with doors open and close switches"
+      },
+      "waits_for": ["email_main_launch", "text_doors_open", "text_last_call"]
+    },
+    {
+      "id": "auto_opt_in",
+      "family": "opt_in",
+      "template": "post-optin-multichannel-stack",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "form_submitted",
+        "detail": "waitlist opt-in tags the contact and starts nurture"
+      },
+      "waits_for": ["email_main_launch", "text_optin_confirmation"]
+    },
+    {
+      "id": "auto_post_sale",
+      "family": "post_sale",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "payment_succeeded",
+        "detail": "each offer purchase sends access and stops promotional sends"
+      },
+      "waits_for": ["page_thank_you", "email_welcome_access"]
+    },
+    {
+      "id": "auto_upsell_branch",
+      "family": "upsell_downsell",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "upsell_decision",
+        "detail": "bought or declined routes to the matching follow-up"
+      },
+      "waits_for": ["email_upsell_strategy", "email_upsell_implementation", "email_downsell_group", "email_downsell_diy"]
+    },
+    {
+      "id": "auto_abandoned_checkout",
+      "family": "abandoned_checkout",
+      "template": "abandoned-cart-multichannel-recovery",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "checkout_started_unpaid",
+        "detail": "stops on purchase"
+      },
+      "waits_for": ["email_abandoned_checkout", "text_abandoned_checkout"]
+    },
+    {
+      "id": "auto_failed_payment",
+      "family": "failed_payment",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "payment_failed",
+        "detail": "payment-plan recovery only"
+      },
+      "waits_for": ["auto_post_sale"]
+    },
+    {
+      "id": "auto_ai_reply",
+      "family": "conversation_ai_reply",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "customer_replied",
+        "detail": "SMS and chat replies route to the Conversation AI action"
+      },
+      "waits_for": ["text_optin_confirmation", "auto_post_sale"]
+    }
+  ]
+}
