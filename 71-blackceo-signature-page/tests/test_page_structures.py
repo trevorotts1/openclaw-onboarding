@@ -219,7 +219,7 @@ class BuilderTests(unittest.TestCase):
 
     def build(self, doc=None, stage="visual-mockup", slots=None):
         return builder.build(stage, None, "", slots or {}, {}, [], "STUB-NO-MODEL", "", self.run,
-                             DOWNSELL, doc or page_doc())
+                             structure=DOWNSELL, page_doc=doc or page_doc())
 
     def test_builds_eight_sections_with_the_role_and_the_decline_label(self):
         request = self.build()
@@ -334,8 +334,8 @@ class PreflightTests(unittest.TestCase):
         for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup"):
             proc = self.preflight(stage)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertIn("PREFLIGHT_SECTIONS page_role=downsell_1 copy_version=downsell sections=8 "
-                          "canonical_ids=1,2,3,4,5,6,7,8", proc.stdout)
+            self.assertIn("PREFLIGHT_SECTIONS copy_version=downsell sections=8 "
+                          "canonical_ids=1,2,3,4,5,6,7,8 page_role=downsell_1", proc.stdout)
             self.assertNotIn("REFUSED", proc.stdout)
             self.assertEqual(proc.stdout.count("PREFLIGHT_CTA"), 8)
             if stage == "visual-mockup":

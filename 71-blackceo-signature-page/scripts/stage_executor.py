@@ -1569,9 +1569,9 @@ def main(argv=None) -> int:
             request["_brand_block"] = brand_block
             check = request.get("_section_check")
             if check:
-                print(f"PREFLIGHT_SECTIONS page_role={request.get('page_role') or 'landing'} "
-                      f"copy_version={check[0]} "
+                print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
                       f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
+                      f"page_role={request.get('page_role') or 'landing'} "
                       f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
             refs = list(dict.fromkeys(str(r) for r in request.get("references") or []))

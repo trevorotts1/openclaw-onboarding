@@ -728,6 +728,9 @@ def main(argv=None) -> int:
     a = p.parse_args(argv)
     upsell = a.copy_version == "upsell"
     structure = exe.page_structure(a.page_role)
+    if a.page_copy and not structure:
+        print(f"REFUSED: page role {a.page_role!r} has no entry in references/page-structures.json")
+        return 1
     if structure and not a.page_copy:
         p.error(f"{a.page_role} takes --page-copy (its own page copy document)")
     if not structure and ((upsell and not (a.copy_json and a.bundle)) or (not upsell and not a.manuscript)):
