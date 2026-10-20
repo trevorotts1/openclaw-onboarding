@@ -210,6 +210,22 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     if errors:
         raise ValueError("; ".join(errors))
     fit = None
+    if length_s is not None and style_id:
+        # v2.9.72 (R1): a style whose rap reservation cannot coexist with its
+        # sung-share floor inside this card length is refused HERE, before the
+        # sheet, before any spend, naming the shortest card that works. Before
+        # this, R&B Flow at 30/45/60 s was planned, drafted, and then refused
+        # by the fit gate forever -- the same loop the stage-3 fixes removed.
+        try:
+            import length_formula as _LF   # noqa: PLC0415
+        except ImportError:                # pragma: no cover - packaging
+            _LF = None
+        if _LF is not None:
+            _plan = _LF.plan(length_s, style_id=style_id)
+            _bad = _plan.get("infeasible")
+            if _bad:
+                raise words_fit.WordsFitError(_bad["reason_code"],
+                                              _bad["message"])
     if length_s is not None:
         # FU-U2: the style travels with the sheet, so R&B Flow is judged at
         # R&B Flow rates and rap words are counted (never the ballad default).
