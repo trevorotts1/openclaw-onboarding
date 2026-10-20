@@ -136,20 +136,57 @@ def exempt_tokens(text):
     return words(text)
 
 def client_word_runs(brief):
-    """Word lists of the client's own text in the brief (claims, packet
-    lines, offer, website)."""
+    """Word lists of the client's own text in the brief.
+
+    Sources are only the fields the intake recorded as the CLIENT'S OWN
+    ANSWERS: the essentials question (offer / audience+action / website),
+    the client's claims and packet lines, the book intake's own-fields
+    (pain_or_transformation, excerpt_lines) and the research brief's
+    sub-avatar answers (avatar, emotional_wound, desired_transformation --
+    validated non-empty client-confirmed answers). ``sub_avatar.notes`` is
+    deliberately NOT a source: it is the authoring provenance remark, the
+    one model-written field inside the sub-avatar block. The same rule
+    keeps research/gather output out of here -- the model-written claim
+    lines a search filled in are never the client's words.
+    """
     b = brief if isinstance(brief, dict) else {}
-    src = [b.get("offer"), b.get("website")]
-    for key in ("claims", "packet_lines"):
+    src = [b.get("offer"), b.get("website"), b.get("audience"),
+           b.get("action") or b.get("cta"),
+           b.get("pain_or_transformation")]
+    for key in ("claims", "packet_lines", "excerpt_lines"):
         v = b.get(key) or []
         for c in v.splitlines() if isinstance(v, str) else v:
             src.append(c.get("text") if isinstance(c, dict) else c)
+    sub = b.get("sub_avatar")
+    if isinstance(sub, dict):
+        src.extend(sub.get(k) for k in
+                   ("avatar", "emotional_wound", "desired_transformation"))
     return [exempt_tokens(t) for t in src if isinstance(t, str) and t.strip()]
 
 def client_verbatim(toks, runs):
     n = len(toks)
     return n >= CLIENT_RUN_MIN and any(
         r[i:i + n] == toks for r in runs for i in range(len(r) - n + 1))
+
+def client_run_inside(toks, runs):
+    """:``True`` when ``toks`` CONTAINS a contiguous client run of at least
+    CLIENT_RUN_MIN tokens (a whole-line run passes already: the first case).
+    A rewritten line that carries a >=3-word chunk of the client's own text
+    is the client's voice, so it is exempt from first-person; a line built
+    from invented wording carries no such run and is still refused. The run
+    must be CONTIGUOUS in the line (no crossing filler gaps), so two stray
+    client words never exempt a line."""
+    n = len(toks)
+    if n < CLIENT_RUN_MIN:
+        return False
+    if client_verbatim(toks, runs):
+        return True
+    for w in range(CLIENT_RUN_MIN, n + 1):
+        for start in range(n - w + 1):
+            win = toks[start:start + w]
+            if client_verbatim(win, runs):
+                return True
+    return False
 
 def significant(text):
     """Brief words that force critical coverage (len>=4 alnum tokens)."""
@@ -340,7 +377,7 @@ def validate_lyrics(lines, brief=None):
                            "detail": "%s: one idea per line" % lid})
         cta = "cta" in str(lid).lower()
         if not cta and not (set(toks) & FIRST_PERSON) \
-                and not client_verbatim(exempt_tokens(text), client_runs):
+                and not client_run_inside(exempt_tokens(text), client_runs):
             errors.append({"error": "line-not-first-person", "detail": lid})
 
         ltoks = set(toks)
