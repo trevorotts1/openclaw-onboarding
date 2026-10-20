@@ -1,0 +1,11 @@
+{
+  "harness": "openclaw",
+  "answers": {
+    "brand_primary_color": {"value": "#1F3A5F", "status": "provided", "source": "client"},
+    "brand_fonts": {"value": "clean-modern", "status": "default_to_confirm", "source": "safe_default",
+                    "reason": "you were not sure"},
+    "design_style": {"value": "B", "status": "suggested", "source": "palette_help"}
+  },
+  "to_confirm": [{"id": "brand_fonts", "label": "Fonts", "value": "clean modern fonts",
+                  "reason": "you were not sure"}]
+}

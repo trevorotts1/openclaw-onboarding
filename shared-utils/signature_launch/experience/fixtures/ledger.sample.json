@@ -1,0 +1,7 @@
+{
+  "image_cap": 40,
+  "images_used": 27,
+  "provider": "kie",
+  "test_only": false,
+  "blocked_by_cap": false
+}
