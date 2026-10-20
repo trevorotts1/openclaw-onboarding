@@ -76,6 +76,8 @@ MODULES = [
     "test_design_style.py",
     # SPF023: composition library (words over images, shaped crops, light fields).
     "test_composition_library.py",
+    # Page types: the thank-you page's own canonical sections reach every image stage.
+    "test_page_role_thank_you.py",
 ]
 
 def skip_reason(stdout):

@@ -101,6 +101,8 @@ for f in \
   tests/test_composition_library.py \
   references/copy-specs/standard-v6.json references/copy-specs/long-form-v6.json \
   references/wireframe-build-spec.json scripts/wireframe_spec.py \
+  references/copy-specs/thank-you-v1.json scripts/page_role.py scripts/run_page_role_stages.py \
+  tests/test_page_role_thank_you.py tests/fixtures/copy_examples/thank-you-path-b.md \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \

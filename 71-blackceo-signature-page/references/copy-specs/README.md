@@ -23,6 +23,14 @@ only, and the Long-Form spec records them as explicitly not applied).
 |---|---|---|---|
 | standard | `references/BlackCEO-Signature-Landing-Page-Standard-v6.md` | `references/copy-specs/standard-v6.json` | `references/copy-specs/standard-emotional-quality.md` |
 | long-form | `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md` | `references/copy-specs/long-form-v6.json` | `references/copy-specs/long-form-emotional-quality.md` |
+| thank-you (page type, `page_role` thank_you) | `82-signature-thank-you/references/layout-and-copy-profiles.md` | `references/copy-specs/thank-you-v1.json` | none (the page's copy comes from Skill 82's clean copy profiles) |
+
+A spec that carries a `page_role` key is a page type's own canonical section sequence (the
+thank-you page: 5 sections). `scripts/page_role.py` is the one reader: it maps a declared
+`copy_version` or page role to its spec, and the section-count check, `build_production_request.py`,
+the wireframe prompt, the Design Board and the gate all read it, so a page type is never forced
+into the landing page's 12 or 15 sections. The thank-you spec is PROPOSED, pending the owner's
+approval of its layout.
 
 How the selection is written: `write_intake.py --copy-version
 {standard,long-form}` records `copy_version` in `intake.json`, and the

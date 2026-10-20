@@ -39,7 +39,7 @@
   },
   "blocks": {
     "intro": [
-      "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for a landing page: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
+      "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for a {page_label}: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
       "FORM: {form_label}, {platform} page, {width}px wide. This slice is section {tag}, {name}, number {position} of {total}. Draw only this section; do not draw its neighbours."
     ],
     "style_reference": "STYLE REFERENCE — the first attached image shows the sheet language for this form: section chips with name tabs, printed type specs, labelled image plates, filled CTA chips and contiguous bands. Copy that grammar only. Never copy its colours, its words, its numbers, its title bar text or any of its mistakes. Where it differs from this prompt, this prompt wins.",

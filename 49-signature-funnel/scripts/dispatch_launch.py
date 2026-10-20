@@ -158,6 +158,12 @@ PAGE_ROLE_MAP = _load_page_role_map()
 PAGE_ROLES = tuple(PAGE_ROLE_MAP["page_roles"])
 PAGE_TYPE_TO_ROLE = {page_type: row["page_role"]
                      for page_type, row in PAGE_ROLE_MAP["page_types"].items()}
+# A page type with its own canonical sections names its copy profile here; every other role takes
+# the launch's copy_profile (standard or long_form) exactly as before. The value is the copy_version
+# of that page type's spec in Skill 71 (71-blackceo-signature-page/references/copy-specs/
+# thank-you-v1.json), which Skill 71's launch import maps to the run's copy_version. Kept out of
+# structure/funnel_structure.json on purpose: that file is hash-pinned enforcement core.
+ROLE_COPY_PROFILE = {"thank_you": "thank-you"}
 
 ROLE_SKILL = {"landing": 71, "product_selection": 78, "checkout": 79,
               "upsell_1": 80, "downsell_1": 81, "upsell_2": 80, "thank_you": 82}
@@ -275,7 +281,7 @@ def build_requests(launch: Dict[str, Any], graph: Dict[str, Any], *,
             "route_graph_ref": launch["route_graph_ref"],
             "route_graph_hash": launch["route_graph_hash"],
             "offer_refs": refs,
-            "copy_profile": copy_profile,
+            "copy_profile": ROLE_COPY_PROFILE.get(role, copy_profile),
             **({"prompt_policy_id": policy_id} if stamp else {}),
             "allowed_write_target": allowed_write_target,
             "test_only": bool(launch["test_only"]),
@@ -609,6 +615,13 @@ def _self_test() -> int:
         "approved full plan emits 7 role requests and honestly marks them "
         "not executed")
     roles = {r["page_role"]: r for r in m["requests"]}
+    _built = {r["page_role"]: r for r in build_requests(
+        launch, graph, copy_profile="standard", allowed_write_target="local_only")}
+    say(_built["thank_you"]["copy_profile"] == "thank-you"
+        and all(r["copy_profile"] == "standard"
+                for role, r in _built.items() if role != "thank_you"),
+        "the thank-you page request names its own copy profile (its own five "
+        "sections in Skill 71), every other role keeps the launch's profile")
     say(roles["upsell_1"]["assigned_skill"] == 80 and
         roles["upsell_2"]["assigned_skill"] == 80 and
         roles["upsell_1"]["request_id"] != roles["upsell_2"]["request_id"],

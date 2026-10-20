@@ -23,6 +23,12 @@ A funnel gets one board for each page it actually has. Page roles are the page-r
 | downsell page | `downsell_1` | 81 |
 | thank-you page | `thank_you` | 82 |
 
+The role a run's board is made for is read from the same place as the page's section structure,
+`scripts/page_role.py` (`intake.json` `page_role` or `launch.page_role`, else `page-request.json`,
+else `landing`), so the board, the section-count check, the wireframe prompt and the gate cannot
+disagree about which page they are for. The thank-you page (`thank_you`) draws its board with the
+icon row required and the celebration-imagery emphasis; its one image is the page's only slot.
+
 A single-offer funnel in combined mode has no product-selection page, so it has no order-page
 board; its `checkout` page carries the order form and gets its own board. A run is one page, so
 one run makes one board; a six-page funnel makes six.

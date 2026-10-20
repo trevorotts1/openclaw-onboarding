@@ -34,6 +34,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import page_role  # noqa: E402
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 WRITE_INTAKE = SKILL_ROOT / "scripts" / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
@@ -76,8 +79,10 @@ def main(argv=None) -> int:
                     "named page_role into the four-image pipeline.")
     p.add_argument("--request", type=Path, required=True)
     p.add_argument("--run-dir", type=Path, required=True)
-    p.add_argument("--page-version", choices=["standard", "long-form"],
-                   required=True)
+    p.add_argument("--page-version", choices=list(page_role.copy_versions()),
+                   required=True,
+                   help="standard or long-form for a landing page; the page type's own "
+                        "form (thank-you for page_role thank_you)")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--image-cap", type=int, required=True)
     p.add_argument("--brand-file", type=Path, required=True)
@@ -106,6 +111,15 @@ def main(argv=None) -> int:
             raise ServiceError(
                 f"page-request: page_role {role!r} is not one of "
                 f"{role_enum}")
+        own = page_role.spec_for_role(role)
+        want = own["copy_version"] if own else None
+        wrong_form = (a.page_version != want) if own else (
+            page_role.role_specs().get(a.page_version) is not None)
+        if wrong_form:
+            raise ServiceError(
+                f"page-request: page_role {role!r} takes --page-version "
+                f"{want or 'standard or long-form'}, not {a.page_version!r}; a page type is "
+                "never forced into another page type's canonical sections")
         if request.get("assigned_skill") not in SHARED_SKILLS:
             raise ServiceError(
                 f"page-request: assigned_skill is "

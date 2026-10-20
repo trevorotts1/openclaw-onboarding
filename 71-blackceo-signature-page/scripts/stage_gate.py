@@ -27,6 +27,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import page_role  # noqa: E402  every page type's canonical copy spec (landing forms, thank-you)
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = Path(os.environ.get(
     "STAGE_GATE_CONTRACT",
@@ -203,7 +206,7 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
         "{run_dir}": str(run_dir),
         "{brand}": str(brand),
     }
-    if "{copy_version}" in cmd:
+    if "{copy_version}" in cmd or "{copy_spec}" in cmd:
         # S4 CR-2 / S1 copy wiring: the copy spec path is selected by the
         # intake's copy_version. No recorded selection is a gate failure,
         # never a silent default (S4 CR-1's fail-closed rule).
@@ -212,11 +215,13 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
         except Exception:
             intake = {}
         cv = intake.get("copy_version") if isinstance(intake, dict) else None
-        if cv not in ("standard", "long-form"):
+        if cv not in page_role.copy_versions():
             return None, ["copy stage validator needs intake.json copy_version "
-                          "(\"standard\" or \"long-form\"), the required intake decision "
+                          "(\"standard\" or \"long-form\", or the page type's own form such as "
+                          "\"thank-you\"), the required intake decision "
                           "(Amendment 6, Items 18/19); none is recorded"]
         substitutions["{copy_version}"] = cv
+        substitutions["{copy_spec}"] = page_role.spec_ref(cv)
     files = []
     per_file = spec.get("per_file_glob")
     if per_file:

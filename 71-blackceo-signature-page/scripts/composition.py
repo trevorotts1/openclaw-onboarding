@@ -183,8 +183,12 @@ def _rgb_hex(rgb) -> str:
 # --------------------------------------------------------------------------
 # section roles and default treatments
 # --------------------------------------------------------------------------
-def section_role(section_id: str, section_name: str = "") -> str | None:
-    """The section's role, from its id first, then its printed name."""
+def section_role(section_id: str, section_name: str = "", declared: str | None = None) -> str | None:
+    """The section's role: the one a page type's spec declares for it (composition_role, a
+    library role name), else from its id, then its printed name. A page type's section "2" is
+    not the landing page's pain section, so its spec names the role instead of the id."""
+    if declared and any(r["role"] == declared for r in library()["roles"]):
+        return declared
     sid = str(section_id or "").strip().lower()
     name = str(section_name or "").strip().lower()
     for role in library()["roles"]:
@@ -285,7 +289,7 @@ def assign_treatments(sections: list, cues: dict | None = None) -> list:
             resolved.append({"section_id": None, "role": None, "slots": []})
             continue
         sid = section.get("section_id")
-        role = section_role(sid, section.get("section_name") or "")
+        role = section_role(sid, section.get("section_name") or "", section.get("composition_role"))
         slots = [s for s in (section.get("slots") or []) if isinstance(s, dict)]
         entry = {"section_id": sid, "role": role, "slots": []}
         first_choice = None

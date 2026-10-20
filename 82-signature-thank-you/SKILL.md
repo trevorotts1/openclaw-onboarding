@@ -44,6 +44,15 @@ survives tab close and extra-offer failure).
   order relationship only (never shared email), and the live half
   (S79/S80/S81 installed mappings + S06 native read) is named as
   L3/L4-pending, not faked.
+- `references/wireframe-mockup-layout.md` — the thank-you page's five
+  canonical sections and their desktop and mobile picture layout for the
+  wireframe and mockup stages (structure only; Trevor's visual rules apply
+  unchanged). Skill 71 is the image service: it draws the page's wireframes
+  and mockups through `71-blackceo-signature-page/scripts/shared_page_service.py
+  --page-version thank-you` (section structure in its
+  `references/copy-specs/thank-you-v1.json`); this skill never makes an image
+  itself. `render_thank_you.py` places the one hero image from the run's
+  image map (`brand.hero_image`) so the built page matches the mockup.
 - `references/branch-matrix.md` — the S82-09 branch matrix: every
   doc 18 / spec §10 case touching the final thank-you, each marked
   COVERED-L1 (exact test cited), COVERED-DOC (contract only), or

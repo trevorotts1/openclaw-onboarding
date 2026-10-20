@@ -9,13 +9,19 @@ standard-v6.json `sequence`); Long-Form has 15 (long-form-v6.json `sequence`:
 1, 2, 2A, 3, 3A, 4, 4A, 5, 6, 7, 8, 9, 10, 11, 12). Every stage therefore
 renders one image per section, per platform.
 
+A page type other than the landing page (the thank-you page) names its own canonical
+sequence in its own copy spec (references/copy-specs/thank-you-v1.json, read through
+scripts/page_role.py): the builder reads that spec the same way, seeds each section's
+composition role, ground and default image slots from it, and stamps `page_role` into the
+request, so every later stage draws that page's structure and never a landing page's.
+
 Fail-closed: a manuscript that does not carry exactly the form's sections in
 order is refused, and the finished request must pass the same
 check_section_count the executor runs before it is written. Zero provider
 calls; the file is the only output.
 
 Usage:
-  build_production_request.py --copy-version standard|long-form \\
+  build_production_request.py --copy-version standard|long-form|thank-you \\
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
@@ -328,7 +334,8 @@ def fill_to_band(request, stage, spec):
     if not budget:
         return
     ceiling = (budget["target_chars"] + budget["max_chars"]) // 2
-    table = skeleton_table()
+    # the skeleton table is the landing page's per-section canon; a page type has its own spec
+    table = {} if spec.get("page_role") else skeleton_table()
     for index, section in enumerate(request["sections"], start=1):
         parts = [str(section.get("layout") or "").strip()]
         parts = [p for p in parts if p]
@@ -358,7 +365,25 @@ def section_copy(units):
     return "\n".join(lines), buttons
 
 
-def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
+def spec_slots(entry: dict, style_id) -> list:
+    """A page-type section's default image slots, shaped for the client's design style
+    (a slot's `shape_by_style`, `style_ratio` and `treatment_by_style` pick circle, 1:1 and the
+    circle-crop treatment for style B)."""
+    by_style = ("shape_by_style", "style_ratio", "treatment_by_style")
+    out = []
+    for slot in entry.get("default_slots") or []:
+        shaped = {k: v for k, v in slot.items() if k not in by_style}
+        shape = (slot.get("shape_by_style") or {}).get(style_id)
+        if shape:
+            shaped["shape"] = shape
+            shaped["aspect_ratio"] = (slot.get("style_ratio") or {}).get(style_id, shaped.get("aspect_ratio"))
+        if (slot.get("treatment_by_style") or {}).get(style_id):
+            shaped["treatment"] = slot["treatment_by_style"][style_id]
+        out.append(shaped)
+    return out
+
+
+def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) -> list:
     units, order, _notes = parse_manuscript(text)
     sequence = list(spec["sequence"])
     if order != sequence:
@@ -367,19 +392,27 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
             f"{spec['copy_version']} copy has {len(sequence)} canonical sections {sequence}; "
             f"missing {[i for i in sequence if i not in order]}, unexpected "
             f"{[i for i in order if i not in sequence]}")
+    role_page = bool(spec.get("page_role"))
+    entries = {e["id"]: e for e in spec["sections"]}
     out = []
     for sid in sequence:
         copy, buttons = section_copy([u for u in units if u.section == sid])
         if len(buttons) > 1:
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
-        entry = {"section_id": sid, "section_name": ROLE_NAMES[sid], "copy": copy,
-                 "cta": buttons[0] if buttons else None, "slots": slots.get(sid, [])}
+        entry = {"section_id": sid,
+                 "section_name": (entries[sid].get("name") if role_page else None) or ROLE_NAMES[sid],
+                 "copy": copy, "cta": buttons[0] if buttons else None,
+                 "slots": slots.get(sid) or (spec_slots(entries[sid], style_id) if role_page else [])}
+        if role_page:  # composition variety and ground rotation follow the page type's own roles
+            for key in ("composition_role", "ground"):
+                if entries[sid].get(key):
+                    entry[key] = entries[sid][key]
         # The founder letter ends with the founder's signature (copy spec, Section 12
         # Part 6): a name, not a sentence. It is a verbatim label of its own so the
         # executor's truncated-copy guard keeps reading prose only.
         rows = copy.splitlines()
-        if sid == "12" and len(rows) > 1 and rows[-1][-1] not in exe.TERMINAL and len(rows[-1].split()) <= 8:
+        if (sid == "12" or entries[sid].get("signature_label")) and len(rows) > 1 and rows[-1][-1] not in exe.TERMINAL and len(rows[-1].split()) <= 8:
             entry["copy"], entry["labels"] = "\n".join(rows[:-1]), [rows[-1]]
         out.append(entry)
     return out
@@ -420,12 +453,16 @@ def run_blocks(request, run_dir):
 
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
-    spec = json.loads((exe.SPEC_DIR / f"{version}-v6.json").read_text(encoding="utf-8"))
-    sections = sections_from_manuscript(manuscript_text, spec, slots)
+    spec = exe.page_role.load_spec(version)
+    if spec is None:
+        raise BuildError(f"copy_version {version!r} is not one of {', '.join(exe.page_role.copy_versions())}")
+    sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}))
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
                "stage_prompts": {stage: template_for(stage, {})}}
+    if spec.get("page_role"):
+        request["page_role"] = spec["page_role"]
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
@@ -465,7 +502,8 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             raise BuildError(f"{exc} (supply --design-prose with the run's measured design system)")
         raise
     request["metadata"] = {
-        "stage": stage, "copy_version": version, "section_count": len(sections),
+        "stage": stage, "copy_version": version, "page_role": spec.get("page_role", "landing"),
+        "section_count": len(sections),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
         "trimmed_blocks": [k for k in chosen if chosen[k] != prose[k]],
@@ -485,7 +523,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--copy-version", choices=["standard", "long-form"], required=True)
+    p.add_argument("--copy-version", choices=list(exe.page_role.copy_versions()), required=True)
     p.add_argument("--manuscript", type=Path, required=True)
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)
@@ -513,7 +551,7 @@ def main(argv=None) -> int:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(request, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     m = request["metadata"]
-    print(f"WROTE {a.out} copy_version={a.copy_version} stage={a.stage} "
+    print(f"WROTE {a.out} copy_version={a.copy_version} page_role={m['page_role']} stage={a.stage} "
           f"sections={m['section_count']} ids={','.join(m['canonical_ids'])}")
     cb = m["char_budget"]
     if cb["target"] and cb["min_seen"] < cb["target"]:  # floor passed (else refused); band goal missed
