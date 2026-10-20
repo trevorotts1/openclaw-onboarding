@@ -456,3 +456,25 @@ still provisional:
   (W3), a skipped or repeated number (W1), an invalid ratio label
   (W3), a palette that is not the client's (W4) or a greyscale
   no-colour sheet (W8) is a named defect, never a general impression)
+
+## Graphics department hooks (SOP-GIP-02, Skill 83 lane)
+
+Skill 71's generated images are external client deliverables, so the Graphics department's image QC applies to them. The automatic-fail list is kept as data in `references/stage-contract.json` under `graphics_autofails` (code, name, summary), and this table mirrors it for readers. Any hit is a FAIL regardless of the average, and `scripts/write_review.py` refuses a `pass` verdict that cites one.
+
+| Code | Automatic failure |
+| --- | --- |
+| AF-G1 | garbled or misspelled baked text (pixel-vs-copy parity) |
+| AF-G2 | logo mutated, recolored or invented mark |
+| AF-G3 | legibility or contrast failure on a key text element |
+| AF-G4 | anatomical artifact (fingers, limbs, face geometry) |
+| AF-G5 | placeholder or bracket token rendered as visible text |
+| AF-G6 | brand palette drift beyond the brand file's tolerances |
+| AF-G7 | demographic default, mono-cast or skin-tone fidelity failure |
+| AF-G8 | provenance gap: no generation receipt tying the pixels to the sanctioned KIE route |
+
+Four hooks make the list enforceable:
+
+1. **Independent reviewer model.** `write_review.py --author-model M1 --reviewer-model M2` (or `--require-model-independence`) marks the review independent only when both models are named and differ. An unnamed model counts as not independent. The reviewer is never the model that wrote the prompt.
+2. **Text read-back.** `validate_production_record.py --ocr` reads each section image with the Design Board's own reader (`design_board.ocr_text`, tesseract) and fails a section whose recorded read-back is not supported by the pixels (AF-G1), or whose expected copy is not visible.
+3. **Logo accuracy.** A section that declares `logo_expected: true` must carry a `logo_check` record (`logo_ref`, `method`, `verdict`). A missing record or a verdict other than `pass` fails the section (AF-G2).
+4. **Text-capable model and PNG.** The paid route refuses a model that cannot render readable text (nano-banana and seedream classes) for wireframe and mockup sections, and refuses a saved file that is not a real PNG.
