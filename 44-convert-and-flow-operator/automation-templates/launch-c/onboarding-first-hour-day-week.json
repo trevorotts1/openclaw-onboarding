@@ -1,0 +1,192 @@
+{
+  "id": "launch-c-onboarding-first-hour-day-week",
+  "name": "Launch C — Onboarding: First Hour, Day 1, Week 1",
+  "aliases": [
+    "Post-Purchase Onboarding Cadence",
+    "First Hour Day One Week One",
+    "Buyer Quick-Win Onboarding",
+    "Launch C Onboarding Layer"
+  ],
+  "category": "funnel-specific-followups",
+  "launch": {
+    "family": "onboarding_review",
+    "unit_id": "auto_onboarding_review",
+    "template_start": "membership-stick-retention",
+    "build_rail": "skill44_engine",
+    "draft_only": true,
+    "waits_for": [
+      "auto_post_sale",
+      "email_welcome_access",
+      "page_thank_you"
+    ],
+    "sibling_files": [
+      "review-referral-ask.json"
+    ]
+  },
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/membership-stick-retention",
+    "adaptation": "Phase A (rapid onboarding) of membership-stick-retention, re-cut for a one-time launch purchase instead of a membership. Membership-only mechanics (trial end, monthly drops, annual upgrade, cancellation funnel) are deliberately excluded.",
+    "supporting": [
+      "Marketing Secrets Blackbook — Secret 53: consumption is the retention lever; get the buyer to a quick win fast.",
+      "Marketing Secrets Blackbook — Secret 54: the 'one gold nugget' framing — name the single first result.",
+      "DotCom Secrets — Soap Opera Sequence 'Set the Stage' energy for the welcome; Attractive Character bond before any offer.",
+      "Jim Edwards Copywriting Secrets — 'If you want X, do this' for the day-one nudge; PAS only if a real obstacle appears.",
+      "GHL capability note (launch-ghl-probe/GHL-CAPABILITY-NOTE.md): purchase trigger is not auto-built; review_request is a verified action type."
+    ]
+  },
+  "purpose": "One job: turn a paid buyer into a buyer who actually uses what they bought inside the first week. Access is delivered by the post-sale family; this sequence owns the quick win and the readiness signal that the review/referral ask depends on. It never sells, never re-offers the main product, and never asks for a review before the buyer has had a chance to use the thing.",
+  "trigger": {
+    "type": "tag_added",
+    "what_starts_it": "Tag Added `purchase-onboard-ready` — set by the post-sale purchase workflow after access is delivered.",
+    "why_not_the_payment_event": "The payment event is owned by the post-sale family. Triggering here on a tag set after access delivery prevents a race where onboarding says 'you're in' before the access email exists.",
+    "build_path": "CampaignBuilder creates a Tag Added trigger by default, which is exactly this shape. No patch-trigger or browser step is needed for the trigger itself.",
+    "fallback_if_post_sale_is_absent": "If a launch has no post-sale workflow, patch a payment_succeeded trigger with `caf workflows patch-trigger --trigger-json <file>` and add a wait until the access action completes. Never fire the welcome before access is real.",
+    "reentry": "once per contact per launch. Buying an upsell or downsell does not restart onboarding; the post-sale family adds that product's access step only."
+  },
+  "channels": [
+    "Email",
+    "SMS (opt-in only; every text ends with a reply invitation and STOP; 8 a.m.–9 p.m. recipient local time)"
+  ],
+  "sequence": [
+    {
+      "phase": "A. First hour",
+      "beat": "Confirm access and give one instruction that produces a first result.",
+      "steps": [
+        {
+          "step": "A1 — Access confirmed + start here",
+          "delay": "Immediately on `purchase-onboard-ready` (SMS inside the next eligible send window)",
+          "channel": "Email + SMS",
+          "subject_angle": "\"You're in — start here (2 minutes)\"",
+          "body_framework": "One line confirming the order and what is now unlocked. One button to the START HERE item, not the account dashboard. State the one thing to do first and the concrete result it produces (MSB Secret 54 gold nugget). No offer, no upsell, no 'while you're here'.",
+          "copy_notes": "The first hour is a time-to-first-value target, not a deadline promise. If the purchase lands outside quiet hours, send at 8 a.m. and keep the copy true ('first thing this morning').",
+          "sms_copy_rule": "Short, personal, one link, ends with a reply invitation and STOP."
+        }
+      ]
+    },
+    {
+      "phase": "B. Day 1",
+      "beat": "Catch the buyer who has not started; reinforce the buyer who has.",
+      "steps": [
+        {
+          "step": "B1 — Started? branch",
+          "delay": "+1 day from the purchase timestamp (event anchor: purchase)",
+          "channel": "Branch only",
+          "subject_angle": "n/a",
+          "body_framework": "If/Else on a consumption signal: `onboard-started` tag, first-lesson completion, or the first access click. TRUE → B2b. FALSE → B2a.",
+          "copy_notes": "If the product has no consumption signal, use the first access-link click as the signal and say so in the build notes. Never invent a completion signal."
+        },
+        {
+          "step": "B2a — Not started nudge",
+          "delay": "Same branch",
+          "channel": "Email",
+          "subject_angle": "\"Did you get a chance to start? Here's the one thing to do first\"",
+          "body_framework": "Jim Edwards 'If you want X, do this': one obstacle acknowledged, one instruction, one link, one result. Tease what is in week one without listing the whole curriculum.",
+          "copy_notes": "No guilt, no streak language, no second product."
+        },
+        {
+          "step": "B2b — Started reinforcement",
+          "delay": "Same branch",
+          "channel": "Email",
+          "subject_angle": "\"You started — here's what to do next\"",
+          "body_framework": "Acknowledge the action specifically (the module they opened), point at the next single step, and name the result it unlocks. Keep it shorter than B2a.",
+          "copy_notes": "Do not ask for a review here. Day 1 is too early."
+        }
+      ]
+    },
+    {
+      "phase": "C. Week 1",
+      "beat": "Close the onboarding loop and set the review/referral eligibility tag honestly.",
+      "steps": [
+        {
+          "step": "C1 — Week-one recap + outcome check",
+          "delay": "+7 days from the purchase timestamp (same event anchor)",
+          "channel": "Email",
+          "subject_angle": "\"Your first week with [offer] — here's where you are\"",
+          "body_framework": "Three lines: what they have access to, the one thing they have already done (if known), and the single next action. Then an honest outcome check: did the promised result happen yet?",
+          "copy_notes": "If no consumption signal exists, do not claim progress. Speak only about access and the next step."
+        },
+        {
+          "step": "C2 — Eligibility branch",
+          "delay": "Immediately after C1",
+          "channel": "Branch + tag",
+          "subject_angle": "n/a",
+          "body_framework": "If/Else: outcome met OR product consumed → Add `review-eligible` (hands off to review-referral-ask.json). Outcome not met OR support issue open → Add `onboard-help-needed`, notify the owner/CS task, and do NOT ask for a review.",
+          "copy_notes": "A buyer who has not received the result is a support case, not a review candidate. This branch is the guard that keeps the review ask honest."
+        }
+      ]
+    }
+  ],
+  "guards": {
+    "promotional_stop": "Purchase of the main offer, an upsell or a downsell stops all launch promotional emails and texts for that buyer. This sequence is onboarding only; it carries no promotion.",
+    "sms_rules": "Opt-in only. Every text: reply invitation + STOP. Quiet hours 8 a.m.–9 p.m. recipient local. At most two onboarding-family texts (first-hour access and any week-one nudge) stay inside the launch cap of 3–5 promotional texts.",
+    "opt_out": "Email unsubscribe or SMS STOP exits every remaining step immediately.",
+    "refund_or_cancel": "Refund/cancel tag exits the sequence; no review or referral ask follows.",
+    "no_invented_deadlines": "No countdown, no bonus expiry, no 'doors close' language in onboarding. The launch calendar owns those facts."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 (caf) — CampaignBuilder / internal API. Draft only; nothing is published or switched live.",
+    "workflows": [
+      {
+        "name": "LC — Onboarding: First Hour, Day 1, Week 1",
+        "trigger": "Tag Added `purchase-onboard-ready`",
+        "key_actions": [
+          "1. Email A1 (access + start here); optional SMS A1 inside the send window",
+          "2. Wait 1 hour → Email follow-up only if the start link was not clicked (optional; skip when no click signal exists)",
+          "3. Set event start time = purchase timestamp → Wait until +1 day → If/Else `onboard-started` → Email B2b or B2a",
+          "4. Wait until +7 days from the same start → Email C1 → If/Else outcome met or consumed → Add `review-eligible`; else Add `onboard-help-needed` + task-notification",
+          "5. workflow_goal `onboard-week-1-complete`"
+        ]
+      }
+    ],
+    "action_types_used": [
+      "email",
+      "sms",
+      "wait",
+      "if_else",
+      "add_contact_tag",
+      "task-notification",
+      "workflow_goal"
+    ],
+    "goal_events": [
+      "`onboard-week-1-complete` — the buyer reached the week-one branch",
+      "`review-eligible` — outcome met or product consumed; hands to the review/referral workflow"
+    ],
+    "tags_used": [
+      "purchase-onboard-ready",
+      "onboard-started",
+      "onboard-help-needed",
+      "review-eligible",
+      "purchase-main",
+      "purchase-upsell",
+      "purchase-downsell",
+      "refunded",
+      "cancelled"
+    ],
+    "timing_notes": "First hour and day 1 are ordinary duration waits. 'Seven days after purchase' is an event-anchored wait: set the event start from the purchase timestamp, not contact creation, build time or tag-add time. The internal API builder verifies duration waits only; if it rejects the event wait, build that node in the Skill 6 managed browser and leave the draft unfinished rather than replacing it with a duration wait that lies.",
+    "notes": "CampaignBuilder writes drafts. Keep `CAF_DRAFT_ONLY` on. No folder listing exists on either transport, so pass `--folder-id` when the launch folder is known. Access delivery is owned by the post-sale family; this workflow only confirms what already exists."
+  },
+  "copy_persona": {
+    "primary": "DotCom Secrets — Attractive Character welcome + Soap Opera 'Set the Stage'; consumption-first onboarding.",
+    "supporting": [
+      "Marketing Secrets Blackbook Secret 53 (consumption = retention) and Secret 54 (one gold nugget).",
+      "Jim Edwards Copywriting Secrets — 'If you want X, do this' for the day-one nudge.",
+      "Daily Seinfeld tone for anything after day 1: conversational, one point, no hype."
+    ],
+    "voice": "Calm, specific, short. One CTA per message. No exclamation-mark urgency, no fake community pressure, no invented results."
+  },
+  "flexibility": {
+    "principle": "A recommended default and a resource — never a rule.",
+    "mode_1_explicit_desire": "The operator's own onboarding plan wins; this file is reference only.",
+    "mode_2_unsure": "Ship A1 + C1 first (access + week-one recap). They carry most of the value and need no consumption tracking.",
+    "mode_3_just_do_it": "Build the full branch as written.",
+    "always": "Never remove the access-confirmation step, the review-eligibility guard, the opt-out handling or draft-only."
+  },
+  "scope": {
+    "includes": "A paid buyer's first hour, day 1 and week 1 after access delivery, ending in a review-eligibility decision.",
+    "excludes": [
+      "Access delivery, receipt and promotional suppression — owned by the post-sale family",
+      "The review and referral asks themselves — owned by review-referral-ask.json",
+      "Win-back, failed payment and conversation AI — separate launch families"
+    ]
+  }
+}

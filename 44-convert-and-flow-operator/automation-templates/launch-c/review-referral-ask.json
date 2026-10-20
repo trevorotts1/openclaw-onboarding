@@ -1,0 +1,179 @@
+{
+  "id": "launch-c-review-referral-ask",
+  "name": "Launch C — Review Ask, Then Referral Ask",
+  "aliases": [
+    "Post-Purchase Review Request",
+    "Review Then Referral",
+    "Honest Review Ask + Referral Ask",
+    "Launch C Review Referral Layer"
+  ],
+  "category": "funnel-specific-followups",
+  "launch": {
+    "family": "onboarding_review",
+    "unit_id": "auto_onboarding_review",
+    "template_start": "membership-stick-retention",
+    "build_rail": "skill44_engine",
+    "draft_only": true,
+    "waits_for": [
+      "auto_onboarding_review",
+      "auto_post_sale",
+      "page_thank_you"
+    ],
+    "sibling_files": [
+      "onboarding-first-hour-day-week.json"
+    ]
+  },
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/membership-stick-retention",
+    "adaptation": "The membership template's engagement/advocacy logic, reduced to the one thing a launch buyer can honestly be asked for at week one: an honest review, then — only after a positive signal — a referral. No membership renewal, cancellation funnel or annual upgrade.",
+    "supporting": [
+      "DotCom Secrets — Attractive Character bond; ask after value is delivered, never before.",
+      "Marketing Secrets Blackbook — word of mouth follows a real result, not a request schedule.",
+      "GHL capability note (launch-ghl-probe/GHL-CAPABILITY-NOTE.md): `review_request` is a verified action type; purchase triggers are not auto-built.",
+      "Review-platform policy: ask for an honest review, never a rating, never an incentive; never suppress unhappy buyers from the public review path."
+    ]
+  },
+  "purpose": "One job: ask a buyer who has had a real chance to use the product for an honest review, then ask for a referral only from a buyer who gave a positive signal. Two asks maximum, both real, both exitable. It never manufactures a review, never promises a reward that does not exist, and never asks a buyer who is still waiting on the result.",
+  "trigger": {
+    "type": "tag_added",
+    "what_starts_it": "Tag Added `review-eligible` — set by the onboarding week-one branch only when the outcome is met or the product is consumed.",
+    "why": "Eligibility is decided before the ask so an unhappy or not-yet-served buyer never receives a review request. The trigger is a tag, which CampaignBuilder creates natively.",
+    "fallback_if_onboarding_is_absent": "Patch a payment_succeeded trigger with `caf workflows patch-trigger --trigger-json <file>`, then Wait 7 days and branch on an explicit consumption or outcome tag. Do not shorten the window to make the build easier.",
+    "reentry": "once per contact per launch. Never ask the same buyer twice for the same offer."
+  },
+  "channels": [
+    "Email",
+    "SMS (opt-in only; one message; reply invitation + STOP; 8 a.m.–9 p.m. recipient local time)"
+  ],
+  "prerequisites": {
+    "review_destination": "A real review URL supplied at intake (Google Business Profile, Trustpilot, GHL Reputation, or the client's own review page). If it is missing, the workflow stays draft and the package warns 'review link missing'. No invented link, no placeholder sent.",
+    "referral_terms": "Either a real referral program link and its real terms, or no program at all. If there is no program, the ask is for one named introduction — never a promised reward.",
+    "consumption_signal": "A tag or click that proves the buyer started, or an outcome tag. If the product exposes no signal, eligibility falls back to 'purchase + 7 days + no open support tag' and the build notes say so."
+  },
+  "sequence": [
+    {
+      "phase": "A. Review ask (day 7–8)",
+      "beat": "One honest request, one link, no rating language.",
+      "steps": [
+        {
+          "step": "A1 — Review request",
+          "delay": "Immediately on `review-eligible`, inside the send window",
+          "channel": "Email + SMS (SMS only if opted in and only one SMS in this workflow)",
+          "subject_angle": "\"Quick favor — how did [offer] land for you?\"",
+          "body_framework": "One sentence naming what they bought and the result they were after. One ask: leave an honest review at the supplied link. One line that says a short review is enough. No '5 stars', no 'amazing', no incentive, no gating language.",
+          "copy_notes": "The ask is for honesty, not praise. If the buyer had a bad experience, the same link must remain available to them. Never ask 'if you loved it, leave a review' — that is review gating and breaks platform policy.",
+          "action": "GHL `review_request` action when the destination supports it; otherwise `email` with the review link button. Record which one was used in the build receipt."
+        }
+      ]
+    },
+    {
+      "phase": "B. One reminder (day 10)",
+      "beat": "A single nudge, then stop.",
+      "steps": [
+        {
+          "step": "B1 — Reminder or exit",
+          "delay": "+3 days from A1",
+          "channel": "Email",
+          "subject_angle": "\"Still happy to hear how it went\"",
+          "body_framework": "One line, same link, same honesty. If `review-submitted` is already set, skip the reminder and go to the referral branch. If a support issue is open, skip and route to support instead.",
+          "copy_notes": "One reminder maximum. No third ask, no 'last chance'."
+        }
+      ]
+    },
+    {
+      "phase": "C. Referral ask (positive signal only)",
+      "beat": "Ask for an introduction from a buyer who showed a positive signal.",
+      "steps": [
+        {
+          "step": "C1 — Positive-signal branch",
+          "delay": "After `review-submitted`, or after a positive reply tag set by the owner/agent",
+          "channel": "Branch + tag",
+          "subject_angle": "n/a",
+          "body_framework": "If/Else: `review-submitted` OR `positive-signal` → C2. Neither → end quietly. A missing review is not a negative signal, but it is not a positive one either.",
+          "copy_notes": "Do not infer satisfaction from an email open or a click. Those are not signals."
+        },
+        {
+          "step": "C2 — Referral request",
+          "delay": "Immediately after C1 (respect the send window)",
+          "channel": "Email + SMS (one SMS maximum)",
+          "subject_angle": "\"Know one other person launching [offer type]?\"",
+          "body_framework": "If a real referral program exists: the real link, the real terms, nothing more. If not: ask for one named introduction — 'Reply with one name and I'll send them the page; no pressure on them.' One CTA.",
+          "copy_notes": "No invented reward, no 'give $50 get $50' unless that program actually exists and is approved. Every text ends with a reply invitation and STOP."
+        }
+      ]
+    }
+  ],
+  "guards": {
+    "never_ask_before_value": "No review ask before day 7 and never before the outcome/consumption gate. Support issues exit both asks.",
+    "one_ask_each": "One review request + one reminder. One referral request. Nothing repeats.",
+    "review_integrity": "No incentive for a review, no rating instruction, no filtering out unhappy buyers. The same destination is offered to every buyer.",
+    "referral_integrity": "Referral terms come from the client's real program or the ask is a named introduction. No invented rewards, deadlines or scarcity.",
+    "promotional_stop": "Purchase already stopped launch promotional messaging. These are service/advocacy messages, not promotions; caps still apply (≤ 5 promotional texts per launch, and at most two texts here).",
+    "opt_out": "Unsubscribe/STOP exits every remaining step; refund or cancel exits both asks."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 (caf) — CampaignBuilder / internal API. Draft only.",
+    "workflows": [
+      {
+        "name": "LC — Review Ask → Referral Ask",
+        "trigger": "Tag Added `review-eligible`",
+        "key_actions": [
+          "1. review_request or email A1 with the approved review link; optional one SMS",
+          "2. Wait 3 days → If/Else `review-submitted` → skip to C1; If open support tag → exit; else send B1 reminder once",
+          "3. Wait for `review-submitted` OR `positive-signal` → If/Else TRUE → email C2 referral ask (real link or named-intro ask); FALSE → workflow_goal `advocacy-closed-no-ask`",
+          "4. workflow_goal `review-requested` on A1, `review-submitted` on the platform event, `referral-asked` on C2"
+        ]
+      }
+    ],
+    "action_types_used": [
+      "review_request",
+      "email",
+      "sms",
+      "wait",
+      "if_else",
+      "add_contact_tag",
+      "workflow_goal"
+    ],
+    "goal_events": [
+      "`review-requested` — A1 delivered",
+      "`review-submitted` — platform webhook or manual tag from the review destination",
+      "`referral-asked` — C2 delivered",
+      "`advocacy-closed-no-ask` — no positive signal; the workflow ends without asking"
+    ],
+    "tags_used": [
+      "review-eligible",
+      "review-requested",
+      "review-submitted",
+      "positive-signal",
+      "referral-asked",
+      "onboard-help-needed",
+      "refunded",
+      "cancelled"
+    ],
+    "notes": "`review_request` is in VERIFIED_ACTIONS. The review platform's 'review submitted' event must be wired back as a tag or webhook before C1 can branch; if the platform cannot report it, C1 falls back to an owner-set `positive-signal` tag and the build notes say the referral ask depends on a human signal. All waits here are duration waits, which the internal API builder supports. Draft only — no send, no live switch."
+  },
+  "copy_persona": {
+    "primary": "DotCom Secrets — Attractive Character, value-first, ask after delivery.",
+    "supporting": [
+      "Marketing Secrets Blackbook — word of mouth follows a real result.",
+      "Jim Edwards Copywriting Secrets — one ask, one action, no pressure.",
+      "Daily Seinfeld tone — human, short, no marketing voice."
+    ],
+    "voice": "Grateful, brief, human. One CTA per message. Zero hype, zero rating instructions, zero invented rewards."
+  },
+  "flexibility": {
+    "principle": "A recommended default and a resource — never a rule.",
+    "mode_1_explicit_desire": "The operator's own review/referral plan wins; this file is reference only.",
+    "mode_2_unsure": "Ship A1 and stop. A single honest review ask is the useful minimum.",
+    "mode_3_just_do_it": "Build A1, B1 and C2 with real links and real terms.",
+    "always": "Never remove the eligibility gate, the one-ask limit, review integrity, opt-out handling or draft-only."
+  },
+  "scope": {
+    "includes": "Review request, one reminder, and a referral request gated on a positive signal, for a launch buyer at week one.",
+    "excludes": [
+      "Onboarding messages and the eligibility decision — owned by onboarding-first-hour-day-week.json",
+      "Access delivery and receipts — owned by the post-sale family",
+      "Review-platform setup, reputation management and paid referral programs — client-side prerequisites"
+    ]
+  }
+}
