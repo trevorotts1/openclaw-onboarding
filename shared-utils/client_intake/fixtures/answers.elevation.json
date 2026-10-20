@@ -1,0 +1,241 @@
+{
+  "schema": "client-intake-answers/v1",
+  "meta": {
+    "mode": "launch",
+    "phase": "pre_build"
+  },
+  "answers": {
+    "interview_mode": {
+      "value": "know",
+      "status": "provided",
+      "source": "client"
+    },
+    "business_name": {
+      "value": "Elevation Coaching Co",
+      "status": "provided",
+      "source": "client"
+    },
+    "offer_name": {
+      "value": "The Elevation Method",
+      "status": "provided",
+      "source": "client"
+    },
+    "offer_description": {
+      "value": "A 6-week group program that helps new coaches get their first 10 paying clients.",
+      "status": "provided",
+      "source": "client"
+    },
+    "audience": {
+      "value": "New coaches who want their first paying clients; career changers who want to coach on the side",
+      "status": "provided",
+      "source": "client"
+    },
+    "offer_transformation": {
+      "value": "After 6 weeks you have a clear offer and three client conversations booked.",
+      "status": "provided",
+      "source": "client"
+    },
+    "pains": {
+      "value": [
+        "No steady income",
+        "Feeling like a fraud",
+        "Family asking when you will get a real job"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "deliverables": {
+      "value": [
+        "12 video lessons",
+        "4 live calls",
+        "Templates pack"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "proof": {
+      "value": "none yet",
+      "status": "provided",
+      "source": "client"
+    },
+    "voice": {
+      "value": "bold, warm, direct",
+      "status": "provided",
+      "source": "client"
+    },
+    "funnel_shape": {
+      "value": "multiple_options",
+      "status": "provided",
+      "source": "client"
+    },
+    "packages": {
+      "value": [
+        {
+          "display_name": "Starter",
+          "deliverables": [
+            "6 video lessons",
+            "Templates pack"
+          ],
+          "price": {
+            "amount_minor": 29700,
+            "currency": "USD"
+          }
+        },
+        {
+          "display_name": "Premium",
+          "deliverables": [
+            "12 video lessons",
+            "4 live calls",
+            "Templates pack"
+          ],
+          "price": {
+            "amount_minor": 49700,
+            "currency": "USD"
+          }
+        }
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "bump": {
+      "value": "none",
+      "status": "provided",
+      "source": "client"
+    },
+    "upsell_1": {
+      "value": {
+        "display_name": "VIP Strategy Day",
+        "deliverables": [
+          "One private strategy day"
+        ],
+        "price": {
+          "amount_minor": 99700,
+          "currency": "USD"
+        }
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "downsell_1": {
+      "value": {
+        "display_name": "VIP Strategy Day, 3 payments",
+        "deliverables": [
+          "One private strategy day"
+        ],
+        "price": {
+          "amount_minor": 39900,
+          "currency": "USD"
+        }
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "upsell_2": {
+      "value": "none",
+      "status": "provided",
+      "source": "client"
+    },
+    "page_set": {
+      "value": "all",
+      "status": "provided",
+      "source": "client"
+    },
+    "brand_primary": {
+      "value": "#0A7E8C",
+      "status": "provided",
+      "source": "client"
+    },
+    "brand_secondary": {
+      "value": "#102A43",
+      "status": "provided",
+      "source": "client"
+    },
+    "brand_accent": {
+      "value": [
+        "#E76F51"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "brand_background": {
+      "value": [
+        "#FFFFFF"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "brand_text": {
+      "value": "#1B2A33",
+      "status": "provided",
+      "source": "client"
+    },
+    "brand_colors": {
+      "value": [
+        "#0A7E8C",
+        "#102A43",
+        "#E76F51",
+        "#FFFFFF",
+        "#1B2A33"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "logo": {
+      "value": {
+        "mode": "wordmark",
+        "text": "Elevation Coaching Co"
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "fonts": {
+      "value": {
+        "mode": "given",
+        "display": "Playfair Display",
+        "body": "Source Sans 3"
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "photos_founder": {
+      "value": "no",
+      "status": "provided",
+      "source": "client"
+    },
+    "design_style": {
+      "value": "B",
+      "status": "provided",
+      "source": "client"
+    },
+    "image_provider": {
+      "value": "connected",
+      "status": "provided",
+      "source": "client"
+    },
+    "image_cap": {
+      "value": 12,
+      "status": "provided",
+      "source": "client"
+    },
+    "paid_render_approval": {
+      "value": {
+        "approved": false,
+        "decide_later": false
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "copy_profile": {
+      "value": "standard",
+      "status": "provided",
+      "source": "client"
+    },
+    "location": {
+      "value": "existing",
+      "status": "provided",
+      "source": "client"
+    }
+  },
+  "to_confirm": [],
+  "run_id": "fixture-elevation"
+}
