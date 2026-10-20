@@ -48,8 +48,10 @@ and dispatch are the proven live legs.
    grant, no approval prompt. Report the session id, the exact model
    label, whether it was the client's choice or the harness default, and
    the links the command prints. Send the client the `chamber_url`
-   (`https://<slug>-council.zerohumanworkforce.com/chamber/#session=<id>`),
-   never a 127.0.0.1 link. Use `blackceo-council`, or
+   exactly as printed, never a 127.0.0.1 link. If the output has no
+   `chamber_url`, do not invent, guess, or build a link: tell the client
+   the Council is running, the result will be shared, and their private
+   Council link is still being set up. Use `blackceo-council`, or
    `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
    PATH. If the box cannot convene, run `bash scripts/verify-council-box.sh`
    and report its `COUNCIL_BOX:` line and the matching fix from
@@ -61,10 +63,12 @@ and dispatch are the proven live legs.
 `ai.blackceo.council-service` on a Mac, pm2 app `council-of-wise-elders` in
 the container on a VPS, release and receipts in
 `$OPENCLAW_ROOT/council-runtime`, durable data in
-`$OPENCLAW_ROOT/council-data`. The client signs in at their own
-`https://<slug>-council.zerohumanworkforce.com` with their Command Center
+`$OPENCLAW_ROOT/council-data`. The client signs in at their own Council
+address (the `chamber_url` the command prints) with their Command Center
 emails. The operator publishes that address with
-`scripts/provision-council-access.sh --all --apply`. Nobody hand-runs npm.
+`scripts/provision-council-access.sh --all --apply`; wire.sh keeps it only
+after the address answers with a Cloudflare Access sign-in, so a box whose
+address is not live yet prints no `chamber_url`. Nobody hand-runs npm.
 
 ## Modes
 
