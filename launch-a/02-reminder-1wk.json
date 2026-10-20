@@ -1,0 +1,52 @@
+{
+  "id": "launch-a-reminder-1wk",
+  "name": "Launch A — Reminder: 1 Week Before",
+  "aliases": ["7-day reminder", "One week out", "Launch A step 2"],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "24h/1h/live reminder framework extended forward to a 7-day pre-frame.",
+    "supporting": [
+      "Soap Opera Email #5 energy (urgency + CTA) applied to attendance, not pitch.",
+      "Expert Secrets — restate the big domino so the registrant remembers why they registered."
+    ]
+  },
+  "purpose": "One job: keep the live event on the calendar a week out. Re-state the date/time and the ONE promise, add one concrete reason to attend live rather than wait for a replay, and make the calendar/join path frictionless.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_datetime` minus 7 days.",
+    "timing": "7 days before the session start.",
+    "late_registrant_rule": "Registered inside the 7-day window: do not send a 'one week' message. Skip to the next reminder whose window is still ahead. If no window remains, skip silently.",
+    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`", "Tag `webinar-registered`"]
+  },
+  "channels": ["Email"],
+  "message": {
+    "email": {
+      "subject_angle": "\"One week from today: [big promise]\"",
+      "body_framework": "Confirm the date/time in the registrant's zone. Restate the ONE promise in the same words as the confirmation so the message is recognisably the same event. Give one concrete reason to be there live (live Q&A, a walkthrough that will not be in the replay, the offer window). Re-open the curiosity loop. One CTA: add to calendar or save the join link.",
+      "cta": "Add to calendar"
+    }
+  },
+  "copy_rules": [
+    "Same promise wording as the confirmation — do not rename the event.",
+    "One reason to attend live, not five.",
+    "No countdown clock and no offer price. Nothing expires today.",
+    "If the session is genuinely sold out or capped, say so; otherwise do not imply scarcity."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit the launch-a path.",
+    "`webinar_datetime` missing or in the past -> do not send; raise a build error rather than guessing a date.",
+    "Opt-out -> suppress email; keep no fallback channel here.",
+    "Rescheduled session -> recompute all launch-a waits from the new `webinar_datetime`; send no duplicate 'one week' message if the move lands inside the window."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 02 Reminder 1 Week",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 7 days -> If not purchased and datetime in future -> Send Email -> End.",
+    "notes": "Use a date-relative wait computed from `webinar_datetime`. Never hard-code the calendar date; a rescheduled session must move every reminder with it."
+  },
+  "scope": {
+    "includes": "A registered, not-yet-purchased contact seven days out.",
+    "excludes": ["Indoctrination emails", "Day-before and same-day reminders", "Replay branch"]
+  }
+}

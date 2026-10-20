@@ -1,0 +1,58 @@
+{
+  "id": "launch-a-reminder-1d",
+  "name": "Launch A — Reminder: 1 Day Before",
+  "aliases": ["24-hour reminder", "Day-before email", "Tomorrow reminder", "Launch A step 4"],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "24h reminder — Email + SMS.",
+    "supporting": [
+      "Soap Opera Email #5 energy applied to attendance.",
+      "Funnel Hacker's Cookbook — show-up rate is won in the last 24 hours."
+    ]
+  },
+  "purpose": "One job: win tomorrow. This is the highest-leverage reminder in the stack. State the time, restate the single most valuable thing they will learn, and make tomorrow's join a one-tap action.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_datetime` minus 24 hours.",
+    "timing": "24 hours before the session start.",
+    "late_registrant_rule": "Registered inside 24h: send immediately with honest copy — \"starts tomorrow\" or \"starts in a few hours\" depending on the actual gap. Never say \"tomorrow\" inside the final 12 hours.",
+    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`"]
+  },
+  "channels": ["Email", "SMS"],
+  "message": {
+    "email": {
+      "subject_angle": "\"Tomorrow: [big promise]\"",
+      "body_framework": "One line: tomorrow, date and time in the registrant's zone. The single most valuable thing they will learn, in the same words as the promise. One line on what to bring or how to prepare. Big join link, calendar hold. Close with a short line about the Q&A or live-only moment so they do not settle for a replay.",
+      "cta": "Save the join link"
+    },
+    "sms": {
+      "send": "24 hours before, only with SMS consent",
+      "body_framework": "Name + tomorrow + time + join URL. One line.",
+      "cta": "Join link"
+    }
+  },
+  "copy_rules": [
+    "Time in the registrant's own zone.",
+    "One promise, once, in the confirmation's wording.",
+    "Honest timing: if the gap is under 12 hours, the copy says hours, not tomorrow.",
+    "No offer price and no countdown.",
+    "SMS stays one line plus the link."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit launch-a.",
+    "`webinar_datetime` missing or past -> do not send; surface a build error.",
+    "Opt-out per channel; SMS DND -> email only.",
+    "Reschedule -> recompute; if the new time is under 24h away, send the honest-gap variant once, not twice."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 04 Reminder 24 Hours",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 24h -> If not purchased and future -> Send Email -> If SMS consent -> Send SMS -> End.",
+    "notes": "The SMS is the reminder that actually moves show-up rate; the email carries the reason. Do not let the SMS be a second copy of the email."
+  },
+  "scope": {
+    "includes": "Registered, not purchased, 24 hours out.",
+    "excludes": ["Same-day reminders", "Indoctrination emails", "Replay branch"]
+  }
+}

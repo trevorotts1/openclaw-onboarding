@@ -1,0 +1,72 @@
+{
+  "id": "launch-a-reminder-confirm",
+  "name": "Launch A — Registration Confirmation (Set the Stage)",
+  "aliases": [
+    "Registration confirm",
+    "Set the Stage email",
+    "Webinar confirmation + calendar",
+    "Launch A step 1"
+  ],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "A. Confirmation",
+    "primary": "Soap Opera Email #1 — Set the Stage (DotCom Secrets Secret #7).",
+    "supporting": [
+      "Expert Secrets — open the ONE big domino loop the webinar resolves.",
+      "Funnel Hacker's Cookbook — Webinar Funnel recipe: registration -> confirmation."
+    ]
+  },
+  "purpose": "One job: make the registrant certain they are in, certain when to show up, and curious enough to come back. Confirm the session in the registrant's own time zone, state the ONE promise, open the loop the webinar closes, and get the calendar hold in place while attention is highest.",
+  "trigger": {
+    "what_starts_it": "Registration submitted on the webinar registration page, or Tag Added `webinar-registered`.",
+    "timing": "Immediately on registration (target under 2 minutes).",
+    "requires": [
+      "Custom field `webinar_datetime` (ISO 8601 with timezone) set by the registration form or the session scheduler",
+      "Custom field `webinar_timezone`",
+      "Custom field `webinar_join_url`",
+      "Calendar link for the add-to-calendar CTA",
+      "Tags: `webinar-registered`"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "message": {
+    "email": {
+      "send": "Immediately",
+      "subject_angle": "\"You're registered — here's what happens next\"",
+      "body_framework": "Soap Opera #1 — Set the Stage. Welcome from the Attractive Character by name. Confirm the exact date and time in the registrant's time zone. State the ONE promise (the big domino the webinar knocks down) in one sentence. Open a curiosity loop: name what they will see that they cannot get from the replay or a summary. Ask them to whitelist the sender and add the calendar hold. One CTA: add to calendar.",
+      "cta": "Add to calendar"
+    },
+    "sms": {
+      "send": "Immediately, only if SMS consent is present",
+      "body_framework": "Short confirm: name, date/time, calendar link. No pitch, no repetition of the full email.",
+      "cta": "Calendar link"
+    }
+  },
+  "copy_rules": [
+    "Confirm the time in the registrant's time zone; never make them convert.",
+    "One promise, one CTA. The confirmation is logistics plus curiosity, not a sales page.",
+    "No countdown and no offer language. The offer does not exist in this message.",
+    "Honest urgency only: nothing expires on the confirmation."
+  ],
+  "guards": [
+    "`webinar-purchased` present -> end the whole launch-a path; the buyer does not receive reminders.",
+    "Email opt-out or SMS opt-out -> honour on the channel it was given, keep the other channel only if separately consented.",
+    "SMS without explicit consent -> email only.",
+    "Duplicate registration -> do not resend the confirmation; update `webinar_datetime` and send nothing unless the session moved."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf build-plan; set `order` and `parentKey` before the first save; fail loud on non-2xx).",
+    "workflow_name": "LA — 01 Confirm (Set the Stage)",
+    "structure": "Trigger: Form Submitted (registration page) OR Tag Added `webinar-registered` -> Set `webinar_datetime` from the session field -> Send Email (Set the Stage) -> If SMS consent -> Send SMS (confirm + calendar) -> End.",
+    "notes": "The session datetime must live in a custom field, never a fixed calendar date, so every later wait in launch-a can compute relative to it."
+  },
+  "scope": {
+    "includes": "A new webinar registration.",
+    "excludes": [
+      "Indoctrination emails — separate launch-a files",
+      "Reminder sends — separate launch-a files",
+      "Replay and no-show branches — separate launch-a file"
+    ]
+  }
+}

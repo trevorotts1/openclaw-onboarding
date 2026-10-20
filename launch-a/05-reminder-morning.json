@@ -1,0 +1,57 @@
+{
+  "id": "launch-a-reminder-morning",
+  "name": "Launch A — Reminder: Morning of the Event",
+  "aliases": ["Morning-of reminder", "Day-of morning email", "Launch A step 5"],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "Same-day attendance reminder layered between the 24h and 1h sends.",
+    "supporting": [
+      "Funnel Hacker's Cookbook — the day-of touch reopens the calendar hold.",
+      "Soap Opera Email #5 — urgency and CTA, scoped to attendance."
+    ]
+  },
+  "purpose": "One job: win the morning decision. Many registrants decide on the day. Put the time and the join path back in front of them while the day is still flexible, and give one reason to protect the hour.",
+  "trigger": {
+    "what_starts_it": "Wait until the morning of the event.",
+    "timing": "Operator-set send time on the event day, default 09:00 in the registrant's time zone. Must be at least 2 hours before `webinar_datetime`; if the session starts before 11:00, send 2 hours before start instead.",
+    "late_registrant_rule": "Registered after the morning send: skip this file; the 1-hour and 15-minute reminders carry the job.",
+    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`", "Custom field `webinar_morning_send` (computed send time, ISO 8601)"]
+  },
+  "channels": ["Email", "SMS"],
+  "message": {
+    "email": {
+      "subject_angle": "\"Today: [big promise] — here's your link\"",
+      "body_framework": "Today, time in the registrant's zone. One reason to protect the hour (the live Q&A, the walkthrough that will not be in the replay, the offer window). The join link. A short line about how early to arrive. One CTA.",
+      "cta": "Join here today"
+    },
+    "sms": {
+      "send": "Same morning, only with SMS consent",
+      "body_framework": "Name + today + time + join URL. One line.",
+      "cta": "Join link"
+    }
+  },
+  "copy_rules": [
+    "Say the time in the registrant's own zone.",
+    "The email is the reason; the SMS is the tap.",
+    "No price, no countdown, no offer language.",
+    "If the session is in the morning, the copy must reflect the actual remaining hours."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit launch-a.",
+    "Event day already passed or `webinar_datetime` past -> do not send.",
+    "Send time computed later than 2h before start -> clamp to start minus 2h; if that is still in the past, send immediately with honest copy.",
+    "Opt-out per channel; SMS DND -> email only."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 05 Reminder Morning Of",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_morning_send` (default 09:00 local on event day, clamped to start-2h) -> If not purchased and future -> Send Email -> If SMS consent -> Send SMS -> End.",
+    "notes": "Compute `webinar_morning_send` from `webinar_datetime` and `webinar_timezone`; never hard-code 09:00 as a fixed clock when the event starts early."
+  },
+  "scope": {
+    "includes": "Registered, not purchased, morning of the event.",
+    "excludes": ["1-hour, 15-minute and live reminders", "Replay branch", "Indoctrination"]
+  }
+}

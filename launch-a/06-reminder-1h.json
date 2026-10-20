@@ -1,0 +1,58 @@
+{
+  "id": "launch-a-reminder-1h",
+  "name": "Launch A — Reminder: 1 Hour Before",
+  "aliases": ["60-minute reminder", "One hour out", "Launch A step 6"],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "1h reminder — SMS-critical.",
+    "supporting": [
+      "Soap Opera Email #5 (urgency + CTA) applied to attendance.",
+      "Funnel Hacker's Cookbook — the 1-hour touch is the last reliable calendar interrupt."
+    ]
+  },
+  "purpose": "One job: make the next hour about the event. Short, specific, one link. SMS leads; email is the fallback for anyone without SMS consent or a phone on the profile.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_datetime` minus 1 hour.",
+    "timing": "60 minutes before the session start.",
+    "late_registrant_rule": "Registered inside the final hour: send immediately with honest copy (\"starting soon\"), once only.",
+    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`"]
+  },
+  "channels": ["SMS", "Email"],
+  "message": {
+    "sms": {
+      "send": "1 hour before, with SMS consent",
+      "body_framework": "Name + \"starting in 1 hour\" + time + join URL. One line, no pitch.",
+      "cta": "Join link"
+    },
+    "email": {
+      "send": "1 hour before, to everyone; primary channel for no-SMS contacts",
+      "subject_angle": "\"Starting in 1 hour\"",
+      "body_framework": "One line: starts in one hour, time in their zone. One line: the single thing they will learn. Join button. Nothing else.",
+      "cta": "Join now"
+    }
+  },
+  "copy_rules": [
+    "Under 60 words for the email body; one line for SMS.",
+    "Time in the registrant's own zone.",
+    "No price, no countdown, no offer language.",
+    "No second CTA. The join link is the only action."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit launch-a.",
+    "`webinar_datetime` past -> no send.",
+    "SMS DND or no consent -> email only.",
+    "Do not send both channels to the same contact unless SMS is the consented channel; email is the fallback, not a duplicate."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 06 Reminder 1 Hour",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 1h -> If not purchased and future -> If SMS consent -> Send SMS -> Else -> Send Email -> End.",
+    "notes": "SMS-first. The email exists so no-SMS registrants are not left out; do not send both to the same contact by default."
+  },
+  "scope": {
+    "includes": "Registered, not purchased, one hour out.",
+    "excludes": ["15-minute and live reminders", "Replay branch", "Indoctrination"]
+  }
+}
