@@ -1,7 +1,7 @@
 ---
 name: signature-product-selection
 description: Build the specificity-led Product Selection page (the order page: the page where a buyer chooses between packages, with its desktop and mobile wireframes and mockups) for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
-version: 0.2.4
+version: 0.2.5
 ---
 
 # Signature Product Selection (Skill 78) - the order page (package selection)

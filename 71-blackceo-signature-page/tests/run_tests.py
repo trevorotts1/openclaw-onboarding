@@ -89,6 +89,8 @@ MODULES = [
     "test_page_role_thank_you.py",
     # SPF030: signature sales page vs signature landing (opt-in) page kinds.
     "test_page_kinds.py",
+    # Diagnostic repair 2026-10-19: a zero-image generation run is FAILED.
+    "test_shared_page_service_generation.py",
 ]
 
 def skip_reason(stdout):

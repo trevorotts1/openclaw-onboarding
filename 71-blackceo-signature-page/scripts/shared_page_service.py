@@ -25,7 +25,17 @@ assigned_skill must be one of the sharing skills (71, 78, 79, 80, 81,
 82), and the route graph and brand bytes must hash to the request's
 recorded hashes. Nothing is written and no consumer runs on refusal.
 
-Exit codes: 0 ok; 2 fail-closed / consumer failure; 3 usage.
+Modes:
+  generation (default): requires --pipeline-command. Success is wired to
+      image files on disk for the stages the run executed -- readable
+      image bytes and desktop/mobile mockup widths -- never to the
+      pipeline command merely exiting 0. Zero images is FAILED.
+  validation-only (--validation-only): admits and stages the request,
+      runs write_intake.py, generates nothing, and says so with the
+      MODE=validation-only line. It can never read as a generated run.
+
+Exit codes: 0 ok; 2 fail-closed / consumer failure / generation not
+proven; 3 usage.
 """
 from __future__ import annotations
 
@@ -42,9 +52,11 @@ import copy_forms  # noqa: E402  the one registry of copy forms
 import page_role  # noqa: E402  a page type's own spec: role to form check below
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+SCRIPTS = SKILL_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
 import design_style  # noqa: E402  the client's A / B / C choice rides through to the intake
-WRITE_INTAKE = SKILL_ROOT / "scripts" / "write_intake.py"
+import stage_gate  # noqa: E402  (artifact/format/dimension success check)
+WRITE_INTAKE = SCRIPTS / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
 MARKER = "shared_image_service"
 MARKER_ID = "71-blackceo-signature-page"
@@ -108,7 +120,11 @@ def main(argv=None) -> int:
     p.add_argument("--pipeline-command", default=None,
                    help="the production pipeline command run after the "
                         "launch-context import (for example the run's "
-                        "stage_gate sequence); one shell-style string")
+                        "stage_gate sequence); one shell-style string. "
+                        "Required for a generation run.")
+    p.add_argument("--validation-only", action="store_true",
+                   help="admit and stage the request, generate nothing, "
+                        "and label the output MODE=validation-only")
     a = p.parse_args(argv)
     if a.image_inputs:
         try:
@@ -128,6 +144,15 @@ def main(argv=None) -> int:
         p.error(f"--design-style must be one of {design_style.STYLE_IDS}")
     if a.image_cap < 0:
         print("REFUSED: --image-cap must be >= 0")
+        return 2
+    if a.validation_only and a.pipeline_command:
+        print("REFUSED: --validation-only and --pipeline-command are "
+              "mutually exclusive; a validation run generates nothing")
+        return 3
+    if not a.validation_only and not a.pipeline_command:
+        print("FAILED: a generation run requires --pipeline-command and "
+              "none was supplied; nothing was generated (use "
+              "--validation-only to admit the request without generating)")
         return 2
     try:
         roles = _json(_read(REQUEST_SCHEMA, "page-request schema"),
@@ -203,18 +228,33 @@ def main(argv=None) -> int:
         if a.test_run:
             intake_argv.append("--test-run")
         subprocess.run(intake_argv, check=True)
-        if a.pipeline_command:
+        if a.validation_only:
+            pass
+        else:
             subprocess.run(shlex.split(a.pipeline_command), check=True,
                            cwd=str(run_dir))
     except ServiceError as exc:
         print(f"REFUSED: {exc}")
         return 2
     except subprocess.CalledProcessError as exc:
-        print(f"FAIL: consumer exited {exc.returncode}")
+        print(f"FAILED: consumer exited {exc.returncode}; the generation "
+              "run is not proven")
         return 2
-    print(f"shared image service: page_role {role!r} admitted; the "
-          "four image stages (desktop-wireframe, mobile-tablet, "
-          "visual-mockup, final-mockups) run on the stage contract")
+    if a.validation_only:
+        print("MODE=validation-only: no artifacts generated")
+        print(f"shared image service: page_role {role!r} admitted "
+              "(validation only; the four image stages did not run)")
+        return 0
+    failures, image_count = stage_gate.verify_generated_images(run_dir)
+    if failures:
+        print("FAILED")
+        for line in failures:
+            print(f"- {line}")
+        print(f"FAILED: the generation run produced {image_count} image(s) "
+              "and does not prove a generation run")
+        return 2
+    print(f"shared image service: page_role {role!r} admitted; "
+          f"{image_count} image(s) verified on disk for the stages that ran")
     return 0
 
 if __name__ == "__main__":

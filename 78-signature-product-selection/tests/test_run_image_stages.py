@@ -210,7 +210,8 @@ class RunTests(Fixture):
                                "--request", str(self.dir / "page-request.json"), "--run-dir", str(self.dir / "r2"),
                                "--page-version", "standard", "--brand-owner", "blackceo", "--image-cap", "40",
                                "--brand-file", str(self.dir / "brand.json"), "--launch-record", str(self.dir / "launch.json"),
-                               "--route-graph", str(self.dir / "route-graph.json")], capture_output=True, text=True)
+                               "--route-graph", str(self.dir / "route-graph.json"), "--validation-only"],
+                              capture_output=True, text=True)
         self.assertEqual(proc.returncode, 2)
         self.assertIn("does not fit page_role", proc.stdout)
 
