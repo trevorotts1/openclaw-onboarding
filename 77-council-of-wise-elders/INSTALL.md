@@ -10,7 +10,7 @@
 
 Follow these steps in this exact order. Do not skip, reorder, or combine
 steps. The order is the onboarding installer contract order: preflight,
-backup, verified copy, isolated dependency install, registry and core
+backup, verified copy, runtime build and service (wire.sh), registry and core
 update, nonsecret configuration, migrations through the owning app,
 offline QC, permitted live acceptance, release receipt.
 
@@ -23,17 +23,26 @@ skill's own scripts), a writable per-user installation prefix, the verified
 skill bundle, and correct schema, core, and source-pack versions once the
 runtime and packs land.
 
-Required to run (later units, stated here so nobody mistakes an installed
-scaffold for a working council): a valid client scope, approved source
-packs, a selected functioning route, a data store, and sufficient context and
-capacity.
+Required to run: a valid client scope, approved source packs, a selected
+functioning route, a data store, and sufficient context and capacity. The
+runtime itself needs Node.js 22.13 or newer (or 24+) with built-in SQLite;
+wire.sh checks this and reports NODE_TOO_OLD when it is not met.
 
-Required for visual managed mode: a compatible Command Center, an
-authenticated pairing and scope, the council migration applied through the
-Command Center, job and event integration, and UI assets. No compatible
-Command Center release exists yet; see references/install-matrix.md for
-the precise not-ready state. An older Command Center may receive this
-portable skill but must not be told the visual experience is ready.
+Installed means usable. A box counts as installed only when the Council
+service is running from a verified release AND the client has a signed-in
+way to open the Roast Room chamber. Copying the skill folder is only the
+first step; Step 4 (wire.sh) and the client access step below finish the
+job, and `scripts/verify-council-box.sh` is the proof.
+
+Optional, for the Command Center managed visual mode only: a compatible
+Command Center, an authenticated pairing and scope, the council migration
+applied through the Command Center, job and event integration, and UI
+assets. The standalone Roast Room chamber does NOT need any of this: it is
+served by the Council service itself and opened at the client's own
+council address (see Client access). No Command Center release carrying
+the managed council contract exists yet; see references/install-matrix.md
+for the precise not-ready state. An older Command Center may receive this
+portable skill but must not be told the managed visual mode is ready.
 
 Required only for new knowledge authoring: the relevant Skill 22
 extractors and authorized source content. A client install does NOT need
@@ -101,25 +110,42 @@ restore never resurrects stale council state.
    from the manifest status, and never use distribution mode to certify a
    source release. These checks prove file consistency, not publisher identity.
 
-## Step 4: Isolated dependency install
+## Step 4: Runtime build and service (wire.sh does this; nobody hand-runs npm)
 
-The complete runtime declares exact pinned dependencies in
-runtime/package.json: zod for the contracts, and TypeScript, tsx,
-esbuild, and @types/node for the build. Install them in isolation
-inside runtime/ only and build the runtime:
+The fleet roll runs `77-council-of-wise-elders/wire.sh` (update-skills.sh
+runs a skill's wire.sh first). Do not run npm, tsx or install-runtime.mjs by
+hand to "finish" an install: no roll can satisfy a manual step, and a
+hand-built tree drifts from the verified release. wire.sh is idempotent and
+does the whole job:
 
-    node scripts/install-runtime.mjs
+1. Resolves OPENCLAW_ROOT: `$OPENCLAW_ROOT`, else `/data/.openclaw`, else
+   `~/.openclaw`.
+2. Builds the runtime into an immutable release under
+   `$OPENCLAW_ROOT/council-runtime` (it runs `scripts/install-runtime.mjs`:
+   Node and SQLite preflight, pinned `npm ci`, build, receipts, then an
+   atomic switch of `active.json`). The skill folder is never built in
+   place. Durable council data lives in `$OPENCLAW_ROOT/council-data`,
+   outside every replaceable tree.
+3. Registers and starts the service on loopback port 8787 and keeps it
+   running across updates and reboots: Mac uses the LaunchAgent
+   `ai.blackceo.council-service`; VPS uses the pm2 app
+   `council-of-wise-elders` inside the container. The service runs from the
+   immutable release as
+   `<node> <release>/node_modules/tsx/dist/cli.mjs <release>/scripts/service-launch.mjs`.
+4. Writes `council-runtime/service.json` (port, origin, public_origin or
+   null, manager launchd, pm2 or external, name, release id), plus the
+   launcher `council-runtime/bin/council-service` and the command line tool
+   `council-runtime/bin/blackceo-council`.
+5. Prints one result line, `COUNCIL_WIRE: READY`, `NOOP`, `ADOPTED_EXISTING`,
+   `DEFERRED_NO_GUI` or `NOT_READY <code>`. The codes (NODE_TOO_OLD, NO_NPM,
+   NO_PM2, RUNNING_AS_ROOT, PORT_IN_USE, SERVICE_UNHEALTHY,
+   RUNTIME_BUILD_FAILED, UNSUPPORTED_PLATFORM) and their fixes are in
+   references/install-matrix.md. A NOT_READY line is a precise state to
+   report, never a reason to simulate a council.
 
-The script derives the pinned package set from runtime/package.json
-(every version must be an exact pin), runs the pinned install
-(`npm install --no-save` with those exact versions, so neither
-package.json nor the lockfile is rewritten), then runs the runtime
-build (`npm run build`: tsc plus the esbuild CLI bundle) and verifies
-that runtime/dist/ exists. Never install globally, never into another
-skill's tree, and never copy a native binary built for a different OS
-or architecture. A native module ABI mismatch fails the installation
-precisely, with no data reset. The source repository tree itself is
-never built in place; the build happens in the installed copy.
+wire.sh never touches client credentials, model defaults or route
+selection. The client's route choice (including claude-nine and
+claude-configured, not only DeepSeek) is read at convene time.
 
 ## Step 5: Registry and core update
 
@@ -171,7 +197,8 @@ council tables are created by the Command Center's own migration path
 when the compatible Command Center release is installed; the onboarding
 installer must never migrate a managed Command Center database behind
 its back. In standalone mode the local council database is created by
-the runtime on first use, outside the skills tree. The managed
+the runtime on first use in `$OPENCLAW_ROOT/council-data`, outside the
+skills tree. The managed
 council migration number remains unallocated in this release (the
 compatibility negotiation surfaces it as the MIGRATION_ID_UNALLOCATED
 advisory); the correct receipt entry states exactly which migrations
@@ -186,6 +213,19 @@ From the INSTALLED folder (not only the source tree):
    pass; below that, loop on the specific failed items (maximum 5 loops,
    then escalate). The installer who runs this QC is never the agent
    that performed the install (no self-QC).
+
+Then prove the box can actually be used. Run, read-only, on the box:
+
+    bash scripts/verify-council-box.sh
+
+Its last line is `COUNCIL_BOX: READY`, `DEGRADED <codes>` or
+`NOT_READY <codes>` (exit 0, 0, 1; exit 2 means the verifier itself could
+not run). It checks, in order: the release receipt, the release hash, the
+service registration (LaunchAgent or pm2), the local `/status`, a usable
+model route, the `blackceo-council` command, the public address and its
+Cloudflare Access sign-in gate, and (VPS) a tunnel connector inside the
+container. Every code and its fix is in references/install-matrix.md.
+READY is the only state that means the client can use the Council today.
 
 ## Step 9: Permitted live acceptance
 
@@ -202,10 +242,14 @@ Only with a real client-selected route:
   unverified. Never simulate a session or invent a verdict to fill
   the gap.
 - The not-ready report is still the correct result wherever a named
-  prerequisite is actually missing (no client-selected route, no
-  compatible Command Center release for managed mode);
+  prerequisite is actually missing (no client-selected route, or a
+  COUNCIL_WIRE / COUNCIL_BOX code from Step 4 or Step 8);
   it names the missing prerequisite precisely rather than claiming
   the council itself is unbuilt.
+- The agent convenes with `blackceo-council` (or
+  `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
+  PATH) and sends the client the `chamber_url` the command prints. It never
+  sends a 127.0.0.1 link: that address only works on the box itself.
 
 ## Step 10: Release receipt
 
@@ -214,8 +258,10 @@ Record, in the install work log or the box's onboarding state:
 - Discovery of slot 77 and the installed path.
 - Source, core, and pack hashes (the tree aggregate and archive hash
   recorded in manifest.json; all nine packs ship in this package).
-- The compatible Command Center version, or the precise not-ready state
-  from references/install-matrix.md.
+- The COUNCIL_WIRE line from the roll and the COUNCIL_BOX line from
+  `scripts/verify-council-box.sh`.
+- Whether the managed Command Center mode is available (optional), or the
+  precise not-ready state from references/install-matrix.md.
 - The registered capability identity (council-of-wise-elders), the SOP
   ID (SOP-COUNCIL-01), and the governance persona binding state
   (deferred until a real company context exists).
@@ -236,18 +282,42 @@ standard-company placeholder is not evidence of actual revenue, cash,
 mission, or customer demand, and council intake must keep unconfirmed
 scaffold data separate from client-confirmed facts.
 
+## Client access (operator step)
+
+The client opens the Roast Room chamber at
+`https://<slug>-council.zerohumanworkforce.com`, where `<slug>` is the
+first label of their Command Center address, and signs in with the same
+email addresses that sign in to their Command Center. The address is
+published on the box's one existing Cloudflare tunnel behind a Cloudflare
+Access application that copies the Command Center's allow-list.
+
+Publishing it is an operator step, run from the onboarding repository by the
+operator (never by the client, never by a worker on a client box):
+
+    bash scripts/provision-council-access.sh --all --apply
+
+That script records `public_origin` for the box, after which
+`blackceo-council convene` prints `chamber_url =
+<public_origin>/chamber/#session=<id>`. Until it has run,
+`verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and the agent
+must tell the client plainly that the chamber link is not set up yet
+instead of sending a local link. If the verifier ever reports
+ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as a
+security failure and do not send the link.
+
 ## Front-door service launcher
 
-A host that serves the Council front door starts it with
-`runtime/scripts/service-launch.mjs`. The launcher calls the composition
-root `startCouncilService(...)`, never a bare `CouncilFrontDoor`: a bare
-door leaves the event, admission and session adapters unbound (events
-answer 501). It binds loopback only, defaults to port 8787, takes the data
-directory from `COUNCIL_SERVICE_DATA_DIR` or the platform default, logs one
-JSON object per stdout line, and stops on SIGTERM or SIGINT. From the skill root, run it only as
-`runtime/node_modules/.bin/tsx runtime/scripts/service-launch.mjs` (tsx is
-installed inside `runtime/` only, so a bare `node --import tsx` from the skill
-root cannot find it); plain `node` cannot load the extensionless imports in the tsc `dist/` output.
+`runtime/scripts/service-launch.mjs` is the launcher. wire.sh starts it from
+the immutable release, never from the skill folder, as
+`<node> <release>/node_modules/tsx/dist/cli.mjs <release>/scripts/service-launch.mjs`
+(tsx is installed inside the release; plain `node` cannot load the
+extensionless imports in the tsc `dist/` output). The launcher calls the
+composition root `startCouncilService(...)`, never a bare
+`CouncilFrontDoor`: a bare door leaves the event, admission and session
+adapters unbound (events answer 501). It binds loopback only, defaults to
+port 8787, takes the data directory from `COUNCIL_SERVICE_DATA_DIR`
+(wire.sh sets it to `$OPENCLAW_ROOT/council-data`), logs one JSON object per
+stdout line, and stops on SIGTERM or SIGINT.
 
 ## Restarts
 
