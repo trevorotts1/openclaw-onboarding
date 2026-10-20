@@ -1,0 +1,100 @@
+{
+  "id": "signature-launch-abandoned-checkout",
+  "type": "sequence",
+  "name": "Signature Launch Abandoned-Checkout Recovery Profile",
+  "tags": [
+    "sequence",
+    "signature-launch",
+    "signature-launch-profile",
+    "abandoned-checkout",
+    "abandoned-cart",
+    "cart-recovery",
+    "checkout-recovery",
+    "order-recovery",
+    "zeigarnik-effect",
+    "loss-aversion",
+    "cognitive-dissonance",
+    "trust",
+    "reciprocity",
+    "three-b-plan",
+    "pas",
+    "before-after-bridge",
+    "per-buyer-type-tactics",
+    "timing-1-3-hours",
+    "founder-signature",
+    "launch-brief-intake",
+    "draft-only-handoff"
+  ],
+  "length": "<150 words",
+  "best_for": [
+    "abandoned-cart",
+    "abandoned-checkout",
+    "signature-launch-builds",
+    "checkout-recovery",
+    "ecommerce",
+    "warm-lists",
+    "buyer-type-segmented-lists"
+  ],
+  "file": "signature-launch-abandoned-checkout.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "signature_launch_abandoned_checkout",
+    "profile": "signature_launch_abandoned_checkout",
+    "length": 3,
+    "preview_count": 1,
+    "preview_count_overridable": false,
+    "subject_count": 2,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "three-b-plan",
+      "2": "pas",
+      "3": "before-after-bridge"
+    },
+    "phase_map": {
+      "reminder": [1],
+      "objection": [2],
+      "last_call": [3]
+    },
+    "cta_rules": {
+      "default": 1
+    },
+    "cta_destination": "checkout page",
+    "objective": "abandoned-cart",
+    "objective_source": "objective-abandoned-cart",
+    "timing": {
+      "1": {
+        "after_hours": [1, 3]
+      },
+      "2": {
+        "after_hours": 24
+      },
+      "3": {
+        "after_hours": [48, 72]
+      },
+      "note": "relative to the checkout-abandonment event; every stated deadline, price, or scarcity fact comes from the approved offer version in the brief, never invented"
+    },
+    "buyer_type_tactics": {
+      "spontaneous": "fastest send in the 1-3 hour window; friction-free one-click finish; Zeigarnik + loss aversion; countdown framing only when the brief supplies a real deadline",
+      "methodical": "answer the unspoken objection; guarantee, security signals, FAQ or support link; no pressure; trust/risk reduction",
+      "humanistic": "a real human check-in; offer help from a person; reciprocity + trust",
+      "competitive": "name what waiting costs; price protection or stock claim only when the approved offer version supplies it; status-coded loss aversion"
+    },
+    "suppression": "a verified purchase, an active order for the same offer, or an opt-out suppresses every remaining email immediately; a pending or failed payment is not a decline and belongs to the failed-payment lane, never this profile",
+    "offer_validity": "every CTA, price, benefit, guarantee, and deadline matches the current approved offer version; no expired one-click link, no second unapproved offer, no discount that the approved version does not carry",
+    "disruptive_required": false,
+    "intake": "the approved S49 shared-launch brief, consumed by the launch intake adapter with per-field provenance; the legacy one-block questionnaire applies only in explicit legacy interactive mode",
+    "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
+    "trigger": "Signature Launch build: appended after the checkout page is approved and the offer version is locked; a checkout-abandonment event enrolls the contact and every email returns them to that same approved checkout page",
+    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; the shared prover also applies its default 150-300 word band (3-B <150), so this profile's compact <150 band is not modeled yet. Until the integrator registers the profile and its band, a run resolving sequence_type signature_launch_abandoned_checkout fails AF-EMAIL-TYPE-MISMATCH by design; register.py --check keeps its frozen 36-entry census",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-PREVIEW-COUNT",
+      "AF-EMAIL-SUBJECT-COUNT",
+      "AF-EMAIL-WORDBAND",
+      "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+      "AF-EMAIL-TYPE-MISMATCH",
+      "AF-EMAIL-PROCESS-INTEGRITY"
+    ]
+  }
+}
