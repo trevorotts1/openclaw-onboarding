@@ -1,10 +1,14 @@
-## [v27.1.51]  -  2026-10-20  -  Batch: Skill 49 every page type + shared client intake + harness parity + Skill 83 real launch
+## [v27.1.52]  -  2026-10-20  -  Merge train: #2369 Council (Skill 77): claude-nine councils finish + true blocked reason
 
-- In plain English: the signature funnel now draws a design for every page type (including the 7-step order page and the 3/5/7-step downsells), the client's chosen landing pages reach the page builder, a folded-levels sales page gets its levels panel, the shared client intake asks the same questions for every consumer, the interview and progress reports read the same on every harness (OpenClaw, Claude Code, claude-nine), and Skill 83 (Black Friday launcher) now builds every planned page in a real launch. Skills bumped: 49 v2.1.17, 71 1.3.3, 83 0.2.4.
-## [v27.1.51]  -  2026-10-20  -  Council (Skill 77) v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #2369 — [v27.1.51]  -  2026-10-20  -  Council (Skill 77) v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
 
 - In plain English: Councils on claude-nine now finish; a blocked council shows the real reason.
 
+## [v27.1.51]  -  2026-10-20  -  Batch: Skill 49 every page type + shared client intake + harness parity + Skill 83 real launch
+
+- In plain English: the signature funnel now draws a design for every page type (including the 7-step order page and the 3/5/7-step downsells), the client's chosen landing pages reach the page builder, a folded-levels sales page gets its levels panel, the shared client intake asks the same questions for every consumer, the interview and progress reports read the same on every harness (OpenClaw, Claude Code, claude-nine), and Skill 83 (Black Friday launcher) now builds every planned page in a real launch. Skills bumped: 49 v2.1.17, 71 1.3.3, 83 0.2.4.
 ## [v27.1.50]  -  2026-10-20  -  Batch: signature funnel page types (sales page, landing, order page, upsell, downsell, thank-you), clear section labels, and Skill 83 turned on for 999 shipping
 
 - In plain English: the signature page skills now build each page type (sales page, opt-in landing page, order page, upsell, downsell, thank-you) through one image pipeline, every wireframe and mockup is labeled desktop or mobile, review PDFs carry no notes between sections, and Skill 83 (Black Friday launcher) is turned on for 999 shipping. Skills bumped: 49 v2.1.16, 71 1.3.2, 78 0.2.4, 79 0.1.6, 80 0.2.3, 81 0.1.5, 82 0.3.2, 83 0.2.3.
