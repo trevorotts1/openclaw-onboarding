@@ -85,7 +85,7 @@ if [ "$(uname -s)" = "Darwin" ] && launchctl print "gui/$UIDN" >/dev/null 2>&1; 
   # public origin (case 10): re-run with the build-state file
   mkdir -p "$H/.openclaw/workspace"
   echo '{"commandCenterUrl":"https://qcbox.zerohumanworkforce.com"}' >"$H/.openclaw/workspace/.workforce-build-state.json"
-  OUT="$(mac /bin/bash "$WIRE" --idempotent 2>&1)"; echo "$OUT"
+  OUT="$(mac env COUNCIL_PUBLIC_ORIGIN_SKIP_PROBE=1 /bin/bash "$WIRE" --idempotent 2>&1)"; echo "$OUT"
   [ "$(jget "$H/.openclaw/council-runtime/service.json" public_origin)" = "https://qcbox-council.zerohumanworkforce.com" ] && grep -q "WISE_ELDERS_PUBLIC_ORIGIN='https://qcbox-council.zerohumanworkforce.com'" "$SH" && ok "public origin from hostname rule" || bad "public origin from hostname rule"
 
   # release change: scratch copy of the skill with one runtime source edit
