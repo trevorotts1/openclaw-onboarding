@@ -779,6 +779,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
     let response: TransportResponse;
     try {
       response = await transport.generate({
+        signal: ctx.signal,
         purpose: 'ratification',
         session_id: session.spec.session_id,
         seat_id: seatId,
@@ -1153,6 +1154,7 @@ export class ConsultExecutor implements OperationExecutorPort {
     let response: TransportResponse;
     try {
       response = await transport.generate({
+        signal: ctx.signal,
         purpose: 'consult',
         session_id: session.spec.session_id,
         seat_id: seatId,

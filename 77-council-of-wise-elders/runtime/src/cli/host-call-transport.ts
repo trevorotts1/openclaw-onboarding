@@ -17,10 +17,12 @@
  *
  * Failure honesty: a harness that exits non-zero or reports an error
  * envelope fails the operation through the normal transport error
- * path. A delegate killed by the deadline may or may not have
- * completed provider-side, so that failure carries
- * unknownCompletion = true and the engine never replays it
- * (Section 15.5). Response bodies are not persisted by this delegate;
+ * path. A delegate killed by the deadline AFTER the harness announced
+ * it started (stream-json init line) may or may not have completed
+ * provider-side, so that failure carries unknownCompletion = true and
+ * the engine never replays it (Section 15.5). A delegate that never
+ * announced it started sent nothing to the provider: that failure is
+ * retryable, and the runner admits exactly one bounded retry. Response bodies are not persisted by this delegate;
  * only the parsed text and structured identity/usage fields leave it.
  */
 
@@ -41,6 +43,12 @@ const MAX_STDERR_BYTES = 64 * 1024;
 // A launcher that runs its own guard scripts before handing off needs ~16 s
 // for --help (measured on claude-nine), so 10 s would miss every flag.
 const HELP_PROBE_TIMEOUT_MS = 45_000;
+/**
+ * Spawn-to-init budget for a stream-json harness. A harness that has not
+ * announced it started by then sent nothing to the provider, so it is
+ * killed and retried instead of waiting out the whole call deadline.
+ */
+export const DEFAULT_STARTUP_TIMEOUT_MS = 300_000;
 /** Backoff before retry 1 and retry 2 (at most 2 extra attempts). */
 const RETRY_BACKOFF_MS = [5_000, 15_000];
 const TRANSIENT_PATTERN =
@@ -49,8 +57,11 @@ const SECRET_PATTERN = /sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S+/g;
 
 /**
  * Flags that stop a harness print call from loading the user's hooks,
- * MCP servers, skills and session history. Each is added only when the
- * harness's own --help lists it. Never --bare (skips Keychain reads),
+ * MCP servers, skills and session history. When the harness's own --help
+ * (a real "Usage: claude" text) is read, only the flags it lists are
+ * added. When the probe fails, times out or prints something else, ALL
+ * are added: running without isolation is the worse failure, and a build
+ * lacking one fails at once with "unknown option". Never --bare (skips Keychain reads),
  * never --setting-sources (claude-nine routes through user settings).
  */
 const ISOLATION_FLAGS: ReadonlyArray<{ flag: string; args: readonly string[] }> = [
@@ -64,17 +75,34 @@ const ISOLATION_FLAGS: ReadonlyArray<{ flag: string; args: readonly string[] }> 
 /** `<exe> --help` output, once per executable path for the process lifetime. */
 const helpCache = new Map<string, Promise<string>>();
 
+/** Kill a harness and everything it spawned (guards, hooks, MCP servers). */
+function killTree(child: ChildProcess): void {
+  try {
+    if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+    else child.kill('SIGKILL');
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+}
+
+const SPAWN_GROUP = process.platform !== 'win32';
+
 export class HostCallTransportError extends Error {
-  readonly retryable = false;
+  readonly retryable: boolean;
   readonly unknownCompletion: boolean;
   /** Raw stdout+stderr, set only for a non-zero exit or an error envelope. */
   readonly rawOutput: string | undefined;
   constructor(
     message: string,
-    options: { unknownCompletion?: boolean; rawOutput?: string } = {},
+    options: { unknownCompletion?: boolean; rawOutput?: string; retryable?: boolean } = {},
   ) {
     super(message);
     this.name = 'HostCallTransportError';
+    this.retryable = options.retryable ?? false;
     this.unknownCompletion = options.unknownCompletion ?? false;
     this.rawOutput = options.rawOutput;
   }
@@ -102,6 +130,10 @@ export interface HostCallTransportOptions {
   model?: string | null;
   /** Verified operation deadline. Default: Section 15.8 initial default. */
   timeoutMs?: number;
+  /** Spawn-to-init budget (stream-json harness only). Default 300 s. */
+  startupTimeoutMs?: number;
+  /** `--help` probe limit. Default 45 s; injectable for tests. */
+  helpTimeoutMs?: number;
   /** Injectable spawn for embedding; production uses node:child_process. */
   spawnImpl?: typeof spawn;
   /** Injectable retry sleep for tests; production waits for real time. */
@@ -162,11 +194,12 @@ function probeHelp(
   executable: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
+  timeoutMs: number,
 ): Promise<string> {
   return new Promise<string>((resolve) => {
     let child: ChildProcess;
     try {
-      child = spawnImpl(executable, ['--help'], { env, cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawnImpl(executable, ['--help'], { env, cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: SPAWN_GROUP });
     } catch {
       resolve('');
       return;
@@ -180,9 +213,9 @@ function probeHelp(
       resolve(out);
     };
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      killTree(child);
       finish();
-    }, HELP_PROBE_TIMEOUT_MS);
+    }, timeoutMs);
     child.stdout?.on('data', (chunk: Buffer) => {
       if (out.length < MAX_STDOUT_BYTES) out += chunk.toString('utf8');
     });
@@ -199,20 +232,33 @@ async function isolationArgs(
   executable: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
-): Promise<string[]> {
+  helpTimeoutMs: number,
+): Promise<{ args: string[]; streaming: boolean }> {
   let help = helpCache.get(executable);
   if (!help) {
-    help = probeHelp(spawnImpl, executable, env, cwd);
+    help = probeHelp(spawnImpl, executable, env, cwd, helpTimeoutMs);
     helpCache.set(executable, help);
   }
   const text = await help;
-  // A probe that timed out or printed nothing is retried on the next call.
-  if (text === '') helpCache.delete(executable);
+  // Only a real help text is trusted (and cached); anything else is
+  // re-probed on the next call and meanwhile runs with every flag.
+  const trusted = /Usage: claude/.test(text);
+  if (!trusted) helpCache.delete(executable);
   const out: string[] = [];
   for (const { flag, args } of ISOLATION_FLAGS) {
-    if (new RegExp(`(?<![\\w-])${flag}(?![\\w-])`).test(text)) out.push(...args);
+    if (!trusted || new RegExp(`(?<![\\w-])${flag}(?![\\w-])`).test(text)) out.push(...args);
   }
-  return out;
+  return { args: out, streaming: !trusted || /stream-json/.test(text) };
+}
+
+/** True once a stream-json stdout holds the harness's own init line. */
+function sawInit(stdout: string): boolean {
+  for (const line of stdout.split('\n')) {
+    if (!line.startsWith('{') || !line.includes('"init"')) continue;
+    const obj = asObject(line.trim()) as { type?: unknown; subtype?: unknown } | null;
+    if (obj && obj.type === 'system' && obj.subtype === 'init') return true;
+  }
+  return false;
 }
 
 export class SubprocessHostCallTransport implements ModelTransport {
@@ -240,19 +286,27 @@ export class SubprocessHostCallTransport implements ModelTransport {
     // A dedicated empty directory so no project CLAUDE.md or hooks load.
     const cwd = join(tmpdir(), 'council-harness-cwd');
     mkdirSync(cwd, { recursive: true });
+    const iso = await isolationArgs(
+      spawnImpl,
+      this.options.executable,
+      env,
+      cwd,
+      this.options.helpTimeoutMs ?? HELP_PROBE_TIMEOUT_MS,
+    );
     const args = [
       '--print',
       '--output-format',
-      'json',
+      iso.streaming ? 'stream-json' : 'json',
+      ...(iso.streaming ? ['--verbose'] : []),
       ...(this.options.model ? ['--model', this.options.model] : []),
-      ...(await isolationArgs(spawnImpl, this.options.executable, env, cwd)),
+      ...iso.args,
     ];
     const sleep = this.options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     const maxAttempts = RETRY_BACKOFF_MS.length + 1;
 
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await this.runOnce(spawnImpl, args, env, cwd, request);
+        return await this.runOnce(spawnImpl, args, env, cwd, request, iso.streaming);
       } catch (err) {
         if (
           !(err instanceof HostCallTransportError) ||
@@ -277,8 +331,10 @@ export class SubprocessHostCallTransport implements ModelTransport {
     env: NodeJS.ProcessEnv,
     cwd: string,
     request: TransportRequest,
+    streaming: boolean,
   ): Promise<TransportResponse> {
     const timeoutMs = this.options.timeoutMs ?? DEFAULT_HOST_CALL_TIMEOUT_MS;
+    const startupMs = this.options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     const prompt = `${request.system}\n\n${canonicalStringify(request.input)}`;
 
     return new Promise<TransportResponse>((resolve, reject) => {
@@ -288,6 +344,7 @@ export class SubprocessHostCallTransport implements ModelTransport {
           env,
           cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
+          detached: SPAWN_GROUP,
         });
       } catch (err) {
         reject(
@@ -302,14 +359,23 @@ export class SubprocessHostCallTransport implements ModelTransport {
       let stderr = '';
       let settled = false;
       let timedOut = false;
+      let started = !streaming; // a plain-json harness cannot announce a start
+      let notStarted = false;
 
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill('SIGKILL');
+        killTree(child);
       }, timeoutMs);
+      const startupTimer = streaming
+        ? setTimeout(() => {
+            if (started) return;
+            notStarted = true;
+            killTree(child);
+          }, startupMs)
+        : null;
 
       const onAbort = () => {
-        child.kill('SIGKILL');
+        killTree(child);
       };
       if (request.signal) {
         if (request.signal.aborted) onAbort();
@@ -318,6 +384,10 @@ export class SubprocessHostCallTransport implements ModelTransport {
 
       child.stdout?.on('data', (chunk: Buffer) => {
         if (stdout.length < MAX_STDOUT_BYTES) stdout += chunk.toString('utf8');
+        if (!started && sawInit(stdout)) {
+          started = true;
+          if (startupTimer) clearTimeout(startupTimer);
+        }
       });
       child.stderr?.on('data', (chunk: Buffer) => {
         if (stderr.length < MAX_STDERR_BYTES) stderr += chunk.toString('utf8');
@@ -326,6 +396,7 @@ export class SubprocessHostCallTransport implements ModelTransport {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (startupTimer) clearTimeout(startupTimer);
         reject(
           new HostCallTransportError(
             `The configured harness executable failed to run: ${err.message}`,
@@ -336,6 +407,16 @@ export class SubprocessHostCallTransport implements ModelTransport {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (startupTimer) clearTimeout(startupTimer);
+        if (!started && (notStarted || timedOut)) {
+          reject(
+            new HostCallTransportError(
+              `The harness did not start within ${Math.round((timedOut ? timeoutMs : startupMs) / 1000)} s (no request was sent to the provider); it was killed and one retry is allowed.`,
+              { retryable: true },
+            ),
+          );
+          return;
+        }
         if (timedOut) {
           reject(
             new HostCallTransportError(
