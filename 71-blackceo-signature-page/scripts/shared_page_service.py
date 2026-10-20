@@ -35,6 +35,8 @@ import sys
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+import design_style  # noqa: E402  the client's A / B / C choice rides through to the intake
 WRITE_INTAKE = SKILL_ROOT / "scripts" / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
 MARKER = "shared_image_service"
@@ -84,6 +86,9 @@ def main(argv=None) -> int:
     p.add_argument("--launch-record", type=Path, required=True)
     p.add_argument("--route-graph", type=Path, required=True)
     p.add_argument("--consent-statements", type=Path, default=None)
+    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=None,
+                   help="the client's design style (A Block, B Circle, C Hybrid), recorded in the "
+                        "intake like any page; omitted, the intake notes it is still to be asked")
     p.add_argument("--pipeline-command", default=None,
                    help="the production pipeline command run after the "
                         "launch-context import (for example the run's "
@@ -146,6 +151,8 @@ def main(argv=None) -> int:
                        "--route-graph", str(run_dir / request["route_graph_ref"])]
         if a.consent_statements is not None:
             intake_argv += ["--consent-statements", str(a.consent_statements)]
+        if a.design_style:
+            intake_argv += ["--design-style", a.design_style]
         subprocess.run(intake_argv, check=True)
         if a.pipeline_command:
             subprocess.run(shlex.split(a.pipeline_command), check=True,

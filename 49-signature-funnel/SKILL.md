@@ -49,7 +49,8 @@ REST call.
 | 12 | The Big Bold Heartfelt Message | 100–150 words | 6 labeled parts; part 2 starts "I used to be just like you…" |
 
 Six page profiles: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you` (+ `checkout`
-microcopy). Derived pages exclude Sections 8–11 and replace Section 12 with the renumbered Section 8
+microcopy; its wireframes and mockups come from `scripts/checkout_wrapper.py`, the design-only
+checkout adapter over Skill 71's five-section checkout role spec). Derived pages exclude Sections 8–11 and replace Section 12 with the renumbered Section 8
 ("7 Reasons To Commit To Your ____ Future" for upsells; "When Time Runs Out" for downsells).
 
 ## How it runs — THROUGH the canonical front door only

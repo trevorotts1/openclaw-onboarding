@@ -1,0 +1,115 @@
+{
+  "spec_id": "role-spec-checkout-v1",
+  "spec_version": 1,
+  "page_role": "checkout",
+  "owning_skill": 79,
+  "form": "standard",
+  "status": "PROPOSAL for Trevor's approval. No Trevor example exists for the order form or checkout page (references/qc-contract.md, examples section), so this structure is built from Skill 79's own spec (79-signature-order-form/SKILL.md modes, references/components/QC-STATES.md reading order). Structure only: the client's brand colours, design style, hypersaturated grade and Trevor's wireframe rules govern every look decision.",
+  "purpose": "The section sequence the Skill 71 image pipeline accepts for a checkout page (the order form). It replaces the 12-section landing sequence for a run whose page_role is checkout; copy_version stays a form label (standard or long-form) that only selects the style reference sheet.",
+  "sequence": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "layout_reference": "The order form page is five sections, top to bottom: the offer or the selected package, the offer details and price, the one order bump, the guarantee and terms, then the secure checkout. Desktop sits in the 1200 px content column: the explanation and its product-proof plate side by side, the price rows in one labelled card. Mobile is one column; price lines stack under 640 px and nothing scrolls sideways at 360 px. The checkout form is drawn as ONE labelled plate headed NATIVE CHECKOUT FORM, never as card, expiry or security-code fields, with one filled submit button under it and a status message strip beneath that. The order bump box and the consent box are drawn unchecked. Few images: a product-proof plate and a guarantee or trust plate. Bright, calm and trustworthy in the client's brand colours only; never dark styling: no dark grounds and no dark authority bands.",
+  "cta_map": {
+    "required_in_sections": [
+      "5"
+    ],
+    "forbidden_in_sections": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "rule": "One filled submit button, in the checkout section only. The bump checkbox and the change-package link are controls, not buttons."
+  },
+  "rules": [
+    "The payment form is the native checkout form only: no homemade card, expiry or security-code fields, no payment logos drawn as fields.",
+    "The order bump starts unchecked and the consent box starts unchecked; both are drawn as empty boxes.",
+    "Nothing on the page is invented: price, guarantee, terms and consent wording are the approved copy, printed exactly.",
+    "Price lines stack under 640 px; there is no sideways scroll at 360 px.",
+    "Bright palette throughout; no dark grounds (each section pins its own light or hero ground)."
+  ],
+  "sections": [
+    {
+      "id": "1",
+      "name": "Offer or selected package",
+      "job": "tells the buyer what they are getting before the price: in combined mode what is included, who it is for, access and delivery and important exclusions; in post-selection mode the chosen package name, billing schedule, quantity and price with a change-package link",
+      "composition_role": "offer-explainer",
+      "slots": [
+        {
+          "slot_id": "checkout-offer-proof",
+          "aspect_ratio": "4:3",
+          "art_direction": "product proof: the offer shown the way the buyer receives it, calm and uncluttered"
+        }
+      ],
+      "slot_canon": "one product-proof plate beside the explanation",
+      "desktop": "Two columns in the content column: the explanation left as four labelled rows (what is included, who it is for, access and delivery, important exclusions), the product-proof plate right. For a selected package the left column is a package summary card (package name, billing schedule, quantity, price) with a quiet change-package text link. Two small labelled VARIANT panels sit under the summary: a recovery choice for a missing or expired selection and a reconfirm notice for a changed offer or price.",
+      "mobile": "One column: headline, then the product-proof plate, then the four explanation rows or the package summary card stacked; the two variant panels stack under it at full width.",
+      "behavior_notes": "Explanation rows or package summary; change-package link goes back to the product selection page; variant panels are labelled VARIANT",
+      "ground": "light"
+    },
+    {
+      "id": "2",
+      "name": "Offer details and price",
+      "job": "shows exactly what the buyer pays and when: the price lines, billing schedule and any trial or installment disclosure, taken from the approved price display",
+      "composition_role": "price-summary",
+      "slots": [],
+      "slot_canon": "no photo; a light field behind the price card",
+      "desktop": "One labelled price card in the content column: item lines left, amounts right-aligned, a due-today total row set heavier, a thin rule above the total and the billing-schedule line beneath it.",
+      "mobile": "The same card at full content width; each price line stacks its label above its amount; the total row stays last and heaviest.",
+      "behavior_notes": "Price lines come from the approved price display; they stack under 640 px",
+      "ground": "light"
+    },
+    {
+      "id": "3",
+      "name": "Order bump",
+      "job": "offers the one add-on on this checkout as a single unchecked box with its headline and benefit line",
+      "composition_role": "order-bump",
+      "slots": [],
+      "slot_canon": "no photo; the bump is a bordered box with an empty checkbox",
+      "desktop": "One bordered box across the content column: an empty checkbox on the left, the bump headline and one benefit line beside it, the bump price on the right. The box carries an accent edge bar and is clearly the only boxed offer on the page.",
+      "mobile": "The same box at full width: checkbox and headline on the first line, benefit line under it, price on its own line at the end.",
+      "behavior_notes": "Checkbox starts unchecked; checking it only changes the pending order",
+      "ground": "hero"
+    },
+    {
+      "id": "4",
+      "name": "Guarantee and terms",
+      "job": "reassures the buyer with the approved guarantee and states the terms and consent line they agree to",
+      "composition_role": "guarantee",
+      "slots": [
+        {
+          "slot_id": "checkout-guarantee-trust",
+          "aspect_ratio": "1:1",
+          "art_direction": "trust: a calm guarantee seal or reassurance moment, warm and believable"
+        }
+      ],
+      "slot_canon": "one guarantee or trust plate beside the guarantee wording",
+      "desktop": "Two columns: the guarantee plate left, the guarantee wording right with the terms text beneath it in smaller type, then one consent row (an empty checkbox and the consent line) spanning the column.",
+      "mobile": "One column: guarantee plate, guarantee wording, terms text, then the consent row with its empty checkbox at the touch-target size.",
+      "behavior_notes": "Consent checkbox starts unchecked; guarantee, terms and consent wording are the approved text",
+      "ground": "light"
+    },
+    {
+      "id": "5",
+      "name": "Secure checkout",
+      "job": "takes the order: the native checkout form, one submit button and the area where order status messages appear",
+      "composition_role": "checkout-form",
+      "slots": [],
+      "slot_canon": "no photo; the native form plate",
+      "desktop": "One wide labelled plate headed NATIVE CHECKOUT FORM fills the content column, drawn as a framed panel with no card, expiry or security-code fields. The filled submit button sits directly under it, centered, with its microcopy under that. Below the button a status message strip shows its four states (pending, failed, needs your action, paid) as a row of small labelled chips.",
+      "mobile": "The same plate at full content width, the submit button spanning the content column, microcopy under it, and the status strip stacked as four short rows.",
+      "behavior_notes": "Native checkout form plate only, no card fields drawn; the submit button is the page's one button; status messages appear in the strip",
+      "ground": "light"
+    }
+  ],
+  "wireframe_blocks": {
+    "colour": "COLOUR — every colour comes from the BRAND COLORS line in this prompt, the client's own resolved palette. The primary colour fills the section chip, the submit button, the plate edge bars and the second line of the headline. This page is bright: the lightest brand colours are the grounds, and the main brand colour may fill the order bump band. The darkest brand colour sets type only, never a ground. The brand text colour sets all type. Image plates stay neutral grey. No other chromatic colour. The sheet is never grey line work on a pale ground, never colourless and never outline-only: a sheet with no brand colour on it is rejected. Do not borrow a colour from the style reference or from any other client.",
+    "bands": "5. BANDS — the band runs edge to edge across the whole frame with no margin gap, no page card, no device frame, no navigation bar, no header links and no footer links. Grounds are the light brand colours from section to section, and the order bump band may sit on the main brand colour; there are no dark grounds, so the stitched page reads as contiguous bright bands.",
+    "desktop": "CHECKOUT DESKTOP — one calm 1200 px content column with at most two columns inside a band, only where the section's layout line says so. Draw the order bump box and the consent box empty, and the checkout form as one labelled plate, never as card fields. Never merge two numbered sections into one band."
+  }
+}

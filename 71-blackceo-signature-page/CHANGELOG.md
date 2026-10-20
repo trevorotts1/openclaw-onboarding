@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased - order form (checkout) page type support
+
+- `references/copy-specs/roles/checkout.json` and `scripts/role_spec.py`: a page role can have its own canonical section sequence; checkout has five. `stage_executor.check_section_count`, `build_production_request.py --page-role`, `composition.py` (composition roles), `wireframe_spec.py` (page type layout block) and `shared_page_service.py --design-style` read it. Landing behaviour is unchanged. Tests: `tests/test_role_section_spec.py`.
+
 ## 1.3.1 - 2026-10-19 - sync allowlist test passes in the 999 edition
 
 - `tests/test_sync_allowlist.py`: the file that exists only in this repo must be absent in the 999 edition, so the same test passes in both. Version bumped so the G3 gate sees the skill content change. No production behavior changed.

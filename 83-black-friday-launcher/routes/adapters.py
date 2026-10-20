@@ -5,9 +5,12 @@ repository path. Nothing is copied, forked or reimplemented. When the
 received contract names an entry point the tree does not have, the mismatch
 is recorded in CONTRACT_DISCREPANCIES; no shim is created.
 
-Checkout is intentionally NOT a dispatch adapter (CR-S49-003): the order
-form is the native Convert and Flow surface installed by Skill 06, and the
-bump is a component on that surface, never a route node.
+Checkout is intentionally NOT a dispatch adapter FOR THE FORM (CR-S49-003): the
+order form is the native Convert and Flow surface installed by Skill 06, and the
+bump is a component on that surface, never a route node. The checkout PAGE's
+design (desktop and mobile wireframes and mockups) does have a design-only
+adapter, 49-signature-funnel/scripts/checkout_wrapper.py, wired through
+build_dispatch_config(checkout_design=...); it never builds or binds the form.
 """
 from __future__ import annotations
 
@@ -128,11 +131,16 @@ NATIVE_SURFACES: Dict[str, Dict[str, Any]] = {
         "surface": "native Convert and Flow order form installed by Skill 06",
         "route_node": True,
         "dispatch_adapter": False,
+        "design_adapter": True,
+        "design_module": "49-signature-funnel/scripts/checkout_wrapper.py",
+        "design_entry": "main",
+        "design_timeout_s": 1800,
         "contract": "79-signature-order-form/references/checkout.schema.json",
         "validator_module": "79-signature-order-form/scripts/validate_checkout.py",
         "validator_entry": "validate_request",
         "reason": "CR-S49-003: checkout is native platform controls, never a "
-                  "custom HTML block and never a dispatch adapter.",
+                  "custom HTML block and never a dispatch adapter for the form "
+                  "(only its design stages have one: design_adapter).",
     },
     "bump": {
         "skill": 79,
@@ -190,10 +198,13 @@ CONTRACT_DISCREPANCIES: List[Dict[str, str]] = [
     {
         "id": "D-05",
         "contract": "checkout as one of the page roles",
-        "observed": "launch-adapters.example.json has no checkout entry by "
-                    "design; Skill 06 installs the native S79 form.",
-        "resolution": "Recorded as an intentional non-adapter. A dispatch "
-                      "request for checkout fails closed by name.",
+        "observed": "launch-adapters.example.json carries a checkout entry that "
+                    "is design-only (checkout_wrapper.py); Skill 06 still "
+                    "installs the native S79 form.",
+        "resolution": "The form stays an intentional non-adapter. Checkout is "
+                      "wired only as the design-only adapter via "
+                      "build_dispatch_config(checkout_design=...); without it a "
+                      "dispatch request for checkout fails closed by name.",
     },
     {
         "id": "D-06",
@@ -317,11 +328,14 @@ def build_dispatch_config(*, work_dir: str | Path,
                           enrichment: Dict[str, str | Path],
                           skill80_root: str | Path | None = None,
                           skill81_root: str | Path | None = None,
-                          python: Optional[str] = None) -> Dict[str, Any]:
+                          python: Optional[str] = None,
+                          checkout_design: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Bind the real adapter commands for one launch. Fails closed.
 
     No /path/to entry, no <...> token and no missing file may be emitted as
-    executable configuration. checkout is not configurable by design.
+    executable configuration. The native checkout form is not configurable by
+    design; checkout_design (manuscript, brand_file, brand_owner, image_cap and
+    optionally design_style) wires only the checkout page's design stages.
     """
     work = Path(work_dir)
     if not work.is_dir():
@@ -412,9 +426,28 @@ def build_dispatch_config(*, work_dir: str | Path,
                     "--skill81-root", str(root81)],
         "timeout_s": ADAPTERS["downsell_1"]["timeout_s"],
     }
+    if checkout_design is not None:
+        surface = NATIVE_SURFACES["checkout"]
+        manuscript = _require_file("checkout_design.manuscript", checkout_design["manuscript"])
+        brand_file = _require_file("checkout_design.brand_file", checkout_design["brand_file"])
+        command = [python, str(substrate.source(surface["design_module"])),
+                   "--request", "{request}", "--result", "{result}",
+                   "--manuscript", str(manuscript),
+                   "--launch", str(launch_path),
+                   "--route-graph", "{work_dir}/route-graph.json",
+                   "--brand-file", str(brand_file),
+                   "--brand-owner", str(checkout_design["brand_owner"]),
+                   "--image-cap", str(checkout_design["image_cap"]),
+                   "--run-dir", "{work_dir}/checkout-run",
+                   "--skill71-root", str(root71)]
+        if checkout_design.get("design_style"):
+            command += ["--design-style", str(checkout_design["design_style"])]
+        adapters["checkout"] = {"command": command, "timeout_s": surface["design_timeout_s"]}
     for role, spec in adapters.items():
         for part in spec["command"]:
             _refuse_placeholder(f"adapters.{role}.command", str(part))
-    if "checkout" in adapters:
-        raise AdapterError("checkout must never be a dispatch adapter")
+    design_module = Path(NATIVE_SURFACES["checkout"]["design_module"]).name
+    if "checkout" in adapters and not any(design_module in str(p) for p in adapters["checkout"]["command"]):
+        raise AdapterError("checkout may only be the design-only adapter; the native form is never "
+                           "a dispatch adapter")
     return {"adapters": adapters}

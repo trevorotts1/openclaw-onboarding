@@ -69,6 +69,16 @@ offered on that original checkout.
   capability matrix, and the purchase-attempt recovery model.
 - `tests/`: the deterministic fixture suite for the models and components.
 
+## Design stages (wireframes and mockups)
+
+This skill builds no page images itself. The order form page's desktop and mobile wireframes
+and visual mockups come from Skill 71's shared image service (`71-blackceo-signature-page/
+scripts/shared_page_service.py`) on the five-section structure in
+`71-blackceo-signature-page/references/copy-specs/roles/checkout.json`, run by Skill 49's
+`49-signature-funnel/scripts/checkout_wrapper.py` (the design-only dispatch adapter). The section
+order is the reading order in `references/components/QC-STATES.md`. The native form is never
+drawn as card fields and is never built or bound by those stages: it stays Skill 06's.
+
 ## Proof levels
 
 - L1 (fixture level): fixture models, schema, state machine and static

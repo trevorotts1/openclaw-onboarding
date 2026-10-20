@@ -285,7 +285,7 @@ def assign_treatments(sections: list, cues: dict | None = None) -> list:
             resolved.append({"section_id": None, "role": None, "slots": []})
             continue
         sid = section.get("section_id")
-        role = section_role(sid, section.get("section_name") or "")
+        role = section.get("composition_role") or section_role(sid, section.get("section_name") or "")
         slots = [s for s in (section.get("slots") or []) if isinstance(s, dict)]
         entry = {"section_id": sid, "role": role, "slots": []}
         first_choice = None

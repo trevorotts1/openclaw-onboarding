@@ -580,14 +580,20 @@ class ConfigFragmentTests(unittest.TestCase):
         # on main (PR #2229, train #2235) and the downsell_1 consumer
         # ships in this tree, so the merged config now wires six
         # roles; the presence assertion below is the exact six-role
-        # set and checkout is the one remaining honest absence. Every
+        # set; checkout has since been wired design-only. Every
         # per-entry assertion is unchanged.
         config = load(CONFIG)
         adapters = config["adapters"]
         self.assertEqual(set(adapters),
                          {"downsell_1", "landing", "product_selection",
-                          "upsell_1", "upsell_2", "thank_you"})
-        self.assertNotIn("checkout", adapters)
+                          "upsell_1", "upsell_2", "thank_you", "checkout"})
+        # checkout is wired design-only (checkout_wrapper.py): the native
+        # form stays out of dispatch (CR-S49-003 amended).
+        checkout_cmd = adapters["checkout"]["command"]
+        self.assertTrue(any("checkout_wrapper.py" in part
+                            for part in checkout_cmd))
+        self.assertIn("{request}", checkout_cmd)
+        self.assertIn("{result}", checkout_cmd)
         commands = {}
         for role in ("upsell_1", "upsell_2"):
             spec = adapters[role]

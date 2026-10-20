@@ -532,8 +532,9 @@ def _self_test() -> int:
         == "downsell_2",
         "downsell-2 is decided: downsell_1 + role_instance downsell_2")
     say(PAGE_ROLE_MAP["page_types"]["checkout"].get("adapter")
-        == "absent_by_design",
-        "checkout's adapter absence is a stated design ruling, not a gap")
+        == "design_only",
+        "checkout's adapter is design-only by ruling: the native form is "
+        "never a dispatch adapter, its wireframes and mockups are")
     try:
         executor_from_config({"adapters": {"not_a_page_role": {
             "command": ["true"]}}}, Path("."))

@@ -362,6 +362,32 @@ class AdapterWiringTests(unittest.TestCase):
                     if part.endswith(".py"):
                         self.assertTrue(Path(part).is_file(), part)
 
+    def test_checkout_design_adapter_is_wired_only_on_request_and_never_for_the_form(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self.make_inputs(Path(tmp))
+            manuscript = Path(tmp) / "checkout.md"
+            brand = Path(tmp) / "brand.json"
+            for path in (manuscript, brand):
+                path.write_text("x", encoding="utf-8")
+            design = {"manuscript": manuscript, "brand_file": brand, "brand_owner": "blackceo",
+                      "image_cap": 2, "design_style": "B"}
+            config = adapters.build_dispatch_config(**inputs, checkout_design=design)
+            command = config["adapters"]["checkout"]["command"]
+            self.assertTrue(any(part.endswith("checkout_wrapper.py") for part in command))
+            self.assertTrue(Path([p for p in command if p.endswith("checkout_wrapper.py")][0]).is_file())
+            self.assertEqual(command[command.index("--design-style") + 1], "B")
+            self.assertIsNone(re.search(r"<[^>]+>|/path/to", json.dumps(config)))
+            self.assertEqual(set(config["adapters"]) - {"checkout"},
+                             {"landing", "product_selection", "upsell_1", "upsell_2", "downsell_1", "thank_you"})
+            surface = adapters.NATIVE_SURFACES["checkout"]  # the form is still native, never a dispatch adapter
+            self.assertTrue(surface["design_adapter"])
+            self.assertFalse(surface["dispatch_adapter"])
+            with self.assertRaises(adapters.AdapterError):
+                adapters.adapter_for("checkout")
+            design["manuscript"] = "/path/to/checkout.md"
+            with self.assertRaises(adapters.PlaceholderRefused):
+                adapters.build_dispatch_config(**inputs, checkout_design=design)
+
     def test_config_refuses_placeholder_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             inputs = self.make_inputs(Path(tmp))

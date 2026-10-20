@@ -38,6 +38,9 @@ def plan(launch: Dict[str, Any]) -> Dict[str, Any]:
                 "surface": surface["surface"],
                 "dispatch_adapter": False,
             }
+            if surface.get("design_adapter"):  # the page's wireframes and mockups, never the form
+                build_entry["design_adapter"] = {"module": surface["design_module"],
+                                                 "entry": surface["design_entry"]}
         else:
             wiring = adapters.adapter_for(role)
             build_entry = {
