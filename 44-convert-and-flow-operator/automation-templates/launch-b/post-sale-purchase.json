@@ -1,0 +1,153 @@
+{
+  "id": "launch-post-sale-purchase",
+  "name": "Launch Post-Sale Purchase — Access + Welcome, Promo Stop, Next Follow-Up",
+  "aliases": [
+    "post-sale purchase",
+    "buyer access welcome",
+    "purchase handler",
+    "paid main upsell downsell access",
+    "stop promotional emails on purchase",
+    "start next follow-up after purchase"
+  ],
+  "category": "launch-b",
+  "template_status": "new, small",
+  "source": {
+    "spec": "launch-automations.spec.md §3.3 — Post-sale purchase: Paid (main / each upsell / each downsell) → access + welcome, stop promotional emails, start next follow-up",
+    "capability_note": "automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md — post-sale purchase: Skill 44 engine; Order Submitted / Payment received trigger is not auto-built; engine + patch-trigger/browser; workflow_goal is a VERIFIED_ACTION",
+    "purchase_spec": "Signature_Launch_Muse_Specifications/14_SKILL_44_PURCHASE_AUTOMATIONS_SPEC.md §6–§7 — short purchase handler, no long waits, buyer suppression, entitlement once per line"
+  },
+  "purpose": "One short purchase handler per paid point. It fires on a verified paid transaction line, grants the matching access and welcome, stops every promotional email and text for that buyer immediately, then starts that buyer's next follow-up. It never waits, never sends a promo, and never requires a thank-you page visit to grant access.",
+  "trigger": {
+    "primary_event": "Order line paid — payment verified as settled (not merely order submitted)",
+    "ghl_trigger_type": "Order Submitted / Payment Received",
+    "trigger_build": "Not created by CampaignBuilder (Tag Added only). Build with `caf workflows patch-trigger --trigger-json <file>` on the internal API, snapshot before write; Tier-4 managed browser where the engine has no verified payload.",
+    "variants": [
+      {
+        "id": "main",
+        "slot": "main",
+        "match": "Approved launch-plan binding for the main offer: product ID + price ID + order-page/form ID. Never inferred from a human-readable product name.",
+        "next_follow_up": "Main upsell follow-up when an upsell page exists; otherwise onboarding / review sequence."
+      },
+      {
+        "id": "upsell",
+        "slot": "upsell",
+        "match": "One variant per upsell page: that page's product ID + price ID + order-page/form ID from the approved launch plan.",
+        "next_follow_up": "The next upsell in the stack, the matching downsell after a decline, or onboarding when the stack ends."
+      },
+      {
+        "id": "downsell",
+        "slot": "downsell",
+        "match": "One variant per downsell page: that page's product ID + price ID + order-page/form ID from the approved launch plan.",
+        "next_follow_up": "The next downsell in the stack, or onboarding when the stack ends."
+      }
+    ],
+    "entry_conditions": [
+      "A verified paid transaction line exists for this tenant and contact",
+      "The line resolves to exactly one approved variant binding (main, upsell N, or downsell N)",
+      "Entitlement + campaign version recorded for idempotent action keys"
+    ],
+    "exit_conditions": [
+      "Access and welcome delivered once for this transaction line",
+      "Buyer removed from all promotional sends for this launch",
+      "Buyer enrolled in exactly one next follow-up"
+    ],
+    "reentry": "Deliberate per transaction line. A later distinct upsell/downsell purchase may enter again; the same transaction line must not repeat access, welcome, suppression or enrollment. Dedupe on tenant + verified transaction/order-line identity + action type + campaign version — never on contact ID alone, order ID alone, or 'has tag'."
+  },
+  "channels": [
+    "Email",
+    "SMS (only when the launch plan has email + text and A2P is approved)"
+  ],
+  "sequence": [
+    {
+      "order": 1,
+      "action": "remove_contact_tag",
+      "name": "Stop promotional sends first",
+      "timing": "Immediately — before welcome or next follow-up",
+      "detail": "Remove every launch promotional tag on the buyer and set the buyer-suppressed state. Remove from promotional campaigns and from abandoned-checkout / recovery workflows. A queued promo must be suppressed before it sends; suppression is the first action, not a later one."
+    },
+    {
+      "order": 2,
+      "action": "add_contact_tag",
+      "name": "Mark buyer + variant",
+      "timing": "Immediately",
+      "detail": "Add the launch buyer tag and the variant tag (main / upsell-N / downsell-N) used by reporting and by the next follow-up. Tags carry the approved variant, never a guessed product name."
+    },
+    {
+      "order": 3,
+      "action": "email",
+      "name": "Access + welcome email",
+      "timing": "Immediately",
+      "detail": "Deliver the access link for the exact purchased variant, the receipt reference, and the next step. Copy comes from the approved Skill 50 welcome/access sequence; this template wires it and does not author it."
+    },
+    {
+      "order": 4,
+      "action": "sms",
+      "name": "Access + welcome text",
+      "timing": "Immediately (when email + text launch and A2P approved)",
+      "detail": "Short access link and reply invitation with STOP opt-out and the launch send window. Skipped entirely when A2P is not approved; the build plan records the skip."
+    },
+    {
+      "order": 5,
+      "action": "add_to_workflow",
+      "name": "Start the next follow-up",
+      "timing": "Immediately after access is granted",
+      "detail": "Enroll in exactly one variant-appropriate next follow-up (next upsell, downsell after a decline, or onboarding at the end of the stack). Never enroll the buyer in the promotional launch sequence."
+    },
+    {
+      "order": 6,
+      "action": "workflow_goal",
+      "name": "Close the handler",
+      "timing": "End",
+      "detail": "Goal/exit node ends the short handler. No nurture waits live here; longer onboarding and review sequences are separate workflows."
+    }
+  ],
+  "buyer_suppression": {
+    "rule": "A paid buyer receives no further promotional emails or texts for this launch, for any variant.",
+    "stops": [
+      "Promotional launch sequence",
+      "Doors-closing / last-call sends",
+      "Abandoned-checkout recovery",
+      "Page-visit retargeting nudge",
+      "Remaining upsell/downsell pitches for an offer already bought or included in the package"
+    ],
+    "does_not_stop": [
+      "Transactional access and receipt notices",
+      "The buyer's own onboarding / review / referral sequence",
+      "A genuinely different later offer approved in the launch plan"
+    ]
+  },
+  "build": {
+    "engine": "Skill 44 internal-API engine (`caf workflows create` / `CampaignBuilder`), with the managed-browser Tier-4 backstop for the trigger and any unverified payload",
+    "api_ceiling": "The official GHL API has no workflow create, update, publish or trigger endpoint; its only workflow operation is GET /workflows/. Do not attempt an API-only build.",
+    "verified_actions_used": [
+      "add_contact_tag",
+      "remove_contact_tag",
+      "email",
+      "sms",
+      "add_to_workflow",
+      "workflow_goal"
+    ],
+    "draft_only": true,
+    "live": false,
+    "state": "Every workflow is created as a draft. Triggers are written `status: draft`; nothing goes live. Live switch-on is a separate client approval.",
+    "inputs_required": [
+      "Approved variant bindings: product ID, price ID, order-page/form ID per main / upsell / downsell",
+      "Access URL per variant",
+      "Approved Skill 50 welcome/access copy hash",
+      "Next follow-up workflow IDs",
+      "Location whitelist entry and Firebase refresh token (workflow writes); absent token → Tier-4 browser backstop"
+    ]
+  },
+  "quality": {
+    "checklist_lines": ["A1", "A2", "X1"],
+    "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
+    "assertions": [
+      "Suppression runs before any welcome or follow-up step",
+      "No wait step longer than the short handler allows",
+      "Access granted once per verified transaction line",
+      "No promo node remains reachable for a paid buyer",
+      "Everything is draft_only; no live switch-on",
+      "No client account touched during the build"
+    ]
+  }
+}
