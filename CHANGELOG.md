@@ -1,3 +1,15 @@
+## [v27.1.54]  -  2026-10-20  -  Merge train: #2376 Council (Skill 77): approved screen look restored; #2377 CAN016: atomic upgrade handles docker containers with a bind-mounted…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #2376 — [v27.1.54]  -  2026-10-20  -  Council (Skill 77) v1.0.33: The Council screen is back to the approved look
+
+- In plain English: The Council screen is back to the approved look.
+
+### #2377 — CAN016: atomic upgrade handles docker containers with a bind-mounted install
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v27.1.53]  -  2026-10-20  -  Batch: Skill 71 zero-image run is FAILED
 
 - In plain English: a signature page run that generates no images now reports FAILED instead of success. Before, a run that produced nothing looked exactly like a run that produced every image. Admitting and staging a request without generating is now its own labelled mode (`--validation-only`), a generation run needs a pipeline command, and success is judged by the image files actually on disk. Skills bumped: 49 v2.1.18, 71 1.3.4, 78 0.2.5.

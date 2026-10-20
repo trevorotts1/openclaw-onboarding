@@ -1,8 +1,6 @@
 /* KEY POINTS panel (unit D). Colours only through var(--ch-*) tokens. */
 .ch-kp {
   min-width: 0;
-  max-height: min(86vh, 900px);
-  overflow-y: auto;
   padding: var(--ch-space-4);
   background: var(--ch-surface-1);
   border: 1px solid var(--ch-line);
@@ -56,60 +54,10 @@
 .ch-kp-detail {
   margin: var(--ch-space-1) 0 0;
   font-size: 13px;
-  line-height: 1.45;
-  color: var(--ch-ink-muted);
-  overflow-wrap: anywhere;
-}
-
-/* Real content under a phase label: who said it, what kind of point it is, the words. */
-.ch-kp-points {
-  margin: var(--ch-space-2) 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--ch-space-3);
-}
-.ch-kp-point {
-  padding-left: var(--ch-space-3);
-  border-left: 2px solid var(--ch-line-strong);
-}
-.ch-kp-point--faultline,
-.ch-kp-point--condition { border-left-color: var(--ch-gold); }
-.ch-kp-point-head {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: var(--ch-space-2);
-  font-size: 13px;
   line-height: 1.4;
-}
-.ch-kp-by { font-weight: 700; color: var(--ch-ink); }
-.ch-kp-tag {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ch-gold-strong);
-}
-.ch-kp-point-text {
-  margin: 2px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ch-ink);
+  color: var(--ch-ink-faint);
   overflow-wrap: anywhere;
 }
-.ch-kp-more {
-  margin: 2px 0 0;
-  padding: 2px 0;
-  border: 0;
-  background: none;
-  font: 600 12px / 1.4 var(--ch-font);
-  color: var(--ch-gold-strong);
-  text-decoration: underline;
-  cursor: pointer;
-}
-.ch-kp-more:focus-visible { outline: 2px solid var(--ch-focus); outline-offset: 2px; }
 
 .ch-kp-empty {
   margin: var(--ch-space-3) 0 0;

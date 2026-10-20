@@ -189,6 +189,7 @@ SUP_PKG_ROOT=""   # the openclaw package the supervisor launches ("" = none foun
 SUP_PREFIX=""
 SUP_ENTRY=""
 SUP_SOURCE=""     # launchd | systemd ("" = no supervisor definition)
+SUP_UNIT=""       # definition handle: the plist/unit path, or container:<name> for docker
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
@@ -272,6 +273,7 @@ _resolve_supervisor_install() {
   SUP_PREFIX="$(printf '%s\n' "$out" | sed -n 's/^prefix=//p' | head -1)"
   SUP_ENTRY="$(printf '%s\n' "$out" | sed -n 's/^entry=//p' | head -1)"
   SUP_SOURCE="$(printf '%s\n' "$out" | sed -n 's/^source=//p' | head -1)"
+  SUP_UNIT="$(printf '%s\n' "$out" | sed -n 's/^unit=//p' | head -1)"
   node_dir="$(printf '%s\n' "$out" | sed -n 's/^node=//p' | head -1)"
   [ -n "$node_dir" ] && node_dir="$(dirname "$node_dir")"
   [ -n "$SUP_PKG_ROOT" ] && [ -n "$SUP_PREFIX" ] || return 1
@@ -280,6 +282,10 @@ _resolve_supervisor_install() {
   export PATH
   # THAT node's npm, unless the operator pinned one.
   [ -z "${OC_ATOMIC_NPM:-}" ] && [ -n "$node_dir" ] && [ -x "$node_dir/npm" ] && NPM_BIN="$node_dir/npm"
+  # Docker-on-host boxes: the persistent prefix's bin/node shim has no npm of
+  # its own; the HOST npm (any version - --prefix makes the ABI irrelevant)
+  # performs the install into the bind-mounted prefix.
+  [ -z "${OC_ATOMIC_NPM:-}" ] && [ -z "$NPM_BIN" ] && [ -x "$(command -v npm 2>/dev/null || true)" ] && NPM_BIN="$(command -v npm)"
   _say "supervisor install: $SUP_PKG_ROOT  (prefix $SUP_PREFIX, npm $NPM_BIN, measured $(_measured_version))"
   pv="$(_path_version)"
   if [ -n "$pv" ] && [ "$pv" != "$(_measured_version)" ]; then
@@ -313,6 +319,14 @@ _detect_supervisor() {
     printf 'docker'
     return 0
   fi
+  # CAN016: docker-on-host fleet layout — the gateway container is named
+  # <something>-openclaw-1 (compose project prefix). A container literally
+  # named `openclaw` matches the branch above; these need an explicit check.
+  if command -v docker >/dev/null 2>&1 \
+     && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q 'openclaw'; then
+    printf 'docker'
+    return 0
+  fi
   if command -v launchctl >/dev/null 2>&1 \
      && [ -f "$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" ]; then
     # plist on disk but not loaded: launchd is still the supervisor, the job is
@@ -333,7 +347,15 @@ _gateway_pid() {
         | awk -F'=' '/^[[:space:]]*pid =/{gsub(/[^0-9]/,"",$2); print $2; exit}'
       ;;
     docker)
-      docker inspect -f '{{.State.Pid}}' openclaw 2>/dev/null | grep -E '^[1-9][0-9]*$'
+      if docker inspect -f '{{.State.Running}}' openclaw 2>/dev/null | grep -q true; then
+        docker inspect -f '{{.State.Pid}}' openclaw 2>/dev/null | grep -E '^[1-9][0-9]*$'
+      else
+        # CAN016: compose layout (<project>-openclaw-1). The FIRST openclaw-named
+        # running container wins; the literal-name branch above stays exact.
+        local c
+        c="$(docker ps --format '{{.Names}}' 2>/dev/null | grep 'openclaw' | head -1)"
+        [ -n "$c" ] && docker inspect -f '{{.State.Pid}}' "$c" 2>/dev/null | grep -E '^[1-9][0-9]*$'
+      fi
       ;;
     *) printf '' ;;
   esac
@@ -360,7 +382,13 @@ _gateway_unloaded() { _job_unloaded "$GATEWAY_LABEL"; }
 _gateway_loaded() {
   case "$SUPERVISOR" in
     launchd) _job_loaded "$GATEWAY_LABEL" ;;
-    docker)  [ "$(docker inspect -f '{{.State.Running}}' openclaw 2>/dev/null)" = "true" ] ;;
+    docker)
+      [ "$(docker inspect -f '{{.State.Running}}' openclaw 2>/dev/null)" = "true" ] && return 0
+      # CAN016: compose layout container
+      local c
+      c="$(docker ps --format '{{.Names}}' 2>/dev/null | grep 'openclaw' | head -1)"
+      [ -n "$c" ] && [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]
+      ;;
     *)       return 1 ;;
   esac
 }
@@ -458,10 +486,17 @@ _quiesce() {
       _ok "gateway job booted out of gui/$UIDN (not merely restarted)"
       ;;
     docker)
-      # Unreachable in --upgrade (refused in preflight); kept correct so
-      # --detect and any future explicitly-driven use are not lying.
-      docker stop openclaw >/dev/null 2>&1 || return 1
-      _ok "container openclaw stopped (restart:unless-stopped does not revive an explicit stop)"
+      # CAN016: compose layout container (<project>-openclaw-1). Same contract as
+      # the literal-name case: an explicit stop is not revived by restart policy.
+      local c
+      c="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep 'openclaw' | head -1)"
+      if [ -n "$c" ]; then
+        docker stop "$c" >/dev/null 2>&1 || return 1
+        _ok "container $c stopped (restart:unless-stopped does not revive an explicit stop)"
+      else
+        docker stop openclaw >/dev/null 2>&1 || return 1
+        _ok "container openclaw stopped (restart:unless-stopped does not revive an explicit stop)"
+      fi
       ;;
     none)
       _ok "no supervisor found — nothing to quiesce"
@@ -512,7 +547,7 @@ _start_gateway() {
       # (e.g. 5) while the job really did load. _prove_started measures it.
       launchctl bootstrap "gui/$UIDN" "$plist" >/dev/null 2>&1
       ;;
-    docker) docker start openclaw >/dev/null 2>&1 || return 1 ;;
+    docker) docker start openclaw >/dev/null 2>&1 || { local c; c="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep 'openclaw' | head -1)"; [ -n "$c" ] && docker start "$c" >/dev/null 2>&1; } || return 1 ;;
     none)   return 0 ;;
   esac
   return 0
@@ -534,7 +569,12 @@ _restore_gateway_step() {
       fi
       ;;
     docker)
-      if ! _gateway_loaded; then docker start openclaw >/dev/null 2>&1; return 1; fi
+      if ! _gateway_loaded; then
+        local c
+        c="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep 'openclaw' | head -1)"
+        if [ -n "$c" ]; then docker start "$c" >/dev/null 2>&1; else docker start openclaw >/dev/null 2>&1; fi
+        return 1
+      fi
       ;;
   esac
   _healthz_ok
@@ -681,7 +721,7 @@ _prove_gateway_on_target() {
   # A gateway started BEFORE the package on disk was (re)installed still runs the old code even
   # though its args, the package.json version and /healthz all look right (in-place `npm i -g`
   # with no restart). So the pid must have started no earlier than the package's last change.
-  if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_PKG_ROOT" ]; then
+  if [ -n "$SUP_PKG_ROOT" ]; then
     local started changed
     started="$(_proc_start_epoch "$pid")"; changed="$(_file_ctime "$SUP_PKG_ROOT/package.json")"
     if [ -z "$started" ] || [ -z "$changed" ]; then
@@ -895,23 +935,33 @@ do_upgrade() {
     return 78
   fi
   if [ "$SUPERVISOR" = "docker" ]; then
-    _refuse_banner \
-      "This gateway is supervised by DOCKER. The binary lives in the container IMAGE, which this repo does not build or pull, so this script cannot make the binary change and the config change atomic." \
-      "Nothing was changed. Migrating the bind-mounted config while the image stays old would enumerate ZERO agents — a silent total outage."
-    echo "  MANUAL SEQUENCE for a docker-hosted box (each step verified before the next):" >&2
-    echo "    1. docker stop openclaw                # unless-stopped does not revive an explicit stop" >&2
-    echo "    2. pull/build the new image" >&2
-    echo "    3. bash $0 --detect      # confirm the shape and the config path" >&2
-    echo "    4. migrate the config with: python3 $MIGRATOR apply <cfg> <tmp> && \\" >&2
-    echo "       python3 $MIGRATOR verify <cfg> <tmp> && cat <tmp> > <cfg>" >&2
-    echo "    5. docker start openclaw ; then confirm the pid is STABLE for 25s" >&2
-    return 78
+    # CAN016: the blanket refusal's premise (binary lives in the image) is FALSE
+    # on the fleet's real layout — the openclaw package sits on a bind-mounted
+    # persistent prefix (<host>/data/.npm-global), so an on-disk install +
+    # docker stop/start + pid + /healthz proof is atomic the same way launchd is.
+    if echo "$SUP_UNIT" | grep -q '^container:' && [ -f "$SUP_PKG_ROOT/package.json" ]; then
+      _say "docker supervisor with a bind-mounted persistent install (CAN016): upgrading ON DISK at $SUP_PKG_ROOT, then restarting the container and pid-proving it"
+    else
+      _refuse_banner \
+        "This gateway is supervised by DOCKER and its OpenClaw binary lives in the container IMAGE (no bind-mounted install was resolved), which this script cannot build or pull — the binary change and the config change cannot be made atomic." \
+        "Nothing was changed. Pull/build the new image, then restart the container and confirm the new pid and /healthz."
+      echo "  MANUAL SEQUENCE for an image-baked docker box (each step verified before the next):" >&2
+      echo "    1. docker stop openclaw                # unless-stopped does not revive an explicit stop" >&2
+      echo "    2. pull/build the new image" >&2
+      echo "    3. bash $0 --detect      # confirm the shape and the config path" >&2
+      echo "    4. migrate the config with: python3 $MIGRATOR apply <cfg> <tmp> && \\" >&2
+      echo "       python3 $MIGRATOR verify <cfg> <tmp> && cat <tmp> > <cfg>" >&2
+      echo "    5. docker start openclaw ; then confirm the pid is STABLE for 25s" >&2
+      return 78
+    fi
   fi
-  # Only launchd can be stopped, restarted and pid-proven here. A systemd unit (or any gateway no
-  # supervisor above owns) would be "upgraded" on disk while the old process keeps answering /healthz.
-  if [ "$SUPERVISOR" != "launchd" ]; then
+  # Only launchd, and docker with a bind-mounted install, can be stopped,
+  # restarted and pid-proven here. A systemd unit (or any gateway no supervisor
+  # above owns) would be "upgraded" on disk while the old process keeps
+  # answering /healthz.
+  if [ "$SUPERVISOR" != "launchd" ] && { [ "$SUPERVISOR" != "docker" ] || ! echo "$SUP_UNIT" | grep -q '^container:' || [ ! -f "$SUP_PKG_ROOT/package.json" ]; }; then
     _refuse_banner \
-      "The gateway supervisor is '${SUP_SOURCE:+$SUP_SOURCE unit, detected as }$SUPERVISOR', and this script can only stop, restart and pid-prove a launchd gateway. Installing here would leave the running gateway on the OLD build and still report success." \
+      "The gateway supervisor is '${SUP_SOURCE:+$SUP_SOURCE unit, detected as }$SUPERVISOR', and this script can only stop, restart and pid-prove a launchd gateway or a docker container with a bind-mounted install. Installing here would leave the running gateway on the OLD build and still report success." \
       "Nothing was changed. Upgrade the install (${SUP_PKG_ROOT:-the unit ExecStart path}) and restart the gateway by hand (systemctl restart), then confirm the new pid and /healthz."
     return 78
   fi

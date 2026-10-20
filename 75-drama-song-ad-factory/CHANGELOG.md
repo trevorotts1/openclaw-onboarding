@@ -4,6 +4,40 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.72 - 2026-10-20 - R&B Flow fits, or is refused before stage 3; brief words count
+
+Two defects left over from the stage-3 and music-stage fixes. Both are the same
+class: a gate the run cannot satisfy, discovered minutes into a paid run.
+
+R1 - R&B FLOW DEADLOCK. A rap style kept its rap reservation AND its generic
+sung budget, so the two missed the style's sung-share floor at 30/45/60 s.
+Measured on v2.9.71: `plan(60,'rnb-flow')` = sung 53 + rap 40 ->
+`words_fit.preflight` SHARE_OFF_TARGET (63.5% against 72.9% floor); 30 s and
+45 s -> WORDS_DO_NOT_FIT. 90/120/180 s were fine. Any client who picked R&B
+Flow with a short card hit the same loop the stage-3 fixes removed.
+Now `length_formula.plan` sizes the sung allocation against the share the gate
+actually checks, at the style's own rates (never raising a word count), so
+rnb-flow plans pass `words_fit.preflight` at every length that can hold both
+the rap floor and the share floor. A card too short for both is REFUSED up
+front by `music_director.build_generate_request` with `STYLE_TOO_SHORT_FOR_RAP`
+naming the shortest card that works (70 s for R&B Flow), before the sheet and
+before any spend. Soul Ballad, Soul Rise and no-style plans are byte-identical.
+
+R2 - THE CLIENT'S OWN BRIEF WORDS. `lyric_writer.client_word_runs` read only
+offer/website/claims/packet_lines, so words the client wrote inside the
+research brief's sub-avatar answers ("avatar", "emotional_wound",
+"desired_transformation") were treated as invented and refused
+line-not-first-person. Those three validated client answers are now exempt
+verbatim sources. `sub_avatar.notes` stays excluded: it is the authoring
+provenance remark, the one model-written field inside that block.
+
+Not in this release: the drafting-row tolerance still admits a sheet that
+`words_fit` would refuse (60 s Soul Ballad: 74.6 words against 58). Tightening
+it was measured against the approved 48 s gala sheet (58 words, a real delivery
+in 48 s) that `words_fit` itself prices at 61.9 s -- refusing it would reject a
+real approved sheet, so the size is a calibration question for the fit rates,
+not a tolerance to tighten. Tracked, not shipped.
+
 ## v2.9.71 - 2026-10-20 - the music stage runs on a clean install: five walls
 
 v2.9.70 opened the script gate. Both clients then hit the music stage and
