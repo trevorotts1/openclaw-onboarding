@@ -78,6 +78,44 @@ test('API: round 3 missing seats, the cause and the unfinished calls are reporte
   }
 });
 
+// The real journal holds repaired round 2 failures (sess-2e504919 seq 45 brene-brown
+// validation) before ROUND_3 began; they must not be blamed for the round 3 block.
+const earlierRound = [
+  { type: 'session_state_changed', to_state: 'ROUND_2', created_at: '2026-10-20T08:06:36.662Z', payload: {} },
+  {
+    type: 'operation_completed', to_state: null, created_at: '2026-10-20T07:59:38.391Z',
+    payload: { kind: 'attempt_failed', seat_id: 'brene-brown', outcome_code: 'output_validation_failed', message: "response was not valid JSON: Unexpected token 'M'" },
+  },
+  {
+    type: 'operation_completed', to_state: null, created_at: '2026-10-20T08:10:56.943Z',
+    payload: { kind: 'attempt_failed', seat_id: 'td-jakes', outcome_code: 'output_validation_failed', message: 'answer failed validation twice' },
+  },
+];
+
+test('API: a repaired earlier-round failure is not the round 3 cause', () => {
+  const reason = buildBlockedReason({
+    ...input,
+    events: [...earlierRound, ...events],
+    failures: [{ seat_id: 'brene-brown', outcome_code: 'output_validation_failed', phase_job_key: 'round-2:brene-brown' }],
+  });
+  assert.deepEqual(reason?.missing_seats, MISSING);
+  assert.deepEqual(reason?.last_errors.map((e) => e.seat_id), MISSING);
+  for (const e of reason?.last_errors ?? []) {
+    assert.equal(e.outcome_code, 'completion_unknown');
+    assert.match(e.message ?? '', /no result recorded.*10 minutes/);
+    assert.doesNotMatch(e.message ?? '', /not valid JSON/);
+  }
+  assert.match(reason?.detail ?? '', /Cause: the provider call ended with no result recorded/);
+});
+
+test('chamber: the round 3 text uses the round 3 cause for every seat, not an earlier round 2 message', () => {
+  const ns = loadChamber();
+  const reason = buildBlockedReason({ ...input, events: [...earlierRound, ...events] });
+  const v = JSON.parse(JSON.stringify(ns.state.view(ns.state.create(sessionRecord({ blocked_reason: reason })), 0)));
+  assert.doesNotMatch(v.round.explain, /not valid JSON/);
+  assert.equal((v.round.explain.match(/no result recorded/g) ?? []).length >= 1, true);
+});
+
 test('API: a recorded per-seat error wins over the unanswered-call cause', () => {
   const reason = buildBlockedReason({
     ...input,

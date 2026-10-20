@@ -155,7 +155,7 @@ export function buildBlockedReason(input: {
   mode: string;
   seat_ids: readonly string[];
   cards: ReadonlyArray<{ card_kind: string; round: number; seat_id?: string }>;
-  failures: ReadonlyArray<{ seat_id: string | null; outcome_code: string | null }>;
+  failures: ReadonlyArray<{ seat_id: string | null; outcome_code: string | null; phase_job_key?: string }>;
   events: ReadonlyArray<{ type: string; payload: Record<string, unknown>; created_at?: string; to_state?: string | null }>;
 }): BlockedReason | null {
   if (input.state !== 'BLOCKED') return null;
@@ -176,7 +176,14 @@ export function buildBlockedReason(input: {
       break;
     }
   }
-  const completed = input.events.filter((e) => e.type === 'operation_completed');
+  // Only what happened since the session entered the short round counts: a
+  // validation failure repaired in an earlier round is not this round's cause.
+  const enteredAt = input.events.findIndex((e) => e.to_state === `ROUND_${missingRound}`);
+  const sinceRound = missingRound === null ? input.events : input.events.slice(Math.max(0, enteredAt));
+  const roundFailures = missingRound === null
+    ? input.failures
+    : input.failures.filter((f) => !f.phase_job_key || f.phase_job_key.startsWith(`round-${missingRound}:`));
+  const completed = sinceRound.filter((e) => e.type === 'operation_completed');
   const attemptFailures = completed.filter((e) => e.payload.kind === 'attempt_failed').map((e) => e.payload);
   // A call reserved, then closed as completion_unknown: it never reported a result.
   const unfinished = completed
@@ -193,11 +200,11 @@ export function buildBlockedReason(input: {
     ? `the provider call ended with no result recorded (completion unknown)${unfinished[0].minutes !== null ? ` about ${unfinished[0].minutes} minutes after it started` : ''}`
     : null;
   const unexplained = missing.filter(
-    (seat) => !attemptFailures.some((p) => p.seat_id === seat) && !input.failures.some((f) => f.seat_id === seat),
+    (seat) => !attemptFailures.some((p) => p.seat_id === seat) && !roundFailures.some((f) => f.seat_id === seat),
   );
   const lastErrors = missing.flatMap((seat) => {
     const logged = attemptFailures.filter((p) => p.seat_id === seat).pop();
-    const job = input.failures.filter((f) => f.seat_id === seat).pop();
+    const job = roundFailures.filter((f) => f.seat_id === seat).pop();
     // Calls carry no seat, so a seat with no recorded error gets the
     // unanswered-call cause only when there are enough such calls to cover
     // every seat that has no other explanation.
