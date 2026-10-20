@@ -1,0 +1,95 @@
+{
+  "id": "signature-launch-doors-closing",
+  "type": "sequence",
+  "name": "Signature Launch Doors-Closing Profile",
+  "tags": [
+    "sequence",
+    "signature-launch",
+    "signature-launch-profile",
+    "doors-closing",
+    "last-48-hours",
+    "final-call",
+    "deadline",
+    "truthful-deadline",
+    "landing-page",
+    "aida",
+    "pas",
+    "three-b-plan",
+    "paired-variants",
+    "founder-signature",
+    "launch-brief-intake",
+    "draft-only-handoff"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "doors-closing",
+    "signature-launch-builds",
+    "final-48-hours",
+    "warm-lists",
+    "launch-close"
+  ],
+  "file": "signature-launch-doors-closing.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "signature_launch_doors_closing",
+    "profile": "signature_launch_doors_closing",
+    "length": 3,
+    "preview_count": 2,
+    "preview_count_overridable": false,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "aida",
+      "2": "pas",
+      "3": "three-b-plan"
+    },
+    "phase_map": {
+      "final_48h": [1],
+      "final_24h": [2],
+      "last_call": [3]
+    },
+    "cta_rules": {
+      "1": 1,
+      "2": 1,
+      "3": 1
+    },
+    "cta_destination": "the approved landing / sales page for the current approved offer version",
+    "word_band": {
+      "1": [150, 300],
+      "2": [150, 300],
+      "3": [0, 149]
+    },
+    "timing_rule": "anchored to launch_calendar.doors_close_at in the approved launch plan: E1 at doors_close_at minus 48 hours, E2 at doors_close_at minus 24 hours, E3 in the final hours of the closing day; no other timing is invented",
+    "deadline_source": "launch_calendar.doors_close_at and launch_calendar.timezone from the approved launch plan, read by field name and never retyped from memory",
+    "deadline_rule": "every deadline, date, countdown, or closing-time line states launch_calendar.doors_close_at and its timezone exactly as approved; all three emails state the same single deadline; the close time is repeated, never extended, rounded, or restated as a different time",
+    "deadline_forbidden": [
+      "extending or reopening the deadline",
+      "a second or different close date",
+      "relative urgency that implies a different close time (midnight tonight, end of day, last chance today) when doors_close_at says otherwise",
+      "fake price changes, bonus expiry, or seat counts the brief does not state",
+      "a countdown computed from anything except doors_close_at"
+    ],
+    "deadline_missing_policy": "fail closed: with no launch_calendar.doors_close_at there is no truthful deadline to state, so the unit does not generate; it reports the missing calendar field instead of writing urgency copy",
+    "objective_default": "promotional",
+    "objective_note": "the frozen objective enum has no doors-closing value; this profile defaults to promotional and must never widen the enum from a lane file",
+    "disruptive_required": false,
+    "variant_pairing": {
+      "pairs": ["A", "B"],
+      "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
+      "pair_b_style": "prolific and disruptive, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no misleading price, no fake scarcity, no invented deadline)"
+    },
+    "intake": "the approved S49 shared-launch brief, consumed by the launch intake adapter with per-field provenance; the legacy one-block questionnaire applies only in explicit legacy interactive mode",
+    "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
+    "trigger": "Signature Launch build: the three doors-closing emails are written from the approved launch brief, the approved landing page, and launch_calendar.doors_close_at; they run only inside the final 48 hours before doors close, after the main launch 10, and every CTA points at the approved landing / sales page",
+    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; until the integrator registers the profile, a run resolving sequence_type signature_launch_doors_closing fails AF-EMAIL-TYPE-MISMATCH by design",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-CTA-COUNT",
+      "AF-EMAIL-PREVIEW-COUNT",
+      "AF-EMAIL-SUBJECT-COUNT",
+      "AF-EMAIL-WORDBAND",
+      "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+      "AF-EMAIL-TYPE-MISMATCH"
+    ]
+  }
+}
