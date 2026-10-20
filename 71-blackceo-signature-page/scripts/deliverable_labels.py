@@ -4,7 +4,7 @@
 Every wireframe and mockup the client receives must say exactly what it is:
 PAGE TYPE (Signature Landing Page, Order Page, Upsell 1, ...) + DEVICE
 (DESKTOP or MOBILE) + KIND (WIREFRAME or MOCKUP) + Section N of M + section
-name. combine_review_pdf.py (PDF page bands, PDF and image file names, client
+name. combine_review_pdf.py (the PDF's one title band, PDF and image file names, client
 delivery folders) and build_overview_board.py (board titles, headers, tile
 captions, file names) both take their words from here, so a page type added
 later is named once and every output follows.
@@ -119,22 +119,29 @@ def board_title(role, device, stage):
     return headline(role, "desktop+mobile" if device == "combined" else device, stage)
 
 
-def page_band(role, device, stage, n, m, section_name):
-    """([header line 1, line 2], [footer line 1, line 2]) for one PDF page."""
-    kind, _ = kind_variant(stage)
-    what = f"{page_type(role).upper()} \u00b7 {device.upper()} {kind}"
-    return [what, section_text(n, m)], [f"Section {n} of {m} \u00b7 {section_name}", what]
+def title_band(role, device, stage, m):
+    """The ONE label of a review PDF, printed once as a title band at the very
+    top of page 1: 'DOWNSELL 1 \u00b7 DESKTOP WIREFRAME \u00b7 8 SECTIONS'.
+    No other page, and no gap between two sections, carries a label."""
+    return f"{headline(role, device, stage)} \u00b7 {m} SECTION{'' if m == 1 else 'S'}"
+
+
+def page_label(role, device, stage, n, m):
+    """Per-page label kept in the receipt only (never drawn on a page)."""
+    return f"{headline(role, device, stage)} \u00b7 {section_text(n, m)}"
 
 
 def band_height(width):
-    """Height in px of each of the header and footer bands (two text lines) for a page `width` px wide."""
-    return max(56, round(width * 0.04))
+    """Height in px of the single title band on page 1 for a page `width` px wide.
+    Pages 2 and on have no band at all: their height is exactly the section image's."""
+    return max(40, round(width * 0.03))
 
 
 if __name__ == "__main__":  # smoke: python3 deliverable_labels.py
     assert pdf_name("upsell_1", "desktop", "desktop-wireframe") == "upsell-1_DESKTOP_WIREFRAMES.pdf"
     assert image_name("upsell_1", "desktop", "desktop-wireframe", 3, 8, "Offer") == \
         "upsell-1_desktop_wireframe_s03-of-08_offer.png"
+    assert title_band("downsell_1", "desktop", "desktop-wireframe", 8) == "DOWNSELL 1 \u00b7 DESKTOP WIREFRAME \u00b7 8 SECTIONS"
     assert page_type("upsell_2") == "Upsell 2" and page_type("downsell_1") == "Downsell 1"
     assert page_type("some_new_page") == "Some New Page"
     print("ok")

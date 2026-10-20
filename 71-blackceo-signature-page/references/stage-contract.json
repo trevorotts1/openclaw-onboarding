@@ -181,7 +181,8 @@
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
         "python3 scripts/design_style.py validate-inventory {run_dir}",
-        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json"
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage desktop-wireframe"
       ],
       "review_required": true,
       "min_scores": {
@@ -236,7 +237,8 @@
       ],
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
-        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json"
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage mobile-tablet"
       ],
       "review_required": true,
       "min_scores": {
