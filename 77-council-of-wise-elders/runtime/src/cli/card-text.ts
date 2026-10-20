@@ -23,7 +23,7 @@
 
 export type CardTextParse =
   | { ok: true; value: unknown }
-  | { ok: false };
+  | { ok: false; message: string };
 
 /** Index of the brace matching the opening brace at `start`, or null. */
 function matchingBrace(text: string, start: number): number | null {
@@ -80,11 +80,32 @@ export function extractJsonObject(text: string): Record<string, unknown> | null 
  * always used for unparseable output.
  */
 export function parseCardResponseText(text: string): CardTextParse {
+  let message = 'the reply held no JSON object';
   try {
     return { ok: true, value: JSON.parse(text) as unknown };
-  } catch {
-    // Fall through to extraction.
+  } catch (error) {
+    // The parser's own message carries the character position.
+    if (error instanceof Error) message = error.message;
   }
   const extracted = extractJsonObject(text);
-  return extracted !== null ? { ok: true, value: extracted } : { ok: false };
+  return extracted !== null ? { ok: true, value: extracted } : { ok: false, message };
+}
+
+/**
+ * The author payload for one provider reply, plus the parse failure
+ * when there is none: an unparseable or non-object reply yields the
+ * empty payload (which can never validate) and the reason, so the one
+ * bounded repair can say "not valid JSON" instead of a schema error.
+ */
+export function authorPayloadFromText(text: string): {
+  author: Record<string, unknown>;
+  parse_error?: string;
+} {
+  const parsed = parseCardResponseText(text);
+  if (!parsed.ok) return { author: {}, parse_error: parsed.message };
+  const value = parsed.value;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return { author: value as Record<string, unknown> };
+  }
+  return { author: {}, parse_error: 'the reply was JSON but not a single JSON object' };
 }
