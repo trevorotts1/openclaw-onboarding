@@ -613,7 +613,7 @@ def allowed_section_sequences(spec: dict) -> list:
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical section of
     the page it builds, in order: the selected form's copy sections (Standard 12,
-    Long-Form 15, Product Selection 5) for a landing or registered-form run, or the
+    Long-Form 15, Product Selection 5, Upsell 8) for a landing or registered-form run, or the
     page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
     for a run whose page_role has one.
 
@@ -663,8 +663,9 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        sources.append(("copy source", [canon_section_id(s["id"]) for s in data.get("sections") or []
-                                        if isinstance(s, dict) and s.get("id")]))
+        # a section is keyed by `id`, or by `number` (the upsell copy, Skill 80)
+        sources.append(("copy source", [canon_section_id(s.get("id") or s["number"]) for s in data.get("sections") or []
+                                        if isinstance(s, dict) and (s.get("id") or s.get("number"))]))
         break
     else:
         absent.append("copy source file not found")

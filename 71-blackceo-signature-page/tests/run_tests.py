@@ -62,6 +62,8 @@ MODULES = [
     "test_item12_hybrid_board.py",
     "test_item15_trait_gates.py",
     "test_wireframe_build_spec.py",
+    # Upsell page type: eight-section form, layout lines, page role, runner.
+    "test_page_type_upsell.py",
     "test_item25_part_naming.py",
     "test_item16_parity_gate.py",
     "test_item26_delivered_filename.py",

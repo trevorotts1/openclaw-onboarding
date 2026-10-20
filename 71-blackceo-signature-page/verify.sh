@@ -101,6 +101,7 @@ for f in \
   tests/test_composition_library.py \
   references/copy-specs/standard-v6.json references/copy-specs/long-form-v6.json \
   references/copy-specs/roles/checkout.json scripts/role_spec.py tests/test_role_section_spec.py \
+  references/copy-specs/upsell-v6.json scripts/run_page_type.py tests/test_page_type_upsell.py \
   references/wireframe-build-spec.json scripts/wireframe_spec.py \
   scripts/copy_forms.py references/copy-specs/product-selection-v1.json tests/test_product_selection_form.py \
   tests/docker/Dockerfile \

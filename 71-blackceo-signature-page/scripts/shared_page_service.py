@@ -5,7 +5,10 @@ Produces the four image stages (desktop wireframe, mobile wireframe,
 desktop mockup, mobile mockup) for ONE page of a named page_role, for
 every role in the page-request enum. The owning skill's wrapper calls
 this script ONCE per page; the 14-stage production contract is never
-duplicated into Skills 78, 79, 80, 81 or 82.
+duplicated into Skills 78, 79, 80, 81 or 82. Wired today: the upsell roles
+(scripts/run_page_type.py calls this service, then builds and runs the
+stages; Skill 49's upsell_wrapper.py --bridge-config calls that runner).
+The other sharing skills' wrappers do not call it yet.
 
 The service stages the page-request, launch record, route graph and
 brand file where Skill 71's launch-context import expects them, stamps
@@ -84,9 +87,8 @@ def main(argv=None) -> int:
     p.add_argument("--page-version", choices=list(copy_forms.FORMS),
                    required=True,
                    help="the page's form: standard or long-form for a landing page, "
-                        "product-selection for the order page (page_role product_selection)")
-    p.add_argument("--design-style", choices=["A", "B", "C"], default=None,
-                   help="the client's design style (references/design-styles.md), recorded at intake")
+                        "product-selection for the order page (page_role product_selection), "
+                        "upsell for the upsell pages (page_roles upsell_1, upsell_2)")
     p.add_argument("--test-run", action="store_true")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--image-cap", type=int, required=True)

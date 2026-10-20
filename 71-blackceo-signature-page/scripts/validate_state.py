@@ -18,7 +18,7 @@ CONTRACT_PATH = Path(os.environ.get(
 # file's vocabulary.
 ORDER = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))["stage_order"]
 STATUSES = {"blocked", "working", "qc_failed", "ready"}
-VERSIONS = {"standard", "long-form"}
+VERSIONS = {"standard", "long-form", "upsell"}
 
 
 def validate(data):
@@ -27,7 +27,7 @@ def validate(data):
         return ["Top-level JSON must be an object."]
 
     if data.get("page_version") not in VERSIONS:
-        errors.append("page_version must be 'standard' or 'long-form'.")
+        errors.append("page_version must be 'standard', 'long-form' or 'upsell'.")
 
     stages = data.get("stages")
     if not isinstance(stages, dict):

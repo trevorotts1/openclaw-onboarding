@@ -15,6 +15,11 @@
       "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Order page desktop (Drive file 1 for the look)"},
       "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Order page mobile (Drive file 4 for the look)",
         "extra_rule": "ORDER PAGE MOBILE — the attached phone reference is the landing phone stack; draw this section as a true single-column phone stack in the same sheet language, never side-by-side rows and never a narrowed desktop."}
+    },
+    "upsell": {
+      "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Standard Desktop (sheet grammar for the upsell)"},
+      "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile (phone stack for the upsell)",
+        "extra_rule": "UPSELL MOBILE — the attached phone reference is the long-form phone stack; draw this upsell section the same way: a true single-column phone stack with the full-width CTA, its terms line and the decline link in reading order, never side-by-side text-and-image rows."}
     }
   },
   "form_layouts": {
@@ -61,6 +66,16 @@
     "desktop-wireframe": {"Eyebrow": "14-18 px", "H1": "56-72 px", "Subhead": "22-32 px", "H2": "48-64 px", "Body": "18-20 px", "CTA": "18-20 px", "CTA microcopy": "12-14 px"},
     "mobile-tablet": {"Eyebrow": "12-14 px", "H1": "36-44 px", "Subhead": "20-24 px", "H2": "34-48 px", "Body": "18-20 px", "CTA": "18-20 px", "CTA microcopy": "16-18 px"}
   },
+  "page_type_blocks": {
+    "note": "Per page type (the form key), extra build-spec lines. `all` applies to every slice of that form; a section tag key adds to that section only. {decline} is filled from the section (the verbatim decline link); the amount-and-terms line and the order-confirmed lines are part of the section's verbatim copy and are pointed at, never quoted twice.",
+    "upsell": {
+      "all": "UPSELL CTA STACK — the CTA is followed directly by the exact amount-and-terms line (the last line of the verbatim copy), printed exactly as given and never separated from the button, and under that a plain-text link, no button shape, reading exactly \"{decline}\" (it charges nothing). Every section carries this stack. The same one-click action sits behind every CTA.",
+      "1": "ORDER-CONFIRMED STRIP — a thin strip across the top of this band carrying the order-confirmed line or lines of the verbatim copy (the lines just before the terms line), printed exactly as given. The offer is named in the headline of this band.",
+      "6": "WHO BAND — a persona list beside the image plate, each persona a row with a check mark, and the filled CTA beneath it (an upsell Who band has a CTA).",
+      "7": "WHAT BAND — the list of extra inclusions on the left as check rows, and on the right a price-and-terms panel carrying the exact terms line and the filled CTA.",
+      "8": "REASONS BAND — seven numbered reason chips, primary-colour circles reading 1, 2, 3, 4, 5, 6, 7 once each in that order, each beside its own reason text from the copy; then the final CTA, terms line and decline link."
+    }
+  },
   "blocks": {
     "intro": [
       "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for {page_kind}: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
@@ -84,6 +99,7 @@
     "cta_shape_mobile": "a full-width filled primary-colour rectangular button",
     "cta_strip_long_form": " Where this is a solution band, a full-width CTA strip carries the button across the foot of the band.",
     "standard_desktop": "STANDARD DESKTOP — two- and three-column bands; the image position rotates left, centre, right across consecutive sections. Each pain section pairs a headline block (A) with a detail block of icon bullet rows (B) and one image plate. Never merge two numbered sections into one band.",
+    "upsell_desktop": "UPSELL DESKTOP — a short eight-section offer page, two- and three-column bands; the image position rotates left, centre, right across consecutive sections. Every band ends in a filled CTA, so no band is typography-only at its foot. Never merge two numbered sections into one band.",
     "long_form_desktop": "LONG-FORM DESKTOP — each pain band is answered by a lettered solution band on the opposite ground (2 then 2A, 3 then 3A, 4 then 4A) and the pair reads as one unit; a full-width CTA strip follows a solution band only where a CTA label is given. The Why section's reality, opportunity and movement beats read as one family. Never merge two numbered sections into one band.",
     "pain": "This band is a PAIN band: pain bullets on dark panels, and the matching lettered solution band follows on the opposite ground.",
     "solution": "This band is the SOLUTION band that answers the pain band before it: the opposite ground and check bullets.",

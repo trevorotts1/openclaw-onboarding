@@ -17,8 +17,8 @@ Skill 80 is the standalone Signature Launch upsell skill with
 verified-purchase eligibility, exact disclosure, and native one-click binding.
 
 > **STATUS — READ THIS FIRST.** This is a **packaging candidate (v0.2.0)** for
-> owner batch approval, prepared in isolation. It is **NOT installed, NOT
-> merged, and NOT production-ready.** What is proven is local only:
+> owner batch approval. It is merged to main, but it is **NOT
+> production-ready.** What is proven is local only:
 > L0 schema/static checks, L1 deterministic tests, and L2 local rendered
 > pages. What is **NOT** yet proven, stated plainly:
 >
@@ -47,9 +47,13 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 >   exist in the build environment, but neither produced a screenshot file
 >   when invoked headlessly; no screenshot was fabricated. The spec §8
 >   mockup-vs-render screenshot comparison remains open.
-> - **Brand tokens and final imagery are pending** the S71/S63 shared
->   brand/image system. The rendered pages use neutral TEST ONLY styling; no
->   brand was invented.
+> - **Brand tokens and final imagery are not in the rendered pages here.**
+>   Wireframes and mockups (desktop and mobile, review PDFs, overview boards,
+>   Design Board for the page role) come from Skill 71's page-type runner
+>   (`71-blackceo-signature-page/scripts/run_page_type.py`, spec
+>   `references/copy-specs/upsell-v6.json`), called by Skill 49's
+>   `upsell_wrapper.py --bridge-config`. The HTML pages in this skill use
+>   neutral TEST ONLY styling; no brand was invented.
 > - All shipped fixtures are **TEST ONLY**. No production copy may be trusted
 >   on a validator PASS alone: deterministic checks enforce evidence
 >   *structure*; the *truth* of a referenced record is proven at S49 /
