@@ -1,0 +1,1381 @@
+{
+  "schema": "client-intake-question-bank/v1",
+  "version": "1.0.0",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'.",
+  "help_label": "I'm not sure, help me",
+  "modes": [
+    "launch",
+    "legacy",
+    "bf"
+  ],
+  "system_fields": {
+    "schema_version": "set by the launch record writer",
+    "tenant_id": "from verified account access",
+    "location_id": "from verified account access",
+    "launch_id": "generated per launch",
+    "revision": "counted by the launch record",
+    "status": "set by the state machine",
+    "route_graph_ref": "compiled from the funnel shape",
+    "route_graph_hash": "compiled from the funnel shape",
+    "plan_approval_ref": "plan_approval question",
+    "offers": "built from offer_name, price, deliverables, extras",
+    "extras": "built from bump, upsell_1, downsell_1, upsell_2, downsell_2",
+    "bump_enabled": "from the bump question",
+    "brand_ref": "path of the brand file generated from the brand answers",
+    "brand_hash": "sha256 of that brand file",
+    "source_refs": "paths of the answers file and brand file",
+    "test_only": "set by the run flags",
+    "image_provider": "image_provider question",
+    "journey_mode": "funnel_shape question",
+    "approval": "plan_approval question",
+    "brand": "brand_colors, fonts, logo and photos questions",
+    "entitlement_attestation": "entitlement question",
+    "page-version": "derived from copy_profile and page_set"
+  },
+  "questions": [
+    {
+      "id": "interview_mode",
+      "group": "start",
+      "text": "How would you like to set this up?",
+      "why": "It decides how much I suggest and how much I ask.",
+      "answer_type": "choice",
+      "choices": [
+        "I know what I want",
+        "Help me choose",
+        "Set it up for me to review"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Pick the first if you have your answers ready. Pick the second and I will explain each choice. Pick the third and I will suggest everything for you to review before anything is built.",
+        "examples": []
+      },
+      "default": {
+        "value": "Help me choose",
+        "flag": "to confirm",
+        "reason": "Most people want explanations; you can change this any time."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "interview_mode"
+      ],
+      "legacy_ids": [
+        "m0_mode"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "business_name",
+      "group": "you",
+      "text": "What is your business or brand name, exactly as it should appear on your pages?",
+      "why": "It goes on the page and the checkout, and becomes your logo text if you have no logo file.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Type it the way you want customers to see it, with your capital letters.",
+        "examples": [
+          "Bright Path Coaching",
+          "Maya Ortiz Studio"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "business_name"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "71:brand-owner"
+      ]
+    },
+    {
+      "id": "offer_name",
+      "group": "offer",
+      "text": "What is the exact name of your offer, as it should be written on the page?",
+      "why": "The name is used word for word. I never invent or change it.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "This is the title of what you sell: a course, event, program or service.",
+        "examples": [
+          "The 30-Day Launch Lab",
+          "Calm Mornings Challenge"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "offer_name"
+      ],
+      "legacy_ids": [
+        "q1"
+      ],
+      "required_by": [
+        "83:offers"
+      ]
+    },
+    {
+      "id": "offer_description",
+      "group": "offer",
+      "text": "In a sentence or two, what are you offering, and who is it for? A rough sentence, a link or pasted notes are all fine.",
+      "why": "The offer and its buyer anchor every later choice, and the claims on the page come only from what you say here.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Say what it is and who it helps. You can paste your own notes.",
+        "examples": [
+          "A 6-week group program that helps new coaches get their first 10 paying clients."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "offer_description"
+      ],
+      "legacy_ids": [
+        "a1_offer"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "audience",
+      "group": "offer",
+      "text": "Who is this for? Name 3 to 6 kinds of people, and for each one, what do they want?",
+      "why": "The page speaks to these people directly.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Think of the people who buy from you today. What result do they want, not the steps to get it?",
+        "examples": [
+          "New coaches who want their first paying clients",
+          "Busy moms who want to start a side business"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "audience"
+      ],
+      "legacy_ids": [
+        "q4"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "offer_transformation",
+      "group": "offer",
+      "text": "What will be different for someone after they use it?",
+      "why": "It is the realistic result the page promises. I will never invent a guarantee.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Finish this sentence: after this, my buyer can ___ within ___.",
+        "examples": [
+          "After 6 weeks you have a clear offer and 3 conversations booked."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "offer_transformation"
+      ],
+      "legacy_ids": [
+        "a2_transformation",
+        "q2"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "pains",
+      "group": "offer",
+      "text": "What are the three biggest problems it solves for them? Short phrases are fine.",
+      "why": "The page is built around three distinct problems.",
+      "answer_type": "list",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "One about their day-to-day, one about how they privately feel, one about who sees them stuck.",
+        "examples": [
+          "No steady income",
+          "Feeling like a fraud",
+          "Family asking when they will get a real job"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "pains"
+      ],
+      "legacy_ids": [
+        "a3_pains",
+        "q3"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "deliverables",
+      "group": "offer",
+      "text": "What does the buyer actually get? A rough list is fine. Include amounts, access time or dates where you know them.",
+      "why": "What buyers get is a promise they rely on, so it must be yours.",
+      "answer_type": "list",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "List every item: modules, calls, templates, bonuses.",
+        "examples": [
+          "12 video lessons",
+          "4 live calls",
+          "Templates pack"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "deliverables"
+      ],
+      "legacy_ids": [
+        "a4_deliverables",
+        "q5"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "proof",
+      "group": "offer",
+      "text": "Do you have real results, stories or kind words from buyers that we may use? Paste or link them, or say none yet.",
+      "why": "Proof must be real and credited. If you have none yet, the page is written without it.",
+      "answer_type": "free_text",
+      "choices": [
+        "I have some to share",
+        "Use my own story",
+        "None yet"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A testimonial, a result with a number, or a screenshot you have permission to share.",
+        "examples": [
+          "\"I booked 3 clients in 2 weeks.\" - Dana R."
+        ]
+      },
+      "default": {
+        "value": "none yet",
+        "flag": "to confirm",
+        "reason": "No proof is invented; the page is written without a proof section."
+      },
+      "never_default": false,
+      "required": "optional",
+      "condition": "always",
+      "targets": [
+        "proof"
+      ],
+      "legacy_ids": [
+        "a5_proof"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "founder_story",
+      "group": "offer",
+      "text": "Tell me your story in three short parts: one low moment from your own struggle, the moment you decided things would change, and who you built this for.",
+      "why": "The personal letter on the page is your real story.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A scene, not a summary. Where were you standing, what did you feel?",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == legacy",
+      "targets": [
+        "founder_story"
+      ],
+      "legacy_ids": [
+        "q6"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "voice",
+      "group": "offer",
+      "text": "How do you talk? Give me 2 or 3 words, or paste a paragraph you wrote that sounds like you.",
+      "why": "The copy is written in your voice.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Words like warm, direct, funny, calm, bold.",
+        "examples": [
+          "bold, warm, street-smart"
+        ]
+      },
+      "default": {
+        "value": "warm, clear, confident",
+        "flag": "to confirm",
+        "reason": "A neutral friendly voice until you give your own."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "voice"
+      ],
+      "legacy_ids": [
+        "q9"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "representation",
+      "group": "offer",
+      "text": "Who should appear in the images, and how should the people break down? Give percentages, or say no people at all.",
+      "why": "I never assume who appears in your images.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Say who your buyers are and who you want shown. It can be anyone, including no people.",
+        "examples": [
+          "70% Black women, 20% mixed, 10% men",
+          "100% women, diverse",
+          "No people at all"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == legacy",
+      "targets": [
+        "representation"
+      ],
+      "legacy_ids": [
+        "q8"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "funnel_shape",
+      "group": "funnel",
+      "text": "Will buyers choose one offer, a few packages, or levels that build on each other?",
+      "why": "It decides whether you need a page where buyers choose, and how many pages the funnel has.",
+      "answer_type": "choice",
+      "choices": [
+        "One offer",
+        "A few packages",
+        "Levels that build on each other"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "One offer: everyone buys the same thing. A few packages: buyers pick one (like Basic or Premium). Levels: each higher level includes the one below it.",
+        "examples": [
+          "One offer: a single course",
+          "Packages: Starter and Premium",
+          "Levels: Level 1, 2 and 3, each adding more"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "funnel_shape"
+      ],
+      "legacy_ids": [
+        "b1_journey"
+      ],
+      "required_by": [
+        "83:journey_mode",
+        "49-launch:journey_mode"
+      ]
+    },
+    {
+      "id": "packages",
+      "group": "offer",
+      "text": "Tell me each package or level on its own line: its name, what is in it, and its price. For example: Premium | 12 lessons; 4 live calls | $497",
+      "why": "A page where buyers choose, or levels, is built only from packages you name and price. I never invent them.",
+      "answer_type": "packages",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Give at least two. Each one needs a name and a price; list what is included after the name.",
+        "examples": [
+          "Starter | 6 video lessons | $297",
+          "Premium | 12 lessons; 4 live calls; templates | $497"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "funnel_shape != single_simple",
+      "targets": [
+        "packages"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "83:offers"
+      ]
+    },
+    {
+      "id": "price",
+      "group": "offer",
+      "text": "Do you already have a price for it, or should I suggest a starting price for you to review?",
+      "why": "A price is a promise to your buyer. I only use a price you gave or a suggestion you approved.",
+      "answer_type": "money",
+      "choices": [
+        "I have a price",
+        "Suggest one for me to review",
+        "It is free"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "price",
+        "explain": "Think about what the result is worth to the buyer, and what similar programs charge. I can suggest a range with my reasoning, but you approve it.",
+        "examples": [
+          "$497 one time",
+          "$97 a month",
+          "Free"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "funnel_shape == single_simple",
+      "targets": [
+        "price"
+      ],
+      "legacy_ids": [
+        "b2_price",
+        "q2"
+      ],
+      "required_by": [
+        "83:offers"
+      ]
+    },
+    {
+      "id": "billing",
+      "group": "offer",
+      "text": "How do buyers pay: all at once, monthly, or in parts?",
+      "why": "The payment plan changes what the checkout shows.",
+      "answer_type": "choice",
+      "choices": [
+        "All at once",
+        "Monthly",
+        "In parts or trial first"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "All at once is one payment. Monthly repeats. In parts splits one price into a few payments.",
+        "examples": []
+      },
+      "default": {
+        "value": "All at once",
+        "flag": "to confirm",
+        "reason": "The simplest checkout until you choose."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "price answered",
+      "targets": [
+        "billing"
+      ],
+      "legacy_ids": [
+        "b3_billing"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "funnel_length",
+      "group": "funnel",
+      "text": "How big do you want this funnel: 3-step, 5-step or 7-step?",
+      "why": "It sets how many extra offers you build.",
+      "answer_type": "choice",
+      "choices": [
+        "3-step",
+        "5-step",
+        "7-step"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "3-step: page, one upsell, thank-you. 5-step adds a smaller-yes offer and a second upsell. 7-step is the full set: checkout, two upsells, two smaller-yes offers, thank-you.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == legacy",
+      "targets": [
+        "funnel_length"
+      ],
+      "legacy_ids": [
+        "q10"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "bump",
+      "group": "funnel",
+      "text": "Would a small extra item help them use what they are buying? It appears as an optional add-on before they pay.",
+      "why": "It is optional on the checkout and starts unchecked.",
+      "answer_type": "offer",
+      "choices": [
+        "Yes, I have one",
+        "Recommend one",
+        "No add-on"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A small, low-priced extra, like a checklist or a bonus session.",
+        "examples": []
+      },
+      "default": {
+        "value": "none",
+        "flag": "to confirm",
+        "reason": "No add-on is built until you name one."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "bump"
+      ],
+      "legacy_ids": [
+        "c1_bump"
+      ],
+      "required_by": [
+        "49-launch:bump_enabled"
+      ]
+    },
+    {
+      "id": "upsell_1",
+      "group": "funnel",
+      "text": "After they buy, is there a useful upgrade or extra product you want to offer?",
+      "why": "Upsell 1 adds value on top of the purchase.",
+      "answer_type": "offer",
+      "choices": [
+        "Yes, I have one",
+        "Recommend one",
+        "No upgrade"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Something that helps them get the result faster or go further.",
+        "examples": []
+      },
+      "default": {
+        "value": "none",
+        "flag": "to confirm",
+        "reason": "No upsell is built until you name one."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "upsell_1"
+      ],
+      "legacy_ids": [
+        "c2_u1",
+        "q11"
+      ],
+      "required_by": [
+        "49-launch:extras"
+      ]
+    },
+    {
+      "id": "downsell_1",
+      "group": "funnel",
+      "text": "If they pass on that upgrade, is there a smaller version or an easier way to buy it?",
+      "why": "A smaller yes keeps a buyer who is not ready for the big one.",
+      "answer_type": "offer",
+      "choices": [
+        "Yes, a smaller version",
+        "Yes, easier payments",
+        "No downsell"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A lighter version or split payments.",
+        "examples": []
+      },
+      "default": {
+        "value": "none",
+        "flag": "to confirm",
+        "reason": "No downsell is built until you name one."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "upsell_1 != none",
+      "targets": [
+        "downsell_1"
+      ],
+      "legacy_ids": [
+        "c3_d1",
+        "q12"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "upsell_2",
+      "group": "funnel",
+      "text": "After someone takes the upgrade or the smaller offer, should we offer one more helpful product?",
+      "why": "Upsell 2 is one more optional step.",
+      "answer_type": "offer",
+      "choices": [
+        "Yes, I have one",
+        "Recommend one",
+        "No second upsell"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A bigger or faster option, like done-for-you or a VIP day.",
+        "examples": []
+      },
+      "default": {
+        "value": "none",
+        "flag": "to confirm",
+        "reason": "No second upsell is built until you name one."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "upsell_1 != none",
+      "targets": [
+        "upsell_2"
+      ],
+      "legacy_ids": [
+        "c4_u2",
+        "q13"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "downsell_2",
+      "group": "funnel",
+      "text": "If they pass on the second upsell, what is the smallest true yes you can offer?",
+      "why": "A last smaller offer keeps buyers who are not ready.",
+      "answer_type": "offer",
+      "choices": [
+        "Yes, I have one",
+        "Easier payments",
+        "No second downsell"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A starter tier, one seat, or recordings only.",
+        "examples": []
+      },
+      "default": {
+        "value": "none",
+        "flag": "to confirm",
+        "reason": "No second downsell is built until you name one."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "upsell_2 != none",
+      "targets": [
+        "downsell_2"
+      ],
+      "legacy_ids": [
+        "q14"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "page_set",
+      "group": "funnel",
+      "text": "Which pages should I build?",
+      "why": "Every page you build gets desktop and phone sketches and designs.",
+      "answer_type": "choice",
+      "choices": [
+        "Every page my funnel needs (recommended)",
+        "Only the main page and checkout",
+        "Help me choose"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The pages are: opt-in page, sales page, page where buyers choose, checkout, upsell, smaller-offer page, and thank-you. The recommended set builds all the ones your funnel uses.",
+        "examples": [
+          "Recommended: landing, sales, checkout, upsells, thank-you"
+        ]
+      },
+      "default": {
+        "value": "all",
+        "flag": "to confirm",
+        "reason": "The full recommended set for your funnel shape."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "page_set"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "49:page_set"
+      ]
+    },
+    {
+      "id": "brand_colors",
+      "group": "brand",
+      "text": "What are your brand colors? Send color codes like #1A2B3C, or color names. If you have a logo or a website, I can read the colors from it.",
+      "why": "Every sketch and design is made only in your own colors.",
+      "answer_type": "colors",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "palette",
+        "explain": "Brand colors are the 2 to 4 colors on your logo, website or business cards. A color code is the # followed by six letters and numbers.",
+        "examples": [
+          "#1A2B3C and #E4572E",
+          "navy blue and orange",
+          "primary #0A7E8C, background #FFFFFF"
+        ]
+      },
+      "default": {
+        "value": "safe_default_palette",
+        "flag": "to confirm",
+        "reason": "A neutral palette that belongs to no client, used until you send your own."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "brand_colors"
+      ],
+      "legacy_ids": [
+        "q7",
+        "d1_brand"
+      ],
+      "required_by": [
+        "83:brand",
+        "49-launch:brand_ref"
+      ]
+    },
+    {
+      "id": "brand_primary",
+      "group": "brand",
+      "text": "Which of these is your MAIN color: the one people think of first when they think of your brand? {colors}",
+      "why": "The main color is used for buttons and key headlines.",
+      "answer_type": "choice",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "If you are unsure, pick the color that is most on your logo, or the one you use for buttons on your website.",
+        "examples": []
+      },
+      "default": {
+        "value": "first_color",
+        "flag": "to confirm",
+        "reason": "Your first color is used as main until you pick."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "needs_role primary",
+      "targets": [
+        "brand_primary"
+      ],
+      "legacy_ids": [],
+      "required_by": [],
+      "dynamic": "colors"
+    },
+    {
+      "id": "brand_secondary",
+      "group": "brand",
+      "text": "Which color is your SECOND color, the one that supports the main color? {colors}",
+      "why": "It is used for section backgrounds and supporting shapes.",
+      "answer_type": "choice",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The second color is usually softer or darker than the main color.",
+        "examples": []
+      },
+      "default": {
+        "value": "next_color",
+        "flag": "to confirm",
+        "reason": "Your next color is used until you pick."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "needs_role secondary",
+      "targets": [
+        "brand_secondary"
+      ],
+      "legacy_ids": [],
+      "required_by": [],
+      "dynamic": "colors"
+    },
+    {
+      "id": "brand_accent",
+      "group": "brand",
+      "text": "Which color should be the small highlight color for badges and underlines? {colors}",
+      "why": "An accent adds a little spark. The other colors stay as extras.",
+      "answer_type": "choice",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Pick the brightest of what is left, or choose none.",
+        "examples": []
+      },
+      "default": {
+        "value": "next_color",
+        "flag": "to confirm",
+        "reason": "The next color is used as the highlight until you pick."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "needs_role accent",
+      "targets": [
+        "brand_accent"
+      ],
+      "legacy_ids": [],
+      "required_by": [],
+      "dynamic": "colors"
+    },
+    {
+      "id": "brand_background",
+      "group": "brand",
+      "text": "What should the page background be?",
+      "why": "Text has to be easy to read on it.",
+      "answer_type": "choice",
+      "choices": [
+        "Light (white or cream)",
+        "Dark",
+        "Not sure"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Light backgrounds feel open and clean. Dark backgrounds feel premium and dramatic. Most coaching pages use light.",
+        "examples": []
+      },
+      "default": {
+        "value": "Light (white or cream)",
+        "flag": "to confirm",
+        "reason": "Light is the easiest to read."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "needs_role background",
+      "targets": [
+        "brand_background"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "logo",
+      "group": "brand",
+      "text": "Do you have a logo file we can use?",
+      "why": "Your real logo is used as is. I never redraw it.",
+      "answer_type": "file_or_text",
+      "choices": [
+        "I will send it",
+        "Use my business name as text",
+        "Not sure"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A logo file is a PNG or SVG of your logo. If you have none, your business name is set in clean type as a text logo.",
+        "examples": []
+      },
+      "default": {
+        "value": "wordmark",
+        "flag": "to confirm",
+        "reason": "Your business name is shown as a text logo until you send a file."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "logo"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "fonts",
+      "group": "brand",
+      "text": "Do you have brand fonts, the typefaces on your logo or website?",
+      "why": "Fonts give the page its personality.",
+      "answer_type": "free_text",
+      "choices": [
+        "I know my fonts",
+        "Pick good ones for me",
+        "Not sure"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "fonts",
+        "explain": "A font is the shape of the letters. If you do not know, I pick a pair that suits your brand and show you.",
+        "examples": [
+          "Playfair Display for headlines, Source Sans 3 for text"
+        ]
+      },
+      "default": {
+        "value": "derive",
+        "flag": "to confirm",
+        "reason": "Fonts are chosen to suit your brand and shown to you to confirm."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "fonts"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "photos_founder",
+      "group": "brand",
+      "text": "Do you want a real photo of you on the page? If yes, send one or two clear photos.",
+      "why": "Real people build trust. I never generate a lookalike of you.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, I will send photos",
+        "No photos of me",
+        "Not sure"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A clear, well-lit photo of your face works best. If you send none, the page has an empty photo frame you can fill later.",
+        "examples": []
+      },
+      "default": {
+        "value": "empty_frame",
+        "flag": "to confirm",
+        "reason": "An empty photo frame is used; no likeness is generated."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "photos_founder"
+      ],
+      "legacy_ids": [
+        "q15"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "photos_permission",
+      "group": "brand",
+      "text": "Do you give us permission to use the photos you send on your page and ads for this launch?",
+      "why": "I only use photos of people with their permission.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, I give permission",
+        "No",
+        "Not sure"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "This covers photos of you and anyone in them. You can withdraw it any time.",
+        "examples": []
+      },
+      "default": {
+        "value": "no",
+        "flag": "to confirm",
+        "reason": "Without a clear yes, your photos are not used."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "photos_founder == yes",
+      "targets": [
+        "photos_permission"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "design_style",
+      "group": "design",
+      "text": "Which look do you want for your page: A, B or C?",
+      "why": "The style sets the shape of the photos and sections.",
+      "answer_type": "choice",
+      "choices": [
+        "A Block",
+        "B Circle",
+        "C Hybrid"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "style",
+        "explain": "A Block: clean rectangles, classic and polished. B Circle: round photos with colored rings, warm and friendly. C Hybrid: Block structure with round photos only for personal pictures. If you are unsure, tell me three words for how you want your brand to feel.",
+        "examples": [
+          "Classic and professional: A",
+          "Warm and friendly: B",
+          "Modern and personal: C"
+        ]
+      },
+      "default": {
+        "value": "A",
+        "flag": "to confirm",
+        "reason": "Block is the most neutral look."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "design_style"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "71:design-style"
+      ],
+      "feel_keywords": {
+        "A": [
+          "classic",
+          "polished",
+          "professional",
+          "corporate",
+          "trusted",
+          "clean",
+          "serious"
+        ],
+        "B": [
+          "warm",
+          "friendly",
+          "playful",
+          "soft",
+          "fun",
+          "cozy",
+          "community"
+        ],
+        "C": [
+          "modern",
+          "personal",
+          "approachable",
+          "balanced",
+          "fresh",
+          "human"
+        ]
+      }
+    },
+    {
+      "id": "style_card_id",
+      "group": "design",
+      "text": "Optional: do you have a registered design style card id (it starts with FN-)? Leave blank if not.",
+      "why": "It locks every image to that style.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Only if you were given one. Most people skip this.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": false,
+      "required": "optional",
+      "condition": "mode == legacy",
+      "targets": [
+        "style_card_id"
+      ],
+      "legacy_ids": [
+        "q18"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "image_provider",
+      "group": "images",
+      "text": "Which image service should make your pictures?",
+      "why": "I only name a service after checking it works for you.",
+      "answer_type": "choice",
+      "choices": [
+        "My connected service",
+        "Recommend one",
+        "No images needed"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "This is the service that draws the pictures. If you are not sure, I use the one already connected to your account.",
+        "examples": []
+      },
+      "default": {
+        "value": "kie",
+        "flag": "to confirm",
+        "reason": "The standard connected image service."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "image_provider"
+      ],
+      "legacy_ids": [
+        "d4_image_provider"
+      ],
+      "required_by": [
+        "83:image_provider",
+        "49-launch:image_provider"
+      ]
+    },
+    {
+      "id": "image_cap",
+      "group": "images",
+      "text": "What is the most pictures I should make for this launch?",
+      "why": "It is a ceiling, not a purchase. Paid pictures also need your separate OK.",
+      "answer_type": "number",
+      "choices": [
+        "12",
+        "24",
+        "No pictures"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Each page needs a handful of pictures. 12 covers a small funnel, 24 a full one.",
+        "examples": []
+      },
+      "default": {
+        "value": 12,
+        "flag": "to confirm",
+        "reason": "A modest ceiling; raising it needs your OK."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "image_cap"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "71:image-cap"
+      ]
+    },
+    {
+      "id": "paid_render_approval",
+      "group": "images",
+      "text": "Do you approve spending on paid pictures, and what is the most you want to spend?",
+      "why": "Paid work needs its own OK, separate from approving the plan.",
+      "answer_type": "money",
+      "choices": [
+        "Yes, up to a limit I will give",
+        "No paid pieces",
+        "Decide later"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Nothing paid is made until you say yes with an amount. Sketches and free drafts do not cost anything.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "always",
+      "targets": [
+        "paid_render_approval"
+      ],
+      "legacy_ids": [
+        "d5_budget"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "copy_profile",
+      "group": "design",
+      "text": "Should the main page be the standard length, or the long, detailed version?",
+      "why": "Length is your choice.",
+      "answer_type": "choice",
+      "choices": [
+        "Standard",
+        "Long-form",
+        "Not sure"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Standard is shorter and quicker to read. Long-form tells more of the story and suits bigger prices.",
+        "examples": []
+      },
+      "default": {
+        "value": "standard",
+        "flag": "to confirm",
+        "reason": "Standard length until you choose."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "copy_profile"
+      ],
+      "legacy_ids": [
+        "d2_copy_profile"
+      ],
+      "required_by": [
+        "83:copy_profile"
+      ]
+    },
+    {
+      "id": "location",
+      "group": "launch",
+      "text": "Should this go into your existing Convert & Flow account?",
+      "why": "The account is checked from your own access, never typed in.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, my existing account",
+        "A new one",
+        "Not sure yet"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "If you already use Convert & Flow, choose yes.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == launch",
+      "targets": [
+        "location"
+      ],
+      "legacy_ids": [
+        "d3_location"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "community_truth",
+      "group": "launch",
+      "text": "I need three real facts: your community link, what the bonus is, and a yes that you will really send the personal text.",
+      "why": "The pages only promise what you will do.",
+      "answer_type": "object",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Give the real community URL, name the bonus, and confirm you will send the text.",
+        "examples": [
+          "https://example.com/community; Bonus: planner PDF; text confirmed: yes"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == legacy",
+      "targets": [
+        "community_truth"
+      ],
+      "legacy_ids": [
+        "q16"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "entitlement",
+      "group": "launch",
+      "text": "Is this launch kit included in what you bought or have a license for?",
+      "why": "A launch is only built with a confirmed right to run it.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, it is included",
+        "Please check for me",
+        "No"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "I check this against your account record. I never assume it.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "entitlement"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "83:entitlement_attestation"
+      ]
+    },
+    {
+      "id": "plan_approval",
+      "group": "launch",
+      "text": "Here is the plan I recommend. Do you approve it for building, or would you like a change?",
+      "why": "Approval is tied to the exact plan you saw.",
+      "answer_type": "choice",
+      "choices": [
+        "Approve this plan",
+        "I want a change",
+        "Stop here"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Nothing is built until you approve.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "phase == approval",
+      "targets": [
+        "plan_approval"
+      ],
+      "legacy_ids": [
+        "e1_plan_review",
+        "q17"
+      ],
+      "required_by": [
+        "83:approval",
+        "49-launch:plan_approval_ref"
+      ]
+    }
+  ]
+}

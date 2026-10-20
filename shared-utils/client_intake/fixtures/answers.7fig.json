@@ -1,0 +1,308 @@
+{
+  "schema": "client-intake-answers/v1",
+  "meta": {
+    "mode": "launch",
+    "phase": "pre_build"
+  },
+  "answers": {
+    "interview_mode": {
+      "value": "help",
+      "status": "provided",
+      "source": "client"
+    },
+    "business_name": {
+      "value": "7FigurePreneur",
+      "status": "provided",
+      "source": "client"
+    },
+    "offer_name": {
+      "value": "The 7FigurePreneur Path",
+      "status": "provided",
+      "source": "client"
+    },
+    "offer_description": {
+      "value": "A three-level mentorship for founders growing from six to seven figures.",
+      "status": "provided",
+      "source": "client"
+    },
+    "audience": {
+      "value": "Founders at 6 figures who want to scale; consultants ready to productize",
+      "status": "provided",
+      "source": "client"
+    },
+    "offer_transformation": {
+      "value": "Within 12 months you run a team and a repeatable sales system.",
+      "status": "provided",
+      "source": "client"
+    },
+    "pains": {
+      "value": [
+        "Stuck on the hamster wheel",
+        "Doing everything alone",
+        "Peers pulling ahead"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "deliverables": {
+      "value": [
+        "Monthly strategy calls",
+        "Playbook library",
+        "Private community"
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "proof": {
+      "value": "none yet",
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "No proof is invented; the page is written without a proof section.",
+      "unknown_count": 2
+    },
+    "voice": {
+      "value": "warm, clear, confident",
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral friendly voice until you give your own.",
+      "unknown_count": 2
+    },
+    "funnel_shape": {
+      "value": "folded_levels",
+      "status": "provided",
+      "source": "client"
+    },
+    "packages": {
+      "value": [
+        {
+          "display_name": "Level 1 Foundation",
+          "deliverables": [
+            "Playbook library"
+          ],
+          "price": {
+            "amount_minor": 99700,
+            "currency": "USD"
+          }
+        },
+        {
+          "display_name": "Level 2 Growth",
+          "deliverables": [
+            "Playbook library",
+            "Monthly strategy calls"
+          ],
+          "price": {
+            "amount_minor": 199700,
+            "currency": "USD"
+          }
+        },
+        {
+          "display_name": "Level 3 Scale",
+          "deliverables": [
+            "Playbook library",
+            "Monthly strategy calls",
+            "Private community"
+          ],
+          "price": {
+            "amount_minor": 299700,
+            "currency": "USD"
+          }
+        }
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "bump": {
+      "value": "none",
+      "status": "provided",
+      "source": "client"
+    },
+    "upsell_1": {
+      "value": "none",
+      "status": "provided",
+      "source": "client"
+    },
+    "page_set": {
+      "value": "all",
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "The full recommended set for your funnel shape.",
+      "unknown_count": 2
+    },
+    "brand_colors": {
+      "value": [
+        "#3D5A6C",
+        "#8FA3AF",
+        "#E07A5F"
+      ],
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral palette that belongs to no client, used until you send your own.",
+      "unknown_count": 2
+    },
+    "brand_primary": {
+      "value": "#3D5A6C",
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral palette that belongs to no client, used until you send your own."
+    },
+    "brand_secondary": {
+      "value": "#8FA3AF",
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral palette that belongs to no client, used until you send your own."
+    },
+    "brand_accent": {
+      "value": [
+        "#E07A5F"
+      ],
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral palette that belongs to no client, used until you send your own."
+    },
+    "brand_background": {
+      "value": [
+        "#FFFFFF"
+      ],
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral palette that belongs to no client, used until you send your own."
+    },
+    "brand_text": {
+      "value": "#1F2933",
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "A neutral palette that belongs to no client, used until you send your own."
+    },
+    "logo": {
+      "value": {
+        "mode": "wordmark",
+        "text": "7FigurePreneur"
+      },
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "Your business name is shown as a text logo until you send a file.",
+      "unknown_count": 2
+    },
+    "fonts": {
+      "value": {
+        "mode": "derive",
+        "suggested": {
+          "name": "Classic editorial",
+          "display": "Playfair Display",
+          "body": "Source Sans 3",
+          "accent": "Source Sans 3",
+          "reason": "Elegant headlines with very readable text."
+        }
+      },
+      "status": "default_to_confirm",
+      "source": "safe-default",
+      "note": "Fonts are chosen to suit your brand and shown to you to confirm.",
+      "unknown_count": 2
+    },
+    "photos_founder": {
+      "value": "yes",
+      "status": "provided",
+      "source": "client"
+    },
+    "photos_permission": {
+      "value": "yes",
+      "status": "provided",
+      "source": "client"
+    },
+    "design_style": {
+      "value": "C",
+      "status": "provided",
+      "source": "client",
+      "unknown_count": 1
+    },
+    "image_provider": {
+      "value": "kie",
+      "status": "suggested",
+      "source": "client"
+    },
+    "image_cap": {
+      "value": 24,
+      "status": "provided",
+      "source": "client"
+    },
+    "paid_render_approval": {
+      "value": {
+        "approved": false,
+        "decide_later": true
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "copy_profile": {
+      "value": "long_form",
+      "status": "provided",
+      "source": "client"
+    },
+    "location": {
+      "value": "existing",
+      "status": "provided",
+      "source": "client"
+    }
+  },
+  "to_confirm": [
+    {
+      "id": "proof",
+      "value": "none yet",
+      "reason": "No proof is invented; the page is written without a proof section.",
+      "how_to_change": "Tell me your new answer to \"Do you have real results, stories or kind words from buyers that we may use\" (question proof) and I will update it."
+    },
+    {
+      "id": "voice",
+      "value": "warm, clear, confident",
+      "reason": "A neutral friendly voice until you give your own.",
+      "how_to_change": "Tell me your new answer to \"How do you talk\" (question voice) and I will update it."
+    },
+    {
+      "id": "page_set",
+      "value": "all",
+      "reason": "The full recommended set for your funnel shape.",
+      "how_to_change": "Tell me your new answer to \"Which pages should I build\" (question page_set) and I will update it."
+    },
+    {
+      "id": "brand_colors",
+      "value": [
+        "#3D5A6C",
+        "#8FA3AF",
+        "#E07A5F"
+      ],
+      "reason": "A neutral palette that belongs to no client, used until you send your own.",
+      "how_to_change": "Tell me your new answer to \"What are your brand colors\" (question brand_colors) and I will update it."
+    },
+    {
+      "id": "logo",
+      "value": {
+        "mode": "wordmark",
+        "text": "7FigurePreneur"
+      },
+      "reason": "Your business name is shown as a text logo until you send a file.",
+      "how_to_change": "Tell me your new answer to \"Do you have a logo file we can use\" (question logo) and I will update it."
+    },
+    {
+      "id": "fonts",
+      "value": {
+        "mode": "derive",
+        "suggested": {
+          "name": "Classic editorial",
+          "display": "Playfair Display",
+          "body": "Source Sans 3",
+          "accent": "Source Sans 3",
+          "reason": "Elegant headlines with very readable text."
+        }
+      },
+      "reason": "Fonts are chosen to suit your brand and shown to you to confirm.",
+      "how_to_change": "Tell me your new answer to \"Do you have brand fonts, the typefaces on your logo or website\" (question fonts) and I will update it."
+    },
+    {
+      "id": "image_provider",
+      "value": "kie",
+      "reason": "Suggested; not confirmed yet.",
+      "how_to_change": "Tell me your new answer to \"Which image service should make your pictures\" (question image_provider) and I will update it."
+    }
+  ],
+  "run_id": "fixture-7fig"
+}

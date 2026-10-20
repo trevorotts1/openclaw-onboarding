@@ -21,6 +21,14 @@ allowed; buttons go to checkout) or the signature landing (opt-in) page (Long-Fo
 sequence, the wireframe closing band and the Design Board label
 (references/page-kinds.json, scripts/page_kinds.py). A production run cannot close
 intake without it (gate:intake_page_kind); test runs are exempt.
+Answers file (lane intake): --answers-file FILE reads the one client intake answers file
+(shared-utils/client_intake, schema client-intake-answers/v1) so the same questions asked in
+claude-nine, Claude Code or OpenClaw feed this writer. It fills --brand-owner (business_name),
+--image-cap, --page-version (copy_profile), --design-style and --image-engine whenever the flag is not
+given, writes the run's client brand file (colors as roles, fonts, logo, photos; see
+scripts/brand_colors.py record-answers) and records answers_file, answers_file_sha256 and the
+to_confirm list in intake.json so the delivery report can name every default. A flag on the command
+line always wins over the answers file. Without --answers-file nothing changes.
 Exit 0 written, 2 invalid input.
 
 Delivery fields (Item 31, Amendment 4): the intake also records the publish
@@ -95,6 +103,7 @@ destination is never written as if it were a handoff. The record is what
 scripts/validate_handoff.py checks the built page against and what the
 funnel-completion receipt proves live at install."""
 import argparse
+import hashlib
 import json
 import os
 import struct
@@ -401,18 +410,60 @@ def founder_photo_form_problems(brand_path, run_dir):
     return problems
 
 
+def read_answers(path):
+    """The answers file as (doc, defaults for this writer's flags). Refuses a file of another schema."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"--answers-file {path} is not readable JSON ({exc})")
+    if not isinstance(doc, dict) or doc.get("schema") != "client-intake-answers/v1":
+        raise ValueError(f"--answers-file {path} is not a client-intake-answers/v1 file")
+
+    def value(key):
+        e = (doc.get("answers") or {}).get(key)
+        return e["value"] if isinstance(e, dict) and e.get("status") != "unknown" else None
+
+    defaults = {}
+    if value("business_name"):
+        defaults["brand_owner"] = value("business_name")
+    if isinstance(value("image_cap"), int):
+        defaults["image_cap"] = value("image_cap")
+    profile = value("copy_profile")
+    if profile in ("standard", "long_form"):
+        defaults["page_version"] = "standard" if profile == "standard" else "long-form"
+    if value("design_style") in design_style.STYLE_IDS:
+        defaults["design_style"] = value("design_style")
+    provider = value("image_provider")
+    if provider in ENGINES:
+        defaults["image_engine"] = provider
+    return doc, defaults
+
+
 def main(argv=None):
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--answers-file", type=Path, default=None)
+    pre_args, _ = pre.parse_known_args(argv)
+    answers_doc, from_answers = None, {}
+    if pre_args.answers_file is not None:
+        try:
+            answers_doc, from_answers = read_answers(pre_args.answers_file)
+        except ValueError as exc:
+            print(f"REFUSED: {exc}")
+            return 2
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("run_dir", type=Path)
-    p.add_argument("--page-version", choices=list(copy_forms.FORMS), required=True,
+    p.add_argument("--answers-file", type=Path, default=None,
+                   help="the client intake answers file (client-intake-answers/v1); fills the flags it can")
+    p.add_argument("--page-version", choices=list(copy_forms.FORMS), required="page_version" not in from_answers,
+                   default=from_answers.get("page_version"),
                    help="standard or long-form for a landing page; a page type's own form "
                         "(thank-you) for that page, which also records its page_role")
-    p.add_argument("--brand-owner", required=True)
-    p.add_argument("--brand-file", default="assets/brand/blackceo-brand.json")
+    p.add_argument("--brand-owner", required="brand_owner" not in from_answers, default=from_answers.get("brand_owner"))
+    p.add_argument("--brand-file", default="brand/client-brand.json" if answers_doc is not None else "assets/brand/blackceo-brand.json")
     p.add_argument("--creative-direction", default=None)
-    p.add_argument("--image-cap", type=int, required=True)
-    p.add_argument("--image-engine", choices=ENGINES, default="kie")
-    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=None,
+    p.add_argument("--image-cap", type=int, required="image_cap" not in from_answers, default=from_answers.get("image_cap"))
+    p.add_argument("--image-engine", choices=ENGINES, default=from_answers.get("image_engine", "kie"))
+    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=from_answers.get("design_style"),
                    help="the client's page design style: A Block, B Circle or C Hybrid "
                         "(references/design-styles.md); ask with `design_style.py question`")
     p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
@@ -698,7 +749,29 @@ def main(argv=None):
         updates, _prepared_artifacts = launch_prepared
         intake.update(updates)
 
+    if answers_doc is not None:
+        intake["answers_file"] = str(a.answers_file)
+        intake["answers_file_sha256"] = hashlib.sha256(a.answers_file.read_bytes()).hexdigest()
+        intake["to_confirm"] = [{"id": t.get("id"), "value": t.get("value"), "reason": t.get("reason")}
+                                for t in answers_doc.get("to_confirm") or []]
+        if from_answers.get("design_style") and a.design_style == from_answers["design_style"] and not a.design_style_source:
+            entry = (answers_doc.get("answers") or {}).get("design_style") or {}
+            # the gate accepts only these two values; the true status stays in design_style_status and to_confirm
+            intake["design_style_source"] = "client_choice" if entry.get("status") == "provided" else "recommended_accepted"
+            intake["design_style_status"] = entry.get("status")
+
     (a.run_dir / "intake.json").write_text(json.dumps(intake, indent=2) + "\n", encoding="utf-8")
+    if answers_doc is not None:
+        import brand_colors
+        try:
+            brand_path = brand_colors.record_from_answers(a.run_dir, a.answers_file)
+            print(f"wrote {brand_path} from the answers file (palette_status="
+                  f"{(brand_colors._json(brand_path) or {}).get('palette_status')})")
+        except ValueError as exc:
+            print(f"NOTE brand colors: {exc}. No wireframe, mockup or image stage may start until the client "
+                  f"gives colors or the safe default is applied (python3 scripts/brand_colors.py check).")
+        for t in intake["to_confirm"]:
+            print(f"TO CONFIRM {t['id']}: {t['reason']}")
     for line in size_lines:
         print(line)
     print(f"wrote {a.run_dir / 'intake.json'} (image_engine={intake['image_engine']})")

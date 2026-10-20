@@ -3,6 +3,7 @@
   "section": "signature-funnel-intake",
   "version": "1.0.0",
   "funnel_type": "signature_funnel",
+  "canonical_bank": "shared-utils/client_intake/question-bank.json",
   "description": "The Signature Funnel intake interview (IMPROVED-FRAMEWORK-v2 Part 8). ONE question per turn -> a locked, provenance-gated brief.json that unlocks generation. Rough notes always welcome ('I don't need perfect sentences or spelling'). Checkpoint-gated between pages (Q11 after main draft; Q12/Q13 for 5/7-step; Q14 for 7-step). This file is the authoritative spec prove_sf_intake.py loads; runtime answers are recorded in brief.json against runtime_intake_contract below.",
   "delivery": {
     "mode": "one_question_per_turn",
@@ -25,7 +26,8 @@
     {"id": "q6", "order": 6, "storeOn": "q6_founder_story", "required": true, "kind": "text",
      "prompt": "Now the personal letter. Three short answers: (a) ONE specific low moment from your own struggle, a scene, not a summary. (b) The moment you DECIDED things would change. (c) Who did you build this for?"},
     {"id": "q7", "order": 7, "storeOn": "q7_brand_colors", "required": true, "kind": "text",
-     "prompt": "What are your brand colors? Hex codes if you have them, plain names if you don't."},
+     "prompt": "What are your brand colors, and which one is your MAIN color (the one people think of first)? Hex codes if you have them, plain names if you don't. If you are not sure, say 'help me' and I will read the colors from your logo or website, or show you three palettes to pick from.",
+     "note": "Canonical question: brand_colors in shared-utils/client_intake/question-bank.json. The main (primary) color is asked explicitly whenever two or more colors come without roles; the answer text carries the roles, e.g. 'primary #0A7E8C; secondary #102A43'."},
     {"id": "q8", "order": 8, "storeOn": "q8_representation", "required": true, "kind": "text",
      "prompt": "Who should appear in the images, and how should the people break down? Give me percentages, for example 70% Black women, 20% mixed, 10% men. Or 100% women, diverse. Or no people at all. I never assume a default.",
      "note": "Representation is NEVER assumed (AF-FUN-INTAKE-REPRESENTATION). Feeds the image-prompt SUBJECT block exactly as given."},
