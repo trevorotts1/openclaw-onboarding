@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased - clear desktop/mobile labeling on every wireframe and mockup
+
+- New `scripts/deliverable_labels.py`: one helper (page_role + stage + device -> human label and file slug) used by `combine_review_pdf.py` and `build_overview_board.py`. Every review PDF page now carries a header and footer band (page type, DESKTOP or MOBILE, WIREFRAME or MOCKUP, Section N of M, section name) added at compose time, never inside the AI image. PDFs, section images and boards are named by those labels (`upsell-1_DESKTOP_WIREFRAMES.pdf`, `upsell-1_desktop_wireframe_s03-of-08_offer.png`, `upsell-1_DESKTOP-and-MOBILE_WIREFRAME-BOARD.png`); client deliveries use the `desktop-wireframes`, `mobile-wireframes`, `desktop-mockups`, `mobile-mockups` folders. Board titles, column headers and tile captions carry the same words. `stage-contract.json` mockup PDF globs follow the new names. Approval and gate behavior unchanged.
+
 ## 1.3.1 - 2026-10-19 - sync allowlist test passes in the 999 edition
 
 - `tests/test_sync_allowlist.py`: the file that exists only in this repo must be absent in the 999 edition, so the same test passes in both. Version bumped so the G3 gate sees the skill content change. No production behavior changed.

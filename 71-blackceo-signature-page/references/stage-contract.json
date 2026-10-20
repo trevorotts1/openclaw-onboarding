@@ -274,11 +274,11 @@
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/visual-mockups-desktop.pdf",
+          "glob": "review-pdfs/*_DESKTOP_MOCKUPS-VISUAL.pdf",
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/visual-mockups-mobile.pdf",
+          "glob": "review-pdfs/*_MOBILE_MOCKUPS-VISUAL.pdf",
           "min_count": 1
         }
       ],
@@ -502,11 +502,11 @@
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/final-mockups-desktop.pdf",
+          "glob": "review-pdfs/*_DESKTOP_MOCKUPS-FINAL.pdf",
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/final-mockups-mobile.pdf",
+          "glob": "review-pdfs/*_MOBILE_MOCKUPS-FINAL.pdf",
           "min_count": 1
         }
       ],
