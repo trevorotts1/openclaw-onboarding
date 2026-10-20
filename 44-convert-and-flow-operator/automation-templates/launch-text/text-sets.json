@@ -1,0 +1,235 @@
+{
+  "contract": "signature-launch-text",
+  "contract_version": "1.0.0",
+  "channel": "sms",
+  "draft_only": true,
+  "opt_out_keyword": "STOP",
+  "quiet_hours": {
+    "start": "08:00",
+    "end": "21:00",
+    "timezone": "recipient_local",
+    "rule": "A step whose computed send time falls before 08:00 or at/after 21:00 recipient-local moves to 08:00 the same day, or 08:00 the next day when the step's deadline allows. Deadline steps move earlier to 20:00, never later into the night."
+  },
+  "promotional_budget": {
+    "cap": 5,
+    "used": 3,
+    "sets": [
+      "text_doors_open",
+      "text_last_call",
+      "text_abandoned_checkout"
+    ]
+  },
+  "a2p": {
+    "required": true,
+    "when_not_ready": "Every set stays draft_only and the package warns that texts cannot send until A2P 10DLC is approved."
+  },
+  "placeholders": [
+    "first_name",
+    "business_name",
+    "offer_name",
+    "price",
+    "sales_url",
+    "checkout_url",
+    "access_url",
+    "doors_close_at",
+    "event_name",
+    "event_start_at"
+  ],
+  "copy_rules": [
+    "Every message contains STOP.",
+    "Deadlines come only from the launch calendar; never invent one.",
+    "One CTA per message; no link shorteners.",
+    "Copy stays under 320 characters before placeholder expansion (2 SMS segments).",
+    "A buyer exits abandoned_checkout at either step."
+  ],
+  "text_sets": [
+    {
+      "id": "text_optin_confirmation",
+      "kind": "opt_in_confirmation",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": [
+        "page_landing"
+      ],
+      "trigger": "Contact opts in to texts on the landing page or by keyword.",
+      "exit": "None. This is a one-message confirmation.",
+      "steps": [
+        {
+          "step": 1,
+          "delay": "Within 60 seconds of opt-in",
+          "purpose": "Confirm the opt-in, name the sender, set frequency expectation, and give HELP and STOP before any promotional text.",
+          "copy": "{{first_name}}, you're in. {{business_name}} will text you about {{offer_name}}. Msg frequency varies. Reply HELP for help or STOP to opt out."
+        }
+      ]
+    },
+    {
+      "id": "text_event_reminders",
+      "kind": "event_reminder",
+      "messages": 3,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": [
+        "page_sales"
+      ],
+      "trigger": "Contact registered for the launch event or webinar.",
+      "exit": "Event ends, or contact texts STOP.",
+      "build_note": "Event-relative waits are not verified API payloads; use the managed-browser (Tier-4) rail.",
+      "steps": [
+        {
+          "step": 1,
+          "delay": "24 hours before {{event_start_at}}, clamped into quiet hours",
+          "purpose": "Day-before reminder with the access link.",
+          "copy": "{{first_name}}, {{event_name}} starts tomorrow at {{event_start_at}}. Details and your link: {{access_url}} Reply STOP to opt out."
+        },
+        {
+          "step": 2,
+          "delay": "1 hour before {{event_start_at}}, clamped into quiet hours",
+          "purpose": "Hour-before reminder; highest open rate of the set.",
+          "copy": "{{first_name}}, {{event_name}} starts in about an hour. Join here: {{access_url}} Reply STOP to opt out."
+        },
+        {
+          "step": 3,
+          "delay": "10 minutes before {{event_start_at}}, clamped into quiet hours",
+          "purpose": "Final nudge for the live room.",
+          "copy": "{{first_name}}, {{event_name}} starts in 10 minutes. Join here: {{access_url}} Reply STOP to opt out."
+        }
+      ]
+    },
+    {
+      "id": "text_doors_open",
+      "kind": "doors_open",
+      "messages": 1,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": [
+        "page_sales"
+      ],
+      "trigger": "launch_calendar.doors_open_at reached.",
+      "exit": "Contact purchases, or texts STOP.",
+      "steps": [
+        {
+          "step": 1,
+          "delay": "At doors_open_at, clamped into quiet hours",
+          "purpose": "Announce that the offer is live. One link, one price, no invented urgency.",
+          "copy": "{{first_name}}, doors are open: {{offer_name}} is live at {{price}}. Get it here: {{sales_url}} Reply STOP to opt out."
+        }
+      ]
+    },
+    {
+      "id": "text_last_call",
+      "kind": "last_call",
+      "messages": 2,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": [
+        "page_sales"
+      ],
+      "trigger": "Doors close at launch_calendar.doors_close_at.",
+      "exit": "Contact purchases, doors_close_at passes, or texts STOP.",
+      "steps": [
+        {
+          "step": 1,
+          "delay": "24 hours before doors_close_at, clamped into quiet hours",
+          "purpose": "Deadline notice with the real close time.",
+          "copy": "{{first_name}}, doors close tomorrow at {{doors_close_at}}: {{offer_name}} at {{price}}. {{sales_url}} Reply STOP to opt out."
+        },
+        {
+          "step": 2,
+          "delay": "2 hours before doors_close_at; if that falls outside quiet hours, 20:00 the same day",
+          "purpose": "Final call. Deadline is the only urgency; no extra scarcity.",
+          "copy": "{{first_name}}, last call. Doors close at {{doors_close_at}}. {{offer_name}} at {{price}}: {{sales_url}} Reply STOP to opt out."
+        }
+      ]
+    },
+    {
+      "id": "text_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "messages": 2,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": [
+        "page_checkout"
+      ],
+      "trigger": "Checkout started and no purchase after 30 minutes.",
+      "exit": "Purchase at any step exits immediately; texts STOP exits the set.",
+      "build_note": "Guard each step with the buyer tag and re-check before send.",
+      "steps": [
+        {
+          "step": 1,
+          "delay": "30 minutes after checkout start, clamped into quiet hours",
+          "purpose": "Assume a technical issue first. Short, helpful, one link back to the saved cart.",
+          "copy": "{{first_name}}, your {{offer_name}} order is still open. Did something go wrong? Finish here: {{checkout_url}} Reply STOP to opt out."
+        },
+        {
+          "step": 2,
+          "delay": "24 hours after step 1, only if no purchase and the cart is still open",
+          "purpose": "One benefit reminder plus an invitation to reply. No new pressure.",
+          "copy": "{{first_name}}, still thinking it over? Your {{offer_name}} order is saved at {{checkout_url}}. Questions? Just reply. STOP to opt out."
+        }
+      ]
+    },
+    {
+      "id": "text_access_link",
+      "kind": "access_link",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": [
+        "page_access"
+      ],
+      "trigger": "Purchase completes, access is granted, or launch_at is reached for an access holder.",
+      "exit": "One message. No follow-up.",
+      "steps": [
+        {
+          "step": 1,
+          "delay": "Immediately on access grant, clamped into quiet hours",
+          "purpose": "Deliver the access link and tell the contact to save the text.",
+          "copy": "{{first_name}}, here is your access link for {{offer_name}}: {{access_url}} Save this text. Reply STOP to opt out."
+        }
+      ]
+    }
+  ]
+}
