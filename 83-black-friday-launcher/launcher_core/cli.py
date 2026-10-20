@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, List
 
 from . import (checks, council, dependencies, image_plan, intake, launch_bridge,
-               package, route)
+               launch_plan, package, route)
 from .constants import DECIDED, SEAMS
 
 
@@ -46,14 +46,29 @@ def cmd_assemble(args: argparse.Namespace) -> int:
             pieces[slot] = _read_json(extra)
     report_path = Path(args.pieces).parent / "dispatch-report.json"
     report = _read_json(report_path) if report_path.is_file() else {}
+    plan = _read_json(args.launch_plan) if args.launch_plan else None
+    deliveries = _read_json(args.deliveries) if args.deliveries else None
     out = package.assemble(Path(args.out), normalized, graph, pieces,
                            source_root=Path(args.pieces).parent, council=advice,
                            require_designs=not args.allow_no_designs,
                            to_confirm=report.get("to_confirm"),
-                           landing_pages=report.get("landing_pages"))
+                           landing_pages=report.get("landing_pages"),
+                           launch_plan=plan, deliveries=deliveries)
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
-           "to_confirm": out["manifest"]["to_confirm"]})
+           "to_confirm": out["manifest"]["to_confirm"],
+           "launch_plan_completeness":
+               (out["manifest"].get("launch_plan") or {}).get("completeness")})
+    return 0
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    """Validate a shared launch plan: Black Friday calendar + planned-unit completeness."""
+    plan = _read_json(args.plan)
+    deliveries = _read_json(args.deliveries) if args.deliveries else None
+    record = launch_plan.record(plan, deliveries)
+    launch_plan.assert_complete(record["completeness"])
+    _emit(record)
     return 0
 
 
@@ -132,7 +147,18 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--allow-no-designs", action="store_true",
                    help="assemble without requiring every page's wireframes and mockups; recorded "
                         "in the manifest, never the default for a delivery")
+    a.add_argument("--launch-plan",
+                   help="the shared launch plan (U-CONTRACT); its Black Friday calendar and every "
+                        "planned email, text, automation and requested AI must be delivered")
+    a.add_argument("--deliveries",
+                   help="JSON object of unit id -> delivery result ({'state': 'complete'})")
     a.set_defaults(fn=cmd_assemble)
+
+    pl = sub.add_parser("plan", help="validate a shared launch plan's calendar and completeness")
+    pl.add_argument("--plan", required=True)
+    pl.add_argument("--deliveries",
+                    help="JSON object of unit id -> delivery result; omit to see what is missing")
+    pl.set_defaults(fn=cmd_plan)
 
     x = sub.add_parser("dispatch", help="turn the intake into a Skill 49 launch record and build every page")
     x.add_argument("--intake", required=True)
@@ -179,7 +205,8 @@ def main(argv: List[str] | None = None) -> int:
     try:
         return args.fn(args)
     except (intake.IntakeError, route.RouteError, package.PackageError,
-            launch_bridge.BridgeError, image_plan.ImagePlanError) as exc:
+            launch_bridge.BridgeError, image_plan.ImagePlanError,
+            launch_plan.LaunchPlanError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
 
