@@ -35,6 +35,7 @@ from .constants import (
 )
 from . import checkout as checkout_module
 from . import council as council_module
+from . import launch_plan as launch_plan_module
 from . import page_designs
 from . import route as route_module
 from .intake import offer_facts
@@ -48,6 +49,19 @@ EXTRA_SLOTS = {"downsell_2": "downsell_1", "sales": "landing"}
 
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _RECEIPTS_REL = "delegation_receipts.jsonl"
+
+# A plan page kind -> the delivered piece slot that satisfies it. Ambiguous kinds
+# consume their candidate slots in plan order, so two upsell pages never claim
+# one piece twice.
+_PAGE_KIND_SLOTS = {
+    "landing": ("landing",),
+    "sales": ("sales",),
+    "order": ("checkout",),
+    "checkout": ("checkout",),
+    "upsell": ("upsell_1", "upsell_2"),
+    "downsell": ("downsell_1", "downsell_2"),
+    "thank_you": ("thank_you",),
+}
 
 
 class PackageError(Exception):
@@ -194,6 +208,37 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
     return out_piece
 
 
+def _page_deliveries(plan: Dict[str, Any], pieces: Dict[str, Any]) -> Dict[str, Any]:
+    """Plan page units satisfied by a delivered piece, without reusing one piece twice."""
+    taken = set()
+    out: Dict[str, Any] = {}
+    for unit in launch_plan_module.planned_units(plan):
+        if unit["type"] != "page":
+            continue
+        candidates = _PAGE_KIND_SLOTS.get(unit["kind"], (unit["kind"],))
+        slot = next((c for c in candidates if c in pieces and c not in taken), None)
+        if slot:
+            taken.add(slot)
+            out[unit["id"]] = {"state": "complete", "piece": slot}
+    return out
+
+
+def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dict[str, Any]],
+                        pieces: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The calendar + completeness record, or a named refusal when a planned unit is missing."""
+    if plan is None:
+        return None
+    supplied = dict(deliveries or {})
+    try:
+        for unit_id, result in _page_deliveries(plan, pieces).items():
+            supplied.setdefault(unit_id, result)
+        record = launch_plan_module.record(plan, supplied)
+        launch_plan_module.assert_complete(record["completeness"])
+    except launch_plan_module.LaunchPlanError as exc:
+        raise PackageError(exc.code, exc.detail) from exc
+    return record
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
@@ -201,7 +246,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              image_plan: Optional[Dict[str, Any]] = None,
              to_confirm: Optional[List[Dict[str, Any]]] = None,
              design_approvals: Optional[Dict[str, Any]] = None,
-             landing_pages: Optional[List[str]] = None) -> Dict[str, Any]:
+             landing_pages: Optional[List[str]] = None,
+             launch_plan: Optional[Dict[str, Any]] = None,
+             deliveries: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -219,6 +266,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     The Council planning step runs here (unless a record is supplied) and its
     result travels into the manifest and the receipt. It is advice: a not-ready
     result never blocks assembly.
+
+    A shared launch plan (U-CONTRACT) makes the package fail closed: the Black
+    Friday calendar is validated, every planned email, text, automation and the
+    requested Conversation AI must arrive as a delivery, and the calendar and
+    completeness percentages travel into the manifest and the receipt.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -231,6 +283,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     if council is None:
         council = council_module.planning_step(intake, runner=council_runner)
     checkout = checkout_module.order_form_mapping(intake, route)
+    if launch_plan is not None and launch_plan.get("launch_id") != intake["launch_id"]:
+        raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
+                           f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
+                           f"{intake['launch_id']!r}")
+    plan_record = _launch_plan_record(launch_plan, deliveries, pieces)
 
     ordered: List[Dict[str, Any]] = []
     for node in route["nodes"]:
@@ -301,6 +358,19 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     council_path.write_text(json.dumps(council, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     checkout_path.write_text(json.dumps(checkout, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+    plan_ref = calendar_ref = None
+    if plan_record is not None:
+        plan_path = run_dir / "launch-plan.json"
+        calendar_path = run_dir / "launch-calendar.json"
+        plan_path.write_text(json.dumps(launch_plan, indent=2, sort_keys=True) + "\n",
+                             encoding="utf-8")
+        calendar_path.write_text(json.dumps(plan_record["calendar"], indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
+        plan_ref = {"path": "launch-plan.json", "sha256": _sha256_file(plan_path),
+                    "contract": launch_plan_module.PLAN_CONTRACT_REF,
+                    "contract_sha256": _sha256_path(REPO_ROOT / launch_plan_module.PLAN_CONTRACT_REF)}
+        calendar_ref = {"path": "launch-calendar.json", "sha256": _sha256_file(calendar_path)}
+
     cross_sales = route.get("cross_sales") or {
         "relationships": [], "teaching": {"state": "pending"}, "route_node": False,
         "surface": "thank_you",
@@ -346,6 +416,14 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "to_confirm": list(to_confirm or []),
         "assembled_at": _now(),
     }
+    if plan_record is not None:
+        manifest["launch_plan"] = {
+            "plan": plan_ref,
+            "calendar": calendar_ref,
+            "completeness": plan_record["completeness"],
+            "conversation_ai": plan_record["conversation_ai"],
+        }
+        manifest["launch_calendar"] = plan_record["calendar"]
     manifest_path = run_dir / "package-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -401,7 +479,15 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "live_effects": "none",
         "test_only": manifest["test_only"],
     }
+    if plan_record is not None:
+        receipt["launch_plan"] = {
+            "plan": plan_ref,
+            "calendar": calendar_ref,
+            "completeness": plan_record["completeness"],
+            "conversation_ai": plan_record["conversation_ai"],
+        }
+        receipt["launch_calendar"] = plan_record["calendar"]
     (run_dir / "receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n",
                                           encoding="utf-8")
-    return {"manifest": manifest, "receipt": receipt,
+    return {"manifest": manifest, "receipt": receipt, "launch_plan": plan_record,
             "manifest_path": str(manifest_path), "receipt_path": str(run_dir / "receipt.json")}

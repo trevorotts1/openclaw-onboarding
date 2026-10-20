@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from . import launch_plan as launch_plan_module
 from . import page_designs
 from .constants import (PLACEHOLDER_TOKENS, ROUTE_ROLES, SCHEMA_VERSION,
                         repo_root_for)
@@ -157,6 +158,71 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
     return fails
 
 
+def _launch_plan_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+    """The shared launch plan: calendar law and every planned unit actually delivered."""
+    record = manifest.get("launch_plan")
+    if record is None:
+        return []  # a page-only package predates the shared launch plan
+    fails: List[str] = []
+    plan_ref = record.get("plan") or {}
+    plan_path = plan_ref.get("path")
+    target = _resolve(root, plan_path) if plan_path else None
+    plan: Dict[str, Any] | None = None
+    if not plan_path or target is None or not target.is_file():
+        fails.append(f"AF-LAUNCH-PKG-PLAN-MISSING: launch plan {plan_path!r} does not resolve")
+    elif _sha256_file(target) != plan_ref.get("sha256"):
+        fails.append("AF-LAUNCH-PKG-PLAN-HASH: the launch plan does not match its digest")
+    else:
+        try:
+            plan = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            fails.append(f"AF-LAUNCH-PKG-PLAN-MISSING: unreadable launch plan ({exc})")
+
+    if plan is None:
+        return fails
+
+    calendar_ref = record.get("calendar") or {}
+    calendar_path = calendar_ref.get("path")
+    calendar_target = _resolve(root, calendar_path) if calendar_path else None
+    if not calendar_path or calendar_target is None or not calendar_target.is_file():
+        fails.append(f"AF-LAUNCH-PKG-PLAN-CALENDAR: calendar {calendar_path!r} does not resolve")
+    elif _sha256_file(calendar_target) != calendar_ref.get("sha256"):
+        fails.append("AF-LAUNCH-PKG-PLAN-CALENDAR: the calendar does not match its digest")
+    else:
+        try:
+            carried = json.loads(calendar_target.read_text(encoding="utf-8"))
+            expected = launch_plan_module.black_friday_calendar(plan)
+        except (OSError, ValueError) as exc:
+            fails.append(f"AF-LAUNCH-PKG-PLAN-CALENDAR: unreadable calendar ({exc})")
+        except launch_plan_module.LaunchPlanError as exc:
+            fails.append(f"{exc.code}: {exc.detail}")
+        else:
+            if carried != expected:
+                fails.append("AF-LAUNCH-PKG-PLAN-CALENDAR: the carried Black Friday calendar "
+                             "is not the plan's calendar")
+
+    completeness = record.get("completeness") or {}
+    delivered = {u.get("id"): {"state": u.get("state")}
+                 for u in (completeness.get("units") or []) if isinstance(u, dict)}
+    try:
+        recomputed = launch_plan_module.completeness(plan, delivered)
+    except launch_plan_module.LaunchPlanError as exc:
+        fails.append(f"{exc.code}: {exc.detail}")
+        return fails
+    if recomputed["missing"]:
+        fails.append("AF-LAUNCH-PKG-PLAN-MISSING: planned item(s) not delivered: "
+                     + ", ".join(recomputed["missing"]))
+    if completeness.get("planned") != recomputed["planned"]:
+        fails.append("AF-LAUNCH-PKG-PLAN-MISSING: the recorded planned units are not "
+                     "the plan's units")
+    if completeness.get("complete") is not True or completeness.get("percentage") != 100:
+        fails.append("AF-LAUNCH-PKG-PLAN-MISSING: the package is not 100% complete")
+    if completeness.get("percentage") != recomputed["percentage"]:
+        fails.append("AF-LAUNCH-PKG-PLAN-MISSING: the recorded percentage does not match "
+                     "the delivered units")
+    return fails
+
+
 def check_package(manifest_path: Path, root: Path,
                   skill_root: Path | None = None,
                   require_designs: bool | None = None) -> List[str]:
@@ -246,6 +312,9 @@ def check_package(manifest_path: Path, root: Path,
     # the entitlement is attested, Council advice never blocks, checkout is native.
     fails.extend(_decided_requirement_violations(manifest, root, skill_root))
 
+    # Shared launch plan: the Black Friday calendar and every planned unit delivered.
+    fails.extend(_launch_plan_violations(manifest, root))
+
     # Receipt: present and self-consistent.
     receipt_path = root / "receipt.json"
     if not receipt_path.is_file():
@@ -263,5 +332,22 @@ def check_package(manifest_path: Path, root: Path,
             state = (receipt.get("receipt_evidence") or {}).get("state")
             if state not in ("verified", "absent"):
                 fails.append(f"AF-LAUNCH-PKG-RECEIPT: Skill 49 receipt store state {state!r}")
+            if manifest.get("launch_plan") is not None:
+                receipt_plan = receipt.get("launch_plan") or {}
+                manifest_plan = manifest.get("launch_plan") or {}
+                for name in ("plan", "calendar"):
+                    sealed = (receipt_plan.get(name) or {}).get("sha256")
+                    carried = (manifest_plan.get(name) or {}).get("sha256")
+                    if not sealed or sealed != carried:
+                        fails.append(f"AF-LAUNCH-PKG-PLAN-RECEIPT: receipt does not seal "
+                                     f"the launch {name}")
+                receipt_completeness = receipt_plan.get("completeness") or {}
+                if receipt_completeness.get("missing") != [] or \
+                        receipt_completeness.get("complete") is not True:
+                    fails.append("AF-LAUNCH-PKG-PLAN-MISSING: the receipt records an "
+                                 "incomplete launch")
+                if receipt_completeness.get("percentage") != 100:
+                    fails.append("AF-LAUNCH-PKG-PLAN-MISSING: the receipt's launch "
+                                 "percentage is not 100")
 
     return fails
