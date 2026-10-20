@@ -15,6 +15,10 @@
       "closing_band": "CLOSING BAND — this is the last section of a sales page: under the section's content draw one full-width closing checkout panel on the dark brand ground, carrying one filled primary-colour button reading exactly \"{label}\". Draw no price, no card fields and no order form: the button leads to the client's checkout.",
       "closing_mockup": "CLOSING PANEL — this slice ends on one full-width closing checkout panel carrying one solid button reading exactly \"{label}\". The panel is the only button on this slice.",
       "mockup_line": "PAGE KIND — SIGNATURE SALES PAGE: every button reads as a checkout action and the last band is a closing checkout panel. Draw no price and no card fields.",
+      "folded_levels": {
+        "closing_band": "CLOSING BAND — this is the last section of a sales page that offers {count} levels folded into the page (no separate selection page): under the section's content draw one full-width levels panel on the dark brand ground. The panel holds exactly {count} level cards side by side on desktop and stacked on mobile, one card per level, each card carrying a level name line, a one-line promise and one filled primary-colour button reading exactly \"{label}\". Every button leads to the client's checkout for that level. Draw no price and no card fields.",
+        "closing_mockup": "LEVELS PANEL — this slice ends on one full-width panel of exactly {count} level cards, one solid button on each card reading exactly \"{label}\". The {count} card buttons are the only buttons on this slice."
+      },
       "design_board": {
         "label": "signature sales page",
         "emphasis": "offer and proof imagery: the outcome, the founder, results and trust, building to a checkout ask"

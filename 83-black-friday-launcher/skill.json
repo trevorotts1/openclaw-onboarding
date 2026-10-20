@@ -1,7 +1,7 @@
 {
   "schema": "blackceo.skill.metadata/1",
   "name": "black-friday-launcher",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "entry": "SKILL.md",
   "priority": "HIGH",
   "status": "enabled-in-999",

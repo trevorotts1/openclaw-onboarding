@@ -1,0 +1,28 @@
+{
+  "schema": "client-intake-palette-defaults/v1",
+  "note": "None of these palettes belongs to any client. The safe default is neutral on purpose and is always reported at delivery as TO CONFIRM. Never copy another client's palette here.",
+  "safe_default": {
+    "name": "Neutral slate",
+    "roles": {"primary": "#3D5A6C", "secondary": "#8FA3AF", "accent": ["#E07A5F"], "background": ["#FFFFFF"], "text": "#1F2933"},
+    "reason": "A calm, readable slate with a soft coral highlight. It suits almost any business until your own colors replace it."
+  },
+  "suggested": [
+    {"name": "Calm trust", "mood": ["calm", "trust", "trusted", "professional", "health", "wellness", "finance", "clean", "classic"],
+     "roles": {"primary": "#1F6F8B", "secondary": "#99C2D0", "accent": ["#E76F51"], "background": ["#FFFFFF"], "text": "#1B2A33"},
+     "reason": "Blue-green feels steady and trustworthy. Health, finance and coaching brands use it to say 'you are in safe hands'.",
+     "example": "Like a wellness clinic or a financial coach."},
+    {"name": "Warm and welcoming", "mood": ["warm", "friendly", "welcoming", "cozy", "community", "soft", "family", "playful"],
+     "roles": {"primary": "#B5532E", "secondary": "#F3E3D3", "accent": ["#3E7C6B"], "background": ["#FFF9F3"], "text": "#2B2220"},
+     "reason": "Earthy terracotta feels human and inviting. It tells people you are approachable and on their side.",
+     "example": "Like a boutique studio, a family business or a community group."},
+    {"name": "Bold and modern", "mood": ["bold", "modern", "fresh", "creative", "energy", "premium", "tech", "fun"],
+     "roles": {"primary": "#5B3FD1", "secondary": "#E9E4FA", "accent": ["#FF6B6B"], "background": ["#FFFFFF"], "text": "#14142B"},
+     "reason": "A strong violet with a bright highlight stands out on a crowded feed and feels current.",
+     "example": "Like a creative agency or an online course brand."}
+  ],
+  "font_pairs": [
+    {"name": "Classic editorial", "display": "Playfair Display", "body": "Source Sans 3", "accent": "Source Sans 3", "reason": "Elegant headlines with very readable text."},
+    {"name": "Friendly modern", "display": "Poppins", "body": "Nunito Sans", "accent": "Poppins", "reason": "Round, welcoming letters that stay clear on a phone."},
+    {"name": "Clean confident", "display": "Montserrat", "body": "Lora", "accent": "Montserrat", "reason": "Strong headlines with a warm reading font."}
+  ]
+}

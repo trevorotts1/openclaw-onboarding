@@ -1,0 +1,26 @@
+{
+  "notes": "Sample questions in the canonical shape LANE-INTAKE's bank uses. Wording here proves the renderer only; the bank owns the real text.",
+  "questions": [
+    {"id": "brand_primary_color", "group": "Brand colours", "header": "Main colour",
+     "text": "Which of your brand colours is the MAIN one? It is the colour people should remember you by.",
+     "why": "It goes on your buttons and headlines, so every page looks like you.",
+     "example": "Navy blue, #1F3A5F",
+     "choices": [{"label": "Navy blue", "value": "#1F3A5F", "description": "from your logo"},
+                 {"label": "Gold", "value": "#C9A227", "description": "from your logo"}],
+     "safe_default": "#2B2B2B"},
+    {"id": "brand_fonts", "group": "Brand colours", "header": "Fonts",
+     "text": "Do you have brand fonts you want on your pages?",
+     "why": "Fonts are a big part of how a page feels.",
+     "choices": ["Yes, I will tell you", "Use clean, modern fonts"],
+     "safe_default": "clean-modern"},
+    {"id": "offer_price", "group": "Offer", "header": "Price",
+     "text": "What is the price of your main offer?",
+     "why": "Buyers see this number, so it has to come from you.",
+     "never_default": true},
+    {"id": "design_style", "group": "Look and feel", "header": "Design style",
+     "text": "Which look do you like best?",
+     "why": "It sets the mood of every page.",
+     "choices": ["A: Bold and dark", "B: Clean and light", "C: Warm and friendly", "D: extra (should be cut)"],
+     "safe_default": "B"}
+  ]
+}

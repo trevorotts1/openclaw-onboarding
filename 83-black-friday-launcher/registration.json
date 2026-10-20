@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "status": "enabled-in-999"
   },
   "number_assignment": {

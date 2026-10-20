@@ -82,6 +82,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compile_launch_route as clr  # noqa: E402
+import page_set as pset  # noqa: E402
+import page_swarm as swarm  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
 
 EXIT_OK = 0
@@ -370,10 +372,21 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
              allowed_write_target: str = "local_only",
              scoped_approvals: Optional[List[Dict[str, Any]]] = None,
              out_dir: Optional[Path] = None,
-             executor: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+             executor: Optional[Callable[..., Dict[str, Any]]] = None,
+             parallel: int = 1,
+             image_inputs: Optional[Dict[str, Any]] = None,
+             landing_pages: Optional[List[str]] = None,
+             extra_pages: Tuple[str, ...] = (),
+             limiter: Any = None,
              ) -> Dict[str, Any]:
     """Full dispatch. Returns the manifest dict; writes requests (+ results
-    when an executor ran) under out_dir when given."""
+    when an executor ran) under out_dir when given.
+
+    parallel: pages built side by side (1 = the sequential fallback, same
+    results). Every page, the landing page too, runs side by side. image_inputs: the shared
+    image inputs (page_set.load_image_inputs); with the paid provider the
+    spend cap and the KIE limiter apply (page_swarm). extra_pages: opted-in
+    design pages that ride on a route request (today downsell_2)."""
     fails = vlp.validate_launch(launch)
     if fails:
         raise DispatchError("launch record fails validation: " + "; ".join(fails))
@@ -411,6 +424,8 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
             "state": d["state"],
             "emitted_schema_version": r["schema_version"],
             "evidence_ref": d["evidence_ref"]}
+    page_set = pset.build_page_set(launch, landing_pages=landing_pages,
+                                   extra_pages=extra_pages)
     manifest: Dict[str, Any] = {
         "schema": "signature-launch-dispatch/v1",
         "launch_id": launch["launch_id"], "revision": launch["revision"],
@@ -423,6 +438,11 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
                       "page_role": r["page_role"],
                       "assigned_skill": r["assigned_skill"],
                       "input_hash": r["input_hash"]} for r in requests],
+        "page_set": {"shape": page_set["shape"], "to_confirm": page_set["to_confirm"],
+                     "pages": [{k: p[k] for k in ("page_key", "role", "page_kind", "role_instance",
+                                                  "label", "skill", "design_only")}
+                               for p in page_set["pages"]],
+                     "lane_plan": pset.lane_plan(page_set)},
         "results": [],
     }
     if out_dir:
@@ -432,19 +452,40 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
             (out_dir / f"request-{r['page_role']}.json").write_text(
                 json.dumps(r, indent=2) + "\n", encoding="utf-8")
     if executor:
-        for r in requests:
-            result = executor(r)
-            manifest["results"].append(result)
+        run = swarm.execute(requests, executor, page_set=page_set,
+                            out_dir=out_dir, launch_id=launch["launch_id"],
+                            workers=parallel, image_inputs=image_inputs,
+                            limiter=limiter)
+        manifest["swarm"] = run["swarm"]
+        failed = [o for o in run["outcomes"] if o["status"] != "ok"]
+        for o in run["outcomes"]:
+            if o["status"] != "ok":
+                continue
+            extra = o["lane"] not in PAGE_ROLES
+            if extra:
+                manifest.setdefault("page_results", {})[o["lane"]] = o["result"]
+            else:
+                manifest["results"].append(o["result"])
             if out_dir:
-                (out_dir / f"result-{r['page_role']}.json").write_text(
-                    json.dumps(result, indent=2) + "\n", encoding="utf-8")
+                name = (f"page-result-{o['lane']}.json" if extra
+                        else f"result-{o['lane']}.json")
+                (out_dir / name).write_text(
+                    json.dumps(o["result"], indent=2) + "\n", encoding="utf-8")
+        if failed:
+            if out_dir:  # the pages that did finish are kept and named
+                (out_dir / "dispatch-manifest.json").write_text(
+                    json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            raise DispatchError(
+                "page(s) did not complete (every other page was still built): "
+                + "; ".join(f"{o['lane']} {o['status']}: {o['error']}" for o in failed))
     if out_dir:
         (out_dir / "dispatch-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
 
-def executor_from_config(config: Dict[str, Any], work_dir: Path):
+def executor_from_config(config: Dict[str, Any], work_dir: Path,
+                         landing_pages: Optional[List[str]] = None):
     """Build an executor from a consumer-adapter config (S49-08 seam).
 
     Config shape: {"adapters": {"<page_role>": {"command": ["prog", "{request}",
@@ -454,28 +495,57 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path):
     validation (schema shape + exact request echo) from
     collect_launch_receipts. A role with no configured adapter, a failing
     command, or an invalid result is a DispatchError — dispatch never
-    papers over a consumer that did not really answer."""
+    papers over a consumer that did not really answer.
+
+    landing_pages: the client's landing page set (page_set.py), filled into
+    the {landing_pages} placeholder. A landing adapter that runs
+    landing_bridge.py MUST pass it (--landing-pages {landing_pages}), so the
+    bridge refuses a config that builds fewer or other pages than planned;
+    a command that leaves it out is refused here, before anything runs."""
     import subprocess
     import collect_launch_receipts as receipts
 
     adapters = config.get("adapters") or {}
-    unknown = sorted(str(k) for k in adapters if k not in PAGE_ROLES)
+    # An adapter key is a page_role, or an extra design page that rides on a
+    # role's request (page_types.json role_instance, today downsell_2).
+    allowed = set(PAGE_ROLES) | {k for k, p in pset.page_types()["pages"].items()
+                                 if p["role_instance"]}
+    unknown = sorted(str(k) for k in adapters if k not in allowed)
     if unknown:
         raise DispatchError(
             "adapter config names page_role(s) outside the page-role map "
             f"({PAGE_ROLE_MAP_FILE.name} page_role_map.page_roles): {unknown}")
 
-    def run(req: Dict[str, Any]) -> Dict[str, Any]:
+    landing = (adapters.get("landing") or {}).get("command") or []
+    if any(Path(str(part)).name == "landing_bridge.py" for part in landing) \
+            and not any("{landing_pages}" in str(part) for part in landing):
+        raise DispatchError(
+            "landing adapter runs landing_bridge.py without --landing-pages {landing_pages}: "
+            "the bridge could not check that it builds the pages the client planned")
+
+    def run(req: Dict[str, Any], lane: Optional[str] = None) -> Dict[str, Any]:
         role = req["page_role"]
-        spec = adapters.get(role)
+        key = lane or role
+        spec = adapters.get(key) or (adapters.get(role) if lane else None)
         if not spec or not spec.get("command"):
             raise DispatchError(f"no consumer adapter configured for role "
-                                f"{role} — dispatch cannot execute it")
-        req_path = work_dir / f"request-{role}.json"
-        res_path = work_dir / f"result-{role}.json"
+                                f"{key} — dispatch cannot execute it")
+        # An extra page rides on its parent's request bytes; its files are
+        # named page-request-/page-result- so the route's request-*/result-*
+        # collections never see a second answer for one request.
+        req_path = work_dir / (f"page-request-{key}.json" if lane
+                               else f"request-{role}.json")
+        res_path = work_dir / (f"page-result-{key}.json" if lane
+                               else f"result-{role}.json")
+        if lane:
+            req_path.write_text(json.dumps(req, indent=2) + "\n", encoding="utf-8")
         cmd = [part.replace("{request}", str(req_path))
                     .replace("{result}", str(res_path))
                     .replace("{work_dir}", str(work_dir))
+                    .replace("{image_inputs}", str(work_dir / swarm.INPUTS_NAME))
+                    .replace("{landing_pages}", ",".join(landing_pages or ()))
+                    .replace("{page_key}", key)
+                    .replace("{role_instance}", lane or "")
                for part in spec["command"]]
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=float(spec.get("timeout_s", 600)))
@@ -496,7 +566,7 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path):
 
 
 def _simulated_executor(author: str):
-    def run(req: Dict[str, Any]) -> Dict[str, Any]:
+    def run(req: Dict[str, Any], lane: Optional[str] = None) -> Dict[str, Any]:
         return {"schema_version": "1.0", "tenant_id": req["tenant_id"],
                 "location_id": req["location_id"], "launch_id": req["launch_id"],
                 "revision": req["revision"], "request_id": req["request_id"],
@@ -744,6 +814,18 @@ def main(argv: List[str]) -> int:
                          "through the owning skills' entrypoints)")
     ap.add_argument("--simulate-executor", action="store_true",
                     help="TEST ONLY: fabricate L0 authored results")
+    ap.add_argument("--parallel", default="auto",
+                    help="pages built side by side: a number, or auto (the runner "
+                         "profile's worker count: Mac 6, Hostinger 8, Contabo 4). "
+                         "1 builds one page at a time")
+    ap.add_argument("--image-inputs",
+                    help="shared image inputs JSON (design style, brand file, owner, "
+                         "image cap, provider); adapters read it as {image_inputs}")
+    ap.add_argument("--landing-pages",
+                    help="which landing pages the client chose: landing, sales or "
+                         "landing,sales (default: the recommended set, flagged to confirm)")
+    ap.add_argument("--extra-page", action="append", default=[],
+                    help="an extra design page to add (downsell_2)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
@@ -759,6 +841,12 @@ def main(argv: List[str]) -> int:
         if cfg.get("mode") not in (None, "signature_launch"):
             print("FAIL: launch-request.json mode is not signature_launch")
             return EXIT_VIOLATION
+        args.image_inputs = args.image_inputs or cfg.get("image_inputs")
+        args.landing_pages = args.landing_pages or (
+            ",".join(cfg["landing_pages"]) if cfg.get("landing_pages") else None)
+        args.extra_page = args.extra_page or list(cfg.get("extra_pages") or [])
+        if args.parallel == "auto" and cfg.get("parallel") is not None:
+            args.parallel = str(cfg["parallel"])
         args.client = args.client or cfg.get("client_identity_ref")
         args.worker = args.worker or cfg.get("worker_identity_ref")
         args.copy_profile = cfg.get("copy_profile", args.copy_profile)
@@ -778,24 +866,40 @@ def main(argv: List[str]) -> int:
                 print("FAIL: --adapters requires --out (or --run-dir) as the "
                       "work dir for request/result files")
                 return EXIT_FAILCLOSED
-            executor = executor_from_config(_load(args.adapters),
-                                            Path(args.out))
+            executor = executor_from_config(
+                _load(args.adapters), Path(args.out),
+                args.landing_pages.split(",") if args.landing_pages
+                else pset.recommended_landing_pages(launch))
         elif args.simulate_executor:
             executor = _simulated_executor("dispatch-cli-simulated")
+        inputs = pset.load_image_inputs(args.image_inputs) \
+            if args.image_inputs else None
+        workers = swarm.default_workers() if args.parallel == "auto" \
+            else int(args.parallel)
+        if workers < 1:
+            raise DispatchError("--parallel must be auto or a number >= 1")
+        limiter = swarm.kie_limiter() if inputs and \
+            inputs["image_provider"] == "kie" else None
         m = dispatch(launch, approval, client_identity_ref=args.client,
                      worker_identity_ref=args.worker,
                      copy_profile=args.copy_profile,
                      allowed_write_target=args.write_target,
                      scoped_approvals=scoped,
                      out_dir=Path(args.out) if args.out else None,
-                     executor=executor)
-    except (DispatchError, vlp.ApprovalError, clr.RouteError, OSError,
-            ValueError) as exc:
+                     executor=executor, parallel=workers,
+                     image_inputs=inputs,
+                     landing_pages=args.landing_pages.split(",")
+                     if args.landing_pages else None,
+                     extra_pages=tuple(args.extra_page), limiter=limiter)
+    except (DispatchError, pset.PageSetError, swarm.SwarmError,
+            vlp.ApprovalError, clr.RouteError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
         return EXIT_VIOLATION
     print(json.dumps({"execution": m["execution"],
                       "requests": len(m["requests"]),
-                      "results": len(m["results"])}, indent=2))
+                      "results": len(m["results"]),
+                      "pages": [p["page_key"] for p in m["page_set"]["pages"]],
+                      "to_confirm": m["page_set"]["to_confirm"]}, indent=2))
     return EXIT_OK
 
 

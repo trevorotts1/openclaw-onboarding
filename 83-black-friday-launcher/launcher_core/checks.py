@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from . import page_designs
 from .constants import (PLACEHOLDER_TOKENS, ROUTE_ROLES, SCHEMA_VERSION,
                         repo_root_for)
 
@@ -157,8 +158,13 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
 
 
 def check_package(manifest_path: Path, root: Path,
-                  skill_root: Path | None = None) -> List[str]:
-    """All package-completeness violations. Empty list means the package holds."""
+                  skill_root: Path | None = None,
+                  require_designs: bool | None = None) -> List[str]:
+    """All package-completeness violations. Empty list means the package holds.
+
+    AF-LAUNCH-PAGE-DESIGNS runs when the package was assembled as a designs-required delivery
+    (manifest.designs_required) or when require_designs is True; require_designs=False skips it.
+    """
     manifest_path = Path(manifest_path)
     root = Path(root).resolve()
     skill_root = Path(skill_root).resolve() if skill_root else Path(__file__).resolve().parent.parent
@@ -176,15 +182,17 @@ def check_package(manifest_path: Path, root: Path,
 
     # Required pieces: every enabled route role, exactly once.
     pieces = manifest.get("pieces") or []
-    roles = [p.get("role") for p in pieces]
+    # A page is its role plus its instance: downsell_1 and downsell_2 are two pages of one role.
+    roles = [p.get("role") for p in pieces if not p.get("role_instance")]
     for role in ROUTE_ROLES:
         if role in ("landing", "checkout", "thank_you"):
             if roles.count(role) != 1:
                 fails.append(f"AF-LAUNCH-PKG-MISSING-ROLE: {role} appears {roles.count(role)} times")
-    for role in roles:
-        if role not in ROUTE_ROLES:
-            fails.append(f"AF-LAUNCH-PKG-MANIFEST: unknown piece role {role!r}")
-    if len(set(roles)) != len(roles):
+    for piece in pieces:
+        if piece.get("role") not in ROUTE_ROLES:
+            fails.append(f"AF-LAUNCH-PKG-MANIFEST: unknown piece role {piece.get('role')!r}")
+    slots = [(p.get("role"), p.get("role_instance")) for p in pieces]
+    if len(set(slots)) != len(slots):
         fails.append("AF-LAUNCH-PKG-MANIFEST: a route role is delivered more than once")
 
     for ref_name in ("intake", "route_graph"):
@@ -228,6 +236,11 @@ def check_package(manifest_path: Path, root: Path,
             actual = _sha256_file(target)
             if actual != digest:
                 fails.append(f"AF-LAUNCH-PKG-HASH: {role} artifact {path!r} sha256 {actual} != {digest}")
+
+    # Every page ships its full set of labeled desktop and mobile wireframes and mockups.
+    needed = manifest.get("designs_required") is True if require_designs is None else require_designs
+    if needed:
+        fails.extend(page_designs.design_violations(manifest, root))
 
     # Decided-requirement records: every commercial fact is supplied or unknown,
     # the entitlement is attested, Council advice never blocks, checkout is native.

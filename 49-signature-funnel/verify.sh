@@ -79,7 +79,7 @@ run "signature-funnel-entry.sh --self-test" bash "$SKILL_DIR/signature-funnel-en
 
 # 4) JSON sanity on the shipped contracts + intake spec conformance.
 run "manifest/structure JSON parse" "$PY" -c "import json,sys; \
-[json.load(open('$SKILL_DIR/'+f)) for f in ('FUNNEL-MANIFEST.json','structure/funnel_structure.json','intake/sf-intake-questions.json')]"
+[json.load(open('$SKILL_DIR/'+f)) for f in ('FUNNEL-MANIFEST.json','structure/funnel_structure.json','structure/page_types.json','intake/sf-intake-questions.json')]"
 run "intake spec conforms to prove_sf_intake" "$PY" "$SCRIPTS/prove_sf_intake.py" "$SKILL_DIR/intake/sf-intake-questions.json"
 
 # 4b) FIX-BOARD-DEPT-01 — AST guard: the Command Center board department slug is a
@@ -87,6 +87,13 @@ run "intake spec conforms to prove_sf_intake" "$PY" "$SCRIPTS/prove_sf_intake.py
 #     never the non-existent "funnels" (nor the sibling Skill 53 "books") defect.
 run "board department slug is canonical (test_sf_department.py)" \
     "$PY" "$SCRIPTS/test_sf_department.py"
+
+# 4c) LANE-49 — every page type in every funnel shape with its designs, the shared image inputs,
+#     and the parallel page swarm (every lane side by side, KIE limiter, spend cap). Free: stub provider and
+#     fake pages only, no paid call.
+run "page set, page types, image inputs (test_page_set.py)" "$PY" "$SCRIPTS/test_page_set.py"
+run "parallel page swarm (test_page_swarm.py)" "$PY" "$SCRIPTS/test_page_swarm.py"
+run "wrappers take the shared image inputs (test_page_image_inputs.py)" "$PY" "$SCRIPTS/test_page_image_inputs.py"
 
 # ---------------------------------------------------------------------------
 # 5) GOLDEN REPRODUCE — the committed golden funnel clears every gate + certifies.
