@@ -613,13 +613,14 @@ def _fit_rap_style_words(D, spoken_words, sung_words, rap_words, style_id):
     f = _WF.style_sung_target_pct(style_id, D) / 100.0
     if not 0.0 < f < 1.0:
         return spoken_words, sung_words, True
+    orig_spoken, orig_sung = spoken_words, sung_words
     rap_t = rap_words / float(r["rap"])
     # Spoken yields first: it is the block the style's own rules let the rap
     # verses crowd out, and its words are already capped by the opener/CTA.
     spoken_t = spoken_words / float(r["spoken"])
     room = vocal_s - rap_t
-    if room < 0:
-        return spoken_words, sung_words, False
+    if room < 0:                                 # nothing left for voice
+        return orig_spoken, orig_sung, False
     # share = sung_t / (sung_t + spoken_t + rap_t) >= f
     #   => sung_t >= f/(1-f) * (spoken_t + rap_t)
     k = f / (1.0 - f)
@@ -629,7 +630,10 @@ def _fit_rap_style_words(D, spoken_words, sung_words, rap_words, style_id):
         spoken_words = int(math.floor(spoken_t * r["spoken"] + 1e-9))
         need_sung_t = k * (spoken_words / float(r["spoken"]) + rap_t)
     if need_sung_t > room + 1e-9:
-        return spoken_words, sung_words, False   # card too short for this style
+        # Card too short for this style. Leave the v2.9.71 allocation alone:
+        # the plan is refused up front and a zeroed opener would change what
+        # every other gate sees for no reason.
+        return orig_spoken, orig_sung, False
     max_sung_t = room - spoken_words / float(r["spoken"])
     sung_words = min(sung_words,
                      int(math.floor(max_sung_t * r["sung"] + 1e-9)))
@@ -993,7 +997,10 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True,
         # with the length that does work, instead of letting stage 3 loop.
         spoken_words, sung_words, fit = _fit_rap_style_words(
             D, spoken_words, sung_words, rap_words, style_id)
-        opener = min(opener, spoken_words)
+        # The opener cap is NOT re-clamped to the spoken count here: a rap
+        # style's reservation can leave zero spoken words while the plan still
+        # reports the opener the sheet is allowed (v2.9.71 behaviour, and what
+        # the shipped sheets rely on).
         planned_share = round((spoken_words / SPOKEN_WPS + rap_s) / D * 100.0, 1)
         if not fit:
             need = infeasible_length(style_id, spoken_share_pct)
