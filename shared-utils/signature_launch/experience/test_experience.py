@@ -79,6 +79,9 @@ class Questions(unittest.TestCase):
         self.assertEqual(rq.parse_reply(q, "3")["kind"], "help")
         self.assertEqual(rq.parse_reply(q, "Help"), {"kind": "help", "value": None})
         self.assertEqual(rq.parse_reply(q, "I don't know.")["kind"], "help")
+        for r in ("I\u2019m not sure", "I don\u2019t know", "not sure?", "Not sure, help", "No clue", "I have no idea"):
+            self.assertEqual(rq.parse_reply(q, r)["kind"], "help", r)
+            self.assertEqual(rq.parse_reply(QS[2], r)["kind"], "help", r)
         self.assertEqual(rq.parse_reply(q, "default"), {"kind": "default", "value": "#2B2B2B"})
         self.assertEqual(rq.parse_reply(q, "teal, like the ocean")["kind"], "free_text")
         self.assertEqual(rq.parse_reply(q, "9")["kind"], "free_text")

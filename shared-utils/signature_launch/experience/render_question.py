@@ -29,6 +29,8 @@ MAX_HEADER = 12
 DONE_STATUSES = ("provided", "default_to_confirm")  # unknown/suggested get asked again
 _HELP_WORDS = {"help", "?", "not sure", "im not sure", "i'm not sure", "idk", "i dont know",
                "i don't know", "dont know", "don't know", "no idea", "help me"}
+_HELP_PHRASES = re.compile(r"\b(?:not sure|no idea|no clue|don'?t know|help)\b")
+_MAX_HELP_WORDS = 6  # longer replies are real answers that merely mention a phrase
 _DEFAULT_WORDS = {"default", "use default", "skip", "you choose", "you pick"}
 
 
@@ -118,7 +120,7 @@ def parse_reply(q, reply):
     """-> {kind: choice|free_text|help|default|repeat, value}. Never a dead end."""
     n = normalize(q)
     t = str(reply or "").strip()
-    low = re.sub(r"[.!]+$", "", t.lower())
+    low = re.sub(r"[.!?]+$", "", t.lower().replace("\u2019", "'").replace("\u2018", "'"))
     if not t:
         return {"kind": "repeat", "value": None}
     if low in _HELP_WORDS:
@@ -135,7 +137,7 @@ def parse_reply(q, reply):
     for c in n["choices"]:
         if low == c["label"].lower():
             return {"kind": "choice", "value": c["value"]}
-    if low == HELP_LABEL.lower():
+    if low == HELP_LABEL.lower() or (len(low.split()) <= _MAX_HELP_WORDS and _HELP_PHRASES.search(low)):
         return {"kind": "help", "value": None}
     return {"kind": "free_text", "value": t}
 
