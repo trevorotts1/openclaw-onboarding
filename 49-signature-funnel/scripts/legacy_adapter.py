@@ -162,7 +162,9 @@ def adapt_legacy_brief(brief: Dict[str, Any], *, tenant_id: str,
                          "reason": "the launch profile has exactly ONE downsell; "
                                    "a second downsell needs a scope decision — "
                                    "it is not folded into D1 and not dropped "
-                                   "silently"})
+                                   "silently; the 7-step Signature Funnel "
+                                   "(downsell-2) gets its wireframes and "
+                                   "mockups from legacy_downsell_images.py"})
     for q in ("q3_pains", "q4_people", "q6_founder_story", "q7_brand_colors",
               "q8_representation", "q9_voice", "q15_reference_images",
               "q16_truth_gate"):

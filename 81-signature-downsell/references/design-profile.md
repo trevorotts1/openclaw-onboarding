@@ -4,7 +4,7 @@ Status: build candidate. Governing sources: packet 11 section 8; packet 16 secti
 
 ## Production sequence (shared workflow, D1 profile)
 
-Approved copy -> section/action plan -> desktop wireframe -> mobile wireframe (intentional reflow, never a shrunk desktop) -> visual mockup -> per-asset prompts approved -> generation through the selected client-owned provider -> visual QC -> final layout -> responsive HTML -> S06 native install -> native action and route tests.
+Approved copy -> section/action plan -> desktop wireframe -> mobile wireframe (intentional reflow, never a shrunk desktop) -> visual mockup -> image inventory and per-asset prompts approved -> generation through the selected client-owned provider and visual QC -> image map -> Design Board (one board for the downsell role, client approval recorded) -> final mockups -> responsive HTML -> S06 native install -> native action and route tests. This is the order of `71-blackceo-signature-page/references/stage-contract.json`; Skill 71's shared image service runs the wireframe, mockup and final-mockup stages for this page (`49-signature-funnel/scripts/downsell_wrapper.py` calls it once), and the band-by-band layout is in `references/wireframe-layout.md`.
 
 ## D1-specific design rules
 

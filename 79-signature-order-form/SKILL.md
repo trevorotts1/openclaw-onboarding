@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
 description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
-version: 0.1.5
+version: 0.1.6
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale
@@ -68,6 +68,16 @@ offered on that original checkout.
   event handoff, the cross-field checkout validator, the native-binding
   capability matrix, and the purchase-attempt recovery model.
 - `tests/`: the deterministic fixture suite for the models and components.
+
+## Design stages (wireframes and mockups)
+
+This skill builds no page images itself. The order form page's desktop and mobile wireframes
+and visual mockups come from Skill 71's shared image service (`71-blackceo-signature-page/
+scripts/shared_page_service.py`) on the five-section structure in
+`71-blackceo-signature-page/references/copy-specs/roles/checkout.json`, run by Skill 49's
+`49-signature-funnel/scripts/checkout_wrapper.py` (the design-only dispatch adapter). The section
+order is the reading order in `references/components/QC-STATES.md`. The native form is never
+drawn as card fields and is never built or bound by those stages: it stays Skill 06's.
 
 ## Proof levels
 

@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.15
+version: v2.1.16
 ---
 
 # Signature Funnel (Skill 49)
@@ -31,6 +31,7 @@ REST call.
   `prove_sf_cert.py` — the five fail-closed deterministic provers (stdlib only; exit 0/2/3).
 - `scripts/kie74_receipt.py` — turns a Skill 74 result into run evidence and defines what the bypass scan allow-lists.
 - `run_signature_funnel.py` — the no-skip orchestrator state machine.
+- `scripts/legacy_downsell_images.py` — desktop wireframes, mobile wireframes and the visual mockup for EVERY downsell page of a 3/5/7-step funnel (`downsell`, and `downsell-2` in the 7-step), run from the P1 copy ledger through Skill 71's own pipeline. A full funnel gets all its pages. Launch mode has one downsell by design; its wrapper is `downsell_wrapper.py`.
 - `signature-funnel-entry.sh` — the canonical fail-closed front door.
 - `verify.sh` — the read-only self-verification gate.
 
@@ -49,7 +50,8 @@ REST call.
 | 12 | The Big Bold Heartfelt Message | 100–150 words | 6 labeled parts; part 2 starts "I used to be just like you…" |
 
 Six page profiles: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you` (+ `checkout`
-microcopy). Derived pages exclude Sections 8–11 and replace Section 12 with the renumbered Section 8
+microcopy; its wireframes and mockups come from `scripts/checkout_wrapper.py`, the design-only
+checkout adapter over Skill 71's five-section checkout role spec). Derived pages exclude Sections 8–11 and replace Section 12 with the renumbered Section 8
 ("7 Reasons To Commit To Your ____ Future" for upsells; "When Time Runs Out" for downsells).
 
 ## How it runs — THROUGH the canonical front door only
@@ -81,6 +83,10 @@ can never reach Complete. Writing your own per-run driver (a hand-rolled GHL RES
 raw Kie `createTask`, a copied KIE client script) is the ungoverned path and is refused by the entry shell's bypass-scan
 (`AF-FUN-CANONICAL-BYPASS`). A direct `python3 run_signature_funnel.py` without the front-door nonce dies
 `AF-FUN-FRONT-DOOR`.
+
+## Wireframes and mockups for the downsell pages
+
+After P1 copy passes, run `python3 scripts/legacy_downsell_images.py --ledger <RUN_DIR>/copy_ledger.json --skill71-root <71 dir> --brand-file <brand.json> --brand-owner <client> --out-dir <dir>`. It builds every downsell slug the funnel size carries (7-step: `downsell` and `downsell-2`; 5-step: `downsell`; 3-step: none), eight sections each, offline stub provider unless the owner approves `--image-provider kie --allow-paid`. It writes `downsell-images-receipt.json`. The image inventory, generation, Design Board and final mockups stay client-gated downstream of it.
 
 ## Fail-closed provers (exit 0 pass / 2 violation / 3 fail-closed)
 

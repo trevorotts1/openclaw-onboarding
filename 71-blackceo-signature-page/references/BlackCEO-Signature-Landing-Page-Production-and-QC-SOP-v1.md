@@ -78,7 +78,7 @@ Read the supplied transcript, copy, brand guide, references and existing page. S
 
 | Needed decision | Client-facing wording |
 |---|---|
-| Page type, name and subject | "What kind of page are we building, what is it called, and what is it about?" |
+| Page type, name and subject | "What kind of page are we building, what is it called, and what is it about?" Record the answer as the run's page kind with `write_intake.py --page-kind`: `sales` for a signature sales page, `opt_in` for a signature landing (opt-in) page. |
 | Intended action | "What should people do: sign up, get something free, buy, book, or something else?" |
 | Hosting | "Will we build it directly in GoHighLevel, or build it on Vercel and embed it into GoHighLevel?" |
 | Existing materials | "Send any copy, recording/transcript, brand guide, logo or page example you already have." |

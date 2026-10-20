@@ -10,6 +10,35 @@
     "long-form": {
       "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-3.png", "label": "Long-Form Desktop"},
       "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile"}
+    },
+    "product-selection": {
+      "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Order page desktop (Drive file 1 for the look)"},
+      "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Order page mobile (Drive file 4 for the look)",
+        "extra_rule": "ORDER PAGE MOBILE — the attached phone reference is the landing phone stack; draw this section as a true single-column phone stack in the same sheet language, never side-by-side rows and never a narrowed desktop."}
+    },
+    "upsell": {
+      "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Standard Desktop (sheet grammar for the upsell)"},
+      "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile (phone stack for the upsell)",
+        "extra_rule": "UPSELL MOBILE — the attached phone reference is the long-form phone stack; draw this upsell section the same way: a true single-column phone stack with the full-width CTA, its terms line and the decline link in reading order, never side-by-side text-and-image rows."}
+    }
+  },
+  "form_layouts": {
+    "note": "Per-section layout text for a non-landing form, keyed by form, platform and section tag. wireframe_spec.prompt_block appends the matching entry in place of the landing forms' standard_desktop / long_form_desktop block. Structure only: the look (brand colours, numbered section chips, type specs, labelled plates, filled buttons) comes from the shared blocks and the attached Drive reference.",
+    "product-selection": {
+      "desktop": {
+            "1": "ORDER PAGE LAYOUT, SECTION 1 (desktop) — a full-width brand-colour hero band. Inside the 1200 px column: the eyebrow position above the headline, then the headline set large in two tones (second line in the primary colour), left aligned and no wider than 800 px. No button, no price and no card on this band. Keep it short: the band is a bridge from the landing page, not a second sales page. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "2": "ORDER PAGE LAYOUT, SECTION 2 (desktop) — a light-ground band. One plain paragraph in a single centred column no wider than 720 px, set at body size with generous line spacing, and a short accent rule above it. No button, no card, no plate. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "3": "ORDER PAGE LAYOUT, SECTION 3 (desktop) — a dark-ground band holding the package choice. The packages are one radio group: draw a thin tab above the cards marked PACKAGES. Cards sit side by side in the order of the copy, equal height, three across when there are three, filled in a light brand colour with a thin primary-colour edge. Each card, top to bottom: its labelled image plate, the package name as the card heading, the who-it-suits line, the outcome line, the inclusion rows with a filled check icon each, the exclusion rows with a distinct filled cross icon, always visible and never collapsed, the exact price large with its terms beneath, and a full-width filled primary-colour button reading exactly its Choose label. A radio dot sits at each card's top-right corner; no card is pre-selected. If the copy marks one package as recommended, a badge chip sits on that card's top edge. Draw ONE card a second time at the right edge in its selected state (thick primary-colour border, shadow, filled radio dot) so the states are visible, with small state chips under the row for default, selected, focus, error, reconfirm and loading. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "4": "ORDER PAGE LAYOUT, SECTION 4 (desktop) — a light-ground band holding the comparison grid as a full table with scoped headers: the first column lists each item of the copy, one column per package in card order with the package name as its column header. Each cell shows a filled check for included, a dash or cross for not included, and the words limited or conditional with the note beside it. Rows alternate between two light brand tones; the header row is the dark brand colour with light type. No button and no image plate. Material exclusions remain readable in the table. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "5": "ORDER PAGE LAYOUT, SECTION 5 (desktop) — a dark-ground band in two columns inside the 1200 px column. Left column: the questions, each as a bordered row with its answer printed beneath it. Right column: the trust lines, each beside a small filled icon. No button, no plate, no invented badge or proof graphic. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own."
+      },
+      "mobile": {
+            "1": "ORDER PAGE LAYOUT, SECTION 1 (mobile) — a full-width brand-colour band in a single column: the eyebrow position, then the headline in two tones, left aligned, filling the 342 px content column. No button, no price, no card. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "2": "ORDER PAGE LAYOUT, SECTION 2 (mobile) — a light-ground band in a single column: a short accent rule, then the one plain paragraph at body size across the full content column. No button, no card, no plate. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "3": "ORDER PAGE LAYOUT, SECTION 3 (mobile) — a dark-ground band; the packages stack one per row in the order of the copy, each card full width in a light brand colour with a thin primary-colour edge, under a thin tab marked PACKAGES. Each card, top to bottom: its labelled image plate, the package name, the who-it-suits line, the outcome line, the inclusion rows with check icons, the exclusion rows with cross icons always visible, the exact price large with its terms, and a full-width filled primary-colour Choose button; a radio dot sits at the card's top-right corner and no card is pre-selected. A recommended badge chip, when the copy marks one, sits on that card's top edge. Show the states with small chips under the stack: default, selected, focus, error, reconfirm, loading. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "4": "ORDER PAGE LAYOUT, SECTION 4 (mobile) — a light-ground band: the comparison grid sits behind a full-width disclosure bar carrying only a chevron, drawn closed above the same table drawn open beneath it so the content is specified. The table keeps one column per package at phone width with the first column as the item list; material exclusions are repeated outside the disclosure, always visible. No button, no plate. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own.",
+            "5": "ORDER PAGE LAYOUT, SECTION 5 (mobile) — a dark-ground band in a single column: each question as a bordered row with its answer beneath, then the trust lines each beside a small filled icon. No button, no plate, no invented badge. The attached reference is a landing-page sheet: take its chip, name tab, type-spec, plate and filled-button grammar only; the structure below is this order page's own."
+      }
     }
   },
   "reference_base_url": "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/71-blackceo-signature-page/assets/visual-standards/",
@@ -37,9 +66,67 @@
     "desktop-wireframe": {"Eyebrow": "14-18 px", "H1": "56-72 px", "Subhead": "22-32 px", "H2": "48-64 px", "Body": "18-20 px", "CTA": "18-20 px", "CTA microcopy": "12-14 px"},
     "mobile-tablet": {"Eyebrow": "12-14 px", "H1": "36-44 px", "Subhead": "20-24 px", "H2": "34-48 px", "Body": "18-20 px", "CTA": "18-20 px", "CTA microcopy": "16-18 px"}
   },
+  "page_type_blocks": {
+    "note": "Per page type (the form key), extra build-spec lines. `all` applies to every slice of that form; a section tag key adds to that section only. {decline} is filled from the section (the verbatim decline link); the amount-and-terms line and the order-confirmed lines are part of the section's verbatim copy and are pointed at, never quoted twice.",
+    "upsell": {
+      "all": "UPSELL CTA STACK — the CTA is followed directly by the exact amount-and-terms line (the last line of the verbatim copy), printed exactly as given and never separated from the button, and under that a plain-text link, no button shape, reading exactly \"{decline}\" (it charges nothing). Every section carries this stack. The same one-click action sits behind every CTA.",
+      "1": "ORDER-CONFIRMED STRIP — a thin strip across the top of this band carrying the order-confirmed line or lines of the verbatim copy (the lines just before the terms line), printed exactly as given. The offer is named in the headline of this band.",
+      "6": "WHO BAND — a persona list beside the image plate, each persona a row with a check mark, and the filled CTA beneath it (an upsell Who band has a CTA).",
+      "7": "WHAT BAND — the list of extra inclusions on the left as check rows, and on the right a price-and-terms panel carrying the exact terms line and the filled CTA.",
+      "8": "REASONS BAND — seven numbered reason chips, primary-colour circles reading 1, 2, 3, 4, 5, 6, 7 once each in that order, each beside its own reason text from the copy; then the final CTA, terms line and decline link."
+    }
+  },
+  "page_profiles_note": "A page role other than landing draws its own band structure (references/page-structures.json). The profile replaces the landing intro, the landing band-geometry lines and the landing step and founder-letter lines; every other block of this file (style reference grammar, brand colour, chip and name tab, type specs, labelled plates, filled CTA, contiguous bands, widths strip, behaviour note, mobile stack, do-not-copy list) applies unchanged. Role-specific lines are per section tag and per platform.",
+  "page_profiles": {
+    "downsell_1": {
+      "page_label": "Downsell page",
+      "sheet_form": "standard",
+      "intro": [
+        "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for a {page_label}, the one alternative offer shown after the visitor declined the first upsell: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
+        "FORM: {page_label}, {platform} page, {width}px wide, eight numbered sections in all. This slice is section {tag}, {name}, number {position} of {total}. Draw only this section; do not draw its neighbours."
+      ],
+      "page_rules": "DOWNSELL PAGE RULES — an eight-band page, one band per numbered section, never merged. The first screen tells the visitor their original order is confirmed and safe. Every band carries the one primary purchase button and, beside it, the decline button. Money terms sit at body size next to the button, never in footer-size type. The style reference supplies the sheet language only; its landing-page band order does not apply to this page.",
+      "decline": "DECLINE BUTTON — beside the primary button, an outlined secondary rectangle of the same height reading exactly \"{decline}\" in the brand text colour. It is a real button, never a text link, never hidden, never greyed out. Declining never charges.",
+      "money_terms": "MONEY TERMS LINE — directly beside the button, one line carrying the money terms drawn at body size, annotated by a small grey line reading exactly \"MONEY TERMS / BODY SIZE\". Never footer-size type.",
+      "sections": {
+        "1": {
+          "desktop": "SECTION 1 GEOMETRY — a thin full-width reassurance band across the top of the band in the lightest brand colour with a check mark, annotated by a grey tab reading exactly \"REASSURANCE BAND / ORIGINAL ORDER CONFIRMED\". Under it: headline, body, then the primary button with the decline button beside it, and one large image plate on the right.",
+          "mobile": "SECTION 1 GEOMETRY — the reassurance band first, full width, annotated by a grey tab reading exactly \"REASSURANCE BAND / ORIGINAL ORDER CONFIRMED\"; then headline, body, image plate, the full-width primary button and the decline button directly under it."
+        },
+        "2": {
+          "desktop": "SECTION 2 GEOMETRY — headline and body left, one portrait image plate right, icon bullet rows under the body. This geometry belongs to section 2 only; sections 3 and 4 look different.",
+          "mobile": "SECTION 2 GEOMETRY — headline, body, portrait plate, icon bullet rows, buttons. This stacking belongs to section 2 only."
+        },
+        "3": {
+          "desktop": "SECTION 3 GEOMETRY — a wide image plate with the centred statement laid over it, then a row of three icon columns under it. It is not three identical cards and not the geometry of section 2.",
+          "mobile": "SECTION 3 GEOMETRY — wide image plate with the statement laid over it, then the three icon items stacked; not the stacking of section 2."
+        },
+        "4": {
+          "desktop": "SECTION 4 GEOMETRY — a full-width dark band: a large pull statement and the body in one narrow column on a dark card that overlaps the edge of a square image plate on the right. It is not the geometry of sections 2 or 3.",
+          "mobile": "SECTION 4 GEOMETRY — dark ground, large pull statement and body on a card overlapping a square plate; not the stacking of sections 2 or 3."
+        },
+        "5": {
+          "desktop": "SECTION 5 GEOMETRY — image plate left, the reason as a short statement with one supporting paragraph right.",
+          "mobile": "SECTION 5 GEOMETRY — statement, supporting paragraph, then the image plate."
+        },
+        "6": {
+          "desktop": "SECTION 6 GEOMETRY — a short list of fit statements on a light ground beside a circular portrait plate; the tone is invitation, never judgement.",
+          "mobile": "SECTION 6 GEOMETRY — the fit statements as a short list, then the circular portrait plate."
+        },
+        "7": {
+          "desktop": "SECTION 7 GEOMETRY — two equal columns side by side, headed INCLUDED and NOT INCLUDED, the same type size, the same row height and the same visual weight, so the limits are shown as honestly as the inclusions. The money terms line sits beside the button under them.",
+          "mobile": "SECTION 7 GEOMETRY — the INCLUDED list first, then the NOT INCLUDED list directly under it in the same type size and row height, then the money terms line and the buttons."
+        },
+        "8": {
+          "desktop": "SECTION 8 GEOMETRY — the heading WHEN TIME RUNS OUT, then one numbered list of exactly seven rows on a dark ground, large primary-colour numeral circles reading 1, 2, 3, 4, 5, 6, 7 once each in that order, each beside its own line from the copy. It must look clearly unlike section 7's two columns: one column, dark ground, large numerals. Primary button and decline button under the list.",
+          "mobile": "SECTION 8 GEOMETRY — the heading, then one numbered column of seven rows on a dark ground, numeral circles 1 to 7 once each in order; then the full-width primary button and the decline button under it. Unlike section 7's two stacked lists."
+        }
+      }
+    }
+  },
   "blocks": {
     "intro": [
-      "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for a landing page: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
+      "WIREFRAME BUILD SPEC — draw this slice as a designed, annotated build specification for {page_kind}: a spec sheet a designer builds from, with structure, hierarchy, type sizes and image rules printed on it. It is not a website screenshot, not a line drawing and not a finished page.",
       "FORM: {form_label}, {platform} page, {width}px wide. This slice is section {tag}, {name}, number {position} of {total}. Draw only this section; do not draw its neighbours."
     ],
     "style_reference": "STYLE REFERENCE — the first attached image shows the sheet language for this form: section chips with name tabs, printed type specs, labelled image plates, filled CTA chips and contiguous bands. Copy that grammar only. Never copy its colours, its words, its numbers, its title bar text or any of its mistakes. Where it differs from this prompt, this prompt wins.",
@@ -50,6 +137,8 @@
     "plates_some": "3. IMAGE PLATES — {plates}. Each plate is a neutral-grey placeholder drawn at its true ratio with a white centred label reading IMAGE, the ratio and the short art direction. A plate is never a finished photograph and never a recognisable face. A thin primary-colour edge bar runs down one edge of each plate. Ratio labels read only one of: {ratio_list}. Never 3:9, never an unreduced ratio, never an invented one.",
     "plates_none": "3. IMAGE PLATES — this section has no image slot. Draw no plate; the band is typography only.",
     "cta_some": "4. CTA — {cta_shape} reading exactly \"{cta}\" in white capitals, and under it one small grey line reading exactly \"CTA MICROCOPY / {microcopy_size}\". A secondary action, if drawn, is an outlined rectangle.{cta_strip}",
+    "cta_cards": "4. CTA — one button per package card, inside its card at the foot, in card order: {cta_shape} on each, each reading exactly one of these labels in white capitals: {labels}. No second button, no link row and no sticky bar.",
+    "cta_closing": "4. CTA — this section has no CTA of its own; its only button is the closing panel's: {cta_shape} reading exactly \"{cta}\" in white capitals, and under it one small grey line reading exactly \"CTA MICROCOPY / {microcopy_size}\". Draw no other button.",
     "cta_none": "4. CTA — this section has no CTA. Draw no button and no CTA strip.",
     "bands": "5. BANDS — the band runs edge to edge across the whole frame with no margin gap, no page card, no device frame, no navigation bar, no header links and no footer links. Grounds alternate between the light and the dark brand colours from section to section, so the stitched page reads as contiguous bands.",
     "strip_first": "6. WIDTHS HEADER STRIP — a thin dark strip across the very top of this slice reading exactly \"{page} PX PAGE / {content} PX CONTENT\". It appears on this first slice only.",
@@ -59,6 +148,7 @@
     "cta_shape_mobile": "a full-width filled primary-colour rectangular button",
     "cta_strip_long_form": " Where this is a solution band, a full-width CTA strip carries the button across the foot of the band.",
     "standard_desktop": "STANDARD DESKTOP — two- and three-column bands; the image position rotates left, centre, right across consecutive sections. Each pain section pairs a headline block (A) with a detail block of icon bullet rows (B) and one image plate. Never merge two numbered sections into one band.",
+    "upsell_desktop": "UPSELL DESKTOP — a short eight-section offer page, two- and three-column bands; the image position rotates left, centre, right across consecutive sections. Every band ends in a filled CTA, so no band is typography-only at its foot. Never merge two numbered sections into one band.",
     "long_form_desktop": "LONG-FORM DESKTOP — each pain band is answered by a lettered solution band on the opposite ground (2 then 2A, 3 then 3A, 4 then 4A) and the pair reads as one unit; a full-width CTA strip follows a solution band only where a CTA label is given. The Why section's reality, opportunity and movement beats read as one family. Never merge two numbered sections into one band.",
     "pain": "This band is a PAIN band: pain bullets on dark panels, and the matching lettered solution band follows on the opposite ground.",
     "solution": "This band is the SOLUTION band that answers the pain band before it: the opposite ground and check bullets.",

@@ -276,7 +276,11 @@ duplicated is a named defect.
   example exists.
 - No example exists for upsell, downsell, thank-you, order form/checkout or
   squeeze pages. Do not invent a precedent for them from the sales or opt-in
-  order.
+  order. The checkout page's five-section structure
+  (`references/copy-specs/roles/checkout.json`) is a PROPOSAL built from Skill
+  79's own spec, not a precedent from an example, and awaits Trevor's approval;
+  its look still comes from the client's brand colours, design style and
+  Trevor's wireframe rules.
 
 ### F. Generic-versus-Trevor discriminators
 

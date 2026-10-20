@@ -81,6 +81,9 @@ import reference_use  # noqa: E402  SPF022: reference images are structure only
 import brand_colors  # noqa: E402  SPF019: client brand colors gate
 import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
 import composition  # noqa: E402  the composition library (treatments, typed references)
+import copy_forms  # noqa: E402  the one registry of copy forms (standard, long-form, product-selection)
+import role_spec  # noqa: E402  per-page-role section structure (checkout and any later role)
+import page_role  # noqa: E402  page types with their own wireframe wording (thank-you): sections, layout, style references
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -252,6 +255,7 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import wireframe_spec  # noqa: E402  SPF016: wireframe style reference + build-spec prompt
+import page_kinds  # noqa: E402  SPF030: signature sales page vs signature landing (opt-in) page
 
 
 def style_refs(stage: str, request: dict, strict: bool = False) -> list:
@@ -413,6 +417,12 @@ def _cta_label(value) -> str:
         value = value.get("label")
     return str(value or "").strip().rstrip(".")
 
+def cta_labels(section: dict) -> list:
+    """Every button label a section carries: one `cta`, or `cta_labels` (one button per package
+    card on the product-selection page's Section 3)."""
+    many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
+    return many or ([_cta_label(section.get("cta"))] if _cta_label(section.get("cta")) else [])
+
 def _copy_source_candidates(run_dir: Path, request: dict) -> list[Path]:
     """Every place a run keeps its copy source, in authority order.
 
@@ -458,8 +468,10 @@ def copy_source_ctas(run_dir: Path, request: dict) -> dict:
         return out
     return {}
 
-def copy_contract(section: dict) -> str:
-    """The verbatim copy goes FIRST, so attention cannot drift to prose."""
+def copy_contract(section: dict, closing: str = "") -> str:
+    """The verbatim copy goes FIRST, so attention cannot drift to prose.
+    `closing` is the page kind's closing-band button label (SPF030), printed as
+    its own verbatim line when the section has no CTA of its own."""
     copy = str(section.get("copy") or "").strip()
     if not copy:
         return ""
@@ -475,6 +487,8 @@ def copy_contract(section: dict) -> str:
             f"section {label}: verbatim copy ends mid-sentence "
             f"({copy[-56:]!r}); rebuild the request with the full section copy")
     cta = _cta_label(section.get("cta")) or _cta_label(section.get("_copy_source_cta"))
+    if not cta and len(cta_labels(section)) > 1:
+        cta = "per card"
     if not cta:
         match = re.search(r"\bCTA:\s*([^\n]+)", copy)
         if match:
@@ -499,11 +513,17 @@ def copy_contract(section: dict) -> str:
     if labels:
         lines.append("LABELS — print exactly, one per line, as designed labels: " +
                      " | ".join(f'"{x}"' for x in labels))
-    if cta:
+    many = cta_labels(section)
+    if len(many) > 1:
+        lines.append("CTA LABELS — one button per package card, in card order, each printed exactly: "
+                     + " | ".join(f'"{x}"' for x in many))
+    elif cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
+    elif closing:
+        lines.append(f'CLOSING BUTTON LABEL — print exactly: "{closing}"')
     return "\n".join(lines)
 
-def negative_block(stage: str | None = None) -> str:
+def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict | None = None) -> str:
     """The skill's own defect-class negative block, applied at the wire.
 
     Stage aware: a wireframe stage prints annotations (section number and
@@ -520,11 +540,15 @@ def negative_block(stage: str | None = None) -> str:
                 "(section number and name, type specs, slot labels with pixel size, "
                 "ratio and treatment, behavior notes); no placeholder tokens, no "
                 "agent notes, no lorem, no bracketed markers, no watermarks.")
+    if page_spec:  # a page type with its own steps rule (the thank-you page: four to six steps)
+        step_rule = ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
+                     "once each, with one step label per badge and no badge the copy does not carry. ")
+    else:
+        step_rule = ("Do not mis-number the 7 steps: exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 "
+                     "once each, and exactly 7 step labels. ") if steps else ""
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
-        "same number twice, do not skip a number. Do not mis-number the 7 steps: "
-        "exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 once each, and exactly 7 "
-        "step labels. Do not garble any label, mug slogan, or caption: no "
+        "same number twice, do not skip a number. " + step_rule + "Do not garble any label, mug slogan, or caption: no "
         "\"BIGNEFIT\", \"BTEP 7\", \"DISCIFIONAL\", \"FREIDOM\", "
         "\"Folow Gnlume Sno Home\", \"widhh\", and no invented, dropped, "
         "doubled, or substituted characters anywhere. " + tail)
@@ -552,7 +576,8 @@ def require_brand_colors(run_dir: Path) -> str:
     return res.block()
 
 
-SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
+SPEC_DIR = copy_forms.SPEC_DIR
+SPEC_FILES = copy_forms.SPEC_FILES
 
 
 def canon_section_id(value) -> str:
@@ -561,6 +586,12 @@ def canon_section_id(value) -> str:
     text = re.sub(r"^S(?=\d)", "", text)
     match = re.fullmatch(r"0*(\d+)([A-Z]?)", text)
     return f"{int(match.group(1))}{match.group(2)}" if match else text
+
+
+def request_form(request: dict):
+    """The request's own form (copy_version or metadata.copy_version) as a registered form, else None."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    return copy_forms.norm(request.get("copy_version") or metadata.get("copy_version"))
 
 
 def declared_copy_version(run_dir: Path, request: dict):
@@ -589,36 +620,98 @@ def allowed_section_sequences(spec: dict) -> list:
     return out
 
 
+STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
+
+
+def page_structure(role):
+    """The canonical section structure of a non-landing page role
+    (references/page-structures.json), or None: the landing page and any role
+    without an entry keep the landing copy-spec behaviour."""
+    if not role or role == "landing":
+        return None
+    try:
+        data = json.loads(STRUCTURES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {STRUCTURES_FILE.name}: {exc}")
+    entry = (data.get("roles") or {}).get(role)
+    return entry if isinstance(entry, dict) else None
+
+
+def page_role_for(run_dir: Path, request: dict) -> str:
+    """The page role of this run: the request's own page_role, else the run's
+    declared role (intake launch.page_role, else the page-request.json that
+    scripts/shared_page_service.py stages), else landing."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    for value in (request.get("page_role"), metadata.get("page_role")):
+        if value:
+            return str(value)
+    return page_role.declared_role(run_dir, request)  # also reads a role form's copy_version
+
+
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
-    """Fail closed unless the request carries one section per canonical copy
-    section of the selected form (Standard 12, Long-Form 15), in order.
+    """Fail closed unless the request carries one section per canonical section of
+    the page it builds, in order: the selected form's copy sections (Standard 12,
+    Long-Form 15, Product Selection 5, Upsell 8, Thank-You 5) for a landing or registered-form run, or the
+    page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
+    for a run whose page_role has one. A non-landing page role with an entry in
+    references/page-structures.json is checked against that entry's sequence
+    instead (Downsell 8).
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
     """
-    version = declared_copy_version(run_dir, request)
-    if not version:
-        if paid:
+    role = page_role_for(run_dir, request)
+    structure = page_structure(role)
+    rspec = None if structure else role_spec.for_request(run_dir, request)
+    version = structure["copy_version"] if structure else declared_copy_version(run_dir, request)
+    if structure:
+        spec, label = structure, f"{structure['label']} page ({role})"
+    elif rspec:
+        version = version or rspec["form"]  # the form only picks the style reference sheet
+        if version not in role_spec.FORMS:
             raise ExecutorError(
-                "the production request does not declare copy_version (request "
-                "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
-                "paid run needs the selected form so the section count can be checked")
-        print("NOTE section_count: no copy_version declared; the section-count "
-              "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
-        return None
-    spec_path = SPEC_DIR / f"{version}-v6.json"
-    if not spec_path.is_file():
-        raise ExecutorError(
-            f"copy_version {version!r} is not one of standard, long-form "
-            f"(no spec at {spec_path.name})")
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+                f"copy_version {version!r} is not one of standard, long-form (the form label "
+                f"of the {rspec['page_role']} page's style reference)")
+        spec, label = rspec, f"{rspec['page_role']} page"
+    else:
+        pspec = page_role.spec_for_role(role)
+        if pspec and not version:
+            version = pspec["copy_version"]  # a role page needs no landing copy_version
+        if not version:
+            if paid:
+                raise ExecutorError(
+                    "the production request does not declare copy_version (request "
+                    "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
+                    "paid run needs the selected form so the section count can be checked")
+            print("NOTE section_count: no copy_version declared; the section-count "
+                  "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
+            return None
+        if version not in SPEC_FILES:
+            raise ExecutorError(
+                f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
+                "(no copy spec for it in references/copy-specs/)")
+        spec = json.loads(copy_forms.spec_path(version).read_text(encoding="utf-8"))
+        spec_role = spec.get("page_role")
+        if (pspec or spec_role) and (spec_role or page_role.LANDING_ROLE) != role:
+            raise ExecutorError(
+                f"page role {role!r} and copy_version {version!r} disagree: copy_version "
+                f"{version!r} is the {spec_role or 'landing'} page's canonical form, and "
+                f"{role!r} has its own ({pspec['copy_version'] if pspec else 'landing'}); "
+                "declare the page's own form (a page type is never forced into another's sections)")
+        try:  # SPF030: a declared page kind may only use the copy forms it allows (a landing-role page)
+            kind = page_kinds.declared(run_dir, request)
+            if kind:
+                page_kinds.check(kind, version)
+        except page_kinds.KindError as exc:
+            raise ExecutorError(f"page kind: {exc}")
+        label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
     allowed = allowed_section_sequences(spec)
     if ids not in allowed:
         want = allowed[0]
         raise ExecutorError(
             f"section count: the request has {len(ids)} sections {ids} but the "
-            f"{version} copy has {len(want)} canonical sections {want}; missing "
+            f"{label} has {len(want)} canonical sections {want}; missing "
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
@@ -630,8 +723,9 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        sources.append(("copy source", [canon_section_id(s["id"]) for s in data.get("sections") or []
-                                        if isinstance(s, dict) and s.get("id")]))
+        # a section is keyed by `id`, or by `number` (the upsell copy, Skill 80)
+        sources.append(("copy source", [canon_section_id(s.get("id") or s["number"]) for s in data.get("sections") or []
+                                        if isinstance(s, dict) and (s.get("id") or s.get("number"))]))
         break
     else:
         absent.append("copy source file not found")
@@ -713,6 +807,9 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
               "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
     resolve_design_style(run_dir, data)
+    role = page_role_for(run_dir, data)
+    if role != "landing":
+        data["page_role"] = role  # wireframe_spec reads the page profile from it
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
     if not (data.get("copy_version") or metadata.get("copy_version")):
         # The run's form is an intake decision (artifact-contracts.md, Intake);
@@ -727,6 +824,17 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
     data["_section_check"] = check_section_count(run_dir, data, paid)
+    data["_role_spec"] = role_spec.for_request(run_dir, data)  # None for a landing run
+    data["page_kind"] = None  # SPF030: only a landing-role page is a sales or opt-in page
+    if role == page_role.LANDING_ROLE and not data["_role_spec"]:
+        try:
+            data["page_kind"] = page_kinds.declared(run_dir, data)
+        except page_kinds.KindError as exc:
+            raise ExecutorError(str(exc))
+        if data["page_kind"] is None:
+            print("NOTE page_kind: not declared (request, metadata or intake.json); the pages "
+                  "carry no sales/opt-in label. Production intake requires it "
+                  "(scripts/write_intake.py --page-kind)", file=sys.stderr)
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -795,11 +903,18 @@ def resolve_composition(section: dict, index: int, request: dict) -> dict:
     return composition.assign_treatments([section], request_cues(request))[0]
 
 
-def section_typed_references(stage: str, width: int, resolved: dict, section: dict) -> list:
-    """Hosted reference rows (by type) for one job; [] when the catalog has none."""
+def section_typed_references(stage: str, width: int, resolved: dict, section: dict,
+                             request_form=None, request: dict | None = None) -> list:
+    """Hosted reference rows (by type) for one job; [] when the catalog has none.
+    The structural sheets in the catalog are landing sections keyed by landing ids, so a
+    page with its own role spec never matches one by number (structure only)."""
     platform = "mobile" if width <= 768 else "desktop"
     used = [e["treatment"] for e in resolved.get("slots") or []]
-    return composition.typed_references(stage, platform, section.get("section_id"), used)
+    # a page-type section ("2" of the thank-you page) is not landing section 2: it matches no
+    # landing sheet, only the per-treatment examples
+    sid = None if (section.get("composition_role") or (request or {}).get("_role_spec")
+                   or page_role.request_spec(request or {})) else section.get("section_id")
+    return composition.typed_references(stage, platform, sid, used, form=request_form)
 
 
 def stage_prompt(stage: str, section: dict, index: int, width: int,
@@ -841,9 +956,20 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = sanitize_prompt(body)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     body = wireframe_body(stage, section, index, width, request, body)
-    copy_block = copy_contract(section)
+    kind = request.get("page_kind")
+    closing = None  # SPF030: the closing band's button label, last slice of a page-kind run
+    if kind and (stage in hypersaturation.MOCKUP_STAGES or stage in wireframe_spec.WIREFRAME_STAGES):
+        try:
+            closing = page_kinds.closing_label(kind, section, request.get("sections"),
+                                               index, len(request.get("sections") or []))
+        except page_kinds.KindError as exc:
+            raise ExecutorError(str(exc))
+    if kind and stage in hypersaturation.MOCKUP_STAGES:
+        body = f"{page_kinds.mockup_line(kind, closing)}\n\n{body}"
+    copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block(stage)
+    neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
+                               page_spec=page_role.request_spec(request))
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
@@ -865,15 +991,20 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     style_blk = (design_style.style_block(request["design_style"], stage, slots)
                  if request.get("design_style") else "")
     comp_block = composition.block(stage, resolved, typed_refs)
-    blocks = [b for b in (copy_block, color_block, page_color, image_grade, ref_block,
-                          frame_block, comp_block, neg_block, style_blk) if b]
+    role_block = page_role.layout_block(stage, section, request, width)
+    named = (("COPY", copy_block), ("BRAND COLORS", color_block), ("PAGE COLOR SYSTEM", page_color),
+             ("IMAGE GRADE", image_grade), ("REFERENCE ROLES", ref_block), ("FRAME CONTRACT", frame_block),
+             ("COMPOSITION", comp_block), ("PAGE TYPE STRUCTURE", role_block), ("NEGATIVE", neg_block),
+             ("DESIGN STYLE", style_blk))
+    blocks = [b for _, b in named if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
         "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
                            + len(color_block) + len(page_color) + len(image_grade)
-                           + len(style_blk) + len(comp_block)),
+                           + len(style_blk) + len(comp_block) + len(role_block)),
+        "blocks": [n for n, b in named if b] + (["BODY"] if body else []),
         "hypersaturation_chars": len(page_color) + len(image_grade),
         "composition_chars": len(comp_block),
         "prose_chars": len(body),
@@ -1143,7 +1274,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template)
             typed = section_typed_references(
-                stage, width, resolve_composition(section, index, request), section)
+                stage, width, resolve_composition(section, index, request), section,
+                request_form(request), request)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True,
                 strict_floor=provider.name == "kie", typed_refs=typed)
@@ -1491,9 +1623,17 @@ def main(argv=None) -> int:
             request = load_request(run_dir, args.request)
             request["_brand_block"] = brand_block
             check = request.get("_section_check")
+            kind = request.get("page_kind")
+            print(f"PREFLIGHT_PAGE page_role={page_kinds.data()['page_role']} "
+                  f"page_kind={kind or 'undeclared'}"
+                  + (f" label={page_kinds.entry(kind)['tag']!r} "
+                     f"action={page_kinds.entry(kind)['action']} "
+                     f"canonical_sequence_len={len(page_kinds.sequence(kind, check[0]))}"
+                     if kind and check else ""))
             if check:
                 print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
                       f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
+                      f"page_role={request.get('page_role') or 'landing'} "
                       f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
             refs = list(dict.fromkeys(str(r) for r in request.get("references") or []))
@@ -1503,14 +1643,15 @@ def main(argv=None) -> int:
                   f"roles={request.get('reference_roles') or '-'}")
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
-                    cta = _cta_label(section.get("cta")) or "-"
+                    cta = " | ".join(cta_labels(section)) or "-"
                     print(f"PREFLIGHT_CTA {stage} {section['section_id']} -> {cta}")
                     for template, width, _height in LAYOUT[stage]:
                         name = template.format(n=index)
                         try:
                             ratio = target_ratio(stage, template, section, run_dir, index)
                             resolved = resolve_composition(section, index, request)
-                            typed = section_typed_references(stage, width, resolved, section)
+                            typed = section_typed_references(stage, width, resolved, section,
+                                                             request_form(request), request)
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True, strict_floor=True, typed_refs=typed)
@@ -1527,6 +1668,9 @@ def main(argv=None) -> int:
                             print(f"PREFLIGHT_HYPERSAT {stage} {name} "
                                   f"ground={hypersaturation.ground_for(index, section)} "
                                   f"chars={sizes['hypersaturation_chars']}")
+                        print(f"PREFLIGHT_BLOCKS {stage} {name} "
+                              f"page_role={page_role.declared_role(run_dir, request)} "
+                              f"blocks={','.join(sizes['blocks'])}")
                         print(f"PREFLIGHT {stage} {name} ratio={ratio} "
                               f"chars={sizes['chars']} copy={sizes['copy_chars']} "
                               f"contract={sizes['contract_chars']} "

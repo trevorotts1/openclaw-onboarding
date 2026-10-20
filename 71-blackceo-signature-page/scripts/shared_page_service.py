@@ -5,7 +5,10 @@ Produces the four image stages (desktop wireframe, mobile wireframe,
 desktop mockup, mobile mockup) for ONE page of a named page_role, for
 every role in the page-request enum. The owning skill's wrapper calls
 this script ONCE per page; the 14-stage production contract is never
-duplicated into Skills 78, 79, 80, 81 or 82.
+duplicated into Skills 78, 79, 80, 81 or 82. Wired today: the upsell roles
+(scripts/run_page_type.py calls this service, then builds and runs the
+stages; Skill 49's upsell_wrapper.py --bridge-config calls that runner).
+The other sharing skills' wrappers do not call it yet.
 
 The service stages the page-request, launch record, route graph and
 brand file where Skill 71's launch-context import expects them, stamps
@@ -34,7 +37,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import copy_forms  # noqa: E402  the one registry of copy forms
+import page_role  # noqa: E402  a page type's own spec: role to form check below
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+import design_style  # noqa: E402  the client's A / B / C choice rides through to the intake
 WRITE_INTAKE = SKILL_ROOT / "scripts" / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
 MARKER = "shared_image_service"
@@ -76,14 +85,22 @@ def main(argv=None) -> int:
                     "named page_role into the four-image pipeline.")
     p.add_argument("--request", type=Path, required=True)
     p.add_argument("--run-dir", type=Path, required=True)
-    p.add_argument("--page-version", choices=["standard", "long-form"],
-                   required=True)
+    p.add_argument("--page-version", choices=list(copy_forms.FORMS),
+                   required=True,
+                   help="the page's form: standard or long-form for a landing page, "
+                        "product-selection for the order page (page_role product_selection), "
+                        "upsell for the upsell pages (page_roles upsell_1, upsell_2), "
+                        "thank-you for page_role thank_you")
+    p.add_argument("--test-run", action="store_true")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--image-cap", type=int, required=True)
     p.add_argument("--brand-file", type=Path, required=True)
     p.add_argument("--launch-record", type=Path, required=True)
     p.add_argument("--route-graph", type=Path, required=True)
     p.add_argument("--consent-statements", type=Path, default=None)
+    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=None,
+                   help="the client's design style (A Block, B Circle, C Hybrid), recorded in the "
+                        "intake like any page; omitted, the intake notes it is still to be asked")
     p.add_argument("--pipeline-command", default=None,
                    help="the production pipeline command run after the "
                         "launch-context import (for example the run's "
@@ -106,11 +123,26 @@ def main(argv=None) -> int:
             raise ServiceError(
                 f"page-request: page_role {role!r} is not one of "
                 f"{role_enum}")
+        own = page_role.spec_for_role(role)
+        want = own["copy_version"] if own else None
+        wrong_form = (a.page_version != want) if own else (
+            page_role.role_specs().get(a.page_version) is not None)
+        if wrong_form:
+            raise ServiceError(
+                f"page-request: page_role {role!r} takes --page-version "
+                f"{want or 'standard or long-form'}, not {a.page_version!r}; a page type is "
+                "never forced into another page type's canonical sections")
         if request.get("assigned_skill") not in SHARED_SKILLS:
             raise ServiceError(
                 f"page-request: assigned_skill is "
                 f"{request.get('assigned_skill')!r}; the shared image "
                 f"service serves skills {SHARED_SKILLS} only")
+        form = copy_forms.form_for_role(role)
+        if form != (a.page_version if a.page_version not in copy_forms.LANDING_FORMS else None):
+            raise ServiceError(
+                f"--page-version {a.page_version!r} does not fit page_role {role!r}: "
+                + (f"this role is built from the {form!r} form" if form else
+                   "this role is a landing page and takes standard or long-form"))
         graph_raw = _read(a.route_graph, "route graph")
         if _sha256(graph_raw) != request.get("route_graph_hash"):
             raise ServiceError(
@@ -146,6 +178,10 @@ def main(argv=None) -> int:
                        "--route-graph", str(run_dir / request["route_graph_ref"])]
         if a.consent_statements is not None:
             intake_argv += ["--consent-statements", str(a.consent_statements)]
+        if a.design_style:
+            intake_argv += ["--design-style", a.design_style]
+        if a.test_run:
+            intake_argv.append("--test-run")
         subprocess.run(intake_argv, check=True)
         if a.pipeline_command:
             subprocess.run(shlex.split(a.pipeline_command), check=True,

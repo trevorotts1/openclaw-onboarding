@@ -108,6 +108,8 @@ class ReferenceSelectionTests(unittest.TestCase):
         manifest = json.loads((STANDARDS / "manifest.json").read_text())
         table = manifest["wireframe_style_references"]
         for form in w.FORMS:
+            if w._role(form):  # a page type that owns its wireframe wording carries its sheets in its copy spec
+                continue
             for stage in w.WIREFRAME_STAGES:
                 self.assertEqual(table[form][stage], w.spec()["style_references"][form][stage]["file"])
         roles = {e["file"]: e.get("role", "") for e in manifest["files"]}

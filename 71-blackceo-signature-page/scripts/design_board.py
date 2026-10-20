@@ -44,6 +44,8 @@ HERE = Path(__file__).resolve().parent
 SKILL_ROOT = HERE.parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))  # stage_executor / brand_colors live beside this file
+import copy_forms  # noqa: E402  the form's page_role names the Design Board's role
+import page_kinds  # noqa: E402  SPF030: the landing role's sales / opt-in kind
 BOARD_DIR = "design-board"
 BOARD_FILE = f"{BOARD_DIR}/design-board.png"
 RECORD_FILE = f"{BOARD_DIR}/production-record.json"
@@ -160,16 +162,15 @@ def read_json(path: Path):
 # ---------------------------------------------------------------- inputs
 
 def declared_role(run_dir: Path) -> str:
-    """The run's page role: intake launch.page_role, else page-request.json, else landing."""
-    for name, key in (("intake.json", "launch"), ("page-request.json", None)):
-        try:
-            data = json.loads((run_dir / name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        data = data.get(key) if key and isinstance(data, dict) else data
-        if isinstance(data, dict) and isinstance(data.get("page_role"), str) and data["page_role"]:
-            return data["page_role"]
-    return "landing"
+    """The run's page role: intake page_role or launch.page_role, else page-request.json, else
+    landing. scripts/page_role.py is the one reader, so the board, the section-count check, the
+    wireframe prompt and the gate always agree on the role."""
+    sys.path.insert(0, str(HERE))
+    try:
+        import page_role
+    finally:
+        sys.path.pop(0)
+    return page_role.declared_role(run_dir)
 
 
 def brand_resolution(run_dir: Path):
@@ -369,6 +370,10 @@ def plan(run_dir: Path, request: dict) -> dict:
     if role != declared_role(run_dir) and (run_dir / "intake.json").is_file():
         raise BoardError(f"design_board.page_role {role!r} differs from the run's declared page "
                          f"role {declared_role(run_dir)!r}")
+    try:  # SPF030: the landing role is a sales page or an opt-in page; its board says which
+        kind = page_kinds.declared(run_dir, request) if role == "landing" else None
+    except page_kinds.KindError as exc:
+        raise BoardError(str(exc))
     res = brand_resolution(run_dir)
     palette = palette_entries(res, spec)
     stray = sorted(k for k in (spec.get("color_names") or {})
@@ -505,7 +510,7 @@ def plan(run_dir: Path, request: dict) -> dict:
                        "present": bool(lines), "lines": lines, "anchors": anchors})
     if missing:
         raise BoardError("design board content missing (never invented): " + "; ".join(missing))
-    return {"role": role, "spec": spec, "palette": palette, "fonts": fonts, "slots": slots,
+    return {"role": role, "kind": kind, "spec": spec, "palette": palette, "fonts": fonts, "slots": slots,
             "extra_items": extra_items, "tile_texts": tile_texts,
             "logo": logo, "blocks": blocks, "res": res,
             "expected": {"required_blocks": [b["key"] for b in blocks if b["required"]],
@@ -566,14 +571,16 @@ def compose_prompt(p: dict, request: dict, run_dir: Path | None = None):
     """(prompt, sizes) for one board; sizes follow the executor's budget-band convention."""
     import stage_executor as se
     spec, role = p["spec"], p["role"]
+    label, emphasis = (page_kinds.board(p["kind"]) if p.get("kind")
+                       else (ROLE_LABEL[role], ROLE_EMPHASIS[role]))
     aesthetic = ", ".join(str(w).lower() for w in spec.get("aesthetic_words") or [])
     out = [f'DESIGN BOARD — one landscape ({BOARD_RATIO}) brand board sheet titled "'
            f'{title_line(spec)}" for the client\'s '
-           f'{ROLE_LABEL[role]}. It is the approval sheet shown before the page is built, made '
+           f'{label}. It is the approval sheet shown before the page is built, made '
            "from the page's real, finished images: "
            + (f"{aesthetic}; " if aesthetic else "")
            + "generous spacing, every text string exactly as given below.",
-           f"PAGE ROLE EMPHASIS — {ROLE_EMPHASIS[role]}."]
+           f"PAGE ROLE EMPHASIS — {emphasis}."]
     out.append("LAYOUT — 4:3 sheet, even outer margin, two columns under a full-width header, "
                "hairline rules between blocks, generous whitespace; placement: "
                + "; ".join(f'{b["title"].lower()}: {PLACEMENT[b["key"]]}' for b in p["blocks"]
@@ -660,7 +667,8 @@ def write_record(run_dir: Path, p: dict, prompt: str, result: dict, revision: in
     board = run_dir / BOARD_FILE
     iset = image_set(p["slots"] + p["extra_items"])
     record = {
-        "artifact": "design-board", "page_role": p["role"], "revision": revision,
+        "artifact": "design-board", "page_role": p["role"], "page_kind": p.get("kind"),
+        "revision": revision,
         "brand": {"name": p["spec"]["brand_name"], "positioning_line": p["spec"]["positioning_line"],
                   "logo": {"file": str(p["logo"]), "sha256": sha256_file(p["logo"])}},
         "palette": p["palette"], "palette_sha256": canon_sha(p["palette"]),
@@ -718,6 +726,15 @@ def validate(run_dir: Path, require_approval=False, request_name=DEFAULT_REQUEST
         fails.append(f"design board: page_role {role!r} is not a page role")
     elif (run_dir / "intake.json").is_file() and role != declared_role(run_dir):
         fails.append(f"design board: board is for {role!r}, the run declares {declared_role(run_dir)!r}")
+    if role == "landing" and (run_dir / "intake.json").is_file():
+        try:
+            want_kind = page_kinds.declared(run_dir, {})
+        except page_kinds.KindError as exc:
+            want_kind = None
+            fails.append(f"design board: {exc}")
+        if want_kind != rec.get("page_kind"):
+            fails.append(f"design board: board is for page kind {rec.get('page_kind')!r}, "
+                         f"the run declares {want_kind!r}")
     try:
         board_png = run_dir / BOARD_FILE
         if not board_png.is_file():

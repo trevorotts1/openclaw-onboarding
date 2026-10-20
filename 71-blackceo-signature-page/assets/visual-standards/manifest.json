@@ -23,6 +23,14 @@
    "desktop-wireframe": "wireframes/chatgpt-wireframe-3.png",
    "mobile-tablet": "wireframes/chatgpt-wireframe-4.png"
   },
+  "product-selection": {
+   "desktop-wireframe": "wireframes/chatgpt-wireframe-1.png",
+   "mobile-tablet": "wireframes/chatgpt-wireframe-4.png"
+  },
+  "upsell": {
+   "desktop-wireframe": "wireframes/chatgpt-wireframe-1.png",
+   "mobile-tablet": "wireframes/chatgpt-wireframe-4.png"
+  },
   "never_attached": [
    "wireframes/chatgpt-wireframe-2.png",
    "wireframes/set-for-life-desktop-wireframe.png"

@@ -39,7 +39,7 @@ What is proven:
   2. The emitted result validates against the page-result 1.0 schema
      AND passes collect_launch_receipts.validate_result AND rolls up
      in collect_launch_receipts.collect.
-  3. Fail-closed: a bridge config missing page_version, brand_owner,
+  3. Fail-closed: a bridge config missing page_version, page_kind, brand_owner,
      or image_cap (each) aborts with the value named, exit 2, and no
      consumer process runs (no intake.json, no staged request).
   4. Fail-closed: a configured brand file whose bytes do not hash to
@@ -130,15 +130,16 @@ BRAND_RAW = dump(BRAND_DOC)
 BRAND_SHA = sha256(BRAND_RAW)
 
 
-def fixture_launch() -> (dict, dict):
-    """The packet fixture launch, made approvable for dispatch."""
+def fixture_launch(full_funnel: bool = False) -> (dict, dict):
+    """The packet fixture launch, made approvable for dispatch.
+    full_funnel turns every extra on (the funnel that gets all its pages)."""
     launch = json.loads((FIXTURES / "launch-example.json")
                         .read_text(encoding="utf-8"))
     launch["journey_mode"] = "single_simple"
-    launch["offers"] = [o for o in launch["offers"]
-                        if o["offer_id"] in ("MAIN-A", "BUMP")]
-    launch["extras"] = {"upsell_1": False, "downsell_1": False,
-                        "upsell_2": False}
+    keep = ("MAIN-A", "BUMP", "U1", "D1", "U2") if full_funnel else ("MAIN-A", "BUMP")
+    launch["offers"] = [o for o in launch["offers"] if o["offer_id"] in keep]
+    launch["extras"] = {"upsell_1": full_funnel, "downsell_1": full_funnel,
+                        "upsell_2": full_funnel}
     launch["brand_ref"] = "brand.json"
     launch["brand_hash"] = BRAND_SHA
     graph = clr.compile_route(launch)
@@ -185,6 +186,7 @@ class LandingBridgeCase(unittest.TestCase):
         landing = {
             "run_dir": str(self.run_dir),
             "page_version": "standard",
+            "page_kind": "sales",
             "brand_owner": "Fixture Brand Owner",
             "image_cap": 12,
             "launch_record": str(self.launch_path),
@@ -209,7 +211,7 @@ class LandingBridgeCase(unittest.TestCase):
                 "--work-dir", "{work_dir}",
                 "--bridge-config", str(self.bridge_config_path)]
 
-    def emit_dispatch(self) -> (dict, Path):
+    def emit_dispatch(self, copy_profile: str = "standard") -> (dict, Path):
         """S49's REAL dispatch over the fixture plan, emission only:
         the full fail-closed gate chain runs (record validation,
         plan-approval gate, route re-compilation + hash binding) and
@@ -219,7 +221,7 @@ class LandingBridgeCase(unittest.TestCase):
             self.launch, self.approval,
             client_identity_ref="client-fixture",
             worker_identity_ref="worker-fixture",
-            copy_profile="standard", allowed_write_target="local_only",
+            copy_profile=copy_profile, allowed_write_target="local_only",
             out_dir=out)
         return manifest, out
 
@@ -309,6 +311,7 @@ class TestEndToEnd(LandingBridgeCase):
         self.assertEqual(intake["launch_profile"],
                          "signature_launch_landing")
         self.assertEqual(intake["page_version"], "standard")
+        self.assertEqual(intake["page_kind"], "sales")
         self.assertEqual(intake["brand_owner"], "Fixture Brand Owner")
         self.assertEqual(intake["image_cap"], 12)
         self.assertEqual(intake["image_engine"], "agnes")
@@ -365,6 +368,72 @@ class TestEndToEnd(LandingBridgeCase):
         self.assertEqual(checkpoint["aggregate_status"], "in_progress")
 
 
+class TestFullFunnelGetsAllPages(LandingBridgeCase):
+    """SPF030: a full funnel (every extra on) gets the sales page AND the
+    signature landing (opt-in) page; a smaller funnel keeps its one page."""
+
+    def setUp(self):
+        super().setUp()
+        self.launch, self.approval = fixture_launch(full_funnel=True)
+        self.launch_path.write_bytes(dump(self.launch))
+        self.opt_in_dir = self.td / "run-opt-in"
+
+    def test_full_funnel_without_the_opt_in_page_is_refused_before_staging(self):
+        self.write_bridge_config()
+        req_path = self.make_request()
+        proc, result_path = self.run_bridge_directly(req_path, self.run_dir)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("full funnel", proc.stdout)
+        self.assertFalse(result_path.exists())
+        self.assertFalse((self.run_dir / "page-request.json").exists())
+
+    def test_opt_in_page_beside_an_opt_in_landing_page_is_refused(self):
+        self.write_bridge_config(page_version="long-form", page_kind="opt_in",
+                                 opt_in={"run_dir": str(self.opt_in_dir)})
+        req_path = self.make_request()
+        proc, _ = self.run_bridge_directly(req_path, self.run_dir)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("page_kind must be 'sales'", proc.stdout)
+
+    def test_both_pages_are_produced_and_one_result_reports_both(self):
+        self.write_bridge_config(page_version="long-form",
+                                 opt_in={"run_dir": str(self.opt_in_dir)})
+        manifest, out = self.emit_dispatch("long-form")
+        result = self.run_landing_adapter(out)
+        sales = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        opt_in = json.loads((self.opt_in_dir / "intake.json").read_text(encoding="utf-8"))
+        self.assertEqual((sales["page_kind"], sales["page_version"]), ("sales", "long-form"))
+        self.assertEqual((opt_in["page_kind"], opt_in["page_version"]), ("opt_in", "long-form"))
+        self.assertEqual(opt_in["brand_owner"], sales["brand_owner"])
+        self.assertEqual((self.opt_in_dir / "page-request.json").read_bytes(),
+                         (out / "request-landing.json").read_bytes())
+        paths = [a["path"] for a in result["artifacts"]]
+        self.assertTrue(any(p.startswith("run-opt-in/") for p in paths), paths)
+        self.assertTrue(any(not p.startswith("run-opt-in/") for p in paths), paths)
+        self.assertEqual(result["status"], "authored")
+        self.assertEqual(result["page_role"], "landing")
+
+    def test_opt_in_needs_the_long_form_profile_and_version(self):
+        self.write_bridge_config(opt_in={"run_dir": str(self.opt_in_dir)})  # page_version standard
+        req_path = self.make_request()
+        proc, _ = self.run_bridge_directly(req_path, self.run_dir)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("Long-Form only", proc.stdout)
+        self.write_bridge_config(page_version="long-form", opt_in={"run_dir": str(self.opt_in_dir)})
+        proc, _ = self.run_bridge_directly(req_path, self.run_dir)  # request copy_profile standard
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("copy_profile", proc.stdout)
+        self.assertFalse((self.run_dir / "page-request.json").exists())
+
+    def test_a_smaller_funnel_keeps_its_single_page(self):
+        self.launch, self.approval = fixture_launch()
+        self.launch_path.write_bytes(dump(self.launch))
+        self.write_bridge_config()
+        manifest, out = self.emit_dispatch()
+        self.run_landing_adapter(out)
+        self.assertFalse(self.opt_in_dir.exists())
+
+
 class TestFailClosed(LandingBridgeCase):
     def assert_refused_before_staging(self, drop, needle):
         self.write_bridge_config(drop=drop)
@@ -379,6 +448,17 @@ class TestFailClosed(LandingBridgeCase):
 
     def test_missing_page_version_fails_closed(self):
         self.assert_refused_before_staging("page_version", "page_version")
+
+    def test_missing_page_kind_fails_closed(self):
+        self.assert_refused_before_staging("page_kind", "page_kind")
+
+    def test_opt_in_page_kind_needs_long_form(self):
+        # the sales page may be standard; the opt-in page is long-form only
+        self.write_bridge_config(page_kind="opt_in")
+        req_path = self.make_request()
+        proc, result_path = self.run_bridge_directly(req_path, self.run_dir)
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("long-form", proc.stdout)
 
     def test_missing_brand_owner_fails_closed(self):
         self.assert_refused_before_staging("brand_owner", "brand_owner")

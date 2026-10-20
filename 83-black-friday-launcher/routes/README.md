@@ -44,7 +44,7 @@ as launcher logic.
 | upsell_1 / upsell_2 | `49-signature-funnel/scripts/upsell_wrapper.py::main` → `80-signature-upsell/components/adapters/produce.py::main` |
 | downsell_1 | `49-signature-funnel/scripts/downsell_wrapper.py::main` → `81-signature-downsell/validators/*` (pinned by the wrapper) |
 | thank_you | `49-signature-funnel/scripts/translate_thank_you_result.py::main` → S82 `run_manifest.build_run_manifest` + `thank_you_resolver.resolve_order_view` |
-| checkout | **native S79 order form installed by Skill 06; never a dispatch adapter** |
+| checkout | **native S79 order form installed by Skill 06; never a dispatch adapter for the form.** Its page design (wireframes and mockups) has a design-only adapter, `49-signature-funnel/scripts/checkout_wrapper.py`, wired by `build_dispatch_config(checkout_design=...)` |
 | bump | **checkout component; never a route node** |
 
 `build_dispatch_config` binds real absolute paths and refuses `/path/to`,
@@ -63,7 +63,7 @@ ever emitted as executable configuration.
   caller's real path.
 - **D-04** The example upsell entries omit `--route-graph`; the builder passes
   `{work_dir}/route-graph.json` explicitly.
-- **D-05** Checkout is intentionally absent from the adapter manifest.
+- **D-05** The native checkout form is intentionally not a dispatch adapter; only the page's design stages have one (design-only).
 - **D-06** The example manifest contains `/path/to` and `<dispatch run session
   id>` placeholders; the builder refuses them.
 

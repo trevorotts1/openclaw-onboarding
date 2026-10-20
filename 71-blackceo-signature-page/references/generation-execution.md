@@ -65,6 +65,19 @@ free run with no declared form prints a NOTE and skips the check; a paid run
 (`--provider kie`) refuses. `--preflight` prints `PREFLIGHT_SECTIONS` (form, count, ids) and one
 `PREFLIGHT_CTA` per section.
 
+A page type with its own canonical sections (the thank-you page, `page_role` `thank_you`) is
+the same contract with its own sequence: `references/copy-specs/thank-you-v1.json` (copy_version
+`thank-you`, 5 sections), read through `scripts/page_role.py`. The role comes from the request's
+`page_role`, else its metadata, else `intake.json` (`page_role` or `launch.page_role`), else
+`page-request.json`, else the role of a declared page-type `copy_version`; a role page needs no
+landing copy_version. A landing-shaped request for that page (12 sections) is refused by name,
+and so is a `page_role` that disagrees with the declared `copy_version`. For these requests every
+stage carries a `PAGE TYPE STRUCTURE` block (the section's desktop or mobile layout from the
+spec, structure only; colour, type and image rules stay the stage's own blocks), the wireframe
+prompt names the page type and attaches the same Drive sheet for grammar only, and
+`--preflight` adds `page_role=` to `PREFLIGHT_SECTIONS` and one `PREFLIGHT_BLOCKS` line per
+slice naming the blocks the prompt carries. Landing requests are unchanged.
+
 `scripts/build_production_request.py` is the request builder for this path. It reads
 `copy/internal-manuscript.md`, writes one section per canonical id with the section's public
 copy, its single CTA label, optional image slots (`--slots`) and optional design prose packed

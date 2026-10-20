@@ -117,6 +117,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import composition  # noqa: E402
+import copy_forms  # noqa: E402
+import page_role  # noqa: E402
 
 EXPECTED_WIDTH = {"desktop-wireframe": 1440, "mobile-tablet": 390}
 WIDTH_TOLERANCE_PX = 2
@@ -125,6 +127,18 @@ WIDTH_TOLERANCE_PX = 2
 # deliberately no mobile-tablet entry: the 48,894px standard is a mockup, not a
 # wireframe, so the mobile height floor is undetermined and unasserted.
 HEIGHT_FLOOR = {"desktop-wireframe": 16736}
+
+
+def height_floor(stage, run_dir):
+    """The page-height floor for the run's form: the 12-section landing sheet's 16,736px for the
+    landing forms; any other form states its own (derived, labelled) floor in its copy spec."""
+    try:
+        form = copy_forms.norm(json.loads((Path(run_dir) / "intake.json").read_text(encoding="utf-8")).get("copy_version"))
+    except (OSError, ValueError, AttributeError):
+        form = None
+    if form and form not in copy_forms.LANDING_FORMS:
+        return copy_forms.load_spec(form).get("wireframe", {}).get("height_floor_px", {}).get(stage)
+    return HEIGHT_FLOOR.get(stage)
 RATIO_TOLERANCE = 0.02
 BRAND_PIXEL_TOLERANCE = 32
 PALETTE_MIN_SHARE = 0.02
@@ -945,7 +959,9 @@ def main(argv):
             print(f"ERROR: unreadable input: Pillow is required to read PNG widths ({exc})")
             return 2
         want = EXPECTED_WIDTH[stage]
-        floor = HEIGHT_FLOOR.get(stage)
+        # the floor is the landing standard set's own height; a page type with its own section
+        # structure (the thank-you page) has no measured floor, so none is asserted (like mobile)
+        floor = None if page_role.spec_for_role(page_role.declared_role(run_dir)) else height_floor(stage, run_dir)
         total_height = 0
         for p in slices:
             try:

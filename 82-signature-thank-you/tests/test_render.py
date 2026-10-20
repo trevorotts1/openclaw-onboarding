@@ -36,6 +36,7 @@ from validate_thank_you import ALLOWED_CTA_CLASSIFICATIONS  # noqa: E402
 from render_thank_you import (  # noqa: E402
     ERROR_KINDS,
     format_amount,
+    hero_image_from_map,
     render_error,
     render_state_fragment,
     render_thank_you,
@@ -362,6 +363,45 @@ class UnknownConfirmationStatusRenderTest(unittest.TestCase):
     def test_known_statuses_still_render(self):
         html_out = render_thank_you(resolve(["MAIN-A"]), BRAND)
         self.assertIn("Confirmed", html_out)
+
+
+class HeroImageTests(unittest.TestCase):
+    """The page's one celebration image (Skill 71 slot TY-IMG-01): decorative, normal layout
+    only, from a safe URL, so the built page matches the approved mockup without carrying
+    order data in an image (references/wireframe-mockup-layout.md)."""
+
+    HERO = {"src": "https://example.test/img/ty-hero.png", "shape": "circle"}
+
+    def test_hero_renders_decorative_in_the_header_only_when_given(self):
+        plain = render_thank_you(resolve(["MAIN-A"]), BRAND)
+        self.assertNotIn("ty82-hero", plain.split("</style>")[1])
+        html_out = render_thank_you(resolve(["MAIN-A"]), dict(BRAND, hero_image=self.HERO))
+        body = html_out.split("</style>")[1]
+        self.assertEqual(body.count("<figure"), 1)
+        self.assertIn('<figure class="ty82-hero ty82-hero--circle"><img src="https://example.test/img/ty-hero.png" alt="">',
+                      body)
+        self.assertLess(body.index("<header"), body.index("ty82-hero"))
+        self.assertLess(body.index("ty82-hero"), body.index("</header>"))
+
+    def test_an_unsafe_or_missing_source_renders_nothing(self):
+        for bad in ({"src": "javascript:alert(1)"}, {"src": ""}, {"shape": "circle"}, "not-a-dict"):
+            html_out = render_thank_you(resolve(["MAIN-A"]), dict(BRAND, hero_image=bad))
+            self.assertNotIn("<figure", html_out)
+
+    def test_errors_and_the_reconciling_fragment_never_carry_the_image(self):
+        brand = dict(BRAND, hero_image=self.HERO)
+        for kind in ERROR_KINDS:
+            self.assertNotIn("<figure", render_error(kind, brand))
+        self.assertNotIn("<figure", render_state_fragment("reconciling", brand))
+
+    def test_the_image_map_gives_the_hero_in_either_dialect(self):
+        by_id = {"images": [{"id": "TY-IMG-01", "asset_file": "image-map-upload/Image-001.png"}]}
+        by_master = {"images": [{"master_id": "TY-IMG-01", "filename": "Image-001.png"}]}
+        self.assertEqual(hero_image_from_map(by_id, shape="circle"),
+                         {"src": "image-map-upload/Image-001.png", "shape": "circle"})
+        self.assertEqual(hero_image_from_map(by_master)["src"], "Image-001.png")
+        self.assertIsNone(hero_image_from_map({"images": [{"id": "IMG-009", "file": "x.png"}]}))
+        self.assertIsNone(hero_image_from_map({}))
 
 
 if __name__ == "__main__":

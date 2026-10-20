@@ -1,0 +1,146 @@
+{
+  "spec_id": "copy-spec-thank-you-v1",
+  "spec_version": 1,
+  "copy_version": "thank-you",
+  "page_role": "thank_you",
+  "owning_skill": 82,
+  "page_label": "thank-you page",
+  "status": "PROPOSED structure, pending Trevor's approval. The owner supplied no precise thank-you layout (82-signature-thank-you/references/layout-and-copy-profiles.md, preamble). This spec merges the two structures already in the repo: Skill 82's order of parts (header, order summary, access blocks, what happens next, support and manage) and Skill 49's TY bands (a welcome, 4 to 6 numbered next steps, a signed close of up to 170 characters, no offer button, exactly one celebration hero image). It is the page type's canonical section sequence for the Skill 71 pipeline, in the same shape as the landing specs, so the section-count check, the request builder, the wireframe prompt and the copy validator read it through scripts/page_role.py and never fork the pipeline. Change this file, not the code, when Trevor changes the layout.",
+  "guide": {
+    "file": "82-signature-thank-you/references/layout-and-copy-profiles.md",
+    "layout_reference": "82-signature-thank-you/references/wireframe-mockup-layout.md",
+    "note": "Skill 82 owns the page's truth (purchase records, access, billing). This spec owns its section sequence and picture layout for the wireframe and mockup stages. The copy for the page comes from Skill 82's clean copy profiles; it is never invented here."
+  },
+  "counting_convention": {
+    "char_counting": "Join the visible components with one space; count letters, punctuation, and spaces.",
+    "count": ["headlines", "body copy", "step text", "button words", "microcopy", "signatures"],
+    "exclude": ["document titles", "section headings", "step numerals", "design notes", "formatting markers"],
+    "word_tokenization": "Strip markers, normalize whitespace, count whitespace-separated tokens.",
+    "source": "Same convention as the landing specs (standard-v6.json counting_convention)."
+  },
+  "sequence": ["1", "2", "3", "4", "5"],
+  "rules": {
+    "max_images": 1,
+    "offer_buttons": "forbidden",
+    "primary_button": "the access button, filled in the client's primary brand colour",
+    "no_pitch": "The page sells nothing: no new offer, no price for anything not purchased, no 'one more thing' (82-signature-thank-you/references/no-pitch-policy.md).",
+    "source": "Skill 49 structure/funnel_structure.json (thank_you, image_coverage.page_policies.thank-you: one celebratory hero, image maximum of one; profiles.thank-you: no offer CTAs); Skill 82 no-pitch policy."
+  },
+  "cta_map": {
+    "forbidden_in_sections": ["2", "4"],
+    "markers": {
+      "button": "[CTA BUTTON: <access, download, support or manage label>]",
+      "microcopy": "[CTA MICROCOPY: <text>]"
+    },
+    "note": "Utility buttons only (access, download, schedule, manage purchase, support). Never an offer button. Section 3 shows one card as the pattern and repeats once per purchased item."
+  },
+  "sections": [
+    {
+      "id": "1",
+      "framework_name": "Confirmation and welcome",
+      "name": "Confirmation and welcome",
+      "job": "Celebrate the decision and confirm the order honestly: a status label and headline, one reassurance line, the primary access button and the order reference, beside the page's one celebration image.",
+      "cta": {"standalone": "optional", "counts_toward_total": false, "note": "The primary access button ('Start here'); absent only when no access is granted yet."},
+      "limits": [
+        {"kind": "target", "min": 120, "max": 180, "scope": "section", "unit": "chars", "source": "Skill 49 TY-1 band (120 to 180 characters), applied as a suggestion because the headline states the real order status"}
+      ],
+      "required": true,
+      "composition_role": "hero",
+      "ground": "hero",
+      "default_slots": [
+        {"slot_id": "TY-IMG-01", "aspect_ratio": "4:3", "art_direction": "warm celebration of the decision, a confident moment for the buyer, never a product pitch", "shape_by_style": {"B": "circle"}, "style_ratio": {"B": "1:1"}, "treatment_by_style": {"B": "mask-circle"}}
+      ],
+      "layout": {
+        "desktop": "Hero ground band inside the 1200 px content column. The text block, top to bottom: a status label chip, the page headline (H1) stating the order status honestly, one reassurance line, the primary access button (filled, primary brand colour) and under it the order reference in small tracked capitals. The page's one celebration image plate is composed with the treatment the composition contract names for the slot; whatever that treatment, the text block keeps this order and the button stays filled in the primary colour.",
+        "mobile": "Single-column phone stack: the text block in the same order (status label chip, headline, reassurance line, primary access button, order reference), with the celebration image plate placed where the composition contract places it; the primary access button spans the full content column."
+      },
+      "note": "Primary access button sits under the headline and reassurance line; order reference is text, never a button"
+    },
+    {
+      "id": "2",
+      "framework_name": "Order summary",
+      "name": "Order summary",
+      "job": "Show exactly what was purchased as a real table: item, status (paid, pending or failed), billing line and amount, then the total paid and, when there is one, the pending total.",
+      "cta": {"standalone": "forbidden", "counts_toward_total": false},
+      "required": true,
+      "composition_role": "what",
+      "ground": "light",
+      "layout": {
+        "desktop": "Light ground band. A section heading, then one real table across the 1200 px column: a header row (Item, Status, Billing, Amount), one row per purchased item with its status as a small filled chip (paid in the primary brand colour, pending outlined, failed in the darkest brand colour), then a Total paid row and, when needed, a Pending row. No image and no button; the table is drawn as a table, never as a picture of a receipt.",
+        "mobile": "Light ground band. The table becomes stacked item cards, one per purchase: item name, status chip, billing line and amount. The Total paid card comes last at full width. No image and no button."
+      },
+      "note": "Real table, never an image of a receipt; status labels Paid, Pending and Failed are separate per item"
+    },
+    {
+      "id": "3",
+      "framework_name": "Access",
+      "name": "Access",
+      "job": "Give one access card per purchased item: its name, what it unlocks, and one utility button that goes to it.",
+      "cta": {"standalone": "optional", "counts_toward_total": false, "note": "One access, download or schedule button per card; the manuscript shows one card as the pattern."},
+      "required": true,
+      "composition_role": "what",
+      "ground": "dark",
+      "layout": {
+        "desktop": "Dark ground band. A section heading, then a row of access cards across the 1200 px column, one card per purchased item (draw three as the pattern; the page repeats the card once per purchase). Each card: an icon at the top from the brand's icon style, the item name, one line saying what it unlocks, and one filled utility button. No photograph.",
+        "mobile": "Dark ground band. The cards stack one per row at full width, each with its icon, item name, one-line description and a full-width utility button. No photograph."
+      },
+      "note": "One card per purchased item; no card for a pending or failed item"
+    },
+    {
+      "id": "4",
+      "framework_name": "What happens next",
+      "name": "What happens next",
+      "job": "Say in four to six numbered steps what happens now and next, momentum-ordered, each step starting with a verb and naming its payoff.",
+      "cta": {"standalone": "forbidden", "counts_toward_total": false},
+      "required": true,
+      "composition_role": "how-to",
+      "ground": "light",
+      "steps": true,
+      "step_rules": {
+        "step_count": {"default": 5, "kind": "target", "min": 4, "max": 6, "source": "Skill 49 TY-2 (4 to 6 numbered steps; each step 89 to 116 characters, applied by the reviewer: per-step character bands are defined for a seven-step page only)"}
+      },
+      "layout": {
+        "desktop": "Light ground band. A section heading, then the numbered steps in one horizontal row inside the 1200 px column: each a primary-colour circle badge with its step number joined to the next by a dotted line, with the verb-led step label under it. No button and no image.",
+        "mobile": "Light ground band. The steps stack in one column with a dotted line running down the left through the primary-colour number badges; each badge sits beside its step label. No button and no image."
+      },
+      "note": "Four to six steps; badges read 1 to N once each, in order; no button here"
+    },
+    {
+      "id": "5",
+      "framework_name": "Help, manage and close",
+      "name": "Help, manage and close",
+      "job": "Close the page: how to get help with this order, how to manage the purchase, and a short signed note of thanks of up to 170 characters. No offer button.",
+      "cta": {"standalone": "optional", "counts_toward_total": false, "note": "One filled support button; the manage-purchase action is a secondary outlined button, never a second filled button."},
+      "limits": [
+        {"kind": "descriptive", "max": 170, "scope": "section", "unit": "chars", "source": "Skill 49 TY-3 (the signed close is up to 170 characters); the section also carries the support lines, so the cap is descriptive for the whole section"}
+      ],
+      "required": true,
+      "composition_role": "closing-cta",
+      "ground": "hero",
+      "signature_label": true,
+      "layout": {
+        "desktop": "Hero ground band, two columns inside the 1200 px content column. Left: the support heading, one line on how to reach help, the filled support button and beside it an outlined manage-purchase button. Right: the short signed note of thanks, the signature in script. No offer button and no price.",
+        "mobile": "Single-column phone stack: the signed note and its script signature first, then the support heading and line, the filled support button at full width and the outlined manage-purchase button at full width under it. No offer button and no price."
+      },
+      "note": "Support is the primary action here; manage purchase is secondary and outlined; no offer button"
+    }
+  ],
+  "wireframe": {
+    "page_label": "thank-you page",
+    "form_label": "Thank-You",
+    "style_references": {
+      "desktop-wireframe": {
+        "file": "wireframes/chatgpt-wireframe-1.png",
+        "label": "Standard Desktop (sheet grammar only for the thank-you page)"
+      },
+      "mobile-tablet": {
+        "file": "wireframes/chatgpt-wireframe-4.png",
+        "label": "Long-Form Mobile (single-column phone stack; sheet grammar only for the thank-you page)"
+      }
+    },
+    "reference_note": "The attached reference is a landing page sheet. For this page it gives the sheet grammar only: section chips with name tabs, printed type specs, labelled image plates, filled CTA chips and contiguous bands. Its sections, section count, words and layout are never copied.",
+    "desktop_block": "THANK-YOU DESKTOP — a five-section confirmation page, not a landing page. The sections are Confirmation and welcome, Order summary, Access, What happens next, Help manage and close, in that order, on alternating grounds with hard butt joins. The page carries exactly one image plate in total (in the first section). No section is an offer, a pitch or a persuasion band, and no filled button is an offer button. Never merge two numbered sections into one band.",
+    "steps_block": "STEPS — between four and six step badges, primary-colour circles reading 1 up to the last step once each in that order, joined by a dotted line, each beside its own step label from the copy. Never a seventh badge that the copy does not carry.",
+    "do_not_copy": "DO NOT COPY THE EXAMPLE'S MISTAKES — the style reference was drawn by a model for a landing page and carries flaws. Never reproduce: a misspelt label (DESKTOR for DESKTOP, BTEP for STEP, featofe, thwo); a section number printed twice or skipped; garbled badges; an invalid ratio such as 3:9; duplicated text; placeholder words such as lorem ipsum or GOES HERE; any landing-page section, pain band, benefit grid or founder letter that this page's copy does not carry."
+  }
+}

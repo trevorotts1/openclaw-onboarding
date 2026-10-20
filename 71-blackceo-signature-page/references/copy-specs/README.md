@@ -11,7 +11,7 @@ The validator that enforces the specs is
 Every run's intake record (`intake.json`, written by `write_intake.py`)
 carries a required field:
 
-    copy_version: "standard" | "long-form"
+    copy_version: "standard" | "long-form" | "product-selection" | "upsell"
 
 That single field selects exactly one row of this table. Nothing else in
 the run may mix versions: a Standard run never opens the Long-Form guide,
@@ -23,6 +23,16 @@ only, and the Long-Form spec records them as explicitly not applied).
 |---|---|---|---|
 | standard | `references/BlackCEO-Signature-Landing-Page-Standard-v6.md` | `references/copy-specs/standard-v6.json` | `references/copy-specs/standard-emotional-quality.md` |
 | long-form | `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md` | `references/copy-specs/long-form-v6.json` | `references/copy-specs/long-form-emotional-quality.md` |
+| product-selection | Skill 78 `references/selection-copy-profile.md` and `selection-ui-contract.md` (the order page; not a landing form) | `references/copy-specs/product-selection-v1.json` | none: Skill 78's claim and specificity gate (`validate_selection_content.py`) |
+| upsell | Skill 80 (`80-signature-upsell`): its profile `signature-upsell-eight-section` and `validate_upsell_copy.py` | `references/copy-specs/upsell-v6.json` (eight sections, structure only: Skill 71's section-count check and request builder; Skill 80 stays the authority on the copy) | none here; Skill 80's substantive review rubric |
+| thank-you (page type, `page_role` thank_you) | `82-signature-thank-you/references/layout-and-copy-profiles.md` | `references/copy-specs/thank-you-v1.json` | none (the page's copy comes from Skill 82's clean copy profiles) |
+
+A spec that carries a `page_role` key is a page type's own canonical section sequence (the
+thank-you page: 5 sections). `scripts/page_role.py` is the one reader: it maps a declared
+`copy_version` or page role to its spec, and the section-count check, `build_production_request.py`,
+the wireframe prompt, the Design Board and the gate all read it, so a page type is never forced
+into the landing page's 12 or 15 sections. The thank-you spec is PROPOSED, pending the owner's
+approval of its layout.
 
 How the selection is written: `write_intake.py --copy-version
 {standard,long-form}` records `copy_version` in `intake.json`, and the
@@ -59,6 +69,16 @@ in its intake record. For those runs only:
 - New runs never take this path: the intake gate fails closed without
   the field. (Gate and reads-resolution behavior are owned by the S1
   contract stream; see CHANGE-REQUESTS.md.)
+
+## Page roles with their own structure (`roles/`)
+
+`roles/<page_role>.json` holds the canonical section sequence of a page that is not a landing
+page (`roles/checkout.json`: five sections). A run whose `page_role` has a file there is checked
+(`stage_executor.check_section_count`), built (`build_production_request.py --page-role`) and
+drawn (`wireframe_spec.prompt_block`) against it; `copy_version` stays a form label that only
+picks the style reference sheet. Each section names its composition role, ground, image slots,
+button rule and desktop / mobile layout. A role with no file keeps the landing specs below.
+The checkout structure is a proposal for Trevor's approval (no Trevor example exists).
 
 ## What the specs contain
 

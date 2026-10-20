@@ -39,9 +39,14 @@ def page_sizes(pdf_path):
 
 
 def check_geometry(pdf_path, image_paths):
-    """One page width for the whole set, and each page the same shape as its
-    source image: nothing cropped, stretched, padded or overlapped."""
+    """THE GUARD AGAINST NOTES BETWEEN SECTIONS. A review PDF is one continuous
+    page: one page width for the set; page 1 is its section image plus exactly
+    ONE title band (deliverable_labels.band_height) on top; every later page is
+    exactly its section image, no header, no footer, no gap. Measured in page
+    geometry, so a label or notes band added anywhere else (the old header +
+    footer on every page) cannot pass, whatever the manifest says."""
     from PIL import Image
+    import deliverable_labels as dl
     errors = []
     sizes = page_sizes(pdf_path)
     if len(sizes) != len(image_paths):
@@ -51,9 +56,20 @@ def check_geometry(pdf_path, image_paths):
     for i, ((w, h), path) in enumerate(zip(sizes, image_paths), start=1):
         with Image.open(path) as im:
             iw, ih = im.size
-        if abs(w / h - iw / ih) / (iw / ih) > 0.005:
-            errors.append(f"Page {i} is {w:.0f}x{h:.0f}pt but its source image is {iw}x{ih}px: the page was cropped, stretched or padded.")
+        want = ih + (dl.band_height(iw) if i == 1 else 0)  # px; the title band exists on page 1 only
+        got = h * iw / w  # page height back in source-image px
+        if abs(got - want) > 2:
+            what = ("an extra label or notes band (no notes between sections: the PDF reads as one continuous page, "
+                    "one title band at the top of page 1 only)") if got > want + 2 else "cropped, stretched or padded"
+            errors.append(f"Page {i} is {h:.0f}pt tall ({got:.0f}px at source width) but must be {want}px "
+                          f"({'its section image plus the one title band' if i == 1 else 'exactly its section image'}): {what}.")
     return errors
+
+
+def check_no_mid_bands(expected_pages):
+    """The manifest may declare only page 1's title: a `band`, or a title on any later page, is a label band."""
+    return [f"Manifest page {i} declares a label band; no notes between sections: only page 1 carries one title band."
+            for i, e in enumerate(expected_pages, start=1) if "band" in e or (i > 1 and "title" in e)]
 
 
 def check_delivered(sources, delivered):
@@ -84,7 +100,7 @@ def main():
     parser.add_argument("pdf", nargs="?", type=Path)
     parser.add_argument("--delivered", type=Path, help="also require the sections in this delivered folder to be the exact images the PDF was built from")
     parser.add_argument("--delivered-pdf", type=Path, help="also require this delivered PDF to be byte-identical to the validated build")
-    parser.add_argument("--delivered-pdfs", type=Path, help="with --stage: a delivered folder that must hold each of the stage's PDFs, byte-identical to the validated builds")
+    parser.add_argument("--delivered-pdfs", type=Path, help="with --stage: a delivered folder that must hold each of the stage's PDFs, in its category subfolder (desktop-wireframes, mobile-mockups, ...), byte-identical to the validated builds")
     parser.add_argument("--stage", help="treat the first argument as a run dir and validate that stage's review PDFs")
     args = parser.parse_args()
     if args.stage:
@@ -152,6 +168,7 @@ def validate(manifest_path, pdf_arg=None, delivered=None, delivered_pdf=None):
                 errors.append(f"Receipt order mismatch at page {i}.")
 
     sources = [(manifest_path.parent / e["path"]).resolve() for e in expected_pages]
+    errors.extend(check_no_mid_bands(expected_pages))
     if not errors and delivered:
         errors.extend(check_delivered(sources, delivered))
     if not errors and delivered_pdf:
@@ -183,7 +200,7 @@ def validate_stage(run_dir, stage, delivered_pdfs=None):
         print(f"FAIL: {exc}")
         return 1
     rc = 0
-    for _template, _category, name, images in sets:
+    for _template, category, name, images in sets:
         manifest = run_dir / crp.REVIEW_DIR / (name[:-4] + ".order.json")
         if not manifest.exists():
             print(f"FAIL: {stage}: review PDF {name} was never built (no {manifest.name}); run combine_review_pdf.py --stage")
@@ -194,7 +211,14 @@ def validate_stage(run_dir, stage, delivered_pdfs=None):
             print(f"FAIL: {stage}: {name} was built from a different image list than the stage now holds (rebuild it).")
             rc = 1
             continue
-        rc = max(rc, validate(manifest, delivered_pdf=delivered_pdfs / name if delivered_pdfs else None))
+        rc = max(rc, validate(manifest, delivered_pdf=delivered_pdfs / category / name if delivered_pdfs else None))
+        copy = crp.CONTRACT_COPY.get(stage)
+        if copy and rc == 0 and (run_dir / stage / copy).is_file():
+            # <stage>/wireframe.pdf is the contract artifact the stage gate requires: it must be the validated build
+            errs = check_delivered_pdf(manifest.parent / name, run_dir / stage / copy)
+            if errs:
+                print("FAIL\n- " + "\n- ".join(errs))
+                rc = 1
     return rc
 
 

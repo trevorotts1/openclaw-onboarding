@@ -40,7 +40,11 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import copy_forms  # noqa: E402  the one registry of copy forms
 
 PROFILE_NAME = "signature_launch_landing"
 SKILL_NUMBER = 71
@@ -52,6 +56,10 @@ SKILL_NUMBER = 71
 SHARED_SERVICE_MARKER = "shared_image_service"
 SHARED_SERVICE_ID = "71-blackceo-signature-page"
 SHARED_SERVICE_SKILLS = (71, 78, 79, 80, 81, 82)
+# page-request copy_profile -> the copy_version (references/copy-specs/<v>-v6.json) the
+# image stages check section counts against. An unmapped profile records none.
+COPY_PROFILE_VERSION = {"standard": "standard", "long-form": "long-form",
+                        "signature-upsell-eight-section": "upsell"}
 
 SCHEMA_FILES = {
     "page-request": "page-request.schema.json",
@@ -91,6 +99,16 @@ TOKENS_COMPONENT_VERSION = "1.0.0"
 NEXT_ROLES = ("product_selection", "checkout", "free_entry")
 
 IDENTITY_FIELDS = ("tenant_id", "location_id", "launch_id", "revision")
+
+
+def _page_role():
+    """scripts/page_role.py: the copy versions a copy_profile may map to (landing forms and
+    each page type's own form)."""
+    spec = importlib.util.spec_from_file_location(
+        "page_role", Path(__file__).resolve().parent / "page_role.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class LaunchContextError(Exception):
@@ -601,9 +619,18 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
                 "only, so an explicitly named other provider must be "
                 "resolved before intake, not silently defaulted")
         updates["image_engine"] = provider
-    copy_mapped = request["copy_profile"] in ("standard", "long-form")
+    copy_version = COPY_PROFILE_VERSION.get(request["copy_profile"])
+    if copy_version is None and request["copy_profile"] in copy_forms.FORMS:
+        copy_version = request["copy_profile"]  # a copy_profile that names a registered form is that form
+    copy_mapped = copy_version is not None
     if copy_mapped:
-        updates["copy_version"] = request["copy_profile"]
+        updates["copy_version"] = copy_version
+    # a shared-service page of another role is built from that role's own form: the request's
+    # copy_profile names the landing page's copy, which this page does not carry
+    role_form = copy_forms.form_for_role(request["page_role"]) if shared else None
+    if role_form:
+        copy_mapped = True
+        updates["copy_version"] = role_form
     if request["test_only"]:
         updates["test_run"] = True
 

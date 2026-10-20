@@ -2,7 +2,7 @@
 name: 80-signature-upsell
 assigned_skill: 80
 description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, and the local page renderer. Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
-version: 0.2.2
+version: 0.2.3
 ---
 
 # Signature Upsell 1 + Upsell 2 (Skill 80)
@@ -17,8 +17,8 @@ Skill 80 is the standalone Signature Launch upsell skill with
 verified-purchase eligibility, exact disclosure, and native one-click binding.
 
 > **STATUS — READ THIS FIRST.** This is a **packaging candidate (v0.2.0)** for
-> owner batch approval, prepared in isolation. It is **NOT installed, NOT
-> merged, and NOT production-ready.** What is proven is local only:
+> owner batch approval. It is merged to main, but it is **NOT
+> production-ready.** What is proven is local only:
 > L0 schema/static checks, L1 deterministic tests, and L2 local rendered
 > pages. What is **NOT** yet proven, stated plainly:
 >
@@ -47,9 +47,13 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 >   exist in the build environment, but neither produced a screenshot file
 >   when invoked headlessly; no screenshot was fabricated. The spec §8
 >   mockup-vs-render screenshot comparison remains open.
-> - **Brand tokens and final imagery are pending** the S71/S63 shared
->   brand/image system. The rendered pages use neutral TEST ONLY styling; no
->   brand was invented.
+> - **Brand tokens and final imagery are not in the rendered pages here.**
+>   Wireframes and mockups (desktop and mobile, review PDFs, overview boards,
+>   Design Board for the page role) come from Skill 71's page-type runner
+>   (`71-blackceo-signature-page/scripts/run_page_type.py`, spec
+>   `references/copy-specs/upsell-v6.json`), called by Skill 49's
+>   `upsell_wrapper.py --bridge-config`. The HTML pages in this skill use
+>   neutral TEST ONLY styling; no brand was invented.
 > - All shipped fixtures are **TEST ONLY**. No production copy may be trusted
 >   on a validator PASS alone: deterministic checks enforce evidence
 >   *structure*; the *truth* of a referenced record is proven at S49 /

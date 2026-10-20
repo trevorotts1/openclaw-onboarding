@@ -20,16 +20,24 @@ Written next to the PDFs, in `<run_dir>/review-pdfs/`:
 
 | File | Content |
 |---|---|
-| `<stage>-desktop-overview.png` | desktop board (stages that deliver desktop images) |
-| `<stage>-mobile-overview.png` | mobile board (stages that deliver mobile images) |
-| `<name>-combined-overview.png` | combined board: desktop and mobile together (see "Combined board") |
-| `<stage>-<device>-overview.json`, `<name>-combined-overview.json` | receipt: sha256 of every input and of the board, sizes, chrome colors, fonts, geometry (mobile grouping, section positions), which source supplied each field |
+| `<role>_DESKTOP_<KIND>-BOARD.png` | desktop board (stages that deliver desktop images) |
+| `<role>_MOBILE_<KIND>-BOARD.png` | mobile board (stages that deliver mobile images) |
+| `<role>_DESKTOP-and-MOBILE_<KIND>-BOARD.png` | combined board: desktop and mobile together (see "Combined board") |
+| the same name with `.json` |  receipt: sha256 of every input and of the board, sizes, chrome colors, fonts, geometry (mobile grouping, section positions), which source supplied each field |
 
-`<stage>` is the stage id. `desktop-wireframe` owes the desktop board,
-`mobile-tablet` the mobile board, `visual-mockup` and `final-mockups` both.
-`<name>` is the stage id for `visual-mockup` and `final-mockups`. The two
-wireframe stages are one pair (desktop wireframe, mobile wireframe), so their
-combined board is `wireframe-combined-overview.png`.
+`desktop-wireframe` owes the desktop board, `mobile-tablet` the mobile board,
+`visual-mockup` and `final-mockups` both. `<role>` is the page role slug
+(`landing`, `upsell-1`, `thank-you`, ...) and `<KIND>` is `WIREFRAME`,
+`MOCKUP-VISUAL` or `MOCKUP-FINAL`; both come from `scripts/deliverable_labels.py`,
+the one helper that names every deliverable. The two wireframe stages are one
+pair (desktop wireframe, mobile wireframe), so their combined board is
+`<role>_DESKTOP-and-MOBILE_WIREFRAME-BOARD.png`.
+
+Labels: the title band reads `<PAGE TYPE> · <DEVICE> <KIND>` (for example
+`UPSELL 1 · DESKTOP WIREFRAME`); the combined board heads its DESKTOP column
+and its MOBILE parts the same way; every guide tile and mobile frame is
+captioned with page type, device, kind and `SECTION N OF M`. The brand name
+moves to the subtitle.
 Sections are read from the same files the PDF combiner reads
 (`section-NN.png`, or `desktop/part-NN.png` and `mobile/part-NN.png`).
 

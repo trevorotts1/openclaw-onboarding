@@ -183,8 +183,12 @@ def _rgb_hex(rgb) -> str:
 # --------------------------------------------------------------------------
 # section roles and default treatments
 # --------------------------------------------------------------------------
-def section_role(section_id: str, section_name: str = "") -> str | None:
-    """The section's role, from its id first, then its printed name."""
+def section_role(section_id: str, section_name: str = "", declared: str | None = None) -> str | None:
+    """The section's role: the one a page type's spec declares for it (composition_role, a
+    library role name), else from its id, then its printed name. A page type's section "2" is
+    not the landing page's pain section, so its spec names the role instead of the id."""
+    if declared and any(r["role"] == declared for r in library()["roles"]):
+        return declared
     sid = str(section_id or "").strip().lower()
     name = str(section_name or "").strip().lower()
     for role in library()["roles"]:
@@ -285,7 +289,7 @@ def assign_treatments(sections: list, cues: dict | None = None) -> list:
             resolved.append({"section_id": None, "role": None, "slots": []})
             continue
         sid = section.get("section_id")
-        role = section_role(sid, section.get("section_name") or "")
+        role = section_role(sid, section.get("section_name") or "", section.get("composition_role"))
         slots = [s for s in (section.get("slots") or []) if isinstance(s, dict)]
         entry = {"section_id": sid, "role": role, "slots": []}
         first_choice = None
@@ -383,6 +387,10 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
              f"{resolved.get('role') or 'unclassified'}. Compose each image slot with its declared "
              "treatment; a photo column beside a text column is only one of the allowed treatments."]
     needs_negative = False
+    # Three or more slots that draw the same way (one package image per card) share ONE drawing
+    # sentence naming every slot, instead of repeating the sentence per slot.
+    group = len(entries) >= 3
+    pending = []  # [labels, tid, text] runs of identical drawings, in slot order
     for entry in entries:
         slot, tid = entry["slot"], entry["treatment"]
         t = treatments()[tid]
@@ -390,16 +398,32 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
         if wire:
             text = _fill(t["wireframe_drawing"], words)
             label = _label(slot, tid) if slot.get("slot_id") else "section backdrop"
-            lines.append(f"SLOT {label}: {text} Print the slot label with its pixel size, ratio and "
-                         f"treatment ({tid}).")
+            if group:
+                if pending and pending[-1][1:] == [tid, text]:
+                    pending[-1][0].append(label)
+                else:
+                    pending.append([[label], tid, text])
+            else:
+                lines.append(f"SLOT {label}: {text} Print the slot label with its pixel size, ratio and "
+                             f"treatment ({tid}).")
         else:
             text = _fill(t["section_prompt"], words)
-            lines.append(f"SLOT {slot.get('slot_id') or 'section backdrop'} (treatment {tid}): {text}")
+            label = str(slot.get("slot_id") or "section backdrop")
+            if group:
+                if pending and pending[-1][1:] == [tid, text]:
+                    pending[-1][0].append(label)
+                else:
+                    pending.append([[label], tid, text])
+            else:
+                lines.append(f"SLOT {label} (treatment {tid}): {text}")
             if slot.get("mobile_role") and stage == "final-mockups":
                 lines.append(f"Mobile role: {slot['mobile_role']}")
         # words over the photo, behind it or overlapping it: never an image column
         # beside a text column. Masks and plain splits keep a column by design.
         needs_negative = needs_negative or t["text_relation"] in ("over", "overlap-card", "behind")
+    for labels, tid, text in pending:
+        lines.append(f"SLOTS {', '.join(labels)} (treatment {tid}): {text}"
+                     + (f" Print each slot label with its pixel size, ratio and treatment ({tid})." if wire else ""))
     if needs_negative:
         lines.append(library()["universal_section_negative"])
     if wire:
@@ -426,7 +450,7 @@ def _row_has_section(row: dict, token: str) -> bool:
 
 
 def typed_references(stage: str, platform: str, section_id, treatment_ids_for_section: list,
-                     catalog: dict | None = None) -> list:
+                     catalog: dict | None = None, form: str | None = None) -> list:
     """Up to three hosted reference rows for one job, by type: the structural
     sheet that matches the stage and section (wireframe for wireframe stages,
     mockup for mockup stages), then one real example per non-split treatment.
@@ -441,6 +465,8 @@ def typed_references(stage: str, platform: str, section_id, treatment_ids_for_se
     token = _section_token(section_id)
     non_split = [t for t in treatment_ids_for_section if t != "split"]
     wanted = ("wireframe", "hybrid-image-map") if stage in WIREFRAME_STAGES else ("mockup",)
+    # a section sheet is picked from its own form's rows: the landing forms share theirs, every other form has its own
+    forms = (form,) if form and form not in ("standard", "long-form") else ("long-form", "standard")
     picks = []
 
     def usable(row):
@@ -449,7 +475,7 @@ def typed_references(stage: str, platform: str, section_id, treatment_ids_for_se
     for viewport in (platform, "desktop"):
         fits = [r for r in rows
                 if r.get("type") in wanted and viewport in str(r.get("viewport") or "").split("+")
-                and usable(r) and r.get("form") in ("long-form", "standard")
+                and usable(r) and r.get("form") in forms
                 and _row_has_section(r, token)]
         fits.sort(key=lambda r: r.get("viewport") != viewport)  # an exact viewport beats a shared sheet
         if fits:

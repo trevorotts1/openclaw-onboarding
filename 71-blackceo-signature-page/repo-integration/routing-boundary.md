@@ -11,7 +11,7 @@ After adding Skill 71, remove the generic trigger `build me a landing page` from
 - upsell/downsell funnel
 - full funnel
 
-Skill 71 should own plain single-page landing-page language.
+Skill 71 should own plain single-page landing-page language, and the phrases `build a signature sales page`, `create a signature sales page` and `signature sales page`: the signature sales page is page kind `sales` of Skill 71 (12-section Standard or 15-section Long-Form, wireframes and mockups included). Only the Direct-Response stack (VSL, 8-section main, high-ticket, order-bump asset stacks) goes to Skill 56; `signature sales page` is in Skill 56's `anti_signals` in the funnel-engine registry so the two never claim the same request.
 
 ## Skill 6 funnel-engine selector
 

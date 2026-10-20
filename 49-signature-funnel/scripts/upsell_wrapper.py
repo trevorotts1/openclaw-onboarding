@@ -38,7 +38,14 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
   4. PROJECT reduces it to exactly the 17 page-result 1.0 fields and
      verifies the echo against the S49 request (a result that does not
      echo is refused, never repaired).
-  5. Writes the projected result at the {result} path dispatch expects.
+  5. IMAGES  with --bridge-config (the landing bridge's own config: Skill 71 root plus
+             brand owner, image cap and brand file) hands the page to Skill 71's
+             page-type runner (scripts/run_page_type.py): desktop and mobile
+             wireframes and mockups, one long review PDF per stage, overview boards,
+             in <work_dir>/images-<slot>. The wrapper builds none of that itself. A
+             failed image run fails the wrapper closed; without --bridge-config the
+             wrapper says on stderr that no wireframes or mockups were made.
+  6. Writes the projected result at the {result} path dispatch expects.
 
 Operator-staged run inputs (sidecar): an optional enrichment JSON file
 may supply ONLY the keys this wrapper cannot source in-band:
@@ -634,6 +641,42 @@ def project_result(bundle: Mapping[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# Images - wireframes and mockups through Skill 71's page-type runner.
+# ---------------------------------------------------------------------------
+def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path,
+                  bundle_path: Path, work_dir: Path) -> List[str]:
+    """The Skill 71 runner command for this slot, from the landing bridge's config.
+
+    Brand owner, image cap and brand file come from that config only; none is
+    invented here (the same discipline as landing_bridge.py)."""
+    cfg = _load_json(Path(args.bridge_config), "bridge config")
+    root = Path((cfg.get("skill71") or {}).get("root") or "")
+    landing = cfg.get("landing") or {}
+    missing = [k for k in ("brand_owner", "image_cap", "brand_file") if landing.get(k) in (None, "")]
+    runner = root / "scripts" / "run_page_type.py"
+    if missing or not runner.is_file():
+        raise EnrichmentError([f"bridge config: landing.{missing} missing" if missing
+                               else f"bridge config: skill71.root has no {runner.name}"])
+    # Dispatch stamps every request with one copy_profile; this page's is the consumer
+    # constant, so Skill 71's intake records the upsell form. Nothing else is changed.
+    images_request = work_dir / f"page-request-images-{args.slot}.json"
+    images_request.write_text(json.dumps(
+        dict(_load_json(request_path, "request"), copy_profile=UPSELL_COPY_PROFILE),
+        indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    cmd = [sys.executable, str(runner), "--copy-version", "upsell",
+           "--copy-json", args.copy, "--bundle", str(bundle_path),
+           "--request", str(images_request), "--launch-record", args.launch,
+           "--route-graph", str(graph_path), "--brand-file", str(landing["brand_file"]),
+           "--brand-owner", str(landing["brand_owner"]), "--image-cap", str(landing["image_cap"]),
+           "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider]
+    if landing.get("design_style"):
+        cmd += ["--design-style", str(landing["design_style"])]
+    if args.allow_paid:
+        cmd.append("--allow-paid")
+    return cmd
+
+
+# ---------------------------------------------------------------------------
 # CLI - the dispatch adapter command shape.
 # ---------------------------------------------------------------------------
 def main(argv: Optional[List[str]] = None) -> int:
@@ -659,6 +702,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--copy-artifact-path",
                     help="path string recorded in result.artifacts "
                          "(default: the --copy value)")
+    ap.add_argument("--bridge-config",
+                    help="landing bridge config JSON (Skill 71 root, brand owner, image "
+                         "cap, brand file): produce the page's wireframes and mockups "
+                         "through Skill 71. Without it none are made, and the wrapper says so")
+    ap.add_argument("--image-provider", choices=["stub", "kie"], default="stub",
+                    help="image provider for --bridge-config (stub is free and draws "
+                         "placeholders; kie spends money and needs --allow-paid)")
+    ap.add_argument("--allow-paid", action="store_true",
+                    help="confirms the spend cap is approved for --image-provider kie")
     ap.add_argument("--bundle-out",
                     help="where to keep the raw bundle (default: "
                          "bundle-<slot>.json beside the request)")
@@ -709,6 +761,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         for p in exc.problems:
             print(f"FAIL-CLOSED: {p}", file=sys.stderr)
         return EXIT_FAILCLOSED
+    if args.bridge_config:
+        try:
+            cmd = image_command(args, request_path, graph_path, bundle_path, work_dir)
+        except EnrichmentError as exc:
+            for p in exc.problems:
+                print(f"FAIL-CLOSED: {p}", file=sys.stderr)
+            return EXIT_FAILCLOSED
+        if subprocess.run(cmd).returncode != 0:
+            print("FAIL-CLOSED: Skill 71 page-type runner failed; no page-result written",
+                  file=sys.stderr)
+            return EXIT_FAILCLOSED
+    else:
+        print(f"NOTE images: no --bridge-config, so no wireframes or mockups were made "
+              f"for {args.slot}; this result is copy and a TEST ONLY render only",
+              file=sys.stderr)
     Path(args.result).write_text(json.dumps(projected, indent=2) + "\n",
                                  encoding="utf-8")
     print(f"wrote {args.result} (slot={args.slot} "

@@ -1,8 +1,7 @@
 {
   "schema": "blackceo.launcher.dependencies/1",
   "target": "999-setup",
-  "enabled_in_999": false,
-  "note": "The Launcher may not be enabled in 999 until every required entry below is present. This manifest is a package, not an install: it writes nothing outside this skill and claims no 999 state.",
+  "note": "The Launcher is enabled in 999 only while every required entry below is present. The preflight derives enabled_in_999 from registration.json plus this check; this manifest writes nothing outside this skill.",
   "entries": [
     {
       "id": "tree-49-signature-funnel",
@@ -103,7 +102,7 @@
       "kind": "installer_registration",
       "ref": "83-black-friday-launcher/SKILL.md",
       "required": true,
-      "why": "install.sh and update-skills.sh discover skills as <number>-<name>/ with SKILL.md; a non-numeric or ARCHIVED directory is skipped"
+      "why": "the 999 installer discovers skills from CONTROL/bundled-skills.txt and links either <number>-<name>/ or a bare <slug>/ whose SKILL.md frontmatter name matches; install.sh and update-skills.sh discover <number>-<name>/; an ARCHIVED directory or a frontmatter name mismatch is skipped"
     },
     {
       "id": "skill-number-assigned",

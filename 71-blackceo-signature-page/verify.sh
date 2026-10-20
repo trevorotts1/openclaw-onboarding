@@ -65,6 +65,7 @@ for f in \
   assets/BlackCEO-Master-Visual-Reference-Guide.png \
   scripts/validate_state.py scripts/validate_prompt.py scripts/validate_image_manifest.py \
   scripts/validate_public_copy.py scripts/combine_review_pdf.py scripts/validate_review_pdf.py \
+  scripts/deliverable_labels.py \
   scripts/stage_gate.py scripts/render_page.py scripts/compare_sheet.py \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
   scripts/calibrate_grade.py scripts/check_authority_pins.py \
@@ -100,7 +101,14 @@ for f in \
   scripts/composition.py assets/visual-standards/reference-catalog.json \
   tests/test_composition_library.py \
   references/copy-specs/standard-v6.json references/copy-specs/long-form-v6.json \
+  references/copy-specs/roles/checkout.json scripts/role_spec.py tests/test_role_section_spec.py \
+  references/copy-specs/upsell-v6.json scripts/run_page_type.py tests/test_page_type_upsell.py \
   references/wireframe-build-spec.json scripts/wireframe_spec.py \
+  scripts/copy_forms.py references/copy-specs/product-selection-v1.json tests/test_product_selection_form.py \
+  references/page-structures.json tests/test_page_structures.py \
+  references/copy-specs/thank-you-v1.json scripts/page_role.py scripts/run_page_role_stages.py \
+  tests/test_page_role_thank_you.py tests/fixtures/copy_examples/thank-you-path-b.md \
+  references/page-kinds.json scripts/page_kinds.py tests/test_page_kinds.py \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \

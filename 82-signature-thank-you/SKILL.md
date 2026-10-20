@@ -1,7 +1,7 @@
 ---
 name: signature-thank-you
 description: Builds the terminal Signature Launch thank-you / confirmation page — the final purchase-confirmation and access experience that shows exactly what the customer actually purchased (verified against the normalized purchase snapshot and S44 entitlement state), its actual charges and terms, and what happens next. This is NOT an upsell page and carries NO new pitch, new offer, or new-charge CTA; a page that says "thank you" while selling something is an upsell page owned by Skill 80. Purchased product names, amounts, totals, order numbers, and billing schedules are allowed and required here because they identify completed purchases. Fulfillment authority is S44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching this page.
-version: 0.3.1
+version: 0.3.2
 ---
 
 # Signature Thank-You and Fulfillment (Skill 82)
@@ -44,6 +44,15 @@ survives tab close and extra-offer failure).
   order relationship only (never shared email), and the live half
   (S79/S80/S81 installed mappings + S06 native read) is named as
   L3/L4-pending, not faked.
+- `references/wireframe-mockup-layout.md` — the thank-you page's five
+  canonical sections and their desktop and mobile picture layout for the
+  wireframe and mockup stages (structure only; Trevor's visual rules apply
+  unchanged). Skill 71 is the image service: it draws the page's wireframes
+  and mockups through `71-blackceo-signature-page/scripts/shared_page_service.py
+  --page-version thank-you` (section structure in its
+  `references/copy-specs/thank-you-v1.json`); this skill never makes an image
+  itself. `render_thank_you.py` places the one hero image from the run's
+  image map (`brand.hero_image`) so the built page matches the mockup.
 - `references/branch-matrix.md` — the S82-09 branch matrix: every
   doc 18 / spec §10 case touching the final thank-you, each marked
   COVERED-L1 (exact test cited), COVERED-DOC (contract only), or
