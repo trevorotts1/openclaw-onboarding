@@ -92,13 +92,17 @@ def main(argv=None) -> int:
                         "upsell for the upsell pages (page_roles upsell_1, upsell_2), "
                         "thank-you for page_role thank_you")
     p.add_argument("--test-run", action="store_true")
-    p.add_argument("--brand-owner", required=True)
-    p.add_argument("--image-cap", type=int, required=True)
-    p.add_argument("--brand-file", type=Path, required=True)
+    p.add_argument("--brand-owner")
+    p.add_argument("--image-cap", type=int)
+    p.add_argument("--brand-file", type=Path)
+    p.add_argument("--image-inputs", type=Path, default=None,
+                   help="the launch's shared image inputs file (image_inputs.json): supplies "
+                        "--brand-owner, --image-cap, --brand-file and --design-style when they are "
+                        "not typed here; a flag typed here wins")
     p.add_argument("--launch-record", type=Path, required=True)
     p.add_argument("--route-graph", type=Path, required=True)
     p.add_argument("--consent-statements", type=Path, default=None)
-    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=None,
+    p.add_argument("--design-style", default=None,
                    help="the client's design style (A Block, B Circle, C Hybrid), recorded in the "
                         "intake like any page; omitted, the intake notes it is still to be asked")
     p.add_argument("--pipeline-command", default=None,
@@ -106,6 +110,22 @@ def main(argv=None) -> int:
                         "launch-context import (for example the run's "
                         "stage_gate sequence); one shell-style string")
     a = p.parse_args(argv)
+    if a.image_inputs:
+        try:
+            shared = json.loads(a.image_inputs.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"REFUSED: --image-inputs {a.image_inputs}: {exc}")
+            return 2
+        for key, attr, cast in (("brand_owner", "brand_owner", str), ("image_cap", "image_cap", int),
+                                ("brand_file", "brand_file", Path), ("design_style", "design_style", str)):
+            if getattr(a, attr) is None and shared.get(key) not in (None, ""):
+                setattr(a, attr, cast(shared[key]))
+    absent = [f"--{n.replace('_', '-')}" for n in ("brand_owner", "image_cap", "brand_file")
+              if getattr(a, n) is None]
+    if absent:
+        p.error("the following arguments are required (or pass --image-inputs): " + ", ".join(absent))
+    if a.design_style and a.design_style not in design_style.STYLE_IDS:
+        p.error(f"--design-style must be one of {design_style.STYLE_IDS}")
     if a.image_cap < 0:
         print("REFUSED: --image-cap must be >= 0")
         return 2

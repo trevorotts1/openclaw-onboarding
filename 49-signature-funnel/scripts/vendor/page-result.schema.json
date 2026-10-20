@@ -35,6 +35,17 @@
       "type": "string",
       "minLength": 1
     },
+    "page_role": {
+      "enum": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ]
+    },
     "status": {
       "enum": [
         "authored",

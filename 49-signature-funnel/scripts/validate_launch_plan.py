@@ -14,7 +14,8 @@ the DOMAIN law a shape cannot express:
     approval binds to its hash — inconsistency discovered later is a re-plan,
     never a silent edit;
   * journey consistency: single_simple has exactly one main offer;
-    multiple_options has at least two; free_entry has at least one;
+    multiple_options has at least two; folded_levels has at least two (levels
+    folded into the signature page, no selection page); free_entry has at least one;
   * U1 and D1 are mutually exclusive — when both are defined, each must list
     the other in `excludes`;
   * requires/excludes reference real offers, never self, and requires is
@@ -84,7 +85,7 @@ SLOTS = ("main", "bump", "upsell_1", "downsell_1", "upsell_2")
 SOURCE_KINDS = ("owner", "existing_verified_catalog", "recommendation", "test_fixture")
 PRICE_STATUSES = ("provided", "recommended_unapproved", "approved", "unknown")
 BILLING_TYPES = ("one_time", "recurring", "installment", "trial")
-JOURNEY_MODES = ("single_simple", "multiple_options", "free_entry")
+JOURNEY_MODES = ("single_simple", "multiple_options", "free_entry", "folded_levels")
 LAUNCH_STATUSES = ("collecting", "awaiting_plan_approval", "approved", "building",
                    "blocked")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -296,6 +297,10 @@ def validate_launch(launch: Any) -> List[str]:
         fail(f"single_simple requires exactly one main offer, found {len(mains)}")
     if launch["journey_mode"] == "multiple_options" and len(mains) < 2:
         fail(f"multiple_options requires at least two main offers, "
+             f"found {len(mains)}")
+    if launch["journey_mode"] == "folded_levels" and len(mains) < 2:
+        fail(f"folded_levels requires at least two main offers (the levels "
+             f"folded into the signature page, no selection page), "
              f"found {len(mains)}")
 
     # U1/D1 mutual exclusion must be DECLARED when both exist.

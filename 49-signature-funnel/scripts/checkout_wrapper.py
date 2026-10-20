@@ -49,6 +49,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from collect_launch_receipts import validate_result  # noqa: E402
+import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
 
 EXIT_OK, EXIT_FAILCLOSED, EXIT_USAGE = 0, 2, 3
 ROLE, SKILL = "checkout", 79
@@ -87,10 +88,17 @@ def load(path, what):
 
 
 def artifacts(run_dir: Path) -> list:
-    files = sorted(p for d in DELIVERABLE_DIRS if (run_dir / d).is_dir()
-                   for p in (run_dir / d).rglob("*") if p.is_file())
-    files += [run_dir / f"production-request-{s}.json" for s in STAGES]
-    return [{"path": str(p), "sha256": sha256(p)} for p in files]
+    """Every design file of the page (section images, PDFs, boards, stage records, visual bible)
+    plus the production requests, sorted by path."""
+    found = {a["path"]: a for a in page_set.design_artifacts("checkout", run_dir)}
+    for s in STAGES:
+        p = run_dir / f"production-request-{s}.json"
+        found[str(p)] = {"path": str(p), "sha256": sha256(p)}
+    for d in DELIVERABLE_DIRS:  # any other file a stage wrote into its own folder
+        for p in (run_dir / d).rglob("*") if (run_dir / d).is_dir() else ():
+            if p.is_file() and str(p) not in found:
+                found[str(p)] = {"path": str(p), "sha256": sha256(p)}
+    return [found[k] for k in sorted(found)]
 
 
 def produce(args, request) -> dict:
@@ -116,6 +124,7 @@ def produce(args, request) -> dict:
     if args.design_style:
         admit += ["--design-style", args.design_style]
     run(admit, "shared_page_service.py")
+    page_set.stage_visual_bible(getattr(args, "inputs", None), run_dir)
     for stage in STAGES:
         name = f"production-request-{stage}.json"
         build = [sys.executable, s71 / "build_production_request.py", "--page-role", ROLE, "--manuscript",
@@ -134,9 +143,12 @@ def produce(args, request) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    for flag in ("request", "result", "manuscript", "launch", "route-graph", "brand-file", "brand-owner",
-                 "image-cap", "run-dir"):
+    for flag in ("request", "result", "manuscript", "launch", "route-graph", "run-dir"):
         ap.add_argument(f"--{flag}", required=True)
+    for flag in ("brand-file", "brand-owner", "image-cap"):  # or one --image-inputs file
+        ap.add_argument(f"--{flag}")
+    ap.add_argument("--image-inputs", help="the shared image inputs file (design style, brand file, owner, "
+                                           "image cap, provider); a flag typed here still wins")
     ap.add_argument("--skill71-root", default=str(HERE.parents[1] / "71-blackceo-signature-page"))
     ap.add_argument("--design-style", choices=("A", "B", "C"))
     ap.add_argument("--slots", help="slots.json overriding the role spec's default slots")
@@ -152,6 +164,19 @@ def main(argv=None) -> int:
         return EXIT_USAGE if exc.code else EXIT_OK
     result_path = Path(args.result)
     try:
+        args.inputs = None
+        if args.image_inputs:
+            inputs = args.inputs = page_set.load_image_inputs(args.image_inputs)
+            page_set.fill_args(args, inputs, {"brand_file": "brand_file", "brand_owner": "brand_owner",
+                                              "image_cap": "image_cap", "design_style": "design_style",
+                                              "design_prose_ref": "design_prose"})
+            if args.provider == "stub" and inputs["image_provider"] == "kie":
+                args.provider, args.allow_paid = "kie", inputs["allow_paid"]
+        missing = [f for f in ("brand_file", "brand_owner", "image_cap") if args.__dict__.get(f) in (None, "")]
+        if missing:
+            raise WrapperError("missing " + ", ".join("--" + m.replace("_", "-") for m in missing)
+                               + " (or pass --image-inputs)")
+        args.image_cap = str(args.image_cap)
         request = load(args.request, "page-request")
         made = produce(args, request)
         result = {"schema_version": "1.0", **{k: request[k] for k in (
@@ -162,7 +187,7 @@ def main(argv=None) -> int:
         fails = validate_result(result, request)
         if fails:
             raise WrapperError("page-result failed receipt validation: " + "; ".join(fails))
-    except (WrapperError, OSError, KeyError) as exc:
+    except (WrapperError, page_set.PageSetError, OSError, KeyError) as exc:
         result_path.unlink(missing_ok=True)  # a failed run leaves no result to be mistaken for this run's
         print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
         return EXIT_FAILCLOSED

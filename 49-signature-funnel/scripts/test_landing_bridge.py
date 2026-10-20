@@ -378,14 +378,14 @@ class TestFullFunnelGetsAllPages(LandingBridgeCase):
         self.launch_path.write_bytes(dump(self.launch))
         self.opt_in_dir = self.td / "run-opt-in"
 
-    def test_full_funnel_without_the_opt_in_page_is_refused_before_staging(self):
+    def test_full_funnel_without_the_opt_in_page_builds_the_sales_page_alone(self):
+        # D1: which landing pages a funnel gets is the client's intake choice (page_set.py),
+        # not a bridge rule, so a full funnel is no longer refused for lacking the opt-in page.
         self.write_bridge_config()
-        req_path = self.make_request()
-        proc, result_path = self.run_bridge_directly(req_path, self.run_dir)
-        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-        self.assertIn("full funnel", proc.stdout)
-        self.assertFalse(result_path.exists())
-        self.assertFalse((self.run_dir / "page-request.json").exists())
+        manifest, out = self.emit_dispatch()
+        result = self.run_landing_adapter(out)
+        self.assertEqual(result["page_role"], "landing")
+        self.assertFalse(self.opt_in_dir.exists())
 
     def test_opt_in_page_beside_an_opt_in_landing_page_is_refused(self):
         self.write_bridge_config(page_version="long-form", page_kind="opt_in",
@@ -432,6 +432,68 @@ class TestFullFunnelGetsAllPages(LandingBridgeCase):
         manifest, out = self.emit_dispatch()
         self.run_landing_adapter(out)
         self.assertFalse(self.opt_in_dir.exists())
+
+
+class TestLandingDrawsItsImages(LandingBridgeCase):
+    """LANE-49: with the shared image inputs the bridge also DRAWS the page's wireframe and mockup
+    stages (stub provider, real Skill 71 request builder and stage executor), with the client's design
+    style, and lists every design file in the result. The real Skill 71 tree is the consumer here."""
+
+    def setUp(self):
+        super().setUp()
+        brand = (SKILL71_MAIN / "assets" / "brand" / "blackceo-brand.json").read_bytes()
+        self.brand_path.write_bytes(brand)
+        self.launch["brand_hash"] = sha256(brand)
+        self.approval["subject_hash"] = vlp.plan_document_hash(self.launch)
+        self.launch_path.write_bytes(dump(self.launch))
+        self.inputs = self.td / "image_inputs.json"
+        self.inputs.write_text(json.dumps({
+            "design_style": "A", "brand_file": str(self.brand_path), "brand_owner": "blackceo",
+            "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+        self.manuscript = SKILL71_MAIN / "tests" / "fixtures" / "copy_examples" / "standard-path-b.md"
+
+    def config(self, **over):
+        over.setdefault("brand_owner", "blackceo")  # the real brand file belongs to this owner
+        cfg = self.write_bridge_config(image_inputs=str(self.inputs), manuscript=str(self.manuscript), **over)
+        cfg["skill71"]["root"] = str(SKILL71_MAIN)  # the real tree has the builder and the executor
+        self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    def test_the_three_image_stages_are_drawn_and_every_design_file_is_in_the_result(self):
+        self.config()
+        manifest, out = self.emit_dispatch()
+        result = self.run_landing_adapter(out)
+        intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        self.assertEqual(intake["design_style"], "A")
+        names = [a["path"] for a in result["artifacts"]]
+        for stage in ("desktop-wireframe", "mobile-tablet"):
+            self.assertEqual(len([n for n in names if n.startswith(f"{stage}/section-")]), 12, stage)
+        for device in ("desktop", "mobile"):
+            self.assertEqual(len([n for n in names if n.startswith(f"visual-mockup/{device}/part-")]), 12)
+
+    def test_without_page_copy_nothing_is_drawn_and_the_summary_says_so(self):
+        self.config()
+        cfg = json.loads(self.bridge_config_path.read_text(encoding="utf-8"))
+        cfg["landing"].pop("manuscript")
+        self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
+        manifest, out = self.emit_dispatch()
+        req_path, res_path = out / "request-landing.json", out / "result-landing.json"
+        proc = subprocess.run([PY, str(BRIDGE), "--request", str(req_path), "--result", str(res_path),
+                               "--work-dir", str(out), "--bridge-config", str(self.bridge_config_path)],
+                              capture_output=True, text=True, timeout=600)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["pipeline"]["images"]["status"], "waiting_for_copy")
+        self.assertFalse((self.run_dir / "desktop-wireframe").exists())
+
+    def test_the_paid_provider_without_the_clients_approval_is_refused_before_staging(self):
+        self.inputs.write_text(json.dumps({
+            "design_style": "A", "brand_file": str(self.brand_path), "brand_owner": "blackceo",
+            "image_cap": 12, "image_provider": "kie"}), encoding="utf-8")
+        self.config()
+        req_path = self.make_request()
+        proc, result_path = self.run_bridge_directly(req_path, self.run_dir)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("paid_render_approval_ref", proc.stdout)
+        self.assertFalse((self.run_dir / "page-request.json").exists())
 
 
 class TestFailClosed(LandingBridgeCase):

@@ -10,8 +10,9 @@ answers these questions for the rest of the pipeline:
   check(kind, copy_version)    refuse a kind that may not use that copy form
   sequence(kind, copy_version) the canonical section sequence: the copy spec's
                                own `sequence` for that form, never a copy of it
-  wireframe_lines(kind, form, index, total, closing)
-                               the wireframe build-spec lines for one slice
+  wireframe_lines(kind, form, index, total, closing, levels)
+                               the wireframe build-spec lines for one slice (levels: a sales page
+                               that folds N levels into itself closes on an N-card levels panel)
   closing_label(kind, section, sections, index, total)
                                the closing band's button label (last slice)
   mockup_line(kind, closing) / board(kind)
@@ -125,20 +126,34 @@ def closing_label(kind, section: dict, sections: list, index: int, total: int):
                     "supplies a CTA label for it")
 
 
-def wireframe_lines(kind: str, form_label: str, index: int, total: int, closing=None) -> list:
-    """The page-kind head, and on the last slice the closing band."""
+def levels_block(kind: str, levels):
+    """The kind's folded-levels wording when the page offers `levels` (an int >= 2) levels folded into
+    it, else None. Only the sales page has one: an opt-in page earns a sign-up and shows no levels."""
+    if levels in (None, 0, 1) or isinstance(levels, bool):
+        return None
+    if not isinstance(levels, int) or levels < 2:
+        raise KindError(f"folded levels must be a whole number of at least 2, got {levels!r}")
+    return entry(kind).get("folded_levels")
+
+
+def wireframe_lines(kind: str, form_label: str, index: int, total: int, closing=None, levels=None) -> list:
+    """The page-kind head, and on the last slice the closing band (a levels panel when `levels`
+    levels are folded into the sales page)."""
     e = entry(kind)
     lines = [e["wireframe_head"].format(form_label=form_label, total=total)]
     if index == total:
         if not closing:
             raise KindError("the closing band needs its button label (closing_label)")
-        lines.append(e["closing_band"].format(label=closing))
+        block = levels_block(kind, levels)
+        lines.append((block["closing_band"] if block else e["closing_band"]).format(label=closing, count=levels))
     return lines
 
 
-def mockup_line(kind: str, closing=None) -> str:
+def mockup_line(kind: str, closing=None, levels=None) -> str:
     e = entry(kind)
-    return f"{e['mockup_line']} {e['closing_mockup'].format(label=closing)}" if closing else e["mockup_line"]
+    block = levels_block(kind, levels)
+    tail = (block["closing_mockup"] if block else e["closing_mockup"]).format(label=closing, count=levels)
+    return f"{e['mockup_line']} {tail}" if closing else e["mockup_line"]
 
 
 def board(kind: str) -> tuple:

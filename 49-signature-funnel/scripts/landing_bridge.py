@@ -48,18 +48,26 @@ funnel run sets "sales" (Standard or Long-Form); "opt_in" is the signature
 landing (opt-in) page and is Long-Form only (Skill 71 references/page-kinds.json).
 A full funnel gets both (see FULL FUNNEL below).
 
-FULL FUNNEL: a funnel with every extra on (upsell_1, downsell_1 and upsell_2 all
-true in the launch record) gets ALL its pages, so its landing role is delivered
-as the signature sales page AND the signature landing (opt-in) page. The bridge
-then refuses a config that does not name both: landing.page_kind "sales" plus
+TWO LANDING PAGES: the landing role can be delivered as the signature sales page, the
+signature landing (opt-in) page, or both. WHICH pages the client gets is their intake choice
+(page_set.py; the recommended set is flagged "to confirm" until they say), not a rule of the bridge:
+a config with page_kind "sales" and no opt_in object builds the sales page alone, whatever the
+funnel's extras. To build both, add
   "opt_in": {"run_dir": "<abs path; the second Skill 71 run directory>"}
-(the opt-in page is Long-Form only, so page_version and the request's approved
-copy_profile are both "long-form"; same brand owner, brand file and image cap). Both runs are staged and produced from the SAME request; the one
-result placed at {result} is the weaker of the two runs' results with both runs'
-artifacts listed (the opt-in run's paths are prefixed with its run directory
-name), so the landing role is never reported ahead of either page. The route
-graph is unchanged: the opt-in page is a second page of the landing role, not a
-new node. A funnel with fewer extras keeps the single page_kind it always had.
+(the opt-in page is Long-Form only, so page_version and the request's approved copy_profile are both
+"long-form"; same brand owner, brand file and image cap). Both runs are staged and produced from the
+SAME request; the one result placed at {result} is the weaker of the two runs' results with both
+runs' artifacts listed (the opt-in run's paths are prefixed with its run directory name), so the
+landing role is never reported ahead of either page. The route graph is unchanged: the opt-in page is
+a second page of the landing role, not a new node.
+
+IMAGE STAGES: with "landing"."image_inputs" (the shared image inputs file) the bridge also DRAWS the
+page's desktop wireframe, mobile wireframe and visual mockup stages through Skill 71's own request
+builder and stage executor, with the client's design style, instead of only reporting the gate's
+verdict. The page copy is the run's copy/internal-manuscript.md (staged from "landing"."manuscript"
+when given); with no copy yet the bridge says so ("waiting_for_copy") and draws nothing. Every design
+file the stages made is listed in the page result. The free stub provider is the default; the paid
+provider needs the inputs file's recorded approval.
 
 FAIL-CLOSED DISCIPLINE: page_version, page_kind, brand_owner and image_cap come
 from the bridge config ONLY. The bridge never invents them (no
@@ -118,6 +126,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # page_set (shared image inputs)
 
 # The documented exit contract: 0 = result placed, 2 = fail-closed
 # refusal, 3 = usage error. EXIT_USAGE is applied by
@@ -297,6 +307,19 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         if opt_in_run_dir == run_dir:
             raise BridgeError("bridge config: landing.opt_in.run_dir must differ "
                               "from landing.run_dir (one run directory per page)")
+    image_inputs = None
+    if landing.get("image_inputs") is not None:
+        import page_set
+        try:
+            image_inputs = page_set.load_image_inputs(
+                _require_abs_path(landing, "image_inputs", "landing"))
+        except page_set.PageSetError as exc:
+            raise BridgeError(f"bridge config: {exc}")
+    manuscript = None
+    if landing.get("manuscript") is not None:
+        manuscript = _require_abs_path(landing, "manuscript", "landing")
+        if not manuscript.is_file():
+            raise BridgeError(f"bridge config: landing.manuscript {manuscript} does not exist")
     pipeline_command = landing.get("pipeline_command")
     if pipeline_command is not None:
         if not isinstance(pipeline_command, list) or not pipeline_command \
@@ -317,6 +340,8 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         "consent_path": consent_path,
         "pipeline_command": pipeline_command,
         "opt_in_run_dir": opt_in_run_dir,
+        "image_inputs": image_inputs,
+        "manuscript": manuscript,
     }
 
 
@@ -606,15 +631,45 @@ def _run(argv: List[str], label: str, cwd: Optional[Path] = None,
     return proc
 
 
-FULL_FUNNEL_EXTRAS = ("upsell_1", "downsell_1", "upsell_2")
 _STATUS_RANK = ("blocked", "authored", "locally_verified", "installed_test_verified",
                 "ready_for_activation", "live_verified")
 
 
-def is_full_funnel(launch: Dict[str, Any]) -> bool:
-    extras = launch.get("extras")
-    return isinstance(extras, dict) and all(extras.get(k) is True
-                                            for k in FULL_FUNNEL_EXTRAS)
+IMAGE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+
+
+def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
+                 page_version: str) -> Dict[str, Any]:
+    """Draw the page's three image stages through Skill 71's request builder and stage executor.
+
+    Needs the page copy at <run_dir>/copy/internal-manuscript.md (staged from landing.manuscript
+    when given). With none, nothing is drawn and the summary says "waiting_for_copy"."""
+    inputs, root, python = cfg["image_inputs"], cfg["skill_root"], cfg["python"]
+    if cfg.get("manuscript") is not None:
+        _stage_file(run_dir, "copy/internal-manuscript.md",
+                    _read_bytes(cfg["manuscript"], "manuscript"), "manuscript")
+    manuscript = run_dir / "copy" / "internal-manuscript.md"
+    if not manuscript.is_file():
+        return {"status": "waiting_for_copy",
+                "note": f"no page copy at {manuscript}; the stages are drawn once the copy exists"}
+    provider = inputs["image_provider"]
+    model = "STUB-NO-MODEL" if provider == "stub" else "gpt-image-2-5-sunburst-image-to-image"
+    for stage in IMAGE_STAGES:
+        request_name = f"production-request-{stage}.json"
+        build = [python, str(root / "scripts" / "build_production_request.py"),
+                 "--copy-version", page_version, "--manuscript", str(manuscript),
+                 "--stage", stage, "--out", str(run_dir / request_name),
+                 "--page-kind", page_kind, "--model", model, "--run-dir", str(run_dir)]
+        if inputs.get("design_prose_ref"):
+            build += ["--design-prose", str(inputs["design_prose_ref"])]
+        _run(build, f"Skill 71 build_production_request ({stage})", timeout=600.0)
+        draw = [python, str(root / "scripts" / "stage_executor.py"), str(run_dir),
+                "--stages", stage, "--request", request_name, "--provider", provider]
+        if inputs["allow_paid"]:
+            draw.append("--allow-paid")
+        _run(draw, f"Skill 71 stage_executor ({stage})", timeout=1800.0)
+    return {"status": "drawn", "provider": provider, "design_style": inputs.get("design_style"),
+            "stages": list(IMAGE_STAGES)}
 
 
 def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
@@ -646,8 +701,14 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
                    str(run_dir / req["route_graph_ref"])]
     if cfg["consent_path"] is not None:
         intake_argv += ["--consent-statements", str(cfg["consent_path"])]
+    inputs = cfg.get("image_inputs")
+    if inputs and inputs.get("design_style"):
+        intake_argv += ["--design-style", inputs["design_style"]]
     _run(intake_argv, "Skill 71 write_intake (launch-context import)",
          timeout=600.0)
+
+    # Phase 1b: draw the page's wireframe and mockup stages (only with the shared image inputs).
+    images = _draw_images(cfg, run_dir, page_kind, page_version) if inputs else None
 
     # Phase 2: the production pipeline's own gate verdict. The gate
     # owns closing stages; the bridge never closes a stage itself.
@@ -680,7 +741,21 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
             "page-result: write_page_result.py exited 0 but no "
             f"page-result.json exists in the run directory {run_dir}")
     result, validation_mode = validate_emitted_result(emitted, req)
+    if images is not None:
+        pipeline["images"] = images
     return result, validation_mode, pipeline, emitted
+
+
+def _with_designs(result: Dict[str, Any], page_key: str, run_dir: Path,
+                  drawn: bool) -> List[Dict[str, Any]]:
+    """The result's artifacts plus, when the bridge drew the page's images, every design file of
+    the run folder (page_types.json deliverables), named from the run folder."""
+    found = {a["path"]: a for a in result.get("artifacts") or []}
+    if drawn:
+        import page_set
+        found.update({a["path"]: a for a in
+                      page_set.design_artifacts(page_key, run_dir, relative=True)})
+    return [found[k] for k in sorted(found)]
 
 
 def _weaker(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
@@ -715,15 +790,6 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
                 f"the page-request carries {req.get(field)!r}; the "
                 "bridge stages only a launch record that agrees with "
                 "the request it approves")
-    if is_full_funnel(launch) and (cfg["page_kind"] != "sales"
-                                   or cfg["opt_in_run_dir"] is None):
-        raise BridgeError(
-            "bridge config: this launch is a full funnel (upsell_1, downsell_1 "
-            "and upsell_2 are all on), and a full funnel gets all its pages: "
-            "set landing.page_kind to 'sales' and add landing.opt_in with its "
-            "own absolute run_dir (Long-Form, dispatched with copy_profile "
-            "'long-form') so the signature landing (opt-in) page is produced "
-            "beside the sales page")
     if cfg["opt_in_run_dir"] is not None and req["copy_profile"] != "long-form":
         raise BridgeError(
             "page-request: the approved copy_profile is "
@@ -745,26 +811,32 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
     placed = emitted.read_bytes()
     summary: Dict[str, Any] = {}
     opt_dir: Optional[Path] = cfg["opt_in_run_dir"]
+    merged = dict(result)
+    main_key = "sales" if cfg["page_kind"] == "sales" else "landing"
+    drawn = (pipeline.get("images") or {}).get("status") == "drawn"
+    main_artifacts = _with_designs(result, main_key, run_dir, drawn)
+    merged["artifacts"] = main_artifacts
     if opt_dir is not None:
         # The opt-in page is Long-Form only (Skill 71 references/page-kinds.json).
         o_result, o_mode, o_pipeline, _ = _produce(
             *args, opt_dir, "opt_in", "long-form")
-        weaker = _weaker(result, o_result)
-        merged = dict(weaker)
+        o_drawn = (o_pipeline.get("images") or {}).get("status") == "drawn"
+        merged = dict(_weaker(merged, o_result))
         merged["artifacts"] = sorted(
-            list(result.get("artifacts") or [])
+            main_artifacts
             + [{**a, "path": f"{opt_dir.name}/{a['path']}"}
-               for a in o_result.get("artifacts") or []],
+               for a in _with_designs(o_result, "landing", opt_dir, o_drawn)],
             key=lambda a: a["path"])
         merged["blockers"] = list(dict.fromkeys(
             list(result.get("blockers") or []) + list(o_result.get("blockers") or [])))
+        summary = {"opt_in_run_dir": str(opt_dir), "opt_in_pipeline": o_pipeline,
+                   "opt_in_result_status": o_result.get("status"),
+                   "opt_in_receipt_validation": o_mode}
+    if opt_dir is not None or drawn:
         merged_path = run_dir / "page-result.merged.json"
         merged_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
         result, validation_mode = validate_emitted_result(merged_path, req)
         placed = merged_path.read_bytes()
-        summary = {"opt_in_run_dir": str(opt_dir), "opt_in_pipeline": o_pipeline,
-                   "opt_in_result_status": o_result.get("status"),
-                   "opt_in_receipt_validation": o_mode}
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_bytes(placed)
     return {
