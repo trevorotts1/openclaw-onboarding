@@ -352,7 +352,13 @@
     'demo-replay': 'Sample replay',
     'claude-configured': 'Claude Code',
     'claude-nine-configured': 'Claude Code (Nine)',
-    'deepseek-configured': 'DeepSeek'
+    'deepseek-configured': 'DeepSeek',
+    'google-configured': 'Google Gemini',
+    'ollama-configured': 'Ollama',
+    'openrouter-configured': 'OpenRouter',
+    'agnes-configured': 'Agnes',
+    '9router-configured': '9Router',
+    'openai-configured': 'OpenAI'
   };
   var MODEL_LABELS = { latest_deepseek_flash: 'newest DeepSeek Flash', harness_default: '' };
 

@@ -14,10 +14,9 @@ are implemented and independently accepted.
   the canonical local-store migration asset into the runtime distribution.
 - `npm test` runs unit and controlled-transport tests. The `sample run`
   command is explicitly synthetic and does **not** prove a paid council run.
-- Standalone `create`, `status`, `authorization preview/approve/status/revoke`,
-  controlled `start`, `replay` and Markdown/JSON report paths are composed.
-  An approved grant is required; granting authority is not inferred from a CLI
-  flag or an agent's statement.
+- Standalone `create`, `status`, controlled `start`, `replay` and
+  Markdown/JSON report paths are composed. A run record is required; it is
+  not inferred from a CLI flag or an agent's statement.
 - Existing configured Claude-nine and supported OpenClaw OpenAI-compatible
   routes can be discovered, composed, and listed by `models` where the
   machine's real configuration, executable and credential reference permit.

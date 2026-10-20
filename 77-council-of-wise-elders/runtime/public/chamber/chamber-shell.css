@@ -57,7 +57,7 @@
   }
 }
 
-/* Phone: brand row, button row, then a stepper strip that scrolls inside itself. */
+/* Phone: brand row, button row, then the six steps, wrapped onto two rows so none sits off-screen. */
 @media (max-width: 599px) {
   .ch-top {
     grid-template-columns: minmax(0, 1fr);
@@ -66,8 +66,8 @@
   .ch-top { position: static; }
   .ch-top-actions { justify-content: center; flex-wrap: wrap; gap: 6px; }
   .ch-top-actions .ch-btn { padding-left: 10px; padding-right: 10px; font-size: 13px; white-space: nowrap; }
-  .ch-top-steps { display: block; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-  .ch-step-list { width: max-content; margin: 0 auto; padding: 0 var(--ch-space-2); }
+  .ch-top-steps { display: block; }
+  .ch-step-list { flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 0 var(--ch-space-2); }
 }
 
 /* Narrow phones (up to 374px): tighten so the three buttons still share one row. */

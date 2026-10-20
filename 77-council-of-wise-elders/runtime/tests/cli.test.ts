@@ -35,7 +35,10 @@ test('cli: no arguments prints the command list and exits 0', async () => {
   const code = await runCli([], c.io);
   assert.equal(code, 0);
   assert.ok(c.out().includes('blackceo-council'));
-  assert.ok(c.out().includes('authorization'));
+  assert.ok(c.out().includes('convene'));
+  for (const stale of ['authorization', 'grant-ref', 'approve']) {
+    assert.equal(c.out().includes(stale), false, `help no longer mentions ${stale}`);
+  }
 });
 
 test('cli: unknown command is a usage error with exit 2', async () => {
