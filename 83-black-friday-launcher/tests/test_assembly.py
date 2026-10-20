@@ -88,7 +88,8 @@ class ElevationFixtureTests(unittest.TestCase):
         self.assertTrue(all(p["buyer_action_required"] is False
                             for p in plan["pages"]))
         checkout = next(p for p in plan["pages"] if p["role"] == "checkout")
-        self.assertIs(checkout["build_entry"]["dispatch_adapter"], False)
+        self.assertIs(checkout["build_entry"]["dispatch_adapter"], False)  # the native form
+        self.assertTrue(checkout["build_entry"]["design_adapter"]["module"].endswith("checkout_wrapper.py"))
 
 
 class SevenFigurePreneurFixtureTests(unittest.TestCase):

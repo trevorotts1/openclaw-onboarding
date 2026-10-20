@@ -11,4 +11,6 @@ Binding contract for the component drafts in this directory:
 - Brand values bind from Skill 71 tokens at install time; `components.css` names the token contract and carries neutral fallbacks for standalone review.
 - Status and error copy renders into the `aria-live` status region; failed and pending states keep the visitor on checkout with the approved copy and the reconcile-first retry policy (doc 09 sections 7 and 8).
 
+- Design stages: the page's wireframes and mockups are made by Skill 71's shared image service on the checkout role spec (`71-blackceo-signature-page/references/copy-specs/roles/checkout.json`) through Skill 49's `checkout_wrapper.py`; the section order there is the order above and in `QC-STATES.md`.
+
 These are drafts for review, not installed pages. L2 rendered proof in an authorized location is still required before any stronger claim.

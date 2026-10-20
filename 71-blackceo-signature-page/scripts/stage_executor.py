@@ -82,6 +82,7 @@ import brand_colors  # noqa: E402  SPF019: client brand colors gate
 import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
 import composition  # noqa: E402  the composition library (treatments, typed references)
 import copy_forms  # noqa: E402  the one registry of copy forms (standard, long-form, product-selection)
+import role_spec  # noqa: E402  per-page-role section structure (checkout and any later role)
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -610,36 +611,47 @@ def allowed_section_sequences(spec: dict) -> list:
 
 
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
-    """Fail closed unless the request carries one section per canonical copy
-    section of the selected form (Standard 12, Long-Form 15, Product Selection 5),
-    in order.
+    """Fail closed unless the request carries one section per canonical section of
+    the page it builds, in order: the selected form's copy sections (Standard 12,
+    Long-Form 15, Product Selection 5) for a landing or registered-form run, or the
+    page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
+    for a run whose page_role has one.
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
     """
+    rspec = role_spec.for_request(run_dir, request)
     version = declared_copy_version(run_dir, request)
-    if not version:
-        if paid:
+    if rspec:
+        version = version or rspec["form"]  # the form only picks the style reference sheet
+        if version not in role_spec.FORMS:
             raise ExecutorError(
-                "the production request does not declare copy_version (request "
-                "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
-                "paid run needs the selected form so the section count can be checked")
-        print("NOTE section_count: no copy_version declared; the section-count "
-              "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
-        return None
-    if version not in SPEC_FILES:
-        raise ExecutorError(
-            f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
-            "(no copy spec for it in references/copy-specs/)")
-    spec_path = copy_forms.spec_path(version)
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+                f"copy_version {version!r} is not one of standard, long-form (the form label "
+                f"of the {rspec['page_role']} page's style reference)")
+        spec, label = rspec, f"{rspec['page_role']} page"
+    else:
+        if not version:
+            if paid:
+                raise ExecutorError(
+                    "the production request does not declare copy_version (request "
+                    "copy_version, metadata.copy_version, or <run_dir>/intake.json); a "
+                    "paid run needs the selected form so the section count can be checked")
+            print("NOTE section_count: no copy_version declared; the section-count "
+                  "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
+            return None
+        if version not in SPEC_FILES:
+            raise ExecutorError(
+                f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
+                "(no copy spec for it in references/copy-specs/)")
+        spec = json.loads(copy_forms.spec_path(version).read_text(encoding="utf-8"))
+        label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
     allowed = allowed_section_sequences(spec)
     if ids not in allowed:
         want = allowed[0]
         raise ExecutorError(
             f"section count: the request has {len(ids)} sections {ids} but the "
-            f"{version} copy has {len(want)} canonical sections {want}; missing "
+            f"{label} has {len(want)} canonical sections {want}; missing "
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
@@ -748,6 +760,7 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
     data["_section_check"] = check_section_count(run_dir, data, paid)
+    data["_role_spec"] = role_spec.for_request(run_dir, data)  # None for a landing run
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -817,12 +830,14 @@ def resolve_composition(section: dict, index: int, request: dict) -> dict:
 
 
 def section_typed_references(stage: str, width: int, resolved: dict, section: dict,
-                             request_form=None) -> list:
-    """Hosted reference rows (by type) for one job; [] when the catalog has none."""
+                             request_form=None, request: dict | None = None) -> list:
+    """Hosted reference rows (by type) for one job; [] when the catalog has none.
+    The structural sheets in the catalog are landing sections keyed by landing ids, so a
+    page with its own role spec never matches one by number (structure only)."""
     platform = "mobile" if width <= 768 else "desktop"
     used = [e["treatment"] for e in resolved.get("slots") or []]
-    return composition.typed_references(stage, platform, section.get("section_id"), used,
-                                        form=request_form)
+    sid = None if (request or {}).get("_role_spec") else section.get("section_id")
+    return composition.typed_references(stage, platform, sid, used, form=request_form)
 
 
 def stage_prompt(stage: str, section: dict, index: int, width: int,
@@ -1167,7 +1182,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             refs = prior_slices(stage, run_dir, index, template)
             typed = section_typed_references(
                 stage, width, resolve_composition(section, index, request), section,
-                request_form(request))
+                request_form(request), request)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True,
                 strict_floor=provider.name == "kie", typed_refs=typed)
@@ -1535,7 +1550,7 @@ def main(argv=None) -> int:
                             ratio = target_ratio(stage, template, section, run_dir, index)
                             resolved = resolve_composition(section, index, request)
                             typed = section_typed_references(stage, width, resolved, section,
-                                                             request_form(request))
+                                                             request_form(request), request)
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True, strict_floor=True, typed_refs=typed)

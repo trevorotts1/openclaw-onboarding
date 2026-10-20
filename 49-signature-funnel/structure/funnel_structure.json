@@ -211,7 +211,7 @@
     "page_types": {
       "main": {"page_role": "landing", "in_funnel_matrix": true},
       "product_selection": {"page_role": "product_selection", "in_funnel_matrix": false, "rule": "No funnel_matrix slug: the selection page is emitted between landing and checkout by Skill 78's native emitter chain and carries no copy profile."},
-      "checkout": {"page_role": "checkout", "in_funnel_matrix": true, "adapter": "absent_by_design", "rule": "CR-S49-003: the order form is the native Convert and Flow form installed by Skill 06, never a dispatch adapter. Its absence from launch-adapters.example.json is a DESIGN RULING, not a gap, and dispatch must never synthesize an entry."},
+      "checkout": {"page_role": "checkout", "in_funnel_matrix": true, "adapter": "design_only", "rule": "CR-S49-003 (amended, awaiting Trevor's ratification): the order form is the native Convert and Flow form installed by Skill 06 and is never a dispatch adapter for the form. The page's DESIGN (desktop and mobile wireframes and mockups) is produced by the design-only adapter checkout_wrapper.py through Skill 71's shared image service, on the five-section structure in 71-blackceo-signature-page/references/copy-specs/roles/checkout.json. The wrapper never builds or binds the form; dispatch must never wire any other checkout adapter."},
       "upsell": {"page_role": "upsell_1", "in_funnel_matrix": true},
       "downsell": {"page_role": "downsell_1", "in_funnel_matrix": true},
       "upsell-2": {"page_role": "upsell_2", "in_funnel_matrix": true},
@@ -229,11 +229,11 @@
 
   "image_coverage": {
     "contract": "sacred-funnel-image-coverage-ledger",
-    "rule": "Per MASTERDOC §4 every numbered copy section on a page carries exactly one signature image; the Thank-You page carries exactly one celebratory hero; the Checkout order page carries none. prove_sf_prompt_floor.py --structure computes the required (page_type, section) image set from funnel_matrix[funnel_size] + profiles[page].sections + these per-page policies, and fails AF-FUN-PROMPT-COVERAGE (prompt ledger) / AF-FUN-IMG-COVERAGE (media ledger) listing every missing pair. A partial ledger can never certify a full funnel.",
+    "rule": "Per MASTERDOC §4 every numbered copy section on a page carries exactly one signature image; the Thank-You page carries exactly one celebratory hero; the Checkout order page requires none (its design stages declare two calm slots, a product-proof plate and a guarantee or trust plate, so the Design Board has images to show). prove_sf_prompt_floor.py --structure computes the required (page_type, section) image set from funnel_matrix[funnel_size] + profiles[page].sections + these per-page policies, and fails AF-FUN-PROMPT-COVERAGE (prompt ledger) / AF-FUN-IMG-COVERAGE (media ledger) listing every missing pair. A partial ledger can never certify a full funnel.",
     "per_section_default": true,
     "page_policies": {
       "thank-you": {"per_section": false, "min_images": 1, "note": "one celebratory hero / WELCOME gallery-typography treatment; image maximum of one"},
-      "checkout": {"per_section": false, "min_images": 0, "note": "dedicated order page; minimal microcopy; no signature image required"}
+      "checkout": {"per_section": false, "min_images": 0, "note": "dedicated order page; minimal microcopy; no signature image required (two calm design slots are declared by the checkout role spec)"}
     }
   },
 

@@ -16,8 +16,14 @@ order is refused, and the finished request must pass the same
 check_section_count the executor runs before it is written. Zero provider
 calls; the file is the only output.
 
+A page role with its own section sequence (references/copy-specs/roles/<role>.json,
+checkout today) is built the same way: --page-role checkout selects that role's spec
+instead of the landing form's, and --copy-version is then optional (the form label only
+picks the style reference sheet). The role spec also supplies each section's name, its
+default image slots, ground, composition role, behaviour note and desktop / mobile layout.
+
 Usage:
-  build_production_request.py --copy-version standard|long-form|product-selection \\
+  build_production_request.py [--page-role checkout] --copy-version standard|long-form|product-selection \\
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
@@ -34,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import io
 import json
 import re
@@ -44,6 +51,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import copy_forms  # noqa: E402
 import stage_executor as exe  # noqa: E402
+import role_spec  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
 LEADS = {
@@ -251,6 +259,8 @@ def section_fragments(stage, section, index, sections, spec, table):
                if x and not PRIVATE_TEXT.search(x)]
     if purpose:
         out.append("PURPOSE: " + "; ".join(purpose) + ".")
+    if spec.get("layout_reference") and stage not in exe.wireframe_spec.WIREFRAME_STAGES:
+        out.append("PAGE LAYOUT: " + spec["layout_reference"])  # the wireframe block carries it for wireframes
     # first, so the run's planned slots win the budget the new contract blocks left
     if row.get("slots") and section.get("slots"):  # the run's IMAGE SLOTS list governs; no plan, no canon
         out.append("SLOT CANON: the usual slots for this kind of section are " + row["slots"].rstrip(".") +
@@ -338,7 +348,7 @@ def fill_to_band(request, stage, spec):
     if not budget:
         return
     ceiling = (budget["target_chars"] + budget["max_chars"]) // 2
-    table = spec.get("skeleton") or skeleton_table()
+    table = spec.get("skeleton") or (role_table(spec) if spec.get("form") else skeleton_table())
     for index, section in enumerate(request["sections"], start=1):
         parts = [str(section.get("layout") or "").strip()]
         parts = [p for p in parts if p]
@@ -346,7 +356,11 @@ def fill_to_band(request, stage, spec):
             if PRIVATE_TEXT.search(text):
                 continue
             section["layout"] = "\n".join(parts + [text])
-            if worst_size(request, stage, index, section) <= ceiling:
+            try:
+                fits_band = worst_size(request, stage, index, section) <= ceiling
+            except exe.ExecutorError:  # a long fragment overshot the model maximum: skip it, try a shorter one
+                continue
+            if fits_band:
                 parts.append(text)
         section["layout"] = "\n".join(parts)
 
@@ -368,6 +382,34 @@ def section_copy(units):
     return "\n".join(lines), buttons
 
 
+def spec_label(spec: dict) -> str:
+    return f"{spec['page_role']} page" if spec.get("page_role") else f"{spec['copy_version']} copy"
+
+
+def role_table(spec: dict) -> dict:
+    """The role spec's per-section slot canon, in the shape skeleton_table() has for landing."""
+    return {s["id"]: {"purpose": None, "slots": s.get("slot_canon", "")} for s in spec["sections"]}
+
+
+def role_section_fields(spec: dict, sid: str, slots: dict, buttons: list) -> dict:
+    """What a role spec adds to a request section: slots (the caller's, else the spec's), the
+    composition role, ground, behaviour note and the desktop / mobile layout. Also the
+    spec's one-button rule, refused by name."""
+    cta_map = spec.get("cta_map") or {}
+    if buttons and sid in cta_map.get("forbidden_in_sections", []):
+        raise BuildError(f"section {sid}: a button is not allowed here on the {spec_label(spec)} "
+                         f"({cta_map.get('rule', '')})")
+    if not buttons and sid in cta_map.get("required_in_sections", []):
+        raise BuildError(f"section {sid}: the {spec_label(spec)} needs its button here "
+                         f"({cta_map.get('rule', '')})")
+    sec = role_spec.section(spec, sid)
+    out = {"section_name": sec["name"], "composition_role": sec["composition_role"],
+           "ground": sec["ground"], "behavior_notes": sec["behavior_notes"],
+           "layout": f"DESKTOP LAYOUT: {sec['desktop']}\nMOBILE LAYOUT: {sec['mobile']}",
+           "slots": copy.deepcopy(slots[sid] if sid in slots else sec["slots"])}
+    return out
+
+
 def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
     names = spec.get("role_names") or ROLE_NAMES
     units, order, _notes = parse_manuscript(text)
@@ -375,7 +417,7 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
     if order != sequence:
         raise BuildError(
             f"section count: the manuscript has {len(order)} sections {order} but the "
-            f"{spec['copy_version']} copy has {len(sequence)} canonical sections {sequence}; "
+            f"{spec_label(spec)} has {len(sequence)} canonical sections {sequence}; "
             f"missing {[i for i in sequence if i not in order]}, unexpected "
             f"{[i for i in order if i not in sequence]}")
     out = []
@@ -386,7 +428,7 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
         if len(buttons) > 1 and not per_card:
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
-        entry = {"section_id": sid, "section_name": names[sid], "copy": copy,
+        entry = {"section_id": sid, "section_name": names.get(sid), "copy": copy,
                  "cta": None if per_card else (buttons[0] if buttons else None),
                  "slots": slots.get(sid, [])}
         if per_card:  # one button per package card
@@ -397,6 +439,8 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
                 entry[key] = spec_section[field]
         if spec_section.get("behavior_notes"):
             entry["behavior_notes"] = spec_section["behavior_notes"]
+        if spec.get("form"):  # a role spec (references/copy-specs/roles/): name, slots, layout, one-button rule
+            entry.update(role_section_fields(spec, sid, slots, buttons))
         # The founder letter ends with the founder's signature (copy spec, Section 12
         # Part 6): a name, not a sentence. It is a verbatim label of its own so the
         # executor's truncated-copy guard keeps reading prose only.
@@ -441,13 +485,25 @@ def run_blocks(request, run_dir):
     exe.resolve_design_style(Path(run_dir), request)
 
 
-def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
-    spec = copy_forms.load_spec(version)
+def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
+          page_role="landing"):
+    spec = role_spec.load(page_role)
+    if spec:
+        version = version or spec["form"]
+    else:
+        version = version or copy_forms.form_for_role(page_role)
+        if not version:
+            raise BuildError("--copy-version is required for a landing page (standard, long-form or product-selection)")
+        spec = copy_forms.load_spec(version)
     sections = sections_from_manuscript(manuscript_text, spec, slots)
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
                "stage_prompts": {stage: template_for(stage, {})}}
+    if spec.get("page_role"):
+        request["page_role"] = spec["page_role"]
+    if spec.get("form"):
+        request["_role_spec"] = spec  # the wireframe block reads it; never written out
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
@@ -488,6 +544,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         raise
     request["metadata"] = {
         "stage": stage, "copy_version": version, "section_count": len(sections),
+        **({"page_role": spec["page_role"]} if spec.get("page_role") else {}),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
         "trimmed_blocks": [k for k in chosen if chosen[k] != prose[k]],
@@ -500,14 +557,19 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
     # Fail closed on our own output, against the run this manuscript belongs to.
     request["metadata"]["checked_against"] = exe.check_section_count(run_dir, request, paid=True)[2]
     # The run's palette is re-resolved by the executor; it is never written into the request.
-    for key in ("_brand_block", "_hypersat"):
+    for key in ("_brand_block", "_hypersat", "_role_spec"):
         request.pop(key, None)
     return request
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--copy-version", choices=list(copy_forms.FORMS), required=True)
+    p.add_argument("--copy-version", choices=list(copy_forms.FORMS),
+                   help="the copy form (standard, long-form, product-selection); optional for a page role "
+                        "that has its own spec")
+    p.add_argument("--page-role", default="landing",
+                   help="page role (default landing); a role with references/copy-specs/roles/<role>.json "
+                        "is built to that role's section sequence")
     p.add_argument("--manuscript", type=Path, required=True)
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)
@@ -528,14 +590,15 @@ def main(argv=None) -> int:
         load = lambda f: json.loads(f.read_text(encoding="utf-8")) if f else {}
         request = build(a.stage, a.copy_version, a.manuscript.read_text(encoding="utf-8"),
                         load(a.slots), load(a.design_prose),
-                        [r for r in a.references.split(",") if r], a.model, a.style, run_dir)
+                        [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
+                        a.page_role)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(request, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     m = request["metadata"]
-    print(f"WROTE {a.out} copy_version={a.copy_version} stage={a.stage} "
+    print(f"WROTE {a.out} page_role={a.page_role} copy_version={request['copy_version']} stage={a.stage} "
           f"sections={m['section_count']} ids={','.join(m['canonical_ids'])}")
     cb = m["char_budget"]
     if cb["target"] and cb["min_seen"] < cb["target"]:  # floor passed (else refused); band goal missed

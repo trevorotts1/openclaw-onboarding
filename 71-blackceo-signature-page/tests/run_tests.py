@@ -18,6 +18,8 @@ MODULES = [
     "test_stage_executor_prompt_contract.py",
     "test_overview_board.py",
     "test_section_count.py",
+    # Per-page-role section structure (checkout): role spec, builder, composition roles, preflight.
+    "test_role_section_spec.py",
     # SPF021: Design Board contract, QC floor, approval binding and gates.
     "test_design_board.py",
     "test_review_pdf_stage.py",

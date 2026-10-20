@@ -38,6 +38,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import copy_forms  # noqa: E402  the one registry of copy forms
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+import design_style  # noqa: E402  the client's A / B / C choice rides through to the intake
 WRITE_INTAKE = SKILL_ROOT / "scripts" / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
 MARKER = "shared_image_service"
@@ -92,6 +94,9 @@ def main(argv=None) -> int:
     p.add_argument("--launch-record", type=Path, required=True)
     p.add_argument("--route-graph", type=Path, required=True)
     p.add_argument("--consent-statements", type=Path, default=None)
+    p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=None,
+                   help="the client's design style (A Block, B Circle, C Hybrid), recorded in the "
+                        "intake like any page; omitted, the intake notes it is still to be asked")
     p.add_argument("--pipeline-command", default=None,
                    help="the production pipeline command run after the "
                         "launch-context import (for example the run's "

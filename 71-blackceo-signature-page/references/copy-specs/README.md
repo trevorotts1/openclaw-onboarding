@@ -61,6 +61,16 @@ in its intake record. For those runs only:
   the field. (Gate and reads-resolution behavior are owned by the S1
   contract stream; see CHANGE-REQUESTS.md.)
 
+## Page roles with their own structure (`roles/`)
+
+`roles/<page_role>.json` holds the canonical section sequence of a page that is not a landing
+page (`roles/checkout.json`: five sections). A run whose `page_role` has a file there is checked
+(`stage_executor.check_section_count`), built (`build_production_request.py --page-role`) and
+drawn (`wireframe_spec.prompt_block`) against it; `copy_version` stays a form label that only
+picks the style reference sheet. Each section names its composition role, ground, image slots,
+button rule and desktop / mobile layout. A role with no file keeps the landing specs below.
+The checkout structure is a proposal for Trevor's approval (no Trevor example exists).
+
 ## What the specs contain
 
 Each spec JSON carries, with a guide source anchor on every value:

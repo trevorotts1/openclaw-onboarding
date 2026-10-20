@@ -240,10 +240,19 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     long_form = form == "long-form"
     page_kind = copy_forms.load_spec(form).get("wireframe", {}).get("page_kind", "a landing page")
     layouts = s.get("form_layouts", {}).get(form)  # a non-landing form carries its own per-section layout text
+    rspec = request.get("_role_spec")  # a page with its own structure (references/copy-specs/roles/)
+    over = (rspec or {}).get("wireframe_blocks") or {}  # replaces the landing-only wording below
     lines = [line.format(form_label=FORM_LABEL[form], platform="mobile" if mobile else "desktop",
                          width=width, tag=tag, name=name, position=index, total=total, page_kind=page_kind)
              for line in blocks["intro"]]
-    lines += [blocks["style_reference"], blocks["colour"], blocks["grammar_head"]]
+    if rspec:
+        lines[0] = lines[0].replace("a landing page", f"a {rspec['page_role']} page")
+    lines += [blocks["style_reference"], over.get("colour", blocks["colour"]), blocks["grammar_head"]]
+    if rspec:  # the reference sheet is style only
+        lines.insert(len(lines) - 1, (
+            f"PAGE TYPE LAYOUT, {rspec['page_role']} page: {rspec['layout_reference']} The attached sheet "
+            "shows the annotated build-spec style only; this page's sections and layout are the ones "
+            "described here."))
     lines.append(blocks["chip"].format(tag=tag, name_caps=name.upper()))
     lines.append(blocks["type_specs"].format(type_specs=_type_specs(stage, section)))
     plates = _plates(section)
@@ -263,7 +272,7 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
             cta_strip=blocks["cta_strip_long_form"] if solution and not mobile else ""))
     else:
         lines.append(blocks["cta_none"])
-    lines.append(blocks["bands"])
+    lines.append(over.get("bands", blocks["bands"]))
     lines.append(blocks["strip_first"].format(page=strip["page_px"], content=strip["content_px"])
                  if index == 1 else blocks["strip_other"])
     lines.append(blocks["behaviour"].format(note=_note(stage, section, cta)))
@@ -272,7 +281,7 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
         if ref["extra_rule"] and form in ("standard", "product-selection"):
             lines.append(ref["extra_rule"])
     elif not layouts:
-        lines.append(blocks["long_form_desktop" if long_form else "standard_desktop"])
+        lines.append(over.get("desktop") or blocks["long_form_desktop" if long_form else "standard_desktop"])
     if layouts:
         lines.append(layouts["mobile" if mobile else "desktop"][tag])
     if long_form and tag in ("2", "3", "4"):
