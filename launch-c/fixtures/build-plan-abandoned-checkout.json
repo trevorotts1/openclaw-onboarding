@@ -1,0 +1,29 @@
+{
+  "folder": "Elevation 2026-11 — Draft Email Workflows",
+  "_meta": {
+    "deploy_mode": "draft-only",
+    "draft_only": true,
+    "sequence_id": "email_abandoned_checkout"
+  },
+  "sequence-email-abandoned-checkout": {
+    "name": "Elevation abandoned checkout (DRAFT)",
+    "tag": "launch:elevation:abandoned-checkout",
+    "status": "draft",
+    "templates": [
+      {
+        "id": "email-sequence-email-abandoned-checkout-e01",
+        "type": "email",
+        "name": "Email: E1",
+        "order": 0,
+        "attributes": {
+          "subject": "{{contact.first_name}}, your place is still held",
+          "body": "<p>Your place is still held.</p>",
+          "html": "<p>Your place is still held.</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": []
+        }
+      }
+    ]
+  }
+}
