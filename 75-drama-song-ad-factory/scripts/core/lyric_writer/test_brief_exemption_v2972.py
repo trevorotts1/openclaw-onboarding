@@ -15,10 +15,11 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import lyric_writer as LW  # noqa: E402
 
-LAYA = os.environ.get(
-    "VTV_RUN",
-    "/Users/blackceomacmini/scratch/laya-drama-diag/x/drama-song-runs/"
-    "voyage-to-virtue")
+# Optional live-run probe. A path is NEVER hard-coded here: this repo may not
+# carry a real client's name or home directory (invariant CRITICAL-1). Point
+# CLIENT_RUN_DIR at any run folder to exercise the same checks on real data;
+# without it the synthetic brief below still proves the exemption.
+CLIENT_RUN = os.environ.get("CLIENT_RUN_DIR", "")
 
 checks, fails = [], []
 
@@ -29,13 +30,13 @@ def check(name, cond, detail=""):
         fails.append("%s: %s" % (name, detail))
 
 
-def _laya():
-    if not os.path.isdir(LAYA):
+def _client_run():
+    if not os.path.isdir(CLIENT_RUN):
         return None
     try:
-        with open(os.path.join(LAYA, "brief.json"), encoding="utf-8") as f:
+        with open(os.path.join(CLIENT_RUN, "brief.json"), encoding="utf-8") as f:
             b = json.load(f)
-        with open(os.path.join(LAYA, "creative", "lyrics.json"),
+        with open(os.path.join(CLIENT_RUN, "creative", "lyrics.json"),
                   encoding="utf-8") as f:
             lyr = json.load(f)
         return b, lyr.get("lines")
@@ -162,23 +163,23 @@ check("first-person lines still pass",
       [e["error"] for e in fp["errors"]])
 
 # --- 9. real-data proof --------------------------------------------------------
-laya = _laya()
-if laya is not None:
-    b, lines = laya
+probe = _client_run()
+if probe is not None:
+    b, lines = probe
     r = LW.validate_lyrics(lines, b)
     errs = r.get("errors") or []
-    check("laya v2 exempt (real data)",
+    check("client brief words exempt (real run data)",
           all(e.get("detail") != "v2" for e in errs
               if e["error"] == "line-not-first-person"),
           repr([e for e in errs if e["error"] == "line-not-first-person"]))
     # The spec's alternative proof: name the remaining invented line.
-    check("laya remaining refusal is exactly v1",
+    check("the only remaining refusal is the invented line",
           all(e.get("detail") == "v1" for e in errs
               if e["error"] == "line-not-first-person"),
           repr(errs))
 else:
-    checks.append("laya real-data (skipped: VTV run dir not present)")
-    print("NOTE: real-data fixture not present at %s; skipped" % LAYA)
+    checks.append("live-run probe skipped (set CLIENT_RUN_DIR to run it)")
+    print("NOTE: real-data fixture not present at %s; skipped" % CLIENT_RUN)
 
 print("test_brief_exemption_v2972: %s (%d checks, %d failures)"
       % ("PASS" if not fails else "FAIL", len(checks), len(fails)))
