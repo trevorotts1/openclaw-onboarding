@@ -18,7 +18,12 @@ never edit a validator, and three shipped gates could not all pass at once:
    it's something you choose" could never pass both. A line that is a
    contiguous run of at least 3 words of the client's own brief text (offer,
    website, claims, packet lines) is now exempt from first-person. Invented
-   second-person lines and 2-word fragments still refuse.
+   second-person lines and 2-word fragments still refuse. The comparison
+   folds apostrophe variants (a brief pasted from Word carries U+2019 while the
+   written lyric usually carries ASCII '), because ``words`` splits the curly
+   form ("isn't" is one token, "isn\u2019t" is two) and the client's own line
+   then silently refused itself -- the same deadlock by a different route.
+   ``words`` and every gate built on it keep their tokenisation.
 2. `lyric_writer` `line-multi-idea` fired on ANY period inside a line, so the
    client's website (`VoyageToVirtue.com/journeyofbecoming`, required verbatim
    by `protected_names.check_website`) always failed. A dot inside a word

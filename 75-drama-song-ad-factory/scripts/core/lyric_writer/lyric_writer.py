@@ -8,7 +8,10 @@ A line that is the client's OWN words -- a contiguous run of at least
 CLIENT_RUN_MIN words of the brief's offer, website, claims or packet_lines --
 is exempt from first-person too: the hook gate (suno_recipe.check_hook)
 demands the client's words, so without this no client hook in another voice
-could ever pass both gates (the v2.9.70 stage-3 deadlock). A dot inside a
+could ever pass both gates (the v2.9.70 stage-3 deadlock). The comparison
+folds the apostrophe variants (curly U+2019 from a pasted brief vs the
+straight one usually written) so the client's own words match themselves;
+``words`` and every gate built on it keep their tokenisation. A dot inside a
 word (VoyageToVirtue.com, 3.5) is not a sentence break for one-idea-per-line;
 "I rise. I fall" still is.
 
@@ -117,6 +120,21 @@ def words(text):
 #: contiguous run of the client's text is exempt from first-person.
 CLIENT_RUN_MIN = 3
 
+#: A brief pasted from Word/Google Docs carries CURLY apostrophes (U+2019) while
+#: the written lyric usually carries straight ones, and ``words`` splits on the
+#: curly form ("isn't" -> one token, "isn\u2019t" -> "isn" + "t"). Comparing the
+#: exemption on that raw split made a client's OWN line silently refuse, which is
+#: the exact stage-3 deadlock v2.9.70 exists to remove. Normalised for the
+#: EXEMPTION COMPARISON ONLY: ``words`` and every gate built on it keep the
+#: tokenisation they had, so no length/coverage gate changes behaviour.
+_APOSTROPHES = "\u2018\u2019\u02bc"
+
+def exempt_tokens(text):
+    """``words`` of ``text`` with the apostrophe variants folded to ASCII '."""
+    for a in _APOSTROPHES:
+        text = text.replace(a, "'")
+    return words(text)
+
 def client_word_runs(brief):
     """Word lists of the client's own text in the brief (claims, packet
     lines, offer, website)."""
@@ -126,7 +144,7 @@ def client_word_runs(brief):
         v = b.get(key) or []
         for c in v.splitlines() if isinstance(v, str) else v:
             src.append(c.get("text") if isinstance(c, dict) else c)
-    return [words(t) for t in src if isinstance(t, str) and t.strip()]
+    return [exempt_tokens(t) for t in src if isinstance(t, str) and t.strip()]
 
 def client_verbatim(toks, runs):
     n = len(toks)
@@ -322,7 +340,7 @@ def validate_lyrics(lines, brief=None):
                            "detail": "%s: one idea per line" % lid})
         cta = "cta" in str(lid).lower()
         if not cta and not (set(toks) & FIRST_PERSON) \
-                and not client_verbatim(toks, client_runs):
+                and not client_verbatim(exempt_tokens(text), client_runs):
             errors.append({"error": "line-not-first-person", "detail": lid})
 
         ltoks = set(toks)
@@ -499,7 +517,15 @@ def selftest():
         ("packet-string-verbatim-passes",
          {"line_id": "h1a", "text": "Nobody ever asks the strong one"},
          {"packet_lines": "Nobody ever asks the strong one\nI take my name"},
-         True, None)):
+         True, None),
+        # a brief pasted from Word carries a CURLY apostrophe; the written
+        # lyric usually carries a straight one. Same words, same exemption.
+        ("curly-brief-straight-lyric-passes",
+         {"line_id": "h1a", "text": "Virtue isn't something you have"},
+         {"claims": [{"text": "virtue isn\u2019t something you have"}]}, True, None),
+        ("straight-brief-curly-lyric-passes",
+         {"line_id": "h1a", "text": "Virtue isn\u2019t something you have"},
+         {"claims": [{"text": "virtue isn't something you have"}]}, True, None)):
         r = validate_lyrics([line], brief)
         checks.append(name)
         errs = {e["error"] for e in r["errors"]}
