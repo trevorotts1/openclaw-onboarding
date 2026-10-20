@@ -1,3 +1,7 @@
+## [v27.1.54]  -  2026-10-20  -  Council (Skill 77) v1.0.33: The Council screen is back to the approved look
+
+- In plain English: The Council screen is back to the approved look.
+
 ## [v27.1.53]  -  2026-10-20  -  Batch: Skill 71 zero-image run is FAILED
 
 - In plain English: a signature page run that generates no images now reports FAILED instead of success. Before, a run that produced nothing looked exactly like a run that produced every image. Admitting and staging a request without generating is now its own labelled mode (`--validation-only`), a generation run needs a pipeline command, and success is judged by the image files actually on disk. Skills bumped: 49 v2.1.18, 71 1.3.4, 78 0.2.5.

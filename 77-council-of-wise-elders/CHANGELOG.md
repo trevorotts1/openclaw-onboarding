@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.33: The Council screen is back to the approved look
+
+In plain English: the Council screen goes back to the look that was approved. There is no extra box above the room, Key Points are compact again, and no internal ids show on the page.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.54).
+
 ## v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
 
 In plain English: a council run through claude-nine could stall or lose its settings partway through, and a blocked council said the chair was still working. Now every claude-nine call keeps its safety settings, a stuck call is stopped cleanly and tried once more if it never started, the deadline is decided in one place and written down, and a blocked council names the seats that are missing and why.
