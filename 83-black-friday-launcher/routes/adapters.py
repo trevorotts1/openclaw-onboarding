@@ -327,6 +327,49 @@ def _python() -> str:
     return sys.executable or "python3"
 
 
+# The shared image inputs (contract C3) every page follows: one style, one owner, one cap. A role's
+# wrapper receives each value through whichever flag it declares, so every role is bound to the same
+# brand file, owner, spend cap and design style, and none can be drawn under a different one.
+IMAGE_PLAN_FLAGS = (
+    ("--skill71-root", "skill71_root"),
+    ("--brand-file", "brand_file"),
+    ("--brand-owner", "brand_owner"),
+    ("--image-cap", "image_cap"),
+    ("--design-style", "design_style"),
+)
+IMAGE_INPUTS_FLAG = "--image-inputs"
+
+
+def _declares(script: Path, flag: str) -> bool:
+    """True when the wrapper's source declares this command-line flag (so passing it cannot break it)."""
+    try:
+        text = script.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return f'"{flag}"' in text or f"'{flag}'" in text
+
+
+def image_flags(script: Path, command: List[str], plan: Dict[str, Any],
+                inputs_path: Path, root71: Path) -> List[str]:
+    """The shared image-plan flags this wrapper declares and its command does not already carry."""
+    values = dict(plan, skill71_root=str(root71))
+    extra: List[str] = []
+    for flag, key in IMAGE_PLAN_FLAGS:
+        if flag in command or not _declares(script, flag) or values.get(key) in (None, ""):
+            continue
+        extra += [flag, str(values[key])]
+    if IMAGE_INPUTS_FLAG not in command and _declares(script, IMAGE_INPUTS_FLAG):
+        extra += [IMAGE_INPUTS_FLAG, str(inputs_path)]
+    return extra
+
+
+def image_wiring(config: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Which shared image flags each configured role actually carries (for the delivery report)."""
+    wanted = [flag for flag, _ in IMAGE_PLAN_FLAGS] + [IMAGE_INPUTS_FLAG]
+    return {role: [f for f in wanted if f in spec["command"]]
+            for role, spec in config["adapters"].items()}
+
+
 def build_dispatch_config(*, work_dir: str | Path,
                           launch_record: str | Path,
                           bridge_config: str | Path,
@@ -340,7 +383,8 @@ def build_dispatch_config(*, work_dir: str | Path,
                           image_provider: str = "stub",
                           allow_paid: bool = False,
                           python: Optional[str] = None,
-                          checkout_design: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                          checkout_design: Optional[Dict[str, Any]] = None,
+                          image_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Bind the real adapter commands for one launch. Fails closed.
 
     No /path/to entry, no <...> token and no missing file may be emitted as
@@ -355,6 +399,10 @@ def build_dispatch_config(*, work_dir: str | Path,
     the same way a missing launch_record is. The product_selection command
     makes the images before it writes the page result and never passes
     --allow-paid.
+
+    image_plan (the resolved C3 inputs: design_style, brand_file, brand_owner, image_cap, ...) binds
+    every role to the same style, owner, cap and Skill 71 root through the flags each wrapper declares;
+    see image_flags and image_wiring.
     """
     work = Path(work_dir)
     if not work.is_dir():
@@ -479,6 +527,20 @@ def build_dispatch_config(*, work_dir: str | Path,
         if checkout_design.get("design_style"):
             command += ["--design-style", str(checkout_design["design_style"])]
         adapters["checkout"] = {"command": command, "timeout_s": surface["design_timeout_s"]}
+    if image_plan is not None:
+        scripts = {"landing": "landing_bridge.py", "upsell_1": "upsell_wrapper.py",
+                   "upsell_2": "upsell_wrapper.py", "downsell_1": "downsell_wrapper.py",
+                   "thank_you": "translate_thank_you_result.py", "checkout": "checkout_wrapper.py"}
+        for role, name in scripts.items():
+            if role in adapters:
+                adapters[role]["command"] += image_flags(
+                    root49 / name, adapters[role]["command"], image_plan, images_path, root71)
+        # the downsell wrapper draws its own pages, so it carries the provider the others already do
+        down = adapters["downsell_1"]["command"]
+        if "--image-provider" not in down and _declares(root49 / "downsell_wrapper.py", "--image-provider"):
+            down += ["--image-provider", image_provider]
+            if allow_paid and "--allow-paid" not in down:
+                down.append("--allow-paid")
     for role, spec in adapters.items():
         for part in spec["command"]:
             _refuse_placeholder(f"adapters.{role}.command", str(part))

@@ -1,6 +1,64 @@
 {
   "version": 1,
   "description": "Skill 71 mandatory stage contract. scripts/stage_gate.py is the only enforcer: no stage starts until check exits 0, no stage closes until close exits 0. Stage IDs are canonical; a run order or prompt cannot remove or rename them. Mockup architecture (Update Plan Item 5, Decision 2 option (i)): visual-mockup is an internal layout-proof stage and is never the client-facing mockup; final-mockups is the single client-judged mockup stage, opening only after the image generation chain (image-inventory-prompts, image-generation-qc, image-map-upload) has closed.",
+  "graphics_autofails": [
+    {
+      "code": "AF-G1",
+      "name": "garbled or misspelled baked text",
+      "summary": "Pixel-vs-copy parity against the section's verbatim strings; read the image back (OCR) and compare.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G2",
+      "name": "logo mutated, recolored or invented mark",
+      "summary": "Compare against the client's LOGO reference; any change to the mark fails.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G3",
+      "name": "legibility or contrast failure on key text",
+      "summary": "Any key text element that cannot be read at its delivered size.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G4",
+      "name": "anatomical artifact",
+      "summary": "Fingers, limbs or face geometry that is wrong.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G5",
+      "name": "placeholder or bracket token rendered as visible text",
+      "summary": "For example [NAME], {{token}} or lorem ipsum on the image.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G6",
+      "name": "brand palette drift",
+      "summary": "Colors outside the brand file's stated tolerances.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G7",
+      "name": "demographic default, mono-cast or skin-tone fidelity failure",
+      "summary": "Melanated skin rendered gray or ashy, hair crushed to black, plastic skin, a specified hairstyle replaced, identity changed by lighting.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    },
+    {
+      "code": "AF-G8",
+      "name": "provenance gap",
+      "summary": "No generation receipt (task id) tying the pixels to the sanctioned KIE route.",
+      "source": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
+      "effect": "any hit is a FAIL regardless of average; a pass verdict may not cite one"
+    }
+  ],
   "stage_order": [
     "intake",
     "copy",
