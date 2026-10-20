@@ -29,7 +29,7 @@ This craft cluster (`universal-sops/funnel-craft/`) is the execution playbook fo
 |---|---|
 | **49** signature-funnel | "build my funnel" · "signature funnel" · "3/5/7 step funnel" · "an opt-in and upsell chain" · "a full funnel" |
 | **62** cinematic-web-funnel-engine | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" · "build an immersive funnel" · "create a cinematic squeeze page" |
-| **78** signature-product-selection | "build a product selection page" · "compare my packages" · "a page to choose between my packages" · "pricing options page for my launch" |
+| **78** signature-product-selection | "build a product selection page" · "build my order page" · "wireframes and mockups for my order page" · "package selection page" · "compare my packages" |
 | **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" · "checkout for my launch" |
 | **80** signature-upsell | "build my upsell pages" · "add an upsell to my launch" · "build the upsell flow for my launch" · "upsell page after checkout" |
 | **81** signature-downsell | "build my downsell page" · "add a downsell to my launch" · "build the downsell flow for my launch" · "downsell page after a declined upsell" |

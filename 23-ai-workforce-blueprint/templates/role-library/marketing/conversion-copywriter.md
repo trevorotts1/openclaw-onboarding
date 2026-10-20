@@ -207,7 +207,7 @@ Per-slot floors also apply: **body/content slots ≥40 words; headline/subhead/C
 | **55** product-bio | "write my product bio" · "a master brain for my product" · "a product sales knowledge base" | `~/.openclaw/skills/55-product-bio/` | `universal-sops/product-bio-craft/` |
 | **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
 | **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
-| **78** signature-product-selection | "build a product selection page" · "compare my packages" · "a page to choose between my packages" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |
+| **78** signature-product-selection | "build a product selection page" · "build my order page" · "wireframes and mockups for my order page" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |
 | **80** signature-upsell | "build my upsell pages" · "add an upsell to my launch" · "build the upsell flow for my launch" | `~/.openclaw/skills/80-signature-upsell/` | `universal-sops/funnel-craft/` |
 | **81** signature-downsell | "build my downsell page" · "add a downsell to my launch" · "build the downsell flow for my launch" | `~/.openclaw/skills/81-signature-downsell/` | `universal-sops/funnel-craft/` |
 | **83** black-friday-launcher | "build my black friday launch" · "run the launcher for my launch" · "compose my upsell and downsell pages" | `~/.openclaw/skills/83-black-friday-launcher/` | `universal-sops/funnel-craft/` |

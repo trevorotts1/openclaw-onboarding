@@ -34,7 +34,7 @@ This craft cluster (`universal-sops/signature-page-craft/`) is the execution pla
 
 | Skill | Reach for this craft when the client says… |
 |---|---|
-| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" · "create a signature landing page" · "build an opt-in page" |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" · "create a signature landing page" · "build a signature sales page" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
 <!-- END CRAFT_INTENT_TRIGGERS_V1 -->
