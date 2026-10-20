@@ -920,8 +920,22 @@ class Adapter:
                 body["callBackUrl"] = req["callBackUrl"]
             # createTask: retried only on body code 429 (never queued); a network error is NOT retried (double-charge risk)
             j = self.call("POST", self.api + path, body)
-            tid = (j.get("data") or {}).get("taskId")
+            data = j.get("data") if isinstance(j.get("data"), dict) else {}
+            tid = data.get("taskId")
             if not tid:
+                # Some createTask-routed models answer SYNCHRONOUSLY: the payload
+                # is already in data (there is no task to poll). Observed on
+                # ai-music-api/timeStamped-lyrics, whose data.data carries
+                # alignedWords. That is a finished job, not a bad response --
+                # reporting it as bad_response made those models undispatchable.
+                inner = data.get("data")
+                if data and (inner is not None or data.get("code") is not None
+                             or data.get("msg") is not None):
+                    return self.result(state="success",
+                                       data={"response": data, "sync": True},
+                                       warnings=["sync response on createTask: "
+                                                 "payload in data.response; no job to poll"],
+                                       **base)
                 raise KieError("bad_response", "createTask returned no taskId")
             return self.result(state="queued", task_id=tid, **base)
         body = dict(inp)  # sync path: schema-declared path and body; model added only if absent
@@ -1028,6 +1042,25 @@ class Adapter:
             if kw["state"] != "success":
                 return self.result(**dict(kw, warnings=["task not successful; nothing to save"]))
             urls = kw["result_urls"]
+            if not urls:
+                # A SYNC createTask payload (no URLs, no job to poll) is the
+                # result itself: persist it as a document so the caller can read
+                # it. ai-music-api/timeStamped-lyrics returns alignedWords this
+                # way, and with nothing saved the words were unreadable. A
+                # market task carries no data.response, so this never fires for
+                # one, and an answer with no payload at all is handled upstream
+                # as bad_response -- nothing is fabricated here.
+                resp = (kw.get("data") or {}).get("response")
+                if resp is not None:
+                    os.makedirs(save_dir, exist_ok=True)
+                    dest = os.path.join(save_dir, "%s_0.json"
+                                        % re.sub(r"[^A-Za-z0-9_-]", "", str(task_id))[:40])
+                    with open(dest, "w", encoding="utf-8") as f:
+                        json.dump(resp, f, indent=1, sort_keys=True)
+                    kw["saved_paths"] = [dest]
+                    kw["warnings"] = list(kw.get("warnings") or []) + [
+                        "sync payload saved as a document; there was no file URL"]
+                    return self.result(**kw)
             if self.dl_hosts:  # caller allowlist: exact host or subdomain; others are skipped, never fetched
                 keep = [u for u in urls if self._allowed(u)]
                 if len(keep) != len(urls):
@@ -1516,7 +1549,9 @@ def main(argv=None, adapter=None, out=sys.stdout):
         ("--prompt-file", {}))
     add("latest-family", ("--family", {"required": True}), ("--capability", {"action": "append"}),
         ("--current-default", {}), ("--refresh", {"action": "store_true"}))
-    add("save", ("--task-id", {"required": True}), ("--save-dir", {"required": True}), ua, ah)
+    add("save", ("--task-id", {"required": True}), ("--save-dir", {"required": True}),
+        ("--info", {"help": "envelope JSON from a SYNC submit: its data.response is the "
+                            "result. Without it save re-queries the task."}), ua, ah)
     a = ap.parse_args(argv)
     try:
         ad = adapter or Adapter()
@@ -1575,7 +1610,8 @@ def main(argv=None, adapter=None, out=sys.stdout):
             caps = [c.strip() for x in (a.capability or []) for c in x.split(",") if c.strip()]
             r = ad.cmd_latest_family(a.family, caps or None, a.current_default, a.refresh)
         else:
-            r = ad.cmd_save(a.task_id, a.save_dir)
+            r = ad.cmd_save(a.task_id, a.save_dir,
+                            info=(_load_json(a.info) if getattr(a, "info", None) else None))
     except (KieError, OSError, ValueError) as e:
         r = ad.result(state="fail", error={"code": getattr(e, "code", "error"), "msg": ad.redact(getattr(e, "msg", str(e)))})
     out.write(ad.redact(json.dumps(r, indent=2)) + "\n")

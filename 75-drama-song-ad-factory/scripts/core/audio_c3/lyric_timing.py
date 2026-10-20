@@ -290,9 +290,15 @@ def fetch_suno_timestamped_lyrics(track: Dict[str, Any], *,
                 "DISPATCHER_UNAVAILABLE",
                 "core kie_dispatch is not importable: %s" % e) from e
         dispatcher = KD.dispatch
+    # Skill 74's ``_cb_check`` validates any PRESENT callBackUrl as an
+    # http(s) URL and refuses "" as bad_request before submit, so the key is
+    # OMITTED when there is none. This operation returns its aligned words
+    # synchronously anyway: there is nothing to call back to.
     request = {"model": KIE_MODEL_TIMESTAMPED_LYRICS,
-               "input": {"task_id": task_id or "", "audio_id": audio_id or ""},
-               "callBackUrl": (track or {}).get("callback_url", "")}
+               "input": {"task_id": task_id or "", "audio_id": audio_id or ""}}
+    _cb = (track or {}).get("callback_url")
+    if _cb:
+        request["callBackUrl"] = _cb
     receipt = card_receipt if card_receipt is not None \
         else (track or {}).get("card_receipt")
     if receipt is not None:  # never fabricated: absent stays absent -> gate refuses

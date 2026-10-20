@@ -4,6 +4,82 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.71 - 2026-10-20 - the music stage runs on a clean install: five walls
+
+v2.9.70 opened the script gate. Both clients then hit the music stage and
+stopped there: on a clean install NOT ONE paid music job could be dispatched and
+the bare `song_choices.py generate` CLI refused every run. Five defects, each
+proven on real client data (Laya Kelley's Voyage To Virtue run, 2026-10-19;
+Jennifer Allen's runs of 2026-10-16/17, FAILURE-ANALYSIS-20261017 section 4.5).
+Laya's box agent hand-patched five files between 09:56 and 10:25 EDT and her
+takes and word timings came back; this release carries the same repairs, with the
+tests the patch never had.
+
+1. **The card receipt was never attached to a song job.** `kie_dispatch.
+   card_gate_refusal` refuses EVERY paid job whose request carries no
+   `card_receipt` (F15), and `song_choices._real_generate` never attached one, so
+   every song dispatch -- and every word-timing sub-call -- refused
+   CARD_UNANSWERED although the client had answered and the stamped receipt was
+   sitting in the run folder. `song_choices._card_receipt` now reads the run's
+   OWN record, in order: `control/card-receipt-block.json` (the stamped block),
+   `control/card-receipt.json` when it holds an `answers` dict, then
+   `control/run-state.json["card_receipt"]`. Nothing found -> nothing attached:
+   the gate still refuses and no receipt is ever fabricated. A request that
+   already carries its own receipt keeps it. `song_transports.make_timings`
+   passes the same receipt to the word-timing step, which forwards it on its own
+   paid sub-call.
+   *Proof*: Laya's `probe/req.json` -> `CARD_UNANSWERED`; the same request with
+   her `probe/card-receipt-block.json` attached -> `None`.
+2. **`script_words` was fed the wrong text.** `song_choices.cmd_generate` passed
+   `script_words=spec["client_text"]` -- the 247-word market-offer research
+   document. `script_words` is a REQUIRED_TAKE_GATE that checks the TAKE sang the
+   approved lyric, so every take was asked to sing a sales page: 96 of the 120
+   required words were unsingable by any take. The gate is now handed the
+   approved sheet's LYRIC LINES only (`_sheet_lyric_words`), falling back to
+   `sheet_text`; bracket headers are directions to Suno and are excluded.
+   `client_text` stays the hook-vocabulary source in `build_requests`.
+   *Proof*: on Laya's sheet the gate wants 55 words and a take singing that
+   sheet misses none; against the old `client_text` the same take misses 95.
+3. **An empty `callBackUrl` was sent.** `audio_c3.lyric_timing` emitted
+   `"callBackUrl": ""` when a track carried no callback, and Skill 74's
+   `_cb_check` refuses `""` as bad_request before submit. The key is now OMITTED
+   when there is none; a real `callback_url` is still sent.
+4. **SYNC createTask models saved zero files (the `kie_dispatch` half).**
+   `ai-music-api/timeStamped-lyrics` answers createTask synchronously: the
+   payload (with `alignedWords`) is in `data`, there is no taskId and no job to
+   poll. `kie_dispatch` synthesized a LOCAL `sync-` id and the save step then
+   re-queried that id at KIE, found nothing and saved zero files -- which the
+   word-timing stage read as "no words". `kie_dispatch` now writes the submit
+   envelope to `sync-info.json` beside the request and passes `--info <file>` to
+   the save step for a sync job only; an asynchronous job's save argv is
+   unchanged. The Skill 74 side of this defect (the adapter reporting a sync
+   payload as `bad_response`, persisting a URL-less payload as
+   `<save_dir>/<task>_0.json`, and the `save --info` flag itself) is fixed in
+   Skill 74's own lane and ships with it; this skill only supplies the `--info`
+   argument and the envelope.
+5. **No production transports existed.** `cmd_generate` correctly refuses a
+   None `measure`/`save`, but nothing in the tree supplied real ones, so the
+   command the runbook hands agents (`song_choices.py generate`) ALWAYS refused
+   "the production run needs a real measure transport". New `scripts/core/
+   song_transports.py` (stdlib + numpy + ffmpeg, through the skill's own load
+   governor) supplies `make_measure` (decoded waveform -> duration, detector
+   segments, first sung second, tail RMS, music-under-speech ratio, the three
+   pace windows, and the one word-timing step), `make_save` (every paid take
+   filed under its variant -- a rejected paid take is evidence), `make_timings`
+   and `build_pace_plan`. The `generate` CLI wires them itself; the programmatic
+   refusal for None stays exactly as it was.
+
+Evidence (Laya Kelley, Voyage To Virtue): req.json -> CARD_UNANSWERED before the
+receipt is attached, None after; her 88 s sheet is satisfiable. Evidence
+(Jennifer Allen, 2026-10-16/17): five throwaway `driver_dispatch*.py` files were
+written to work around exactly these five walls; none is needed now.
+
+`scripts/core/test_music_clean_install_v2971.py` proves all five here (the real
+probe shapes, a synthesized tone measured off disk, and a sync dispatch through
+a FAKE Skill 74 runner -- no adapter call is made).
+
+
+
 ## v2.9.70 - 2026-10-20 - stage-3 script-lyrics deadlock: three gates that contradicted each other
 
 A 60 s / 90 s run sat in script-lyrics for hours and never reached the song:

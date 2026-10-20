@@ -341,8 +341,14 @@ def main():
               "kie_dispatch.py" in ROWS["image-keyframes"]["command"], True)
         check("runbook keeps the KIE video row",
               "kie_dispatch.py" in ROWS["video-generation"]["command"], True)
+        # v2.9.71: the music row is the shipped song_choices runner, which is
+        # the KIE path (song_choices dispatches through core/kie_dispatch and
+        # supplies its own measure/save transports). The assertion's intent is
+        # that this row never becomes an Agnes row.
+        _music_cmd = ROWS["music"]["command"]
         check("runbook keeps the KIE music row",
-              "kie_dispatch.py" in ROWS["music"]["command"], True)
+              "song_choices.py generate" in _music_cmd
+              and "agnes_dispatch" not in _music_cmd, True)
 
         # -- 6b: quota admission that will not fit -> waiting ----------------
         # The refusal is forced through the quota's OWN public knobs, not a

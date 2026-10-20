@@ -1523,6 +1523,11 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                                  owner, ev)
 
         # (1) submit --------------------------------------------------------
+        # A createTask-routed model may answer SYNCHRONOUSLY: the payload IS
+        # the result and no job exists to poll. When that happens the submit
+        # envelope is written beside the request and handed to the save step,
+        # so save never re-queries an id KIE never had.
+        sync_info_path = None
         try:
             s_rc, s, s_raw = _call(run, adapter,
                                    ["submit", "--request", req_file, "--json"])
@@ -1596,7 +1601,17 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
 
         if s_state == RUN_OK and not task_id:
             # Sync family already finished inside submit; no pollable id.
+            # NOTE: this id is LOCAL. KIE has no such task, so the save step
+            # must not re-query it -- it would find nothing and save zero
+            # files (which the word-timing stage then read as "no words").
             task_id = "sync-" + L.digest_request(request)[:12]
+        if s_state == RUN_OK and task_id.startswith("sync-"):
+            sync_info_path = os.path.join(tmp, "sync-info.json")
+            try:
+                with open(sync_info_path, "w", encoding="utf-8") as f:
+                    json.dump(s, f, sort_keys=True)
+            except (OSError, TypeError):
+                sync_info_path = None
 
         if task_id:
             sub = L.mark_submitted(ledger_db, run_id, logical_key, attempt_id,
@@ -1669,9 +1684,11 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
 
         # (3) save ----------------------------------------------------------
         try:
-            v_rc, v, v_raw = _call(run, adapter,
-                                   ["save", "--task-id", task_id,
-                                    "--save-dir", save_dir, "--json"])
+            save_argv = ["save", "--task-id", task_id,
+                         "--save-dir", save_dir, "--json"]
+            if sync_info_path:
+                save_argv += ["--info", sync_info_path]
+            v_rc, v, v_raw = _call(run, adapter, save_argv)
         except Exception as e:                              # pragma: no cover
             v, v_raw, v_rc = None, str(e), -1
         saved = (v.get("saved_paths") or []) if isinstance(v, dict) else []

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.70
+version: v2.9.71
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -1021,6 +1021,20 @@ in exactly ONE of two modes and NEVER both:
   (`song_choices.run_unit` -> the SAME single-variant helper
   `one_variant`; there is no second worker path). `cmd_generate` then reports
   `dispatched: 1`.
+
+**The music command (v2.9.71).** The command to run for the music stage is
+`song_choices.py generate --run-dir "$RUN" --request "$RUN/music/req.json"
+--ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID"`. On a clean install it is the
+only one that works, because it supplies the production transports itself
+(`scripts/core/song_transports.py`: measurements decoded off each take's own
+audio, every paid take kept under `<run>/music/takes/<variant>/take-NN/`, the
+one word-timing step and the pace order), attaches the run's recorded four-pick
+card receipt (`control/card-receipt-block.json`, else
+`control/card-receipt.json` with an `answers` dict, else
+`control/run-state.json["card_receipt"]`), and hands the `script_words` gate the
+approved sheet's LYRIC LINES instead of the source research document. The lower
+level `kie_dispatch.py dispatch` row still exists for a single hand-built job
+and supplies none of those three things.
 
 Never put an unqualified `song_choices.py generate` into all three unit
 prompts: each unit would then fan out three of its own and the run would pay

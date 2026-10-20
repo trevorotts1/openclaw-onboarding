@@ -4,6 +4,12 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.3] - 2026-10-20 - pin moves with Skill 74 v1.1.9
+
+- `tests/test_official_docs_port.py`: `SKILL_VERSIONS["74-kie-live-adapter"]` follows Skill 74's music-stage patch from 1.1.8 to 1.1.9 (sync createTask answers dispatchable; URL-less save persists the payload). The skill's own pin moves to 7.2.3 with this version roll. No setup step changes.
+
+---
+
 ## [v7.2.2] - 2026-10-14 - Presentations callback doctrine settled: decks poll, Skill 46 scoped to the Skill 74 route
 
 - `SKILL.md`: the Critical Things to Know bullet no longer orders decks onto Skill 46 callbacks. Presentations deck runs poll `recordInfo` through the department's canonical engine and never dispatch through Skill 74. Item 4 (callback vs polling policy), the Skill 74 paragraph, and the Skill 46 Companion section carry the same scoping.
