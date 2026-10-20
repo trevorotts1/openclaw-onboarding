@@ -72,9 +72,13 @@ function fail(message) {
   process.exit(1);
 }
 
+// Root-level .wired-<version> sentinels are written into every skill folder by
+// update-skills.sh during a fleet roll. They are roll bookkeeping, not skill
+// content, so they must not count toward the manifest tree hash.
 function isGeneratedRuntimePath(rel) {
   return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
-    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/");
+    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/")
+    || /^\.wired-[^/]*$/.test(rel);
 }
 
 function walk(dir, out = [], base = dir) {

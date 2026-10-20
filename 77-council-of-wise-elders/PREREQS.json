@@ -33,11 +33,11 @@
     },
     {
       "check": {
-        "note": "The pinned Command Center (see cc-compat.json) carries no council contract. The portable skill installs and registers regardless; managed visual mode reports its precise not-ready state until a paired Command Center release lands. Standalone mode is unaffected. Never report visual mode as ready."
+        "note": "Optional. Only the Command Center managed visual mode needs a Command Center release carrying the council contract (the pinned release, see cc-compat.json, has none yet). The standalone Roast Room chamber does not need a Command Center release: the Council service serves it, and the client opens it at their own council address. The portable skill installs and registers regardless. Never report the managed visual mode as ready before that release is installed."
       },
       "id": "managed-mode-command-center",
-      "label": "Managed (visual) mode needs a Command Center release carrying the council contract; none exists yet",
-      "satisfy": "No action available at install time. Install the skill; managed mode becomes available when a compatible Command Center release is installed through its own update path.",
+      "label": "Optional: Command Center managed visual mode needs a release carrying the council contract (the standalone Roast Room chamber does not)",
+      "satisfy": "No action needed for the standalone chamber. Managed mode becomes available when a compatible Command Center release is installed through its own update path.",
       "severity": "optional",
       "type": "manual"
     }

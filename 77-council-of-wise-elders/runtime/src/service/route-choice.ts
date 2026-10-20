@@ -24,6 +24,7 @@
  * Authorization header only. No error text built here includes it.
  */
 
+import type { spawn } from 'node:child_process';
 import { SubprocessHostCallTransport } from '../cli/host-call-transport.js';
 import type { ModelTransport } from '../cli/host-ports.js';
 import {
@@ -451,7 +452,7 @@ function selectionFromSnapshot(snapshot: PinnedRouteSnapshot): CouncilRouteSelec
  */
 export function transportForSnapshot(
   snapshot: PinnedRouteSnapshot,
-  opts: { homeDir?: string; env?: NodeJS.ProcessEnv },
+  opts: { homeDir?: string; env?: NodeJS.ProcessEnv; spawnImpl?: typeof spawn },
 ): ModelTransport | null {
   let route: DiscoveredRoute;
   try {
@@ -466,8 +467,14 @@ export function transportForSnapshot(
   if (route.harness?.executable) {
     return new SubprocessHostCallTransport({
       executable: route.harness.executable,
-      configDir: route.harness.configDir,
+      // Plain Claude Code keys its macOS Keychain login on whether
+      // CLAUDE_CONFIG_DIR is set, so set it only when it is not the default.
+      configDir:
+        route.harness.configRootName === '.claude' && !(opts.env ?? process.env).CLAUDE_CONFIG_DIR
+          ? undefined
+          : route.harness.configDir,
       model: snapshot.requestedModelOrAlias,
+      spawnImpl: opts.spawnImpl,
     });
   }
   if (route.compatible) {

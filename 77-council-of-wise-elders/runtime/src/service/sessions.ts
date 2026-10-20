@@ -129,3 +129,61 @@ export function resolveSessionTarget(
     'Record exactly one authority (standalone or managed) for the session.',
   );
 }
+
+export interface BlockedReason {
+  code: string;
+  detail: string;
+  missing_seats: string[];
+  last_errors: Array<{ seat_id: string; outcome_code: string | null; message: string | null }>;
+}
+
+/**
+ * Why a BLOCKED session is blocked, computed at read time from stored
+ * data (spec seats minus accepted advisor cards, failed jobs, journaled
+ * attempt failures), so sessions blocked before the journal carried
+ * messages explain themselves too. Null when the session is not BLOCKED.
+ */
+export function buildBlockedReason(input: {
+  state: string;
+  mode: string;
+  seat_ids: readonly string[];
+  cards: ReadonlyArray<{ card_kind: string; round: number; seat_id?: string }>;
+  failures: ReadonlyArray<{ seat_id: string | null; outcome_code: string | null }>;
+  events: ReadonlyArray<{ type: string; payload: Record<string, unknown> }>;
+}): BlockedReason | null {
+  if (input.state !== 'BLOCKED') return null;
+  // The first advisor round (1, then 2) that is short of seats.
+  let missing: string[] = [];
+  for (const round of [1, 2]) {
+    const have = new Set(
+      input.cards.filter((c) => c.card_kind === 'advisor' && c.round === round).map((c) => c.seat_id),
+    );
+    missing = input.seat_ids.filter((seat) => !have.has(seat));
+    if (missing.length > 0) break;
+  }
+  const attemptFailures = input.events
+    .filter((e) => e.type === 'operation_completed' && e.payload.kind === 'attempt_failed')
+    .map((e) => e.payload);
+  const lastErrors = missing.flatMap((seat) => {
+    const logged = attemptFailures.filter((p) => p.seat_id === seat).pop();
+    const job = input.failures.filter((f) => f.seat_id === seat).pop();
+    if (!logged && !job) return [];
+    return [{
+      seat_id: seat,
+      outcome_code: (logged?.outcome_code as string | undefined) ?? job?.outcome_code ?? null,
+      message: (logged?.message as string | undefined) ?? null,
+    }];
+  });
+  const settled = input.events
+    .filter((e) => e.type === 'operation_completed' && e.payload.kind === 'worker_error')
+    .map((e) => e.payload.code)
+    .filter((c): c is string => typeof c === 'string')
+    .pop();
+  const code = missing.length > 0
+    ? input.mode === 'full' ? 'FULL_MODE_SEATS_MISSING' : 'SEATS_MISSING'
+    : settled ?? 'BLOCKED_REASON_NOT_RECORDED';
+  const detail = missing.length > 0
+    ? `${input.mode === 'full' ? 'Full mode needs all nine seats' : 'The council is short of seats'}; no accepted card from: ${missing.join(', ')}.`
+    : 'The session is blocked and no seat is missing; no reason was recorded.';
+  return { code, detail, missing_seats: missing, last_errors: lastErrors };
+}

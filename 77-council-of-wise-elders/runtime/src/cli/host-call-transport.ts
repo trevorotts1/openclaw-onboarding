@@ -25,6 +25,9 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { canonicalStringify } from '../contracts/index.js';
 import type {
   ModelTransport,
@@ -35,14 +38,45 @@ import type {
 export const DEFAULT_HOST_CALL_TIMEOUT_MS = 600_000;
 const MAX_STDOUT_BYTES = 16 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
+// A launcher that runs its own guard scripts before handing off needs ~16 s
+// for --help (measured on claude-nine), so 10 s would miss every flag.
+const HELP_PROBE_TIMEOUT_MS = 45_000;
+/** Backoff before retry 1 and retry 2 (at most 2 extra attempts). */
+const RETRY_BACKOFF_MS = [5_000, 15_000];
+const TRANSIENT_PATTERN =
+  /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|Connection error|fetch failed|overloaded|\b(429|502|503|529)\b/i;
+const SECRET_PATTERN = /sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S+/g;
+
+/**
+ * Flags that stop a harness print call from loading the user's hooks,
+ * MCP servers, skills and session history. Each is added only when the
+ * harness's own --help lists it. Never --bare (skips Keychain reads),
+ * never --setting-sources (claude-nine routes through user settings).
+ */
+const ISOLATION_FLAGS: ReadonlyArray<{ flag: string; args: readonly string[] }> = [
+  { flag: '--no-session-persistence', args: ['--no-session-persistence'] },
+  { flag: '--disable-slash-commands', args: ['--disable-slash-commands'] },
+  { flag: '--strict-mcp-config', args: ['--strict-mcp-config'] },
+  { flag: '--tools', args: ['--tools', ''] },
+  { flag: '--settings', args: ['--settings', '{"disableAllHooks":true}'] },
+];
+
+/** `<exe> --help` output, once per executable path for the process lifetime. */
+const helpCache = new Map<string, Promise<string>>();
 
 export class HostCallTransportError extends Error {
   readonly retryable = false;
   readonly unknownCompletion: boolean;
-  constructor(message: string, options: { unknownCompletion?: boolean } = {}) {
+  /** Raw stdout+stderr, set only for a non-zero exit or an error envelope. */
+  readonly rawOutput: string | undefined;
+  constructor(
+    message: string,
+    options: { unknownCompletion?: boolean; rawOutput?: string } = {},
+  ) {
     super(message);
     this.name = 'HostCallTransportError';
     this.unknownCompletion = options.unknownCompletion ?? false;
+    this.rawOutput = options.rawOutput;
   }
 }
 
@@ -53,7 +87,9 @@ export interface HostCallTransportOptions {
    * The harness config root this route serves. Passed to the child as
    * CLAUDE_CONFIG_DIR so a plain harness executable serves the same
    * root the route was discovered from; launcher scripts that set it
-   * themselves set the identical value.
+   * themselves set the identical value. Omitted for the default
+   * ~/.claude root, whose macOS Keychain login is keyed on the variable
+   * being unset.
    */
   configDir?: string;
   /** Extra environment for the child, merged over the inherited env. */
@@ -68,9 +104,12 @@ export interface HostCallTransportOptions {
   timeoutMs?: number;
   /** Injectable spawn for embedding; production uses node:child_process. */
   spawnImpl?: typeof spawn;
+  /** Injectable retry sleep for tests; production waits for real time. */
+  sleepImpl?: (ms: number) => Promise<void>;
 }
 
 interface HarnessResultEnvelope {
+  type?: unknown;
   result?: unknown;
   is_error?: unknown;
   subtype?: unknown;
@@ -82,6 +121,98 @@ interface HarnessResultEnvelope {
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function redactedTail(text: string): string {
+  return text.trim().slice(-300).replace(SECRET_PATTERN, '[redacted]');
+}
+
+function asObject(text: string): HarnessResultEnvelope | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as HarnessResultEnvelope;
+    }
+  } catch {
+    // not JSON
+  }
+  return null;
+}
+
+/**
+ * The whole stdout first; otherwise the last stdout line that is a JSON
+ * object shaped like a result envelope (a launcher may print its own
+ * lines before it hands off to the harness).
+ */
+function parseEnvelope(trimmed: string): HarnessResultEnvelope | null {
+  const whole = asObject(trimmed);
+  if (whole) return whole;
+  const lines = trimmed.split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith('{')) continue;
+    const obj = asObject(line);
+    if (obj && (obj.type === 'result' || 'result' in obj || 'is_error' in obj)) return obj;
+  }
+  return null;
+}
+
+function probeHelp(
+  spawnImpl: typeof spawn,
+  executable: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<string> {
+  return new Promise<string>((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawnImpl(executable, ['--help'], { env, cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch {
+      resolve('');
+      return;
+    }
+    let out = '';
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(out);
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish();
+    }, HELP_PROBE_TIMEOUT_MS);
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (out.length < MAX_STDOUT_BYTES) out += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', () => {});
+    child.on('error', finish);
+    child.on('close', finish);
+    child.stdin?.on('error', () => {});
+    child.stdin?.end();
+  });
+}
+
+async function isolationArgs(
+  spawnImpl: typeof spawn,
+  executable: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<string[]> {
+  let help = helpCache.get(executable);
+  if (!help) {
+    help = probeHelp(spawnImpl, executable, env, cwd);
+    helpCache.set(executable, help);
+  }
+  const text = await help;
+  // A probe that timed out or printed nothing is retried on the next call.
+  if (text === '') helpCache.delete(executable);
+  const out: string[] = [];
+  for (const { flag, args } of ISOLATION_FLAGS) {
+    if (new RegExp(`(?<![\\w-])${flag}(?![\\w-])`).test(text)) out.push(...args);
+  }
+  return out;
 }
 
 export class SubprocessHostCallTransport implements ModelTransport {
@@ -102,23 +233,62 @@ export class SubprocessHostCallTransport implements ModelTransport {
 
   async generate(request: TransportRequest): Promise<TransportResponse> {
     const spawnImpl = this.options.spawnImpl ?? spawn;
-    const timeoutMs = this.options.timeoutMs ?? DEFAULT_HOST_CALL_TIMEOUT_MS;
     const env: NodeJS.ProcessEnv = { ...process.env, ...(this.options.env ?? {}) };
     if (this.options.configDir) {
       env.CLAUDE_CONFIG_DIR = this.options.configDir;
     }
+    // A dedicated empty directory so no project CLAUDE.md or hooks load.
+    const cwd = join(tmpdir(), 'council-harness-cwd');
+    mkdirSync(cwd, { recursive: true });
+    const args = [
+      '--print',
+      '--output-format',
+      'json',
+      ...(this.options.model ? ['--model', this.options.model] : []),
+      ...(await isolationArgs(spawnImpl, this.options.executable, env, cwd)),
+    ];
+    const sleep = this.options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const maxAttempts = RETRY_BACKOFF_MS.length + 1;
+
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.runOnce(spawnImpl, args, env, cwd, request);
+      } catch (err) {
+        if (
+          !(err instanceof HostCallTransportError) ||
+          err.unknownCompletion ||
+          err.rawOutput === undefined ||
+          !TRANSIENT_PATTERN.test(err.rawOutput) ||
+          request.signal?.aborted
+        ) {
+          throw err;
+        }
+        if (attempt >= maxAttempts) {
+          throw new HostCallTransportError(`${err.message} (gave up after ${attempt} attempts)`);
+        }
+        await sleep(RETRY_BACKOFF_MS[attempt - 1]);
+      }
+    }
+  }
+
+  private runOnce(
+    spawnImpl: typeof spawn,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    cwd: string,
+    request: TransportRequest,
+  ): Promise<TransportResponse> {
+    const timeoutMs = this.options.timeoutMs ?? DEFAULT_HOST_CALL_TIMEOUT_MS;
     const prompt = `${request.system}\n\n${canonicalStringify(request.input)}`;
 
     return new Promise<TransportResponse>((resolve, reject) => {
       let child: ChildProcess;
       try {
-        child = spawnImpl(
-          this.options.executable,
-          this.options.model
-            ? ['--print', '--output-format', 'json', '--model', this.options.model]
-            : ['--print', '--output-format', 'json'],
-          { env, stdio: ['pipe', 'pipe', 'pipe'] },
-        );
+        child = spawnImpl(this.options.executable, args, {
+          env,
+          cwd,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
       } catch (err) {
         reject(
           new HostCallTransportError(
@@ -184,15 +354,8 @@ export class SubprocessHostCallTransport implements ModelTransport {
           return;
         }
         const trimmed = stdout.trim();
-        let envelope: HarnessResultEnvelope | null = null;
-        try {
-          const parsed = JSON.parse(trimmed) as unknown;
-          if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            envelope = parsed as HarnessResultEnvelope;
-          }
-        } catch {
-          envelope = null;
-        }
+        const envelope = parseEnvelope(trimmed);
+        const rawOutput = `${stdout}\n${stderr}`;
         if (envelope && envelope.is_error === true) {
           const detail =
             typeof envelope.result === 'string'
@@ -201,15 +364,19 @@ export class SubprocessHostCallTransport implements ModelTransport {
                 ? envelope.subtype
                 : 'the harness reported an error';
           reject(
-            new HostCallTransportError(`The harness reported an error: ${detail}`),
+            new HostCallTransportError(
+              `The harness reported an error: ${redactedTail(detail)}`,
+              { rawOutput },
+            ),
           );
           return;
         }
         if (code !== 0 && code !== null) {
-          const tail = stderr.trim().slice(-300);
+          const tail = redactedTail(stderr);
           reject(
             new HostCallTransportError(
               `The configured harness executable exited with code ${code}${tail ? `: ${tail}` : ''}`,
+              { rawOutput },
             ),
           );
           return;

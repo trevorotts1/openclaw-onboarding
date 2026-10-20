@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.48"
+ONBOARDING_VERSION="v27.1.49"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -9789,6 +9789,28 @@ if [ -d "$_DSR_SKILL_DIR/shared-bridge" ]; then
 else
     note "skill 75 shared-bridge not in bundle ($_DSR_SKILL_DIR) -- Drama Studio enrollment + timer skipped (older onboarding bundle, harmless)"
 fi
+
+# ----------------------------------------------------------
+# Skill 77 (Council of Wise Elders): build the runtime, keep the service running
+# and put the blackceo-council CLI on PATH. A fresh install has no generic
+# wiring loop (that lives in update-skills.sh), so run the skill's own wire.sh
+# here. Fail-soft by design: wire.sh prints one COUNCIL_WIRE line, exits 0 for
+# every not-ready state and 1 only when the runtime build failed; none of it
+# may fail the install, and the next update-skills roll retries it.
+# ----------------------------------------------------------
+_COUNCIL_WIRE="$SKILLS_DIR/77-council-of-wise-elders/wire.sh"
+if [ -x "$_COUNCIL_WIRE" ]; then
+    step "Council of Wise Elders: building the runtime and starting the service (skill 77, idempotent)"
+    _council_rc=0
+    bash "$_COUNCIL_WIRE" --idempotent 2>&1 | tee -a "$LOG_FILE" || _council_rc=$?
+    if [ "$_council_rc" -ne 0 ]; then
+        note "Council wire step returned rc=$_council_rc (see $LOG_FILE); the install continues and the next update retries it"
+    fi
+    unset _council_rc
+else
+    note "skill 77 wire.sh not in bundle ($_COUNCIL_WIRE) -- Council service wiring skipped (older onboarding bundle, harmless)"
+fi
+unset _COUNCIL_WIRE
 
 # ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)

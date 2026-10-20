@@ -1,4 +1,4 @@
-# WER-026 host acceptance — runnable supervisor driver (W13-U001)
+# WER-026 host acceptance - runnable supervisor driver (W13-U001)
 
 Live acceptance on the operator host for the new supervisor entry point
 `77-council-of-wise-elders/scripts/supervisor/runner.mjs`.
