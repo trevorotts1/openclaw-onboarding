@@ -1,0 +1,326 @@
+{
+  "id": "launch-a-prelaunch-window",
+  "name": "Launch A — Pre-Launch Window (Calendar, Tags, Schedule, Switches)",
+  "aliases": [
+    "pre-launch window automation",
+    "pre-cart indoctrination window",
+    "launch pre-frame schedule",
+    "doors-soon sequence",
+    "pre-launch open close switches"
+  ],
+  "category": "multichannel-automation",
+  "spec": {
+    "section": "3.3 Pre-launch",
+    "family": "pre_launch",
+    "build_rail": "skill44_engine",
+    "draft_only": true,
+    "source_templates": [
+      "44-convert-and-flow-operator/automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.json (PRE-CART rows only)",
+      "44-convert-and-flow-operator/automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+    ],
+    "capability_note": "44-convert-and-flow-operator/automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md — official API cannot create, update, publish or trigger a workflow. Build through the Skill 44 internal-API engine; calendar Wait Until dates and the Messenger action need the Tier-4 managed browser."
+  },
+  "purpose": "Own the days before doors open and nothing else. The workflow warms the pre-launch list with the indoctrination story series, lands the final pre-cart reminder, then hands off at doors_open_at. Cart-open sends, cart-close urgency, post-close branching and every cart-window message belong to the cart-open/cart-close lane, not this file.",
+  "trigger": {
+    "type": "contact_tag",
+    "detail": "Tag Added: pre-launch-list",
+    "filters": [
+      "purchased-[offer-id] absent",
+      "buyer-[offer] absent",
+      "indoc-started absent (single entry per contact per launch)"
+    ],
+    "fires": "once per contact per launch",
+    "reentry_guard": "indoc-started"
+  },
+  "calendar_dates": {
+    "source": "launch_plan.launch_calendar — every datetime below is derived from these four fields, never typed by a lane",
+    "canonical": {
+      "launch_at": "{{launch_at}}",
+      "doors_open_at": "{{doors_open_at}}",
+      "doors_close_at": "{{doors_close_at}}",
+      "timezone": "{{timezone}}"
+    },
+    "derived": {
+      "prelaunch_open_at": "doors_open_at - 5 days at 09:00 location time",
+      "indoc_1_at": "doors_open_at - 5 days at 09:00 location time",
+      "indoc_2_at": "doors_open_at - 3 days at 09:00 location time",
+      "indoc_3_at": "doors_open_at - 2 days at 09:00 location time",
+      "indoc_4_at": "doors_open_at - 2 days at 14:00 location time (optional; only with a genuine values story)",
+      "precart_reminder_at": "doors_open_at - 1 day at 09:00 location time",
+      "precart_sms_at": "doors_open_at - 1 day at 18:00 location time",
+      "prelaunch_close_at": "doors_open_at"
+    },
+    "date_waits": {
+      "rule": "Every wait is 'Wait Until' the fixed datetime above, never a duration and never a relative day count.",
+      "rail": "tier4",
+      "reason": "The API workflow builder verifies duration waits only. Calendar 'Wait Until' dates are rejected by the API builder and must be built in the managed browser. Do not strip the timing contract to make the API accept the template.",
+      "single_source": "All dates resolve from launch_plan.launch_calendar. A missing or placeholder calendar blocks the build."
+    }
+  },
+  "tags": {
+    "entry": [
+      {
+        "tag": "pre-launch-list",
+        "added_by": "opt-in / waitlist upstream",
+        "role": "workflow entry tag"
+      }
+    ],
+    "runtime": [
+      {
+        "tag": "indoc-started",
+        "when": "first node",
+        "role": "re-entry guard"
+      },
+      {
+        "tag": "indoc-1-sent",
+        "when": "after the D-5 origin story send succeeds"
+      },
+      {
+        "tag": "indoc-2-sent",
+        "when": "after the D-3 obsession story send succeeds"
+      },
+      {
+        "tag": "indoc-3-sent",
+        "when": "after the D-2 teaching send succeeds"
+      },
+      {
+        "tag": "indoc-4-sent",
+        "when": "after the optional values send succeeds"
+      },
+      {
+        "tag": "doors-soon",
+        "when": "after the D-1 pre-cart reminder"
+      },
+      {
+        "tag": "prelaunch-complete",
+        "when": "at doors_open_at after the handoff tag is written"
+      },
+      {
+        "tag": "cart-open-ready",
+        "when": "at doors_open_at — the handoff signal consumed by the cart-open/cart-close lane"
+      }
+    ],
+    "channel_gates": [
+      {
+        "tag": "sms-subscribed",
+        "use": "SMS beats send only when present"
+      },
+      {
+        "tag": "messenger-subscribed",
+        "use": "Messenger mirrors send only when present"
+      }
+    ],
+    "exit": [
+      {
+        "tag": "purchased-[offer-id]",
+        "when": "purchase interrupt at any node",
+        "effect": "remove from workflow immediately; stop every remaining pre-launch beat"
+      },
+      {
+        "tag": "buyer-[offer]",
+        "when": "purchase interrupt at any node",
+        "effect": "same exit, buyer-side tag"
+      }
+    ],
+    "control": [
+      {
+        "tag": "pre-launch-stop",
+        "use": "operator kill switch; presence ends the workflow for that contact and suppresses future beats"
+      }
+    ]
+  },
+  "schedule": [
+    {
+      "beat": "Entry",
+      "at": "trigger fires",
+      "channels": [],
+      "actions": [
+        "Add tag indoc-started",
+        "If/Else: purchased-[offer-id] or buyer-[offer] present → end",
+        "Arm the D-5 Wait Until"
+      ],
+      "rail": "skill44_engine",
+      "no_send": true
+    },
+    {
+      "beat": "INDOC-01 — Origin / Backstory",
+      "at": "{{indoc_1_at}}",
+      "channels": ["email", "messenger", "retargeting_ad"],
+      "actions": [
+        "Send email INDOC-01 (story only, no pitch, no buy CTA)",
+        "If messenger-subscribed → Messenger INDOC-M01 mirror",
+        "Add tag indoc-1-sent"
+      ],
+      "rail": "skill44_engine for email + tag; tier4 for the Messenger action"
+    },
+    {
+      "beat": "INDOC-02 — Obsession / Expertise",
+      "at": "{{indoc_2_at}}",
+      "channels": ["email", "messenger", "sms"],
+      "actions": [
+        "Send email INDOC-02 (story only, no pitch)",
+        "If email not opened in 24h AND sms-subscribed → SMS INDOC-S01 nudge with story link",
+        "If messenger-subscribed → Messenger INDOC-M02 mirror",
+        "Add tag indoc-2-sent"
+      ],
+      "rail": "skill44_engine for email + SMS + tag; tier4 for the Messenger action"
+    },
+    {
+      "beat": "INDOC-03 — Teaching / Method",
+      "at": "{{indoc_3_at}}",
+      "channels": ["email", "messenger", "retargeting_ad"],
+      "actions": [
+        "Send email INDOC-03 (teaching, first stay-tuned CTA, no buy CTA)",
+        "If messenger-subscribed → Messenger INDOC-M03 mirror",
+        "Add tag indoc-3-sent"
+      ],
+      "rail": "skill44_engine for email + tag; tier4 for the Messenger action"
+    },
+    {
+      "beat": "INDOC-04 — Values / Mission (optional)",
+      "at": "{{indoc_4_at}}",
+      "channels": ["email", "messenger"],
+      "actions": [
+        "Send email INDOC-04 only when a genuine values story is approved",
+        "If messenger-subscribed → Messenger INDOC-M04 mirror",
+        "Add tag indoc-4-sent"
+      ],
+      "skip_rule": "No genuine values story → skip this beat and go straight to the D-1 reminder. Never fabricate one.",
+      "rail": "skill44_engine for email + tag; tier4 for the Messenger action"
+    },
+    {
+      "beat": "PRE-CART — Last reminder before doors open",
+      "at": "{{precart_reminder_at}}",
+      "channels": ["email", "sms"],
+      "actions": [
+        "Send email PRE-CART last reminder: what opens tomorrow, who it is for, exact doors_open_at time, why it closes",
+        "Add tag doors-soon",
+        "Wait Until {{precart_sms_at}}",
+        "If sms-subscribed → SMS PRE-CART reminder with the doors_open_at time"
+      ],
+      "rail": "skill44_engine for email + SMS + tag; tier4 for the Wait Until"
+    },
+    {
+      "beat": "Handoff",
+      "at": "{{doors_open_at}}",
+      "channels": [],
+      "actions": [
+        "Wait Until {{doors_open_at}}",
+        "If/Else: purchased-[offer-id] present → end",
+        "Add tag cart-open-ready",
+        "Add tag prelaunch-complete",
+        "End this workflow. The cart-open/cart-close lane owns every send from doors_open_at onward."
+      ],
+      "rail": "skill44_engine for tags; tier4 for the Wait Until",
+      "no_send": true
+    }
+  ],
+  "switches": {
+    "defaults": {
+      "all_switches": "closed",
+      "draft_only": true,
+      "caf_draft_only": true,
+      "live_send": false,
+      "note": "Building the workflow never turns it on. CAF_DRAFT_ONLY keeps every trigger and action draft until an operator opens the switch with an explicit GO."
+    },
+    "prelaunch_open": {
+      "state": "closed",
+      "opens_at": "{{prelaunch_open_at}}",
+      "opens_on_tag": "pre-launch-list",
+      "operator_gate": "explicit operator GO after the calendar, copy and tag set are verified",
+      "effect_when_open": "the workflow accepts pre-launch-list entries and begins the D-5 Wait Until"
+    },
+    "prelaunch_close": {
+      "state": "closed",
+      "closes_at": "{{doors_open_at}}",
+      "effect_when_closed": "no new entries; armed contacts finish the handoff node only",
+      "automatic": true,
+      "note": "Closes on the real doors_open_at from the launch calendar. A manual close may only bring it earlier, never later."
+    },
+    "cart_open_handoff": {
+      "state": "off",
+      "turns_on_at": "{{doors_open_at}}",
+      "requires": [
+        "prelaunch_close confirmed",
+        "operator GO",
+        "cart-open/cart-close lane is built and drafted"
+      ],
+      "emits": "cart-open-ready",
+      "effect_when_on": "the cart-open lane may enroll contacts tagged cart-open-ready"
+    },
+    "kill_switch": {
+      "tag": "pre-launch-stop",
+      "state": "armed",
+      "effect": "any contact carrying pre-launch-stop is removed from the workflow at the next wait and receives no further pre-launch beat",
+      "operator_use": "add the tag to one contact or to the whole list; no rebuild required"
+    },
+    "purchase_interrupt": {
+      "state": "always_on",
+      "events": ["purchased-[offer-id] tag added", "buyer-[offer] tag added"],
+      "effect": "exit immediately, stop every remaining beat, never re-enter this launch"
+    }
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf)",
+    "engine": "internal API (backend.leadconnectorhq.com) with the location Firebase refresh token; PIT-only sessions can read but cannot build",
+    "draft_only": "CAF_DRAFT_ONLY=1 — workflow created as draft, trigger status draft",
+    "steps": [
+      "1. Resolve launch_plan.launch_calendar. Refuse the build if launch_at, doors_open_at, doors_close_at or timezone is missing or still a placeholder.",
+      "2. Create or confirm the tags in this file. Location tag creation uses the internal POST /workflow/{loc}/tags/create path.",
+      "3. caf workflows create — name and folder for this launch; keep the draft.",
+      "4. CampaignBuilder or caf workflows create-step for the email, SMS, if_else, tag and purchase-interrupt nodes. The only auto-created trigger is Tag Added (contact_tag), which matches this template's entry.",
+      "5. Tier-4 managed browser for every Wait Until calendar date and for the Messenger action nodes. Snapshot the workflow before and after each browser edit.",
+      "6. caf workflows export — store the finished draft as the build artifact.",
+      "7. Do not patch the trigger to active and do not publish. Opening the workflow is the switch, not the build."
+    ],
+    "commands": [
+      "caf workflows create --name '<launch name> — Pre-Launch Window' --experimental",
+      "caf workflows create-step --workflow-id <id> --step-json <file> --experimental",
+      "caf workflows patch-trigger --workflow-id <id> --trigger-json <file> --experimental (only if the entry trigger must be corrected; snapshot first)",
+      "caf workflows export --workflow-id <id> --experimental",
+      "caf workflows get --workflow-id <id> --experimental"
+    ],
+    "verified_actions_used": ["email", "sms", "wait", "if_else", "update_custom_value", "workflow_goal"],
+    "tier4_required": [
+      "every Wait Until calendar date node",
+      "every Messenger action node"
+    ],
+    "notes": "Set order and parentKey before the first save on every node. The entry trigger auto-created by CampaignBuilder is Tag Added only, which is exactly what this workflow needs — no patch-trigger required for the trigger itself. Verify each tag add/remove node after the first save; tag nodes are the part of the build that silently reorders."
+  },
+  "integrity_guardrails": [
+    "Every date in this file resolves from launch_plan.launch_calendar. A lane never invents, shifts or rounds a launch date.",
+    "Episodes 1–4 carry no product pitch and no buy CTA. Their only CTA is stay-tuned. The pitch starts at doors_open_at in the cart-open lane.",
+    "The values episode is optional and must be genuine. Skip it when there is no real story.",
+    "SMS beats send only to sms-subscribed contacts with one shared opt-out. Messenger beats send only to messenger-subscribed contacts.",
+    "A purchase at any node exits immediately. The purchase interrupt is never simplified away.",
+    "Building is not opening. Every switch defaults closed; live sends require an explicit operator GO."
+  ],
+  "scope": {
+    "in": [
+      "pre-launch-list entry through the D-5 to D-1 story and reminder beats",
+      "the tag set and channel gates those beats depend on",
+      "the open/close switches and the doors_open_at handoff signal"
+    ],
+    "out": [
+      "cart-open announcement and every cart-window send — cart-open/cart-close lane",
+      "cart-close urgency at T-48h, T-24h, T-3h, T-1h — cart-open/cart-close lane",
+      "post-close buyer/non-buyer branching and downsell — cart-open/cart-close lane",
+      "the pre-launch email copy itself — Skill 50 email lane",
+      "Conversation AI — Skill 38 lane"
+    ]
+  },
+  "flexibility": {
+    "core_principle": "A guide and a resource, never a rule. An operator's own pre-launch plan wins.",
+    "modes": {
+      "explicit_desire": "Use as reference only; build exactly what the operator specifies.",
+      "unsure": "Ship the D-5 origin story, D-3 obsession story and D-1 reminder first. They carry most of the warm-up and need no optional beats.",
+      "just_do_it": "Build all non-optional beats, the optional values episode only when a story exists, and the full tag set."
+    },
+    "never_simplify_away": [
+      "the purchase interrupt",
+      "the real doors_open_at deadline",
+      "the SMS/Messenger subscription gates",
+      "the draft-only default and closed switches"
+    ]
+  }
+}
