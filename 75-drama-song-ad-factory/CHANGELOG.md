@@ -34,12 +34,14 @@ never edit a validator, and three shipped gates could not all pass at once:
    rap styles are untouched.
    Scope, stated plainly: change B caps ONLY the plan the WRITER is handed
    (`length_formula.plan` with `style_id`). `suno_recipe.check_lyric_sheet`'s
-   drafting tolerance (10 % + 2) still reads the UNSTYLED plan, so a real
-   approved sheet keeps passing -- the gala 48 s sheet is 58 words against a
-   46-word capped plan, and refusing it broke three shipped self-checks
-   (`sung_hook/test_three_walls.py`, `suno_recipe/test_pace_direction_g11.py`,
-   `song_dispatch/test_remaining_defects_r1_r2_r4.py`). `words_fit.preflight`
-   remains the one gate that decides whether a sheet FITS.
+   drafting tolerance (10 % + 2) is NOT that gate: it takes the larger of the
+   styled plan and the unstyled one, which is byte-for-byte the allowance
+   origin/main applied -- for a rap style (the styled plan carries the rap
+   words) and for a non-rap style (the unstyled plan is the uncapped total).
+   Reading the capped total there refused a real approved 48 s sheet (the gala
+   sheet: 58 words against a 46-word cap); reading the unstyled total alone
+   refused a rap sheet (123 words against 95, ignoring its 128-word rap plan).
+   `words_fit.preflight` remains the one gate that decides whether a sheet FITS.
 
 Doctrine: SKILL.md, INSTRUCTIONS.md and references/stage-runbook.md carry a
 stage-3 STOP RULE -- at most 3 validator rounds, then stop, report the exact

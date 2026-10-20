@@ -752,17 +752,21 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
                                       _HP.hook_target(length_s, hook_plan))
     if length_s is not None:
         p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
-        # v2.9.70: ``p`` prices a named non-rap style at its own measured
-        # rates (length_formula._fit_style_words), so its total is the gate's
-        # ceiling, not a drafting allowance. This row is a DRAFTING tolerance
-        # (10% + 2) around an uncapped plan, exactly as before: using the
-        # capped total here refused a real approved 48 s sheet (58 words
-        # against 52.6) that words_fit judges as a whole sheet, and broke
-        # three shipped self-checks (sung_hook/test_three_walls.py,
-        # song_dispatch/test_remaining_defects_r1_r2_r4.py,
-        # suno_recipe/test_pace_direction_g11.py). ``words_fit.preflight``
-        # remains the one gate that decides whether a sheet FITS.
-        budget = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct)["words"]["total"]
+        # v2.9.70: ``p`` prices a named NON-RAP style at its own measured rates
+        # (length_formula._fit_style_words), so for Soul Ballad/Soul Rise its
+        # total is words_fit's ceiling. This row is NOT that gate: it is the
+        # DRAFTING tolerance (10% + 2) it has always been, so it takes the
+        # larger of the styled plan and the unstyled one -- byte-for-byte the
+        # allowance origin/main applied, for a rap style (styled carries the rap
+        # words) and for a non-rap style (unstyled is the uncapped total).
+        # Reading the capped total here refused a real approved 48 s sheet (58
+        # words against 52.6) and broke three shipped self-checks; reading the
+        # UNSTYLED total alone refused a rap sheet (123 words against 95, which
+        # ignores its 128-word rap plan). ``words_fit.preflight`` remains the
+        # ONE gate that decides whether a sheet FITS.
+        budget = max(p["words"]["total"],
+                     _LF.plan(length_s + _LF.END_EARLY_S,
+                              spoken_share_pct)["words"]["total"])
         total = sheet_words(sheet)
         # R&B word budget: U2 landed on 999 main only (MGB010a); on the
         # onboarding tree the rap budget is still open (file 18 decision 1),
