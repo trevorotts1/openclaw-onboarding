@@ -1294,9 +1294,18 @@ Labeling (Trevor order 2026-10-20): every deliverable says exactly what it is,
 PAGE TYPE + DEVICE + KIND + Section N of M + section name, all from
 `scripts/deliverable_labels.py` (page role + stage; any role, including ones
 added later). `<role>` is the page role slug (`landing`, `upsell-1`,
-`downsell-1`, `thank-you`). Every PDF page is the untouched section image plus a
-clean header and footer band added at compose time (never painted into the AI
-image; the validator checks the page is the image plus exactly those bands).
+`downsell-1`, `thank-you`). **No notes between sections; the PDF reads as one
+continuous page; one title band at the top only.** Page 1 is the untouched
+section image under ONE clean title band added at compose time (`DOWNSELL 1 ·
+DESKTOP WIREFRAME · 8 SECTIONS`, never painted into the AI image, never
+covering design); every later page is exactly its section image, with no
+header, footer, caption or label of any kind, so the sections join edge to
+edge. The validator enforces this by page geometry (page 1 = image height plus
+one title band, every other page = image height) and FAILS any PDF, wireframe
+or mockup, with a band anywhere else; it also rejects a manifest that declares
+one, and the stage contract runs it for all four image stages (and checks that
+`<stage>/wireframe.pdf` is the validated build), so such a PDF cannot be
+delivered.
 Labeled section images (`upsell-1_desktop_wireframe_s03-of-08_offer.png`) sit
 beside the PDFs in `review-pdfs/<folder>/` and, with `--deliver`, in
 `<client folder>/<folder>/` together with the PDF, where `<folder>` is
@@ -1309,7 +1318,7 @@ with a missing section number or a section count that differs from the run's.
 One section is one page at the section's native size (no scaling, cropping or
 padding), so a page break never cuts a section and nothing sits between two
 sections. The validator also checks one page width for the set and that every
-page has the shape of its source image. `validate_review_pdf.py <manifest> --delivered <folder>`
+page has the shape of its source image (plus the one title band on page 1). `validate_review_pdf.py <manifest> --delivered <folder>`
 also requires the client's delivered section images (sorted `*.png`) to be
 byte-identical, page for page, to what the PDF was built from; run it before a
 PDF and its folder are handed over together. The client's copy of the PDF is

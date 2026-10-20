@@ -44,12 +44,13 @@ def check_name(category, path):
 
 # Stage plan (the pinned review-PDF step): for each image stage, where the
 # ordered section images live and which device they are. One PDF per device
-# per stage; one page per section: the section image at its native size plus a
-# clean label band above and below (added here, at compose time, never painted
-# into the AI image), so a page break never cuts a section and no scaling,
-# cropping or gap is introduced between sections. The PDF's name, the client
-# folder and the band text all come from deliverable_labels.py (page role +
-# stage + device).
+# per stage; one page per section at the image's native size. NO NOTES BETWEEN
+# SECTIONS: the PDF reads as one continuous page, top to bottom. The only label
+# is ONE title band at the very top of page 1 (added here, at compose time,
+# never painted into the AI image); pages 2 and on are the bare section image,
+# so the sections join edge to edge. validate_review_pdf.py fails any PDF that
+# carries a band anywhere else. The PDF's name, the client folder and the title
+# text all come from deliverable_labels.py (page role + stage + device).
 REVIEW_DIR = "review-pdfs"
 STAGE_SETS = {
     "desktop-wireframe": [("section-{n:02d}.png", "desktop")],
@@ -61,27 +62,24 @@ STAGE_SETS = {
 CONTRACT_COPY = {"desktop-wireframe": "wireframe.pdf", "mobile-tablet": "wireframe.pdf"}
 
 
-def add_bands(im, top, bottom):
-    """The page: a header band, the untouched section image, a footer band."""
+def add_title_band(im, title):
+    """Page 1 only: one clean title band above the untouched section image."""
     from PIL import Image, ImageDraw
     import build_overview_board as bob
     w, h = im.size
     bh = dl.band_height(w)
-    page = Image.new("RGB", (w, h + 2 * bh), (255, 255, 255))
+    page = Image.new("RGB", (w, h + bh), (255, 255, 255))
     page.paste(im, (0, bh))
     d = ImageDraw.Draw(page)
     pad = max(8, bh // 3)
-    for y0, lines, kind in ((0, top, "bold"), (bh + h, bottom, "sans")):
-        d.rectangle([0, y0, w, y0 + bh - 1], fill=(242, 242, 242))
-        size = round(bh * 0.36)
-        fnt = bob.font(kind, size)
-        while size > 8 and max(d.textlength(t, font=fnt) for t in lines) > w - 2 * pad:  # ponytail: shrink-to-fit, never wraps
-            size -= 1
-            fnt = bob.font(kind, size)
-        for t, frac in zip(lines, (0.27, 0.73)):
-            d.text((pad, y0 + round(bh * frac)), t, font=fnt, fill=(17, 17, 17), anchor="lm")
+    d.rectangle([0, 0, w, bh - 1], fill=(242, 242, 242))
+    size = round(bh * 0.45)
+    fnt = bob.font("bold", size)
+    while size > 8 and d.textlength(title, font=fnt) > w - 2 * pad:  # ponytail: shrink-to-fit, never wraps
+        size -= 1
+        fnt = bob.font("bold", size)
+    d.text((pad, bh // 2), title, font=fnt, fill=(17, 17, 17), anchor="lm")
     d.line([0, bh - 1, w, bh - 1], fill=(120, 120, 120), width=2)
-    d.line([0, bh + h, w, bh + h], fill=(120, 120, 120), width=2)
     return page
 
 
@@ -158,10 +156,11 @@ def build_stage(run_dir, stage, expect=None, deliver=None):
     for (template, category, name, images), (_t, device) in zip(sets, STAGE_SETS[stage]):
         names = section_names(run_dir, stage, len(images))
         pages = []
-        for i, (p, sec) in enumerate(zip(images, names), start=1):
-            top, bottom = dl.page_band(role, device, stage, i, len(images), sec)
-            pages.append({"path": os.path.relpath(p, review), "label": " \u00b7 ".join(top),
-                          "band": {"top": top, "bottom": bottom}})
+        for i, p in enumerate(images, start=1):
+            page = {"path": os.path.relpath(p, review), "label": dl.page_label(role, device, stage, i, len(images))}
+            if i == 1:  # the one title band; no other page carries a label
+                page["title"] = dl.title_band(role, device, stage, len(images))
+            pages.append(page)
         manifest = review / (name[:-4] + ".order.json")
         manifest.write_text(json.dumps({
             "category": category,
@@ -249,11 +248,9 @@ def main():
         if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
             errors.append(f"Unsupported page image type: {path}")
         errors.extend(check_name(category, path))
-        band = item.get("band")
-        if band is not None and not (isinstance(band, dict) and band.get("top") and band.get("bottom")):
-            errors.append(f"pages[{i}].band needs top and bottom line lists.")
-            band = None
-        resolved.append((path, item.get("label", f"Page {i}"), band))
+        if i > 1 and ("title" in item or "band" in item):
+            errors.append(f"pages[{i}] carries a label band; no notes between sections: only page 1 has a title band.")
+        resolved.append((path, item.get("label", f"Page {i}"), item.get("title") if i == 1 else None))
 
     if len({str(p) for p, _, _ in resolved}) != len(resolved):
         errors.append("The ordered page list contains duplicate image paths.")
@@ -272,16 +269,17 @@ def main():
 
     pil_pages = []
     try:
-        for path, _, band in resolved:
+        for n, (path, _, title) in enumerate(resolved, start=1):
             im = Image.open(path)
             if im.mode in {"RGBA", "LA"}:
                 bg = Image.new("RGB", im.size, "white")
-                alpha = im.getchannel("A") if im.mode == "RGBA" else im.getchannel("A")
-                bg.paste(im.convert("RGB"), mask=alpha)
+                bg.paste(im.convert("RGB"), mask=im.getchannel("A"))
                 im = bg
             else:
                 im = im.convert("RGB")
-            pil_pages.append(add_bands(im, band["top"], band["bottom"]) if band else im.copy())
+            if n == 1:
+                title = title or Path(output_name).stem.replace("_", " ").upper()
+            pil_pages.append(add_title_band(im, title) if n == 1 else im.copy())
             im.close()
         first, rest = pil_pages[0], pil_pages[1:]
         # quality 95, no chroma subsampling: small printed text must stay legible.
@@ -300,7 +298,7 @@ def main():
         "page_count": len(resolved),
         "pages": [
             {"order": i, "label": label, "path": str(path), "sha256": sha256(path)}
-            for i, (path, label, _band) in enumerate(resolved, start=1)
+            for i, (path, label, _title) in enumerate(resolved, start=1)
         ],
         "pdf_sha256": sha256(output),
     }

@@ -88,9 +88,11 @@ class WireframeArtifactTest(unittest.TestCase):
                           if stage == "desktop-wireframe" else [])
             self.assertEqual(STAGES[stage]["validators"],
                              [f"python3 scripts/validate_wireframe.py {{run_dir}} {stage}", *style_gate,
-                              f"python3 scripts/validate_production_record.py {{run_dir}}/{stage}/production-record.json"],
+                              f"python3 scripts/validate_production_record.py {{run_dir}}/{stage}/production-record.json",
+                              # no notes between sections: the review PDF gate (one title band on page 1 only)
+                              f"python3 scripts/validate_review_pdf.py {{run_dir}} --stage {stage}"],
                              f"{stage} validators are the wireframe check plus the Item 13 "
-                             f"production-record gate (and the style inventory check on desktop-wireframe)")
+                             f"production-record gate, the review-PDF gate (and the style inventory check on desktop-wireframe)")
             self.assertTrue(STAGES[stage]["review_required"])
 
     def test_artifact_contracts_enumeration_matches_contract(self):
