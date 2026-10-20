@@ -231,7 +231,7 @@ def fit_estimate(role, text):
     return lines(1200, desktop_px), lines(342, mobile_px)
 
 
-def section_fragments(stage, section, index, sections, spec, table):
+def section_fragments(stage, section, index, sections, spec, table, kind=None):
     """Ordered specification paragraphs for one section; each is added only while it fits."""
     sid = exe.canon_section_id(section["section_id"])
     n = len(sections)
@@ -264,9 +264,13 @@ def section_fragments(stage, section, index, sections, spec, table):
                    ". Size and space the text so all of it prints at a readable size.")
     cta = exe._cta_label(section.get("cta"))
     forbidden = {exe.canon_section_id(x) for x in (spec.get("cta_map", {}).get("forbidden_in_sections") or [])}
+    closing = page_kinds.closing_label(kind, section, sections, index, n)  # SPF030
     if cta:
         out.append(f'BUTTON: this section carries exactly one button, labelled "{cta}", with the microcopy '
                    "line under it when the copy block supplies one; no second button, link row or sticky bar.")
+    elif closing:  # the last section carries no CTA of its own; the page kind's closing panel does
+        out.append(f'BUTTON: this section carries no button of its own; its closing panel carries exactly one, '
+                   f'labelled "{closing}"; no second button, link row or sticky bar.')
     elif sid in forbidden:
         out.append("BUTTON: this section carries no button, no chip and no button-shaped pill; a button here is a defect.")
     else:
@@ -333,7 +337,8 @@ def fill_to_band(request, stage, spec):
     for index, section in enumerate(request["sections"], start=1):
         parts = [str(section.get("layout") or "").strip()]
         parts = [p for p in parts if p]
-        for text in section_fragments(stage, section, index, request["sections"], spec, table):
+        for text in section_fragments(stage, section, index, request["sections"], spec, table,
+                                      request.get("page_kind")):
             if PRIVATE_TEXT.search(text):
                 continue
             section["layout"] = "\n".join(parts + [text])

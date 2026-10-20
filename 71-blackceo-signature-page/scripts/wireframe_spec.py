@@ -204,22 +204,20 @@ def _type_specs(stage: str, section: dict) -> str:
     return "; ".join(f"{k.upper()} / {v}" for k, v in spec()["type_scale_default"][stage].items())
 
 
-def _note(stage: str, section: dict, cta: str) -> str:
+def _note(stage: str, section: dict, cta: str, closing: bool = False) -> str:
     notes = section.get("behavior_notes")
     if isinstance(notes, str) and notes.strip():
         return notes.strip()
     if isinstance(notes, list) and any(isinstance(n, str) and n.strip() for n in notes):
         return next(n.strip() for n in notes if isinstance(n, str) and n.strip())
+    if closing:
+        return "Closing CTA panel"
     if not cta:
         return "No CTA"
     return "CTA full width below the copy" if stage == "mobile-tablet" else "CTA below the copy"
 
 
-def _cta(section: dict) -> str:
-    value = section.get("cta") or section.get("_copy_source_cta")
-    if isinstance(value, dict):
-        value = value.get("label")
-    return str(value or "").strip().rstrip(".")
+_cta = page_kinds.cta_label
 
 
 def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
@@ -242,11 +240,14 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
                          width=width, tag=tag, name=name, position=index, total=total)
              for line in blocks["intro"]]
     kind = request.get("page_kind")
+    closing = None  # the last slice's closing-band label, when the section has no CTA of its own
     if kind:  # SPF030: the page kind's head, and its closing band on the last slice
         try:
-            lines += page_kinds.wireframe_lines(kind, FORM_LABEL[form], index, total)
+            label = page_kinds.closing_label(kind, section, request.get("sections"), index, total)
+            lines += page_kinds.wireframe_lines(kind, FORM_LABEL[form], index, total, label)
         except page_kinds.KindError as exc:
             raise SpecError(str(exc))
+        closing = label if label and not cta else None
     lines += [blocks["style_reference"], blocks["colour"], blocks["grammar_head"]]
     lines.append(blocks["chip"].format(tag=tag, name_caps=name.upper()))
     lines.append(blocks["type_specs"].format(type_specs=_type_specs(stage, section)))
@@ -259,12 +260,16 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
         lines.append(blocks["cta_some"].format(
             cta_shape=shape, cta=cta, microcopy_size=scale["CTA microcopy"].upper(),
             cta_strip=blocks["cta_strip_long_form"] if solution and not mobile else ""))
+    elif closing:  # the closing band's button replaces "no CTA" on the last slice
+        lines.append(blocks["cta_closing"].format(
+            cta_shape=blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"], cta=closing,
+            microcopy_size=scale["CTA microcopy"].upper()))
     else:
         lines.append(blocks["cta_none"])
     lines.append(blocks["bands"])
     lines.append(blocks["strip_first"].format(page=strip["page_px"], content=strip["content_px"])
                  if index == 1 else blocks["strip_other"])
-    lines.append(blocks["behaviour"].format(note=_note(stage, section, cta)))
+    lines.append(blocks["behaviour"].format(note=_note(stage, section, cta, bool(closing))))
     if mobile:
         lines.append(blocks["mobile"].format(width=width))
         if ref["extra_rule"] and form == "standard":

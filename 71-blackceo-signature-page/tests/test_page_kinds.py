@@ -15,7 +15,10 @@ Pins:
       mobile-tablet and visual-mockup;
   (e) the wireframe build spec differs by kind: the head names the kind, and the
       closing band (last slice only) is a checkout panel for a sales page and a
-      registration strip for an opt-in page; no hex colour, no price;
+      registration strip for an opt-in page; no hex colour, no price; on the
+      real copy (the founder letter carries no CTA of its own) the band's button
+      reads the page's last given CTA label, that label is in the verbatim copy
+      block, and the "no CTA" lines are gone from that slice only;
   (f) the mockup prompt carries the kind line, and the Design Board labels the
       landing role by kind, records it and fails a board of the other kind;
   (g) Skill 71 routes "signature sales page" to itself and Skill 56 declines it.
@@ -232,6 +235,59 @@ class WireframeAndMockupTests(unittest.TestCase):
         for kind in pk.kind_ids():
             self.assertNotIn("CLOSING BAND", self.block(kind, "desktop-wireframe", 14, 15))
             self.assertIn("CLOSING BAND", self.block(kind, "desktop-wireframe", 15, 15))
+
+    def test_closing_button_label_on_real_copy_for_every_kind_and_stage(self):
+        """The founder letter has no CTA in the copy specs, so the closing band reads
+        the page's last given CTA; the prompt never says both 'draw a button' and
+        'no CTA', and the label is in the verbatim block (the model may print it)."""
+        for kind, version, count in CASES:
+            with tempfile.TemporaryDirectory() as tmp:
+                run = Path(tmp)
+                give_blackceo_colors(run)
+                make_request(run, kind, version)
+                request = exe.load_request(run, "production-request.json")
+                request["_brand_block"] = exe.require_brand_colors(run)
+                request["_hypersat"] = exe.hypersaturation.roles_for_run(run)
+                last = request["sections"][-1]
+                self.assertFalse(last.get("cta"), "the copy spec forbids a CTA on the last section")
+                label = [x["cta"] for x in request["sections"] if x.get("cta")][-1]
+                for stage in (*w.WIREFRAME_STAGES, "visual-mockup"):
+                    width = exe.LAYOUT[stage][0][1]
+                    with self.subTest(kind=kind, version=version, stage=stage):
+                        ratio = exe.target_ratio(stage, exe.LAYOUT[stage][0][0], last, run, count)
+                        text = exe.stage_prompt(stage, last, count, width, request, ratio)
+                        self.assertIn(f'CLOSING BUTTON LABEL — print exactly: "{label}"', text)
+                        self.assertNotIn("this section has no CTA.", text)
+                        self.assertNotIn("Draw no button and no CTA strip", text)
+                        self.assertNotIn('exactly "No CTA"', text)
+                        if stage in w.WIREFRAME_STAGES:
+                            self.assertIn(f'carrying one filled primary-colour button reading exactly "{label}"', text)
+                            self.assertIn("4. CTA — this section has no CTA of its own", text)
+                            self.assertIn("Closing CTA panel", text)
+                        else:
+                            self.assertIn(f'button reading exactly "{label}"', text)
+                text = exe.stage_prompt("desktop-wireframe", request["sections"][5], 6, 1440, request, "3:4")
+                self.assertNotIn("CLOSING", text)
+                self.assertIn("this section has no CTA.", text)  # a mid-page section without a CTA still says so
+
+    def test_builder_button_line_names_the_closing_label_not_a_forbidden_button(self):
+        spec = json.loads((exe.SPEC_DIR / "standard-v6.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            give_blackceo_colors(Path(tmp))
+            request = make_request(Path(tmp), "sales", "standard")
+        table = builder.skeleton_table()
+        sections = request["sections"]
+        for kind, expect in (("sales", 'closing panel carries exactly one, labelled "Make Room to Lead"'),
+                             (None, "carries no button, no chip")):
+            lines = builder.section_fragments("visual-mockup", sections[-1], 12, sections, spec, table, kind)
+            self.assertTrue(any(expect in line for line in lines), (kind, [l for l in lines if "BUTTON" in l]))
+
+    def test_closing_label_refuses_a_page_with_no_cta_at_all(self):
+        with self.assertRaises(pk.KindError):
+            pk.closing_label("sales", {"section_id": "12"}, [{"section_id": "1"}, {"section_id": "12"}], 2, 2)
+        self.assertIsNone(pk.closing_label("sales", {"section_id": "1"}, [], 1, 2))
+        self.assertIsNone(pk.closing_label(None, {"section_id": "2", "cta": "X"}, [], 2, 2))
+        self.assertEqual(pk.closing_label("sales", {"section_id": "2"}, [{"cta": "A."}, {}], 2, 2), "A")
 
     def test_no_kind_adds_nothing_and_blocks_stay_colourless_and_priceless(self):
         self.assertNotIn("PAGE KIND", self.block(None, "desktop-wireframe", 15, 15))

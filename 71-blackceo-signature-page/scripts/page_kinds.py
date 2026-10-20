@@ -3,16 +3,18 @@
 (opt-in) page, both of page role `landing`.
 
 Everything is data in references/page-kinds.json. This module reads it and
-answers five questions for the rest of the pipeline:
+answers these questions for the rest of the pipeline:
 
   declared(run_dir, request)   the run's page kind (request, request metadata,
                                then intake.json), or None when undeclared
   check(kind, copy_version)    refuse a kind that may not use that copy form
   sequence(kind, copy_version) the canonical section sequence: the copy spec's
                                own `sequence` for that form, never a copy of it
-  wireframe_lines(kind, form, index, total)
+  wireframe_lines(kind, form, index, total, closing)
                                the wireframe build-spec lines for one slice
-  mockup_line(kind) / board(kind)
+  closing_label(kind, section, sections, index, total)
+                               the closing band's button label (last slice)
+  mockup_line(kind, closing) / board(kind)
                                the mockup stages' one line, the Design Board's
                                page label and emphasis
 
@@ -98,17 +100,45 @@ def sequence(kind: str, copy_version: str) -> list:
     return list(spec["sequence"])
 
 
-def wireframe_lines(kind: str, form_label: str, index: int, total: int) -> list:
+def cta_label(section: dict) -> str:
+    """A section's CTA label: its own, else the one resolved from the copy source."""
+    value = section.get("cta") or section.get("_copy_source_cta")
+    if isinstance(value, dict):
+        value = value.get("label")
+    return str(value or "").strip().rstrip(".")
+
+
+def closing_label(kind, section: dict, sections: list, index: int, total: int):
+    """The label on the closing band's one button, on the last slice only.
+
+    The closing band sits on the last section (the founder letter), which the copy
+    specs forbid a CTA of its own, so the button reads the page's last given CTA
+    label. A last section that does carry its own label keeps it. None off the last
+    slice or with no page kind; a page that gives no CTA label at all is refused."""
+    if not kind or index != total:
+        return None
+    for s in [section, *reversed(sections or [])]:
+        label = cta_label(s)
+        if label:
+            return label
+    raise KindError(f"page_kind {normalize(kind)!r} draws a closing button and no section "
+                    "supplies a CTA label for it")
+
+
+def wireframe_lines(kind: str, form_label: str, index: int, total: int, closing=None) -> list:
     """The page-kind head, and on the last slice the closing band."""
     e = entry(kind)
     lines = [e["wireframe_head"].format(form_label=form_label, total=total)]
     if index == total:
-        lines.append(e["closing_band"])
+        if not closing:
+            raise KindError("the closing band needs its button label (closing_label)")
+        lines.append(e["closing_band"].format(label=closing))
     return lines
 
 
-def mockup_line(kind: str) -> str:
-    return entry(kind)["mockup_line"]
+def mockup_line(kind: str, closing=None) -> str:
+    e = entry(kind)
+    return f"{e['mockup_line']} {e['closing_mockup'].format(label=closing)}" if closing else e["mockup_line"]
 
 
 def board(kind: str) -> tuple:

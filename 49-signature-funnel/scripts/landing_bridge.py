@@ -46,6 +46,20 @@ The bridge config is a JSON object with exactly two sections:
 page_kind: a funnel's main page is the 12-section signature SALES page, so a
 funnel run sets "sales" (Standard or Long-Form); "opt_in" is the signature
 landing (opt-in) page and is Long-Form only (Skill 71 references/page-kinds.json).
+A full funnel gets both (see FULL FUNNEL below).
+
+FULL FUNNEL: a funnel with every extra on (upsell_1, downsell_1 and upsell_2 all
+true in the launch record) gets ALL its pages, so its landing role is delivered
+as the signature sales page AND the signature landing (opt-in) page. The bridge
+then refuses a config that does not name both: landing.page_kind "sales" plus
+  "opt_in": {"run_dir": "<abs path; the second Skill 71 run directory>"}
+(the opt-in page is Long-Form only, so page_version and the request's approved
+copy_profile are both "long-form"; same brand owner, brand file and image cap). Both runs are staged and produced from the SAME request; the one
+result placed at {result} is the weaker of the two runs' results with both runs'
+artifacts listed (the opt-in run's paths are prefixed with its run directory
+name), so the landing role is never reported ahead of either page. The route
+graph is unchanged: the opt-in page is a second page of the landing role, not a
+new node. A funnel with fewer extras keeps the single page_kind it always had.
 
 FAIL-CLOSED DISCIPLINE: page_version, page_kind, brand_owner and image_cap come
 from the bridge config ONLY. The bridge never invents them (no
@@ -264,6 +278,25 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
             raise BridgeError(
                 f"bridge config: landing.consent_statements "
                 f"{consent_path} does not exist")
+    opt_in = landing.get("opt_in")
+    opt_in_run_dir: Optional[Path] = None
+    if opt_in is not None:
+        if not isinstance(opt_in, dict):
+            raise BridgeError("bridge config: landing.opt_in must be an object "
+                              "with an absolute run_dir")
+        if page_kind != "sales":
+            raise BridgeError(
+                "bridge config: landing.opt_in adds the opt-in page beside the "
+                f"sales page, so landing.page_kind must be 'sales' (got {page_kind!r})")
+        if page_version != "long-form":
+            raise BridgeError(
+                "bridge config: landing.opt_in adds the opt-in page, which is "
+                "Long-Form only, so the funnel's pages share one form: set "
+                f"landing.page_version to 'long-form' (got {page_version!r})")
+        opt_in_run_dir = _require_abs_path(opt_in, "run_dir", "landing.opt_in")
+        if opt_in_run_dir == run_dir:
+            raise BridgeError("bridge config: landing.opt_in.run_dir must differ "
+                              "from landing.run_dir (one run directory per page)")
     pipeline_command = landing.get("pipeline_command")
     if pipeline_command is not None:
         if not isinstance(pipeline_command, list) or not pipeline_command \
@@ -283,6 +316,7 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         "brand_file_cfg": brand_file_cfg,
         "consent_path": consent_path,
         "pipeline_command": pipeline_command,
+        "opt_in_run_dir": opt_in_run_dir,
     }
 
 
@@ -572,39 +606,24 @@ def _run(argv: List[str], label: str, cwd: Optional[Path] = None,
     return proc
 
 
-def bridge(request_path: Path, result_path: Path, work_dir: Path,
-           config_path: Path) -> Dict[str, Any]:
-    cfg = load_bridge_config(config_path)
-    req, request_raw = check_request(request_path)
+FULL_FUNNEL_EXTRAS = ("upsell_1", "downsell_1", "upsell_2")
+_STATUS_RANK = ("blocked", "authored", "locally_verified", "installed_test_verified",
+                "ready_for_activation", "live_verified")
 
+
+def is_full_funnel(launch: Dict[str, Any]) -> bool:
+    extras = launch.get("extras")
+    return isinstance(extras, dict) and all(extras.get(k) is True
+                                            for k in FULL_FUNNEL_EXTRAS)
+
+
+def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
+             launch_raw: bytes, brand_raw: bytes, graph_raw: bytes,
+             run_dir: Path, page_kind: str, page_version: str):
+    """Stage one Skill 71 run directory for this request and produce its page
+    result. Returns (validated result, validation mode, pipeline, emitted path)."""
     skill_root: Path = cfg["skill_root"]
     python: str = cfg["python"]
-    run_dir: Path = cfg["run_dir"]
-
-    # Operator-supplied context documents, cross-checked against the
-    # request BEFORE anything is staged or run.
-    launch_raw = _read_bytes(cfg["launch_record"], "launch record")
-    launch = _load_json_file(cfg["launch_record"], "launch record")
-    if not isinstance(launch, dict):
-        raise BridgeError("launch record: the document is not a "
-                          "JSON object")
-    for field in ("tenant_id", "location_id", "launch_id", "revision",
-                  "brand_ref", "brand_hash", "prompt_policy_id",
-                  "route_graph_ref", "route_graph_hash"):
-        if launch.get(field) != req.get(field):
-            raise BridgeError(
-                f"launch record: {field} is {launch.get(field)!r} but "
-                f"the page-request carries {req.get(field)!r}; the "
-                "bridge stages only a launch record that agrees with "
-                "the request it approves")
-    brand_raw = _read_bytes(cfg["brand_file_cfg"], "brand file")
-    if _sha256(brand_raw) != req["brand_hash"]:
-        raise BridgeError(
-            f"brand file: SHA-256 of the configured brand file is "
-            f"{_sha256(brand_raw)}, not the request's approved "
-            f"brand_hash {req['brand_hash']}; the bridge refuses to "
-            "stage a brand the approved plan did not name")
-    graph_raw = resolve_graph_bytes(req, work_dir)
 
     # Stage the run directory (byte-identical request; verbatim docs).
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -616,8 +635,8 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
     # Phase 1: intake + launch-context import (the format consumer).
     intake_argv = [python, str(skill_root / "scripts" / "write_intake.py"),
                    str(run_dir),
-                   "--page-version", cfg["page_version"],
-                   "--page-kind", cfg["page_kind"],
+                   "--page-version", page_version,
+                   "--page-kind", page_kind,
                    "--brand-owner", cfg["brand_owner"],
                    "--brand-file", req["brand_ref"],
                    "--image-cap", str(cfg["image_cap"]),
@@ -651,7 +670,7 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
                             "progress in the run directory"}
 
     # Phase 3: emit the page result inside the run, validate it with
-    # S49's receipt rules, then place it at the dispatch result path.
+    # S49's receipt rules.
     _run([python,
           str(skill_root / "scripts" / "write_page_result.py"),
           str(run_dir)], "Skill 71 write_page_result", timeout=600.0)
@@ -661,8 +680,93 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
             "page-result: write_page_result.py exited 0 but no "
             f"page-result.json exists in the run directory {run_dir}")
     result, validation_mode = validate_emitted_result(emitted, req)
+    return result, validation_mode, pipeline, emitted
+
+
+def _weaker(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    """The result that is further from done: lower status, then lower proof class."""
+    def rank(r):
+        status = r.get("status")
+        return (_STATUS_RANK.index(status) if status in _STATUS_RANK else -1,
+                str(r.get("proof_class")))
+    return a if rank(a) <= rank(b) else b
+
+
+def bridge(request_path: Path, result_path: Path, work_dir: Path,
+           config_path: Path) -> Dict[str, Any]:
+    cfg = load_bridge_config(config_path)
+    req, request_raw = check_request(request_path)
+
+    run_dir: Path = cfg["run_dir"]
+
+    # Operator-supplied context documents, cross-checked against the
+    # request BEFORE anything is staged or run.
+    launch_raw = _read_bytes(cfg["launch_record"], "launch record")
+    launch = _load_json_file(cfg["launch_record"], "launch record")
+    if not isinstance(launch, dict):
+        raise BridgeError("launch record: the document is not a "
+                          "JSON object")
+    for field in ("tenant_id", "location_id", "launch_id", "revision",
+                  "brand_ref", "brand_hash", "prompt_policy_id",
+                  "route_graph_ref", "route_graph_hash"):
+        if launch.get(field) != req.get(field):
+            raise BridgeError(
+                f"launch record: {field} is {launch.get(field)!r} but "
+                f"the page-request carries {req.get(field)!r}; the "
+                "bridge stages only a launch record that agrees with "
+                "the request it approves")
+    if is_full_funnel(launch) and (cfg["page_kind"] != "sales"
+                                   or cfg["opt_in_run_dir"] is None):
+        raise BridgeError(
+            "bridge config: this launch is a full funnel (upsell_1, downsell_1 "
+            "and upsell_2 are all on), and a full funnel gets all its pages: "
+            "set landing.page_kind to 'sales' and add landing.opt_in with its "
+            "own absolute run_dir (Long-Form, dispatched with copy_profile "
+            "'long-form') so the signature landing (opt-in) page is produced "
+            "beside the sales page")
+    if cfg["opt_in_run_dir"] is not None and req["copy_profile"] != "long-form":
+        raise BridgeError(
+            "page-request: the approved copy_profile is "
+            f"{req['copy_profile']!r}, but the opt-in page is Long-Form only and "
+            "the plan-bound copy profile cannot be changed here; dispatch the "
+            "full funnel with copy_profile 'long-form'")
+    brand_raw = _read_bytes(cfg["brand_file_cfg"], "brand file")
+    if _sha256(brand_raw) != req["brand_hash"]:
+        raise BridgeError(
+            f"brand file: SHA-256 of the configured brand file is "
+            f"{_sha256(brand_raw)}, not the request's approved "
+            f"brand_hash {req['brand_hash']}; the bridge refuses to "
+            "stage a brand the approved plan did not name")
+    graph_raw = resolve_graph_bytes(req, work_dir)
+
+    args = (cfg, req, request_raw, launch_raw, brand_raw, graph_raw)
+    result, validation_mode, pipeline, emitted = _produce(
+        *args, run_dir, cfg["page_kind"], cfg["page_version"])
+    placed = emitted.read_bytes()
+    summary: Dict[str, Any] = {}
+    opt_dir: Optional[Path] = cfg["opt_in_run_dir"]
+    if opt_dir is not None:
+        # The opt-in page is Long-Form only (Skill 71 references/page-kinds.json).
+        o_result, o_mode, o_pipeline, _ = _produce(
+            *args, opt_dir, "opt_in", "long-form")
+        weaker = _weaker(result, o_result)
+        merged = dict(weaker)
+        merged["artifacts"] = sorted(
+            list(result.get("artifacts") or [])
+            + [{**a, "path": f"{opt_dir.name}/{a['path']}"}
+               for a in o_result.get("artifacts") or []],
+            key=lambda a: a["path"])
+        merged["blockers"] = list(dict.fromkeys(
+            list(result.get("blockers") or []) + list(o_result.get("blockers") or [])))
+        merged_path = run_dir / "page-result.merged.json"
+        merged_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+        result, validation_mode = validate_emitted_result(merged_path, req)
+        placed = merged_path.read_bytes()
+        summary = {"opt_in_run_dir": str(opt_dir), "opt_in_pipeline": o_pipeline,
+                   "opt_in_result_status": o_result.get("status"),
+                   "opt_in_receipt_validation": o_mode}
     result_path.parent.mkdir(parents=True, exist_ok=True)
-    result_path.write_bytes(emitted.read_bytes())
+    result_path.write_bytes(placed)
     return {
         "role": ROLE,
         "request_id": req["request_id"],
@@ -672,6 +776,7 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
         "proof_class": result.get("proof_class"),
         "receipt_validation": validation_mode,
         "pipeline": pipeline,
+        **summary,
     }
 
 

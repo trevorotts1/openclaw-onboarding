@@ -459,8 +459,10 @@ def copy_source_ctas(run_dir: Path, request: dict) -> dict:
         return out
     return {}
 
-def copy_contract(section: dict) -> str:
-    """The verbatim copy goes FIRST, so attention cannot drift to prose."""
+def copy_contract(section: dict, closing: str = "") -> str:
+    """The verbatim copy goes FIRST, so attention cannot drift to prose.
+    `closing` is the page kind's closing-band button label (SPF030), printed as
+    its own verbatim line when the section has no CTA of its own."""
     copy = str(section.get("copy") or "").strip()
     if not copy:
         return ""
@@ -502,6 +504,8 @@ def copy_contract(section: dict) -> str:
                      " | ".join(f'"{x}"' for x in labels))
     if cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
+    elif closing:
+        lines.append(f'CLOSING BUTTON LABEL — print exactly: "{closing}"')
     return "\n".join(lines)
 
 def negative_block(stage: str | None = None) -> str:
@@ -856,9 +860,17 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = sanitize_prompt(body)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     body = wireframe_body(stage, section, index, width, request, body)
-    if request.get("page_kind") and stage in hypersaturation.MOCKUP_STAGES:
-        body = f"{page_kinds.mockup_line(request['page_kind'])}\n\n{body}"
-    copy_block = copy_contract(section)
+    kind = request.get("page_kind")
+    closing = None  # SPF030: the closing band's button label, last slice of a page-kind run
+    if kind and (stage in hypersaturation.MOCKUP_STAGES or stage in wireframe_spec.WIREFRAME_STAGES):
+        try:
+            closing = page_kinds.closing_label(kind, section, request.get("sections"),
+                                               index, len(request.get("sections") or []))
+        except page_kinds.KindError as exc:
+            raise ExecutorError(str(exc))
+    if kind and stage in hypersaturation.MOCKUP_STAGES:
+        body = f"{page_kinds.mockup_line(kind, closing)}\n\n{body}"
+    copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage)
     ref_block = reference_use.reference_block(request.get("references"),
