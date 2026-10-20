@@ -8,10 +8,11 @@ description: >
   Council advice in planning, produces the 7FigurePreneur shape without a
   product-selection page, dispatches page requests through Skill 49, and
   assembles the delivered package with a manifest, a receipt and executable
-  completeness checks. Ships a 999 dependency package that enables nothing.
-  Offline core only: no live payment, no entitlement creation, no paid model
-  session.
-version: 0.2.2
+  completeness checks. Enabled in 999: installed from CONTROL/bundled-skills.txt,
+  with a dependency preflight that verifies every dependency before it reports
+  ready. Offline core only: no live payment, no entitlement creation, no paid
+  model session.
+version: 0.2.3
 priority: HIGH
 ---
 
@@ -62,8 +63,11 @@ a numbered directory, so the same code runs in both layouts.
    Council advice is recorded as blocking, or when checkout is not the native
    contract.
 7. **999 dependency package** (`launcher_core/dependencies.py`). Lists every
-   dependency and reports which are present and which are missing. It enables
-   nothing.
+   dependency and reports which are present and which are missing. The skill is
+   enabled in 999: `registration.json` records `enablement.enabled_in_999: true`,
+   the 999 installers link it from `CONTROL/bundled-skills.txt` and install
+   `requirements.txt` (jsonschema) on macOS and Windows, and the preflight
+   reports `enabled_in_999=True` only while every required dependency is present.
 
 ## Entry
 
@@ -92,8 +96,8 @@ through the settled `folded_levels` mode, with its three distinct offers intact.
   80, 81 and 82 return.
 - It does not charge, create an entitlement or call a billing API.
 - It does not start a live Council session.
-- It does not choose a distribution target, and it does not enable the Launcher
-  in 999.
+- It does not choose a distribution target (`registration.json:distribution`
+  stays an open decision; enabling in 999 does not depend on it).
 - It does not invent cross-sale teaching content: the surface is present, the
   teaching is marked pending.
 - It ships no `/path/to` binding: `check` fails any placeholder-shaped path.

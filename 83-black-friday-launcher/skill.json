@@ -1,10 +1,10 @@
 {
   "schema": "blackceo.skill.metadata/1",
   "name": "black-friday-launcher",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "entry": "SKILL.md",
   "priority": "HIGH",
-  "status": "core-only",
+  "status": "enabled-in-999",
   "description": "Composes the Black Friday launch from separate page skills through the signature launch contracts: fail-closed intake with an entitlement attestation gate, doc 02 route compilation including folded_levels, native Skill 79 checkout mapping, Council advice in planning, package and receipt assembly, executable completeness checks, and a 999 dependency package.",
   "skill_number": {
     "value": "83",

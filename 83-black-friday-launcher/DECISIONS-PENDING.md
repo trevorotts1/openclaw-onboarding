@@ -103,9 +103,9 @@ that is recorded in the checkout mapping as an open contract gap, not guessed.
 inside BlackCEO's environment.
 
 **Code seam:** `registration.json:distribution` (`status: open_decision`,
-`chosen_target: null`) and `SKILL.md` entry. No installer path, no skills-root
-assumption and no 999 write exist. `launcher_core/dependencies.py` packages the
-dependency list but enables nothing (`enabled_in_999: false`).
+`chosen_target: null`) and `SKILL.md` entry. The Launcher is enabled in 999 regardless of this decision
+(`registration.json:enablement.enabled_in_999: true`); `launcher_core/dependencies.py`
+reports `enabled_in_999` from that record plus the dependency check.
 
 **Ceiling:** a renamed or relocated install layout is detected and the package
 fails closed instead of guessing a path.

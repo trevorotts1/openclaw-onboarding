@@ -9,8 +9,8 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.1",
-    "status": "core-only"
+    "version": "0.2.3",
+    "status": "enabled-in-999"
   },
   "number_assignment": {
     "assigned_at": "2026-10-18",
@@ -51,7 +51,7 @@
     ]
   },
   "registration": {
-    "scope": "repository-local registration record; no installer edit, no fleet rollout, no 999 write",
+    "scope": "repository-local registration record; enabled in 999 through CONTROL/bundled-skills.txt and the 999 installers; no fleet rollout",
     "registered_at": "2026-10-18",
     "base_commit": "50c8908a15c445bd4f8fa672e61028ff30b962fa",
     "branch": "recovery/launcher-portability"
@@ -120,8 +120,10 @@
     "cross_sales_teaching_source"
   ],
   "enablement": {
-    "enabled_in_999": false,
-    "note": "Enabling in 999 is not part of LAUNCH-04 and no 999 write was made. This records the state of the three reported enablement blockers.",
+    "enabled_in_999": true,
+    "enabled_at": "2026-10-20",
+    "enabled_evidence": "recovery/999-launcher-enable: the dependency preflight reports 16 present, 0 missing, 0 unverifiable (would_enable=true); installer-registration/verify-registration.sh 34/0, verify-council-registration.sh 53/0, kaizen 18 suites, launcher verify.sh all pass",
+    "note": "Enabled in 999 after the dependency preflight came back clean and every registration gate passed. The preflight now derives enabled_in_999 from this record plus the dependency check (no hard-coded false), and reports would_enable=true. The 999 macOS and Windows installers install jsonschema from requirements.txt; see the runtime-dependency blocker below.",
     "blockers": [
       {
         "id": "department-map-entry-absent",
@@ -135,8 +137,18 @@
       },
       {
         "id": "runtime-dependency-declared-nowhere",
-        "status": "declared",
-        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator; the 999 installer still installs no Python dependencies"
+        "status": "resolved",
+        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator, and .claude/skills/nine-router-setup/scripts/setup-macos.sh ensure_jsonschema() and setup-windows.ps1 Ensure-Jsonschema install it from that file: idempotent (an importable module skips pip) and fatal when the import still fails. Proven by tests/verify_installer_python_deps.sh: control MISSING with isolated_interpreter=True before the install, PRESENT with isolated_interpreter=True after."
+      },
+      {
+        "id": "department-map-absent",
+        "status": "resolved",
+        "evidence": "23-ai-workforce-blueprint/skill-department-map.json vendored verbatim from openclaw-onboarding origin/main @ 6de76988d1d17a42198815684374799529b70c2a (provenance in 23-ai-workforce-blueprint/VENDORED.md); the three registry-line entries now resolve"
+      },
+      {
+        "id": "installer-numeric-directory-only",
+        "status": "resolved",
+        "evidence": "launcher_core/dependencies.py accepts a bare-slug directory whose SKILL.md frontmatter name matches, as well as a numbered directory; installer-registration/verify-registration.sh section F proves the real 999 installer links the bare slug and that a mismatched frontmatter name is rejected"
       }
     ]
   },
