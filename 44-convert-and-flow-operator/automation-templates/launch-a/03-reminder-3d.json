@@ -1,7 +1,11 @@
 {
   "id": "launch-a-reminder-3d",
   "name": "Launch A — Reminder: 3 Days Before",
-  "aliases": ["3-day reminder", "Three days out", "Launch A step 3"],
+  "aliases": [
+    "3-day reminder",
+    "Three days out",
+    "Launch A step 3"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +21,15 @@
     "what_starts_it": "Wait until `webinar_datetime` minus 3 days.",
     "timing": "3 days before the session start.",
     "late_registrant_rule": "Registered less than 3 days out: skip this file; the 24h reminder carries the job.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`"
+    ]
   },
-  "channels": ["Email"],
+  "channels": [
+    "Email"
+  ],
   "message": {
     "email": {
       "subject_angle": "\"[Outcome] in 3 days — here's how to be ready\"",
@@ -43,10 +53,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 03 Reminder 3 Days",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 3 days -> If not purchased and future -> Send Email -> End.",
-    "notes": "Keep the wait relative to `webinar_datetime`. If the registration window is shorter than the runway, this node must be skipped, not fired late."
+    "notes": "Keep the wait relative to `webinar_datetime`. If the registration window is shorter than the runway, this node must be skipped, not fired late.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registered, not purchased, three days out.",
-    "excludes": ["Indoctrination emails", "24h and same-day reminders", "Replay branch"]
+    "excludes": [
+      "Indoctrination emails",
+      "24h and same-day reminders",
+      "Replay branch"
+    ]
   }
 }

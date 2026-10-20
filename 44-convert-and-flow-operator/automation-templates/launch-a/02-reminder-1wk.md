@@ -1,5 +1,8 @@
 # Launch A — Reminder: 1 Week Before
 
+**Built as draft, nothing sends** until the operator approves each workflow in GoHighLevel; this file ships the build, not the go-live.
+
+
 - **id:** `launch-a-reminder-1wk`
 - **Derived from:** `44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack` (Phase C — Show-up reminders, extended to 7 days)
 - **Timing:** `webinar_datetime` minus 7 days

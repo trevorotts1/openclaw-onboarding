@@ -1,7 +1,12 @@
 {
   "id": "launch-a-reminder-live",
   "name": "Launch A — Reminder: We're LIVE",
-  "aliases": ["We're live now", "Live-now SMS", "Join now", "Launch A step 8"],
+  "aliases": [
+    "We're live now",
+    "Live-now SMS",
+    "Join now",
+    "Launch A step 8"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +22,17 @@
     "what_starts_it": "Wait until `webinar_datetime` (session start).",
     "timing": "At the scheduled start.",
     "late_registrant_rule": "Registered after start but while the session is live: send immediately once with honest copy (\"we're live now\"), provided the session has not ended.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`", "Custom field `webinar_end_datetime` (used to suppress after the session ends)"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`",
+      "Custom field `webinar_end_datetime` (used to suppress after the session ends)"
+    ]
   },
-  "channels": ["SMS", "Email"],
+  "channels": [
+    "SMS",
+    "Email"
+  ],
   "message": {
     "sms": {
       "send": "At start, with SMS consent",
@@ -49,10 +62,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 08 Reminder We're Live",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` -> If not purchased and now < `webinar_end_datetime` -> If SMS consent -> Send SMS -> Else -> Send Email -> End.",
-    "notes": "The live send must be gated by the end datetime. A 'we're live' message after the room closed is the fastest way to burn the list."
+    "notes": "The live send must be gated by the end datetime. A 'we're live' message after the room closed is the fastest way to burn the list.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registered, not purchased, session currently live.",
-    "excludes": ["Pre-event reminders", "Replay and no-show branch", "Offer copy"]
+    "excludes": [
+      "Pre-event reminders",
+      "Replay and no-show branch",
+      "Offer copy"
+    ]
   }
 }

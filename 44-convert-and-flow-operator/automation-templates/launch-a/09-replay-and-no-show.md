@@ -1,5 +1,8 @@
 # Launch A — Replay and No-Show Branch
 
+**Built as draft, nothing sends** until the operator approves each workflow in GoHighLevel; this file ships the build, not the go-live.
+
+
 - **id:** `launch-a-replay-and-no-show`
 - **Derived from:** `44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack` (Phase D — Replay)
 - **Timing:** `webinar_end_datetime` + 2 hours (configurable 1–4h); replay window ends at `cart_close_datetime`

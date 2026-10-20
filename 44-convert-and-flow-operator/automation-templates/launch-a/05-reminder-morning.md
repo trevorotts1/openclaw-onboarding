@@ -1,5 +1,8 @@
 # Launch A — Reminder: Morning of the Event
 
+**Built as draft, nothing sends** until the operator approves each workflow in GoHighLevel; this file ships the build, not the go-live.
+
+
 - **id:** `launch-a-reminder-morning`
 - **Derived from:** `44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack` (Phase C — same-day reminder)
 - **Timing:** morning of the event, default 09:00 local, clamped to at least 2 hours before start

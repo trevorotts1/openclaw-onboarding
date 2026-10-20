@@ -33,7 +33,10 @@
       "Optional: `webinar-buy-link-clicked`, `webinar-purchased`"
     ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "branches": {
     "no_show": {
       "subject_angle": "\"Sorry we missed you — here's the replay (expires [date])\"",
@@ -73,7 +76,8 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 09 Replay and No-Show",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_end_datetime` + 2h -> If purchased -> End -> If/Else `webinar-attended` OR `webinar-buy-link-clicked` -> Attended replay email -> Else -> No-show replay email -> If SMS consent -> Branch-matched SMS -> Wait until `cart_close_datetime` -> End.",
-    "notes": "Attendance tags come from the webinar platform webhook or a 'click to join' trigger-link click. Both branches must share one `cart_close_datetime`; the replay page countdown reads the same field. Never let the email cite a deadline the page does not enforce."
+    "notes": "Attendance tags come from the webinar platform webhook or a 'click to join' trigger-link click. Both branches must share one `cart_close_datetime`; the replay page countdown reads the same field. Never let the email cite a deadline the page does not enforce.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registrants who are not buyers after the live session ends.",

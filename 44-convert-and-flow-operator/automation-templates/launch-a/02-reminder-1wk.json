@@ -1,7 +1,11 @@
 {
   "id": "launch-a-reminder-1wk",
   "name": "Launch A — Reminder: 1 Week Before",
-  "aliases": ["7-day reminder", "One week out", "Launch A step 2"],
+  "aliases": [
+    "7-day reminder",
+    "One week out",
+    "Launch A step 2"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +21,16 @@
     "what_starts_it": "Wait until `webinar_datetime` minus 7 days.",
     "timing": "7 days before the session start.",
     "late_registrant_rule": "Registered inside the 7-day window: do not send a 'one week' message. Skip to the next reminder whose window is still ahead. If no window remains, skip silently.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`", "Tag `webinar-registered`"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`",
+      "Tag `webinar-registered`"
+    ]
   },
-  "channels": ["Email"],
+  "channels": [
+    "Email"
+  ],
   "message": {
     "email": {
       "subject_angle": "\"One week from today: [big promise]\"",
@@ -43,10 +54,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 02 Reminder 1 Week",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 7 days -> If not purchased and datetime in future -> Send Email -> End.",
-    "notes": "Use a date-relative wait computed from `webinar_datetime`. Never hard-code the calendar date; a rescheduled session must move every reminder with it."
+    "notes": "Use a date-relative wait computed from `webinar_datetime`. Never hard-code the calendar date; a rescheduled session must move every reminder with it.",
+    "draft_only": true
   },
   "scope": {
     "includes": "A registered, not-yet-purchased contact seven days out.",
-    "excludes": ["Indoctrination emails", "Day-before and same-day reminders", "Replay branch"]
+    "excludes": [
+      "Indoctrination emails",
+      "Day-before and same-day reminders",
+      "Replay branch"
+    ]
   }
 }

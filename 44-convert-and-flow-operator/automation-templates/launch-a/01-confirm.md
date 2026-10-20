@@ -1,5 +1,8 @@
 # Launch A — Registration Confirmation (Set the Stage)
 
+**Built as draft, nothing sends** until the operator approves each workflow in GoHighLevel; this file ships the build, not the go-live.
+
+
 - **id:** `launch-a-reminder-confirm`
 - **Derived from:** `44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack` (Phase A — Confirmation)
 - **Timing:** immediately on registration (target under 2 minutes)

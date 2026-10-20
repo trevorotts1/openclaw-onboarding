@@ -1,5 +1,8 @@
 # Launch A — Reminder: We're LIVE
 
+**Built as draft, nothing sends** until the operator approves each workflow in GoHighLevel; this file ships the build, not the go-live.
+
+
 - **id:** `launch-a-reminder-live`
 - **Derived from:** `44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack` (Phase C — "We're LIVE")
 - **Timing:** at `webinar_datetime`, suppressed after `webinar_end_datetime`

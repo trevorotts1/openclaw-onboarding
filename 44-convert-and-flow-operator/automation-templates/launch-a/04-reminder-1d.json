@@ -1,7 +1,12 @@
 {
   "id": "launch-a-reminder-1d",
   "name": "Launch A — Reminder: 1 Day Before",
-  "aliases": ["24-hour reminder", "Day-before email", "Tomorrow reminder", "Launch A step 4"],
+  "aliases": [
+    "24-hour reminder",
+    "Day-before email",
+    "Tomorrow reminder",
+    "Launch A step 4"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +22,16 @@
     "what_starts_it": "Wait until `webinar_datetime` minus 24 hours.",
     "timing": "24 hours before the session start.",
     "late_registrant_rule": "Registered inside 24h: send immediately with honest copy — \"starts tomorrow\" or \"starts in a few hours\" depending on the actual gap. Never say \"tomorrow\" inside the final 12 hours.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`"
+    ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "message": {
     "email": {
       "subject_angle": "\"Tomorrow: [big promise]\"",
@@ -49,10 +61,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 04 Reminder 24 Hours",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 24h -> If not purchased and future -> Send Email -> If SMS consent -> Send SMS -> End.",
-    "notes": "The SMS is the reminder that actually moves show-up rate; the email carries the reason. Do not let the SMS be a second copy of the email."
+    "notes": "The SMS is the reminder that actually moves show-up rate; the email carries the reason. Do not let the SMS be a second copy of the email.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registered, not purchased, 24 hours out.",
-    "excludes": ["Same-day reminders", "Indoctrination emails", "Replay branch"]
+    "excludes": [
+      "Same-day reminders",
+      "Indoctrination emails",
+      "Replay branch"
+    ]
   }
 }

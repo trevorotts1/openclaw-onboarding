@@ -29,7 +29,10 @@
       "Tags: `webinar-registered`"
     ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "message": {
     "email": {
       "send": "Immediately",
@@ -59,7 +62,8 @@
     "builder": "Skill 44 — Convert & Flow Operator (caf build-plan; set `order` and `parentKey` before the first save; fail loud on non-2xx).",
     "workflow_name": "LA — 01 Confirm (Set the Stage)",
     "structure": "Trigger: Form Submitted (registration page) OR Tag Added `webinar-registered` -> Set `webinar_datetime` from the session field -> Send Email (Set the Stage) -> If SMS consent -> Send SMS (confirm + calendar) -> End.",
-    "notes": "The session datetime must live in a custom field, never a fixed calendar date, so every later wait in launch-a can compute relative to it."
+    "notes": "The session datetime must live in a custom field, never a fixed calendar date, so every later wait in launch-a can compute relative to it.",
+    "draft_only": true
   },
   "scope": {
     "includes": "A new webinar registration.",

@@ -1,7 +1,11 @@
 {
   "id": "launch-a-reminder-morning",
   "name": "Launch A — Reminder: Morning of the Event",
-  "aliases": ["Morning-of reminder", "Day-of morning email", "Launch A step 5"],
+  "aliases": [
+    "Morning-of reminder",
+    "Day-of morning email",
+    "Launch A step 5"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +21,17 @@
     "what_starts_it": "Wait until the morning of the event.",
     "timing": "Operator-set send time on the event day, default 09:00 in the registrant's time zone. Must be at least 2 hours before `webinar_datetime`; if the session starts before 11:00, send 2 hours before start instead.",
     "late_registrant_rule": "Registered after the morning send: skip this file; the 1-hour and 15-minute reminders carry the job.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`", "Custom field `webinar_morning_send` (computed send time, ISO 8601)"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`",
+      "Custom field `webinar_morning_send` (computed send time, ISO 8601)"
+    ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "message": {
     "email": {
       "subject_angle": "\"Today: [big promise] — here's your link\"",
@@ -48,10 +60,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 05 Reminder Morning Of",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_morning_send` (default 09:00 local on event day, clamped to start-2h) -> If not purchased and future -> Send Email -> If SMS consent -> Send SMS -> End.",
-    "notes": "Compute `webinar_morning_send` from `webinar_datetime` and `webinar_timezone`; never hard-code 09:00 as a fixed clock when the event starts early."
+    "notes": "Compute `webinar_morning_send` from `webinar_datetime` and `webinar_timezone`; never hard-code 09:00 as a fixed clock when the event starts early.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registered, not purchased, morning of the event.",
-    "excludes": ["1-hour, 15-minute and live reminders", "Replay branch", "Indoctrination"]
+    "excludes": [
+      "1-hour, 15-minute and live reminders",
+      "Replay branch",
+      "Indoctrination"
+    ]
   }
 }

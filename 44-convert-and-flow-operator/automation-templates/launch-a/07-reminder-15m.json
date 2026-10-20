@@ -1,7 +1,11 @@
 {
   "id": "launch-a-reminder-15m",
   "name": "Launch A — Reminder: 15 Minutes Before",
-  "aliases": ["15-minute reminder", "Last call reminder", "Launch A step 7"],
+  "aliases": [
+    "15-minute reminder",
+    "Last call reminder",
+    "Launch A step 7"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +21,16 @@
     "what_starts_it": "Wait until `webinar_datetime` minus 15 minutes.",
     "timing": "15 minutes before the session start.",
     "late_registrant_rule": "Registered inside the final 15 minutes: skip this file; the live reminder is the next and only appropriate touch.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`", "SMS consent"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`",
+      "SMS consent"
+    ]
   },
-  "channels": ["SMS"],
+  "channels": [
+    "SMS"
+  ],
   "message": {
     "sms": {
       "send": "15 minutes before, with SMS consent only",
@@ -42,10 +53,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 07 Reminder 15 Minutes",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 15 minutes -> If not purchased, future, and SMS consent -> Send SMS -> End.",
-    "notes": "Pure SMS lane. Adding an email here dilutes the moment and increases unsubscribe risk."
+    "notes": "Pure SMS lane. Adding an email here dilutes the moment and increases unsubscribe risk.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registered, not purchased, SMS-consented, 15 minutes out.",
-    "excludes": ["Email reminders", "Live reminder", "Replay branch"]
+    "excludes": [
+      "Email reminders",
+      "Live reminder",
+      "Replay branch"
+    ]
   }
 }

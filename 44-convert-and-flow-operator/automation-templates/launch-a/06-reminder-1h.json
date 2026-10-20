@@ -1,7 +1,11 @@
 {
   "id": "launch-a-reminder-1h",
   "name": "Launch A — Reminder: 1 Hour Before",
-  "aliases": ["60-minute reminder", "One hour out", "Launch A step 6"],
+  "aliases": [
+    "60-minute reminder",
+    "One hour out",
+    "Launch A step 6"
+  ],
   "category": "funnel-specific-followups",
   "source": {
     "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
@@ -17,9 +21,16 @@
     "what_starts_it": "Wait until `webinar_datetime` minus 1 hour.",
     "timing": "60 minutes before the session start.",
     "late_registrant_rule": "Registered inside the final hour: send immediately with honest copy (\"starting soon\"), once only.",
-    "requires": ["`webinar_datetime`", "`webinar_timezone`", "`webinar_join_url`"]
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`"
+    ]
   },
-  "channels": ["SMS", "Email"],
+  "channels": [
+    "SMS",
+    "Email"
+  ],
   "message": {
     "sms": {
       "send": "1 hour before, with SMS consent",
@@ -49,10 +60,15 @@
     "builder": "Skill 44 — Convert & Flow Operator.",
     "workflow_name": "LA — 06 Reminder 1 Hour",
     "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 1h -> If not purchased and future -> If SMS consent -> Send SMS -> Else -> Send Email -> End.",
-    "notes": "SMS-first. The email exists so no-SMS registrants are not left out; do not send both to the same contact by default."
+    "notes": "SMS-first. The email exists so no-SMS registrants are not left out; do not send both to the same contact by default.",
+    "draft_only": true
   },
   "scope": {
     "includes": "Registered, not purchased, one hour out.",
-    "excludes": ["15-minute and live reminders", "Replay branch", "Indoctrination"]
+    "excludes": [
+      "15-minute and live reminders",
+      "Replay branch",
+      "Indoctrination"
+    ]
   }
 }
