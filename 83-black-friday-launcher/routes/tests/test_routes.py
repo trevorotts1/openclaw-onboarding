@@ -362,6 +362,23 @@ class AdapterWiringTests(unittest.TestCase):
                     if part.endswith(".py"):
                         self.assertTrue(Path(part).is_file(), part)
 
+    def test_order_page_images_bind_only_when_the_launch_asks_for_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self.make_inputs(Path(tmp))
+            bare = adapters.build_dispatch_config(**inputs)["adapters"]["product_selection"]["command"][-1]
+            self.assertNotIn("run_image_stages.py", bare)
+            images = Path(tmp) / "order-page-image-inputs.json"
+            images.write_text("{}", encoding="utf-8")
+            bound = adapters.build_dispatch_config(
+                image_inputs=images, **inputs)["adapters"]["product_selection"]["command"][-1]
+            # plan, then the order page images, then the page result: a result exists only after the images
+            self.assertLess(bound.index("build_selection_plan.py"), bound.index("run_image_stages.py"))
+            self.assertLess(bound.index("run_image_stages.py"), bound.index("emit_page_result.py"))
+            self.assertIn(str(images), bound)
+            self.assertNotIn("--allow-paid", bound)  # dispatch never spends
+            with self.assertRaises(adapters.AdapterError):
+                adapters.build_dispatch_config(image_inputs=Path(tmp) / "missing.json", **inputs)
+
     def test_config_refuses_placeholder_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             inputs = self.make_inputs(Path(tmp))

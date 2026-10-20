@@ -11,7 +11,7 @@ The validator that enforces the specs is
 Every run's intake record (`intake.json`, written by `write_intake.py`)
 carries a required field:
 
-    copy_version: "standard" | "long-form"
+    copy_version: "standard" | "long-form" | "product-selection"
 
 That single field selects exactly one row of this table. Nothing else in
 the run may mix versions: a Standard run never opens the Long-Form guide,
@@ -23,6 +23,7 @@ only, and the Long-Form spec records them as explicitly not applied).
 |---|---|---|---|
 | standard | `references/BlackCEO-Signature-Landing-Page-Standard-v6.md` | `references/copy-specs/standard-v6.json` | `references/copy-specs/standard-emotional-quality.md` |
 | long-form | `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md` | `references/copy-specs/long-form-v6.json` | `references/copy-specs/long-form-emotional-quality.md` |
+| product-selection | Skill 78 `references/selection-copy-profile.md` and `selection-ui-contract.md` (the order page; not a landing form) | `references/copy-specs/product-selection-v1.json` | none: Skill 78's claim and specificity gate (`validate_selection_content.py`) |
 
 How the selection is written: `write_intake.py --copy-version
 {standard,long-form}` records `copy_version` in `intake.json`, and the

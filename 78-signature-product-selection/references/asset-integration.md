@@ -2,14 +2,22 @@
 
 ## Position
 
-A selection page's job is comprehension (doc 16 section 5). It needs no
-generated imagery by default. Decoration never hides price, exclusions, or
-the continue action, and no animation may shift the selection controls.
+A selection page's job is comprehension (doc 16 section 5). Decoration never
+hides price, exclusions, or the continue action, and no animation may shift
+the selection controls.
 
-## When an asset is genuinely needed
+Every package card carries one image plate (slot `PKG-n`, in card order): the
+client's supplied package or product image, or one generated image when no
+image was supplied. The wireframes and mockups are made through Skill 71's
+shared image service (`scripts/run_image_stages.py`), and the page's Design
+Board is built from these plates, so its image grid is never empty. A plate is
+a labelled placeholder in the wireframe and a real image in the mockup; it
+never hides price, exclusions or the Choose button.
+
+## Where the images come from
 
 Examples: an approved product visualization supplied by the client, or one
-generated image per offer when the approved creative direction calls for it.
+generated image per offer.
 
 Rules, all inherited and none forked here:
 

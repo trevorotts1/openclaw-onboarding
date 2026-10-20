@@ -81,6 +81,7 @@ import reference_use  # noqa: E402  SPF022: reference images are structure only
 import brand_colors  # noqa: E402  SPF019: client brand colors gate
 import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
 import composition  # noqa: E402  the composition library (treatments, typed references)
+import copy_forms  # noqa: E402  the one registry of copy forms (standard, long-form, product-selection)
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -413,6 +414,12 @@ def _cta_label(value) -> str:
         value = value.get("label")
     return str(value or "").strip().rstrip(".")
 
+def cta_labels(section: dict) -> list:
+    """Every button label a section carries: one `cta`, or `cta_labels` (one button per package
+    card on the product-selection page's Section 3)."""
+    many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
+    return many or ([_cta_label(section.get("cta"))] if _cta_label(section.get("cta")) else [])
+
 def _copy_source_candidates(run_dir: Path, request: dict) -> list[Path]:
     """Every place a run keeps its copy source, in authority order.
 
@@ -475,6 +482,8 @@ def copy_contract(section: dict) -> str:
             f"section {label}: verbatim copy ends mid-sentence "
             f"({copy[-56:]!r}); rebuild the request with the full section copy")
     cta = _cta_label(section.get("cta")) or _cta_label(section.get("_copy_source_cta"))
+    if not cta and len(cta_labels(section)) > 1:
+        cta = "per card"
     if not cta:
         match = re.search(r"\bCTA:\s*([^\n]+)", copy)
         if match:
@@ -499,11 +508,15 @@ def copy_contract(section: dict) -> str:
     if labels:
         lines.append("LABELS — print exactly, one per line, as designed labels: " +
                      " | ".join(f'"{x}"' for x in labels))
-    if cta:
+    many = cta_labels(section)
+    if len(many) > 1:
+        lines.append("CTA LABELS — one button per package card, in card order, each printed exactly: "
+                     + " | ".join(f'"{x}"' for x in many))
+    elif cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
 
-def negative_block(stage: str | None = None) -> str:
+def negative_block(stage: str | None = None, steps: bool = True) -> str:
     """The skill's own defect-class negative block, applied at the wire.
 
     Stage aware: a wireframe stage prints annotations (section number and
@@ -520,11 +533,11 @@ def negative_block(stage: str | None = None) -> str:
                 "(section number and name, type specs, slot labels with pixel size, "
                 "ratio and treatment, behavior notes); no placeholder tokens, no "
                 "agent notes, no lorem, no bracketed markers, no watermarks.")
+    step_rule = ("Do not mis-number the 7 steps: exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 "
+                 "once each, and exactly 7 step labels. ") if steps else ""
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
-        "same number twice, do not skip a number. Do not mis-number the 7 steps: "
-        "exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 once each, and exactly 7 "
-        "step labels. Do not garble any label, mug slogan, or caption: no "
+        "same number twice, do not skip a number. " + step_rule + "Do not garble any label, mug slogan, or caption: no "
         "\"BIGNEFIT\", \"BTEP 7\", \"DISCIFIONAL\", \"FREIDOM\", "
         "\"Folow Gnlume Sno Home\", \"widhh\", and no invented, dropped, "
         "doubled, or substituted characters anywhere. " + tail)
@@ -552,7 +565,8 @@ def require_brand_colors(run_dir: Path) -> str:
     return res.block()
 
 
-SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
+SPEC_DIR = copy_forms.SPEC_DIR
+SPEC_FILES = copy_forms.SPEC_FILES
 
 
 def canon_section_id(value) -> str:
@@ -561,6 +575,12 @@ def canon_section_id(value) -> str:
     text = re.sub(r"^S(?=\d)", "", text)
     match = re.fullmatch(r"0*(\d+)([A-Z]?)", text)
     return f"{int(match.group(1))}{match.group(2)}" if match else text
+
+
+def request_form(request: dict):
+    """The request's own form (copy_version or metadata.copy_version) as a registered form, else None."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    return copy_forms.norm(request.get("copy_version") or metadata.get("copy_version"))
 
 
 def declared_copy_version(run_dir: Path, request: dict):
@@ -591,7 +611,8 @@ def allowed_section_sequences(spec: dict) -> list:
 
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical copy
-    section of the selected form (Standard 12, Long-Form 15), in order.
+    section of the selected form (Standard 12, Long-Form 15, Product Selection 5),
+    in order.
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
@@ -606,11 +627,11 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
         print("NOTE section_count: no copy_version declared; the section-count "
               "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
         return None
-    spec_path = SPEC_DIR / f"{version}-v6.json"
-    if not spec_path.is_file():
+    if version not in SPEC_FILES:
         raise ExecutorError(
-            f"copy_version {version!r} is not one of standard, long-form "
-            f"(no spec at {spec_path.name})")
+            f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
+            "(no copy spec for it in references/copy-specs/)")
+    spec_path = copy_forms.spec_path(version)
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
     allowed = allowed_section_sequences(spec)
@@ -795,11 +816,13 @@ def resolve_composition(section: dict, index: int, request: dict) -> dict:
     return composition.assign_treatments([section], request_cues(request))[0]
 
 
-def section_typed_references(stage: str, width: int, resolved: dict, section: dict) -> list:
+def section_typed_references(stage: str, width: int, resolved: dict, section: dict,
+                             request_form=None) -> list:
     """Hosted reference rows (by type) for one job; [] when the catalog has none."""
     platform = "mobile" if width <= 768 else "desktop"
     used = [e["treatment"] for e in resolved.get("slots") or []]
-    return composition.typed_references(stage, platform, section.get("section_id"), used)
+    return composition.typed_references(stage, platform, section.get("section_id"), used,
+                                        form=request_form)
 
 
 def stage_prompt(stage: str, section: dict, index: int, width: int,
@@ -843,7 +866,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = wireframe_body(stage, section, index, width, request, body)
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block(stage)
+    neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS)
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
@@ -1143,7 +1166,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template)
             typed = section_typed_references(
-                stage, width, resolve_composition(section, index, request), section)
+                stage, width, resolve_composition(section, index, request), section,
+                request_form(request))
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True,
                 strict_floor=provider.name == "kie", typed_refs=typed)
@@ -1503,14 +1527,15 @@ def main(argv=None) -> int:
                   f"roles={request.get('reference_roles') or '-'}")
             for stage in stages:
                 for index, section in enumerate(request["sections"], start=1):
-                    cta = _cta_label(section.get("cta")) or "-"
+                    cta = " | ".join(cta_labels(section)) or "-"
                     print(f"PREFLIGHT_CTA {stage} {section['section_id']} -> {cta}")
                     for template, width, _height in LAYOUT[stage]:
                         name = template.format(n=index)
                         try:
                             ratio = target_ratio(stage, template, section, run_dir, index)
                             resolved = resolve_composition(section, index, request)
-                            typed = section_typed_references(stage, width, resolved, section)
+                            typed = section_typed_references(stage, width, resolved, section,
+                                                             request_form(request))
                             prompt, sizes = stage_prompt(
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True, strict_floor=True, typed_refs=typed)

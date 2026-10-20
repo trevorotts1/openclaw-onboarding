@@ -33,6 +33,9 @@
  ],
  "intent_triggers": [
   "build a product selection page",
+  "build my order page",
+  "wireframes and mockups for my order page",
+  "package selection page",
   "compare my packages",
   "a page to choose between my packages",
   "pricing options page for my launch"
