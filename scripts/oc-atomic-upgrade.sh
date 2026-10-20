@@ -648,8 +648,13 @@ _prove_gateway_on_target() {
     _err "the package the gateway launches measures '${v:-nothing}', not $TARGET_VERSION"
     return 1
   fi
+  pid="$(_gateway_pid)"
+  case "$SUPERVISOR" in
+    launchd|docker)
+      if [ -z "$pid" ]; then _err "no gateway process is running (supervisor: $SUPERVISOR)"; return 1; fi ;;
+  esac
+  if ! _healthz_ok; then _err "/healthz did not answer 200"; return 1; fi
   if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_ENTRY" ]; then
-    pid="$(_gateway_pid)"
     args="$(ps -o args= -p "$pid" 2>/dev/null)"
     if [ -z "$args" ]; then
       _warn "could not read the gateway process arguments (pid ${pid:-none}); package version and /healthz are the evidence"
@@ -918,16 +923,22 @@ do_upgrade() {
   _say "version   : $OLD_VERSION (measured)  ->  $TARGET_VERSION (target)"
   _say "config    : $OC_CONFIG  [shape: $shape]"
 
-  # ponytail: "already on target" trusts the supervisor's package.json; it cannot tell a gateway
-  # process started BEFORE a manual install (npm resets file mtimes, so no mtime test) - add a
-  # pid-start vs package-ctime check if that case shows up.
+  # "Already on target" needs the supervisor's package at the target AND the live gateway process
+  # launched from it AND /healthz 200 (_prove_gateway_on_target). A package at the target under a
+  # gateway still running the old build (or no gateway at all) falls through to the full procedure,
+  # which restarts the gateway and re-proves it.
+  # ponytail: no pid-start vs package-ctime check (npm resets mtimes); a gateway launched from the
+  # same path before an in-place reinstall still passes - add the check if that case shows up.
   if [ "$OLD_VERSION" = "$TARGET_VERSION" ] && [ "$shape" != "LEGACY_LIST" ]; then
+    if ! _prove_gateway_on_target; then
+      _warn "the package is at $TARGET_VERSION but the gateway is NOT proven running it (above) — running the full procedure to restart and re-prove it"
     # "Nothing to do" is only true if the installed build actually accepts the config.
-    if [ "$shape" = "NO_CONFIG" ] || _config_valid_for_installed_binary; then
-      _ok "already on $TARGET_VERSION with a non-legacy config the installed build accepts — nothing to do."
+    elif [ "$shape" = "NO_CONFIG" ] || _config_valid_for_installed_binary; then
+      _ok "already on $TARGET_VERSION, gateway running it, non-legacy config the installed build accepts — nothing to do."
       return 0
+    else
+      _warn "already on $TARGET_VERSION but the installed build REJECTS the config (above) — running the full procedure to migrate it"
     fi
-    _warn "already on $TARGET_VERSION but the installed build REJECTS the config (above) — running the full procedure to migrate it"
   fi
 
   if [ "$DRY_RUN" = "1" ]; then

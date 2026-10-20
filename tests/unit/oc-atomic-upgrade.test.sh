@@ -373,7 +373,7 @@ make_box() {
 # run_atomic <home> <stubs> <state> [script-override] -- returns the script's rc
 run_atomic() {
   local home="$1" stubs="$2" state="$3" script="${4:-$ATOMIC}"
-  touch "$state/loaded_ai.openclaw.gateway"     # the gateway starts out running
+  [ -n "${T_GATEWAY_DOWN:-}" ] || touch "$state/loaded_ai.openclaw.gateway"     # the gateway starts out running
   HOME="$home" PATH="$stubs:/usr/bin:/bin:/usr/sbin:/sbin" \
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
     OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
@@ -1009,6 +1009,41 @@ if grep -q 'DISAGREE' <<<"$OUT14" && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT1
   pass "14c: PATH/supervisor disagreement was logged, the upgrade completed and the gateway is back up"
 else
   fail "14c: no disagreement log / completion / gateway. Output: $OUT14"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (15) CAN015 round 2: package at target is NOT 'already on target' unless the gateway runs it ---"
+# Probe A: the supervisor's package is already at the target but the live gateway was launched
+# from an OLD tree (an npm/openclaw update with no restart). Probe B: package at target, gateway
+# job not loaded at all. Both used to return 0 'nothing to do' with no gateway proof.
+H15="$(make_box b15 clean)"; S15="$SANDBOX/stubs15"; ST15="$SANDBOX/state15"
+make_stubs "$S15" "$ST15" versioned
+set_installed "$H15" "$ST15" "$NEW_V"
+printf 'node %s/OLD/lib/node_modules/openclaw/dist/index.js gateway\n' "$SANDBOX" > "$ST15/ps_args"
+OUT15="$(run_atomic "$H15" "$S15" "$ST15")"; RC15=$?
+if ! grep -q 'nothing to do' <<<"$OUT15" && grep -q 'launchctl bootout' "$ST15/events" && [ "$RC15" -ne 0 ]; then
+  pass "15a: package at target but live gateway on an old tree -> restarted and failed loudly (rc=$RC15), no false 'nothing to do'"
+else
+  fail "15a: rc=$RC15 (want nonzero, with a restart and no 'nothing to do'). Output: $OUT15"
+fi
+H15B="$(make_box b15b clean)"; S15B="$SANDBOX/stubs15b"; ST15B="$SANDBOX/state15b"
+make_stubs "$S15B" "$ST15B" versioned
+set_installed "$H15B" "$ST15B" "$NEW_V"
+OUT15B="$(T_GATEWAY_DOWN=1 run_atomic "$H15B" "$S15B" "$ST15B")"; RC15B=$?
+if ! grep -q 'nothing to do' <<<"$OUT15B" && grep -q 'launchctl bootstrap' "$ST15B/events" && [ -f "$ST15B/loaded_ai.openclaw.gateway" ]; then
+  pass "15b: package at target but gateway not loaded -> gateway started and proven, no false 'nothing to do'"
+else
+  fail "15b: rc=$RC15B. Output: $OUT15B"
+fi
+H15C="$(make_box b15c clean)"; S15C="$SANDBOX/stubs15c"; ST15C="$SANDBOX/state15c"
+make_stubs "$S15C" "$ST15C" versioned
+set_installed "$H15C" "$ST15C" "$NEW_V"
+OUT15C="$(run_atomic "$H15C" "$S15C" "$ST15C")"; RC15C=$?
+if [ "$RC15C" -eq 0 ] && grep -q 'nothing to do' <<<"$OUT15C" && ! grep -q 'launchctl bootout' "$ST15C/events"; then
+  pass "15c: package at target AND gateway running it with /healthz 200 -> still 'nothing to do', no restart"
+else
+  fail "15c: rc=$RC15C. Output: $OUT15C"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
