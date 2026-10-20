@@ -242,6 +242,46 @@
       "value": "existing",
       "status": "provided",
       "source": "client"
+    },
+    "launch_calendar": {
+      "value": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+      "status": "provided",
+      "source": "client"
+    },
+    "channels": {
+      "value": "Email and text",
+      "status": "provided",
+      "source": "client"
+    },
+    "conversation_ai": {
+      "value": "Yes, add the bot",
+      "status": "provided",
+      "source": "client"
+    },
+    "access_delivery": {
+      "value": "Yes, send access after purchase",
+      "status": "provided",
+      "source": "client"
+    },
+    "payment_plans": {
+      "value": "Payment plans offered",
+      "status": "provided",
+      "source": "client"
+    },
+    "sender_name": {
+      "value": "7FigurePreneur",
+      "status": "provided",
+      "source": "client"
+    },
+    "reply_to_email": {
+      "value": "hello@7figurepreneur.com",
+      "status": "provided",
+      "source": "client"
+    },
+    "a2p_ready": {
+      "value": "Yes, it is approved",
+      "status": "provided",
+      "source": "client"
     }
   },
   "to_confirm": [

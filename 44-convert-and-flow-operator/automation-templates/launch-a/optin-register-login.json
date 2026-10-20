@@ -1,0 +1,202 @@
+{
+  "id": "launch-optin-register-login",
+  "name": "Launch Opt-In / Register / Log-In — Tag, Confirmation, Access, Nurture Start",
+  "aliases": [
+    "launch opt-in",
+    "launch registration",
+    "launch access request",
+    "opt-in register log-in",
+    "waitlist opt-in",
+    "registration confirmation",
+    "access log-in delivery",
+    "nurture start after opt-in"
+  ],
+  "category": "launch-a",
+  "template_status": "from post-optin-multichannel-stack (opt-in entry trimmed; nurture body stays in the source template)",
+  "source": {
+    "spec": "launch-automations.spec.md §3.3 — Opt-in / register / log-in: Form, registration, access request → tag, confirmation, access/log-in, nurture start",
+    "template": "automation-templates/multichannel-automation/post-optin-multichannel-stack.json/.md — trigger, tag guard and delivery framing come from this template",
+    "capability_note": "automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md — opt-in / register / log-in: Skill 44 engine; CampaignBuilder auto-creates only a Tag Added trigger, so Form Submitted / Funnel Step Submitted needs `caf workflows patch-trigger` or the Tier-4 managed browser"
+  },
+  "purpose": "One entry handler for every launch opt-in surface: an opt-in form, an event/webinar registration, or an access/log-in request. The submit is tagged once, confirmed immediately, given the exact access or log-in it asked for, and handed to the right nurture start. It is the front door of the launch; the long nurture sequence and the reminder cadence are separate workflows.",
+  "trigger": {
+    "primary_event": "Form submitted on an opt-in, registration or access-request page",
+    "ghl_trigger_type": "Form Submitted / Funnel Step Submitted",
+    "trigger_build": "Not created by CampaignBuilder (Tag Added only). Build with `caf workflows patch-trigger --trigger-json <file>` on the internal API, snapshot before write; Tier-4 managed browser where the engine has no verified payload.",
+    "variants": [
+      {
+        "id": "form-optin",
+        "surface": "Opt-in form / lead magnet claim / waitlist squeeze page",
+        "match": "The approved launch plan's opt-in form ID or funnel-step ID. Never inferred from page title or URL text.",
+        "adds_tag": "launch-optin",
+        "confirmation": "Lead magnet delivery + what happens next",
+        "nurture_start": "post-optin-multichannel-stack nurture workflow"
+      },
+      {
+        "id": "registration",
+        "surface": "Event / webinar / launch registration form",
+        "match": "The approved launch plan's registration form ID or funnel-step ID.",
+        "adds_tag": "launch-registered",
+        "confirmation": "Registration confirmed + calendar/access link",
+        "nurture_start": "launch reminder cadence (event reminders + replay / no-show family)"
+      },
+      {
+        "id": "access-login",
+        "surface": "Access request / log-in request form (membership, portal, course, event access)",
+        "match": "The approved launch plan's access-request form ID or funnel-step ID. Log-in delivery is the transactional access email; no password is ever sent by this workflow.",
+        "adds_tag": "launch-access-requested",
+        "confirmation": "Access request received + access/log-in delivery",
+        "nurture_start": "access / onboarding follow-up workflow"
+      }
+    ],
+    "entry_conditions": [
+      "The submitted form resolves to exactly one approved variant binding (form-optin, registration, or access-login)",
+      "The contact has not already entered this variant for this campaign (guard tag absent)",
+      "The contact is not already a paid buyer for this launch, or the purchase guard exits before any promotional step"
+    ],
+    "exit_conditions": [
+      "Variant tag written once for this campaign",
+      "Confirmation delivered once",
+      "Access/log-in delivered once where the variant requires it",
+      "Exactly one nurture workflow enrolled"
+    ],
+    "reentry": "Once per contact per variant per campaign. Guard tags are `launch-optin-started`, `launch-registered-started`, `launch-access-started`; a variant guard present means the workflow does not repeat the tag, confirmation, access delivery or enrollment. Dedupe on form submission identity plus variant, never on 'has any launch tag'."
+  },
+  "channels": [
+    "Email (confirmation, access/log-in delivery)",
+    "SMS (confirmation only when the launch plan is email + text and A2P is approved)"
+  ],
+  "dependencies_first": {
+    "note": "Skill 44 refuses to build if these do not exist. Create them before the workflow.",
+    "tags": [
+      "launch-optin",
+      "launch-registered",
+      "launch-access-requested",
+      "launch-optin-started",
+      "launch-registered-started",
+      "launch-access-started",
+      "sms-subscribed",
+      "purchased-[offer-id]"
+    ],
+    "custom_fields": [
+      "launch_optin_date (date)"
+    ],
+    "custom_values": [
+      "{{lead_magnet_url}}",
+      "{{registration_calendar_url}}",
+      "{{access_login_url}}",
+      "{{ac_name}}",
+      "{{brand_name}}"
+    ]
+  },
+  "sequence": [
+    {
+      "order": 1,
+      "action": "add_contact_tag",
+      "name": "Tag the entry once",
+      "timing": "Immediately",
+      "detail": "Add the variant tag (`launch-optin`, `launch-registered`, or `launch-access-requested`) plus the matching `*-started` guard. The guard makes the handler idempotent across page refreshes and repeated submits."
+    },
+    {
+      "order": 2,
+      "action": "update_custom_value",
+      "name": "Record the opt-in date",
+      "timing": "Immediately",
+      "detail": "Set `launch_optin_date` to now. This is the date the nurture and reminder families read; it is not a send trigger in this workflow."
+    },
+    {
+      "order": 3,
+      "action": "if_else",
+      "name": "Purchase guard before anything promotional",
+      "timing": "Immediately",
+      "detail": "IF tag `purchased-[offer-id]` is present → do not send promotional copy; exit to the post-sale purchase workflow. ELSE continue. This is the A2 guarantee: a buyer never receives launch promo emails or texts from this handler."
+    },
+    {
+      "order": 4,
+      "action": "email",
+      "name": "Immediate confirmation",
+      "timing": "0 min after submit",
+      "detail": "Variant copy from the approved Skill 50 launch copy: form-optin delivers the lead magnet and what happens next; registration confirms the seat and supplies the calendar/access link; access-login confirms the request and delivers the log-in path. Copy comes from Skill 50; this template wires the sends and does not author them."
+    },
+    {
+      "order": 5,
+      "action": "sms",
+      "name": "Confirmation text",
+      "timing": "Immediately, only when email + text launch and A2P approved",
+      "detail": "One short confirmation with a reply invitation and STOP opt-out inside the launch send window (default 8 a.m.–9 p.m. recipient local time). Skipped entirely when A2P is not approved; the build plan records the skip and the text stays a draft."
+    },
+    {
+      "order": 6,
+      "action": "email",
+      "name": "Access / log-in delivery",
+      "timing": "Immediately, registration and access-login variants only",
+      "detail": "Registration sends the calendar/join link; access-login sends the portal invitation or magic log-in link for the exact purchased or granted access. form-optin skips this node — its access is the lead magnet already delivered. Never send a password."
+    },
+    {
+      "order": 7,
+      "action": "add_to_workflow",
+      "name": "Nurture start",
+      "timing": "Immediately after confirmation",
+      "detail": "Enroll in exactly one variant-appropriate workflow: form-optin → post-optin-multichannel-stack nurture; registration → launch reminder cadence; access-login → access / onboarding follow-up. Never enroll twice; the guard from step 1 prevents it."
+    },
+    {
+      "order": 8,
+      "action": "workflow_goal",
+      "name": "Close the entry handler",
+      "timing": "End",
+      "detail": "The handler is short — no multi-day waits live here. The nurture sequence and the reminder cadence own their own timing."
+    }
+  ],
+  "buyer_suppression": {
+    "rule": "A paid buyer receives no further promotional emails or texts for this launch, from any variant of this handler.",
+    "stops": [
+      "Promotional launch sequence",
+      "Doors-closing / last-call sends",
+      "Abandoned-checkout recovery",
+      "Page-visit retargeting nudge",
+      "Nurture pitches for an offer already bought or included in the package"
+    ],
+    "does_not_stop": [
+      "Transactional confirmation, access and log-in notices",
+      "The buyer's own onboarding / review / referral sequence",
+      "A genuinely different later offer approved in the launch plan"
+    ]
+  },
+  "build": {
+    "engine": "Skill 44 internal-API engine (`caf workflows create` / `CampaignBuilder`), with the managed-browser Tier-4 backstop for the trigger",
+    "api_ceiling": "The official GHL API has no workflow create, update, publish or trigger endpoint; its only workflow operation is GET /workflows/. Do not attempt an API-only build.",
+    "verified_actions_used": [
+      "add_contact_tag",
+      "update_custom_value",
+      "if_else",
+      "email",
+      "sms",
+      "add_to_workflow",
+      "workflow_goal"
+    ],
+    "draft_only": true,
+    "live": false,
+    "state": "Every workflow is created as a draft. Triggers are written `status: draft` and `active` stays gated by CAF_DRAFT_ONLY. Nothing sends, nothing goes live. Live switch-on is a separate client approval.",
+    "inputs_required": [
+      "Approved variant bindings: form ID or funnel-step ID per opt-in / registration / access-login surface",
+      "Approved Skill 50 confirmation copy hash per variant",
+      "Lead magnet URL, registration calendar/join URL, access/log-in URL",
+      "Nurture workflow IDs: post-optin nurture, reminder cadence, access / onboarding follow-up",
+      "A2P registration state and launch send window",
+      "Location whitelist entry and Firebase refresh token (workflow writes); absent token → Tier-4 browser backstop"
+    ]
+  },
+  "quality": {
+    "checklist_lines": ["A1", "A2", "X1"],
+    "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
+    "assertions": [
+      "Each variant resolves to one approved form binding; no guessed page or product",
+      "Tag + guard written before any send, so a refresh cannot double-send",
+      "Purchase guard exits before every promotional node",
+      "Access/log-in delivered once; no password is ever sent",
+      "SMS node is skipped and recorded when A2P is not approved",
+      "Exactly one nurture enrollment per contact and variant",
+      "Everything is draft_only; no live switch-on; no client account touched during the build"
+    ]
+  }
+}

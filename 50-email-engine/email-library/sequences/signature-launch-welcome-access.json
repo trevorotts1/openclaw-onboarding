@@ -1,0 +1,92 @@
+{
+  "id": "signature-launch-welcome-access",
+  "type": "sequence",
+  "name": "Signature Launch Welcome / Access Profile",
+  "tags": [
+    "sequence",
+    "signature-launch",
+    "signature-launch-profile",
+    "welcome-access",
+    "post-purchase",
+    "access",
+    "receipt",
+    "next-steps",
+    "onboarding",
+    "transactional",
+    "six-ws",
+    "before-after-bridge",
+    "paired-variants",
+    "founder-signature",
+    "launch-brief-intake",
+    "draft-only-handoff"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "post-purchase",
+    "welcome-access",
+    "signature-launch-builds",
+    "access-delivery",
+    "receipt-and-next-steps"
+  ],
+  "file": "signature-launch-welcome-access.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "signature_launch_welcome_access",
+    "profile": "signature_launch_welcome_access",
+    "length": 2,
+    "preview_count": 1,
+    "preview_count_overridable": false,
+    "subject_count": 2,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "six-ws",
+      "2": "before-after-bridge"
+    },
+    "phase_map": {
+      "access_receipt": [1],
+      "next_steps_thank_you": [2]
+    },
+    "cta_rules": {
+      "default": 1
+    },
+    "cta_destination": "the approved access page / member area from the launch plan thank_you_url",
+    "objective": "promotional",
+    "objective_source": "frozen objective enum",
+    "objective_note": "the frozen objective enum has no welcome/access or transactional value; this profile is operational and carries no promotional claim, urgency, or offer, and no lane file widens the enum",
+    "timing": {
+      "1": "immediately on the payment_succeeded event, inside the same minute where the platform allows",
+      "2": {
+        "after_hours": 24
+      },
+      "note": "relative to the purchase event; any date, session time, or deadline in the copy comes from the approved brief and launch calendar, never invented"
+    },
+    "email_count_note": "the launch plan's email_count for kind welcome_access is authoritative; this profile models the two-email core (most fixtures) — a plan that declares 3 requires the integrator to extend the profile before the run, and the lane never pads an email to reach a count",
+    "facts_source": "the order record and the approved shared-launch brief only: buyer name, offer name, price paid, plan/installments, order reference, access URL, session or start date, and included items. No figure, date, or entitlement is invented",
+    "receipt_rule": "the receipt block states the amount actually charged, the currency, the plan and the next charge only when the order record carries it, and the order reference. No card digits, no full payment token, no credential, and no password ever appear in an email",
+    "access_rule": "the access link comes from the platform or the approved brief. It is never constructed from a guessed URL, never carries a password in the query string, and never asks the recipient to reply with a password. If the access URL is missing from the brief, the email says access details follow from support and names the support address instead of inventing a link",
+    "transactional_rule": "the purchase receipt and the access delivery are transactional. A marketing opt-out does not suppress them; a full refund or a cancelled order before the send does suppress them. Each email sends at most once per order",
+    "suppression": "a full refund, a cancelled order, or a chargeback recorded before the send suppresses the remaining email; a duplicate purchase event for the same order never re-sends an email already delivered",
+    "proof_rule": "no testimonial, result, member count, or revenue figure appears unless the approved brief carries the evidence; operational email does not need proof and prefers none",
+    "disruptive_required": false,
+    "variant_pairing": {
+      "pairs": ["A", "B"],
+      "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
+      "pair_b_style": "plain and direct, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no misleading price, no fake security warning)"
+    },
+    "intake": "the approved S49 shared-launch brief, consumed by the launch intake adapter with per-field provenance; the legacy one-block questionnaire applies only in explicit legacy interactive mode",
+    "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
+    "trigger": "Signature Launch build: appended after the thank-you/access page is approved and the offer version is locked; a payment_succeeded event enrolls the contact and every email returns them to that same approved access page",
+    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; until the integrator registers the profile, a run resolving sequence_type signature_launch_welcome_access fails AF-EMAIL-TYPE-MISMATCH by design; register.py --check keeps its frozen 36-entry census",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-CTA-COUNT",
+      "AF-EMAIL-PREVIEW-COUNT",
+      "AF-EMAIL-SUBJECT-COUNT",
+      "AF-EMAIL-WORDBAND",
+      "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+      "AF-EMAIL-TYPE-MISMATCH",
+      "AF-EMAIL-PROCESS-INTEGRITY"
+    ]
+  }
+}

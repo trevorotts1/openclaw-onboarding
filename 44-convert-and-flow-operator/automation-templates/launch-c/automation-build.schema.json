@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "automation-build.schema.json",
+  "title": "Launch Automation Builds (launch-c v1)",
+  "description": "Emitted by launch-c/plan_reader.py from the U-CONTRACT launch plan plus the Skill 50 P4 DRAFT-ONLY build plans. One entry per launch-plan automation unit, carrying the launch-plan fields unchanged and the Skill 50 workflows it waits on. DRAFT-ONLY: nothing here authorizes a send, a publish or a live switch-on.",
+  "type": "object",
+  "required": ["schema_version", "launch_id", "draft_only", "sources", "builds", "unused_build_plan_workflows", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "launch_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "draft_only": { "type": "boolean", "const": true },
+    "sources": {
+      "type": "object",
+      "required": ["launch_plan", "build_plans"],
+      "additionalProperties": false,
+      "properties": {
+        "launch_plan": { "type": "string", "minLength": 1 },
+        "build_plans": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "builds": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/build" }
+    },
+    "unused_build_plan_workflows": {
+      "type": "array",
+      "description": "Build plans that could not be bound to a launch email_sequence. Reported, never silently dropped; pass --sequence-map to bind one.",
+      "items": {
+        "type": "object",
+        "required": ["build_plan", "reason", "workflows"],
+        "additionalProperties": false,
+        "properties": {
+          "build_plan": { "type": "string" },
+          "reason": { "type": "string" },
+          "workflows": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code"],
+        "properties": { "code": { "type": "string" } },
+        "additionalProperties": true
+      }
+    }
+  },
+  "definitions": {
+    "build": {
+      "type": "object",
+      "required": ["id", "family", "template", "build_rail", "draft_only", "trigger", "waits_for", "email_sequences", "workflows", "state", "blocked_by"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "family": {
+          "type": "string",
+          "enum": ["pre_launch", "opt_in", "event_reminders", "post_sale", "upsell_downsell", "abandoned_checkout", "page_retargeting", "onboarding_review", "win_back", "failed_payment", "conversation_ai_reply"]
+        },
+        "template": { "type": ["string", "null"] },
+        "build_rail": { "type": "string", "enum": ["ghl_api", "skill44_engine", "unknown"] },
+        "draft_only": { "type": "boolean", "const": true },
+        "trigger": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1 },
+            "detail": { "type": "string" }
+          }
+        },
+        "waits_for": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "email_sequences": {
+          "type": "array",
+          "description": "Launch email_sequence ids this automation waits on, in plan order.",
+          "items": { "type": "string" }
+        },
+        "workflows": {
+          "type": "array",
+          "description": "Skill 50 DRAFT workflows bound to those sequences, steps passed through verbatim.",
+          "items": { "$ref": "#/definitions/workflow" }
+        },
+        "state": {
+          "type": "string",
+          "enum": ["ready", "blocked"],
+          "description": "blocked when any email_sequence this automation waits on has no bound Skill 50 build plan. A blocked build is never upgraded by assumption."
+        },
+        "blocked_by": {
+          "type": "array",
+          "description": "Email sequence ids with no bound build plan.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["key", "name", "tag", "status", "folder", "email_count", "wait_count", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "tag": { "type": ["string", "null"] },
+        "status": { "type": "string", "const": "draft" },
+        "folder": { "type": "string", "minLength": 1 },
+        "email_count": { "type": "integer", "minimum": 0 },
+        "wait_count": { "type": "integer", "minimum": 0 },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/step" }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "type", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["email", "wait"] },
+        "name": { "type": "string", "minLength": 1 },
+        "order": { "type": "integer", "minimum": 0 },
+        "slot": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "variant_pairs": { "type": "object" },
+        "attributes": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

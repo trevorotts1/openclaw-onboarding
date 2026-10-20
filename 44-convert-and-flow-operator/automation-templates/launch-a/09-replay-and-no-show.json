@@ -1,0 +1,90 @@
+{
+  "id": "launch-a-replay-and-no-show",
+  "name": "Launch A — Replay and No-Show Branch",
+  "aliases": [
+    "Replay email",
+    "Sorry we missed you",
+    "No-show recovery",
+    "Attendance-segmented replay",
+    "Launch A step 9"
+  ],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "D. Replay (attendance-segmented)",
+    "primary": "If/Else `webinar-attended` vs `webinar-noshow` -> branched replay copy with cart-close countdown.",
+    "supporting": [
+      "Funnel Hacker's Cookbook — Webinar Funnel replay/urgency page with cart-close countdown; Drop-Off Automation for no-shows.",
+      "Perfect Webinar Stack recap for attendees who left before the offer.",
+      "Honest urgency only — the countdown must match the real cart-close datetime."
+    ]
+  },
+  "purpose": "One job: recover the value of the live session after it ends. No-shows get the replay and a reason it matters now. Attendees who did not buy get the stack recap and a door back into the offer. One branch, two messages, one shared deadline.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_end_datetime` plus 2 hours (configurable 1-4 hours) — after the live room has closed and before attention fades.",
+    "timing": "Within hours of the live event; the replay window default is 72 hours, and it must end at the same moment as `cart_close_datetime`.",
+    "branching": "If/Else on attendance tags: `webinar-attended` -> attended branch. `webinar-noshow` -> no-show branch. No attendance signal -> no-show branch (the safer assumption; never call a silent contact an attendee).",
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_end_datetime`",
+      "`cart_close_datetime` (must equal the replay expiry)",
+      "`webinar_replay_url`",
+      "Tags: `webinar-attended`, `webinar-noshow`",
+      "Optional: `webinar-buy-link-clicked`, `webinar-purchased`"
+    ]
+  },
+  "channels": [
+    "Email",
+    "SMS"
+  ],
+  "branches": {
+    "no_show": {
+      "subject_angle": "\"Sorry we missed you — here's the replay (expires [date])\"",
+      "body_framework": "Acknowledge plainly that they could not make it. Re-sell the promise in one sentence, not the agenda. Embed the replay. Name the real deadline: the replay closes at `cart_close_datetime`. Restate the ONE promise and one thing they will see in the replay. Single CTA.",
+      "cta": "Watch the replay"
+    },
+    "attended_no_buy": {
+      "subject_angle": "\"Did you catch the [offer] at the end?\"",
+      "body_framework": "Thank them for attending. Point straight at the part they may have missed: the offer, the stack, the deadline. Embed the replay anchored to the offer segment if the platform supports it. Deadline in one line. Single CTA.",
+      "cta": "See the offer again"
+    }
+  },
+  "message": {
+    "sms": {
+      "send": "One SMS per branch, only with consent, sent with the email",
+      "body_framework": "No-show: \"Missed you — replay here, closes [date]: [URL]\". Attended: \"Thanks for coming — the offer from the end is here: [URL]\". One line.",
+      "cta": "Replay link"
+    }
+  },
+  "copy_rules": [
+    "Never tell a no-show they attended, or an attendee they missed it. The branch exists so the copy never lies.",
+    "The replay expiry and the cart close are the same datetime. If they differ, fix the build, not the copy.",
+    "Countdown is real: do not extend it silently after sending.",
+    "No fake replay-extension emails. One replay window, stated once, honoured.",
+    "No-show copy never shames. 'Sorry we missed you' is the tone ceiling.",
+    "Attendee copy never re-teaches the webinar; it points at the offer segment."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit before the branch; do not send a replay to a buyer.",
+    "`webinar-buy-link-clicked` without purchase -> attended branch even if the attendance tag is missing.",
+    "No replay URL -> do not send; surface a build error rather than sending a broken link.",
+    "`cart_close_datetime` missing or in the past -> do not send.",
+    "Opt-out per channel; SMS DND -> email only.",
+    "Session rescheduled after the live send -> replay stays bound to the delivered session; never mix replays from two sessions."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 09 Replay and No-Show",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_end_datetime` + 2h -> If purchased -> End -> If/Else `webinar-attended` OR `webinar-buy-link-clicked` -> Attended replay email -> Else -> No-show replay email -> If SMS consent -> Branch-matched SMS -> Wait until `cart_close_datetime` -> End.",
+    "notes": "Attendance tags come from the webinar platform webhook or a 'click to join' trigger-link click. Both branches must share one `cart_close_datetime`; the replay page countdown reads the same field. Never let the email cite a deadline the page does not enforce.",
+    "draft_only": true
+  },
+  "scope": {
+    "includes": "Registrants who are not buyers after the live session ends.",
+    "excludes": [
+      "Buyers — routed to onboarding, never messaged here",
+      "Pre-event reminders — separate launch-a files",
+      "Cart-close Emotion/Logic/Fear close sequence — separate launch-a files"
+    ]
+  }
+}

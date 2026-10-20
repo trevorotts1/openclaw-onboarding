@@ -1,0 +1,290 @@
+{
+  "schema_version": "1.0.0",
+  "launch_id": "black-friday-2026",
+  "offer": {
+    "name": "Black Friday Power Bundle",
+    "price_usd": 197,
+    "currency": "USD",
+    "payment_plans": false,
+    "landing_url": "https://example.com/black-friday",
+    "sales_page_url": "https://example.com/black-friday/offer",
+    "checkout_url": "https://example.com/black-friday/order",
+    "thank_you_url": "https://example.com/black-friday/access"
+  },
+  "launch_calendar": {
+    "launch_at": "2026-11-27T00:00:00-05:00",
+    "doors_open_at": "2026-11-27T00:00:00-05:00",
+    "doors_close_at": "2026-12-01T00:00:00-05:00",
+    "timezone": "America/New_York",
+    "black_friday": {
+      "teaser_at": "2026-11-20T09:00:00-05:00",
+      "countdown_at": "2026-11-24T09:00:00-05:00",
+      "cyber_monday_at": "2026-11-30T00:00:00-05:00",
+      "last_call_at": "2026-11-30T20:00:00-05:00"
+    }
+  },
+  "a2p_ready": false,
+  "conversation_ai": {
+    "requested": false,
+    "mode": "none"
+  },
+  "pages": [
+    {
+      "id": "page_landing",
+      "kind": "landing",
+      "url": "https://example.com/black-friday",
+      "waits_for": []
+    },
+    {
+      "id": "page_sales",
+      "kind": "sales",
+      "url": "https://example.com/black-friday/offer",
+      "waits_for": []
+    },
+    {
+      "id": "page_checkout",
+      "kind": "checkout",
+      "url": "https://example.com/black-friday/order",
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "page_upsell_fast",
+      "kind": "upsell",
+      "url": "https://example.com/black-friday/upsell-fast",
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "page_downsell_small",
+      "kind": "downsell",
+      "url": "https://example.com/black-friday/downsell-small",
+      "waits_for": ["page_upsell_fast"]
+    },
+    {
+      "id": "page_thank_you",
+      "kind": "thank_you",
+      "url": "https://example.com/black-friday/access",
+      "waits_for": ["page_downsell_small"]
+    }
+  ],
+  "email_sequences": [
+    {
+      "id": "email_pre_launch",
+      "kind": "pre_launch",
+      "provider": "skill50",
+      "email_count": 5,
+      "draft_only": true,
+      "waits_for": ["page_landing"]
+    },
+    {
+      "id": "email_main_launch",
+      "kind": "main_launch",
+      "provider": "skill50",
+      "email_count": 10,
+      "draft_only": true,
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "email_doors_closing",
+      "kind": "doors_closing",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["email_main_launch"]
+    },
+    {
+      "id": "email_upsell_fast",
+      "kind": "upsell_followup",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_upsell_fast"]
+    },
+    {
+      "id": "email_downsell_small",
+      "kind": "downsell_followup",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_downsell_small"]
+    },
+    {
+      "id": "email_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "email_welcome_access",
+      "kind": "welcome_access",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_thank_you"]
+    }
+  ],
+  "text_sets": [
+    {
+      "id": "text_keyword_opt_in",
+      "kind": "keyword_opt_in",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_landing"]
+    },
+    {
+      "id": "text_doors_open",
+      "kind": "doors_open",
+      "messages": 1,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "text_last_call",
+      "kind": "last_call",
+      "messages": 2,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "text_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "messages": 2,
+      "promotional": true,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "text_access_link",
+      "kind": "access_link",
+      "messages": 1,
+      "promotional": false,
+      "draft_only": true,
+      "opt_out_keyword": "STOP",
+      "includes_reply_invitation": true,
+      "send_window": {
+        "start": "08:00",
+        "end": "21:00",
+        "timezone": "recipient_local"
+      },
+      "waits_for": ["page_thank_you"]
+    }
+  ],
+  "automations": [
+    {
+      "id": "auto_pre_launch",
+      "family": "pre_launch",
+      "template": "cart-open-cart-close-launch-sequence",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "launch_calendar",
+        "detail": "teaser, countdown, doors open, Cyber Monday and last call switches"
+      },
+      "waits_for": ["email_pre_launch", "email_main_launch", "text_doors_open"]
+    },
+    {
+      "id": "auto_opt_in",
+      "family": "opt_in",
+      "template": "post-optin-multichannel-stack",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "form_submitted",
+        "detail": "waitlist opt-in tags the contact and starts the promo calendar"
+      },
+      "waits_for": ["text_keyword_opt_in", "email_pre_launch"]
+    },
+    {
+      "id": "auto_post_sale",
+      "family": "post_sale",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "payment_succeeded",
+        "detail": "access delivery and promotional sends stop"
+      },
+      "waits_for": ["email_welcome_access", "text_access_link"]
+    },
+    {
+      "id": "auto_upsell_branch",
+      "family": "upsell_downsell",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "upsell_decision",
+        "detail": "bought routes to the upsell follow-up, declined routes to the downsell"
+      },
+      "waits_for": ["email_upsell_fast", "email_downsell_small"]
+    },
+    {
+      "id": "auto_abandoned_checkout",
+      "family": "abandoned_checkout",
+      "template": "abandoned-cart-multichannel-recovery",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "checkout_started_unpaid",
+        "detail": "recovery stops on purchase"
+      },
+      "waits_for": ["email_abandoned_checkout", "text_abandoned_checkout"]
+    },
+    {
+      "id": "auto_page_retargeting",
+      "family": "page_retargeting",
+      "template": "behavioral-retargeting-page-visit-fire",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "page_visit_no_checkout",
+        "detail": "sales page visit without checkout gets one nudge"
+      },
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "auto_win_back",
+      "family": "win_back",
+      "template": "re-engagement-winback-broadcast",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "launch_closed_no_purchase",
+        "detail": "re-engagement for the next offer"
+      },
+      "waits_for": ["auto_post_sale", "text_last_call"]
+    }
+  ]
+}

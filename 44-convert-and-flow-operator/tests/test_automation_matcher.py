@@ -159,7 +159,9 @@ def test_committed_index_is_portable():
 
 def test_index_round_trips(catalog):
     cat = am.Catalog.from_index(_INDEX_PATH)
-    assert len(cat.templates) == 28
+    # 28 library templates + 23 launch-* family templates = 51 indexed (the
+    # drift guard counts all 51 on disk; Catalog.load stays 28 by design).
+    assert len(cat.templates) == 51
     sp = cat.templates[0]["sourcePath"]
     assert os.path.isabs(sp) and os.path.isfile(sp)
 

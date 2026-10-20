@@ -17,6 +17,14 @@ Inputs (all five are required, all produced and approved upstream):
   --landing-facts  landing facts document (sections 5, 6, 8, 9, 10 facts,
                    round timing, testimonial evidence or explicit null)
 
+Launch mode (EM-B3): pass `--launch-plan PLAN` to read the U-CONTRACT
+launch plan (shared-utils/signature_launch_contract/launch-plan.schema.json).
+The plan's `email_sequences[]` units are the sequence selector: the adapter
+emits one locked brief per planned Skill 50 sequence, each with its own
+sequence_position and objective. The shared launch answers (the S49 intake
+session answer ledger) are consumed exactly as above; the Skill 50
+one-block questionnaire is never read or asked on this path.
+
 Every S49-shape assumption lives in tools/s49_launch_shape.py, the single
 translation module; this file speaks only in engine terms. The contract is
 intake/launch-intake-contract.json (human doc: intake/LAUNCH-INTAKE.md).
@@ -32,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -56,6 +65,22 @@ _OFFER_STATE_BY_KIND = {
     "recommendation": "approved_recommendation",
     "test_fixture": "provided",
 }
+
+# U-CONTRACT launch plan -> Skill 50 sequence profile (EM-B3). A launch plan
+# unit kind resolves to the sequence library record that authors it; the
+# objective follows the email's job, never invented from the plan.
+LAUNCH_PLAN_SCHEMA_VERSION = "1.0.0"
+LAUNCH_SEQUENCE_PROFILES = {
+    "pre_launch": ("signature-launch-prelaunch", "promotional"),
+    "main_launch": (PROFILE, "promotional"),
+    "doors_closing": ("signature-launch-doors-closing", "promotional"),
+    "upsell_followup": ("signature-launch-upsell", "upsell"),
+    "downsell_followup": ("signature-launch-downsell", "downsell"),
+    "abandoned_checkout": ("signature-launch-abandoned-checkout",
+                           "abandoned-cart"),
+    "welcome_access": ("signature-launch-welcome-access", "promotional"),
+}
+LAUNCH_SEQUENCE_PROVIDER = "skill50"
 
 
 class Refusal(Exception):
@@ -154,6 +179,126 @@ def _consumed(entry: Dict[str, Any], label: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Launch plan mode (EM-B3): the shared U-CONTRACT plan selects the sequences
+# ---------------------------------------------------------------------------
+def _profile_record_ref(profile: str) -> str:
+    """The sequence library record that defines this profile constant."""
+    if profile == PROFILE:
+        return PROFILE_RECORD_REF
+    return "email-library/sequences/%s.json" % profile
+
+
+def _launch_contract():
+    """The shared launch plan validator and schema, from the repo checkout or
+    the installed skills tree. Imported by path so a same-named module on
+    sys.path can never shadow the contract this adapter is bound to."""
+    here = Path(__file__).resolve()
+    candidates = [p / "shared-utils" / "signature_launch_contract"
+                  for p in here.parents]
+    candidates += [
+        Path.home() / ".openclaw" / "skills" / "shared-utils" / "signature_launch_contract",
+        Path("/data/.openclaw/skills/shared-utils/signature_launch_contract"),
+    ]
+    for directory in candidates:
+        schema_path = directory / "launch-plan.schema.json"
+        validator_path = directory / "validate_launch_plan.py"
+        if not (schema_path.is_file() and validator_path.is_file()):
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "_s50_launch_contract_validator", validator_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module, schema_path
+    raise Refusal(
+        "shared launch contract not found (shared-utils/"
+        "signature_launch_contract): launch mode cannot be proven against "
+        "the contract it claims to read")
+
+
+def _validate_launch_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Fail closed unless the plan validates against the shared launch contract."""
+    if not isinstance(plan, dict):
+        raise Refusal("launch plan is not a JSON object")
+    if plan.get("schema_version") != LAUNCH_PLAN_SCHEMA_VERSION:
+        raise Refusal(
+            f"launch plan schema_version is {plan.get('schema_version')!r}, "
+            f"expected {LAUNCH_PLAN_SCHEMA_VERSION!r}")
+    module, schema_path = _launch_contract()
+    try:
+        schema = module.load_json(schema_path)
+        errors = module.validate_plan(plan, schema)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise Refusal(f"launch plan contract could not be read: {exc}")
+    if errors:
+        raise Refusal(
+            "launch plan violates the shared launch contract: "
+            + "; ".join(errors[:8]))
+    return plan
+
+
+def _launch_sequences(plan: Dict[str, Any],
+                      sequence_id: Optional[str] = None) -> list:
+    """The planned Skill 50 email units, in plan order. A named unit must
+    exist; with no name every planned Skill 50 unit is returned."""
+    units = [u for u in plan.get("email_sequences") or []
+             if isinstance(u, dict)]
+    if sequence_id is not None:
+        units = [u for u in units if u.get("id") == sequence_id]
+        if not units:
+            raise Refusal(
+                f"launch plan has no email_sequences unit {sequence_id!r}")
+    else:
+        units = [u for u in units
+                 if u.get("provider") == LAUNCH_SEQUENCE_PROVIDER]
+    if not units:
+        raise Refusal("launch plan plans no Skill 50 email sequence")
+    for unit in units:
+        uid = unit.get("id")
+        if unit.get("provider") != LAUNCH_SEQUENCE_PROVIDER:
+            raise Refusal(
+                f"email sequence {uid!r} provider is "
+                f"{unit.get('provider')!r}, expected "
+                f"{LAUNCH_SEQUENCE_PROVIDER!r}")
+        if unit.get("draft_only") is not True:
+            raise Refusal(f"email sequence {uid!r} is not draft_only")
+        if unit.get("kind") not in LAUNCH_SEQUENCE_PROFILES:
+            raise Refusal(
+                f"email sequence {uid!r} kind {unit.get('kind')!r} has no "
+                "Skill 50 launch sequence profile")
+    return units
+
+
+def adapt_launch_plan(session: Dict[str, Any], launch: Dict[str, Any],
+                      approval: Dict[str, Any], brand_facts: Dict[str, Any],
+                      landing_facts: Dict[str, Any], launch_plan: Dict[str, Any],
+                      *, sequence_id: Optional[str] = None,
+                      **adapt_kwargs: Any) -> list:
+    """Launch mode: read the shared launch answers and the shared launch plan,
+    and emit one locked brief per planned Skill 50 sequence.
+
+    The Skill 50 one-block questionnaire is never read, asked, or attested:
+    each brief carries intake_mode "signature_launch" and the same approved
+    provenance the single-profile path emits. Returns
+    [{"sequence_id", "kind", "brief"}, ...] in plan order.
+    """
+    _validate_launch_plan(launch_plan)
+    plan_launch_id = launch_plan.get("launch_id")
+    if not _nonempty_str(plan_launch_id) \
+            or plan_launch_id != launch.get("launch_id"):
+        raise Refusal(
+            "launch plan launch_id does not match the launch record: the "
+            "plan belongs to another launch")
+    briefs = []
+    for unit in _launch_sequences(launch_plan, sequence_id):
+        profile, objective = LAUNCH_SEQUENCE_PROFILES[unit["kind"]]
+        brief = adapt(session, launch, approval, brand_facts, landing_facts,
+                      profile=profile, objective=objective, **adapt_kwargs)
+        briefs.append({"sequence_id": unit["id"], "kind": unit["kind"],
+                       "brief": brief})
+    return briefs
+
+
+# ---------------------------------------------------------------------------
 # The adapter
 # ---------------------------------------------------------------------------
 def adapt(session: Dict[str, Any], launch: Dict[str, Any],
@@ -163,8 +308,15 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
           brand_facts_sha256: Optional[str] = None,
           landing_facts_sha256: Optional[str] = None,
           brand_facts_ref: str = "brand-facts document",
-          landing_facts_ref: str = "landing-facts document") -> Dict[str, Any]:
+          landing_facts_ref: str = "landing-facts document",
+          profile: str = PROFILE,
+          objective: str = "promotional") -> Dict[str, Any]:
     """Validate the five launch artifacts and emit the locked brief.
+
+    `profile` and `objective` select which approved launch sequence the brief
+    locks (launch mode passes them per planned email_sequences unit); the
+    default is the landing-10 profile, so the original single-brief CLI path
+    is unchanged.
 
     Raises Refusal on any defect. The emitted brief is the shape
     tools/prove-email.py consumes under intake_mode signature_launch.
@@ -422,8 +574,9 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
     # --- assemble the locked brief ------------------------------------------
     offer_answer = " + ".join(offer_names)
     first_main = mains[0]
+    record_ref = _profile_record_ref(profile)
     constant_prov = _prov("verified_existing", "existing_verified_catalog",
-                          PROFILE_RECORD_REF)
+                          record_ref)
     brand_field = _prov(brand_prov["state"], brand_prov["source_kind"],
                         brand_prov["source_ref"], artifact=brand_facts_ref,
                         artifact_hash=brand_hash)
@@ -465,11 +618,11 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             "question_id": entry.get("question_id"),
         }
     answers: Dict[str, Any] = {
-        "objective": "promotional",
+        "objective": objective,
         "buyer_type": "all",
         "offer": offer_answer,
         "brand_voice": brand_voice,
-        "sequence_position": PROFILE,
+        "sequence_position": profile,
         "founder_name": founder_name,
         "high_ticket": "no",
         "offer_token_ledger": offer_names,
@@ -482,7 +635,7 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
         "skill": "email-engine",
         "intake_mode": "signature_launch",
         "launch_provenance": {
-            "profile": PROFILE,
+            "profile": profile,
             "launch_id": launch.get("launch_id"),
             "launch_revision": launch.get("revision"),
             "tenant_id": launch.get("tenant_id"),
@@ -706,6 +859,43 @@ def build_fixtures() -> Dict[str, Any]:
             "worker_identity_ref": "worker:s50-adapter"}
 
 
+def build_launch_plan_fixture() -> Dict[str, Any]:
+    """A U-CONTRACT launch plan for the fixture launch: every planned Skill 50
+    sequence kind, so launch mode is exercised end to end. Fictional."""
+    sequences = [
+        ("email_pre_launch", "pre_launch", 5),
+        ("email_main_launch", "main_launch", 10),
+        ("email_doors_closing", "doors_closing", 3),
+        ("email_upsell_1", "upsell_followup", 2),
+        ("email_downsell_1", "downsell_followup", 2),
+        ("email_abandoned_checkout", "abandoned_checkout", 3),
+        ("email_welcome_access", "welcome_access", 2),
+    ]
+    return {
+        "schema_version": "1.0.0",
+        "launch_id": "launch-fixture-0001",
+        "offer": {"name": "The Momentum Method", "price_usd": 497,
+                  "currency": "USD", "payment_plans": False},
+        "launch_calendar": {
+            "launch_at": "2026-11-03T12:00:00-05:00",
+            "doors_open_at": "2026-11-03T09:00:00-05:00",
+            "doors_close_at": "2026-11-10T23:59:00-05:00",
+            "timezone": "America/New_York",
+        },
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
+        "pages": [{"id": "page_landing", "kind": "landing",
+                   "url": None, "waits_for": []}],
+        "email_sequences": [
+            {"id": uid, "kind": kind, "provider": "skill50",
+             "email_count": count, "draft_only": True, "waits_for": []}
+            for uid, kind, count in sequences
+        ],
+        "text_sets": [],
+        "automations": [],
+    }
+
+
 def _self_test() -> int:
     import copy
     ok = True
@@ -793,6 +983,72 @@ def _self_test() -> int:
         say(False, "worker self-approval is refused")
     except Refusal:
         say(True, "worker self-approval is refused")
+
+    # --- EM-B3 launch mode: the shared launch plan selects the sequences -----
+    lfx = build_fixtures()
+    plan = build_launch_plan_fixture()
+    try:
+        adapted = adapt_launch_plan(
+            lfx["session"], lfx["launch"], lfx["approval"],
+            lfx["brand_facts"], lfx["landing_facts"], plan,
+            worker_identity_ref=lfx["worker_identity_ref"])
+        say(len(adapted) == len(plan["email_sequences"]),
+            "launch mode emits one brief per planned Skill 50 sequence")
+        say({a["sequence_id"] for a in adapted}
+            == {u["id"] for u in plan["email_sequences"]},
+            "every planned sequence id is covered")
+        by_kind = {a["kind"]: a["brief"] for a in adapted}
+        say(by_kind["abandoned_checkout"]["answers"]["objective"]
+            == "abandoned-cart"
+            and by_kind["upsell_followup"]["answers"]["objective"] == "upsell"
+            and by_kind["downsell_followup"]["answers"]["objective"]
+            == "downsell",
+            "objective follows the planned sequence kind")
+        say(by_kind["pre_launch"]["answers"]["sequence_position"]
+            == "signature-launch-prelaunch"
+            and by_kind["main_launch"]["answers"]["sequence_position"]
+            == PROFILE,
+            "sequence_position follows the planned profile")
+        say(all("asked_all_at_once" not in a["brief"]
+                and "question_block_msg_id" not in a["brief"]
+                for a in adapted),
+            "launch mode never emits the legacy questionnaire attestation")
+        say(all(a["brief"]["intake_mode"] == "signature_launch"
+                for a in adapted),
+            "every launch brief carries intake_mode signature_launch")
+        one = adapt_launch_plan(
+            lfx["session"], lfx["launch"], lfx["approval"],
+            lfx["brand_facts"], lfx["landing_facts"], plan,
+            sequence_id="email_main_launch",
+            worker_identity_ref=lfx["worker_identity_ref"])
+        say(len(one) == 1
+            and one[0]["brief"]["answers"]["sequence_position"] == PROFILE,
+            "a named sequence adapts to exactly one brief")
+    except Refusal as exc:
+        say(False, f"launch mode adapts a valid plan (refused: {exc})")
+
+    def plan_refuses(label: str, mutate) -> None:
+        bad = json.loads(json.dumps(plan))
+        mutate(bad)
+        try:
+            adapt_launch_plan(
+                lfx["session"], lfx["launch"], lfx["approval"],
+                lfx["brand_facts"], lfx["landing_facts"], bad,
+                worker_identity_ref=lfx["worker_identity_ref"])
+            say(False, label)
+        except Refusal:
+            say(True, label)
+
+    plan_refuses("plan bound to another launch is refused",
+                 lambda p: p.__setitem__("launch_id", "another-launch"))
+    plan_refuses("plan violating the shared contract is refused",
+                 lambda p: p["launch_calendar"].pop("timezone"))
+    plan_refuses("plan with a non-draft email sequence is refused",
+                 lambda p: p["email_sequences"][0].__setitem__(
+                     "draft_only", False))
+    plan_refuses("plan with an unknown sequence kind is refused",
+                 lambda p: p["email_sequences"][0].__setitem__(
+                     "kind", "follow_up"))
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return EXIT_OK if ok else 1
 
@@ -830,8 +1086,17 @@ def main(argv=None) -> int:
     ap.add_argument("--worker-identity",
                     help="identity ref of the worker operating this run "
                          "(self-approval check)")
+    ap.add_argument("--launch-plan",
+                    help="U-CONTRACT launch plan JSON (launch mode): emit one "
+                         "brief per planned Skill 50 email sequence")
+    ap.add_argument("--sequence",
+                    help="launch mode: the email_sequences unit id to adapt "
+                         "(default: every planned Skill 50 sequence)")
     ap.add_argument("--out", help="write the locked brief here "
                                   "(default: stdout)")
+    ap.add_argument("--out-dir",
+                    help="launch mode: write each brief to "
+                         "BRIEF-<sequence-id>.json in this directory")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
@@ -844,6 +1109,10 @@ def main(argv=None) -> int:
               + ", ".join("--" + m.replace("_", "-") for m in missing),
               file=sys.stderr)
         return EXIT_USAGE
+    if args.launch_plan and (args.out and args.out_dir):
+        print("USAGE ERROR: pass --out or --out-dir in launch mode, not both",
+              file=sys.stderr)
+        return EXIT_USAGE
     session, _, _ = _read_json_arg(args.session, "intake session")
     launch, _, _ = _read_json_arg(args.launch, "launch record")
     approval, _, _ = _read_json_arg(args.approval, "approval record")
@@ -851,13 +1120,61 @@ def main(argv=None) -> int:
         args.brand_facts, "brand facts")
     landing_facts, landing_sha, landing_name = _read_json_arg(
         args.landing_facts, "landing facts")
+    adapt_kwargs = {
+        "worker_identity_ref": args.worker_identity or "",
+        "brand_facts_sha256": brand_sha,
+        "landing_facts_sha256": landing_sha,
+        "brand_facts_ref": brand_name,
+        "landing_facts_ref": landing_name,
+    }
     try:
+        if args.launch_plan:
+            launch_plan, _, _ = _read_json_arg(args.launch_plan, "launch plan")
+            adapted = adapt_launch_plan(
+                session, launch, approval, brand_facts, landing_facts,
+                launch_plan, sequence_id=args.sequence, **adapt_kwargs)
+            if not args.out and not args.out_dir:
+                sys.stdout.write(json.dumps(
+                    {"launch_id": launch_plan.get("launch_id"),
+                     "briefs": adapted}, indent=2) + "\n")
+                return EXIT_OK
+            if args.out:
+                if len(adapted) != 1:
+                    print("USAGE ERROR: --out needs exactly one brief; pass "
+                          "--sequence or use --out-dir", file=sys.stderr)
+                    return EXIT_USAGE
+                brief = adapted[0]["brief"]
+                try:
+                    Path(args.out).write_text(
+                        json.dumps(brief, indent=2) + "\n", encoding="utf-8")
+                except OSError as exc:
+                    print(f"USAGE/IO ERROR: cannot write brief to "
+                          f"{args.out}: {exc}", file=sys.stderr)
+                    return EXIT_USAGE
+                prov = brief["launch_provenance"]
+                print(f"ADAPTED: locked brief for {prov['profile']} written "
+                      f"to {args.out} (launch {prov['launch_id']}, plan_hash "
+                      f"{prov['plan_hash'][:12]}..., approval "
+                      f"{prov['approval']['approval_id']})")
+                return EXIT_OK
+            out_dir = Path(args.out_dir)
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                for item in adapted:
+                    target = out_dir / ("BRIEF-%s.json" % item["sequence_id"])
+                    target.write_text(
+                        json.dumps(item["brief"], indent=2) + "\n",
+                        encoding="utf-8")
+            except OSError as exc:
+                print(f"USAGE/IO ERROR: cannot write briefs to "
+                      f"{args.out_dir}: {exc}", file=sys.stderr)
+                return EXIT_USAGE
+            print(f"ADAPTED: {len(adapted)} locked launch briefs written to "
+                  f"{args.out_dir} (launch "
+                  f"{launch_plan.get('launch_id')})")
+            return EXIT_OK
         brief = adapt(session, launch, approval, brand_facts, landing_facts,
-                      worker_identity_ref=args.worker_identity or "",
-                      brand_facts_sha256=brand_sha,
-                      landing_facts_sha256=landing_sha,
-                      brand_facts_ref=brand_name,
-                      landing_facts_ref=landing_name)
+                      **adapt_kwargs)
     except Refusal as exc:
         print(f"REFUSAL: {exc}")
         return EXIT_REFUSAL

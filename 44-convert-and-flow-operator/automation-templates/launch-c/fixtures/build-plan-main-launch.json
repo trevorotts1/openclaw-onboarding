@@ -1,0 +1,55 @@
+{
+  "folder": "Elevation 2026-11 — Draft Email Workflows",
+  "_meta": {
+    "deploy_mode": "draft-only",
+    "draft_only": true,
+    "sequence_id": "email_main_launch"
+  },
+  "sequence-email-main-launch": {
+    "name": "Elevation main launch (DRAFT)",
+    "tag": "launch:elevation:main-launch",
+    "status": "draft",
+    "templates": [
+      {
+        "id": "email-sequence-email-main-launch-e01",
+        "type": "email",
+        "name": "Email: E1",
+        "order": 0,
+        "attributes": {
+          "subject": "{{contact.first_name}}, the doors are open",
+          "body": "<p>The doors are open.</p>",
+          "html": "<p>The doors are open.</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": []
+        }
+      },
+      {
+        "id": "wait-sequence-email-main-launch-01",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 1,
+        "attributes": {
+          "type": "time",
+          "startAfter": {"type": "days", "value": 1, "when": "after"},
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-email-main-launch-e02",
+        "type": "email",
+        "name": "Email: E2",
+        "order": 2,
+        "attributes": {
+          "subject": "{{contact.first_name}}, the second reason effort stalls",
+          "body": "<p>The second reason.</p>",
+          "html": "<p>The second reason.</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": []
+        }
+      }
+    ]
+  }
+}

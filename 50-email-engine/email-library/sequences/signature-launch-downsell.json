@@ -1,0 +1,87 @@
+{
+  "id": "signature-launch-downsell",
+  "type": "sequence",
+  "name": "Signature Launch Downsell Profile",
+  "tags": [
+    "sequence",
+    "signature-launch",
+    "signature-launch-profile",
+    "downsell",
+    "declined-offer",
+    "smaller-option",
+    "face-saving",
+    "risk-reduction",
+    "incremental-commitment",
+    "foot-in-door",
+    "value-recalibration",
+    "future-opportunity",
+    "pas",
+    "before-after-bridge",
+    "aida",
+    "paired-variants",
+    "founder-signature",
+    "launch-brief-intake",
+    "draft-only-handoff"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "downsell",
+    "post-decline",
+    "signature-launch-builds",
+    "smaller-entry-offer",
+    "warm-lists"
+  ],
+  "file": "signature-launch-downsell.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "signature_launch_downsell",
+    "profile": "signature_launch_downsell",
+    "length": 3,
+    "preview_count": 2,
+    "preview_count_overridable": false,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "pas",
+      "2": "before-after-bridge",
+      "3": "aida"
+    },
+    "phase_map": {
+      "after_no": [1],
+      "recalibrate": [2],
+      "future_opportunity": [3]
+    },
+    "cta_rules": {
+      "1": 1,
+      "2": 1,
+      "3": 1
+    },
+    "per_page_rule": "one sequence instance per downsell page: the instance is bound to exactly one approved downsell page and its smaller option; the three emails never mix pages and never sell the main offer or a larger upsell",
+    "cta_destination": "the matching downsell page for this instance (the smaller option bound to that page); never the sales page, checkout, or a second offer",
+    "timing_rule": "relative to the decline and the approved launch calendar in the brief: E1 after the decline is recorded, E2 and E3 spaced across the follow-up window the brief supplies; every date, deadline, or countdown comes from the brief, never invented",
+    "objective_default": "downsell",
+    "objective_note": "the frozen objective enum already carries downsell; this profile uses it and must never widen the enum from a lane file",
+    "face_saving_rule": "the copy acknowledges the no without arguing with it: no guilt, no re-pitching the declined offer, no implying the reader was wrong; the smaller option is framed as a right-sized first step, and declining it too is accepted plainly",
+    "disruptive_required": false,
+    "variant_pairing": {
+      "pairs": ["A", "B"],
+      "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
+      "pair_b_style": "prolific and disruptive, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no fake scarcity, no misleading price)"
+    },
+    "intake": "the approved S49 shared-launch brief, consumed by the launch intake adapter with per-field provenance; the legacy one-block questionnaire applies only in explicit legacy interactive mode",
+    "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
+    "trigger": "Signature Launch build: after a contact declines the main offer or the preceding upsell, the matching downsell follow-up offers the smaller option on that downsell page; one instance per downsell page, from the approved launch brief and the approved downsell page",
+    "stop_rules": "stop on purchase of the main offer, the smaller option, or any later upsell; a purchase moves the contact to access/welcome and the next follow-up, never to remaining downsell emails; a second decline ends the sequence with no further promotional send",
+    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; until the integrator registers the profile, a run resolving sequence_type signature_launch_downsell fails AF-EMAIL-TYPE-MISMATCH by design",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-CTA-COUNT",
+      "AF-EMAIL-PREVIEW-COUNT",
+      "AF-EMAIL-SUBJECT-COUNT",
+      "AF-EMAIL-WORDBAND",
+      "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+      "AF-EMAIL-OBJECTIVE-INVALID",
+      "AF-EMAIL-TYPE-MISMATCH"
+    ]
+  }
+}

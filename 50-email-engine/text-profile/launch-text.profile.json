@@ -1,0 +1,161 @@
+{
+  "id": "text-profile-launch-text",
+  "type": "text-profile",
+  "name": "Launch Text Profile (launch-text voice)",
+  "version": "1.0.0",
+  "tags": [
+    "text-profile",
+    "sms",
+    "launch",
+    "launch-text",
+    "skill-50-voice",
+    "skill-44-send-sms",
+    "draft-only",
+    "a2p-10dlc",
+    "quiet-hours",
+    "stop-opt-out",
+    "reply-invitation"
+  ],
+  "best_for": [
+    "signature-launch",
+    "black-friday-launch",
+    "opt-in-confirmation",
+    "event-reminders",
+    "doors-open",
+    "last-call",
+    "abandoned-checkout",
+    "access-link"
+  ],
+  "file": "launch-text.profile.md",
+  "rules": {
+    "kind": "text-profile",
+    "voice_id": "launch-text",
+    "voice_source": "The approved brand_voice answer in the locked Skill 50 brief, rendered for SMS; one voice across the whole launch, matching the emails.",
+    "channel": "sms",
+    "draft_only": true,
+    "never_sends": true,
+    "a2p_required": true,
+    "a2p_gate": "When a2p_ready=false, every text stays a draft and the package warns: texts cannot send until A2P 10DLC is approved.",
+    "max_characters": 320,
+    "character_counting": "160 GSM-7 characters per segment, 320 = 2 segments; non-GSM characters force UCS-2 at 70 per segment, so keep curly quotes, em dashes and emoji out unless the approved brand_voice requires them.",
+    "one_idea_per_text": true,
+    "max_links": 1,
+    "max_questions": 1,
+    "promotional_cap_per_launch": 5,
+    "required_endings": [
+      "reply_invitation",
+      "opt_out_stop"
+    ],
+    "reply_invitation_min": 1,
+    "opt_out_keyword": "STOP",
+    "opt_out_literal_required": true,
+    "send_window": {
+      "start": "08:00",
+      "end": "21:00",
+      "timezone": "recipient_local",
+      "outside_window_policy": "clamp to the next window start; drop the text if the clamped time lands after the event it refers to"
+    },
+    "stop_on_purchase": true,
+    "points": {
+      "optin_confirm": {
+        "kind": "operational",
+        "voice_intent": "Confirm the sign-up, say exactly what arrives and when, and ask one easy question so a reply is natural. No offer pitch.",
+        "max_links": 0
+      },
+      "keyword_optin": {
+        "kind": "operational",
+        "voice_intent": "Confirm the keyword worked and deliver the thing it promised. The confirmation is the reply invitation; never bait another keyword.",
+        "max_links": 1
+      },
+      "reminder_1d": {
+        "kind": "operational",
+        "voice_intent": "Plain time-and-place reminder, one link, one warm line. No new offer claims.",
+        "max_links": 1
+      },
+      "reminder_1h": {
+        "kind": "operational",
+        "voice_intent": "Short, calm, specific to the hour. One link, one reply invitation.",
+        "max_links": 1
+      },
+      "reminder_15m": {
+        "kind": "operational",
+        "voice_intent": "Two sentences at most. Time, link, reply invitation. Nothing else.",
+        "max_links": 1
+      },
+      "doors_open": {
+        "kind": "promotional",
+        "voice_intent": "Say the doors are open, name the offer once, use only the approved deadline. One link, reply invitation.",
+        "max_links": 1
+      },
+      "last_call": {
+        "kind": "promotional",
+        "voice_intent": "Truthful deadline only, stated once. No invented scarcity, no countdown theatre. One link, reply invitation.",
+        "max_links": 1
+      },
+      "abandoned_checkout": {
+        "kind": "promotional",
+        "voice_intent": "Neutral, no blame: the checkout did not finish, the cart is still open. One resume link, reply invitation. Stops on purchase.",
+        "max_links": 1,
+        "stops_on": [
+          "purchase"
+        ]
+      },
+      "access_link": {
+        "kind": "operational",
+        "voice_intent": "Deliver access or receipt first, then the single next step. One link, reply invitation. Never mixes in a sales pitch.",
+        "max_links": 1
+      }
+    },
+    "promotional_points": [
+      "doors_open",
+      "last_call",
+      "abandoned_checkout"
+    ],
+    "operational_points": [
+      "optin_confirm",
+      "keyword_optin",
+      "reminder_1d",
+      "reminder_1h",
+      "reminder_15m",
+      "access_link"
+    ],
+    "forbidden": [
+      "persona names, quotes or book references (Skill 50 AF-EMAIL-PERSONA-NAMED rule carries over)",
+      "invented deadlines, fake scarcity or countdowns not in the approved offer",
+      "guarantees of results",
+      "prices or bonuses that are not in the approved offer version",
+      "more than one link",
+      "ALL CAPS shouting beyond STOP and the reply keyword",
+      "emoji unless the approved brand_voice sample uses them",
+      "the word unsubscribe; SMS opt-out is STOP only",
+      "sending, scheduling against a live account, or any state change while draft_only is true"
+    ],
+    "af_codes": [
+      "AF-TEXT-NO-STOP",
+      "AF-TEXT-NO-REPLY-INVITE",
+      "AF-TEXT-WINDOW",
+      "AF-TEXT-PROMO-CAP",
+      "AF-TEXT-LENGTH",
+      "AF-TEXT-LINK-COUNT",
+      "AF-TEXT-A2P-GATE"
+    ]
+  },
+  "examples": [
+    {
+      "point": "doors_open",
+      "text": "Doors are open, {first_name}. {offer_name} is live now, and the launch price holds until {deadline}. Take a look: {link}\nReply YES and I'll send the details. Reply STOP to opt out."
+    },
+    {
+      "point": "reminder_1h",
+      "text": "We start in 1 hour, {first_name}. Join here: {link}\nReply YES if you want the replay link instead. Reply STOP to opt out."
+    },
+    {
+      "point": "abandoned_checkout",
+      "text": "Looks like your checkout did not finish, {first_name}. Your cart is still open: {link}\nReply YES and I'll resend the link. Reply STOP to opt out."
+    },
+    {
+      "point": "access_link",
+      "text": "You're in, {first_name}. Here is your access: {link}\nReply YES and I'll send the receipt and next steps. Reply STOP to opt out."
+    }
+  ]
+}

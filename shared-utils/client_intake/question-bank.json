@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
-  "version": "1.0.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'.",
+  "version": "1.1.0",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented.",
   "help_label": "I'm not sure, help me",
   "modes": [
     "launch",
@@ -1286,6 +1286,232 @@
       "legacy_ids": [
         "d3_location"
       ],
+      "required_by": []
+    },
+    {
+      "id": "launch_calendar",
+      "group": "launch",
+      "text": "When is your launch, and when do the doors open and close? Include your time zone.",
+      "why": "Every email, text and automation is timed from these moments, and I never invent a deadline.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Give the date and both times with the time zone, in one sentence. For example: doors open Friday 14 November 2026 at 9:00 a.m. New York time, the launch email goes at noon, and doors close Sunday 16 November at 11:59 p.m. If the date is not set yet, say so; nothing is timed until you give it.",
+        "examples": [
+          "Doors open 14 Nov 2026 9:00 a.m. New York, launch at noon, doors close 16 Nov 2026 11:59 p.m.",
+          "Launch 1 Dec 2026 at 10:00 a.m. London time, doors close 7 Dec 2026 at midnight London time"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "launch_calendar",
+        "launch_at",
+        "doors_open_at",
+        "doors_close_at",
+        "timezone"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "channels",
+      "group": "launch",
+      "text": "Should the launch reach people by email only, or by email and text message?",
+      "why": "Texts cost money, need carrier registration, and are capped; email always works.",
+      "answer_type": "choice",
+      "choices": [
+        "Email only",
+        "Email and text"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose email only if you do not have a text list or A2P approval. Choose email and text only if you want texts; they stay drafts until A2P is approved.",
+        "examples": []
+      },
+      "default": {
+        "value": "Email only",
+        "flag": "to confirm",
+        "reason": "Email always works; texts wait for A2P approval."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "channels"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "conversation_ai",
+      "group": "launch",
+      "text": "Do you want a Conversation AI bot that answers people when they reply?",
+      "why": "It is optional; when it is not requested, nothing is built and the package says so.",
+      "answer_type": "choice",
+      "choices": [
+        "No, not this launch",
+        "Yes, add the bot"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The bot answers common questions, books calls, or sends a checkout link when someone replies. Choose no if you want a person to reply to every message.",
+        "examples": []
+      },
+      "default": {
+        "value": "No, not this launch",
+        "flag": "to confirm",
+        "reason": "Optional; you can add it later."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "conversation_ai"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "access_delivery",
+      "group": "launch",
+      "text": "After someone pays, do they need a log-in or an access link from you?",
+      "why": "It decides whether the access email, the access automation and the delivery link are planned.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, send access after purchase",
+        "No, nothing to deliver"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose yes for a course, membership, or event that needs a log-in, a link, or a schedule. Choose no for a service where a person follows up by hand.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "access_delivery",
+        "delivery_bindings"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "payment_plans",
+      "group": "launch",
+      "text": "Will this offer be paid in full, or do you offer payment plans?",
+      "why": "Payment plans turn on the failed-payment recovery automation; without them it is never built.",
+      "answer_type": "choice",
+      "choices": [
+        "Paid in full",
+        "Payment plans offered"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose payment plans if a buyer can split the price into installments. Your billing answer still decides how the checkout charges them.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "payment_plans"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "sender_name",
+      "group": "launch",
+      "text": "What sender name should people see on your emails and texts?",
+      "why": "It is the name in the From line and the text signature; it must be real and recognizable.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Use the name your audience already knows: your business name or your own name. Never use a name you do not own.",
+        "examples": [
+          "Elevation Coaching",
+          "Maya Ortiz"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "sender_name",
+        "sender"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "reply_to_email",
+      "group": "launch",
+      "text": "Which email address should replies go to?",
+      "why": "Real replies must reach a mailbox you read.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Any address you check, like hello@yourdomain.com. It has to be a real mailbox, not a no-reply address.",
+        "examples": [
+          "hello@elevationcoaching.com"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "reply_to_email",
+        "reply_to"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "a2p_ready",
+      "group": "launch",
+      "text": "Is your A2P 10DLC registration approved for sending text messages?",
+      "why": "Texts cannot send until A2P is approved; without it every text stays a draft.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, it is approved",
+        "No, not yet"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A2P is the carrier registration that lets a business send text messages in the United States. Check your Convert & Flow or your SMS provider for its status. If it is not approved, I plan the texts as drafts and the package warns that they cannot send yet.",
+        "examples": []
+      },
+      "default": {
+        "value": "No, not yet",
+        "flag": "to confirm",
+        "reason": "Texts stay drafts until you confirm A2P approval."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "a2p_ready"
+      ],
+      "legacy_ids": [],
       "required_by": []
     },
     {

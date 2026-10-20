@@ -1,0 +1,86 @@
+{
+  "id": "signature-launch-prelaunch",
+  "type": "sequence",
+  "name": "Signature Launch Pre-Launch Profile",
+  "tags": [
+    "sequence",
+    "signature-launch",
+    "signature-launch-profile",
+    "pre-launch",
+    "teaser",
+    "value",
+    "doors-soon",
+    "waitlist",
+    "opt-in",
+    "star-chain-hook",
+    "pastor-story",
+    "features-to-benefit",
+    "before-after-bridge",
+    "pas",
+    "paired-variants",
+    "founder-signature",
+    "launch-brief-intake",
+    "draft-only-handoff"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "pre-launch",
+    "signature-launch-builds",
+    "waitlist-growth",
+    "warm-lists",
+    "doors-open-anticipation"
+  ],
+  "file": "signature-launch-prelaunch.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "signature_launch_prelaunch",
+    "profile": "signature_launch_prelaunch",
+    "length": 5,
+    "preview_count": 2,
+    "preview_count_overridable": false,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "star-chain-hook",
+      "2": "pastor-story",
+      "3": "features-to-benefit",
+      "4": "before-after-bridge",
+      "5": "pas"
+    },
+    "phase_map": {
+      "teaser": [1],
+      "value": [2, 3, 4],
+      "doors_soon": [5]
+    },
+    "cta_rules": {
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 1,
+      "5": 1
+    },
+    "cta_destination": "opt-in / waitlist page",
+    "timing_rule": "relative to the launch calendar in the approved brief: E1 at announcement, E2-E4 spaced across the pre-launch window, E5 on the day before doors open; every stated date or deadline comes from the brief, never invented",
+    "objective_default": "promotional",
+    "objective_note": "the frozen objective enum has no pre-launch value; this profile defaults to promotional and must never widen the enum from a lane file",
+    "disruptive_required": false,
+    "variant_pairing": {
+      "pairs": ["A", "B"],
+      "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
+      "pair_b_style": "prolific and disruptive, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no misleading price, no fake scarcity)"
+    },
+    "intake": "the approved S49 shared-launch brief, consumed by the launch intake adapter with per-field provenance; the legacy one-block questionnaire applies only in explicit legacy interactive mode",
+    "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
+    "trigger": "Signature Launch build: the five pre-launch emails are written before the doors-open date, from the approved launch brief and the approved landing page; the sequence runs before the main launch 10 and every CTA points at the opt-in / waitlist page",
+    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; until the integrator registers the profile, a run resolving sequence_type signature_launch_prelaunch fails AF-EMAIL-TYPE-MISMATCH by design",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-CTA-COUNT",
+      "AF-EMAIL-PREVIEW-COUNT",
+      "AF-EMAIL-SUBJECT-COUNT",
+      "AF-EMAIL-WORDBAND",
+      "AF-EMAIL-SIGNATURE-PLACEHOLDER",
+      "AF-EMAIL-TYPE-MISMATCH"
+    ]
+  }
+}

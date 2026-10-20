@@ -1,0 +1,67 @@
+{
+  "id": "launch-a-reminder-3d",
+  "name": "Launch A — Reminder: 3 Days Before",
+  "aliases": [
+    "3-day reminder",
+    "Three days out",
+    "Launch A step 3"
+  ],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "24h/1h/live reminder framework extended forward to a 3-day pre-frame.",
+    "supporting": [
+      "Soap Opera Sequence #5 — Urgency and CTA applied to attendance.",
+      "Expert Secrets — remind the registrant what they will be able to do after the event."
+    ]
+  },
+  "purpose": "One job: turn a calendar entry into an intention. Three days out is the point where the registrant decides whether they will actually show up. Give them the outcome they will walk away with and the smallest possible preparation step.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_datetime` minus 3 days.",
+    "timing": "3 days before the session start.",
+    "late_registrant_rule": "Registered less than 3 days out: skip this file; the 24h reminder carries the job.",
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`"
+    ]
+  },
+  "channels": [
+    "Email"
+  ],
+  "message": {
+    "email": {
+      "subject_angle": "\"[Outcome] in 3 days — here's how to be ready\"",
+      "body_framework": "Restate date/time in the registrant's zone. Lead with the after-state: what they will know or be able to do when the session ends. Name one small preparation step (bring a number, write down one question, block the hour). Re-open the loop from the confirmation. One CTA: add to calendar / save join link.",
+      "cta": "Save my seat"
+    }
+  },
+  "copy_rules": [
+    "Lead with the outcome, not the agenda.",
+    "One preparation step maximum.",
+    "No price, no countdown, no offer language.",
+    "Do not repeat the full confirmation copy; this is the third mention and must add something."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit launch-a.",
+    "`webinar_datetime` missing or past -> do not send; surface a build error.",
+    "Opt-out -> suppress.",
+    "Reschedule -> recompute from the new datetime; no duplicate 3-day send."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 03 Reminder 3 Days",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 3 days -> If not purchased and future -> Send Email -> End.",
+    "notes": "Keep the wait relative to `webinar_datetime`. If the registration window is shorter than the runway, this node must be skipped, not fired late.",
+    "draft_only": true
+  },
+  "scope": {
+    "includes": "Registered, not purchased, three days out.",
+    "excludes": [
+      "Indoctrination emails",
+      "24h and same-day reminders",
+      "Replay branch"
+    ]
+  }
+}

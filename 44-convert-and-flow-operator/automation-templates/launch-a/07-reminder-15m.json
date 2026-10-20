@@ -1,0 +1,67 @@
+{
+  "id": "launch-a-reminder-15m",
+  "name": "Launch A — Reminder: 15 Minutes Before",
+  "aliases": [
+    "15-minute reminder",
+    "Last call reminder",
+    "Launch A step 7"
+  ],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "Final pre-live touch between the 1h reminder and the 'We're LIVE' send.",
+    "supporting": [
+      "Soap Opera Email #5 — urgency and CTA at the last useful moment.",
+      "Funnel Hacker's Cookbook — the final minutes are where ad-hoc intentions become attendance."
+    ]
+  },
+  "purpose": "One job: catch the registrant in the last quarter hour. SMS only, one line and the link. No email — the inbox is the wrong place fifteen minutes out.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_datetime` minus 15 minutes.",
+    "timing": "15 minutes before the session start.",
+    "late_registrant_rule": "Registered inside the final 15 minutes: skip this file; the live reminder is the next and only appropriate touch.",
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`",
+      "SMS consent"
+    ]
+  },
+  "channels": [
+    "SMS"
+  ],
+  "message": {
+    "sms": {
+      "send": "15 minutes before, with SMS consent only",
+      "body_framework": "\"We start in 15 minutes — [join URL]\" plus the name of the host or event if it fits. One line.",
+      "cta": "Join link"
+    }
+  },
+  "copy_rules": [
+    "One line. Under 160 characters where possible.",
+    "No email fallback, no pitch, no price, no countdown.",
+    "Never send to a contact without SMS consent; there is no substitute channel here."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit launch-a.",
+    "No SMS consent or DND -> no send at all. Do not substitute email.",
+    "`webinar_datetime` past -> no send.",
+    "Do not repeat the 1-hour message; this must name the 15-minute gap."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 07 Reminder 15 Minutes",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` - 15 minutes -> If not purchased, future, and SMS consent -> Send SMS -> End.",
+    "notes": "Pure SMS lane. Adding an email here dilutes the moment and increases unsubscribe risk.",
+    "draft_only": true
+  },
+  "scope": {
+    "includes": "Registered, not purchased, SMS-consented, 15 minutes out.",
+    "excludes": [
+      "Email reminders",
+      "Live reminder",
+      "Replay branch"
+    ]
+  }
+}

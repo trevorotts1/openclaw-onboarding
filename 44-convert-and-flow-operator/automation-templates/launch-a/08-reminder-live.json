@@ -1,0 +1,76 @@
+{
+  "id": "launch-a-reminder-live",
+  "name": "Launch A — Reminder: We're LIVE",
+  "aliases": [
+    "We're live now",
+    "Live-now SMS",
+    "Join now",
+    "Launch A step 8"
+  ],
+  "category": "funnel-specific-followups",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack",
+    "phase": "C. Show-up reminders",
+    "primary": "At-start 'We're LIVE' — SMS-first with direct join URL.",
+    "supporting": [
+      "Soap Opera Email #5 — urgency and CTA at zero hour.",
+      "Funnel Hacker's Cookbook — the live-now push is the last chance to convert intent into attendance."
+    ]
+  },
+  "purpose": "One job: get them into the room now. SMS-first at start time with the direct join URL, plus one email for no-SMS contacts. No pitch, no context, no second CTA.",
+  "trigger": {
+    "what_starts_it": "Wait until `webinar_datetime` (session start).",
+    "timing": "At the scheduled start.",
+    "late_registrant_rule": "Registered after start but while the session is live: send immediately once with honest copy (\"we're live now\"), provided the session has not ended.",
+    "requires": [
+      "`webinar_datetime`",
+      "`webinar_timezone`",
+      "`webinar_join_url`",
+      "Custom field `webinar_end_datetime` (used to suppress after the session ends)"
+    ]
+  },
+  "channels": [
+    "SMS",
+    "Email"
+  ],
+  "message": {
+    "sms": {
+      "send": "At start, with SMS consent",
+      "body_framework": "\"We're LIVE — join now: [join URL]\" plus host name. One line.",
+      "cta": "Join link"
+    },
+    "email": {
+      "send": "At start, to everyone; primary for no-SMS contacts",
+      "subject_angle": "\"We're LIVE — join now\"",
+      "body_framework": "One line that it has started, one join button. Nothing else.",
+      "cta": "Join the room"
+    }
+  },
+  "copy_rules": [
+    "Present tense only: it is happening now.",
+    "One line for SMS, under 60 words for email.",
+    "No price, no offer, no replay mention.",
+    "Do not send after `webinar_end_datetime`; a live link that points at an ended room trains people to ignore the next one."
+  ],
+  "guards": [
+    "`webinar-purchased` -> exit launch-a.",
+    "Current time past `webinar_end_datetime` -> no send.",
+    "SMS DND or no consent -> email only.",
+    "Operator-started-late sessions: the live send follows the actual start, not the scheduled start, if the platform reports it."
+  ],
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator.",
+    "workflow_name": "LA — 08 Reminder We're Live",
+    "structure": "Trigger: Tag Added `webinar-registered` -> Wait until `webinar_datetime` -> If not purchased and now < `webinar_end_datetime` -> If SMS consent -> Send SMS -> Else -> Send Email -> End.",
+    "notes": "The live send must be gated by the end datetime. A 'we're live' message after the room closed is the fastest way to burn the list.",
+    "draft_only": true
+  },
+  "scope": {
+    "includes": "Registered, not purchased, session currently live.",
+    "excludes": [
+      "Pre-event reminders",
+      "Replay and no-show branch",
+      "Offer copy"
+    ]
+  }
+}

@@ -57,6 +57,27 @@ packages or levels, funnel shape, community link and bonus truth gate, entitleme
 - Skill 83: `brand_ref` is the path of the brand file the answers produced and `brand_hash` its sha256 (the same two values
   `launch_intake.ingest_answers` records).
 
+## Full launch plan facts (Skill 49 `--launch-plan`, Skill 83's plan)
+
+`scripts/launch_plan.py` reads these answers (spec §3.5) to plan the emails, texts, automations and Conversation AI
+beside the pages. They are asked by the shared question bank — this skill only reads them; a missing launch date, doors
+time, timezone or AI mode blocks the launch plan by name and is never filled in.
+
+| Answer key | Meaning |
+|---|---|
+| `launch.launch_at`, `launch.doors_open_at`, `launch.doors_close_at`, `launch.timezone` | Launch date and the truthful doors open/close window (IANA zone) |
+| `launch.black_friday.{teaser_at,countdown_at,cyber_monday_at,last_call_at}` | Optional Black Friday calendar (Skill 83); all four or none |
+| `launch.channels` | `["email"]` or `["email", "text"]` |
+| `launch.texts_enabled` | Boolean alternative to `launch.channels` |
+| `launch.text_keyword` | Optional opt-in keyword (for example `EARLY`); absent means no keyword set |
+| `launch.a2p_ready` | A2P 10DLC registration done. False (or missing) keeps every text a draft and the package warns |
+| `launch.conversation_ai` | Boolean: the optional Skill 38 bot was requested |
+| `launch.conversation_ai_mode` | `faq`, `booking`, `checkout` or `full`; required when requested |
+| `launch.conversation_ai_channels` | Optional `["sms"]`, `["chat"]` or both |
+| `launch.send_window` | Optional `{start, end, timezone}`; default `08:00`–`21:00` recipient local |
+| `offers.main.payment_plans` | Boolean: opens the failed-payment automation family (else derived from an instalment/recurring billing type) |
+| `launch.{landing,sales_page,checkout,thank_you}_url` | Approved page URLs; null while a page is only planned |
+
 ## Question id map
 
 Every legacy and launch question id maps to one canonical id through `legacy_ids` in the bank. A test fails if a question

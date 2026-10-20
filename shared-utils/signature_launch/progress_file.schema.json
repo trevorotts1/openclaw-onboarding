@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "progress_file.schema.json",
+  "title": "Signature Launch progress file (WF-SWARM)",
+  "description": "One resumable progress file per launch, keyed by launch_id. Holds every unit from the approved launch plan, its state, and a terminal percentage. A stopped run resumes from this file: terminal units are skipped, and an active unit whose artifact exists is recovered as done without a duplicate build or a second charge.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "launch_id",
+    "plan_hash",
+    "created_at",
+    "updated_at",
+    "units"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plan launch_id. Also the progress-file and package key."
+    },
+    "plan_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Hash of the approved plan this progress belongs to."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Percentage of planned units that are terminal (done or dropped). Written on every save."
+    },
+    "counts": {
+      "type": "object",
+      "description": "Per-state counts written on every save.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "units": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Unit id -> state. Every page, email sequence, text set and automation from the plan.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "kind",
+          "waits_for",
+          "state",
+          "attempts",
+          "charged",
+          "artifact",
+          "note",
+          "updated_at"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "page",
+              "email_sequence",
+              "text_set",
+              "automation"
+            ]
+          },
+          "waits_for": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "description": "Unit ids that must be terminal before this unit starts."
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "blocked",
+              "dropped"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "charged": {
+            "type": "boolean",
+            "description": "True once this unit has been charged (KIE spend). A terminal unit is never charged again."
+          },
+          "artifact": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Path or id of the built artifact. Existence of this path recovers a crashed unit as done."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}
