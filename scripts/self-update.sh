@@ -131,7 +131,26 @@ try: print(json.load(open(sys.argv[1])).get("version",""))
 except Exception: print("")' "$1" 2>/dev/null | head -n1
 }
 
+# CAN015: the OpenClaw to report is the one the SUPERVISOR launches (launchd
+# ProgramArguments / systemd ExecStart), not whichever copy PATH or the
+# fallbacks below find first. oc-supervisor-install.py resolves it; it sits next
+# to this script when run from a checkout, else it is fetched once per process.
+# Call sup_helper_init in the PARENT shell (a $( ) would discard the result).
+SUP_HELPER_PATH=""
+sup_helper_init() {
+  _h="$(dirname "$SELF")/oc-supervisor-install.py"
+  if [ ! -f "$_h" ]; then
+    _h="$REFRESH_DIR/oc-supervisor-install.py"
+    curl -fsSL --max-time 30 "$REPO_RAW/scripts/oc-supervisor-install.py" -o "$_h" >>"$LOG" 2>&1 \
+      || { rm -f "$_h"; _h=""; }
+  fi
+  SUP_HELPER_PATH="$_h"
+}
+
 oc_pkg() {
+  if [ -n "$SUP_HELPER_PATH" ]; then
+    _p="$(python3 "$SUP_HELPER_PATH" pkg_json 2>/dev/null)" && [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
+  fi
   for _p in "$ROOT/npm-global/lib/node_modules/openclaw/package.json" \
             "$HOME/.openclaw/npm-global/lib/node_modules/openclaw/package.json" \
             /data/.npm-global/lib/node_modules/openclaw/package.json \
@@ -426,6 +445,7 @@ print(p.pid)' "$LOG" bash "$SELF" "$@" 2>>"$LOG" </dev/null)"
   printf '%s\n' "$CHILD" > "$LOCK_DIR/pid" 2>/dev/null
   # The watch must see the new run before the child reaches its first step.
   STAMP_BEFORE="$(read_stamp)"
+  sup_helper_init
   OC_BEFORE="$(oc_version)"
   NR_BEFORE="$(nr_version)"
   status_write "launched" "" ""
@@ -445,8 +465,10 @@ log "START runner v$VERSION pid=$$ root=$ROOT roll=${ROLL_ID:-none} run_id=$RUN_
 
 # Pre-update values, kept for every subsequent status write.
 STAMP_BEFORE="$(read_stamp)"
+sup_helper_init
 OC_BEFORE="$(oc_version)"
 NR_BEFORE="$(nr_version)"
+[ -n "$SUP_HELPER_PATH" ] || log "WARN: oc-supervisor-install.py unavailable - openclaw versions below come from PATH-era fallbacks, not the supervisor's install"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/self-update.XXXXXX")" || {
   log "REFUSED: could not create a temp dir"
@@ -871,8 +893,9 @@ else
   status_write "upgrade" "" ""
   UPG_RC=0
   if ! fetch "$REPO_RAW/scripts/oc-atomic-upgrade.sh" "$WORK/oc-atomic-upgrade.sh" \
-     || ! fetch "$REPO_RAW/scripts/oc-schema-migrate.py" "$WORK/oc-schema-migrate.py"; then
-    log "FAIL upgrade: could not fetch oc-atomic-upgrade.sh / oc-schema-migrate.py from main"
+     || ! fetch "$REPO_RAW/scripts/oc-schema-migrate.py" "$WORK/oc-schema-migrate.py" \
+     || [ -z "$SUP_HELPER_PATH" ] || ! cp "$SUP_HELPER_PATH" "$WORK/oc-supervisor-install.py"; then
+    log "FAIL upgrade: could not fetch oc-atomic-upgrade.sh / oc-schema-migrate.py / oc-supervisor-install.py from main"
     UPG_RC=$EX_UPGRADE
   else
     chmod 700 "$WORK/oc-atomic-upgrade.sh" 2>/dev/null || true
@@ -889,7 +912,7 @@ else
     log "FAIL upgrade: oc-atomic-upgrade.sh exited $UPG_RC"
     record_fail "$UPG_RC" "upgrade exited $UPG_RC"
   else
-    log "OK upgrade: $TARGET_VERSION"
+    log "OK upgrade: $TARGET_VERSION (the supervisor's install now reports $(oc_version))"
   fi
 fi
 
