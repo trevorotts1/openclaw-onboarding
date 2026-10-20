@@ -542,10 +542,18 @@ class DependencyPackageTests(unittest.TestCase):
                          "installer-registration-launcher"):
             self.assertIn(required, ids)
 
-    def test_manifest_never_claims_999_is_enabled(self):
+    def test_preflight_reports_enabled_from_registration_and_dependencies(self):
         manifest = dependencies.load_manifest()
-        self.assertIs(manifest["enabled_in_999"], False)
+        self.assertNotIn("enabled_in_999", manifest)
         report = dependencies.check()
+        # jsonschema is the one blocker that depends on the interpreter's
+        # site-packages (absent under `python3 -I` with a user-site install).
+        self.assertLessEqual(set(report["blockers"]), {"runtime-jsonschema"})
+        self.assertIs(report["enabled_in_999"], report["would_enable"])
+
+    def test_preflight_is_not_enabled_without_a_registered_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = dependencies.check(Path(tmp))
         self.assertIs(report["enabled_in_999"], False)
 
     def test_report_names_present_and_missing(self):
