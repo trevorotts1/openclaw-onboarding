@@ -445,6 +445,25 @@ test('chamber-shell.css: the single row starts at 1280px, the compact phone rule
   assert.match(css, /@media \(max-width: 374px\)\s*\{\s*\.ch-top-actions \{ gap: 4px/);
 });
 
+test('chamber-shell.css: on a phone the six steps wrap instead of scrolling sideways', () => {
+  const css = readFileSync(join(chamberDir, 'chamber-shell.css'), 'utf8');
+  const phone = css.slice(css.indexOf('@media (max-width: 599px)'), css.indexOf('@media (max-width: 374px)'));
+  assert.match(phone, /\.ch-step-list \{[^}]*flex-wrap: wrap/);
+  assert.equal(/overflow-x:\s*auto/.test(phone), false);
+  assert.equal(phone.includes('max-content'), false);
+});
+
+test('the composer speaks plainly: no approval or allowance wording, no raw route codes', () => {
+  const html = readFileSync(join(chamberDir, 'index.html'), 'utf8');
+  const js = readFileSync(join(chamberDir, 'chamber-shell.js'), 'utf8');
+  assert.ok(html.includes('Convening starts the council now on the model you chose.'));
+  const open = html.indexOf('class="ch-composer-approval"');
+  const note = html.slice(html.indexOf('>', open) + 1, html.indexOf('</p>', open)).toLowerCase();
+  for (const word of ['allowance', 'approv', 'budget']) assert.equal(note.includes(word), false, word);
+  assert.ok(js.includes("'Not available for the council yet'"));
+  assert.equal(js.includes('failure_code'), false, 'a raw failure code never reaches the screen');
+});
+
 test('index.html: every sr-only span in the stepper is the one the renderer reuses, so (current) is never announced twice', () => {
   const html = readFileSync(join(chamberDir, 'index.html'), 'utf8');
   const nav = html.slice(html.indexOf('id="ch-stepper"'), html.indexOf('</nav>', html.indexOf('id="ch-stepper"')));

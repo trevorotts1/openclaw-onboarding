@@ -1,3 +1,7 @@
+## [v27.1.46]  -  2026-10-19  -  Council (Skill 77) v1.0.29: client polish on the live Council screen (plain wording, friendly model names, all six steps visible on a phone, no stale notices)
+
+- In plain English: the New question window now says only that convening starts the council on the model you chose; every model has a friendly name and a plain "Not available for the council yet" note instead of a raw code; the six steps (Brief to Verdict) all fit on a phone screen; the service status page no longer claims the Council screen is missing; and the operator command help no longer points anyone to an approval step.
+
 ## [v27.1.45]  -  2026-10-19  -  Merge train: #2342 Council (Skill 77) v1.0.26: live council — client-chosen model,…; #2344 Council (Skill 77): Roast-Room chamber screen — full reference…; #2353 CAN014: workshop autonomous mode follows the installed OpenClaw…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

@@ -14,9 +14,9 @@
  *   packaged chamber entry page exists (no loopback host in the header);
  * - `GET /chamber/` serves the chamber HTML, which never carries the
  *   diagnostics banner;
- * - `GET /status` serves the previous diagnostics page unchanged, with
- *   UI_NOT_BUNDLED, the identity table and no external asset or foreign
- *   origin;
+ * - `GET /status` serves the diagnostics page with the identity table,
+ *   a link to the packaged Council room (no stale UI_NOT_BUNDLED notice)
+ *   and no external asset or foreign origin;
  * - without the packaged assets `GET /` keeps that honest status page and
  *   `/chamber/` falls back to the unchanged catch-all 404;
  * - the catch-all 404 and every existing route keep their prior status
@@ -118,7 +118,7 @@ test('GET /chamber/ serves the chamber HTML without the diagnostics banner', asy
 
 // ----------------------------------------------------------- status page
 
-test('GET /status serves the unchanged diagnostics page', async () => {
+test('GET /status serves the diagnostics page', async () => {
   await withService(async (service, origin) => {
     const response = await fetch(`${origin}/status`);
     const body = await response.text();
@@ -143,8 +143,9 @@ test('GET /status serves the unchanged diagnostics page', async () => {
     assert.ok(body.includes(FIXED_NOW), 'readiness observation time is rendered');
 
     // Honest about what is and is not packaged.
-    assert.ok(body.includes('UI_NOT_BUNDLED'), 'UI_NOT_BUNDLED is named');
-    assert.ok(body.includes('WER-021'), 'WER-021 full packaging is named');
+    assert.equal(body.includes('<strong>UI_NOT_BUNDLED</strong>'), false, 'the chamber is packaged, so no stale notice');
+    assert.equal(body.includes('is not packaged'), false, 'the page never says the chamber is missing');
+    assert.ok(body.includes(`href="${origin}/chamber/"`), 'the page points at the Council room');
     assert.ok(
       body.includes('<strong>not</strong> the full Council chamber UI'),
       'the page says it is not the full chamber UI',
@@ -194,7 +195,7 @@ test('GET /status drops the not-bound notice when the adapters are bound', async
       assert.equal(body.includes('not_bundled'), false, 'no unbound session wording');
       assert.ok(body.includes('durable event stream'), 'the bound event route is described');
       assert.ok(body.includes('durable session record'), 'the bound session route is described');
-      assert.ok(body.includes('UI_NOT_BUNDLED'), 'the UI blocker is still named');
+      assert.equal(body.includes('<strong>UI_NOT_BUNDLED</strong>'), false, 'the packaged chamber is not reported missing');
     },
     { eventsAdapter: boundEvents, sessionReader: boundReader },
   );
@@ -223,7 +224,7 @@ test('without packaged chamber assets GET / keeps the honest status page', async
       const body = await response.text();
       assert.equal(response.status, 200, 'no assets: the root serves the status page');
       assert.match(body, /Council of Wise Elders — service landing/);
-      assert.ok(body.includes('UI_NOT_BUNDLED'), 'the honest blocker is still named');
+      assert.ok(body.includes('<strong>UI_NOT_BUNDLED</strong>'), 'the honest blocker is still named');
 
       const chamber = await fetch(`${origin}/chamber/`, { redirect: 'manual' });
       assert.equal(chamber.status, 404, 'no assets: the chamber route falls through');

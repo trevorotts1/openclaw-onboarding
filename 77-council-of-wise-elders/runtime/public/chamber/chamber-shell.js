@@ -414,7 +414,7 @@
       if (usable) {
         label.appendChild(make('span', 'ch-composer-route-line', 'Default model: ' + defaultModelText(route.route_id, body.harness_defaults)));
       } else {
-        label.appendChild(make('span', 'ch-composer-route-line', 'Cannot be used now: ' + (route.failure_code || 'unknown reason')));
+        label.appendChild(make('span', 'ch-composer-route-line', 'Not available for the council yet'));
       }
       els.routesList.appendChild(label);
     }
