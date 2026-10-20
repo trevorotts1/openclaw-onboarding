@@ -188,6 +188,7 @@ UIDN=""
 SUP_PKG_ROOT=""   # the openclaw package the supervisor launches ("" = none found: PATH is all there is)
 SUP_PREFIX=""
 SUP_ENTRY=""
+SUP_SOURCE=""     # launchd | systemd ("" = no supervisor definition)
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
@@ -270,6 +271,7 @@ _resolve_supervisor_install() {
   SUP_PKG_ROOT="$(printf '%s\n' "$out" | sed -n 's/^pkg_root=//p' | head -1)"
   SUP_PREFIX="$(printf '%s\n' "$out" | sed -n 's/^prefix=//p' | head -1)"
   SUP_ENTRY="$(printf '%s\n' "$out" | sed -n 's/^entry=//p' | head -1)"
+  SUP_SOURCE="$(printf '%s\n' "$out" | sed -n 's/^source=//p' | head -1)"
   node_dir="$(printf '%s\n' "$out" | sed -n 's/^node=//p' | head -1)"
   [ -n "$node_dir" ] && node_dir="$(dirname "$node_dir")"
   [ -n "$SUP_PKG_ROOT" ] && [ -n "$SUP_PREFIX" ] || return 1
@@ -662,10 +664,8 @@ _prove_gateway_on_target() {
     return 1
   fi
   pid="$(_gateway_pid)"
-  case "$SUPERVISOR" in
-    launchd|docker)
-      if [ -z "$pid" ]; then _err "no gateway process is running (supervisor: $SUPERVISOR)"; return 1; fi ;;
-  esac
+  # No pid, no proof: never claim "gateway pid  runs ..." for a process nobody identified.
+  if [ -z "$pid" ]; then _err "no gateway process is identified (supervisor: $SUPERVISOR) - cannot prove it runs the target"; return 1; fi
   if ! _healthz_ok; then _err "/healthz did not answer 200"; return 1; fi
   if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_ENTRY" ]; then
     args="$(ps -o args= -p "$pid" 2>/dev/null)"
@@ -905,6 +905,14 @@ do_upgrade() {
     echo "    4. migrate the config with: python3 $MIGRATOR apply <cfg> <tmp> && \\" >&2
     echo "       python3 $MIGRATOR verify <cfg> <tmp> && cat <tmp> > <cfg>" >&2
     echo "    5. docker start openclaw ; then confirm the pid is STABLE for 25s" >&2
+    return 78
+  fi
+  # Only launchd can be stopped, restarted and pid-proven here. A systemd unit (or any gateway no
+  # supervisor above owns) would be "upgraded" on disk while the old process keeps answering /healthz.
+  if [ "$SUPERVISOR" != "launchd" ]; then
+    _refuse_banner \
+      "The gateway supervisor is '${SUP_SOURCE:+$SUP_SOURCE unit, detected as }$SUPERVISOR', and this script can only stop, restart and pid-prove a launchd gateway. Installing here would leave the running gateway on the OLD build and still report success." \
+      "Nothing was changed. Upgrade the install (${SUP_PKG_ROOT:-the unit ExecStart path}) and restart the gateway by hand (systemctl restart), then confirm the new pid and /healthz."
     return 78
   fi
   if ! command -v "$NPM_BIN" >/dev/null 2>&1; then

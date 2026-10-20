@@ -1066,6 +1066,30 @@ fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
+echo "--- (16) CAN015 round 3: a systemd box is refused loudly, never a false success ---"
+# Only launchd is stopped, restarted and pid-proven. A systemd unit used to resolve to
+# SUPERVISOR=none: no restart, an EMPTY-pid "gateway pid  runs ..." proof, rc 0 -- while the old
+# gateway kept answering /healthz. A: package already at the target. B: package at the old build.
+for kind in A B; do
+  H16="$(make_box "b16$kind" clean)"; S16="$SANDBOX/stubs16$kind"; ST16="$SANDBOX/state16$kind"
+  make_stubs "$S16" "$ST16" versioned
+  rm -f "$H16/Library/LaunchAgents/ai.openclaw.gateway.plist"
+  mkdir -p "$H16/.config/systemd/user"
+  printf '[Service]\nExecStart=/usr/bin/env node %s/sup/lib/node_modules/openclaw/dist/index.js gateway\n' "$H16" \
+    > "$H16/.config/systemd/user/openclaw-gateway.service"
+  [ "$kind" = "A" ] && set_installed "$H16" "$ST16" "$NEW_V"
+  OUT16="$(T_GATEWAY_DOWN=1 run_atomic "$H16" "$S16" "$ST16")"; RC16=$?
+  if [ "$RC16" -eq 78 ] && grep -q 'systemd' <<<"$OUT16" \
+     && ! grep -Eq 'nothing to do|ATOMIC UPGRADE COMPLETE|gateway pid' <<<"$OUT16" \
+     && [ ! -f "$ST16/npm_installs" ] && ! grep -q 'launchctl boot' "$ST16/events"; then
+    pass "16$kind: systemd box -> refused (rc=78), nothing installed or stopped, no 'nothing to do' / empty-pid proof"
+  else
+    fail "16$kind: rc=$RC16 (want 78 with no install, no stop, no success text). Output: $OUT16"
+  fi
+done
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
   echo "FAIL: $FAIL check(s) failed -- CI guard triggered"
