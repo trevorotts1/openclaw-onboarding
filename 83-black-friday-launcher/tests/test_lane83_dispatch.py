@@ -259,20 +259,21 @@ class DispatchTests(unittest.TestCase):
         seen = {}
         real = substrate.dispatch()
 
+        def stop(launch, approval, **kwargs):
+            seen.update(kwargs)
+            raise real.DispatchError("spy: stopped at the call")
+        stop.__signature__ = __import__("inspect").signature(real.dispatch)  # the real argument list
+
         class Spy:
             vlp, clr, DispatchError = real.vlp, real.clr, real.DispatchError
             swarm = real.swarm
             executor_from_config = staticmethod(real.executor_from_config)
+            dispatch = staticmethod(stop)
 
-            @staticmethod
-            def dispatch(launch, approval, **kwargs):
-                seen.update(kwargs)
-                raise real.DispatchError("spy: stopped at the call")
-            dispatch.__signature__ = __import__("inspect").signature(real.dispatch)
-
+        config = consumer_config()
         with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
             with self.assertRaises(launch_bridge.BridgeError):
-                run_dispatch(doc, self.out, adapters_config=consumer_config(), **kw)
+                run_dispatch(doc, self.out, adapters_config=config, **kw)
         return seen
 
     @unittest.skipUnless("image_inputs" in __import__("inspect").signature(substrate.dispatch().dispatch).parameters,
