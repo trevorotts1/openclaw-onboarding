@@ -8,7 +8,7 @@ nothing silently switches.
 | Mode | What it is |
 |---|---|
 | `legacy_signature_funnel` | The historical pipeline: SACRED 12-section hero, derived U1/D1/U2/D2/thank-you pages, 3/5/7-step funnels, the locked-brief intake (`intake/sf-intake-questions.json`), fail-closed provers, signed PROCESS-CERTIFICATE. Behavior is unchanged; its golden fixtures are the regression contract (acceptance A34). |
-| `signature_launch` | The launch coordinator added by the Signature Launch build: guided intake and plan approval first, a deterministic route graph compiled from the approved plan, then one idempotent page request per role dispatched to the specialist skills (71 landing, 78 product selection, 79 checkout, 80 upsell 1 and upsell 2 as separate invocations, 81 downsell, 82 thank-you). The bump is a component on checkout, never a page. There is no second downsell in this profile. |
+| `signature_launch` | The launch coordinator added by the Signature Launch build: guided intake and plan approval first, a deterministic route graph compiled from the approved plan, then one idempotent page request per role dispatched to the specialist skills (71 landing, 78 product selection, 79 checkout, 80 upsell 1 and upsell 2 as separate invocations, 81 downsell, 82 thank-you). The bump is a component on checkout, never a page. There is no second downsell in this profile; the 7-step Signature Funnel carries `downsell-2`, and `scripts/legacy_downsell_images.py` gives it wireframes and mockups. |
 
 ## Entry
 
