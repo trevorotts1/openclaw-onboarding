@@ -1,6 +1,9 @@
 ## [v27.1.51]  -  2026-10-20  -  Batch: Skill 49 every page type + shared client intake + harness parity + Skill 83 real launch
 
 - In plain English: the signature funnel now draws a design for every page type (including the 7-step order page and the 3/5/7-step downsells), the client's chosen landing pages reach the page builder, a folded-levels sales page gets its levels panel, the shared client intake asks the same questions for every consumer, the interview and progress reports read the same on every harness (OpenClaw, Claude Code, claude-nine), and Skill 83 (Black Friday launcher) now builds every planned page in a real launch. Skills bumped: 49 v2.1.17, 71 1.3.3, 83 0.2.4.
+## [v27.1.51]  -  2026-10-20  -  Council (Skill 77) v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
+
+- In plain English: Councils on claude-nine now finish; a blocked council shows the real reason.
 
 ## [v27.1.50]  -  2026-10-20  -  Batch: signature funnel page types (sales page, landing, order page, upsell, downsell, thank-you), clear section labels, and Skill 83 turned on for 999 shipping
 

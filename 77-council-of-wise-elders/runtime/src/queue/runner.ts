@@ -249,6 +249,12 @@ export interface OperationDispatchContext {
   attempt_kind: DispatchAttemptKind;
   /** Validation issues from the previous output, for output_repair dispatches. */
   repair_issues: string[];
+  /**
+   * Aborted when the runner gives up on this dispatch (provider deadline),
+   * so the executor can kill its harness child instead of leaving it to
+   * overlap the next seat. Executors pass it to transport.generate.
+   */
+  signal?: AbortSignal;
 }
 
 export interface OperationDispatchResult {
@@ -1118,6 +1124,7 @@ export class DurableJobRunner {
       }
     });
     let result: OperationDispatchResult;
+    const giveUp = new AbortController();
     try {
       const dispatchPromise = this.executor.dispatch({
         session,
@@ -1125,6 +1132,7 @@ export class DurableJobRunner {
         dispatch_operation_id: dispatchOperationId,
         attempt_kind: attemptKind,
         repair_issues: repairIssues,
+        signal: giveUp.signal,
       });
       dispatchPromise.catch(() => {
         // A deadline overrun resolves the race first; the late
@@ -1137,14 +1145,22 @@ export class DurableJobRunner {
         this.timers.delay(this.providerDeadlineMs).then(() => ({ tag: 'timeout' as const })),
       ]);
       if (raced.tag === 'timeout') {
-        return this.settleUnknown(envelope, claim, session, dispatchOperationId, dispatchesSoFar);
+        giveUp.abort();
+        return this.settleUnknown(
+          envelope,
+          claim,
+          session,
+          dispatchOperationId,
+          dispatchesSoFar,
+          `The provider call did not return within ${Math.round(this.providerDeadlineMs / 1000)} s; whether the provider completed is unknown, so it is not replayed.`,
+        );
       }
       result = raced.value;
     } catch (error) {
       if (isSimulatedCrash(error)) throw error;
       if (error instanceof TransportDispatchError) {
         if (error.unknownCompletion) {
-          return this.settleUnknown(envelope, claim, session, dispatchOperationId, dispatchesSoFar);
+          return this.settleUnknown(envelope, claim, session, dispatchOperationId, dispatchesSoFar, error.message);
         }
         if (error.retryable) {
           // The provider did not accept this attempt: release its
@@ -1350,6 +1366,7 @@ export class DurableJobRunner {
     session: StoredSession,
     dispatchOperationId: string,
     dispatchesSoFar: number,
+    message: string,
   ): OperationOutcome {
     try {
       this.admission.recordConsumption(envelope, {
@@ -1376,6 +1393,7 @@ export class DurableJobRunner {
       this.keepFencedReservationCounted(envelope, claim, dispatchOperationId);
     }
     this.updateAttempt(envelope, dispatchOperationId, 'provider_completion_unknown', 'completion_unknown');
+    this.journalAttemptFailure(envelope, claim, dispatchOperationId, 'provider_completion_unknown', message);
     this.saveCheckpoint(envelope, claim, session, 'provider_completion_unknown', null, {
       input_tokens: null,
       output_tokens: null,

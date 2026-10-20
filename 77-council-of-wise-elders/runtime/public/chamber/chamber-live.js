@@ -240,7 +240,9 @@
     frames.forEach(function (frame) {
       if (!state.apply(model, frame)) return;
       changed = true;
-      if (frame.type === 'card_accepted' || frame.type === 'verdict_validated') wantRead = true;
+      if (frame.type === 'card_accepted' || frame.type === 'verdict_validated' || frame.type === 'session_blocked') wantRead = true;
+      // The service explains a block (blocked_reason) only on a read, and records its last error after session_blocked.
+      if (frame.type === 'operation_completed' && frame.payload && frame.payload.kind === 'worker_error') wantRead = true;
     });
     if (changed && terminal()) wantRead = true;
     if (wantRead) scheduleRefetch();
