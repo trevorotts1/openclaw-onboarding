@@ -96,8 +96,8 @@ def main(argv: list[str]) -> int:
             errors.append(f"automation templates on disk but NOT in index (orphans): {sorted(disk - idx)}")
         if idx - disk:
             errors.append(f"automation ids in index but NO file (phantoms): {sorted(idx - disk)}")
-        if len(disk) != 28:
-            errors.append(f"expected 28 automation templates on disk, found {len(disk)}")
+        if len(disk) != 51:
+            errors.append(f"expected 51 automation templates on disk, found {len(disk)}")
 
     # (3) link-map integrity (v2 canonical): funnel ids + automation refs resolve
     funnel_ids = {k.split("/", 1)[1] for k in _disk_templates(funnel_root)}
