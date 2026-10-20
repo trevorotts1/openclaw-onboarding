@@ -197,6 +197,64 @@ class NotKnowing(unittest.TestCase):
         self.assertEqual(r["recommendation"], "B")
         self.assertIsNone(e.val(d, "design_style"))
 
+    def test_colour_help_replies_are_accepted_by_record(self):
+        d = e.new_doc()
+        e.record(d, "brand_colors", "not sure")
+        r = e.record(d, "brand_colors", "2")  # "say 1, 2 or 3"
+        self.assertEqual((r["ok"], r["action"]), (True, "palette_chosen"))
+        self.assertEqual(e.get(d, "brand_colors")["source"], "palette-help:option-2")
+        d = e.new_doc()
+        e.record(d, "brand_colors", "not sure")
+        r = e.record(d, "brand_colors", "Calm trust")  # feel words reorder the three palettes
+        self.assertEqual((r["ok"], r["action"], len(r["palettes"])), (False, "palettes", 3))
+        r = e.record(d, "brand_colors", "1")
+        self.assertEqual(e.get(d, "brand_colors")["value"][0], r["palette"]["roles"]["primary"])
+
+    def test_website_and_logo_replies_wait_for_a_yes_then_save_the_colours(self):
+        from PIL import Image
+        page = '<meta name="theme-color" content="#0A7E8C"><div style="color:#E76F51">'
+        real = ph.http_fetch
+        ph.http_fetch = lambda u, **k: page
+        try:
+            d = e.new_doc()
+            r = e.record(d, "brand_colors", "https://www.example.com")
+        finally:
+            ph.http_fetch = real
+        self.assertEqual(r["action"], "confirm_colors")
+        self.assertIsNone(e.val(d, "brand_colors"))
+        self.assertTrue(e.record(d, "brand_colors", "yes")["ok"])
+        self.assertEqual(e.val(d, "brand_colors")[0], "#0A7E8C")
+        self.assertEqual(e.get(d, "brand_colors")["source"], "website")
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "l.png"
+            Image.new("RGB", (40, 40), (10, 126, 140)).save(f)
+            d = e.new_doc()
+            self.assertEqual(e.record(d, "brand_colors", str(f))["action"], "confirm_colors")
+        self.assertTrue(e.record(d, "brand_colors", "yes")["ok"])
+        self.assertEqual(e.get(d, "brand_colors")["source"], "logo")
+
+    def test_a_private_website_gets_a_plain_message_not_a_crash(self):
+        r = e.record(e.new_doc(), "brand_colors", "http://127.0.0.1/")
+        self.assertFalse(r["ok"])
+        self.assertIn("private", r["message"])
+
+    def test_style_help_words_reach_a_recommendation_through_record(self):
+        d = e.new_doc()
+        e.record(d, "design_style", "not sure")
+        r = e.record(d, "design_style", "warm, friendly, community")
+        self.assertEqual((r["ok"], r["recommendation"]), (False, "B"))
+        self.assertIsNone(e.val(d, "design_style"))
+        self.assertTrue(e.record(d, "design_style", "yes")["ok"])
+        self.assertEqual((e.val(d, "design_style"), e.get(d, "design_style")["status"]), ("B", "provided"))
+
+    def test_second_not_sure_on_style_uses_the_words_the_client_gave(self):
+        d = e.new_doc()
+        e.record(d, "design_style", "not sure")
+        e.record(d, "design_style", "warm and friendly")
+        r = e.record(d, "design_style", "not sure")
+        self.assertEqual((r["action"], r["value"]), ("default_applied", "B"))
+        self.assertEqual(e.get(d, "design_style")["status"], "default_to_confirm")
+
     def test_logo_without_a_file_never_invents_one(self):
         d = e.new_doc()
         e.record(d, "business_name", "Bright Path")

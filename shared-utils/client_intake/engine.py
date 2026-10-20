@@ -486,6 +486,10 @@ def record(doc, qid, value, *, source="client", status=None, note=None):
     q = question(qid)
     if wants_help(q, value):
         return resolve_unknown(doc, qid)
+    if qid in ("brand_colors", "design_style") and isinstance(value, str):
+        reply = _help_reply(doc, q, value)  # a reply to the help message: logo, website, 1-3, "yes", feel words
+        if reply is not None:
+            return reply
     out = _normalize(doc, q, value)
     if isinstance(out, dict):
         return out
@@ -502,6 +506,53 @@ def record(doc, qid, value, *, source="client", status=None, note=None):
 
 
 # ---------------------------------------------------------------- not knowing the answer
+_YES = ("yes", "y", "yep", "yeah", "ok", "okay", "sure", "use it", "use them")
+_IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+
+
+def _pend(doc, qid, **kw):
+    """Remember what the help message offered, on the question's own entry, so the client's next reply can finish it."""
+    e = get(doc, qid) or _set(doc, qid, None, "unknown", "client")
+    e["pending"] = kw
+    return e
+
+
+def _help_reply(doc, q, text):
+    """The replies the help messages ask for. None means: not one of those, use the normal path."""
+    qid, low = q["id"], _norm(text)
+    e = get(doc, qid) or {}
+    pend = e.get("pending") or {}
+    helped = e.get("status") == "unknown" and e.get("unknown_count", 0) >= 1
+    if qid == "design_style":
+        if pend.get("recommendation") and low in _YES:
+            return record(doc, qid, pend["recommendation"])
+        if pend.get("recommendation") and low in ("no", "n", "nope"):
+            return _need("No problem. Pick A, B or C, or tell me three other words for how you want your brand to feel.")
+        if helped and not re.match(r"^\(?[abc]\b", low) and not re.search(r"\b(block|circle|hybrid)\b", low) and low not in _YES and low:
+            rec = _recommend_style(q, text)  # the three words the help message asked for
+            _pend(doc, qid, mood=text, recommendation=rec["recommendation"])
+            return dict(ok=False, action="recommend", **rec)
+        return None
+    if pend.get("colors") and low in _YES:  # "I read these colors ... Should I use them?"
+        return record(doc, qid, " ".join(pend["colors"]), source=pend["source"])
+    if text.strip().lower().startswith(("http://", "https://", "www.")):
+        kw = {"website": text.strip() if "://" in text else "https://" + text.strip()}
+    elif text.strip().lower().endswith(_IMAGE_EXT) or Path(text.strip()).expanduser().is_file():
+        kw = {"logo": str(Path(text.strip()).expanduser())}
+    elif helped and low.isdigit():
+        kw = {"palette": low}
+    elif helped and not ph.parse_colors(text)["colors"] and re.search(r"[a-z]", low):
+        pals = ph.suggest_palettes((_colors(doc) or [None])[0], text)  # feel words: reorder the three palettes
+        _pend(doc, qid, mood=text)
+        return {"ok": False, "action": "palettes", "palettes": pals, "message": "From those words, here are 3 palettes. Say 1, 2 or 3, or send color codes."}
+    else:
+        return None
+    try:
+        return resolve_unknown(doc, qid, mood=pend.get("mood"), **kw)
+    except (OSError, ValueError, ImportError) as err:
+        return _need(str(err) if isinstance(err, ValueError) else "I could not read that. Send color codes, or say 1, 2 or 3 for a palette.")
+
+
 def _how_to_change(q):
     return f"Tell me your new answer to \"{q['text'].split('?')[0].strip()}\" (question {q['id']}) and I will update it."
 
@@ -564,6 +615,7 @@ def resolve_unknown(doc, qid, *, logo=None, website=None, palette=None, mood=Non
     n = e.get("unknown_count", 0)
     if logo or website or palette:
         return _palette_action(doc, q, logo, website, palette, mood, fetch)
+    mood = mood or (e.get("pending") or {}).get("mood")
     e = _set(doc, qid, None, "unknown", "client", keep_count=False)
     e["unknown_count"] = n + 1
     h = q["help"]
@@ -579,11 +631,20 @@ def resolve_unknown(doc, qid, *, logo=None, website=None, palette=None, mood=Non
                                     {"id": "website", "label": "Read them from my website (send the link)"},
                                     {"id": "palette", "label": "Pick one of these 3 palettes (say 1, 2 or 3)"}],
                            palettes=ph.suggest_palettes(seed, mood or ""))
+            if mood:
+                _pend(doc, qid, mood=mood)
         elif h["kind"] == "fonts":
             payload["pairs"] = ph.fonts_suggestions()
         elif h["kind"] == "style" and mood:
             payload.update(_recommend_style(q, mood))
+            _pend(doc, qid, mood=mood, recommendation=payload["recommendation"])
         return payload
+    if h["kind"] == "style" and mood:  # the client gave feel words: the safe default is what they point to
+        best = _recommend_style(q, mood)["recommendation"]
+        _set(doc, qid, best, "default_to_confirm", "feel-words", "Picked from the words you used for how your brand should feel.")
+        _sync_to_confirm(doc)
+        return dict(payload, action="default_applied", value=best, flag="to confirm",
+                    message=f"No problem. I will use {best} for now, picked from your words, marked TO CONFIRM. It will be listed in your delivery report with a one-line way to change it.")
     if q["default"] is None:
         return dict(payload, action="skipped", message="No problem, we will leave this one out.")
     d = apply_default(doc, qid)
@@ -619,6 +680,7 @@ def _palette_action(doc, q, logo, website, palette, mood, fetch):
     got = ph.extract_from_logo(logo) if logo else ph.extract_from_website(website, fetch=fetch)
     if not got["colors"]:
         return {"ok": False, "action": "nothing_found", "message": "I could not read any colors from that. Send color codes, or pick one of the 3 palettes."}
+    _pend(doc, q["id"], colors=got["colors"], source=got["source"])
     return {"ok": True, "action": "confirm_colors", "colors": got["colors"], "source": got["source"],
             "message": f"I read these colors from your {got['source']}: {', '.join(got['colors'])}. Should I use them? If yes, I will ask which one is your main color."}
 

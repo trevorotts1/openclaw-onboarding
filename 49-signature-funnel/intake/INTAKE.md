@@ -29,6 +29,10 @@ roles in one message ("primary #0A7E8C, background white"), nothing more is aske
    from the website (plain HTTP fetch of the page and its CSS; no browser, no agent-browser, no Playwright), or pick one of
    three palettes, each with roles, a plain-English reason and an example, and a readability check. For other questions it
    explains in plain English with examples.
+   The client's next reply goes straight to `record(doc, id, reply)`, no special call: `1`, `2` or `3` picks a palette; a
+   website link or a logo file path reads the colours and asks "Should I use them?", and a `yes` saves them; plain words
+   such as "calm trust" reorder the three palettes. For the design style, the three feel words the help asks for get a
+   recommendation, a `yes` saves it, and a second "not sure" uses those words instead of the plain default.
 2. Second "I don't know": the safe default, clearly flagged **to confirm**, with the reason. The build is never blocked
    silently. Colours fall back to a neutral palette that belongs to no client (never another client's palette). Logo falls
    back to the business name as text. Photos fall back to an empty photo frame; a likeness of a real person is never
