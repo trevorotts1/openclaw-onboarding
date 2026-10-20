@@ -1,6 +1,37 @@
 {
-  "_comment": "Consumer adapter config for dispatch_launch.py --adapters. One entry per page_role, never per page_type: the key vocabulary is the one page_type -> page_role table in 49-signature-funnel/structure/funnel_structure.json (page_role_map.page_roles;Fix 15), and dispatch_launch.executor_from_config refuses a key that is not a page_role: the command that executes that role's page request. {request} is the page-request JSON path, {result} is where the consumer must write its page-result JSON, {work_dir} is the dispatch directory. A result is accepted only when it validates and echoes its request exactly (collect_launch_receipts rules). S49-08 assembly (this revision): seven roles are wired (six, plus checkout design-only) (landing via landing_bridge.py, downsell_1 via downsell_wrapper.py, upsell_1 and upsell_2 via separate upsell_wrapper.py invocations, thank_you via translate_thank_you_result.py, all shipped in 49-signature-funnel/scripts/; product_selection via Skill 78's native emitter chain, re-pointed by the config retirement candidate); the /path/to/ entries keep this file's example convention and are replaced with real install paths at deployment. checkout is wired DESIGN-ONLY (funnel_structure.json page_role_map.page_types.checkout, adapter design_only): checkout_wrapper.py produces the order form page's desktop and mobile wireframes and mockups through Skill 71's shared image service, and never builds or binds the form, which per CR-S49-003 stays the native Convert and Flow form installed by Skill 06. checkout needs the approved checkout copy (--manuscript, written from the approved references in the Skill 79 checkout request), the run's measured design system staged as {work_dir}/design-prose-checkout.json (--design-prose, a required staged input: without it the default image-model prompt band refuses every checkout section for falling below the 16000-char floor and the wrapper fails closed before any wireframe or mockup), the approved brand file, the recorded brand owner, the image cap and the client's design style A, B or C. downsell_1 is wired via downsell_wrapper.py to the Skill 81 consumer (Skill 81 landed on main in PR #2229 and the wrapper shipped in PR #2237; this sentence replaces the pre-landing text that said downsell_1 was not wired, a comment-only cure). A role with no adapter entry makes dispatch fail closed for that role rather than pretend. Per-role notes: landing also needs the bridge config named by --bridge-config (Skill 71 tree root plus the landing operator values page_version, page_kind sales or opt_in, brand_owner and image_cap; the bridge refuses to run when any operator value is missing; a full funnel, with upsell_1, downsell_1 and upsell_2 all on, gets all its pages, so its config sets page_kind sales, page_version long-form and an opt_in object with its own run_dir, and the dispatch copy_profile is long-form) and consent statements reach the popup only via landing.consent_statements in that config. Upsell runs need the operator-staged work-dir inputs named in the command (launch.json, the per-instance copy document, the verified journey state, the enrichment sidecar) and the Skill 80 tree at the --produce path. product_selection takes one per-launch input, the approved launch record JSON named inside its command, which must be set for the launch before dispatching; the S44/S79 native mapping rows are no longer an adapter input, because the checkout_targets enrichment stays S49-side per CR-S49-002 and is not consumed by the native emitter chain. RETIREMENT DISCHARGED: Skill 78's native emitter fix landed in PR #2232 (batch train #2235), and the product_selection entry in this revision IS the native entrypoint (plan builder, then emit_page_result.py with --output and the request as echo source). selection_wrapper.py is retired as the seam mechanism and stays in the tree as built history and as the checkout_targets enrichment library; retirement is a routing fact, not a deletion (S49 retirement record, 2026-10-17). thank_you needs the Skill 82 thank-you result document and its companion run manifest in the work dir, and the dispatch run session id in --author-session. The thank_you entry chains two commands the way the product_selection entry does: first Skill 71's shared image service (shared_page_service.py with --page-version thank-you, so the page is drawn with its own five canonical sections from 71-blackceo-signature-page/references/copy-specs/thank-you-v1.json and never a landing page's twelve), whose pipeline command is run_page_role_stages.py (the one request builder and the one executor: desktop and mobile wireframes and mockups, one long PDF per stage, overview boards; stub provider unless the operator adds --provider kie --allow-paid; the Design Board and final-mockups follow after client approval), then the translator. It needs four more per-launch inputs: the brand owner, the brand file, the manuscript copy-thank_you.md and design-prose.json in the work dir. Every role's four image stages are produced by Skill 71's shared image service (71-blackceo-signature-page/scripts/shared_page_service.py) and called once from that role's wrapper. For product_selection that call is 78-signature-product-selection/scripts/run_image_stages.py, the middle step of the command (the page result is written only after it succeeds): it admits the page as page_role product_selection, turns the approved plan into the five-section order page copy and runs Skill 71's stage_executor for the desktop wireframe, mobile wireframe and visual mockup stages. The per-launch inputs file names the route graph, brand file, brand owner, image cap and design style (A, B or C); the literal value none is refused, because a funnel with an order page gets all its pages and the order page images are never skipped. The adapter never passes --allow-paid, so a dispatched run is free (placeholder images); a paid run is the same wrapper run by hand with --allow-paid. Image stages: upsell_1 and upsell_2 are WIRED. With --bridge-config (the landing bridge config: Skill 71 root plus brand owner, image cap and brand file; add landing.design_style A, B or C) upsell_wrapper.py hands the page to Skill 71's page-type runner (71-blackceo-signature-page/scripts/run_page_type.py), which calls shared_page_service.py, builds one eight-section production request per stage and runs the desktop wireframe, mobile wireframe and mockup stages in <work_dir>/images-<slot>; --image-provider stub is free and draws placeholders, and kie (with --allow-paid) is the paid provider that also writes the review PDFs and overview boards; without --bridge-config the wrapper says on stderr that no images were made. The Design Board and final-mockups follow after the image chain and the client's recorded approval. Wired to the image service in this revision: product_selection, checkout (design-only), the upsell roles, downsell_1 and thank_you (shared_page_service.py, then run_page_role_stages.py); the landing page is Skill 71's own page, built through landing_bridge.py. downsell_1 (SPF030): the four trailing flags --skill71-root, --brand-file, --brand-owner and --image-cap make downsell_wrapper.py call Skill 71's shared image service once, so the downsell page gets desktop and mobile wireframes and the visual mockup (eight sections, from 71-blackceo-signature-page/references/page-structures.json); omit them for the copy-and-contract checks alone. The default image provider is the offline stub; a paid run adds --image-provider kie --allow-paid with the owner's approval.",
+  "_comment": "Consumer adapter config for dispatch_launch.py --adapters. One entry per page_role, never per page_type: the key vocabulary is the one page_type -> page_role table in 49-signature-funnel/structure/funnel_structure.json (page_role_map.page_roles;Fix 15), and dispatch_launch.executor_from_config refuses a key that is not a page_role: the command that executes that role's page request. {request} is the page-request JSON path, {result} is where the consumer must write its page-result JSON, {work_dir} is the dispatch directory. A result is accepted only when it validates and echoes its request exactly (collect_launch_receipts rules). S49-08 assembly (this revision): seven roles are wired (six, plus checkout design-only) (landing via landing_bridge.py, downsell_1 via downsell_wrapper.py, upsell_1 and upsell_2 via separate upsell_wrapper.py invocations, thank_you via translate_thank_you_result.py, all shipped in 49-signature-funnel/scripts/; product_selection via Skill 78's native emitter chain, re-pointed by the config retirement candidate); the /path/to/ entries keep this file's example convention and are replaced with real install paths at deployment. checkout is wired DESIGN-ONLY (funnel_structure.json page_role_map.page_types.checkout, adapter design_only): checkout_wrapper.py produces the order form page's desktop and mobile wireframes and mockups through Skill 71's shared image service, and never builds or binds the form, which per CR-S49-003 stays the native Convert and Flow form installed by Skill 06. checkout needs the approved checkout copy (--manuscript, written from the approved references in the Skill 79 checkout request), the run's measured design system staged as {work_dir}/design-prose-checkout.json (--design-prose, a required staged input: without it the default image-model prompt band refuses every checkout section for falling below the 16000-char floor and the wrapper fails closed before any wireframe or mockup), the approved brand file, the recorded brand owner, the image cap and the client's design style A, B or C. downsell_1 is wired via downsell_wrapper.py to the Skill 81 consumer (Skill 81 landed on main in PR #2229 and the wrapper shipped in PR #2237; this sentence replaces the pre-landing text that said downsell_1 was not wired, a comment-only cure). A role with no adapter entry makes dispatch fail closed for that role rather than pretend. Per-role notes: landing also needs the bridge config named by --bridge-config (Skill 71 tree root plus the landing operator values page_version, page_kind sales or opt_in, brand_owner and image_cap; the bridge refuses to run when any operator value is missing; which landing pages a funnel gets (the signature landing page, the signature sales page, or both) is the client's intake choice, never a rule of the bridge (scripts/page_set.py; the recommended set is flagged to confirm until they choose): the landing command passes --landing-pages {landing_pages} (the client's set as dispatch planned it, the recommended set when they did not choose) and the bridge REFUSES a config that builds another set, and dispatch refuses a landing_bridge.py command without the placeholder: page_kind sales builds the sales page, an opt_in object with its own run_dir adds the signature landing (opt-in) page, which is Long-Form only, so that config sets page_version long-form and the dispatch copy_profile is long-form, and the two pages are built side by side; add landing.image_inputs and landing.manuscript (landing.opt_in.manuscript is the opt-in page's own copy) and the bridge also draws the page's wireframe and mockup stages with the client's design style) and consent statements reach the popup only via landing.consent_statements in that config. Upsell runs need the operator-staged work-dir inputs named in the command (launch.json, the per-instance copy document, the verified journey state, the enrichment sidecar) and the Skill 80 tree at the --produce path. product_selection takes one per-launch input, the approved launch record JSON named inside its command, which must be set for the launch before dispatching; the S44/S79 native mapping rows are no longer an adapter input, because the checkout_targets enrichment stays S49-side per CR-S49-002 and is not consumed by the native emitter chain. RETIREMENT DISCHARGED: Skill 78's native emitter fix landed in PR #2232 (batch train #2235), and the product_selection entry in this revision IS the native entrypoint (plan builder, then emit_page_result.py with --output and the request as echo source). selection_wrapper.py is retired as the seam mechanism and stays in the tree as built history and as the checkout_targets enrichment library; retirement is a routing fact, not a deletion (S49 retirement record, 2026-10-17). thank_you needs the Skill 82 thank-you result document and its companion run manifest in the work dir, and the dispatch run session id in --author-session. The thank_you entry chains two commands the way the product_selection entry does: first Skill 71's shared image service (shared_page_service.py with --page-version thank-you, so the page is drawn with its own five canonical sections from 71-blackceo-signature-page/references/copy-specs/thank-you-v1.json and never a landing page's twelve), whose pipeline command is run_page_role_stages.py (the one request builder and the one executor: desktop and mobile wireframes and mockups, one long PDF per stage, overview boards; stub provider unless the operator adds --provider kie --allow-paid; the Design Board and final-mockups follow after client approval), then the translator. It needs four more per-launch inputs: the brand owner, the brand file, the manuscript copy-thank_you.md and design-prose.json in the work dir. Every role's four image stages are produced by Skill 71's shared image service (71-blackceo-signature-page/scripts/shared_page_service.py) and called once from that role's wrapper. For product_selection that call is 78-signature-product-selection/scripts/run_image_stages.py, the middle step of the command (the page result is written only after it succeeds): it admits the page as page_role product_selection, turns the approved plan into the five-section order page copy and runs Skill 71's stage_executor for the desktop wireframe, mobile wireframe and visual mockup stages. The per-launch inputs file names the route graph, brand file, brand owner, image cap and design style (A, B or C); the literal value none is refused, because a funnel with an order page gets all its pages and the order page images are never skipped. The adapter never passes --allow-paid, so a dispatched run is free (placeholder images); a paid run is the same wrapper run by hand with --allow-paid. Image stages: upsell_1 and upsell_2 are WIRED. With --bridge-config (the landing bridge config: Skill 71 root plus brand owner, image cap and brand file; add landing.design_style A, B or C) upsell_wrapper.py hands the page to Skill 71's page-type runner (71-blackceo-signature-page/scripts/run_page_type.py), which calls shared_page_service.py, builds one eight-section production request per stage and runs the desktop wireframe, mobile wireframe and mockup stages in <work_dir>/images-<slot>; --image-provider stub is free and draws placeholders, and kie (with --allow-paid) is the paid provider that also writes the review PDFs and overview boards; without --bridge-config the wrapper says on stderr that no images were made. The Design Board and final-mockups follow after the image chain and the client's recorded approval. Wired to the image service in this revision: product_selection, checkout (design-only), the upsell roles, downsell_1 and thank_you (shared_page_service.py, then run_page_role_stages.py); the landing page is Skill 71's own page, built through landing_bridge.py. downsell_1 (SPF030): the four trailing flags --skill71-root, --brand-file, --brand-owner and --image-cap make downsell_wrapper.py call Skill 71's shared image service once, so the downsell page gets desktop and mobile wireframes and the visual mockup (eight sections, from 71-blackceo-signature-page/references/page-structures.json); omit them for the copy-and-contract checks alone. The default image provider is the offline stub; a paid run adds --image-provider kie --allow-paid with the owner's approval. EVERY PAGE TYPE, EVERY SHAPE (LANE-49): structure/page_types.json is the one list of pages (signature landing page, signature sales page, order page, order form / checkout, upsell 1 and 2, downsell 1 and 2, thank-you) with the exact design files each must end with: desktop and mobile wireframe sections and review PDFs, desktop and mobile mockup sections and review PDFs, and overview boards; scripts/page_set.py plans the pages for any funnel shape (single offer, multiple options, folded levels, free entry, legacy 3, 5 and 7 step). The free stub provider makes the section images only; the review PDFs and boards are composed on the paid provider, so a stub run is reported as images only, render pending, never as complete. SHARED IMAGE INPUTS: dispatch_launch.py --image-inputs <image_inputs.json> writes {work_dir}/image-inputs.json (design style A, B or C, brand file, brand owner, image cap, provider, the paid-render approval reference, and after the landing page the visual bible) and every command may take it as --image-inputs {image_inputs} in place of the per-launch brand, owner, cap and style flags (checkout_wrapper.py, downsell_wrapper.py, upsell_wrapper.py, shared_page_service.py); a flag typed on the command still wins, the paid provider needs the client's recorded approval, and an agnes launch is refused by name. PARALLEL: dispatch_launch.py --parallel (default auto: the runner profile's workers, Mac 6, Hostinger 8, Contabo 4; 1 is one page at a time) builds every page, the landing page too, side by side, within the 20 starts per 10 seconds KIE limit and the image cap. downsell_2: the second downsell is a design page the client opts into (--extra-page downsell_2); it rides on the downsell_1 request through downsell_wrapper.py --role-instance downsell_2, its files are page-request-downsell_2.json and page-result-downsell_2.json, and it is labelled Downsell 2 on every file.",
   "adapters": {
+    "checkout": {
+      "command": [
+        "python3",
+        "/path/to/49-signature-funnel/scripts/checkout_wrapper.py",
+        "--request",
+        "{request}",
+        "--result",
+        "{result}",
+        "--manuscript",
+        "{work_dir}/copy-checkout.md",
+        "--design-prose",
+        "{work_dir}/design-prose-checkout.json",
+        "--launch",
+        "{work_dir}/launch.json",
+        "--route-graph",
+        "{work_dir}/route-graph.json",
+        "--brand-file",
+        "<approved brand file>",
+        "--brand-owner",
+        "<recorded brand owner>",
+        "--image-cap",
+        "<image cap>",
+        "--design-style",
+        "<A|B|C>",
+        "--run-dir",
+        "{work_dir}/checkout-run",
+        "--skill71-root",
+        "/path/to/71-blackceo-signature-page"
+      ],
+      "timeout_s": 1800
+    },
     "downsell_1": {
       "command": [
         "python3",
@@ -32,6 +63,29 @@
       ],
       "timeout_s": 1800
     },
+    "downsell_2": {
+      "command": [
+        "python3",
+        "/path/to/49-signature-funnel/scripts/downsell_wrapper.py",
+        "--role-instance",
+        "downsell_2",
+        "--request",
+        "{request}",
+        "--result",
+        "{result}",
+        "--launch",
+        "{work_dir}/launch.json",
+        "--route-graph",
+        "{work_dir}/route-graph.json",
+        "--copy",
+        "{work_dir}/copy-downsell_2.json",
+        "--skill71-root",
+        "/path/to/71-blackceo-signature-page",
+        "--image-inputs",
+        "{image_inputs}"
+      ],
+      "timeout_s": 1800
+    },
     "landing": {
       "command": [
         "python3",
@@ -43,7 +97,9 @@
         "--work-dir",
         "{work_dir}",
         "--bridge-config",
-        "/path/to/landing-bridge-config.json"
+        "/path/to/landing-bridge-config.json",
+        "--landing-pages",
+        "{landing_pages}"
       ],
       "timeout_s": 1800
     },
@@ -59,7 +115,7 @@
       "command": [
         "bash",
         "-c",
-        "python3 /path/to/71-blackceo-signature-page/scripts/shared_page_service.py --request \"{request}\" --run-dir \"{work_dir}/thank_you-run\" --page-version thank-you --brand-owner \"<per-launch: brand owner>\" --image-cap 1 --brand-file \"<per-launch: brand file>\" --launch-record \"{work_dir}/launch.json\" --route-graph \"{work_dir}/route-graph.json\" --pipeline-command \"python3 /path/to/71-blackceo-signature-page/scripts/run_page_role_stages.py {work_dir}/thank_you-run --manuscript {work_dir}/copy-thank_you.md --design-prose {work_dir}/design-prose.json\" && python3 /path/to/49-signature-funnel/scripts/translate_thank_you_result.py \"{request}\" \"{result}\" \"{work_dir}\" --author-session \"<dispatch run session id>\""
+        "python3 /path/to/71-blackceo-signature-page/scripts/shared_page_service.py --request \"{request}\" --run-dir \"{work_dir}/thank_you-run\" --page-version thank-you --brand-owner \"<per-launch: brand owner>\" --image-cap 1 --brand-file \"<per-launch: brand file>\" --launch-record \"{work_dir}/launch.json\" --route-graph \"{work_dir}/route-graph.json\" --pipeline-command \"python3 /path/to/71-blackceo-signature-page/scripts/run_page_role_stages.py {work_dir}/thank_you-run --manuscript {work_dir}/copy-thank_you.md --design-prose {work_dir}/design-prose.json\" && python3 /path/to/49-signature-funnel/scripts/translate_thank_you_result.py \"{request}\" \"{result}\" \"{work_dir}\" --images-run-dir \"{work_dir}/thank_you-run\" --author-session \"<dispatch run session id>\""
       ],
       "timeout_s": 1800
     },
@@ -114,37 +170,6 @@
         "/path/to/landing-bridge-config.json",
         "--image-provider",
         "stub"
-      ],
-      "timeout_s": 1800
-    },
-    "checkout": {
-      "command": [
-        "python3",
-        "/path/to/49-signature-funnel/scripts/checkout_wrapper.py",
-        "--request",
-        "{request}",
-        "--result",
-        "{result}",
-        "--manuscript",
-        "{work_dir}/copy-checkout.md",
-        "--design-prose",
-        "{work_dir}/design-prose-checkout.json",
-        "--launch",
-        "{work_dir}/launch.json",
-        "--route-graph",
-        "{work_dir}/route-graph.json",
-        "--brand-file",
-        "<approved brand file>",
-        "--brand-owner",
-        "<recorded brand owner>",
-        "--image-cap",
-        "<image cap>",
-        "--design-style",
-        "<A|B|C>",
-        "--run-dir",
-        "{work_dir}/checkout-run",
-        "--skill71-root",
-        "/path/to/71-blackceo-signature-page"
       ],
       "timeout_s": 1800
     }

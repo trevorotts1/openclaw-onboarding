@@ -39,11 +39,14 @@ def load_spec(form: str) -> dict:
 
 
 def form_for_role(page_role) -> str | None:
-    """The non-landing form a page role's images are built from (spec `page_role`), else None."""
+    """The non-landing form a page role's images are built from (spec `page_role`, or one of the
+    spec's `page_roles` when a form serves several roles, as the upsell form serves upsell_1 and
+    upsell_2), else None."""
     for form in FORMS:
         if form in LANDING_FORMS:
             continue
-        if load_spec(form).get("page_role") == page_role:
+        spec = load_spec(form)
+        if page_role == spec.get("page_role") or page_role in (spec.get("page_roles") or ()):
             return form
     return None
 

@@ -418,6 +418,10 @@ def main(argv: List[str]) -> int:
                     help="S82 companion run manifest (default: "
                          "<work_dir>/thank-you-run-manifest.json, else "
                          "beside the request)")
+    ap.add_argument("--images-run-dir", default=None,
+                    help="the thank-you page's Skill 71 image run folder: every design "
+                         "file in it (section images, PDFs, boards) is listed in the "
+                         "page-result beside the S82 artifacts")
     ap.add_argument("--author-session", default=None,
                     help="the dispatch run's session identity (the "
                          "page-result author); falls back to "
@@ -449,6 +453,12 @@ def main(argv: List[str]) -> int:
     except TranslationError as exc:
         print(f"TRANSLATION REFUSED: {exc}")
         return EXIT_VIOLATION
+    if args.images_run_dir:
+        import page_set
+        found = {a["path"]: a for a in out["artifacts"]}
+        found.update({a["path"]: a for a in
+                      page_set.design_artifacts("thank_you", Path(args.images_run_dir))})
+        out["artifacts"] = [found[k] for k in sorted(found)]
     Path(args.result).write_text(json.dumps(out, indent=2) + "\n",
                                  encoding="utf-8")
     print(json.dumps({"translated": True, "status": out["status"],
