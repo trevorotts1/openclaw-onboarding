@@ -197,7 +197,7 @@
     if (why.steps.length) {
       var ol = el('ol', 'ch-dec-why-steps');
       why.steps.forEach(function (t) { ol.appendChild(el('li', '', t)); });
-      if (why.moreSteps > 0) ol.appendChild(el('li', 'ch-dec-why-more', 'And ' + why.moreSteps + ' more, listed in the full verdict.'));
+      if (why.moreSteps > 0) ol.appendChild(el('li', 'ch-dec-why-more', 'And ' + why.moreSteps + ' more, listed in Key Points.'));
       cols.appendChild(whyBlock('ch-dec-why-first', why.stepsHeading || 'What has to happen first', ol));
     }
     var side = el('div', 'ch-dec-why-side');

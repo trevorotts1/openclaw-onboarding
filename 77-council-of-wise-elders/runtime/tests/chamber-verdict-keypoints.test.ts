@@ -62,7 +62,7 @@ test('the verdict says why: what must happen first, the evidence in words, and t
   assert.match(why.evidence, /^Low\. /);
   assert.equal(why.support, 'All 9 elders back it, each with conditions.');
   // Nobody voted against it, so the verdict has no dissent; the sharpest caution is credited by name.
-  assert.equal(why.dissent.lead, 'Sharpest caution');
+  assert.equal(why.dissent.lead, 'A caution');
   assert.equal(why.dissent.by, 'Simon Sinek');
 });
 
@@ -217,8 +217,35 @@ test('decision header draws the Why and hides it when there is no verdict', () =
   const t = words(why);
   assert.match(t, /What has to happen first/);
   assert.match(t, /How strong the evidence is/);
-  assert.match(t, /Sharpest caution, from Simon Sinek/);
+  assert.match(t, /A caution, from Simon Sinek/);
   push({ session: { ...sv, verdict: null } });
   assert.equal(why.hidden, true);
   assert.equal(why.children.length, 0);
+});
+
+test('a Go-with-conditions verdict with no action proposals lists its main reasons, never "the points below" over nothing', () => {
+  const ns = load(['chamber-seats.js', 'chamber-state.js']);
+  const rec = plain(fx.readback.session);
+  rec.verdict = {
+    result_kind: 'scored', label: 'GO_WITH_CONDITIONS', recommended_option_id: rec.verdict.recommended_option_id,
+    main_reasons: ['Crux-1: skipped on purpose.', 'Eight of nine advisors back a ten-client pilot.', 'A firm 90-day review date is the condition attached.']
+  };
+  const why = plain(ns.state.view(ns.state.create(rec), 0).verdict.why);
+  assert.equal(why.stepsHeading, 'Why the elders landed here');
+  assert.deepEqual(why.steps, ['Eight of nine advisors back a ten-client pilot.', 'A firm 90-day review date is the condition attached.']);
+  assert.match(why.headline, /^Go, with conditions\./);
+  rec.verdict.main_reasons = [];
+  const bare = plain(ns.state.view(ns.state.create(rec), 0).verdict.why);
+  assert.equal(bare.steps.length, 0);
+  assert.doesNotMatch(bare.headline, /points below/);
+});
+
+test('one opposing elder reads "1 opposes"', () => {
+  const ns = load(['chamber-seats.js', 'chamber-state.js']);
+  const rec = plain(fx.readback.session);
+  const fin = rec.cards.find((c: Any) => c.round === 3 && c.card_kind === 'ratification');
+  fin.stance = 'oppose';
+  fin.resolution_stance = 'oppose';
+  const why = plain(ns.state.view(ns.state.create(rec), 0).verdict.why);
+  assert.match(why.support, /; 1 opposes\.$/);
 });

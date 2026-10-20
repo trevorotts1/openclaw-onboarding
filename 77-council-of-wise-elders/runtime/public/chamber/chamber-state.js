@@ -379,7 +379,7 @@
     var cond = fin.filter(function (e) { return e.card.resolution_stance === 'conditional_support' || e.card.stance === 'conditional'; }).length;
     var opp = fin.filter(function (e) { return e.card.stance === 'oppose' || e.card.resolution_stance === 'oppose'; }).length;
     if (cond === fin.length) return 'All ' + fin.length + ' elders back it, each with conditions.';
-    return (fin.length - opp) + ' of ' + fin.length + ' elders back it' + (cond ? ', ' + cond + ' with conditions' : '') + (opp ? '; ' + opp + ' oppose' : '') + '.';
+    return (fin.length - opp) + ' of ' + fin.length + ' elders back it' + (cond ? ', ' + cond + ' with conditions' : '') + (opp ? '; ' + opp + (opp === 1 ? ' opposes' : ' oppose') : '') + '.';
   }
 
   var EVIDENCE_TEXT = {
@@ -389,12 +389,12 @@
     insufficient: 'Not enough evidence to judge this.'
   };
 
-  function whyHeadline(label, rec) {
+  function whyHeadline(label, rec, hasSteps) {
     var named = rec ? ' ' + rec : '';
     switch (label) {
-      case 'WAIT': return 'Wait. The elders lean toward' + (rec ? named : ' an option') + ', but it should not start until the points below are settled.';
+      case 'WAIT': return 'Wait. The elders lean toward' + (rec ? named : ' an option') + ', but it should not start ' + (hasSteps ? 'until the points below are settled.' : 'yet.');
       case 'GO': return 'Go. The elders back' + (rec ? named : ' this') + ' as it stands.';
-      case 'GO_WITH_CONDITIONS': return 'Go, with conditions. The elders back' + (rec ? named : ' this') + ' once the points below are in place.';
+      case 'GO_WITH_CONDITIONS': return 'Go, with conditions. The elders back' + (rec ? named : ' this') + (hasSteps ? ' once the points below are in place.' : ' with conditions attached.');
       case 'RESHAPE': return 'Reshape. The elders want the option changed before anyone goes ahead.';
       case 'DONT_DO_IT': return 'Do not do it. The elders advise against this.';
       case 'INSUFFICIENT_EVIDENCE': return 'Not enough evidence. The elders could not judge this with what was supplied.';
@@ -413,6 +413,10 @@
       v.critical_unknowns.forEach(function (t) { if (text(t)) steps.push(text(t)); });
       if (steps.length) heading = 'What is still unknown';
     }
+    if (!steps.length && Array.isArray(v.main_reasons)) {
+      v.main_reasons.forEach(function (t) { if (text(t) && !/^Crux-\d+\b/.test(text(t))) steps.push(text(t)); });
+      if (steps.length) heading = 'Why the elders landed here';
+    }
     var shown = steps.slice(0, 4);
     var strength = text(v.evidence_strength);
     var dissent = null;
@@ -423,10 +427,10 @@
       dissent = { lead: 'Strongest dissent', text: sd, by: who ? nameOf(who) : null };
     } else {
       var mins = cardsOf(m, 2).filter(function (e) { return text(e.card.minority_position); });
-      if (mins.length) dissent = { lead: 'Sharpest caution', text: text(mins[0].card.minority_position), by: nameOf(mins[0].id) };
+      if (mins.length) dissent = { lead: 'A caution', text: text(mins[0].card.minority_position), by: nameOf(mins[0].id) };
     }
     return {
-      headline: whyHeadline(text(v.label), rec),
+      headline: whyHeadline(text(v.label), rec, steps.length > 0),
       stepsHeading: heading, steps: shown, moreSteps: steps.length - shown.length,
       evidence: strength ? (has(EVIDENCE_TEXT, strength) ? EVIDENCE_TEXT[strength] : strength.charAt(0).toUpperCase() + strength.slice(1) + '.') : null,
       support: voteDetail(m),
