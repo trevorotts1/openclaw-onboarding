@@ -1,0 +1,121 @@
+{
+  "id": "failed-payment-recovery",
+  "name": "Failed Payment Recovery (payment plans only)",
+  "aliases": [
+    "failed payment recovery",
+    "payment failed sequence",
+    "card declined recovery",
+    "dunning sequence",
+    "payment plan recovery",
+    "past due payment reminder"
+  ],
+  "category": "launch-c",
+  "family": "failed_payment",
+  "template_start": "new, small",
+  "summary": "Small recovery workflow for a payment plan whose scheduled charge fails. Transactional only: it points the buyer at the update-payment link, repeats once by SMS only when A2P is approved, checks for a successful payment between every step, and exits the instant the payment recovers or the client's dunning window ends. No promotional copy, no invented amount or deadline — every value comes from the offer and the processor.",
+  "gate": {
+    "field": "offer.payment_plans",
+    "equals": true,
+    "when_false": "omit this automation entirely — do not create the workflow, and the package records 'failed payment: not applicable (offer has no payment plans)'",
+    "source": "launch_plan.offer.payment_plans (shared-utils/signature_launch_contract/launch-plan.schema.json)"
+  },
+  "draft_only": true,
+  "trigger": {
+    "primary_event": "Payment failed on an installment / payment plan",
+    "ghl_trigger": "Payment Failed (subscription / recurring invoice) — not auto-built by CampaignBuilder; built with engine patch-trigger or the Tier-4 managed browser (see U-GHL-PROBE)",
+    "entry_conditions": [
+      "Contact has an active payment plan (the offer is paid in installments)",
+      "The processor reports a failed scheduled charge for that plan",
+      "A recoverable payment method update link exists for this location"
+    ],
+    "exit_conditions": [
+      "Payment succeeds → tag `payment-recovered`; stop every remaining step",
+      "Buyer updates the card but the retry has not run yet → stay on the retry check",
+      "Plan is intentionally cancelled → tag `payment-plan-cancelled`; stop",
+      "Client's dunning window ends → tag `payment-recovery-exhausted`; stop, no more messages",
+      "Opt-out / DND"
+    ],
+    "segmentation_inputs": [
+      "First failed attempt vs repeat failure on the same plan",
+      "A2P approved (SMS allowed) vs email only",
+      "Amount due and next retry date as reported by the processor"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "step": "1 — Immediate recovery email",
+      "delay": "Immediately on the failed charge",
+      "channel": "Email",
+      "subject_angle": "\"Your payment didn't go through — here's the one-click fix\"",
+      "body_framework": "Plain, no shame, no scare copy. State that the scheduled payment for {plan_amount} did not go through, give the single update-payment link, and say access stays as it is until the retry. One CTA, nothing else.",
+      "copy_notes": "Amount and retry date are read from the plan/receipt; never type a price or a date by hand. Do not claim access is suspended unless the client's own dunning rule actually suspends it."
+    },
+    {
+      "step": "2 — SMS nudge (only when A2P is approved)",
+      "delay": "+4 hours, inside the 8 a.m.–9 p.m. recipient-local window",
+      "channel": "SMS",
+      "subject_angle": null,
+      "body_framework": "One sentence + the same update-payment link. Ends with a reply invitation and STOP. Skipped entirely when launch_plan.a2p_ready is false.",
+      "copy_notes": "Same link as step 1. No new claim, no new deadline."
+    },
+    {
+      "step": "3 — Retry check + follow-up email",
+      "delay": "+2 days (or the processor's own retry date if later)",
+      "channel": "Email",
+      "subject_angle": "\"Quick check on your payment — still needs updating\"",
+      "body_framework": "If/Else on `payment-recovered`: TRUE → end (Goal: payment recovered). FALSE → short reminder with the same link and the processor's stated next retry date. Nothing else.",
+      "copy_notes": "The if/else runs before the send so a recovered buyer is never chased."
+    },
+    {
+      "step": "4 — Final notice + human reply path",
+      "delay": "+3 days after step 3",
+      "channel": "Email",
+      "subject_angle": "\"Last reminder about your payment\"",
+      "body_framework": "If/Else on `payment-recovered`: TRUE → end. FALSE → one short paragraph: this is the last automatic reminder, the link to update, and an invitation to reply if the plan needs changing. Name only the consequence the client actually configured (for example 'your plan will be cancelled' only if it will be).",
+      "copy_notes": "No invented consequence, no invented deadline. The client's own dunning setting is the only source for what happens next."
+    },
+    {
+      "step": "5 — Close out",
+      "delay": "After step 4",
+      "channel": "Tag",
+      "subject_angle": null,
+      "body_framework": "Add tag `payment-recovery-exhausted` only when the plan is still unpaid and the client's window has ended. Remove the working tag `payment-failed-active`.",
+      "copy_notes": "Transactional workflow; it never adds a buyer to a promotional sequence."
+    }
+  ],
+  "ghl_build": {
+    "engine": "Skill 44 engine (caf / CampaignBuilder) — the official GHL API cannot create, update, publish or trigger a workflow (U-GHL-PROBE, 2026-10-20)",
+    "build_rail": "skill44_engine",
+    "workflow_name": "Launch C — Failed Payment Recovery",
+    "draft_only": true,
+    "trigger_config": {
+      "ghl_trigger": "Payment Failed",
+      "build_note": "CampaignBuilder only auto-creates a Tag Added trigger; use `caf workflows patch-trigger --trigger-json <file>` (snapshot before write) or the Tier-4 managed browser for the Payment Failed trigger."
+    },
+    "actions_in_order": [
+      "1. Send Email — recovery email (step 1)",
+      "2. Wait — 4 hours (SMS step is skipped when a2p_ready is false)",
+      "3. Send SMS — recovery nudge (step 2)",
+      "4. Wait — 2 days",
+      "5. If/Else — contact has tag `payment-recovered`? TRUE -> workflow_goal: payment recovered (end). FALSE -> continue",
+      "6. Send Email — retry follow-up (step 3)",
+      "7. Wait — 3 days",
+      "8. If/Else — contact has tag `payment-recovered`? TRUE -> end. FALSE -> continue",
+      "9. Send Email — final notice (step 4)",
+      "10. Add tag `payment-recovery-exhausted`; remove tag `payment-failed-active`"
+    ],
+    "goal_event": "Successful payment → `payment-recovered` tag; wired as a workflow GOAL so a recovered buyer exits immediately.",
+    "tags_used": ["payment-failed-active", "payment-recovered", "payment-recovery-exhausted", "payment-plan-cancelled"],
+    "notes": "Duration waits only in the API builder; any calendar-date wait needs the managed browser. Every step stays inactive until a separate client approval switches it live."
+  },
+  "source": {
+    "spec": "launch-automations.spec.md §3.3 — 'Failed payment | Only if the offer has payment plans → recovery | new, small'",
+    "capability": "44-convert-and-flow-operator/automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md",
+    "fidelity_note": "Small by design. Amounts, retry dates and consequences are read from the offer and the processor; none are invented here."
+  },
+  "flexibility": {
+    "principle": "Recommended default, never a requirement. An explicit client request wins over this template.",
+    "note": "The gate is the one hard rule: no payment plans means this family is not built."
+  }
+}
