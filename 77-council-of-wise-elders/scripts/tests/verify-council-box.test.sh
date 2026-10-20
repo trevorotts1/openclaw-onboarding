@@ -12,9 +12,10 @@ REAL_NODE="$(command -v node)" || { echo "FAIL node required"; exit 2; }
 NODE_DIR="$(dirname "$REAL_NODE")"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/verify-council-box-test.XXXXXX")"
-PIDS=""
+PIDFILE="$WORK/pids" # start_server runs in a command substitution, so pids go to a file, not a variable
+: > "$PIDFILE"
 cleanup() {
-  for p in $PIDS; do kill "$p" 2>/dev/null; done
+  for p in $(cat "$PIDFILE" 2>/dev/null); do kill "$p" 2>/dev/null; done
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -38,6 +39,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(open(routes, "rb").read())
             else:
                 self.send_response(404); self.end_headers()
+        elif mode == "public-frontdoor":
+            # copies runtime/src/service/front-door.ts: / redirects to /chamber/, no auth anywhere
+            if self.path == "/":
+                self.send_response(302); self.send_header("Location", "/chamber/"); self.end_headers()
+            else:
+                self.send_response(200); self.end_headers(); self.wfile.write(b"open")
         elif mode == "public-open":
             self.send_response(200); self.end_headers(); self.wfile.write(b"chamber")
         elif mode == "public-access":
@@ -53,7 +60,7 @@ start_server() { # mode routes-file -> echoes "<pid> <port>"
   local pf="$WORK/port.$$.$RANDOM"
   python3 "$WORK/serve.py" "$pf" "$1" "${2:-/dev/null}" >/dev/null 2>&1 &
   local pid=$!
-  PIDS="$PIDS $pid"
+  echo "$pid" >> "$PIDFILE"
   local i=0
   while [ ! -s "$pf" ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
   echo "$pid $(cat "$pf")"
@@ -146,6 +153,12 @@ set -- $(start_server public-open); P200=$2
 F6="$(mkfix c6 external "$OPORT" "http://127.0.0.1:$P200")"
 run "$F6"
 expect "public_origin answering 200 -> NOT_READY ACCESS_GATE_OPEN" "COUNCIL_BOX: NOT_READY ACCESS_GATE_OPEN" 1
+
+# 8b. open address whose / answers 302 to its own /chamber/ (the real front door) is still open
+set -- $(start_server public-frontdoor); PFD=$2
+F6B="$(mkfix c6b external "$OPORT" "http://127.0.0.1:$PFD")"
+run "$F6B"
+expect "public_origin open, / answers 302 to /chamber/ -> NOT_READY ACCESS_GATE_OPEN" "COUNCIL_BOX: NOT_READY ACCESS_GATE_OPEN" 1
 
 # 9. public origin 302 to cloudflareaccess.com passes, box is READY
 set -- $(start_server public-access); P302=$2

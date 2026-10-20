@@ -24,7 +24,7 @@
 #                                              else NOT_READY NO_USABLE_ROUTE
 #   6. blackceo-council resolves               else DEGRADED CLI_SHIM_MISSING
 #   7. public_origin set                       else DEGRADED PUBLIC_ORIGIN_UNSET
-#      GET <public_origin>/ without following redirects: a 3xx to
+#      GET <public_origin>/status without following redirects: a 3xx to
 #      *.cloudflareaccess.com passes; 200 is NOT_READY ACCESS_GATE_OPEN (a
 #      security failure); anything else is DEGRADED ACCESS_GATE_MISSING
 #   8. pm2 boxes only: pm2 jlist lists a cloudflared app
@@ -240,16 +240,21 @@ fi
 if [ -z "$PUBLIC_ORIGIN" ]; then
   dg PUBLIC_ORIGIN_UNSET "public-origin" "public_origin is null in $P/service.json; the client has no chamber link yet (operator runs provision-council-access.sh --apply)"
 else
-  http "${PUBLIC_ORIGIN%/}/"
+  # Probe /status, not /: the service answers / with a 302 to its own /chamber/,
+  # which an open address would return too. /status is always a 2xx when open.
+  GATE_URL="${PUBLIC_ORIGIN%/}/status"
+  http "$GATE_URL"
   REDIR_HOST="$(printf '%s' "$HREDIR" | sed -e 's#^[a-zA-Z]*://##' -e 's#[/:?].*$##')"
+  PUB_HOST="$(printf '%s' "$PUBLIC_ORIGIN" | sed -e 's#^[a-zA-Z]*://##' -e 's#[/:?].*$##')"
   case "$HCODE" in
     301|302|303|307|308)
       case "$REDIR_HOST" in
-        *.cloudflareaccess.com) ok "access-gate" "GET ${PUBLIC_ORIGIN%/}/ answered $HCODE to $REDIR_HOST (Cloudflare Access sign-in)" ;;
-        *) dg ACCESS_GATE_MISSING "access-gate" "GET ${PUBLIC_ORIGIN%/}/ answered $HCODE to '${REDIR_HOST}', not *.cloudflareaccess.com" ;;
+        *.cloudflareaccess.com) ok "access-gate" "GET $GATE_URL answered $HCODE to $REDIR_HOST (Cloudflare Access sign-in)" ;;
+        "$PUB_HOST") nr ACCESS_GATE_OPEN "access-gate" "GET $GATE_URL answered $HCODE to its own host $PUB_HOST with no Access sign-in: the chamber is open to the internet" ;;
+        *) dg ACCESS_GATE_MISSING "access-gate" "GET $GATE_URL answered $HCODE to '${REDIR_HOST}', not *.cloudflareaccess.com" ;;
       esac ;;
-    200) nr ACCESS_GATE_OPEN "access-gate" "GET ${PUBLIC_ORIGIN%/}/ answered 200 with no Access sign-in: the chamber is open to the internet" ;;
-    *) dg ACCESS_GATE_MISSING "access-gate" "GET ${PUBLIC_ORIGIN%/}/ answered $HCODE, expected a 3xx to *.cloudflareaccess.com (000 means no connection)" ;;
+    2??) nr ACCESS_GATE_OPEN "access-gate" "GET $GATE_URL answered $HCODE with no Access sign-in: the chamber is open to the internet" ;;
+    *) dg ACCESS_GATE_MISSING "access-gate" "GET $GATE_URL answered $HCODE, expected a 3xx to *.cloudflareaccess.com (000 means no connection)" ;;
   esac
 fi
 
