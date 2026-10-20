@@ -451,7 +451,7 @@ class PipelineTests(RunCase):
             [PY, str(SCRIPTS / "shared_page_service.py"), "--request", str(Path(td) / "request.json"),
              "--run-dir", str(Path(td) / run_name), "--page-version", version, "--brand-owner", "Acme Owner",
              "--image-cap", "1", "--brand-file", str(brand), "--launch-record", str(Path(td) / "launch.json"),
-             "--route-graph", str(Path(td) / "graph.json"), "--pipeline-command", "true"],
+             "--route-graph", str(Path(td) / "graph.json"), "--validation-only"],
             capture_output=True, text=True), Path(td) / run_name
 
     def test_the_shared_service_admits_the_page_under_its_own_form_only(self):
