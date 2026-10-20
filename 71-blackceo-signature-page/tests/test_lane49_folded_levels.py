@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(SCRIPTS))
 import deliverable_labels as labels  # noqa: E402
 import page_kinds as pk  # noqa: E402
+import stage_executor as executor  # noqa: E402
 import wireframe_spec as w  # noqa: E402
 from brand_fixture import give_blackceo_colors  # noqa: E402
 
@@ -96,6 +97,17 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         self.assertNotIn("folded_levels", self.request())
         self.write_run_launch("folded_levels", 3)
         self.assertNotIn("folded_levels", self.request("opt_in"))
+
+    def test_the_visual_mockup_prompt_closes_on_the_levels_panel_too(self):
+        self.write_run_launch("folded_levels", 3)
+        request = builder.build("visual-mockup", "long-form", MANUSCRIPT.read_text(encoding="utf-8"), {}, {}, [],
+                                "STUB-NO-MODEL", "", self.run, page_kind="sales")
+        (self.run / "production-request.json").write_text(json.dumps(request), encoding="utf-8")
+        loaded = executor.load_request(self.run, "production-request.json")
+        sections = loaded["sections"]
+        last = executor.stage_prompt("visual-mockup", sections[-1], len(sections), 1440, loaded, "3:2")
+        self.assertIn("exactly 3 level cards", last)
+        self.assertNotIn("one full-width closing checkout panel", last)
 
     def test_the_stamped_request_still_preflights(self):
         self.write_run_launch("folded_levels", 3)

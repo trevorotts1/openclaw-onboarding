@@ -965,7 +965,10 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
         except page_kinds.KindError as exc:
             raise ExecutorError(str(exc))
     if kind and stage in hypersaturation.MOCKUP_STAGES:
-        body = f"{page_kinds.mockup_line(kind, closing)}\n\n{body}"
+        try:
+            body = f"{page_kinds.mockup_line(kind, closing, levels=request.get('folded_levels'))}\n\n{body}"
+        except page_kinds.KindError as exc:
+            raise ExecutorError(str(exc))
     copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,

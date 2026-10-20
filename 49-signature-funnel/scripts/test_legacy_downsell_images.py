@@ -16,6 +16,7 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 REPO = SCRIPTS.parents[1]
 TOOL = SCRIPTS / "legacy_downsell_images.py"
 SKILL71 = REPO / "71-blackceo-signature-page"
+CHECKOUT_MANUSCRIPT = SKILL71 / "tests" / "fixtures" / "copy_examples" / "checkout-example.md"
 BRAND = SKILL71 / "assets" / "brand" / "blackceo-brand.json"
 LEDGER = json.loads((SCRIPTS.parent / "examples" / "golden-daybreak" / "copy_ledger.json").read_text())
 sys.path.insert(0, str(SKILL71 / "scripts"))
@@ -113,6 +114,28 @@ class LegacyPageImagesTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 2, slug)
             self.assertIn(f"{slug}: the copy ledger page {needle}" if slug != "thank-you"
                           else f"{slug}: the copy ledger page must carry sections {needle}", proc.stderr)
+
+    def test_seven_step_checkout_is_drawn_from_the_staged_manuscript(self):
+        proc, out = self.run_tool(LEDGER, "--checkout-manuscript", str(CHECKOUT_MANUSCRIPT))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual(sorted(report["pages"]), sorted([*PAGES, "checkout"]))
+        self.assertEqual(report["not_built"], {})
+        page = report["pages"]["checkout"]
+        self.assertEqual(page["page_key"], "checkout")
+        self.assertEqual({k: v["images"] for k, v in page["stages"].items()},
+                         {"desktop-wireframe": 5, "mobile-tablet": 5, "visual-mockup": 10})
+
+    def test_checkout_manuscript_with_card_fields_is_refused(self):
+        bad = pathlib.Path(tempfile.mkdtemp()) / "checkout.md"
+        bad.write_text(CHECKOUT_MANUSCRIPT.read_text(encoding="utf-8") + "\nCard number field.\n", encoding="utf-8")
+        proc, _ = self.run_tool(LEDGER, "--page", "checkout", "--checkout-manuscript", str(bad))
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("native checkout form only", proc.stderr)
+
+    def test_without_the_manuscript_the_receipt_says_what_checkout_needs(self):
+        proc, _ = self.run_tool(LEDGER, "--page", "main")
+        self.assertIn("--checkout-manuscript", json.loads(proc.stdout)["not_built"]["checkout"])
 
     def test_paid_provider_needs_the_owner_flag(self):
         proc, _ = self.run_tool(LEDGER, "--image-provider", "kie")

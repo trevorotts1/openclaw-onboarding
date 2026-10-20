@@ -20,8 +20,11 @@ copied. The page copy comes from the run's copy ledger, and nothing is invented 
               only (no price, no order reference: the ledger has none). The two utility buttons
               take --access-label and --help-label.
 
-checkout is not built here: it is design-only, drawn by checkout_wrapper.py from an approved
-five-section checkout manuscript the legacy ledger does not carry (the receipt names it).
+checkout (7-step) is design-only and the legacy ledger carries no checkout copy, so it is drawn
+only when the owner stages the approved five-section checkout manuscript with
+--checkout-manuscript <file> ("## Section N: name" headings, the payment form named native only;
+card, expiry or security-code fields are refused). Without it the receipt names the page as not
+built and says what it needs. This tool never writes checkout copy.
 
   legacy_downsell_images.py --ledger <copy_ledger.json> --skill71-root <71 dir> \
       --brand-file <brand.json> --brand-owner <client> --out-dir <dir> [--page downsell-2]
@@ -44,6 +47,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import page_set  # noqa: E402
+from checkout_wrapper import CARD_FIELDS  # noqa: E402
 
 STRUCTURE = HERE.parent / "structure" / "funnel_structure.json"
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
@@ -54,8 +58,8 @@ MANUSCRIPT_PAGES = {
     "upsell-2": {"intake": {}, "build": ["--page-role", "upsell_2"]},
     "thank-you": {"intake": {"copy_version": "thank-you"}, "build": ["--copy-version", "thank-you"]},
 }
-NOT_BUILT = {"checkout": "design-only page: drawn by checkout_wrapper.py from an approved five-section "
-                         "checkout manuscript, which the legacy copy ledger does not carry"}
+NOT_BUILT = {"checkout": "design-only page: the legacy copy ledger carries no checkout copy; stage the approved "
+                         "five-section checkout manuscript and re-run with --checkout-manuscript <file>"}
 ROLES = ["big_bold_claim", "big_bold_pain_1", "big_bold_pain_2", "big_bold_pain_3",
          "big_bold_why", "big_bold_who", "big_bold_what", "when_time_runs_out"]
 
@@ -95,12 +99,14 @@ def page_object(ledger_page, slug, decline_label):
     return {"page": {"sections": sections, "decline_action": {"label": decline_label}}}
 
 
-def targets(structure, size, wanted, role_entries):
+def targets(structure, size, wanted, role_entries, checkout=False):
     """The matrix slugs this tool draws: every page of the funnel size except the ones named in
-    NOT_BUILT; a downsell page needs its entry in Skill 71 references/page-structures.json."""
+    NOT_BUILT (checkout joins when its manuscript is staged); a downsell page needs its entry in
+    Skill 71 references/page-structures.json."""
     matrix = structure["funnel_matrix"][str(size)]
     page_types = structure["page_role_map"]["page_types"]
-    found = [s for s in matrix if s in MANUSCRIPT_PAGES or page_types[s]["page_role"] in role_entries]
+    found = [s for s in matrix if s in MANUSCRIPT_PAGES or page_types[s]["page_role"] in role_entries
+             or (checkout and s == "checkout")]
     if wanted:
         bad = [w for w in wanted if w not in found]
         if bad:
@@ -179,7 +185,7 @@ def run_page(slug, structure, ledger, args, scripts, entries):
     run = args.out_dir / slug
     run.mkdir(parents=True, exist_ok=True)
     ledger_page = {p.get("page_type"): p for p in ledger.get("pages") or []}.get(slug)
-    if ledger_page is None:
+    if ledger_page is None and slug != "checkout":  # checkout copy is the staged manuscript, not the ledger
         raise Refused(f"{slug}: the copy ledger has no such page")
     entry = structure["page_role_map"]["page_types"][slug]
     role = entry["page_role"]
@@ -187,7 +193,16 @@ def run_page(slug, structure, ledger, args, scripts, entries):
     intake = {"brand_owner": args.brand_owner, "brand_file": str(args.brand_file.resolve()), "page_role": role}
     if entry.get("role_instance"):  # downsell-2: every file is labelled Downsell 2
         intake["role_instance"] = entry["role_instance"]
-    if slug in MANUSCRIPT_PAGES:
+    if slug == "checkout":
+        text = args.checkout_manuscript.read_text(encoding="utf-8")
+        if CARD_FIELDS.search(text):
+            raise Refused("checkout: the manuscript names card, expiry or security-code fields; the payment "
+                          f"form is the native checkout form only ({CARD_FIELDS.search(text).group(0)!r})")
+        manuscript = run / "copy" / "internal-manuscript.md"
+        manuscript.parent.mkdir(parents=True, exist_ok=True)
+        manuscript.write_text(text, encoding="utf-8")
+        build_args = ["--manuscript", str(manuscript), "--page-role", role]
+    elif slug in MANUSCRIPT_PAGES:
         cfg = MANUSCRIPT_PAGES[slug]
         manuscript = run / "copy" / "internal-manuscript.md"
         manuscript.parent.mkdir(parents=True, exist_ok=True)
@@ -226,6 +241,8 @@ def main(argv=None):
     ap.add_argument("--brand-owner", required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--page", action="append", help="a matrix slug to build (repeatable)")
+    ap.add_argument("--checkout-manuscript", type=Path,
+                    help="the approved five-section checkout manuscript; without it checkout is reported not built")
     ap.add_argument("--decline-label", default="No thanks",
                     help="the decline button label of the downsell pages (the legacy ledger carries none)")
     ap.add_argument("--access-label", default="Access Your Purchase",
@@ -252,9 +269,12 @@ def main(argv=None):
         size = ledger.get("funnel_size")
         if str(size) not in structure["funnel_matrix"]:
             raise Refused(f"copy ledger funnel_size {size!r} is not 3, 5 or 7")
-        slugs = targets(structure, size, args.page, entries)
+        if args.checkout_manuscript and not args.checkout_manuscript.is_file():
+            raise Refused(f"--checkout-manuscript {args.checkout_manuscript} is not a file")
+        slugs = targets(structure, size, args.page, entries, bool(args.checkout_manuscript))
         report = {"funnel_size": size, "pages": {},
-                  "not_built": {s: NOT_BUILT[s] for s in structure["funnel_matrix"][str(size)] if s in NOT_BUILT}}
+                  "not_built": {s: NOT_BUILT[s] for s in structure["funnel_matrix"][str(size)]
+                                if s in NOT_BUILT and not (s == "checkout" and args.checkout_manuscript)}}
         for slug in slugs:
             report["pages"][slug] = run_page(slug, structure, ledger, args, scripts, entries)
         report["note"] = ("the image inventory, generation, Design Board approval and final-mockups "

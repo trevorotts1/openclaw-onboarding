@@ -59,7 +59,7 @@ the wireframes close on that panel in a real run, not only in a hand-built reque
 The legacy 3, 5 and 7 step funnel gets the same: `scripts/legacy_downsell_images.py` (name kept) draws the
 wireframes and mockups of every page of the funnel size from the P1 copy ledger (sales page, upsell 1
 and 2, downsell 1 and 2, thank-you), checks each against `structure/page_types.json`, and names the
-checkout as design-only (`checkout_wrapper.py`, from an approved checkout manuscript the ledger lacks).
+checkout as design-only: it draws it too when given `--checkout-manuscript <the approved five-section checkout manuscript>` (the ledger has no checkout copy and `checkout_wrapper.py` needs a launch request legacy mode lacks), and otherwise says so in the receipt.
 
 ## Contracts
 
