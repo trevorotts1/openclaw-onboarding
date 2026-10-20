@@ -51,7 +51,7 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:noop",
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:intake_page_kind", "gate:noop",
                  "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
 
 
@@ -633,6 +633,32 @@ def run_builtin(name, args, run_dir):
                     "design_style_source client_choice or recommended_accepted; ask the client with "
                     "`python3 scripts/design_style.py question`, then record it with "
                     "scripts/write_intake.py --design-style (references/design-styles.md)")
+        return None
+    if name == "gate:intake_page_kind":
+        # The landing-role page is a signature sales page or a signature landing
+        # (opt-in) page (references/page-kinds.json). A production run cannot close
+        # intake without the recorded kind, and the kind must allow the run's copy
+        # form; test runs are exempt.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"gate:intake_page_kind: intake.json unreadable ({exc})"
+        if not isinstance(intake, dict):
+            return "gate:intake_page_kind: intake.json is not an object"
+        if intake.get("test_run") is True and not intake.get("page_kind"):
+            return None
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import page_kinds
+            import page_role
+            if page_role.declared_role(run_dir) != page_role.LANDING_ROLE:
+                return None  # only the landing role has a page kind
+            page_kinds.check(intake.get("page_kind"), intake.get("copy_version") or intake.get("page_version"))
+        except page_kinds.KindError as exc:
+            return (f"gate:intake_page_kind: {exc}; record the page with "
+                    "scripts/write_intake.py --page-kind sales|opt_in")
+        finally:
+            sys.path.pop(0)
         return None
     if name == "gate:noop":
         # Test-only builtin: always passes.
@@ -3560,6 +3586,12 @@ def cmd_report(run_dir):
     else:
         lines.append("Browser hygiene: not recorded.")
     lines.append("")
+
+    # SPF030: the page role and, for the landing role, its page kind.
+    kind = intake_data(run_dir).get("page_kind")
+    if kind:
+        lines.append(f"Page: role {', '.join(declared_page_roles(run_dir))}, kind {kind}")
+        lines.append("")
 
     # Fix 12.4: the four-image rule forces incomplete; it never refuses the
     # report, because the report is where the absence must be visible.

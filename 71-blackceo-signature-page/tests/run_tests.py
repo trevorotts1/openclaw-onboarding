@@ -87,6 +87,8 @@ MODULES = [
     "test_page_structures.py",
     # Page types: the thank-you page's own canonical sections reach every image stage.
     "test_page_role_thank_you.py",
+    # SPF030: signature sales page vs signature landing (opt-in) page kinds.
+    "test_page_kinds.py",
 ]
 
 def skip_reason(stdout):

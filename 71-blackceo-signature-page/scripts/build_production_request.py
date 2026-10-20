@@ -39,7 +39,7 @@ Usage:
       --bundle bundle-upsell_1.json --stage visual-mockup --out <run_dir>/production-request.json
   build_production_request.py [--page-role checkout] --copy-version standard|long-form|product-selection|thank-you \
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
-      --out <run_dir>/production-request.json [--slots slots.json] \\
+      --out <run_dir>/production-request.json [--page-kind sales|opt_in] [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
 
   slots.json:  {"<canonical section id>": [{"slot_id", "aspect_ratio", "art_direction"}]}
@@ -77,6 +77,7 @@ import copy_forms  # noqa: E402
 import stage_executor as exe  # noqa: E402
 import role_spec  # noqa: E402
 import wireframe_spec  # noqa: E402
+import page_kinds  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
 LEADS = {
@@ -266,7 +267,7 @@ def fit_estimate(role, text):
     return lines(1200, desktop_px), lines(342, mobile_px)
 
 
-def section_fragments(stage, section, index, sections, spec, table):
+def section_fragments(stage, section, index, sections, spec, table, kind=None):
     """Ordered specification paragraphs for one section; each is added only while it fits."""
     sid = exe.canon_section_id(section["section_id"])
     n = len(sections)
@@ -302,6 +303,7 @@ def section_fragments(stage, section, index, sections, spec, table):
     cta = exe._cta_label(section.get("cta"))
     many = exe.cta_labels(section)
     forbidden = {exe.canon_section_id(x) for x in (spec.get("cta_map", {}).get("forbidden_in_sections") or [])}
+    closing = page_kinds.closing_label(kind, section, sections, index, n)  # SPF030
     if len(many) > 1:
         out.append(f"BUTTON: this section carries exactly {len(many)} buttons, one inside each package card in card "
                    "order, labelled " + ", ".join(f'"{x}"' for x in many) +
@@ -312,6 +314,9 @@ def section_fragments(stage, section, index, sections, spec, table):
         label = "labelled exactly as the CTA LABEL line above" if len(cta.split()) >= 8 else f'labelled "{cta}"'
         out.append(f"BUTTON: this section carries exactly one button, {label}, with the microcopy "
                    "line under it when the copy block supplies one; no second button, link row or sticky bar.")
+    elif closing:  # the last section carries no CTA of its own; the page kind's closing panel does
+        out.append(f'BUTTON: this section carries no button of its own; its closing panel carries exactly one, '
+                   f'labelled "{closing}"; no second button, link row or sticky bar.')
     elif sid in forbidden:
         out.append("BUTTON: this section carries no button, no chip and no button-shaped pill; a button here is a defect.")
     else:
@@ -382,7 +387,8 @@ def fill_to_band(request, stage, spec):
     for index, section in enumerate(request["sections"], start=1):
         parts = [str(section.get("layout") or "").strip()]
         parts = [p for p in parts if p]
-        for text in section_fragments(stage, section, index, request["sections"], spec, table):
+        for text in section_fragments(stage, section, index, request["sections"], spec, table,
+                                      request.get("page_kind")):
             if PRIVATE_TEXT.search(text):
                 continue
             section["layout"] = "\n".join(parts + [text])
@@ -635,7 +641,7 @@ def run_blocks(request, run_dir):
 
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
-          page_role="landing", sections=None, structure=None, page_doc=None):
+          page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None):
     notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
     if structure:  # a role with its own entry in references/page-structures.json (downsell_1)
         version, spec = structure["copy_version"], structure
@@ -659,6 +665,14 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             for section in sections:
                 section["layout"] = "\n".join(wireframe_spec.page_type_lines(
                     version, section, wireframe_spec.section_tag(section, 1)))
+    kind = None
+    if page_role == "landing" and not spec.get("page_role"):  # SPF030: only a landing-role page has a kind
+        try:  # the page kind (flag, else the run's intake) must allow this copy form
+            kind = page_kinds.normalize(page_kind) if page_kind else page_kinds.declared(run_dir, {})
+            if kind:
+                page_kinds.check(kind, version)
+        except page_kinds.KindError as exc:
+            raise BuildError(f"page kind: {exc}")
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
@@ -671,6 +685,8 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         page = page_doc.get("page") if isinstance(page_doc.get("page"), dict) else page_doc
         request["page_role"] = structure["role"]
         request["decline_action"] = {"label": page["decline_action"]["label"].strip()}
+    if kind:
+        request["page_kind"] = kind
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
@@ -711,7 +727,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         raise
     request["metadata"] = {
         "stage": stage, "copy_version": version, "page_role": spec.get("page_role", "landing"),
-        "section_count": len(sections),
+        "page_kind": kind, "section_count": len(sections),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         **({"page_role": structure["role"], **notes} if structure else {}),
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
@@ -746,6 +762,9 @@ def main(argv=None) -> int:
                    help="a role with a references/page-structures.json entry: that role's own page copy document (JSON)")
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=None,
+                   help="sales or opt_in (default: the run's intake.json page_kind); "
+                        "references/page-kinds.json")
     p.add_argument("--slots", type=Path)
     p.add_argument("--design-prose", type=Path)
     p.add_argument("--references", default="")
@@ -780,14 +799,16 @@ def main(argv=None) -> int:
         request = build(a.stage, a.copy_version, "" if (structure or upsell) else a.manuscript.read_text(encoding="utf-8"),
                         load(a.slots), load(a.design_prose),
                         [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
-                        a.page_role, sections=sections, structure=structure, page_doc=page_doc)
+                        a.page_role, sections=sections, structure=structure, page_doc=page_doc,
+                        page_kind=a.page_kind)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(request, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     m = request["metadata"]
-    print(f"WROTE {a.out} copy_version={request['copy_version']} page_role={m['page_role']} stage={a.stage} "
+    print(f"WROTE {a.out} copy_version={request['copy_version']} page_role={m['page_role']} "
+          f"page_kind={m['page_kind']} stage={a.stage} "
           f"sections={m['section_count']} ids={','.join(m['canonical_ids'])}")
     cb = m["char_budget"]
     if cb["target"] and cb["min_seen"] < cb["target"]:  # floor passed (else refused); band goal missed

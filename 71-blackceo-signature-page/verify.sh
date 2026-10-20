@@ -107,6 +107,7 @@ for f in \
   references/page-structures.json tests/test_page_structures.py \
   references/copy-specs/thank-you-v1.json scripts/page_role.py scripts/run_page_role_stages.py \
   tests/test_page_role_thank_you.py tests/fixtures/copy_examples/thank-you-path-b.md \
+  references/page-kinds.json scripts/page_kinds.py tests/test_page_kinds.py \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \

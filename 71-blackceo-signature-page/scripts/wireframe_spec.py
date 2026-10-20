@@ -36,6 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import copy_forms  # noqa: E402  the one registry of copy forms
 import page_role  # noqa: E402  a page type's own form: sections, layout, style references
+import page_kinds  # noqa: E402  SPF030: signature sales page vs signature landing (opt-in) page
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SPEC_FILE = SKILL_ROOT / "references" / "wireframe-build-spec.json"
@@ -228,23 +229,21 @@ def _type_specs(stage: str, section: dict) -> str:
     return "; ".join(f"{k.upper()} / {v}" for k, v in spec()["type_scale_default"][stage].items())
 
 
-def _note(stage: str, section: dict, cta: str, role=None) -> str:
+def _note(stage: str, section: dict, cta: str, role=None, closing: bool = False) -> str:
     entry = page_role.section_spec(role, section.get("section_id")) if role else None
     notes = section.get("behavior_notes") or (entry or {}).get("note")
     if isinstance(notes, str) and notes.strip():
         return notes.strip()
     if isinstance(notes, list) and any(isinstance(n, str) and n.strip() for n in notes):
         return next(n.strip() for n in notes if isinstance(n, str) and n.strip())
+    if closing:
+        return "Closing CTA panel"
     if not cta:
         return "No CTA"
     return "CTA full width below the copy" if stage == "mobile-tablet" else "CTA below the copy"
 
 
-def _cta(section: dict) -> str:
-    value = section.get("cta") or section.get("_copy_source_cta")
-    if isinstance(value, dict):
-        value = value.get("label")
-    return str(value or "").strip().rstrip(".")
+_cta = page_kinds.cta_label
 
 
 def page_type_lines(form: str, section: dict, tag: str) -> list:
@@ -306,6 +305,15 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
              for line in (profile["intro"] if profile else blocks["intro"])]
     if rspec:
         lines[0] = lines[0].replace("a landing page", f"a {rspec['page_role']} page")
+    kind = request.get("page_kind")  # SPF030: a landing-role page only; no other page type carries a kind
+    closing = None  # the last slice's closing-band label, when the section has no CTA of its own
+    if kind:  # the page kind's head, and its closing band on the last slice
+        try:
+            label = page_kinds.closing_label(kind, section, request.get("sections"), index, total)
+            lines += page_kinds.wireframe_lines(kind, FORM_LABEL[form], index, total, label)
+        except page_kinds.KindError as exc:
+            raise SpecError(str(exc))
+        closing = label if label and not cta else None
     lines += [blocks["style_reference"]]
     if role:
         lines.append(role["wireframe"]["reference_note"])
@@ -332,12 +340,16 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
         lines.append(blocks["cta_some"].format(
             cta_shape=shape, cta=cta, microcopy_size=scale["CTA microcopy"].upper(),
             cta_strip=blocks["cta_strip_long_form"] if solution and not mobile else ""))
+    elif closing:  # the closing band's button replaces "no CTA" on the last slice
+        lines.append(blocks["cta_closing"].format(
+            cta_shape=blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"], cta=closing,
+            microcopy_size=scale["CTA microcopy"].upper()))
     else:
         lines.append(blocks["cta_none"])
     lines.append(over.get("bands", blocks["bands"]))
     lines.append(blocks["strip_first"].format(page=strip["page_px"], content=strip["content_px"])
                  if index == 1 else blocks["strip_other"])
-    lines.append(blocks["behaviour"].format(note=_note(stage, section, cta, role)))
+    lines.append(blocks["behaviour"].format(note=_note(stage, section, cta, role, bool(closing))))
     if mobile:
         lines.append(blocks["mobile"].format(width=width))
         if ref["extra_rule"] and form != "long-form":

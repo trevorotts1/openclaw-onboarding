@@ -138,6 +138,7 @@
     "plates_none": "3. IMAGE PLATES — this section has no image slot. Draw no plate; the band is typography only.",
     "cta_some": "4. CTA — {cta_shape} reading exactly \"{cta}\" in white capitals, and under it one small grey line reading exactly \"CTA MICROCOPY / {microcopy_size}\". A secondary action, if drawn, is an outlined rectangle.{cta_strip}",
     "cta_cards": "4. CTA — one button per package card, inside its card at the foot, in card order: {cta_shape} on each, each reading exactly one of these labels in white capitals: {labels}. No second button, no link row and no sticky bar.",
+    "cta_closing": "4. CTA — this section has no CTA of its own; its only button is the closing panel's: {cta_shape} reading exactly \"{cta}\" in white capitals, and under it one small grey line reading exactly \"CTA MICROCOPY / {microcopy_size}\". Draw no other button.",
     "cta_none": "4. CTA — this section has no CTA. Draw no button and no CTA strip.",
     "bands": "5. BANDS — the band runs edge to edge across the whole frame with no margin gap, no page card, no device frame, no navigation bar, no header links and no footer links. Grounds alternate between the light and the dark brand colours from section to section, so the stitched page reads as contiguous bands.",
     "strip_first": "6. WIDTHS HEADER STRIP — a thin dark strip across the very top of this slice reading exactly \"{page} PX PAGE / {content} PX CONTENT\". It appears on this first slice only.",

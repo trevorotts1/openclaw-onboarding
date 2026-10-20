@@ -1,0 +1,42 @@
+{
+  "schema": "skill71-page-kinds/v1",
+  "purpose": "The two kinds of Skill 71 page that share the page role `landing`: the signature sales page and the signature landing (opt-in) page. A page kind fixes which copy forms the page may use (so its canonical section sequence is the copy spec's own sequence for that form), what its buttons do, how its closing band is drawn on the wireframes, how the mockups and the Design Board label it. scripts/page_kinds.py is the only reader; scripts/stage_executor.py, scripts/build_production_request.py, scripts/wireframe_spec.py, scripts/design_board.py, scripts/write_intake.py and scripts/stage_gate.py call it. Section sequences are never copied here: they are read from references/copy-specs/<form>-v6.json, the one source.",
+  "page_role": "landing",
+  "decision_basis": "references/qc-contract.md part E names the 12-section order the sales page and the 15-band order the opt-in page, and records that every opt-in example is long-form. The production SOP part B asks for the checkout link on a sales page and the form on an opt-in page.",
+  "kinds": {
+    "sales": {
+      "label": "signature sales page",
+      "tag": "SIGNATURE SALES PAGE",
+      "copy_versions": ["standard", "long-form"],
+      "default_copy_version": "standard",
+      "action": "checkout",
+      "action_line": "every call-to-action button leads to the client's checkout page or payment link",
+      "wireframe_head": "PAGE KIND — SIGNATURE SALES PAGE (page role landing, {form_label}, {total} sections). This page persuades toward a purchase: it reads as one long top-to-bottom persuasion stack, every call-to-action button is a checkout action, and the page closes on a checkout call-to-action panel. Layout family: the style reference attached to this request (structure only).",
+      "closing_band": "CLOSING BAND — this is the last section of a sales page: under the section's content draw one full-width closing checkout panel on the dark brand ground, carrying one filled primary-colour button reading exactly \"{label}\". Draw no price, no card fields and no order form: the button leads to the client's checkout.",
+      "closing_mockup": "CLOSING PANEL — this slice ends on one full-width closing checkout panel carrying one solid button reading exactly \"{label}\". The panel is the only button on this slice.",
+      "mockup_line": "PAGE KIND — SIGNATURE SALES PAGE: every button reads as a checkout action and the last band is a closing checkout panel. Draw no price and no card fields.",
+      "design_board": {
+        "label": "signature sales page",
+        "emphasis": "offer and proof imagery: the outcome, the founder, results and trust, building to a checkout ask"
+      },
+      "structure_captures": ["assets/page-references/Sales Page - Elevation Conference - Desktop(1).jpg"]
+    },
+    "opt_in": {
+      "label": "signature landing (opt-in) page",
+      "tag": "SIGNATURE LANDING (OPT-IN) PAGE",
+      "copy_versions": ["long-form"],
+      "default_copy_version": "long-form",
+      "action": "form",
+      "action_line": "every call-to-action button opens the client's registration form",
+      "wireframe_head": "PAGE KIND — SIGNATURE LANDING (OPT-IN) PAGE (page role landing, {form_label}, {total} sections). This page earns a sign-up, not a purchase: it reads as one long top-to-bottom promise stack, every call-to-action button opens the registration form, and the page closes on a registration call-to-action strip. Layout family: the style reference attached to this request (structure only).",
+      "closing_band": "CLOSING BAND — this is the last section of an opt-in page: under the section's content draw one full-width registration strip on the dark brand ground, carrying one filled primary-colour button reading exactly \"{label}\". Draw no form fields and no price: the button opens the client's form.",
+      "closing_mockup": "CLOSING PANEL — this slice ends on one full-width registration strip carrying one solid button reading exactly \"{label}\". The strip is the only button on this slice.",
+      "mockup_line": "PAGE KIND — SIGNATURE LANDING (OPT-IN) PAGE: every button reads as a registration action and the last band is a registration strip. Draw no price and no form fields.",
+      "design_board": {
+        "label": "signature landing (opt-in) page",
+        "emphasis": "the event or result promise: the founder, the experience and the people it is for, building to a registration ask"
+      },
+      "structure_captures": ["assets/page-references/README.md (the two Challenge registration captures, registered there)"]
+    }
+  }
+}
