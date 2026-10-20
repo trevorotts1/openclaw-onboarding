@@ -4,6 +4,60 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.70 - 2026-10-20 - stage-3 script-lyrics deadlock: three gates that contradicted each other
+
+A 60 s / 90 s run sat in script-lyrics for hours and never reached the song:
+Laya Kelley's Voyage To Virtue run (about 9 hours, 321 shell calls, 1.84 M
+output tokens) and Jennifer Allen's runs (54-minute and 136-minute agents on
+the same errors). The agent is told to iterate until every gate passes and
+never edit a validator, and three shipped gates could not all pass at once:
+
+1. `lyric_writer` refused every non-CTA line without I/me/my/we
+   (`line-not-first-person`) while `suno_recipe.check_hook` REQUIRES the hook
+   to be the client's own words. Laya's hook "Virtue isn't something you have /
+   it's something you choose" could never pass both. A line that is a
+   contiguous run of at least 3 words of the client's own brief text (offer,
+   website, claims, packet lines) is now exempt from first-person. Invented
+   second-person lines and 2-word fragments still refuse. The comparison
+   folds apostrophe variants (a brief pasted from Word carries U+2019 while the
+   written lyric usually carries ASCII '), because ``words`` splits the curly
+   form ("isn't" is one token, "isn\u2019t" is two) and the client's own line
+   then silently refused itself -- the same deadlock by a different route.
+   ``words`` and every gate built on it keep their tokenisation.
+2. `lyric_writer` `line-multi-idea` fired on ANY period inside a line, so the
+   client's website (`VoyageToVirtue.com/journeyofbecoming`, required verbatim
+   by `protected_names.check_website`) always failed. A dot inside a word
+   (`site.com`, `3.5`) is no longer a sentence break; "I rise. I fall" still
+   refuses.
+3. `length_formula.plan(L, style_id=...)` priced its word budget at 1.4 spoken /
+   1.07 sung words per second, but `words_fit.preflight` (enforced by
+   `music_director`) prices Soul Ballad at 1.85 / 1.0 plus 8 s intro/outro, so
+   the plan's own budget was refused `WORDS_DO_NOT_FIT` (60 s: 66 words =
+   65.7 s against 58 s; 90 s: 95 words = 90.1 s against 88 s). A named style
+   that delivers no rap now caps its `words` to what `preflight` admits at that
+   style's rates. `plan(L)` with no style is byte-identical (BASE_SHA pins),
+   rap styles are untouched.
+   Scope, stated plainly: change B caps ONLY the plan the WRITER is handed
+   (`length_formula.plan` with `style_id`). `suno_recipe.check_lyric_sheet`'s
+   drafting tolerance (10 % + 2) is NOT that gate: it takes the larger of the
+   styled plan and the unstyled one, which is byte-for-byte the allowance
+   origin/main applied -- for a rap style (the styled plan carries the rap
+   words) and for a non-rap style (the unstyled plan is the uncapped total).
+   Reading the capped total there refused a real approved 48 s sheet (the gala
+   sheet: 58 words against a 46-word cap); reading the unstyled total alone
+   refused a rap sheet (123 words against 95, ignoring its 128-word rap plan).
+   `words_fit.preflight` remains the one gate that decides whether a sheet FITS.
+
+Doctrine: SKILL.md, INSTRUCTIONS.md and references/stage-runbook.md carry a
+stage-3 STOP RULE -- at most 3 validator rounds, then stop, report the exact
+gate and ask the client one question; never grid-search, never more than about
+10 minutes, never edit a validator during a run.
+
+New check: `scripts/core/length_formula/test_style_budget_fits_v2970.py`
+(Soul Ballad and Soul Rise at 30/45/60/90/120/180 s all `WORDS_FIT_OK`).
+Updated: `lyric_writer --selftest` (6 new cases), `test_style_plan_u2.py` (the
+L60 Soul pins compare everything outside `words`, and the words must fit).
+
 ## v2.9.65 - 2026-10-17 - hook plan upstreamed, strict request duration, pace gap closed
 
 The remaining defects from the same 48 s run. Both changes ADD gating; no gate,

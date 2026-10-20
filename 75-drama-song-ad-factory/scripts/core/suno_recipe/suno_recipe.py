@@ -752,13 +752,28 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
                                       _HP.hook_target(length_s, hook_plan))
     if length_s is not None:
         p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
+        # v2.9.70: ``p`` prices a named NON-RAP style at its own measured rates
+        # (length_formula._fit_style_words), so for Soul Ballad/Soul Rise its
+        # total is words_fit's ceiling. This row is NOT that gate: it is the
+        # DRAFTING tolerance (10% + 2) it has always been, so it takes the
+        # larger of the styled plan and the unstyled one -- byte-for-byte the
+        # allowance origin/main applied, for a rap style (styled carries the rap
+        # words) and for a non-rap style (unstyled is the uncapped total).
+        # Reading the capped total here refused a real approved 48 s sheet (58
+        # words against 52.6) and broke three shipped self-checks; reading the
+        # UNSTYLED total alone refused a rap sheet (123 words against 95, which
+        # ignores its 128-word rap plan). ``words_fit.preflight`` remains the
+        # ONE gate that decides whether a sheet FITS.
+        budget = max(p["words"]["total"],
+                     _LF.plan(length_s + _LF.END_EARLY_S,
+                              spoken_share_pct)["words"]["total"])
         total = sheet_words(sheet)
         # R&B word budget: U2 landed on 999 main only (MGB010a); on the
         # onboarding tree the rap budget is still open (file 18 decision 1),
         # so the ballad budget is not applied to a rap sheet there.
         rap_pending = sheet_words(sheet, "rap") > 0 and not rap_ok
-        if not rap_pending and total > p["words"]["total"] * 1.1 + 2:
-            errs.append("%d words, the %d s budget is %d" % (total, length_s, p["words"]["total"]))
+        if not rap_pending and total > budget * 1.1 + 2:
+            errs.append("%d words, the %d s budget is %d" % (total, length_s, budget))
         intro = [s for s in sheet if s["delivery"] == "spoken" and s["tag"].lower().startswith("intro")]
         if intro and sheet_words(intro) > p["words"]["opener_max"]:
             errs.append("spoken intro is %d words, max %d at this length"
