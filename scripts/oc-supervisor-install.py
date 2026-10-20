@@ -34,11 +34,56 @@ import plistlib
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 
 LABEL = "ai.openclaw.gateway"
 PKG_RE = re.compile(r"^(.*/node_modules/openclaw)(?:/|$)")
 FIELDS = ("source", "unit", "node", "entry", "pkg_root", "pkg_json", "prefix", "version")
+
+
+def _docker_gateway_container():
+    """Name of the first running container whose command line spawns an openclaw package entry, else None.
+
+    Never prints secrets: only inspects process cmdlines for path fragments.
+    docker-init's child runs `exec node server.mjs` (compose command), whose
+    child is the gateway. The persistent bind-mounted prefix
+    (<host>/data/.npm-global) is where the installed binary actually lives.
+    """
+    if not shutil.which("docker"):
+        return None
+    try:
+        names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
+                               capture_output=True, text=True, timeout=30).stdout.splitlines()
+    except Exception:
+        return None
+    for name in sorted(n.strip() for n in names if n.strip()):
+        try:
+            inspect = subprocess.run(
+                ["docker", "inspect", "-f", "{{json .Config.Cmd}} {{json .HostConfig.Binds}}", name],
+                capture_output=True, text=True, timeout=30)
+        except Exception:
+            continue
+        if inspect.returncode != 0:
+            continue
+        if "npm-global" not in inspect.stdout and "node_modules/openclaw" not in inspect.stdout:
+            continue
+        return name
+    return None
+
+
+def _docker_compose_command(container):
+    """The container's own sh -c command text (the compose `command:`), else ''."""
+    try:
+        raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Cmd}}", container],
+                             capture_output=True, text=True, timeout=30, errors="replace")
+    except Exception:
+        return ""
+    try:
+        cmd = json.loads(raw.stdout)
+    except Exception:
+        return ""
+    return " ".join(str(x) for x in cmd if isinstance(x, str))
 
 
 def supervisor_argv(home):
@@ -73,8 +118,71 @@ def supervisor_argv(home):
 
 def resolve(home):
     sup = supervisor_argv(home)
+    container = None
+    argv = []
     if sup is None:
-        return None, 1
+        # Docker-on-host box: the compose command (`exec node server.mjs`) is the
+        # supervisor definition; the installed binary lives on the bind-mounted
+        # persistent prefix. Entry resolution follows the same node/entry/pkg rule.
+        container = _docker_gateway_container()
+        if container is None:
+            return None, 1
+        cmd = _docker_compose_command(container)
+        argv = shlex.split(cmd) if cmd else []
+        out = {"source": "docker", "unit": "container:%s" % container, "node": "", "entry": "", "pkg_root": ""}
+        # The compose command runs a wrapper (`node server.mjs`), not the openclaw
+        # package directly. The bind-mounted prefix is the source of truth.
+        try:
+            mounts = json.loads(subprocess.run(
+                ["docker", "inspect", "-f", "{{json .Mounts}}", container],
+                capture_output=True, text=True, timeout=30).stdout or "[]")
+        except Exception:
+            mounts = []
+        for mnt in mounts:
+            src = str(mnt.get("Source") or "")
+            if not src or not os.path.isdir(src):
+                continue
+            for cand in (os.path.join(src, ".npm-global", "lib", "node_modules", "openclaw"),
+                         os.path.join(src, "npm-global", "lib", "node_modules", "openclaw")):
+                if not os.path.isfile(os.path.join(cand, "package.json")):
+                    continue
+                pkg_root = cand
+                # npm-global root = dirname(dirname(dirname(pkg))) :
+                #   pkg -> .../node_modules/openclaw
+                #   -1 node_modules, -2 lib, -3 the prefix (…/.npm-global)
+                npm_dir = cand.rsplit("/lib/node_modules/", 1)[0]
+                out["pkg_root"] = pkg_root
+                out["pkg_json"] = os.path.join(pkg_root, "package.json")
+                # /<mount>/.npm-global/bin/npm's shebang names the node that owns it.
+                # The prefix's OWN node first (npm-global layout installs `node`
+                # as a package: <prefix>/lib/node_modules/node/bin/node); the
+                # shebang of an npm shim is only a fallback if it exists.
+                nbin = os.path.join(npm_dir, "lib", "node_modules", "node", "bin", "node")
+                if os.path.isfile(nbin):
+                    out["node"] = nbin
+                else:
+                    npm = os.path.join(npm_dir, "bin", "npm")
+                    if os.path.isfile(npm):
+                        try:
+                            shebang = open(npm, errors="replace").readline().strip()
+                            nb = shebang.split(" ", 1)[-1]
+                            out["node"] = nb if os.path.isabs(nb) else (shutil.which(nb) or "")
+                        except Exception:
+                            pass
+                out["prefix"] = npm_dir
+                break
+            if out["pkg_root"]:
+                break
+        if not out["pkg_root"]:
+            # Not bind-mounted: the binary really is in the image. Caller must know.
+            return out, 2
+        try:
+            out["version"] = str(json.load(open(out["pkg_json"])).get("version") or "")
+        except Exception:
+            out["version"] = ""
+        if not out["node"]:
+            out["node"] = shutil.which("node") or ""
+        return out, 0
     source, unit, argv = sup
     out = {"source": source, "unit": unit, "node": "", "entry": "", "pkg_root": ""}
     for a in argv:
