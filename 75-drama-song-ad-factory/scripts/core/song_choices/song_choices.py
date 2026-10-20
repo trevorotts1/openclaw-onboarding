@@ -1019,6 +1019,79 @@ def _write_envelope(run_dir, variant_id, evidence):
     return p
 
 
+def _card_receipt(run_dir):
+    """The run's recorded four-pick card receipt, read from the run folder.
+
+    ``kie_dispatch.card_gate_refusal`` refuses EVERY paid job that carries no
+    ``card_receipt`` (F15: no paid job starts on an unanswered card), and the
+    music path never attached one -- so every dispatch, the word-timing
+    sub-calls included, refused CARD_UNANSWERED although the client had
+    answered and the receipt was on disk.
+
+    Read in this order, each shape taken only when it really carries the
+    answers: ``control/card-receipt-block.json`` (the stamped block),
+    ``control/card-receipt.json`` when it holds an ``answers`` dict (the
+    per-question record), ``control/run-state.json["card_receipt"]``. Nothing
+    found returns None: the gate then refuses exactly as before. A receipt is
+    never fabricated.
+    """
+    def _ok(block):
+        return isinstance(block, dict) and isinstance(block.get("answers"), dict)
+
+    p = os.path.join(run_dir, "control", "card-receipt-block.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        doc = None
+    if _ok(doc):
+        return doc
+
+    p = os.path.join(run_dir, "control", "card-receipt.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        doc = None
+    if _ok(doc):
+        return doc
+
+    p = os.path.join(run_dir, "control", "run-state.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        doc = None
+    block = doc.get("card_receipt") if isinstance(doc, dict) else None
+    return block if _ok(block) else None
+
+
+def _sheet_lyric_words(spec):
+    """The approved sheet's LYRIC LINES only -- what the script_words gate asks.
+
+    ``script_words`` is a REQUIRED_TAKE_GATE: it checks the TAKE sang the
+    approved lyrics. It was handed ``spec["client_text"]``, the source
+    research document, so every take was asked to sing a sales page. The
+    sheet's bracket headers are directions to Suno (``[Verse 1 (sung):
+    melodic, rhymed, slow long held notes]``), never lyrics, so they are
+    excluded here too -- ``song_dispatch._script_lyric_words`` only drops
+    brackets from text it is given, and this hands it text that never had
+    them. Falling back to ``sheet_text`` keeps a sheet that failed to parse
+    no worse off than before. ``client_text`` stays the hook-vocabulary
+    source and nothing else (``build_requests``).
+    """
+    lines = []
+    for sec in spec.get("sheet") or []:
+        if not isinstance(sec, dict):
+            continue
+        for line in sec.get("lines") or []:
+            if str(line).strip():
+                lines.append(str(line))
+    if lines:
+        return " ".join(lines)
+    return spec.get("sheet_text") or ""
+
+
 def _real_generate(run_dir, ledger, run_id):
     """The default per-variant worker: ONE KIE dispatch per call, and the
     per-variant envelope carries the two aware-UTC stamps the overlap
@@ -1031,12 +1104,21 @@ def _real_generate(run_dir, ledger, run_id):
         import kie_dispatch.kie_dispatch as _KD   # noqa: PLC0415
         save_dir = os.path.join(run_dir, "music", "takes", variant["id"])
         os.makedirs(save_dir, exist_ok=True)
-        env = _KD.dispatch(model=request.get("model") or "ai-music-api/generate",
-                           request=request, save_dir=save_dir, ledger_db=ledger,
+        # F15: the run's recorded card receipt rides the request. Without it
+        # every paid job -- each song and each word-timing sub-call -- was
+        # refused CARD_UNANSWERED even though the client had answered. A
+        # request that already carries its own receipt is left alone.
+        payload = dict(request)
+        if not isinstance(payload.get("card_receipt"), dict):
+            receipt = _card_receipt(run_dir)
+            if receipt is not None:
+                payload["card_receipt"] = receipt
+        env = _KD.dispatch(model=payload.get("model") or "ai-music-api/generate",
+                           request=payload, save_dir=save_dir, ledger_db=ledger,
                            run_id=run_id or (os.path.basename(run_dir) or "run"),
                            logical_key="song/%s" % variant["id"],
                            attempt_id="a1", estimated_cost=_SD.GEN_COST_CENTS,
-                           prompt=request.get("input", {}).get("style", "")[:2000])
+                           prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
         _write_envelope(run_dir, variant["id"], ev)
         # D2 item 3: the overlap receipt, built from the PROVIDER lifecycle
@@ -1095,7 +1177,7 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
                     "_pace_plan": spec["pace_plan"]}
     gen = generate or _real_generate(run_dir, a.ledger, a.run_id)
     kw = dict(plan=plan, generate=gen, measure=measure, save=save,
-              script_words=spec["client_text"], hook_text=hook_text)
+              script_words=_sheet_lyric_words(spec), hook_text=hook_text)
     # WWFIXGAPS U1 (defect 3): ``dispatched`` is MEASURED from the run that
     # actually happened, never a literal. One provider job goes out per
     # attempt, and ``one_variant`` regenerates a FAIL once, so a variant that
@@ -1148,7 +1230,28 @@ def main(argv=None):
         elif a.cmd == "pick":
             print("Picked: " + record_pick(a.run_dir, a.reply))
         elif a.cmd == "generate":
-            out = cmd_generate(a)
+            # The CLI is the command the stage runbook hands agents, so it
+            # supplies the REAL transports itself: measurements off the take's
+            # own audio (song_transports.make_measure, which runs the one
+            # word-timing step) and every paid take kept on disk
+            # (make_save). ``cmd_generate`` still refuses a programmatic
+            # ``measure``/``save`` of None -- that guard is untouched; it was
+            # never meant to describe the shipped runner.
+            import song_transports as _ST        # noqa: PLC0415
+            _run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
+            _spec = _load_request(a.request)
+            # The word-timing step is wired here too: hook, hook_placement and
+            # song_contract cannot be measured without it, and the step carries
+            # the SAME run receipt this file attaches, so its own paid sub-call
+            # clears the same card gate.
+            _timings = _ST.make_timings(
+                _run_dir, ledger=a.ledger or os.path.join(_run_dir, "spend.sqlite3"),
+                run_id=a.run_id)
+            out = cmd_generate(
+                a,
+                measure=_ST.make_measure(pace_plan=_spec.get("pace_plan"),
+                                         timings=_timings),
+                save=_ST.make_save(_run_dir))
             json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
             sys.stdout.write("\n")
         else:
