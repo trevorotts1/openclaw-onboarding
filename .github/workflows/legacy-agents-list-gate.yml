@@ -53,6 +53,7 @@ on:
       - scripts/qc-assert-legacy-agents-list.sh
       - scripts/oc-atomic-upgrade.sh
       - scripts/oc-schema-migrate.py
+      - scripts/oc-supervisor-install.py
       - scripts/setup-weekly-update.sh
       - scripts/fleet-audit-remediate.sh
       - scripts/u126-remediate.sh
@@ -67,6 +68,7 @@ on:
       - scripts/qc-assert-legacy-agents-list.sh
       - scripts/oc-atomic-upgrade.sh
       - scripts/oc-schema-migrate.py
+      - scripts/oc-supervisor-install.py
       - scripts/setup-weekly-update.sh
       - scripts/fleet-audit-remediate.sh
       - scripts/u126-remediate.sh
@@ -104,6 +106,7 @@ jobs:
           sh   -n platform/mac/service-selfheal/remediate.sh
           sh   -n platform/mac/service-selfheal/gateway-health-watchdog.sh
           python3 -c "import ast; ast.parse(open('scripts/oc-schema-migrate.py').read())"
+          python3 -c "import ast; ast.parse(open('scripts/oc-supervisor-install.py').read())"
           bash -n scripts/setup-weekly-update.sh
           bash -n scripts/fleet-audit-remediate.sh
           bash -n scripts/u126-remediate.sh

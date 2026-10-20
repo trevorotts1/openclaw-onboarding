@@ -29,6 +29,7 @@ mkdir -p "$T/home" "$T/root" "$T/bin" "$T/fix"
 # Stand-ins for the three scripts the runner fetches. Each proves it ran.
 printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] oc-atomic-upgrade $*"' 'exit 0' > "$T/fix/oc-atomic-upgrade.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$T/fix/oc-schema-migrate.py"
+printf 'raise SystemExit(1)\n' > "$T/fix/oc-supervisor-install.py"   # CAN015: no supervisor definition on the fixture box
 printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] weekly-full-update $*"' 'exit 0' > "$T/fix/weekly-full-update.sh"
 
 # curl stub: copy the matching fixture instead of hitting the network.

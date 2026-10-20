@@ -41,6 +41,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ATOMIC="$REPO_ROOT/scripts/oc-atomic-upgrade.sh"
 MIGRATOR="$REPO_ROOT/scripts/oc-schema-migrate.py"
+SUPHELPER="$REPO_ROOT/scripts/oc-supervisor-install.py"
 
 PASS=0
 FAIL=0
@@ -54,6 +55,7 @@ echo ""
 
 [ -f "$ATOMIC" ]   || { echo "FATAL: $ATOMIC not found"; exit 1; }
 [ -f "$MIGRATOR" ] || { echo "FATAL: $MIGRATOR not found"; exit 1; }
+[ -f "$SUPHELPER" ] || { echo "FATAL: $SUPHELPER not found"; exit 1; }
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/oc-atomic-test.XXXXXX")"
 cleanup() { rm -rf "$SANDBOX"; }
@@ -204,14 +206,26 @@ EOF
   cat > "$dir/npm" <<EOF
 #!/bin/bash
 STATE="$state"
-echo "npm \$*" >> "\$STATE/events"
+echo "npm \$* #via=\$0" >> "\$STATE/events"
 if [ "\${1:-}" = "view" ]; then cat "\$STATE/latest"; exit 0; fi
 if [ "\${1:-}" = "install" ]; then
+  # CAN015: two installs can exist. \`--prefix P\` writes the package the supervisor
+  # launches (P/lib/node_modules/openclaw); a bare \`install -g\` writes only the
+  # copy \`openclaw\` on PATH reports (\$STATE/version). With \$STATE/split, the two
+  # are separate; without it, the PATH copy follows the prefix install.
+  PFX=""; VER=""; prev=""
   for a in "\$@"; do
-    case "\$a" in
-      openclaw@*) printf '%s' "\${a#openclaw@}" > "\$STATE/version" ;;
-    esac
+    case "\$a" in openclaw@*) VER="\${a#openclaw@}" ;; esac
+    [ "\$prev" = "--prefix" ] && PFX="\$a"
+    prev="\$a"
   done
+  if [ -n "\$PFX" ]; then
+    mkdir -p "\$PFX/lib/node_modules/openclaw"
+    printf '{"name":"openclaw","version":"%s"}\n' "\$VER" > "\$PFX/lib/node_modules/openclaw/package.json"
+    [ -f "\$STATE/split" ] || printf '%s' "\$VER" > "\$STATE/version"
+  elif [ -n "\$VER" ]; then
+    printf '%s' "\$VER" > "\$STATE/version"
+  fi
   echo "npm-install-witness \$*" >> "\$STATE/npm_installs"
   exit 0
 fi
@@ -310,7 +324,41 @@ EOF
 #!/bin/bash
 echo "a-box"
 EOF
-  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl"
+  # node: the supervisor plist names a bare `node`; the resolver finds this one.
+  printf '#!/bin/bash\nexit 0\n' > "$dir/node"
+  # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args).
+  cat > "$dir/ps" <<EOF
+#!/bin/bash
+if [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi
+EOF
+  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps"
+}
+
+# write_supervisor <home> <node> <prefix> <version>
+#   the LaunchAgent plist (ProgramArguments: node, the openclaw dist entry, gateway)
+#   and the package it launches, at <version>.
+write_supervisor() {
+  local home="$1" node="$2" prefix="$3" ver="$4"
+  mkdir -p "$home/Library/LaunchAgents" "$prefix/lib/node_modules/openclaw/dist"
+  printf '{"name":"openclaw","version":"%s"}\n' "$ver" > "$prefix/lib/node_modules/openclaw/package.json"
+  : > "$prefix/lib/node_modules/openclaw/dist/index.js"
+  cat > "$home/Library/LaunchAgents/ai.openclaw.gateway.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>ai.openclaw.gateway</string>
+<key>ProgramArguments</key><array>
+<string>$node</string>
+<string>$prefix/lib/node_modules/openclaw/dist/index.js</string>
+<string>gateway</string>
+</array></dict></plist>
+EOF
+}
+
+# set_installed <home> <state> <version> -- put the PATH copy AND the supervisor's package at <version>
+set_installed() {
+  printf '%s' "$3" > "$2/version"
+  printf '{"name":"openclaw","version":"%s"}\n' "$3" > "$1/sup/lib/node_modules/openclaw/package.json"
 }
 
 # make_box <name> <config-kind> -> echoes the box HOME
@@ -318,7 +366,7 @@ make_box() {
   local home="$SANDBOX/$1"
   mkdir -p "$home/.openclaw/scripts" "$home/Library/LaunchAgents"
   write_config "$home/.openclaw/openclaw.json" "$2"
-  echo "<plist/>" > "$home/Library/LaunchAgents/ai.openclaw.gateway.plist"
+  write_supervisor "$home" node "$home/sup" "$OLD_V"
   echo "$home"
 }
 
@@ -523,6 +571,7 @@ echo "--- (5) MUTATION PROOF: neuter ONLY the shape detector ---"
 MUT_DIR="$SANDBOX/mutscripts"
 mkdir -p "$MUT_DIR"
 cp "$MIGRATOR" "$MUT_DIR/oc-schema-migrate.py"
+cp "$SUPHELPER" "$MUT_DIR/oc-supervisor-install.py"
 MUT="$MUT_DIR/oc-atomic-upgrade.sh"
 MUT_SRC="$ATOMIC" MUT_DST="$MUT" python3 - <<'PY'
 import os, sys
@@ -905,7 +954,7 @@ fi
 
 # A box ALREADY on the new build and holding propose (the operator Mac): not "nothing to do".
 H13B="$(make_box b13b propose)"; S13B="$SANDBOX/stubs13b"; ST13B="$SANDBOX/state13b"
-make_stubs "$S13B" "$ST13B" versioned; printf '%s' "$NEW_V" > "$ST13B/version"
+make_stubs "$S13B" "$ST13B" versioned; set_installed "$H13B" "$ST13B" "$NEW_V"
 OUT13B="$(run_atomic "$H13B" "$S13B" "$ST13B")"; RC13B=$?
 if [ "$RC13B" -eq 0 ] && grep -Eq '"mode": *"off"' "$H13B/.openclaw/openclaw.json" && [ ! -f "$ST13B/npm_installs" ] && [ -f "$ST13B/loaded_ai.openclaw.gateway" ]; then
   pass "13b: a box already on the new build holding propose is repaired (no reinstall, gateway back up)"
@@ -927,6 +976,40 @@ for kind in bogus clean; do
     fail "13c($kind): rc=$RC13C version=$(cat "$ST13C/version") out=$OUT13C"
   fi
 done
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (14) CAN015: upgrade the install the SUPERVISOR launches, not the copy on PATH ---"
+# Operator Mac, roll 20261019: launchd ran node ~/.npm-global/.../openclaw (2026.10.4)
+# while `openclaw` on PATH was an nvm copy already at 2026.10.5 (an earlier failed run
+# had installed it there). The script measured PATH, logged "binary already at
+# 2026.10.5 - no install needed", exited 0, and the gateway stayed on 2026.10.4.
+# Fixture: the plist's node + package live in sup14 (a DIFFERENT npm than the one on
+# PATH); the PATH copy is already at the target.
+H14="$(make_box b14 clean)"; S14="$SANDBOX/stubs14"; ST14="$SANDBOX/state14"
+make_stubs "$S14" "$ST14" versioned
+SUP14="$SANDBOX/sup14"; mkdir -p "$SUP14/node/bin"
+cp "$S14/node" "$S14/npm" "$SUP14/node/bin/"
+write_supervisor "$H14" "$SUP14/node/bin/node" "$SUP14/npm-global" "$OLD_V"
+touch "$ST14/split"; printf '%s' "$NEW_V" > "$ST14/version"      # PATH copy already newer
+printf 'node %s/npm-global/lib/node_modules/openclaw/dist/index.js gateway\n' "$SUP14" > "$ST14/ps_args"
+OUT14="$(run_atomic "$H14" "$S14" "$ST14")"; RC14=$?
+PKG14="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$SUP14/npm-global/lib/node_modules/openclaw/package.json" 2>/dev/null)"
+if [ "$RC14" -eq 0 ] && [ "$PKG14" = "$NEW_V" ]; then
+  pass "14a: the package the gateway launches moved $OLD_V -> $PKG14 even though PATH openclaw already reported the target"
+else
+  fail "14a: rc=$RC14, the supervisor's package is '$PKG14' (want $NEW_V) while the PATH copy says $NEW_V - the false 'already at target' success. Output: $OUT14"
+fi
+if grep -qF "npm install -g --prefix $SUP14/npm-global openclaw@$NEW_V #via=$SUP14/node/bin/npm" "$ST14/events" 2>/dev/null; then
+  pass "14b: installed with the supervisor's node's npm into the supervisor's prefix"
+else
+  fail "14b: wrong npm or prefix. Events: $(tr '\n' '|' < "$ST14/events" 2>/dev/null)"
+fi
+if grep -q 'DISAGREE' <<<"$OUT14" && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT14" && [ -f "$ST14/loaded_ai.openclaw.gateway" ]; then
+  pass "14c: PATH/supervisor disagreement was logged, the upgrade completed and the gateway is back up"
+else
+  fail "14c: no disagreement log / completion / gateway. Output: $OUT14"
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""

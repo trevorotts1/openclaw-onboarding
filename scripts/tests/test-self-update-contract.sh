@@ -87,6 +87,7 @@ mkfx() {  # oc_rc weekly_rc
   printf '%s\n' '#!/usr/bin/env bash' 'echo "[fixture] oc-atomic-upgrade $*"' "exit $1" \
     > "$T/fix/oc-atomic-upgrade.sh"
   printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$T/fix/oc-schema-migrate.py"
+  printf 'raise SystemExit(1)\n' > "$T/fix/oc-supervisor-install.py"   # CAN015: no supervisor definition on the fixture box
   printf '%s\n' '#!/usr/bin/env bash' 'sleep "${WEEKLY_SLEEP:-0}"' \
     'if [ -n "${WEEKLY_EDIT:-}" ]; then echo CHANGED > "$WEEKLY_EDIT"; fi' \
     "exit $2" > "$T/fix/weekly-full-update.sh"
@@ -204,6 +205,23 @@ SC="$C/root/fleet-refresh/agent-pull-status.json"
 [ "$(json "$SC" step_exit_codes)" = '{"999-setup": 0, "9router": 0, "update": 2, "upgrade": 0}' ] \
   && ok "update rc 2 recorded" || bad "step_exit_codes: $(json "$SC" step_exit_codes)"
 [ "$RC" = "2" ] && ok "exit 2" || bad "exit $RC (want 2)"
+
+# ── CASE E (CAN015): openclaw_before/after are the SUPERVISOR's install, not a stale root copy ──
+mkfx 0 0
+E="$T/e"; seed_root "$E"     # root npm-global copy = 2026.10.3; the plist launches a different tree
+mkdir -p "$E/home/Library/LaunchAgents" "$E/sup/lib/node_modules/openclaw/dist"
+printf '{"name":"openclaw","version":"2026.10.9"}\n' > "$E/sup/lib/node_modules/openclaw/package.json"
+cat > "$E/home/Library/LaunchAgents/ai.openclaw.gateway.plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>ProgramArguments</key><array>
+<string>/usr/bin/true</string><string>$E/sup/lib/node_modules/openclaw/dist/index.js</string><string>gateway</string>
+</array></dict></plist>
+PL
+RE="$(run_fg "$E")"
+SE="$E/root/fleet-refresh/agent-pull-status.json"
+[ "$(json "$SE" openclaw_before)" = "2026.10.9" ] && [ "$(json "$SE" openclaw_after)" = "2026.10.9" ] \
+  && ok "CAN015: openclaw_before/after read the package the plist launches (2026.10.9), not the root copy" \
+  || bad "CAN015: openclaw_before=$(json "$SE" openclaw_before) after=$(json "$SE" openclaw_after) (want the plist's 2026.10.9)"
 
 # ── CASE D: detached child in its own session; second launch is a no-op ──────
 mkfx 0 0

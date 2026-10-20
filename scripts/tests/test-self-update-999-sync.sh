@@ -48,6 +48,7 @@ for n in claude osascript shasum tar security xcode-select; do printf '%s\n' '#!
 chmod 700 "$T/bin/"*
 for n in oc-atomic-upgrade.sh weekly-full-update.sh; do printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$T/fix/$n"; done
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$T/fix/oc-schema-migrate.py"
+printf 'raise SystemExit(1)\n' > "$T/fix/oc-supervisor-install.py"   # CAN015: no supervisor definition on the fixture box
 
 gg() { "$G" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
 
