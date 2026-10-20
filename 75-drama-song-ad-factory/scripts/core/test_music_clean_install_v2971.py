@@ -36,7 +36,18 @@ import song_dispatch.song_dispatch as SD        # noqa: E402
 import kie_dispatch.kie_dispatch as KD          # noqa: E402
 import song_transports as ST                    # noqa: E402
 
-MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
+def _live_kie_dispatch():
+    """The kie_dispatch module the CODE UNDER TEST will import at call time.
+
+    ``song_choices._real_generate`` imports ``kie_dispatch.kie_dispatch``
+    INSIDE the call, and the skill-tree conftest drops skill modules between
+    collectors, so the object bound here at import time is not always the one
+    a later import returns (another suite patches its own copy's
+    ``make_runner`` to refuse). Resolve it at run time, so the patch always
+    lands on the module the production code will use -- solo run and the
+    one-process pytest run alike.
+    """
+    return importlib.import_module("kie_dispatch.kie_dispatch")
 
 PROBE = os.environ.get("DSF_LAYA_PROBE",
                        os.path.expanduser("~/scratch/dsf-stall-fix/laya/dsf003/probe"))
@@ -138,13 +149,14 @@ def test_generate_attaches_the_run_receipt():
             seen.update(kw)
             return {"outcome": "ok", "evidence": {}}
 
-        real = MODULE.dispatch
-        MODULE.dispatch = fake_dispatch
+        live = _live_kie_dispatch()
+        real = live.dispatch
+        live.dispatch = fake_dispatch
         try:
             gen = SC._real_generate(tmp, os.path.join(tmp, "spend.db"), "run-1")
             gen({"id": "V6"}, {"model": "m", "input": {"style": "s"}})
         finally:
-            MODULE.dispatch = real
+            live.dispatch = real
         got = (seen.get("request") or {}).get("card_receipt")
         check("1: the run's recorded receipt rides the dispatched request",
               got == block, str(got))
@@ -153,11 +165,11 @@ def test_generate_attaches_the_run_receipt():
         seen.clear()
         own = {"answers": {"video_style": "OTHER", "audio_style": "x",
                            "length": 90, "video_model": "y"}, "who": "w", "at": "a"}
-        MODULE.dispatch = fake_dispatch
+        live.dispatch = fake_dispatch
         try:
             gen({"id": "V6"}, {"model": "m", "input": {}, "card_receipt": own})
         finally:
-            MODULE.dispatch = real
+            live.dispatch = real
         check("1: a request with its own receipt keeps it",
               (seen.get("request") or {}).get("card_receipt") == own)
     finally:
@@ -269,7 +281,7 @@ def test_sync_submit_hands_save_its_envelope():
                                             "length": 60, "video_model": "m"},
                                 "who": "w", "at": "a"},
                "input": {"task_id": "t1", "audio_id": "a1"}}
-        env = MODULE.dispatch(
+        env = _live_kie_dispatch().dispatch(
             model="ai-music-api/timeStamped-lyrics", request=req,
             save_dir=os.path.join(tmp, "out"), ledger_db=db, run_id="run-sync",
             logical_key="word-timings", attempt_id="att-1", estimated_cost=1,
@@ -308,7 +320,7 @@ def test_sync_submit_hands_save_its_envelope():
 
         db2 = os.path.join(tmp, "spend2.db")
         L.init_run(db2, "run-async", 10000)
-        env2 = MODULE.dispatch(
+        env2 = _live_kie_dispatch().dispatch(
             model="ai-music-api/timeStamped-lyrics", request=req,
             save_dir=os.path.join(tmp, "out2"), ledger_db=db2, run_id="run-async",
             logical_key="song", attempt_id="att-1", estimated_cost=1,
