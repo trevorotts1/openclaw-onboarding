@@ -46,7 +46,7 @@ class TestPersonaCrosswalk(unittest.TestCase):
     def test_expected_library_sizes(self):
         c = self.res["counts"]
         self.assertEqual(c["funnel_templates"], 38)
-        self.assertEqual(c["automation_templates"], 28)
+        self.assertEqual(c["automation_templates"], 51)
         self.assertGreater(c["refs"], 100)      # ~181 persona refs across the two libraries
 
     def test_every_crosswalk_target_is_canonical(self):
