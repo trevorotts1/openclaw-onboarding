@@ -360,6 +360,13 @@ def validate(units, section_order, structure_notes, spec, manifest=None,
                 rep.fails.append(
                     f"CTA map: {label} carries {len(buttons)} standalone CTA "
                     f"buttons; the map allows exactly one module at this position")
+        elif cta.get("standalone") == "per_card":
+            # one Choose button per package card; a selection page needs at least two packages
+            if len(buttons) < cta.get("min", 2):
+                rep.fails.append(
+                    f"CTA map: {label} carries {len(buttons)} package buttons; one button per "
+                    f"package card is required, and a selection page has at least "
+                    f"{cta.get('min', 2)} packages")
         elif cta.get("standalone") == "forbidden":
             if buttons:
                 rep.fails.append(

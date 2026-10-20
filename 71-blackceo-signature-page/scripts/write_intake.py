@@ -3,7 +3,7 @@
 
 image_engine is "kie" (default) or "agnes". stage_gate.py accepts the Agnes route on
 image-generation-qc only when intake.json says "agnes" (references/kie-generation-route.md).
-copy_version ("standard" or "long-form") is a required intake decision (fix plan
+copy_version ("standard", "long-form" or "product-selection") is a required intake decision (fix plan
 Amendment 6, Items 18/19): it selects the ONE copy guide, copy spec, and
 emotional-quality extract the copy stage reads (see the copy stage's
 copy_selection block in references/stage-contract.json and the selection
@@ -95,6 +95,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import copy_forms
 import design_style
 import launch_context
 
@@ -394,7 +395,7 @@ def founder_photo_form_problems(brand_path, run_dir):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("run_dir", type=Path)
-    p.add_argument("--page-version", choices=["standard", "long-form"], required=True)
+    p.add_argument("--page-version", choices=list(copy_forms.FORMS), required=True)
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--brand-file", default="assets/brand/blackceo-brand.json")
     p.add_argument("--creative-direction", default=None)
@@ -405,7 +406,7 @@ def main(argv=None):
                         "(references/design-styles.md); ask with `design_style.py question`")
     p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
                    help="how the style was chosen (default client_choice when --design-style is given)")
-    p.add_argument("--copy-version", choices=["standard", "long-form"], default=None,
+    p.add_argument("--copy-version", choices=list(copy_forms.FORMS), default=None,
                    help="the run's copy selection (required intake decision, "
                         "Amendment 6 Items 18/19); selects the copy guide, spec, "
                         "and emotional-quality extract for the copy stage")

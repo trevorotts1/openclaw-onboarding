@@ -119,6 +119,8 @@ def shipped_selection_entry(launch_path):
     root = str(HERE.parents[1])
     command = [part.replace("/path/to", root).replace(LAUNCH_SLOT, str(launch_path))
                for part in spec["command"]]
+    # this case proves the plan and result chain; the required image step has its own tests in Skill 78
+    command[-1] = " && ".join(s for s in command[-1].split(" && ") if "run_image_stages.py" not in s)
     return {"command": command, "timeout_s": spec.get("timeout_s", 600)}
 
 

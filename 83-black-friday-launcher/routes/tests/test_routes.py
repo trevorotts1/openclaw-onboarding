@@ -312,6 +312,8 @@ class AdapterWiringTests(unittest.TestCase):
                 path = tmp / f"{name}-{role}.json"
                 path.write_text("{}", encoding="utf-8")
                 mapping[role] = path
+        images = tmp / "order-page-image-inputs.json"
+        images.write_text("{}", encoding="utf-8")
         return {
             "work_dir": work,
             "launch_record": launch_path,
@@ -320,6 +322,7 @@ class AdapterWiringTests(unittest.TestCase):
             "copy": copy,
             "journey": journey,
             "enrichment": enrichment,
+            "image_inputs": images,
         }
 
     def test_all_real_entry_points_match_contract_signatures(self):
@@ -361,6 +364,24 @@ class AdapterWiringTests(unittest.TestCase):
                 for part in spec["command"]:
                     if part.endswith(".py"):
                         self.assertTrue(Path(part).is_file(), part)
+
+    def test_order_page_images_are_required_in_every_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self.make_inputs(Path(tmp))
+            images = inputs["image_inputs"]
+            cmd = adapters.build_dispatch_config(**inputs)["adapters"]["product_selection"]["command"][-1]
+            # plan, then the order page images, then the page result: a result exists only after the images
+            self.assertLess(cmd.index("build_selection_plan.py"), cmd.index("run_image_stages.py"))
+            self.assertLess(cmd.index("run_image_stages.py"), cmd.index("emit_page_result.py"))
+            self.assertIn(str(images), cmd)
+            self.assertNotIn("--allow-paid", cmd)  # dispatch never spends
+            # a full funnel gets every page: no way to leave the image step out
+            for bad in ("none", "NONE", "", Path(tmp) / "missing.json"):
+                with self.assertRaises(adapters.AdapterError):
+                    adapters.build_dispatch_config(**{**inputs, "image_inputs": bad})
+            del inputs["image_inputs"]
+            with self.assertRaises(TypeError):
+                adapters.build_dispatch_config(**inputs)
 
     def test_config_refuses_placeholder_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -76,6 +76,8 @@ MODULES = [
     "test_design_style.py",
     # SPF023: composition library (words over images, shaped crops, light fields).
     "test_composition_library.py",
+    # The order page (page_role product_selection) as a third copy form of the one pipeline.
+    "test_product_selection_form.py",
 ]
 
 def skip_reason(stdout):

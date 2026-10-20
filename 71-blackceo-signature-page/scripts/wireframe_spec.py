@@ -32,12 +32,15 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import copy_forms  # noqa: E402  the one registry of copy forms
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SPEC_FILE = SKILL_ROOT / "references" / "wireframe-build-spec.json"
 STANDARDS = SKILL_ROOT / "assets" / "visual-standards"
 WIREFRAME_STAGES = ("desktop-wireframe", "mobile-tablet")
-FORMS = ("standard", "long-form")
-FORM_LABEL = {"standard": "Standard", "long-form": "Long-Form"}
+FORMS = copy_forms.FORMS
+FORM_LABEL = {"standard": "Standard", "long-form": "Long-Form", "product-selection": "Product Selection"}
 
 
 class SpecError(Exception):
@@ -83,11 +86,9 @@ def form_of(request: dict, strict: bool = False) -> str:
     declared = [request.get("copy_version"), metadata.get("copy_version"),
                 check[0] if isinstance(check, (tuple, list)) and check else None]
     for value in declared:
-        norm = re.sub(r"[^a-z]", "", str(value or "").lower())
-        if norm in ("standard", "standardv6"):
-            return "standard"
-        if norm in ("longform", "longformv6"):
-            return "long-form"
+        form = copy_forms.norm(value)
+        if form:
+            return form
     tags = [canon((s or {}).get("section_id", "")) for s in request.get("sections") or []]
     if any(re.fullmatch(r"\d+[A-Z]", t) for t in tags):
         return "long-form"
@@ -95,7 +96,7 @@ def form_of(request: dict, strict: bool = False) -> str:
         return "standard"
     if strict:
         raise SpecError(
-            "the wireframe form is not known: declare copy_version (standard or long-form) "
+            f"the wireframe form is not known: declare copy_version ({', '.join(FORMS)}) "
             "in the production request, so the right style reference and form rules are used "
             "(a paid run never guesses the form)")
     if "form" not in _NOTED:
@@ -190,7 +191,9 @@ def _plates(section: dict) -> str:
                 f"({', '.join(allowed)})")
         shown = ratio if ratio and ratio != "auto" else "the nearest listed ratio to the plate as drawn"
         direction = short_direction(slot.get("art_direction")) or "image to be generated"
-        labels.append(f"one plate labelled \"IMAGE {shown} - {direction}\"")
+        # three or more plates (one per package card) are numbered, so no phrase repeats word for word
+        lead = f"plate {len(labels) + 1} labelled" if len(section.get("slots") or []) >= 3 else "one plate labelled"
+        labels.append(f"{lead} \"IMAGE {shown} - {direction}\"")
     return "; ".join(labels)
 
 
@@ -235,8 +238,10 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     scale = s["type_scale_default"][stage]
     strip = s["header_strip"][stage]
     long_form = form == "long-form"
+    page_kind = copy_forms.load_spec(form).get("wireframe", {}).get("page_kind", "a landing page")
+    layouts = s.get("form_layouts", {}).get(form)  # a non-landing form carries its own per-section layout text
     lines = [line.format(form_label=FORM_LABEL[form], platform="mobile" if mobile else "desktop",
-                         width=width, tag=tag, name=name, position=index, total=total)
+                         width=width, tag=tag, name=name, position=index, total=total, page_kind=page_kind)
              for line in blocks["intro"]]
     lines += [blocks["style_reference"], blocks["colour"], blocks["grammar_head"]]
     lines.append(blocks["chip"].format(tag=tag, name_caps=name.upper()))
@@ -244,7 +249,13 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     plates = _plates(section)
     lines.append(blocks["plates_some"].format(plates=plates, ratio_list=", ".join(s["ratio_labels"]))
                  if plates else blocks["plates_none"])
-    if cta:
+    many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
+    if len(many) > 1:  # one button per package card (product-selection Section 3)
+        shape = blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"]
+        lines.append(blocks["cta_cards"].format(
+            cta_shape=shape, labels=" | ".join(f'"{x}"' for x in many)))
+        cta = "per card"
+    elif cta:
         shape = blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"]
         solution = long_form and re.fullmatch(r"\d+[A-Z]", tag) is not None
         lines.append(blocks["cta_some"].format(
@@ -258,10 +269,12 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     lines.append(blocks["behaviour"].format(note=_note(stage, section, cta)))
     if mobile:
         lines.append(blocks["mobile"].format(width=width))
-        if ref["extra_rule"] and form == "standard":
+        if ref["extra_rule"] and form in ("standard", "product-selection"):
             lines.append(ref["extra_rule"])
-    else:
+    elif not layouts:
         lines.append(blocks["long_form_desktop" if long_form else "standard_desktop"])
+    if layouts:
+        lines.append(layouts["mobile" if mobile else "desktop"][tag])
     if long_form and tag in ("2", "3", "4"):
         lines.append(blocks["pain"])
     elif long_form and re.fullmatch(r"[234]A", tag):

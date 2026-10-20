@@ -6,8 +6,10 @@ skill's own path from the copy to that request, and it makes one rule
 structural: ONE request section per canonical copy section of the selected
 form, never band-compressed. Standard has 12 (references/copy-specs/
 standard-v6.json `sequence`); Long-Form has 15 (long-form-v6.json `sequence`:
-1, 2, 2A, 3, 3A, 4, 4A, 5, 6, 7, 8, 9, 10, 11, 12). Every stage therefore
-renders one image per section, per platform.
+1, 2, 2A, 3, 3A, 4, 4A, 5, 6, 7, 8, 9, 10, 11, 12); Product Selection (the order
+page, Skill 78) has 5 (product-selection-v1.json). Every stage therefore
+renders one image per section, per platform. A form's spec supplies its own
+neutral section names, skeleton rows and per-section notes; nothing else differs.
 
 Fail-closed: a manuscript that does not carry exactly the form's sections in
 order is refused, and the finished request must pass the same
@@ -15,7 +17,7 @@ check_section_count the executor runs before it is written. Zero provider
 calls; the file is the only output.
 
 Usage:
-  build_production_request.py --copy-version standard|long-form \\
+  build_production_request.py --copy-version standard|long-form|product-selection \\
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
@@ -40,6 +42,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import copy_forms  # noqa: E402
 import stage_executor as exe  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
@@ -262,8 +265,13 @@ def section_fragments(stage, section, index, sections, spec, table):
                    f"; {words} printed words in all" + (f" (the form plans {vol} for this section)" if vol else "") +
                    ". Size and space the text so all of it prints at a readable size.")
     cta = exe._cta_label(section.get("cta"))
+    many = exe.cta_labels(section)
     forbidden = {exe.canon_section_id(x) for x in (spec.get("cta_map", {}).get("forbidden_in_sections") or [])}
-    if cta:
+    if len(many) > 1:
+        out.append(f"BUTTON: this section carries exactly {len(many)} buttons, one inside each package card in card "
+                   "order, labelled " + ", ".join(f'"{x}"' for x in many) +
+                   "; no other button, link row or sticky bar.")
+    elif cta:
         out.append(f'BUTTON: this section carries exactly one button, labelled "{cta}", with the microcopy '
                    "line under it when the copy block supplies one; no second button, link row or sticky bar.")
     elif sid in forbidden:
@@ -304,6 +312,8 @@ def padding_check(request, stage):
     for index, section in enumerate(request["sections"], start=1):
         with contextlib.redirect_stderr(io.StringIO()):
             prompt = exe.stage_prompt(stage, section, index, exe.LAYOUT[stage][0][1], request, "3:4")
+        # the verbatim copy is masked, as validate_prompt masks it: packages share inclusion lines word for word
+        prompt = prompt.replace(exe.copy_contract(section), " ")
         errors = padding_errors(prompt.strip(), re.findall(r"\S+", prompt))
         if errors:
             raise BuildError(f"section {section['section_id']}: {errors[0]}")
@@ -328,7 +338,7 @@ def fill_to_band(request, stage, spec):
     if not budget:
         return
     ceiling = (budget["target_chars"] + budget["max_chars"]) // 2
-    table = skeleton_table()
+    table = spec.get("skeleton") or skeleton_table()
     for index, section in enumerate(request["sections"], start=1):
         parts = [str(section.get("layout") or "").strip()]
         parts = [p for p in parts if p]
@@ -359,6 +369,7 @@ def section_copy(units):
 
 
 def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
+    names = spec.get("role_names") or ROLE_NAMES
     units, order, _notes = parse_manuscript(text)
     sequence = list(spec["sequence"])
     if order != sequence:
@@ -370,11 +381,22 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
     out = []
     for sid in sequence:
         copy, buttons = section_copy([u for u in units if u.section == sid])
-        if len(buttons) > 1:
+        spec_section = next((x for x in spec["sections"] if x["id"] == sid), {})
+        per_card = spec_section.get("cta", {}).get("standalone") == "per_card"
+        if len(buttons) > 1 and not per_card:
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
-        entry = {"section_id": sid, "section_name": ROLE_NAMES[sid], "copy": copy,
-                 "cta": buttons[0] if buttons else None, "slots": slots.get(sid, [])}
+        entry = {"section_id": sid, "section_name": names[sid], "copy": copy,
+                 "cta": None if per_card else (buttons[0] if buttons else None),
+                 "slots": slots.get(sid, [])}
+        if per_card:  # one button per package card
+            entry["cta_labels"] = buttons
+        # a non-landing form's spec pins each section's composition role, ground and behaviour note
+        for key, field in (("composition_role", "composition_role"), ("ground", "ground")):
+            if spec_section.get(field):
+                entry[key] = spec_section[field]
+        if spec_section.get("behavior_notes"):
+            entry["behavior_notes"] = spec_section["behavior_notes"]
         # The founder letter ends with the founder's signature (copy spec, Section 12
         # Part 6): a name, not a sentence. It is a verbatim label of its own so the
         # executor's truncated-copy guard keeps reading prose only.
@@ -420,7 +442,7 @@ def run_blocks(request, run_dir):
 
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
-    spec = json.loads((exe.SPEC_DIR / f"{version}-v6.json").read_text(encoding="utf-8"))
+    spec = copy_forms.load_spec(version)
     sections = sections_from_manuscript(manuscript_text, spec, slots)
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
@@ -485,7 +507,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--copy-version", choices=["standard", "long-form"], required=True)
+    p.add_argument("--copy-version", choices=list(copy_forms.FORMS), required=True)
     p.add_argument("--manuscript", type=Path, required=True)
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)

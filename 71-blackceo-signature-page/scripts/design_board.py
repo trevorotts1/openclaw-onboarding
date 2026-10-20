@@ -44,6 +44,7 @@ HERE = Path(__file__).resolve().parent
 SKILL_ROOT = HERE.parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))  # stage_executor / brand_colors live beside this file
+import copy_forms  # noqa: E402  the form's page_role names the Design Board's role
 BOARD_DIR = "design-board"
 BOARD_FILE = f"{BOARD_DIR}/design-board.png"
 RECORD_FILE = f"{BOARD_DIR}/production-record.json"
@@ -160,7 +161,8 @@ def read_json(path: Path):
 # ---------------------------------------------------------------- inputs
 
 def declared_role(run_dir: Path) -> str:
-    """The run's page role: intake launch.page_role, else page-request.json, else landing."""
+    """The run's page role: intake launch.page_role, else page-request.json, else the role the
+    run's copy_version belongs to (a product-selection run is the product_selection page), else landing."""
     for name, key in (("intake.json", "launch"), ("page-request.json", None)):
         try:
             data = json.loads((run_dir / name).read_text(encoding="utf-8"))
@@ -169,7 +171,11 @@ def declared_role(run_dir: Path) -> str:
         data = data.get(key) if key and isinstance(data, dict) else data
         if isinstance(data, dict) and isinstance(data.get("page_role"), str) and data["page_role"]:
             return data["page_role"]
-    return "landing"
+    try:
+        form = json.loads((run_dir / "intake.json").read_text(encoding="utf-8")).get("copy_version")
+    except (OSError, ValueError, AttributeError):
+        form = None
+    return (copy_forms.load_spec(form).get("page_role") if copy_forms.norm(form) else None) or "landing"
 
 
 def brand_resolution(run_dir: Path):

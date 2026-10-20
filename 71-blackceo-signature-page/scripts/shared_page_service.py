@@ -34,6 +34,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import copy_forms  # noqa: E402  the one registry of copy forms
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 WRITE_INTAKE = SKILL_ROOT / "scripts" / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
@@ -76,8 +79,13 @@ def main(argv=None) -> int:
                     "named page_role into the four-image pipeline.")
     p.add_argument("--request", type=Path, required=True)
     p.add_argument("--run-dir", type=Path, required=True)
-    p.add_argument("--page-version", choices=["standard", "long-form"],
-                   required=True)
+    p.add_argument("--page-version", choices=list(copy_forms.FORMS),
+                   required=True,
+                   help="the page's form: standard or long-form for a landing page, "
+                        "product-selection for the order page (page_role product_selection)")
+    p.add_argument("--design-style", choices=["A", "B", "C"], default=None,
+                   help="the client's design style (references/design-styles.md), recorded at intake")
+    p.add_argument("--test-run", action="store_true")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--image-cap", type=int, required=True)
     p.add_argument("--brand-file", type=Path, required=True)
@@ -111,6 +119,12 @@ def main(argv=None) -> int:
                 f"page-request: assigned_skill is "
                 f"{request.get('assigned_skill')!r}; the shared image "
                 f"service serves skills {SHARED_SKILLS} only")
+        form = copy_forms.form_for_role(role)
+        if form != (a.page_version if a.page_version not in copy_forms.LANDING_FORMS else None):
+            raise ServiceError(
+                f"--page-version {a.page_version!r} does not fit page_role {role!r}: "
+                + (f"this role is built from the {form!r} form" if form else
+                   "this role is a landing page and takes standard or long-form"))
         graph_raw = _read(a.route_graph, "route graph")
         if _sha256(graph_raw) != request.get("route_graph_hash"):
             raise ServiceError(
@@ -146,6 +160,10 @@ def main(argv=None) -> int:
                        "--route-graph", str(run_dir / request["route_graph_ref"])]
         if a.consent_statements is not None:
             intake_argv += ["--consent-statements", str(a.consent_statements)]
+        if a.design_style:
+            intake_argv += ["--design-style", a.design_style]
+        if a.test_run:
+            intake_argv.append("--test-run")
         subprocess.run(intake_argv, check=True)
         if a.pipeline_command:
             subprocess.run(shlex.split(a.pipeline_command), check=True,

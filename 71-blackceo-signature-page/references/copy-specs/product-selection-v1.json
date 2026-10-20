@@ -1,0 +1,196 @@
+{
+  "spec_id": "copy-spec-product-selection-v1",
+  "spec_version": 1,
+  "copy_version": "product-selection",
+  "page_role": "product_selection",
+  "status": "Structure extracted from Skill 78's own references (selection-copy-profile.md page shape, selection-ui-contract.md). Skill 78 states that no pre-existing exact selection-page copy framework was supplied; this is the new design contract, not BlackCEO source copy. No character or word band is invented: the copy is checked for its sections, its order, one button per package card and no button elsewhere.",
+  "guide": {
+    "file": "78-signature-product-selection/references/selection-copy-profile.md",
+    "title": "Skill 78 copy profile - specificity-led comparison",
+    "also": [
+      "78-signature-product-selection/references/selection-ui-contract.md"
+    ]
+  },
+  "sequence": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "role_names": {
+    "1": "Bridge headline",
+    "2": "How to choose",
+    "3": "Packages",
+    "4": "Compare",
+    "5": "Questions and trust"
+  },
+  "counting_convention": {
+    "char_counting": "Join the visible components with one space; count letters, punctuation, and spaces.",
+    "word_tokenization": "Strip markers, normalize whitespace, count whitespace-separated tokens.",
+    "count": [
+      "headline",
+      "paragraph",
+      "package card lines",
+      "comparison rows",
+      "questions and answers",
+      "trust lines",
+      "button words"
+    ],
+    "exclude": [
+      "document titles",
+      "section headings",
+      "package card headings",
+      "AI/design notes",
+      "formatting markers"
+    ]
+  },
+  "sections": [
+    {
+      "id": "1",
+      "framework_name": "Bridge headline",
+      "job": "Acknowledges the interest the visitor just showed; it picks up from the landing page and never re-sells the whole offer.",
+      "required": true,
+      "cta": {
+        "standalone": "forbidden"
+      },
+      "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 1",
+      "composition_role": "selection-bridge",
+      "ground": "hero",
+      "limits": [],
+      "behavior_notes": "Brand band; no button on this section"
+    },
+    {
+      "id": "2",
+      "framework_name": "How to choose",
+      "job": "One plain paragraph on what choosing means and how the packages differ.",
+      "required": true,
+      "cta": {
+        "standalone": "forbidden"
+      },
+      "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 2",
+      "composition_role": "selection-guide",
+      "ground": "light",
+      "limits": [],
+      "behavior_notes": "One plain paragraph; no button on this section"
+    },
+    {
+      "id": "3",
+      "framework_name": "Packages",
+      "job": "One card per approved package, in approved order: exact name, who it suits, main outcome, specific inclusions, visible exclusions, exact price and terms, and a Choose button.",
+      "required": true,
+      "cta": {
+        "standalone": "per_card",
+        "min": 2,
+        "counts_toward_total": false
+      },
+      "element_counts": [
+        {
+          "element": "package_inclusions",
+          "unit_kind": "bullet",
+          "min": 2,
+          "max": 200,
+          "kind": "hard",
+          "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 3 (inclusions stated specifically, exclusions visible)"
+        }
+      ],
+      "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 3; 78-signature-product-selection/references/selection-ui-contract.md (radio group of cards)",
+      "composition_role": "selection-packages",
+      "ground": "dark",
+      "limits": [],
+      "behavior_notes": "Radio group of cards, none pre-selected; one Choose button per card"
+    },
+    {
+      "id": "4",
+      "framework_name": "Compare",
+      "job": "The comparison grid: for each item, whether each package includes it, does not include it, limits it or makes it conditional. Exclusions stay visible on desktop and mobile.",
+      "required": true,
+      "cta": {
+        "standalone": "forbidden"
+      },
+      "element_counts": [
+        {
+          "element": "comparison_rows",
+          "unit_kind": "bullet",
+          "min": 1,
+          "max": 200,
+          "kind": "hard",
+          "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 4"
+        }
+      ],
+      "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 4; 78-signature-product-selection/references/selection-ui-contract.md (responsive behavior)",
+      "composition_role": "selection-compare",
+      "ground": "light",
+      "limits": [],
+      "behavior_notes": "Desktop table, mobile disclosure; exclusions stay visible"
+    },
+    {
+      "id": "5",
+      "framework_name": "Questions and trust",
+      "job": "Common questions and trust information, supported by real evidence only; no invented proof.",
+      "required": true,
+      "cta": {
+        "standalone": "forbidden"
+      },
+      "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 5",
+      "composition_role": "selection-trust",
+      "ground": "dark",
+      "limits": [],
+      "behavior_notes": "Questions then trust lines; no button on this section"
+    }
+  ],
+  "cta_map": {
+    "required_in_sections": [
+      "3"
+    ],
+    "forbidden_in_sections": [
+      "1",
+      "2",
+      "4",
+      "5"
+    ],
+    "markers": {
+      "button": "[CTA BUTTON: Choose <package name>]"
+    },
+    "module_anatomy": "One button per package card, labelled Choose plus the exact package name; no payment language and no sticky or floating button.",
+    "position_semantics": "Buttons sit inside their package cards, in card order; Section 3 carries all of them.",
+    "source": "78-signature-product-selection/references/selection-copy-profile.md (Page shape), item 3; no Buy now (validate_selection_content.py)"
+  },
+  "skeleton": {
+    "1": {
+      "purpose": "Bridge from the interest the visitor just showed to the choice below",
+      "slots": "no image slot by default; a brand-colour band carries the headline"
+    },
+    "2": {
+      "purpose": "Explain in one plain paragraph how the packages differ",
+      "slots": "no image slot by default"
+    },
+    "3": {
+      "purpose": "One selectable card per package, side by side on desktop and stacked on mobile",
+      "slots": "one labelled image plate per package card (client-supplied or generated), in card order"
+    },
+    "4": {
+      "purpose": "Comparison grid of what each package includes, excludes, limits or conditions",
+      "slots": "no image slot; a table on desktop and a disclosure on mobile"
+    },
+    "5": {
+      "purpose": "Common questions and trust information backed by real evidence",
+      "slots": "no image slot by default"
+    }
+  },
+  "wireframe": {
+    "page_kind": "an order page (package selection)",
+    "height_floor_px": {
+      "desktop-wireframe": 6973
+    },
+    "height_floor_note": "Derived, not measured: the standard desktop wireframe sheet is 16,736px for 12 sections (1,394.7px each); 5 sections x 1,394.7 = about 6,973px. No product-selection sheet exists to measure; replace with a measured value once Trevor approves one."
+  },
+  "procedural_law": {
+    "hard_failure_blocks": true,
+    "deviation_note_required": false,
+    "anti_requirements": [
+      "No invented prices, savings, popularity or scarcity claims; every figure is the approved catalog's."
+    ]
+  },
+  "qualitative_rules": []
+}

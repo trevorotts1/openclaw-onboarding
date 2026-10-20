@@ -40,7 +40,11 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import copy_forms  # noqa: E402  the one registry of copy forms
 
 PROFILE_NAME = "signature_launch_landing"
 SKILL_NUMBER = 71
@@ -604,6 +608,12 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
     copy_mapped = request["copy_profile"] in ("standard", "long-form")
     if copy_mapped:
         updates["copy_version"] = request["copy_profile"]
+    # a shared-service page of another role is built from that role's own form: the request's
+    # copy_profile names the landing page's copy, which this page does not carry
+    role_form = copy_forms.form_for_role(request["page_role"]) if shared else None
+    if role_form:
+        copy_mapped = True
+        updates["copy_version"] = role_form
     if request["test_only"]:
         updates["test_run"] = True
 

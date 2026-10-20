@@ -70,8 +70,13 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
         "entry": "build_plan",
         "second_module": "78-signature-product-selection/scripts/emit_page_result.py",
         "second_entry": "emit",
+        "image_module": "78-signature-product-selection/scripts/run_image_stages.py",
+        "image_entry": "main",
         "timeout_s": 1800,
-        "note": "native S78 chain: build_plan, then emit_page_result.emit",
+        "note": ("native S78 chain: build_plan, then run_image_stages.main (the order "
+                 "page's wireframes and mockups through Skill 71's shared image "
+                 "service; required, never skipped), then "
+                 "emit_page_result.emit"),
     },
     "upsell_1": {
         "dispatch": True,
@@ -231,6 +236,9 @@ EXPECTED_SIGNATURES = (
      ("plan", "author_session", "request_id", "page_id", "input_hash",
       "request", "artifact_paths", "status", "test_only", "reviewer_session",
       "native_bindings_ref", "blockers")),
+    ("s78_run_image_stages.main",
+     "78-signature-product-selection/scripts/run_image_stages.py", None,
+     "main", ("argv",)),
     ("s79_validate_checkout.validate_request",
      "79-signature-order-form/scripts/validate_checkout.py", None,
      "validate_request", ("request", "now")),
@@ -315,6 +323,7 @@ def build_dispatch_config(*, work_dir: str | Path,
                           copy: Dict[str, str | Path],
                           journey: Dict[str, str | Path],
                           enrichment: Dict[str, str | Path],
+                          image_inputs: str | Path,
                           skill80_root: str | Path | None = None,
                           skill81_root: str | Path | None = None,
                           python: Optional[str] = None) -> Dict[str, Any]:
@@ -322,6 +331,14 @@ def build_dispatch_config(*, work_dir: str | Path,
 
     No /path/to entry, no <...> token and no missing file may be emitted as
     executable configuration. checkout is not configurable by design.
+
+    image_inputs (required) is the per-launch inputs file for the order page's
+    wireframes and mockups (78 run_image_stages.py --inputs). Every funnel that
+    has a product_selection page gets all of its pages, so the order page's
+    image step is never optional: a missing, empty or "none" value is refused
+    the same way a missing launch_record is. The product_selection command
+    makes the images before it writes the page result and never passes
+    --allow-paid.
     """
     work = Path(work_dir)
     if not work.is_dir():
@@ -342,6 +359,11 @@ def build_dispatch_config(*, work_dir: str | Path,
         if not root.is_dir():
             raise AdapterError(f"{label}: no directory at {root}")
 
+    if image_inputs is None or str(image_inputs).strip().lower() in ("", "none"):
+        raise AdapterError(
+            "image_inputs: required; a funnel with an order page gets its "
+            "wireframes and mockups, so the image step cannot be skipped")
+    images_path = _require_file("image_inputs", image_inputs)
     copy_files = {role: _require_file(f"copy.{role}", path)
                   for role, path in copy.items()}
     journey_files = {role: _require_file(f"journey.{role}", path)
@@ -371,6 +393,12 @@ def build_dispatch_config(*, work_dir: str | Path,
                 "bash", "-c",
                 f"{quote(python)} {quote(root78 / 'build_selection_plan.py')} "
                 f"{quote(launch_path)} > {quote(work / 'selection-plan.json')} "
+                f"&& {quote(python)} {quote(root78 / 'run_image_stages.py')} "
+                f"--plan {quote(work / 'selection-plan.json')} "
+                f"--request \"{{request}}\" "
+                f"--run-dir {quote(work / 'order-page-images')} "
+                f"--launch-record {quote(launch_path)} "
+                f"--inputs {quote(images_path)} "
                 f"&& {quote(python)} {quote(root78 / 'emit_page_result.py')} "
                 f"{quote(work / 'selection-plan.json')} "
                 f"--output \"{{result}}\" --author-session s49-native-selection "
