@@ -36,12 +36,13 @@
 
 **The client cannot open the chamber.** Run
 `bash scripts/verify-council-box.sh` first. PUBLIC_ORIGIN_UNSET means the
-operator has not yet run `scripts/provision-council-access.sh --all --apply`
-for this box. The client signs in at
-`https://<slug>-council.zerohumanworkforce.com` with their Command Center
+box has no verified Council address: the operator has not yet run
+`scripts/provision-council-access.sh --all --apply`, or has run it since the
+last `wire.sh` (then `bash wire.sh --idempotent` picks it up). The client
+signs in at the `chamber_url` the CLI prints with their Command Center
 emails; an email that is not on the Command Center allow-list is refused by
-Cloudflare Access by design. Send the `chamber_url` the CLI prints, never a
-127.0.0.1 link, which only opens on the box itself.
+Cloudflare Access by design. Never build the address by hand and never send
+a 127.0.0.1 link, which only opens on the box itself.
 
 **The service is not running.** wire.sh owns it: the LaunchAgent
 `ai.blackceo.council-service` on a Mac, the pm2 app `council-of-wise-elders`

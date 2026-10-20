@@ -1,3 +1,7 @@
+## [v27.1.55]  -  2026-10-20  -  Council (Skill 77) v1.0.34: Clients only get a Council link that actually opens
+
+- In plain English: Clients only get a Council link that actually opens.
+
 ## [v27.1.54]  -  2026-10-20  -  Merge train: #2376 Council (Skill 77): approved screen look restored; #2377 CAN016: atomic upgrade handles docker containers with a bind-mounted…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

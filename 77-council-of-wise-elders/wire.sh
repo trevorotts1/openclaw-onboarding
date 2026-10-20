@@ -206,6 +206,16 @@ if [ -n "$CC_URL" ]; then
   esac
 fi
 if [ -z "$PUBLIC" ]; then PUBLIC="$(jget "$P/service.json" public_origin)"; fi
+# Keep the candidate only if it answers like a Cloudflare Access login (302/303 to
+# *.cloudflareaccess.com); otherwise a dead link would reach clients as chamber_url.
+if [ -n "$PUBLIC" ] && [ "${COUNCIL_PUBLIC_ORIGIN_SKIP_PROBE:-0}" != 1 ]; then
+  _pr="$(curl -s -o /dev/null -m 8 -w '%{http_code} %{redirect_url}' "$PUBLIC/status" 2>/dev/null)" || true
+  _pc="${_pr%% *}"; _pl="${_pr#* }"; _ph="${_pl#*://}"; _ph="${_ph%%/*}"; _ph="${_ph%%:*}"
+  case "$_pc:$_ph" in
+    302:*.cloudflareaccess.com|303:*.cloudflareaccess.com) ;;
+    *) say "PUBLIC_ORIGIN_UNVERIFIED $PUBLIC code=${_pc:-000}"; PUBLIC="" ;;
+  esac
+fi
 
 # ------------------------------------------------- 7. generated launcher + shim
 mkdir -p "$P/bin"

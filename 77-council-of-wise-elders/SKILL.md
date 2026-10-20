@@ -1,5 +1,5 @@
 ---
-version: 1.0.33
+version: 1.0.34
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -48,12 +48,15 @@ inside the container on a VPS. Nobody hand-runs npm. The result is the
 
 The agent convenes with `blackceo-council` (or
 `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
-PATH). The client opens the Roast Room chamber at
-`https://<slug>-council.zerohumanworkforce.com` and signs in with their
-Command Center emails; the operator publishes that address with
-`scripts/provision-council-access.sh --all --apply`. The command prints a
-`chamber_url`: always send the client that `chamber_url`, never a
-127.0.0.1 link (it only works on the box itself).
+PATH). The client opens the Roast Room chamber at their own Council
+address and signs in with their Command Center emails; the operator
+publishes that address with `scripts/provision-council-access.sh --all
+--apply`. If the command prints a `chamber_url`, send the client exactly
+that link. If it prints no `chamber_url`, the address was not
+verified: do not invent, guess, or build a link, and never send a
+127.0.0.1 link (it only works on the box itself). Tell the client the
+Council is running, the result will be shared, and their private
+Council link is still being set up.
 
 To learn whether this box is usable right now, run
 `bash scripts/verify-council-box.sh` (read-only). Its last line,
@@ -142,9 +145,11 @@ operational reference for a follow-up or an existing-session control.
    choice or the harness default, and the session and live events links.
    Tell the client which model is running, and send them the
    `chamber_url` from the output so they can watch the Roast Room. If the
-   output has no `chamber_url`, the public address is not set up yet
-   (COUNCIL_BOX code PUBLIC_ORIGIN_UNSET): say so plainly and give the
-   session id; never substitute a 127.0.0.1 link.
+   output has no `chamber_url` (COUNCIL_BOX code PUBLIC_ORIGIN_UNSET):
+   do not invent or guess a link and never substitute a 127.0.0.1
+   link. Tell the client the Council is running and the result will be
+   shared, give the session id, and say their private Council link is
+   still being set up.
    A fresh install convenes immediately on any usable route; there is
    no setup or approval step. If convening is refused for any other
    reason, read the refusal to the client in plain words and never

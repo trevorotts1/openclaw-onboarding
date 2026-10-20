@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.34: Clients only get a Council link that actually opens
+
+In plain English: clients only get a Council link that actually opens. Before handing one over, setup now checks that the link answers from the public internet and drops it if it does not. If there is no working link, the Council says so plainly and tells the client what to do next instead of sending a dead address.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.55).
+
 ## v1.0.33: The Council screen is back to the approved look
 
 In plain English: the Council screen goes back to the look that was approved. There is no extra box above the room, Key Points are compact again, and no internal ids show on the page.
