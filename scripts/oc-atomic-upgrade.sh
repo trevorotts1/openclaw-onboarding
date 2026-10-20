@@ -188,6 +188,7 @@ UIDN=""
 SUP_PKG_ROOT=""   # the openclaw package the supervisor launches ("" = none found: PATH is all there is)
 SUP_PREFIX=""
 SUP_ENTRY=""
+SUP_SOURCE=""     # launchd | systemd ("" = no supervisor definition)
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
@@ -270,6 +271,7 @@ _resolve_supervisor_install() {
   SUP_PKG_ROOT="$(printf '%s\n' "$out" | sed -n 's/^pkg_root=//p' | head -1)"
   SUP_PREFIX="$(printf '%s\n' "$out" | sed -n 's/^prefix=//p' | head -1)"
   SUP_ENTRY="$(printf '%s\n' "$out" | sed -n 's/^entry=//p' | head -1)"
+  SUP_SOURCE="$(printf '%s\n' "$out" | sed -n 's/^source=//p' | head -1)"
   node_dir="$(printf '%s\n' "$out" | sed -n 's/^node=//p' | head -1)"
   [ -n "$node_dir" ] && node_dir="$(dirname "$node_dir")"
   [ -n "$SUP_PKG_ROOT" ] && [ -n "$SUP_PREFIX" ] || return 1
@@ -637,6 +639,19 @@ _prove_started() {
   return 0
 }
 
+# ── Epoch seconds a process started (ps etime is [[dd-]hh:]mm:ss on macOS and Linux), and
+# ── the epoch a file's inode last changed (GNU stat -c %Z, then BSD stat -f %c). "" on any failure.
+_proc_start_epoch() {
+  local e d=0 a b c secs
+  e="$(ps -o etime= -p "$1" 2>/dev/null | tr -d '[:space:]')"
+  case "$e" in ''|*[!0-9:-]*) return 1 ;; esac
+  case "$e" in *-*) d="${e%%-*}"; e="${e#*-}" ;; esac
+  IFS=: read -r a b c <<<"$e"
+  if [ -n "$c" ]; then secs=$((10#$a*3600 + 10#$b*60 + 10#$c)); else secs=$((10#$a*60 + 10#$b)); fi
+  printf '%s' "$(( $(date +%s) - 10#$d*86400 - secs ))"
+}
+_file_ctime() { stat -c %Z "$1" 2>/dev/null || stat -f %c "$1" 2>/dev/null; }  # GNU first: on GNU, `stat -f %c` succeeds with filesystem info
+
 # ── CAN015: success means the GATEWAY PROCESS runs the target, not that some
 # ── openclaw on PATH reports it. The package the supervisor launches must measure
 # ── the target now, and (launchd) the live pid's command line must be that very
@@ -648,8 +663,11 @@ _prove_gateway_on_target() {
     _err "the package the gateway launches measures '${v:-nothing}', not $TARGET_VERSION"
     return 1
   fi
+  pid="$(_gateway_pid)"
+  # No pid, no proof: never claim "gateway pid  runs ..." for a process nobody identified.
+  if [ -z "$pid" ]; then _err "no gateway process is identified (supervisor: $SUPERVISOR) - cannot prove it runs the target"; return 1; fi
+  if ! _healthz_ok; then _err "/healthz did not answer 200"; return 1; fi
   if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_ENTRY" ]; then
-    pid="$(_gateway_pid)"
     args="$(ps -o args= -p "$pid" 2>/dev/null)"
     if [ -z "$args" ]; then
       _warn "could not read the gateway process arguments (pid ${pid:-none}); package version and /healthz are the evidence"
@@ -658,6 +676,22 @@ _prove_gateway_on_target() {
         *"$SUP_ENTRY"*) ;;
         *) _err "the live gateway (pid $pid) was not launched from $SUP_ENTRY"; return 1 ;;
       esac
+    fi
+  fi
+  # A gateway started BEFORE the package on disk was (re)installed still runs the old code even
+  # though its args, the package.json version and /healthz all look right (in-place `npm i -g`
+  # with no restart). So the pid must have started no earlier than the package's last change.
+  if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_PKG_ROOT" ]; then
+    local started changed
+    started="$(_proc_start_epoch "$pid")"; changed="$(_file_ctime "$SUP_PKG_ROOT/package.json")"
+    if [ -z "$started" ] || [ -z "$changed" ]; then
+      _err "cannot compare the gateway start time (pid $pid: '${started:-?}') with the package change time ('${changed:-?}'); not proven"
+      return 1
+    fi
+    # 2s slack: etime is whole seconds, so the derived start can be a second early.
+    if [ $((started + 2)) -lt "$changed" ]; then
+      _err "the live gateway (pid $pid) started before $SUP_PKG_ROOT/package.json last changed - it predates the installed build"
+      return 1
     fi
   fi
   _ok "gateway pid $(_gateway_pid) runs $SUP_PKG_ROOT at $v (target $TARGET_VERSION), /healthz 200"
@@ -873,6 +907,14 @@ do_upgrade() {
     echo "    5. docker start openclaw ; then confirm the pid is STABLE for 25s" >&2
     return 78
   fi
+  # Only launchd can be stopped, restarted and pid-proven here. A systemd unit (or any gateway no
+  # supervisor above owns) would be "upgraded" on disk while the old process keeps answering /healthz.
+  if [ "$SUPERVISOR" != "launchd" ]; then
+    _refuse_banner \
+      "The gateway supervisor is '${SUP_SOURCE:+$SUP_SOURCE unit, detected as }$SUPERVISOR', and this script can only stop, restart and pid-prove a launchd gateway. Installing here would leave the running gateway on the OLD build and still report success." \
+      "Nothing was changed. Upgrade the install (${SUP_PKG_ROOT:-the unit ExecStart path}) and restart the gateway by hand (systemctl restart), then confirm the new pid and /healthz."
+    return 78
+  fi
   if ! command -v "$NPM_BIN" >/dev/null 2>&1; then
     _refuse_banner "npm ($NPM_BIN) is NOT ON PATH, so the binary cannot be installed or rolled back." \
       "Nothing was changed. Refusing to start a procedure whose rollback is already impossible."
@@ -918,16 +960,22 @@ do_upgrade() {
   _say "version   : $OLD_VERSION (measured)  ->  $TARGET_VERSION (target)"
   _say "config    : $OC_CONFIG  [shape: $shape]"
 
-  # ponytail: "already on target" trusts the supervisor's package.json; it cannot tell a gateway
-  # process started BEFORE a manual install (npm resets file mtimes, so no mtime test) - add a
-  # pid-start vs package-ctime check if that case shows up.
+  # "Already on target" needs the supervisor's package at the target AND the live gateway process
+  # launched from it AND /healthz 200 (_prove_gateway_on_target). A package at the target under a
+  # gateway still running the old build (or no gateway at all) falls through to the full procedure,
+  # which restarts the gateway and re-proves it.
+  # The proof includes pid start >= package.json ctime, so an in-place reinstall with no restart
+  # is not "already on target" either.
   if [ "$OLD_VERSION" = "$TARGET_VERSION" ] && [ "$shape" != "LEGACY_LIST" ]; then
+    if ! _prove_gateway_on_target; then
+      _warn "the package is at $TARGET_VERSION but the gateway is NOT proven running it (above) — running the full procedure to restart and re-prove it"
     # "Nothing to do" is only true if the installed build actually accepts the config.
-    if [ "$shape" = "NO_CONFIG" ] || _config_valid_for_installed_binary; then
-      _ok "already on $TARGET_VERSION with a non-legacy config the installed build accepts — nothing to do."
+    elif [ "$shape" = "NO_CONFIG" ] || _config_valid_for_installed_binary; then
+      _ok "already on $TARGET_VERSION, gateway running it, non-legacy config the installed build accepts — nothing to do."
       return 0
+    else
+      _warn "already on $TARGET_VERSION but the installed build REJECTS the config (above) — running the full procedure to migrate it"
     fi
-    _warn "already on $TARGET_VERSION but the installed build REJECTS the config (above) — running the full procedure to migrate it"
   fi
 
   if [ "$DRY_RUN" = "1" ]; then
