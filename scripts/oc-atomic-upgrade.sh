@@ -637,6 +637,19 @@ _prove_started() {
   return 0
 }
 
+# ── Epoch seconds a process started (ps etime is [[dd-]hh:]mm:ss on macOS and Linux), and
+# ── the epoch a file's inode last changed (BSD stat -f %c, GNU stat -c %Z). "" on any failure.
+_proc_start_epoch() {
+  local e d=0 a b c secs
+  e="$(ps -o etime= -p "$1" 2>/dev/null | tr -d '[:space:]')"
+  case "$e" in ''|*[!0-9:-]*) return 1 ;; esac
+  case "$e" in *-*) d="${e%%-*}"; e="${e#*-}" ;; esac
+  IFS=: read -r a b c <<<"$e"
+  if [ -n "$c" ]; then secs=$((10#$a*3600 + 10#$b*60 + 10#$c)); else secs=$((10#$a*60 + 10#$b)); fi
+  printf '%s' "$(( $(date +%s) - 10#$d*86400 - secs ))"
+}
+_file_ctime() { stat -f %c "$1" 2>/dev/null || stat -c %Z "$1" 2>/dev/null; }
+
 # ── CAN015: success means the GATEWAY PROCESS runs the target, not that some
 # ── openclaw on PATH reports it. The package the supervisor launches must measure
 # ── the target now, and (launchd) the live pid's command line must be that very
@@ -663,6 +676,22 @@ _prove_gateway_on_target() {
         *"$SUP_ENTRY"*) ;;
         *) _err "the live gateway (pid $pid) was not launched from $SUP_ENTRY"; return 1 ;;
       esac
+    fi
+  fi
+  # A gateway started BEFORE the package on disk was (re)installed still runs the old code even
+  # though its args, the package.json version and /healthz all look right (in-place `npm i -g`
+  # with no restart). So the pid must have started no earlier than the package's last change.
+  if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_PKG_ROOT" ]; then
+    local started changed
+    started="$(_proc_start_epoch "$pid")"; changed="$(_file_ctime "$SUP_PKG_ROOT/package.json")"
+    if [ -z "$started" ] || [ -z "$changed" ]; then
+      _err "cannot compare the gateway start time (pid $pid: '${started:-?}') with the package change time ('${changed:-?}'); not proven"
+      return 1
+    fi
+    # 2s slack: etime is whole seconds, so the derived start can be a second early.
+    if [ $((started + 2)) -lt "$changed" ]; then
+      _err "the live gateway (pid $pid) started before $SUP_PKG_ROOT/package.json last changed - it predates the installed build"
+      return 1
     fi
   fi
   _ok "gateway pid $(_gateway_pid) runs $SUP_PKG_ROOT at $v (target $TARGET_VERSION), /healthz 200"
@@ -927,8 +956,8 @@ do_upgrade() {
   # launched from it AND /healthz 200 (_prove_gateway_on_target). A package at the target under a
   # gateway still running the old build (or no gateway at all) falls through to the full procedure,
   # which restarts the gateway and re-proves it.
-  # ponytail: no pid-start vs package-ctime check (npm resets mtimes); a gateway launched from the
-  # same path before an in-place reinstall still passes - add the check if that case shows up.
+  # The proof includes pid start >= package.json ctime, so an in-place reinstall with no restart
+  # is not "already on target" either.
   if [ "$OLD_VERSION" = "$TARGET_VERSION" ] && [ "$shape" != "LEGACY_LIST" ]; then
     if ! _prove_gateway_on_target; then
       _warn "the package is at $TARGET_VERSION but the gateway is NOT proven running it (above) — running the full procedure to restart and re-prove it"

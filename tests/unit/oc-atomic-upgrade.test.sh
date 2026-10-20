@@ -296,6 +296,7 @@ case "\${1:-}" in
     if [ -f "\$STATE/bootstrap_fail" ]; then exit 1; fi
     [ -f "\$STATE/loaded_\$LBL" ] && exit 17     # already loaded / still tearing down
     touch "\$STATE/loaded_\$LBL"
+    rm -f "\$STATE/ps_etime"                    # a (re)started gateway is a brand-new process
     exit 0
     ;;
 esac
@@ -326,10 +327,14 @@ echo "a-box"
 EOF
   # node: the supervisor plist names a bare `node`; the resolver finds this one.
   printf '#!/bin/bash\nexit 0\n' > "$dir/node"
-  # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args).
+  # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args); its age is
+  # $STATE/ps_etime (default 00:00 = just started, i.e. after every fixture file was written).
   cat > "$dir/ps" <<EOF
 #!/bin/bash
-if [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi
+case "\$*" in
+  *etime*) if [ -f "$state/ps_etime" ]; then cat "$state/ps_etime"; else echo "00:00"; fi ;;
+  *) if [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi ;;
+esac
 EOF
   chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps"
 }
@@ -1044,6 +1049,19 @@ if [ "$RC15C" -eq 0 ] && grep -q 'nothing to do' <<<"$OUT15C" && ! grep -q 'laun
   pass "15c: package at target AND gateway running it with /healthz 200 -> still 'nothing to do', no restart"
 else
   fail "15c: rc=$RC15C. Output: $OUT15C"
+fi
+
+# 15d: the package is at the target and the gateway's args/healthz look right, but the gateway was
+# started BEFORE the package was installed in place (npm i -g, no restart) -> not proven, restart.
+H15D="$(make_box b15d clean)"; S15D="$SANDBOX/stubs15d"; ST15D="$SANDBOX/state15d"
+make_stubs "$S15D" "$ST15D" versioned
+set_installed "$H15D" "$ST15D" "$NEW_V"
+printf '05-00:00:00\n' > "$ST15D/ps_etime"   # the pid is 5 days old; the fixture package.json is seconds old
+OUT15D="$(run_atomic "$H15D" "$S15D" "$ST15D")"; RC15D=$?
+if ! grep -q 'nothing to do' <<<"$OUT15D" && grep -q 'launchctl bootout' "$ST15D/events" && grep -q 'predates the installed build' <<<"$OUT15D"; then
+  pass "15d: gateway started before the package's last change -> not 'already on target'; restarted and re-proved (rc=$RC15D)"
+else
+  fail "15d: rc=$RC15D (want a restart, 'predates the installed build', no 'nothing to do'). Output: $OUT15D"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
