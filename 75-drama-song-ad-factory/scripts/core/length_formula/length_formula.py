@@ -586,6 +586,35 @@ def _rap_style(style_id):
         return False
 
 
+def _sung_style(style_id):
+    """True for a KNOWN style that delivers no rap (Soul Ballad, Soul Rise).
+    No style or an unknown style -> False: that plan stays byte-identical."""
+    if style_id is None:
+        return False
+    try:
+        return "rap" not in _MS.style(style_id)["deliveries"]
+    except (_MS.MusicStyleError, TypeError):
+        return False
+
+def _fit_style_words(D, spoken_words, sung_words, style_id):
+    """Cap (spoken, sung) so words_fit.preflight(D, sung, spoken, style) is ok.
+
+    The ceiling is words_fit's own budget split (_fewer_words_budget's
+    arithmetic: delivered minus intro/outro, divided by the style's sung
+    target and priced at the style's rates). Spoken keeps its plan count up to
+    its share of that budget; sung takes the vocal seconds left. Never raises
+    a word count, so a plan that already fits returns unchanged.
+    """
+    if _WF.preflight(D, sung_words, spoken_words, style=style_id)["outcome"] == "ok":
+        return spoken_words, sung_words
+    r = _WF.rates_for(style_id)
+    vocal_s = max(D - _WF.INTRO_OUTRO_S, 0.0)
+    f = _WF.style_sung_target_pct(style_id, D) / 100.0
+    spoken = min(spoken_words, int(math.floor(vocal_s * (1.0 - f) * r["spoken"] + 1e-9)))
+    sung = min(sung_words, int(math.floor(
+        max(vocal_s - spoken / float(r["spoken"]), 0.0) * r["sung"] + 1e-9)))
+    return spoken, sung
+
 # ---------------------------------------------------------------------------
 # W1-method-song-U3 (Trevor 2026-10-13): THE METHOD'S RUNTIME TARGETS, in the
 # ONE length function. Method sections 7.1-7.2 of the Drama-to-Demand method:
@@ -777,7 +806,9 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True,
     rap rate from core/words_fit (one copy of the number). The plan then
     returns words {spoken, rap, sung} and a top-level ``rap_s``. No style, an
     unknown style, Soul Ballad and Soul Rise keep the previous output
-    BYTE-IDENTICAL -- no rap key is added for them.
+    BYTE-IDENTICAL -- no rap key is added for them -- except (v2.9.70) that a
+    named non-rap style's ``words`` are capped to what words_fit.preflight
+    admits at that style's rates (_fit_style_words); no style is untouched.
 
     ``method`` (default False) adds the Drama-to-Demand runtime targets (method
     sections 7.1-7.2) as ``out["method"]``: the backstory, ERM and closing
@@ -876,6 +907,15 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True,
         # the D15 share counts rap as spoken-style: the plan reaches the
         # requested target by construction, so the caps-bind note never fires.
         planned_share = round((spoken_words / SPOKEN_WPS + rap_s) / D * 100.0, 1)
+    if _sung_style(style_id):
+        # v2.9.70: a named non-rap style's budget must pass the gate that
+        # judges it (words_fit.preflight, at the style's own rates, + intro/
+        # outro). Without this the 60 s Soul Ballad plan (66 words, 65.7 s)
+        # was refused WORDS_DO_NOT_FIT by music_director -- an unpassable
+        # stage 3. A plan that already fits is untouched.
+        spoken_words, sung_words = _fit_style_words(D, spoken_words, sung_words, style_id)
+        opener = min(opener, spoken_words)
+        planned_share = round(spoken_words / SPOKEN_WPS / D * 100.0, 1)
     words = {"total": spoken_words + sung_words + rap_words,
              "spoken": spoken_words, "sung": sung_words, "opener_max": opener,
              "closing": max(spoken_words - opener, 0)}
@@ -982,12 +1022,12 @@ def selfcheck():
     assert p["lexical_gate"]["verdict"] == "PASS", p["lexical_gate"]
     assert p["lexical_s"] + 1e-9 >= 0.70 * 88, p["lexical_s"]
     assert p["rap_gate"]["verdict"] == "PASS", p["rap_gate"]
-    control = plan(90, style_id="soul-ballad")         # the unchanged control
+    control = plan(90, style_id="soul-ballad")         # the non-rap control
     assert "rap" not in control["words"] and "rap_s" not in control, control["words"]
     assert control == plan(90, style_id="soul-ballad")
     return {"rnb-flow": {"rap_s": p["rap_s"], "rap_words": p["words"]["rap"],
                          "lexical_s": p["lexical_s"], "owed_s": p["lexical_gate"]["owed_s"]},
-            "soul-ballad": "byte-identical, no rap key", "ok": True}
+            "soul-ballad": "deterministic, no rap key", "ok": True}
 
 
 if __name__ == "__main__":  # python3 length_formula.py <chosen_s> | --selfcheck

@@ -4,6 +4,13 @@ Rules: short first-person lines, one idea per line, critical=true on every
 line carrying offer/claim/product/CTA wording (100% coverage per acceptance
 profile), pronunciation_map on every line naming the product. CTA lines
 (line_id containing "cta") are exempt from first-person (imperative voice).
+A line that is the client's OWN words -- a contiguous run of at least
+CLIENT_RUN_MIN words of the brief's offer, website, claims or packet_lines --
+is exempt from first-person too: the hook gate (suno_recipe.check_hook)
+demands the client's words, so without this no client hook in another voice
+could ever pass both gates (the v2.9.70 stage-3 deadlock). A dot inside a
+word (VoyageToVirtue.com, 3.5) is not a sentence break for one-idea-per-line;
+"I rise. I fall" still is.
 
 W-G-002 amend (Trevor order 2026-10-08 11:50 EDT, part G; review item G5):
 lines marked ``delivery: "sung"`` must be SINGABLE -- short metered lines
@@ -105,6 +112,26 @@ def _structure():
 def words(text):
     return re.findall(r"[a-z0-9]+(?:'[a-z]+)?", text.lower())
 
+
+#: the hook gate demands the client's OWN words, so a line that is a
+#: contiguous run of the client's text is exempt from first-person.
+CLIENT_RUN_MIN = 3
+
+def client_word_runs(brief):
+    """Word lists of the client's own text in the brief (claims, packet
+    lines, offer, website)."""
+    b = brief if isinstance(brief, dict) else {}
+    src = [b.get("offer"), b.get("website")]
+    for key in ("claims", "packet_lines"):
+        v = b.get(key) or []
+        for c in v.splitlines() if isinstance(v, str) else v:
+            src.append(c.get("text") if isinstance(c, dict) else c)
+    return [words(t) for t in src if isinstance(t, str) and t.strip()]
+
+def client_verbatim(toks, runs):
+    n = len(toks)
+    return n >= CLIENT_RUN_MIN and any(
+        r[i:i + n] == toks for r in runs for i in range(len(r) - n + 1))
 
 def significant(text):
     """Brief words that force critical coverage (len>=4 alnum tokens)."""
@@ -263,6 +290,7 @@ def validate_lyrics(lines, brief=None):
                  lines, {"critical_words": 0, "covered": 0, "missing": []}), cast_rcpt)
 
     errors, seen, ok_lines = [], set(), []
+    client_runs = client_word_runs(brief)
     crit_words = brief_words(brief)
     prod = product_tokens(brief)
 
@@ -288,11 +316,13 @@ def validate_lyrics(lines, brief=None):
             errors.append({"error": "line-too-long",
                            "detail": "%s: %d words, max %d" % (lid, len(toks), MAX_WORDS)})
         core = text.strip().rstrip(".!?;").lower()
-        if re.search(r"[.!?;]", core):
+        # a dot inside a word (VoyageToVirtue.com, 3.5) is not a sentence break
+        if re.search(r"[.!?;]", re.sub(r"(?<=\w)\.(?=\w)", "", core)):
             errors.append({"error": "line-multi-idea",
                            "detail": "%s: one idea per line" % lid})
         cta = "cta" in str(lid).lower()
-        if not cta and not (set(toks) & FIRST_PERSON):
+        if not cta and not (set(toks) & FIRST_PERSON) \
+                and not client_verbatim(toks, client_runs):
             errors.append({"error": "line-not-first-person", "detail": lid})
 
         ltoks = set(toks)
@@ -444,6 +474,39 @@ def selftest():
     checks.append("cta-exempt")
     if r["outcome"] != "ok":
         fails.append("cta-exempt rejected: %s" % r["reason_code"])
+
+    # v2.9.70 stage-3 deadlock: client verbatim / URL dot / still-strict cases
+    vbrief = {"offer": "Voyage To Virtue: A Journey of Becoming",
+              "website": "VoyageToVirtue.com/journeyofbecoming",
+              "claims": [{"id": "c4", "text": "virtue isn't something you have"
+                          " - it's something you choose"}]}
+    for name, line, brief, want_ok, want_reason in (
+        ("client-verbatim-passes",
+         {"line_id": "h1a", "text": "Virtue isn't something you have"},
+         vbrief, True, None),
+        ("invented-second-person-rejects",
+         {"line_id": "h1a", "text": "You never had a choice"},
+         vbrief, False, "line-not-first-person"),
+        ("client-two-word-fragment-rejects",
+         {"line_id": "h1a", "text": "Virtue isn't"},
+         vbrief, False, "line-not-first-person"),
+        ("url-line-passes",
+         {"line_id": "cta2", "text": "at VoyageToVirtue.com/journeyofbecoming"},
+         vbrief, True, None),
+        ("two-sentences-rejects",
+         {"line_id": "v1", "text": "I rise. I fall"},
+         {}, False, "line-multi-idea"),
+        ("packet-string-verbatim-passes",
+         {"line_id": "h1a", "text": "Nobody ever asks the strong one"},
+         {"packet_lines": "Nobody ever asks the strong one\nI take my name"},
+         True, None)):
+        r = validate_lyrics([line], brief)
+        checks.append(name)
+        errs = {e["error"] for e in r["errors"]}
+        if want_ok and errs & {"line-not-first-person", "line-multi-idea"}:
+            fails.append("%s: %s" % (name, sorted(errs)))
+        if not want_ok and want_reason not in errs:
+            fails.append("%s: %s not raised (%s)" % (name, want_reason, sorted(errs)))
 
     print("lyric_writer selftest: %s (%d checks, %d failures)"
           % ("PASS" if not fails else "FAIL", len(checks), len(fails)))

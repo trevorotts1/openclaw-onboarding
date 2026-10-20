@@ -752,13 +752,24 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
                                       _HP.hook_target(length_s, hook_plan))
     if length_s is not None:
         p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
+        # v2.9.70: ``p`` prices a named non-rap style at its own measured
+        # rates (length_formula._fit_style_words), so its total is the gate's
+        # ceiling, not a drafting allowance. This row is a DRAFTING tolerance
+        # (10% + 2) around an uncapped plan, exactly as before: using the
+        # capped total here refused a real approved 48 s sheet (58 words
+        # against 52.6) that words_fit judges as a whole sheet, and broke
+        # three shipped self-checks (sung_hook/test_three_walls.py,
+        # song_dispatch/test_remaining_defects_r1_r2_r4.py,
+        # suno_recipe/test_pace_direction_g11.py). ``words_fit.preflight``
+        # remains the one gate that decides whether a sheet FITS.
+        budget = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct)["words"]["total"]
         total = sheet_words(sheet)
         # R&B word budget: U2 landed on 999 main only (MGB010a); on the
         # onboarding tree the rap budget is still open (file 18 decision 1),
         # so the ballad budget is not applied to a rap sheet there.
         rap_pending = sheet_words(sheet, "rap") > 0 and not rap_ok
-        if not rap_pending and total > p["words"]["total"] * 1.1 + 2:
-            errs.append("%d words, the %d s budget is %d" % (total, length_s, p["words"]["total"]))
+        if not rap_pending and total > budget * 1.1 + 2:
+            errs.append("%d words, the %d s budget is %d" % (total, length_s, budget))
         intro = [s for s in sheet if s["delivery"] == "spoken" and s["tag"].lower().startswith("intro")]
         if intro and sheet_words(intro) > p["words"]["opener_max"]:
             errs.append("spoken intro is %d words, max %d at this length"

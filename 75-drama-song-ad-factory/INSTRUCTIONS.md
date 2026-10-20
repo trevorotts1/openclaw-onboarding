@@ -150,6 +150,8 @@ guard that already failed.
    creative beats and twelve production stages stay separate contracts
    (section 14).
 
+   **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+
 9. **Persist every provider task and result (step 9).** Every paid call
    reserves through `scripts/core/spend_ledger.py` with a recorded
    ceiling FIRST (no recorded ceiling = no paid call), then records run
