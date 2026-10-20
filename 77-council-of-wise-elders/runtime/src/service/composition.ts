@@ -94,6 +94,7 @@ import {
   type SeatKnowledgeUse,
 } from '../sources/elder-knowledge.js';
 import { createCouncilDriver } from './driver.js';
+import { buildBlockedReason, type BlockedReason } from './sessions.js';
 import {
   HARNESS_DEFAULTS,
   listRouteOptions,
@@ -106,6 +107,7 @@ import {
   repositorySessionReader,
   type CouncilEventStreamAdapter,
   type CouncilSessionReader,
+  type CouncilSessionRecord,
 } from './events.js';
 import { CouncilFrontDoor, isLoopbackHost } from './front-door.js';
 import {
@@ -945,11 +947,23 @@ function composeBackend(input: {
     },
     auditLogPath: join(input.dataDir, 'convening-audit.jsonl'),
     onSettled: (sessionId, settled) => {
-      if (settled.status === 'error') {
-        recordWorkerError(
-          Object.assign(new Error(`The convened run ended with ${settled.code}.`), { code: settled.code }),
-          { session_id: sessionId },
-        );
+      const missing =
+        settled.status === 'incomplete' ? [...new Set(settled.missing.map((m) => m.seat_id))] : [];
+      const code =
+        settled.status === 'error'
+          ? settled.code
+          : settled.status === 'incomplete'
+            ? 'SESSION_INCOMPLETE'
+            : settled.status === 'readiness_failed'
+              ? settled.readiness
+              : null;
+      process.stdout.write(
+        `${JSON.stringify({ event: 'session_settled', session_id: sessionId, status: settled.status, code, missing_seats: missing })}\n`,
+      );
+      if (settled.status !== 'completed') {
+        const detail =
+          settled.status === 'error' ? `The convened run ended with ${settled.code}.` : settled.detail;
+        recordWorkerError(Object.assign(new Error(detail), { code }), { session_id: sessionId });
       }
     },
   });
@@ -1002,6 +1016,35 @@ function composeBackend(input: {
     workers,
     stop,
   };
+}
+
+/**
+ * Add blocked_reason to a BLOCKED session's record (and its list row),
+ * so a client sees why instead of only BLOCKED.
+ */
+function withBlockedReason(
+  reader: CouncilSessionReader,
+  reasonFor: (record: CouncilSessionRecord) => BlockedReason | null,
+): CouncilSessionReader {
+  const read = async (sessionId: string): Promise<CouncilSessionRecord | null> => {
+    const record = await reader.read(sessionId);
+    if (record === null) return null;
+    const reason = reasonFor(record);
+    return reason ? { ...record, blocked_reason: reason } : record;
+  };
+  const wrapped: CouncilSessionReader = { read };
+  if (reader.list) {
+    const list = reader.list.bind(reader);
+    wrapped.list = async () =>
+      Promise.all(
+        (await list()).map(async (row) => {
+          if (row.state !== 'BLOCKED') return row;
+          const record = await read(row.session_id);
+          return record?.blocked_reason ? { ...row, blocked_reason: record.blocked_reason } : row;
+        }),
+      );
+  }
+  return wrapped;
 }
 
 /**
@@ -1079,10 +1122,21 @@ export function composeCouncilService(
       journal: backend.journal,
       envelope: readEnvelope,
     }),
-    sessionReader: repositorySessionReader({
-      repositories: backend.repositories,
-      envelope: readEnvelope,
-    }),
+    sessionReader: withBlockedReason(
+      repositorySessionReader({
+        repositories: backend.repositories,
+        envelope: readEnvelope,
+      }),
+      (record) =>
+        buildBlockedReason({
+          state: (record.state as { state: string }).state,
+          mode: (record.spec as { mode: string }).mode,
+          seat_ids: (record.spec as { seat_ids: string[] }).seat_ids,
+          cards: (record.cards as Array<{ card_kind: string; round: number; seat_id?: string }> | undefined) ?? [],
+          failures: backend.deliberation.runner.listSessionFailures(readEnvelope, record.session_id),
+          events: backend.journal.list(readEnvelope, record.session_id, 0),
+        }),
+    ),
     convening: backend.conveningPort,
     readiness: {
       nowUtc,
