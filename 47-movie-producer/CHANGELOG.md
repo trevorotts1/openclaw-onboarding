@@ -1,5 +1,10 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.1.12 - 2026-10-20 - embedded Skill 74 client re-embedded (v1.1.9)
+
+- Re-embedded the Skill 74 client block in `kie-adapters/tools/graphics/kie_image.py` from Skill 74 v1.1.9, so a bare clone and the Docker image carry the sync createTask answer as a finished job (`state=success`, payload in `data.response`, no `bad_response`) and the URL-less save that persists it as `<task>_0.json`. `python3 scripts/embed_kie_client.py --check` reports OK; `scripts/test_kie_embedded_client_hashlock.py` is 21/21.
+- Version roll to v15.1.12 (`SKILL.md`, `skill-version.txt`). No other behaviour change.
+
 ## v15.1.7 - 2026-10-09 - operator wording scrub
 
 - Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
