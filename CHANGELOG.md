@@ -1,3 +1,7 @@
+## [v27.1.51]  -  2026-10-20  -  Council (Skill 77) v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
+
+- In plain English: Councils on claude-nine now finish; a blocked council shows the real reason.
+
 ## [v27.1.50]  -  2026-10-20  -  Batch: signature funnel page types (sales page, landing, order page, upsell, downsell, thank-you), clear section labels, and Skill 83 turned on for 999 shipping
 
 - In plain English: the signature page skills now build each page type (sales page, opt-in landing page, order page, upsell, downsell, thank-you) through one image pipeline, every wireframe and mockup is labeled desktop or mobile, review PDFs carry no notes between sections, and Skill 83 (Black Friday launcher) is turned on for 999 shipping. Skills bumped: 49 v2.1.16, 71 1.3.2, 78 0.2.4, 79 0.1.6, 80 0.2.3, 81 0.1.5, 82 0.3.2, 83 0.2.3.
