@@ -110,6 +110,8 @@ class BridgeRecordTests(unittest.TestCase):
         self.assertEqual(plan["phase_2_together"], ELEVATION_ROLES[1:])
         self.assertEqual((plan["independent_pages"], plan["workers"]), (6, 6))
         self.assertIn("visual direction", plan["phase_1_reason"] + " visual direction")
+        side = launch_bridge.lane_plan(graph, workers=6, side_by_side=True)  # what Skill 49 does with workers
+        self.assertEqual((side["phase_1_alone"], side["phase_2_together"]), ([], ELEVATION_ROLES))
 
 
 class DispatchTests(unittest.TestCase):
@@ -182,6 +184,24 @@ class DispatchTests(unittest.TestCase):
                  if "AF-LAUNCH-PAGE-DESIGNS" in f]
         self.assertEqual(fails, [])
 
+    def test_an_opted_in_downsell_2_is_dispatched_labeled_and_packaged_beside_downsell_1(self):
+        doc = payload("elevation")
+        config = consumer_config()
+        config["adapters"]["downsell_2"] = {"command": config["adapters"]["downsell_1"]["command"]
+                                            + ["--instance", "downsell_2"], "timeout_s": 60}
+        report = run_dispatch(doc, self.out, adapters_config=config, extra_pages=("downsell_2",))
+        self.assertEqual(sorted(report["pages"]), sorted(ELEVATION_ROLES + ["downsell_2"]))
+        self.assertIn("downsell_2", report["lane_plan"]["phase_2_together"])
+        normalized = intake.validate(doc)
+        pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
+        built = package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
+                                 source_root=self.out, require_designs=True, to_confirm=report["to_confirm"],
+                                 council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
+                                          "advice_state": "p", "blocks_build": False, "is_permission": False})
+        self.assertEqual(checks.check_package(Path(built["manifest_path"]), self.out / "package"), [])
+        d2 = [p for p in built["manifest"]["pieces"] if "downsell_2" in json.dumps(p)]
+        self.assertTrue(d2, "downsell_2 is in the package manifest")
+
     def test_a_page_missing_its_mobile_mockup_pdf_fails_the_package_by_name(self):
         doc = payload("elevation")
         config = consumer_config({"upsell_1": ["--omit", "mockup_mobile_pdf"]})
@@ -252,7 +272,8 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(report["parallel"], "parallel x4")
         else:
             self.assertTrue(report["parallel"].startswith("serial"), report["parallel"])
-        self.assertEqual(report["lane_plan"]["phase_1_alone"], ["landing"])
+        side = report["parallel"].startswith("parallel")  # what ran is what is reported
+        self.assertEqual(report["lane_plan"]["phase_1_alone"], [] if side else ["landing"])
 
     def _spy_dispatch(self, doc, **kw):
         """Run the bridge against Skill 49's real dispatch, but stop it at the call and return what it was given."""
@@ -319,7 +340,9 @@ class DispatchTests(unittest.TestCase):
             report = run_dispatch(doc, self.out)
         self.assertEqual(report["pages"], ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
         self.assertNotIn("product_selection", report["pages"])
-        self.assertEqual(report["lane_plan"]["phase_1_alone"], ["landing"])
+        side = report["parallel"].startswith("parallel")
+        self.assertEqual(report["lane_plan"]["phase_1_alone"], [] if side else ["landing"])
+        self.assertIn("landing", report["lane_plan"]["phase_1_alone"] + report["lane_plan"]["phase_2_together"])
         self.assertFalse(self.marker.exists())
 
     def test_no_adapters_is_a_plain_message_not_a_stack_trace(self):

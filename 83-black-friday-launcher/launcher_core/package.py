@@ -127,7 +127,8 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
         if piece.get(key) != intake[key]:
             raise PackageError("AF-LAUNCH-PKG-PIECE",
                                f"{role}: {key} {piece.get(key)!r} does not match launch {intake[key]!r}")
-    if piece.get("page_id") != node["page_id"]:
+    # A slot page (downsell_2) rides on its parent's Skill 49 request, so a real result echoes the parent's id.
+    if piece.get("page_id") not in (node["page_id"], node.get("echoed_page_id")):
         raise PackageError("AF-LAUNCH-PKG-PIECE",
                            f"{role}: page_id {piece.get('page_id')!r} != route node {node['page_id']!r}")
     for key in ("request_id", "input_hash", "author_session"):
@@ -242,7 +243,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         if parent_node is None:
             raise PackageError("AF-LAUNCH-PKG-SLOT",
                                f"a {slot} piece was delivered but the route has no {parent} page")
-        node = {"role": parent, "role_instance": slot,
+        node = {"role": parent, "role_instance": slot, "echoed_page_id": parent_node["page_id"],
                 "page_id": route_module.route_law._page_id(intake["launch_id"], slot)}
         ordered.append(_validate_piece(pieces[slot], node, intake))
 

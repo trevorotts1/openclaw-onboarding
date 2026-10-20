@@ -65,7 +65,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         client_identity_ref=args.client, worker_identity_ref=args.worker,
         adapters_config=adapters_config, adapter_inputs=adapter_inputs,
         parallel=args.parallel,
-        scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None)
+        scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None,
+        extra_pages=tuple(args.extra_page or ()))
     _emit(report)
     print()
     for line in launch_bridge.summary_lines(report):
@@ -142,6 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="build the independent pages as this many parallel lanes (1 = one at a time; "
                         "default: this computer's worker count)")
     x.add_argument("--scoped-approvals", help="JSON array of extra scoped approvals")
+    x.add_argument("--extra-page", action="append", choices=sorted(package.EXTRA_SLOTS),
+                   help="an extra design page the client opted into (downsell_2); repeat for more")
     x.set_defaults(fn=cmd_dispatch)
 
     q = sub.add_parser("questions", help="the picture questions a client is asked, as data")

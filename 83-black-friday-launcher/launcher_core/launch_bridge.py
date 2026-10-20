@@ -22,7 +22,7 @@ import inspect
 import json
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import sys
 
@@ -35,7 +35,7 @@ import substrate  # noqa: E402
 from . import image_plan, intake as intake_module, route  # noqa: E402
 
 LAUNCH_SCHEMA_VERSION = "1.2"
-FIRST_ROLE = "landing"  # runs alone: it writes the visual direction every other page follows
+FIRST_ROLE = "landing"  # first when pages are built one at a time (side by side, Skill 49 starts every page together)
 
 
 class BridgeError(Exception):
@@ -120,14 +120,21 @@ def check_launch_record(launch: Dict[str, Any]) -> List[str]:
     return list(substrate.dispatch().vlp.validate_launch(launch))
 
 
-def lane_plan(graph: Dict[str, Any], workers: Optional[int] = None) -> Dict[str, Any]:
-    """What runs first and what runs together, in the order a client would be told."""
-    roles = [n["role"] for n in graph["nodes"]]
-    first = [r for r in roles if r == FIRST_ROLE]
-    rest = [r for r in roles if r != FIRST_ROLE]
+def lane_plan(graph: Dict[str, Any], workers: Optional[int] = None,
+              extra_pages: Sequence[str] = (), side_by_side: bool = False) -> Dict[str, Any]:
+    """What runs first and what runs together, in the order a client would be told.
+
+    extra_pages are the design pages the client opted into (downsell_2): they ride beside their parent.
+    side_by_side is what Skill 49 really does when it is given workers: every page starts together, the
+    landing page too, because the shared look travels in the image inputs file, so no page waits."""
+    roles = [n["role"] for n in graph["nodes"]] + list(extra_pages)
+    first = [] if side_by_side else [r for r in roles if r == FIRST_ROLE]
+    rest = [r for r in roles if r not in first]
     return {
         "phase_1_alone": first,
-        "phase_1_reason": "the landing page fixes the visual direction every other page follows",
+        "phase_1_reason": ("every page shares one look through the image inputs file, so no page waits for another"
+                           if side_by_side else
+                           "the landing page fixes the visual direction every other page follows"),
         "phase_2_together": rest,
         "workers": workers,
         "independent_pages": len(rest),
@@ -158,7 +165,8 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         adapters_config: Optional[Dict[str, Any]] = None,
         adapter_inputs: Optional[Dict[str, Any]] = None,
         parallel: Optional[int] = None,
-        scoped_approvals: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        scoped_approvals: Optional[List[Dict[str, Any]]] = None,
+        extra_pages: Sequence[str] = ()) -> Dict[str, Any]:
     """Validate, bridge, dispatch, and write one result per page. Returns the dispatch report.
 
     Fail-closed and plain-spoken: every refusal raises BridgeError (or the Launcher's own IntakeError /
@@ -212,6 +220,12 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         kwargs["image_inputs"] = _dispatch_image_inputs(inputs)
     if _accepts(dl.dispatch, "limiter") and inputs["executor_provider"] == "kie":
         kwargs["limiter"] = dl.swarm.kie_limiter()
+    if extra_pages:  # an opted-in design page (downsell_2) is never silently dropped
+        if not _accepts(dl.dispatch, "extra_pages"):
+            raise BridgeError("AF-LAUNCH-BRIDGE-EXTRA-PAGES",
+                              f"Skill 49's dispatch cannot build {', '.join(extra_pages)} in this checkout. "
+                              "Nothing was dispatched and nothing was spent.")
+        kwargs["extra_pages"] = tuple(extra_pages)
     try:
         manifest = dl.dispatch(
             launch, approval,
@@ -234,12 +248,15 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         src = dispatch_dir / f"result-{role}.json"
         shutil.copyfile(src, pieces_dir / f"{role}.json")
         written.append(role)
+    for lane in manifest.get("page_results", {}):  # an extra page rides on its parent's request
+        shutil.copyfile(dispatch_dir / f"page-result-{lane}.json", pieces_dir / f"{lane}.json")
+        written.append(lane)
 
     report = {
         "launch_id": normalized["launch_id"],
         "execution": manifest["execution"],
         "pages": written,
-        "lane_plan": lane_plan(graph, parallel),
+        "lane_plan": lane_plan(graph, parallel, extra_pages, side_by_side=parallel_state.startswith("parallel")),
         "parallel": parallel_state,
         "pieces_dir": str(pieces_dir),
         "launch_record": str(launch_path),
@@ -262,6 +279,9 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
         lines.append(f"First, {', '.join(plan['phase_1_alone'])} on its own, because it fixes the look "
                      f"every other page follows. Then the other {plan['independent_pages']} pages, which do "
                      f"not depend on each other. Run mode: {report['parallel']}.")
+    else:
+        lines.append(f"All {plan['independent_pages']} pages are built side by side: they share one look, so "
+                     f"none waits for another. Run mode: {report['parallel']}.")
     if report["paid_calls_allowed"]:
         lines.append("Pictures: real rendering, within the ceiling you approved.")
     else:

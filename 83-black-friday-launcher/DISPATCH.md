@@ -9,7 +9,7 @@ edited by the turn-on workflow, so this file carries the new behavior until that
 ```
 python3 -m launcher_core.cli dispatch --intake intake.json --out RUN \
     --approval approval.json --client CLIENT_ID --worker WORKER_ID \
-    (--adapters adapters.json | --adapter-inputs inputs.json) [--parallel N]
+    (--adapters adapters.json | --adapter-inputs inputs.json) [--parallel N] [--extra-page downsell_2]
 python3 -m launcher_core.cli assemble --intake intake.json --pieces RUN/pieces --out PACKAGE
 python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --root PACKAGE
 ```
@@ -20,13 +20,18 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
    plan, and a plan that changed after approval is refused.
 3. Skill 49 dispatches one request per page. `assemble` reads the result files the bridge lays in
    `RUN/pieces/<role>.json` (and `<slot>.json` for a second page of a role, such as `downsell_2`).
+   `--extra-page downsell_2` is the client's opt-in to a second downsell: Skill 49 builds it beside `downsell_1`
+   (it rides on that page's request), the bridge lays its result in `pieces/downsell_2.json`, and the package
+   names it `downsell-2_...` with the same required design set as every other page.
 4. `assemble` requires every page's designs by default. `--allow-no-designs` exists for old-style plan-only
    packages and is recorded in the manifest as `designs_required: false`.
 
 ## Build order and parallel lanes
 
-The landing page runs alone first because it fixes the visual direction every other page follows. The other
-pages are independent of each other and run together. `--parallel N` (default: the runner profile's worker
+Every page is independent: the look they share travels in the image inputs file, so no page waits for another.
+With workers, Skill 49 starts every page together, the landing page too (`lane_plan.phase_1_alone` is empty and
+`phase_2_together` holds every page). Built one at a time (`--parallel 1`, or a Skill 49 with no parallel mode),
+the landing page goes first and the report says so. `--parallel N` (default: the runner profile's worker
 count, the same as Skill 49's own `auto`) is passed to Skill 49's dispatch when
 that dispatcher has a `parallel` argument; if it does not yet, the report says `serial (...)` instead of
 claiming parallel. The plan is always reported: `dispatch-report.json` -> `lane_plan`.
