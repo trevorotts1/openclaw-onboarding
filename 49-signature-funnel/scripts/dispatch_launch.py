@@ -383,7 +383,7 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     when an executor ran) under out_dir when given.
 
     parallel: pages built side by side (1 = the sequential fallback, same
-    results). The landing page always runs first. image_inputs: the shared
+    results). Every page, the landing page too, runs side by side. image_inputs: the shared
     image inputs (page_set.load_image_inputs); with the paid provider the
     spend cap and the KIE limiter apply (page_swarm). extra_pages: opted-in
     design pages that ride on a route request (today downsell_2)."""
@@ -484,7 +484,8 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     return manifest
 
 
-def executor_from_config(config: Dict[str, Any], work_dir: Path):
+def executor_from_config(config: Dict[str, Any], work_dir: Path,
+                         landing_pages: Optional[List[str]] = None):
     """Build an executor from a consumer-adapter config (S49-08 seam).
 
     Config shape: {"adapters": {"<page_role>": {"command": ["prog", "{request}",
@@ -494,7 +495,13 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path):
     validation (schema shape + exact request echo) from
     collect_launch_receipts. A role with no configured adapter, a failing
     command, or an invalid result is a DispatchError — dispatch never
-    papers over a consumer that did not really answer."""
+    papers over a consumer that did not really answer.
+
+    landing_pages: the client's landing page set (page_set.py), filled into
+    the {landing_pages} placeholder. A landing adapter that runs
+    landing_bridge.py MUST pass it (--landing-pages {landing_pages}), so the
+    bridge refuses a config that builds fewer or other pages than planned;
+    a command that leaves it out is refused here, before anything runs."""
     import subprocess
     import collect_launch_receipts as receipts
 
@@ -508,6 +515,13 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path):
         raise DispatchError(
             "adapter config names page_role(s) outside the page-role map "
             f"({PAGE_ROLE_MAP_FILE.name} page_role_map.page_roles): {unknown}")
+
+    landing = (adapters.get("landing") or {}).get("command") or []
+    if any(Path(str(part)).name == "landing_bridge.py" for part in landing) \
+            and not any("{landing_pages}" in str(part) for part in landing):
+        raise DispatchError(
+            "landing adapter runs landing_bridge.py without --landing-pages {landing_pages}: "
+            "the bridge could not check that it builds the pages the client planned")
 
     def run(req: Dict[str, Any], lane: Optional[str] = None) -> Dict[str, Any]:
         role = req["page_role"]
@@ -529,6 +543,7 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path):
                     .replace("{result}", str(res_path))
                     .replace("{work_dir}", str(work_dir))
                     .replace("{image_inputs}", str(work_dir / swarm.INPUTS_NAME))
+                    .replace("{landing_pages}", ",".join(landing_pages or ()))
                     .replace("{page_key}", key)
                     .replace("{role_instance}", lane or "")
                for part in spec["command"]]
@@ -802,7 +817,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--parallel", default="auto",
                     help="pages built side by side: a number, or auto (the runner "
                          "profile's worker count: Mac 6, Hostinger 8, Contabo 4). "
-                         "1 builds one page at a time. The landing page always runs first")
+                         "1 builds one page at a time")
     ap.add_argument("--image-inputs",
                     help="shared image inputs JSON (design style, brand file, owner, "
                          "image cap, provider); adapters read it as {image_inputs}")
@@ -851,8 +866,10 @@ def main(argv: List[str]) -> int:
                 print("FAIL: --adapters requires --out (or --run-dir) as the "
                       "work dir for request/result files")
                 return EXIT_FAILCLOSED
-            executor = executor_from_config(_load(args.adapters),
-                                            Path(args.out))
+            executor = executor_from_config(
+                _load(args.adapters), Path(args.out),
+                args.landing_pages.split(",") if args.landing_pages
+                else pset.recommended_landing_pages(launch))
         elif args.simulate_executor:
             executor = _simulated_executor("dispatch-cli-simulated")
         inputs = pset.load_image_inputs(args.image_inputs) \

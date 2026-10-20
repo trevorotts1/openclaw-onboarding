@@ -31,7 +31,7 @@ REST call.
   `prove_sf_cert.py` — the five fail-closed deterministic provers (stdlib only; exit 0/2/3).
 - `scripts/kie74_receipt.py` — turns a Skill 74 result into run evidence and defines what the bypass scan allow-lists.
 - `run_signature_funnel.py` — the no-skip orchestrator state machine.
-- `scripts/legacy_downsell_images.py` — desktop wireframes, mobile wireframes and the visual mockup for EVERY downsell page of a 3/5/7-step funnel (`downsell`, and `downsell-2` in the 7-step), run from the P1 copy ledger through Skill 71's own pipeline. A full funnel gets all its pages. Launch mode has one downsell by design; its wrapper is `downsell_wrapper.py`.
+- `scripts/legacy_downsell_images.py` — desktop wireframes, mobile wireframes and the visual mockup for EVERY page of a 3/5/7-step funnel (sales page, upsell, `upsell-2`, `downsell`, `downsell-2` in the 7-step, thank-you), run from the P1 copy ledger through Skill 71's own pipeline. Only the design-only checkout is left to `checkout_wrapper.py`, and the receipt says so. Launch mode has one downsell by design; its wrapper is `downsell_wrapper.py`.
 - `signature-funnel-entry.sh` — the canonical fail-closed front door.
 - `verify.sh` — the read-only self-verification gate.
 
@@ -84,9 +84,9 @@ raw Kie `createTask`, a copied KIE client script) is the ungoverned path and is 
 (`AF-FUN-CANONICAL-BYPASS`). A direct `python3 run_signature_funnel.py` without the front-door nonce dies
 `AF-FUN-FRONT-DOOR`.
 
-## Wireframes and mockups for the downsell pages
+## Wireframes and mockups for every page
 
-After P1 copy passes, run `python3 scripts/legacy_downsell_images.py --ledger <RUN_DIR>/copy_ledger.json --skill71-root <71 dir> --brand-file <brand.json> --brand-owner <client> --out-dir <dir>`. It builds every downsell slug the funnel size carries (7-step: `downsell` and `downsell-2`; 5-step: `downsell`; 3-step: none), eight sections each, offline stub provider unless the owner approves `--image-provider kie --allow-paid`. It writes `downsell-images-receipt.json`. The image inventory, generation, Design Board and final mockups stay client-gated downstream of it.
+After P1 copy passes, run `python3 scripts/legacy_downsell_images.py --ledger <RUN_DIR>/copy_ledger.json --skill71-root <71 dir> --brand-file <brand.json> --brand-owner <client> --out-dir <dir>`. It builds every page the funnel size carries except the design-only checkout (7-step: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you`; 5-step: the same without `downsell-2`; 3-step: `main`, `upsell`, `thank-you`), offline stub provider unless the owner approves `--image-provider kie --allow-paid`. Each page is checked against `structure/page_types.json`; a page missing its images is refused. It writes `page-images-receipt.json`. The image inventory, generation, Design Board and final mockups stay client-gated downstream of it.
 
 ## Fail-closed provers (exit 0 pass / 2 violation / 3 fail-closed)
 

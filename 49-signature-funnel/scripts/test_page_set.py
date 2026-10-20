@@ -148,16 +148,17 @@ class EveryShapeEveryPage(unittest.TestCase):
                                                 landing_pages=["sales"], extra_pages=["downsell_2"]))
         self.assertIn("Downsell 2 (design only)", d2)
 
-    def test_lane_plan_runs_landing_first_and_everything_else_side_by_side(self):
+    def test_lane_plan_runs_every_lane_side_by_side_the_landing_lane_included(self):
         got = ps.build_page_set(route_launch("multiple_options", EXTRAS[-1]), landing_pages=["landing", "sales"],
                                 extra_pages=["downsell_2"])
         plan = ps.lane_plan(got)
-        self.assertEqual([l["lane"] for l in plan["first"]], ["landing"])
-        self.assertEqual(plan["first"][0]["pages"], ["landing", "sales"])
+        self.assertEqual(list(plan), ["parallel"])
         self.assertEqual([l["lane"] for l in plan["parallel"]],
-                         ["product_selection", "checkout", "upsell_1", "upsell_2", "downsell_1", "downsell_2",
-                          "thank_you"])
-        self.assertEqual(plan["first"][0]["image_estimate"], 4 * 15 + 4 * 12)
+                         ["landing", "product_selection", "checkout", "upsell_1", "upsell_2", "downsell_1",
+                          "downsell_2", "thank_you"])
+        landing = plan["parallel"][0]
+        self.assertEqual(landing["pages"], ["landing", "sales"])
+        self.assertEqual(landing["image_estimate"], 4 * 15 + 4 * 12)
 
 
 class Deliverables(unittest.TestCase):

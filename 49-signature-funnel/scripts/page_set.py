@@ -144,14 +144,21 @@ def build_page_set(launch: Dict[str, Any], *, landing_pages: Optional[Iterable[s
     return {"shape": mode, "pages": pages, "to_confirm": to_confirm}
 
 
+def page_key_for_slug(slug: str) -> str:
+    """The page_key of a legacy funnel_matrix slug ('main' -> 'sales', 'upsell-2' -> 'upsell_2')."""
+    for key, p in page_types()["pages"].items():
+        if p["matrix_slug"] == slug:
+            return key
+    raise PageSetError(f"funnel matrix slug {slug!r} is not a page type in {PAGE_TYPES_FILE.name}")
+
+
 def legacy_page_set(funnel_size: int) -> Dict[str, Any]:
     """The legacy 3, 5 or 7 step funnel as the same page entries (matrix slug -> page_key)."""
     structure = json.loads(FUNNEL_STRUCTURE_FILE.read_text(encoding="utf-8"))
     slugs = structure["funnel_matrix"].get(str(funnel_size))
     if not isinstance(slugs, list):
         raise PageSetError(f"funnel_size {funnel_size!r} is not 3, 5 or 7")
-    by_slug = {p["matrix_slug"]: k for k, p in page_types()["pages"].items() if p["matrix_slug"]}
-    pages = [_entry(by_slug[s], f"legacy_{funnel_size}", "legacy") for s in slugs]
+    pages = [_entry(page_key_for_slug(s), f"legacy_{funnel_size}", "legacy") for s in slugs]
     return {"shape": f"legacy_{funnel_size}", "pages": sorted(pages, key=lambda e: e["order"]),
             "to_confirm": []}
 
@@ -175,24 +182,21 @@ def plain_summary(page_set: Dict[str, Any]) -> str:
 
 
 def lane_plan(page_set: Dict[str, Any]) -> Dict[str, Any]:
-    """Which request lanes run first and which run side by side.
-
-    A lane is one dispatch request (or one extra page). The landing role is the first lane: it makes
-    the visual bible every later page follows. Every other lane is independent and runs in parallel."""
-    first, rest, seen = [], [], set()
+    """The request lanes, in page order. A lane is one dispatch request (or one extra page); every
+    lane is independent and runs side by side (the landing lane too: the look the pages share is the
+    image inputs file, so no page waits for another)."""
+    lanes: List[Dict[str, Any]] = []
     for page in page_set["pages"]:
         extra = page["role_instance"] is not None
         lane_key = page["role_instance"] if extra else page["request_role"]
-        if lane_key in seen:
-            lane = next(x for x in first + rest if x["lane"] == lane_key)
+        lane = next((x for x in lanes if x["lane"] == lane_key), None)
+        if lane:
             lane["pages"].append(page["page_key"])
             lane["image_estimate"] += page["image_estimate"]
-            continue
-        seen.add(lane_key)
-        lane = {"lane": lane_key, "request_role": page["request_role"], "extra": extra,
-                "pages": [page["page_key"]], "image_estimate": page["image_estimate"]}
-        (first if lane_key == "landing" else rest).append(lane)
-    return {"first": first, "parallel": rest}
+        else:
+            lanes.append({"lane": lane_key, "request_role": page["request_role"], "extra": extra,
+                          "pages": [page["page_key"]], "image_estimate": page["image_estimate"]})
+    return {"parallel": lanes}
 
 
 # ---------------------------------------------------------------------------------------------

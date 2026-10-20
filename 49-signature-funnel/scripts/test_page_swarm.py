@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_page_swarm.py - pages built side by side: landing first, parallel after, limiter and spend
+"""test_page_swarm.py - pages built side by side (the landing lane too), limiter and spend
 cap respected, one failure never stops the rest. Fake pages and a fake limiter only: no provider,
 no paid call, no network. Run: python3 test_page_swarm.py (from scripts/).
 """
@@ -80,8 +80,7 @@ class WhatAFullFunnelDispatches(unittest.TestCase):
         self.assertEqual(pages, ["landing", "sales", "product_selection", "checkout", "upsell_1", "upsell_2",
                                  "downsell_1", "thank_you"])
         plan = m["page_set"]["lane_plan"]
-        self.assertEqual([l["lane"] for l in plan["first"]], ["landing"])
-        self.assertEqual(len(plan["parallel"]), 6)
+        self.assertEqual(len(plan["parallel"]), 7, "landing and the six other lanes")
         self.assertEqual(len(m["requests"]), 7, "the route graph still has 7 nodes: no node was added")
 
     def test_folded_levels_dispatches_every_page_but_the_selection_page(self):
@@ -104,15 +103,8 @@ class ParallelLanes(unittest.TestCase):
         m = go(executor=fake_executor(sleep=0.25), parallel=6)
         wall = time.monotonic() - started
         self.assertEqual(len(m["results"]), 7)
-        # landing alone (0.25) then six lanes at once (0.25): far below the 7 x 0.25 sequential sum
-        self.assertLess(wall, 1.2, wall)
-
-    def test_landing_finishes_before_any_other_page_starts(self):
-        log = []
-        go(executor=fake_executor(log=log, sleep=0.05), parallel=6)
-        landing_end = next(t for ev, k, t in log if ev == "end" and k == "landing")
-        others = [t for ev, k, t in log if ev == "start" and k != "landing"]
-        self.assertTrue(others and all(t >= landing_end for t in others))
+        # all seven lanes at once (0.25), far below the 7 x 0.25 sequential sum, with no landing-first wait
+        self.assertLess(wall, 0.9, wall)
 
     def test_results_come_back_in_page_order_whatever_order_they_finish(self):
         # later pages finish first
@@ -181,7 +173,7 @@ class LimiterAndSpendCap(unittest.TestCase):
         m = go(executor=fake_executor(transient_once=("checkout",)), parallel=6, inputs=paid_inputs(10 ** 6),
                limiter=limiter)
         plan = m["page_set"]["lane_plan"]
-        estimate = {l["lane"]: l["image_estimate"] for l in plan["first"] + plan["parallel"]}
+        estimate = {l["lane"]: l["image_estimate"] for l in plan["parallel"]}
         self.assertEqual(limiter.tokens, sum(estimate.values()) + estimate["checkout"])
 
     def test_no_new_paid_image_work_starts_past_the_cap(self):
@@ -226,19 +218,23 @@ class LimiterAndSpendCap(unittest.TestCase):
 
 
 class VisualBibleAndExtraPages(unittest.TestCase):
-    def test_landing_writes_the_visual_bible_before_the_other_pages_start(self):
-        out = Path(tempfile.mkdtemp())
-        seen_bible = {}
+    def test_the_landing_lane_runs_beside_the_other_pages_not_before_them(self):
+        meet = threading.Barrier(2, timeout=20)  # landing and checkout must be running at the same time
 
         def run(req, lane=None):
-            key = lane or req["page_role"]
-            seen_bible[key] = json.loads((out / sw.INPUTS_NAME).read_text(encoding="utf-8")).get("visual_bible_ref")
+            if (lane or req["page_role"]) in ("landing", "checkout"):
+                meet.wait()
             return dl._simulated_executor("t")(req, lane)
-        go(executor=run, parallel=4, inputs=STUB_INPUTS, out=out)
-        self.assertIsNone(seen_bible["landing"], "the landing page itself has no bible yet")
-        self.assertTrue(all(v == str(out / sw.BIBLE_NAME) for k, v in seen_bible.items() if k != "landing"))
+        m = go(executor=run, parallel=4, inputs=STUB_INPUTS)
+        self.assertEqual(set(m["swarm"]["statuses"].values()), {"ok"})
+
+    def test_the_visual_bible_is_the_record_of_the_landing_run_written_when_the_swarm_ends(self):
+        out = Path(tempfile.mkdtemp())
+        go(executor=fake_executor(), parallel=4, inputs=STUB_INPUTS, out=out)
         bible = json.loads((out / sw.BIBLE_NAME).read_text(encoding="utf-8"))
         self.assertEqual((bible["design_style"], bible["landing_status"]), ("B", "ok"))
+        inputs = json.loads((out / sw.INPUTS_NAME).read_text(encoding="utf-8"))
+        self.assertNotIn("visual_bible_ref", inputs, "no lane's input depends on the bible")
 
     def test_the_second_downsell_rides_on_the_downsell_request_with_its_own_files(self):
         out = Path(tempfile.mkdtemp())

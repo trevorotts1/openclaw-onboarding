@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased - LANE-49 repair: a folded-levels sales page gets its levels panel in a real run
+
+- `scripts/build_production_request.py`: for a sales-kind request the builder reads `<run_dir>/launch.json` (staged by `write_intake.py --launch-context`) and, when its `journey_mode` is `folded_levels`, stamps `folded_levels` = the number of main offers into the production request. `wireframe_spec.py` already closes the last wireframe slice on an N-card levels panel when the request carries it; before this change nothing in a real run set it. The mockup stages still call `page_kinds.mockup_line(kind, closing)` without the level count (`stage_executor.py`, a file the Skill 83 lane also edits); that one call needs `levels=request.get("folded_levels")`. Tests: `tests/test_lane49_folded_levels.py`.
+
 ## Unreleased - order form (checkout) page type support
 
 - `references/copy-specs/roles/checkout.json` and `scripts/role_spec.py`: a page role can have its own canonical section sequence; checkout has five. `stage_executor.check_section_count`, `build_production_request.py --page-role`, `composition.py` (composition roles), `wireframe_spec.py` (page type layout block) and `shared_page_service.py --design-style` read it. Landing behaviour is unchanged. Tests: `tests/test_role_section_spec.py`.

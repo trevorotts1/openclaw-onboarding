@@ -28,6 +28,12 @@ as the landing adapter command:
 
   python3 landing_bridge.py --request {request} --result {result}
       --work-dir {work_dir} --bridge-config <bridge-config.json>
+      --landing-pages {landing_pages}
+
+--landing-pages is the client's landing page set as dispatch planned it (page_set.py: "landing",
+"sales" or "landing,sales"). The bridge refuses, before staging anything, a config that would build a
+different set, so a funnel the client planned two landing pages for is never delivered with one.
+Dispatch refuses a landing adapter command that leaves the placeholder out.
 
 The bridge config is a JSON object with exactly two sections:
 
@@ -46,14 +52,15 @@ The bridge config is a JSON object with exactly two sections:
 page_kind: a funnel's main page is the 12-section signature SALES page, so a
 funnel run sets "sales" (Standard or Long-Form); "opt_in" is the signature
 landing (opt-in) page and is Long-Form only (Skill 71 references/page-kinds.json).
-A full funnel gets both (see FULL FUNNEL below).
+The pages built are the client's landing page set (see TWO LANDING PAGES below).
 
 TWO LANDING PAGES: the landing role can be delivered as the signature sales page, the
 signature landing (opt-in) page, or both. WHICH pages the client gets is their intake choice
 (page_set.py; the recommended set is flagged "to confirm" until they say), not a rule of the bridge:
 a config with page_kind "sales" and no opt_in object builds the sales page alone, whatever the
 funnel's extras. To build both, add
-  "opt_in": {"run_dir": "<abs path; the second Skill 71 run directory>"}
+  "opt_in": {"run_dir": "<abs path; the second Skill 71 run directory>",
+             "manuscript": "<optional abs path; the opt-in page's own copy, for image_inputs>"}
 (the opt-in page is Long-Form only, so page_version and the request's approved copy_profile are both
 "long-form"; same brand owner, brand file and image cap). Both runs are staged and produced from the
 SAME request; the one result placed at {result} is the weaker of the two runs' results with both
@@ -124,6 +131,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -315,11 +323,13 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
                 _require_abs_path(landing, "image_inputs", "landing"))
         except page_set.PageSetError as exc:
             raise BridgeError(f"bridge config: {exc}")
-    manuscript = None
-    if landing.get("manuscript") is not None:
-        manuscript = _require_abs_path(landing, "manuscript", "landing")
-        if not manuscript.is_file():
-            raise BridgeError(f"bridge config: landing.manuscript {manuscript} does not exist")
+    manuscripts = {}
+    for key, section, label in (("manuscript", landing, "landing"),
+                                ("opt_in_manuscript", opt_in or {}, "landing.opt_in")):
+        if section.get("manuscript") is not None:  # each page draws from its own copy
+            manuscripts[key] = _require_abs_path(section, "manuscript", label)
+            if not manuscripts[key].is_file():
+                raise BridgeError(f"bridge config: {label}.manuscript {manuscripts[key]} does not exist")
     pipeline_command = landing.get("pipeline_command")
     if pipeline_command is not None:
         if not isinstance(pipeline_command, list) or not pipeline_command \
@@ -341,7 +351,8 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         "pipeline_command": pipeline_command,
         "opt_in_run_dir": opt_in_run_dir,
         "image_inputs": image_inputs,
-        "manuscript": manuscript,
+        "manuscript": manuscripts.get("manuscript"),
+        "opt_in_manuscript": manuscripts.get("opt_in_manuscript"),
     }
 
 
@@ -645,9 +656,9 @@ def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
     Needs the page copy at <run_dir>/copy/internal-manuscript.md (staged from landing.manuscript
     when given). With none, nothing is drawn and the summary says "waiting_for_copy"."""
     inputs, root, python = cfg["image_inputs"], cfg["skill_root"], cfg["python"]
-    if cfg.get("manuscript") is not None:
-        _stage_file(run_dir, "copy/internal-manuscript.md",
-                    _read_bytes(cfg["manuscript"], "manuscript"), "manuscript")
+    source = cfg["opt_in_manuscript"] if run_dir == cfg["opt_in_run_dir"] else cfg["manuscript"]
+    if source is not None:
+        _stage_file(run_dir, "copy/internal-manuscript.md", _read_bytes(source, "manuscript"), "manuscript")
     manuscript = run_dir / "copy" / "internal-manuscript.md"
     if not manuscript.is_file():
         return {"status": "waiting_for_copy",
@@ -758,6 +769,24 @@ def _with_designs(result: Dict[str, Any], page_key: str, run_dir: Path,
     return [found[k] for k in sorted(found)]
 
 
+def _check_designs(pages) -> Dict[str, Any]:
+    """Planned versus delivered: every page whose images the bridge drew must hold the images its
+    page type promises (page_types.json deliverables, through page_set.check_deliverables), or the
+    landing lane is refused instead of reporting ok. The review PDFs and boards are composed only on
+    the paid provider; they are reported as render_pending, never as present."""
+    out: Dict[str, Any] = {}
+    for key, folder, pipeline in pages:
+        if folder is None or (pipeline.get("images") or {}).get("status") != "drawn":
+            continue
+        import page_set  # only a run that drew images needs it (the isolated bridge test has none)
+        report = page_set.check_deliverables(key, folder, rendered=False)
+        if report["missing"]:
+            raise BridgeError(f"page {key} ({folder}): the bridge drew its images but the run folder is "
+                              f"missing {report['missing']}; the page is not delivered")
+        out[key] = {"images_complete": report["images_complete"], "render_pending": report["render_pending"]}
+    return out
+
+
 def _weaker(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     """The result that is further from done: lower status, then lower proof class."""
     def rank(r):
@@ -767,9 +796,35 @@ def _weaker(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     return a if rank(a) <= rank(b) else b
 
 
+LANDING_PAGE_KEYS = ("landing", "sales")
+
+
+def _built_pages(cfg: Dict[str, Any]) -> List[str]:
+    """The landing pages this config builds (page_set keys): the main page, plus the opt-in page."""
+    main = "sales" if cfg["page_kind"] == "sales" else "landing"
+    return [main] + (["landing"] if cfg["opt_in_run_dir"] is not None else [])
+
+
+def _check_planned_pages(cfg: Dict[str, Any], landing_pages: Optional[List[str]]) -> None:
+    """Refuse a config that builds a different landing page set than the client's plan."""
+    if not landing_pages:
+        return
+    bad = [k for k in landing_pages if k not in LANDING_PAGE_KEYS]
+    if bad or len(set(landing_pages)) != len(landing_pages):
+        raise BridgeError(f"--landing-pages must be landing, sales or landing,sales; got {landing_pages!r}")
+    built = _built_pages(cfg)
+    if sorted(built) != sorted(landing_pages):
+        raise BridgeError(
+            f"landing pages: the client's page set is {sorted(landing_pages)} but this bridge config "
+            f"builds {sorted(built)}. Set landing.page_kind and landing.opt_in to build exactly the "
+            "planned pages: the sales page is page_kind 'sales'; the signature landing (opt-in) page "
+            "is landing.opt_in with its own run_dir (Long-Form), or page_kind 'opt_in' alone")
+
+
 def bridge(request_path: Path, result_path: Path, work_dir: Path,
-           config_path: Path) -> Dict[str, Any]:
+           config_path: Path, landing_pages: Optional[List[str]] = None) -> Dict[str, Any]:
     cfg = load_bridge_config(config_path)
+    _check_planned_pages(cfg, landing_pages)
     req, request_raw = check_request(request_path)
 
     run_dir: Path = cfg["run_dir"]
@@ -806,20 +861,24 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
     graph_raw = resolve_graph_bytes(req, work_dir)
 
     args = (cfg, req, request_raw, launch_raw, brand_raw, graph_raw)
-    result, validation_mode, pipeline, emitted = _produce(
-        *args, run_dir, cfg["page_kind"], cfg["page_version"])
+    opt_dir: Optional[Path] = cfg["opt_in_run_dir"]
+    jobs = [(run_dir, cfg["page_kind"], cfg["page_version"])]
+    if opt_dir is not None:
+        jobs.append((opt_dir, "opt_in", "long-form"))  # Long-Form only (page-kinds.json)
+    # The pages share nothing (one run folder each), so they are built side by side.
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        produced = [f.result() for f in [pool.submit(_produce, *args, *job) for job in jobs]]
+    result, validation_mode, pipeline, emitted = produced[0]
     placed = emitted.read_bytes()
     summary: Dict[str, Any] = {}
-    opt_dir: Optional[Path] = cfg["opt_in_run_dir"]
     merged = dict(result)
     main_key = "sales" if cfg["page_kind"] == "sales" else "landing"
     drawn = (pipeline.get("images") or {}).get("status") == "drawn"
     main_artifacts = _with_designs(result, main_key, run_dir, drawn)
     merged["artifacts"] = main_artifacts
+    o_pipeline: Dict[str, Any] = {}
     if opt_dir is not None:
-        # The opt-in page is Long-Form only (Skill 71 references/page-kinds.json).
-        o_result, o_mode, o_pipeline, _ = _produce(
-            *args, opt_dir, "opt_in", "long-form")
+        o_result, o_mode, o_pipeline, _ = produced[1]
         o_drawn = (o_pipeline.get("images") or {}).get("status") == "drawn"
         merged = dict(_weaker(merged, o_result))
         merged["artifacts"] = sorted(
@@ -832,6 +891,9 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
         summary = {"opt_in_run_dir": str(opt_dir), "opt_in_pipeline": o_pipeline,
                    "opt_in_result_status": o_result.get("status"),
                    "opt_in_receipt_validation": o_mode}
+    designs = _check_designs([(main_key, run_dir, pipeline), ("landing", opt_dir, o_pipeline)])
+    if designs:
+        summary["designs"] = designs
     if opt_dir is not None or drawn:
         merged_path = run_dir / "page-result.merged.json"
         merged_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
@@ -880,10 +942,14 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--bridge-config", required=True,
                     help="bridge config JSON (skill71 root + landing "
                          "operator values)")
+    ap.add_argument("--landing-pages", default="",
+                    help="the client's landing page set from dispatch ({landing_pages}): landing, "
+                         "sales or landing,sales; the bridge refuses a config that builds another set")
     args = ap.parse_args(argv)
     try:
         summary = bridge(Path(args.request), Path(args.result),
-                         Path(args.work_dir), Path(args.bridge_config))
+                         Path(args.work_dir), Path(args.bridge_config),
+                         [k.strip() for k in args.landing_pages.split(",") if k.strip()])
     except BridgeError as exc:
         print(f"FAIL: {exc}")
         return EXIT_FAILCLOSED

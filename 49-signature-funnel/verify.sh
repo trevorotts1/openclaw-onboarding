@@ -89,7 +89,7 @@ run "board department slug is canonical (test_sf_department.py)" \
     "$PY" "$SCRIPTS/test_sf_department.py"
 
 # 4c) LANE-49 — every page type in every funnel shape with its designs, the shared image inputs,
-#     and the parallel page swarm (landing first, KIE limiter, spend cap). Free: stub provider and
+#     and the parallel page swarm (every lane side by side, KIE limiter, spend cap). Free: stub provider and
 #     fake pages only, no paid call.
 run "page set, page types, image inputs (test_page_set.py)" "$PY" "$SCRIPTS/test_page_set.py"
 run "parallel page swarm (test_page_swarm.py)" "$PY" "$SCRIPTS/test_page_swarm.py"

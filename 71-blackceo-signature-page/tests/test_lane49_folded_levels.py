@@ -5,7 +5,10 @@ checkout; and a second downsell is labelled Downsell 2 on every file it makes.
 
 No provider is called anywhere in this module.
 """
+import importlib.util
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,10 +16,17 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPTS = HERE.parent / "scripts"
+sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(SCRIPTS))
 import deliverable_labels as labels  # noqa: E402
 import page_kinds as pk  # noqa: E402
 import wireframe_spec as w  # noqa: E402
+from brand_fixture import give_blackceo_colors  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("build_production_request", SCRIPTS / "build_production_request.py")
+builder = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(builder)
+MANUSCRIPT = HERE / "fixtures" / "copy_examples" / "long-form-path-b.md"
 
 
 def slice_block(kind, index, total, **request_extra):
@@ -52,6 +62,47 @@ class FoldedLevelsTests(unittest.TestCase):
     def test_mockup_line_carries_the_levels_panel(self):
         self.assertIn("exactly 3 level cards", pk.mockup_line("sales", "GET IT", levels=3))
         self.assertNotIn("level cards", pk.mockup_line("sales", "GET IT"))
+
+
+class BuilderStampsFoldedLevelsTests(unittest.TestCase):
+    """The production request a real run builds carries the level count, read from the run's own
+    launch record, so the wireframes of a folded-levels sales page close on the levels panel."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run = Path(self.tmp.name)
+        give_blackceo_colors(self.run)
+        self.addCleanup(self.tmp.cleanup)
+
+    def write_run_launch(self, mode, mains):
+        offers = [{"offer_id": f"M{i}", "role": "main"} for i in range(mains)] + [{"offer_id": "U1", "role": "upsell_1"}]
+        (self.run / "launch.json").write_text(json.dumps({"journey_mode": mode, "offers": offers}), encoding="utf-8")
+
+    def request(self, kind="sales"):
+        return builder.build("desktop-wireframe", "long-form", MANUSCRIPT.read_text(encoding="utf-8"), {}, {}, [],
+                             "STUB-NO-MODEL", "", self.run, page_kind=kind)
+
+    def test_a_folded_levels_launch_stamps_its_main_offer_count(self):
+        self.write_run_launch("folded_levels", 3)
+        request = self.request()
+        self.assertEqual(request["folded_levels"], 3)
+        last = request["sections"][-1]
+        block = w.prompt_block("desktop-wireframe", last, len(request["sections"]), len(request["sections"]), 1440, request)
+        self.assertIn("exactly 3 level cards", block)
+
+    def test_no_launch_record_a_single_offer_or_an_opt_in_page_is_unchanged(self):
+        self.assertNotIn("folded_levels", self.request())
+        self.write_run_launch("single_simple", 1)
+        self.assertNotIn("folded_levels", self.request())
+        self.write_run_launch("folded_levels", 3)
+        self.assertNotIn("folded_levels", self.request("opt_in"))
+
+    def test_the_stamped_request_still_preflights(self):
+        self.write_run_launch("folded_levels", 3)
+        (self.run / "production-request.json").write_text(json.dumps(self.request()), encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(SCRIPTS / "stage_executor.py"), str(self.run), "--preflight",
+                               "--stages", "desktop-wireframe"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
 class SecondDownsellLabelTests(unittest.TestCase):

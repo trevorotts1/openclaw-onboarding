@@ -5,12 +5,13 @@
 dispatch_launch.py hands this module one lane per page request. Rules, all proven by
 test_page_swarm.py with fake pages and a fake limiter (no paid call anywhere):
 
-  * The landing lane runs FIRST and alone. When it finishes, visual-bible.json is written (design
-    style, brand file, owner, provider, the landing run's files) and the shared image inputs file is
-    refreshed to point at it, so every later page follows the same look.
-  * Every other lane then runs in parallel, `workers` at a time. The default worker count is the
-    runner profile's max_workers from Skill 71 (Mac 6, Hostinger 8, Contabo 4); workers=1 is the
-    sequential fallback and gives byte-identical results.
+  * Every lane runs side by side, `workers` at a time, the landing lane (sales page and opt-in page)
+    with the rest. The default worker count is the runner profile's max_workers from Skill 71 (Mac 6,
+    Hostinger 8, Contabo 4); workers=1 is the sequential fallback and gives byte-identical results.
+    No lane waits for another: the look every page follows (design style, brand file, owner,
+    provider) is in the shared image inputs file all lanes read from the start. The landing run's
+    visual-bible.json is written when the swarm ends, as the record of what it drew; no later page
+    prompt reads it, so holding the other pages back for it bought nothing.
   * Every paid image start takes a token from Skill 71's shared KIE limiter (20 starts per 10
     seconds per account, lockfile-persisted); a lane takes one token per image it plans to start,
     again for its single retry. The free stub provider takes none.
@@ -132,8 +133,6 @@ class SpendLedger:
 # ---------------------------------------------------------------------------------------------
 def run_swarm(lanes: List[Dict[str, Any]], runner: Callable[[Dict[str, Any]], Any], *,
               workers: int = 1, limiter=None, ledger: Optional[SpendLedger] = None,
-              first: str = "landing",
-              on_first_done: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
               ) -> List[Dict[str, Any]]:
     """Run lanes; returns one outcome per lane IN THE ORDER GIVEN.
 
@@ -178,14 +177,7 @@ def run_swarm(lanes: List[Dict[str, Any]], runner: Callable[[Dict[str, Any]], An
         if ledger is not None:
             ledger.settle(outcome["lane"], outcome["status"])
 
-    firsts = [l for l in lanes if l["lane"] == first]
-    rest = [l for l in lanes if l["lane"] != first]
-    for lane in firsts:
-        if admit(lane):
-            finish(attempt(lane))
-    if on_first_done is not None:
-        on_first_done([outcomes[l["lane"]] for l in firsts if l["lane"] in outcomes])
-    admitted = [l for l in rest if admit(l)]  # reserved in page order, so the cap is deterministic
+    admitted = [l for l in lanes if admit(l)]  # reserved in page order, so the cap is deterministic
     if admitted:
         with ThreadPoolExecutor(max_workers=max(1, min(int(workers), len(admitted)))) as pool:
             for outcome in pool.map(attempt, admitted):
@@ -198,7 +190,7 @@ def run_swarm(lanes: List[Dict[str, Any]], runner: Callable[[Dict[str, Any]], An
 # ---------------------------------------------------------------------------------------------
 def write_visual_bible(out_dir: Path, launch_id: str, inputs: Optional[Dict[str, Any]],
                        landing: Optional[Dict[str, Any]]) -> Path:
-    """visual-bible.json: what the landing run decided that every other page follows."""
+    """visual-bible.json: the record of the look the landing run drew (written when the swarm ends)."""
     inputs = inputs or {}
     result = (landing or {}).get("result") or {}
     doc = {"schema": "signature-launch-visual-bible/v1", "launch_id": launch_id,
@@ -222,7 +214,7 @@ def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, An
     rides on its parent's request (today: downsell_2). Returns
     {"outcomes": [...], "swarm": {report}}; the caller decides what a failed lane means."""
     plan = ps.lane_plan(page_set)
-    estimates = {l["lane"]: l["image_estimate"] for l in plan["first"] + plan["parallel"]}
+    estimates = {l["lane"]: l["image_estimate"] for l in plan["parallel"]}
     by_role = {r["page_role"]: r for r in requests}
     lanes = [{"lane": r["page_role"], "request": r, "extra": False,
               "image_estimate": estimates.get(r["page_role"], 0)} for r in requests]
@@ -239,28 +231,19 @@ def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, An
     if image_inputs is not None:
         ledger = SpendLedger(image_inputs["image_cap"], enforce=paid, provider=image_inputs["image_provider"],
                              path=out_dir / LEDGER_NAME if out_dir else None)
-    inputs_path = None
     if out_dir and image_inputs is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
-        inputs_path = out_dir / INPUTS_NAME
-        inputs_path.write_text(json.dumps({k: v for k, v in image_inputs.items() if k != "allow_paid"},
+        (out_dir / INPUTS_NAME).write_text(json.dumps({k: v for k, v in image_inputs.items() if k != "allow_paid"},
                                           indent=2) + "\n", encoding="utf-8")
 
     def run(lane):
         return executor(lane["request"], lane["lane"]) if lane["extra"] else executor(lane["request"])
 
-    def after_landing(done):
-        if not out_dir:
-            return
-        bible = write_visual_bible(out_dir, launch_id, image_inputs, done[0] if done else None)
-        if inputs_path is not None:
-            refreshed = json.loads(inputs_path.read_text(encoding="utf-8"))
-            refreshed["visual_bible_ref"] = str(bible)
-            inputs_path.write_text(json.dumps(refreshed, indent=2) + "\n", encoding="utf-8")
-
-    outcomes = run_swarm(lanes, run, workers=workers, limiter=limiter if paid else None,
-                         ledger=ledger, on_first_done=after_landing)
-    report = {"workers": int(workers), "landing_first": any(l["lane"] == "landing" for l in lanes),
+    outcomes = run_swarm(lanes, run, workers=workers, limiter=limiter if paid else None, ledger=ledger)
+    if out_dir:
+        write_visual_bible(out_dir, launch_id, image_inputs,
+                           next((o for o in outcomes if o["lane"] == "landing"), None))
+    report = {"workers": int(workers),
               "lanes": [o["lane"] for o in outcomes],
               "statuses": {o["lane"]: o["status"] for o in outcomes},
               "attempts": {o["lane"]: o["attempts"] for o in outcomes},
