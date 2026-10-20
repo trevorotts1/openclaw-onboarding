@@ -570,7 +570,8 @@ def build_mobile(imgs, secs, c, title, stage, viewport, role="landing", brand=No
     cap_h = max(line_h(f_cap) * len(n) + line_h(f_sub) * len(s) for n, s in caps) + 28
     n_f = len(groups)
     note = [f"Optimized for mobile ({viewport})", "Same content and flow as desktop \u00b7 No section labels on the page"]
-    subtitle = f"{brand + ' \u00b7 ' if brand else ''}Mobile {STAGE_LABEL[stage]} (complete scroll)"
+    brand_prefix = brand + " \u00b7 " if brand else ""
+    subtitle = f"{brand_prefix}Mobile {STAGE_LABEL[stage]} (complete scroll)"
     # the left block is as wide as the longer of title and subtitle; the note box sits right of it
     left_w = max(tmp.textlength(title.upper(), font=font("serif", 56)),
                  tmp.textlength(subtitle.upper(), font=font("bold", 24)))
