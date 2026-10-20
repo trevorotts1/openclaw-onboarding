@@ -585,7 +585,7 @@ class ConfigFragmentTests(unittest.TestCase):
         config = load(CONFIG)
         adapters = config["adapters"]
         self.assertEqual(set(adapters),
-                         {"downsell_1", "landing", "product_selection",
+                         {"downsell_1", "downsell_2", "landing", "product_selection",
                           "upsell_1", "upsell_2", "thank_you", "checkout"})
         # checkout is wired design-only (checkout_wrapper.py): the native
         # form stays out of dispatch (CR-S49-003 amended).
@@ -658,6 +658,31 @@ class Upsell1ImagesTests(unittest.TestCase):
         # the stub provider never composes review PDFs or overview boards (a placeholder is not
         # an approved input); the kie provider does, per Skill 71's stage executor
         self.assertTrue((wd / "result-upsell_1.json").is_file())
+
+    def test_shared_image_inputs_replace_the_bridge_config_and_list_every_design_file(self):
+        brand = SKILL71 / "assets" / "brand" / "blackceo-brand.json"
+
+        def mutate(record):
+            record["brand_ref"] = "brand.json"
+            record["brand_hash"] = __import__("hashlib").sha256(brand.read_bytes()).hexdigest()
+        wd, record, graph, by_role = make_workdir(mutate)
+        self.addCleanup(shutil.rmtree, wd, True)
+        inputs = wd / "image_inputs.json"
+        inputs.write_text(json.dumps({"design_style": "C", "brand_file": str(brand), "brand_owner": "blackceo",
+                                      "image_cap": 40, "image_provider": "stub"}))
+        cmd = [sys.executable, str(WRAPPER), "--slot", "upsell_1",
+               "--request", str(wd / "request-upsell_1.json"), "--result", str(wd / "result-upsell_1.json"),
+               "--launch", str(wd / "launch.json"), "--copy", str(S80_FIX / "copy-upsell1-public.valid.json"),
+               "--journey", str(ADAPT_FIX / "journey-main-only.testonly.json"),
+               "--enrichment", str(FIXTURES / "enrichment-upsell_1.json"),
+               "--produce", str(PRODUCE), "--skill71-root", str(SKILL71), "--image-inputs", str(inputs)]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout[-1500:] + proc.stderr[-1500:])
+        run = wd / "images-upsell_1"
+        self.assertEqual(load(run / "intake.json")["design_style"], "C")
+        result = load(wd / "result-upsell_1.json")
+        pngs = [a["path"] for a in result["artifacts"] if a["path"].endswith(".png")]
+        self.assertEqual(len(pngs), 8 * 4, "wireframes and mockups, desktop and mobile, are all in the result")
 
     def test_missing_operator_value_fails_closed_before_any_image(self):
         wd, proc = self._run(drop=("brand_owner",))

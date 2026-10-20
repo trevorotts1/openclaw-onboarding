@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "client-intake-answers/v1",
+  "title": "Client intake answers (one file per run)",
+  "description": "C1 contract. Written by shared-utils/client_intake/engine.py, read by Skill 49 launch and legacy intake, Skill 71 write_intake (--answers-file) and Skill 83. Harness-neutral: claude-nine, Claude Code and OpenClaw all write and resume this same file.",
+  "type": "object",
+  "required": ["schema", "answers", "to_confirm"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "client-intake-answers/v1"},
+    "run_id": {"type": "string"},
+    "harness": {"type": "string", "enum": ["claude-nine", "claude-code", "openclaw", "plain"]},
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"type": "string", "enum": ["launch", "legacy", "bf"]},
+        "phase": {"type": "string", "enum": ["pre_build", "approval"]}
+      }
+    },
+    "answers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "status", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "value": {},
+          "status": {"type": "string", "enum": ["provided", "suggested", "default_to_confirm", "unknown"]},
+          "source": {"type": "string", "minLength": 1},
+          "note": {"type": "string"},
+          "unknown_count": {"type": "integer", "minimum": 0},
+          "pending": {"type": "object", "description": "What the last help message offered (colors read, feel words, recommendation), so the next reply can finish it. Dropped when the answer is recorded."}
+        }
+      }
+    },
+    "to_confirm": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "value", "reason", "how_to_change"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "value": {},
+          "reason": {"type": "string"},
+          "how_to_change": {"type": "string"}
+        }
+      }
+    }
+  }
+}

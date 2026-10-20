@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from . import entitlement
+from . import entitlement, image_plan
 from .constants import (
     JOURNEY_MODES,
     OFFER_RELATION_KEYS,
@@ -46,6 +46,10 @@ PERMITTED_DEFAULTS = {
     "automation_execution": ("automation_execution", "not_requested",
                              "contract section 7: a JSON file does not execute a workflow"),
 }
+
+# Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
+# cap, provider); it is shape-checked here and resolved, with flagged defaults, only at dispatch.
+OPTIONAL_FIELDS = ("image_plan",)
 
 OFFER_REQUIRED = ("offer_id", "name", "role", "price")
 OFFER_OPTIONAL = ("level", "relationships")
@@ -297,7 +301,7 @@ def validate(payload: Any) -> Dict[str, Any]:
     except entitlement.EntitlementError as exc:
         raise IntakeError(exc.code, exc.field, exc.detail) from exc
 
-    known = set(REQUIRED_FIELDS) | set(PERMITTED_DEFAULTS)
+    known = set(REQUIRED_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
     unknown = set(payload) - known
     if unknown:
         _fail("AF-LAUNCH-INTAKE-UNKNOWN", "<root>",
@@ -334,6 +338,10 @@ def validate(payload: Any) -> Dict[str, Any]:
         else:
             normalized[key] = value
             provenance[key] = f"default: {reason}"
+    try:
+        normalized["image_plan"] = image_plan.validate_raw(payload.get("image_plan")) or None
+    except image_plan.ImagePlanError as exc:
+        raise IntakeError(exc.code, exc.field, exc.detail) from exc
     normalized["provenance"] = provenance
     assert_no_commercial_defaults(normalized)
     return normalized

@@ -55,6 +55,20 @@ reviewed_at, criteria, verdict, automatic_failures, repair_attempt,
 specific_defects, performed_check, next_current_artifact,
 independent_review.
 
+Model independence (graphics hooks, SOP-GIP-02): a review of generated
+images or of the prompt that made them must come from a DIFFERENT MODEL than
+the one that authored the prompt. Pass --author-model and --reviewer-model (or
+set SKILL71_REVIEWER_MODEL) and/or --require-model-independence. When the rule
+is active, independent_review is true only when BOTH models are named and they
+differ; an unnamed model counts as NOT independent (the limitation is recorded,
+never simulated). The review then also carries author_model, reviewer_model and
+model_independence (independent | same_model | unknown). With none of the
+three given the record is byte-for-byte what it was before.
+
+A pass verdict may not cite an automatic failure listed in the stage contract's
+graphics_autofails block (AF-G1..AF-G8): a pass with a graphics automatic
+failure is refused, the same as SOP-GIP-02's "any hit = FAIL".
+
 Exit codes: 0 written (including UNKNOWN-session writes), 1 invalid
 review content, 2 usage / unreadable input.
 """
@@ -74,6 +88,27 @@ UNKNOWN_SESSION = "UNKNOWN"
 STANDARD_SET_DIR = "assets/visual-standards"
 TRAIT_CRITERIA = ("wireframe_trait_completeness", "mockup_trait_fidelity")
 FILE_SUFFIXES = ("json", "md", "html", "png", "txt", "pdf", "jpg", "jpeg")
+REVIEWER_MODEL_ENV = "SKILL71_REVIEWER_MODEL"
+UNKNOWN_MODEL = "UNKNOWN"
+
+
+def _model_key(model):
+    return " ".join(str(model or "").strip().lower().split())
+
+
+def model_independence(author_model, reviewer_model):
+    """'independent' only when both models are named and differ; an unnamed
+    model is 'unknown' and counts as not independent."""
+    a, r = _model_key(author_model), _model_key(reviewer_model)
+    if not a or not r:
+        return "unknown"
+    return "same_model" if a == r else "independent"
+
+
+def graphics_autofail_codes(contract):
+    """AF-G codes the stage contract lists (data, not prose)."""
+    rows = contract.get("graphics_autofails") or []
+    return sorted(str(r.get("code")) for r in rows if isinstance(r, dict) and r.get("code"))
 
 
 def sha256_file(p):
@@ -268,6 +303,14 @@ def main():
     parser.add_argument("--specific-defects", default="[]",
                         help="JSON list of named defects; required non-empty "
                              "when the verdict is fail (SOP evidentiary field)")
+    parser.add_argument("--author-model", default=None,
+                        help="model that authored the prompt/artifact under review "
+                             "(model-independence rule; unnamed counts as not independent)")
+    parser.add_argument("--reviewer-model", default=None,
+                        help="model doing this review (default: $" + REVIEWER_MODEL_ENV + ")")
+    parser.add_argument("--require-model-independence", action="store_true",
+                        help="apply the model-independence rule even when no model is named "
+                             "(then both models are unknown, so the review is not independent)")
     parser.add_argument("--standard-file", default=None,
                         help="the visual standard file this review compared the "
                              "artifact against, relative to the skill root. "
@@ -370,6 +413,14 @@ def main():
         return 1
 
     contract = load_contract()
+    hit = [f for f in automatic_failures
+           if any(f == code or f.startswith(code + ":") or f.startswith(code + " ")
+                  for code in graphics_autofail_codes(contract))]
+    if args.verdict == "pass" and hit:
+        print("FAIL")
+        print("- a pass verdict cannot cite a graphics automatic failure ("
+              + ", ".join(hit) + "); any hit is a FAIL (SOP-GIP-02)")
+        return 1
     if args.artifact:
         artifact_path = run_dir / args.artifact
         if not artifact_path.is_file():
@@ -397,6 +448,16 @@ def main():
         or "unknown-author"
 
     independent_review = (not session_unknown) and reviewer_session != author_session
+    author_model = (args.author_model or "").strip() or None
+    reviewer_model = ((args.reviewer_model or "").strip()
+                      or os.environ.get(REVIEWER_MODEL_ENV, "").strip() or None)
+    model_rule = bool(args.require_model_independence or author_model or reviewer_model)
+    model_state = model_independence(author_model, reviewer_model)
+    if model_rule and model_state != "independent":
+        independent_review = False
+        print("WARNING: model independence is " + model_state + "; writing the review with "
+              "independent_review false (a reviewer model must differ from the prompt author's "
+              "model, and an unnamed model counts as not independent).", file=sys.stderr)
 
     review = {
         "item": args.item_id,
@@ -419,6 +480,10 @@ def main():
     # criterion (tests/test_review_v2.py pins that exact set).
     if standard_file:
         review["standard_file"] = standard_file
+    if model_rule:
+        review["author_model"] = author_model or UNKNOWN_MODEL
+        review["reviewer_model"] = reviewer_model or UNKNOWN_MODEL
+        review["model_independence"] = model_state
 
     out_dir = run_dir / "private" / "reviews" / args.stage
     out_dir.mkdir(parents=True, exist_ok=True)

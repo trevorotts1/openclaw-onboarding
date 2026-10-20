@@ -105,6 +105,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
+
 EXIT_OK = 0
 EXIT_FAILCLOSED = 2
 EXIT_USAGE = 3
@@ -801,8 +804,10 @@ def _run_images(args, request: Mapping[str, Any],
     if args.image_provider == "kie" and not args.allow_paid:
         raise WrapperError(["images: --image-provider kie spends money; "
                             "it needs --allow-paid, approved by the owner"])
+    instance = getattr(args, "role_instance", None)
+    page_key = instance or "downsell_1"
     run_dir = Path(args.images_run_dir) if args.images_run_dir \
-        else work_dir / "downsell_1-images"
+        else work_dir / f"{page_key}-images"
     py = sys.executable
     model = args.image_model or (
         "STUB-NO-MODEL" if args.image_provider == "stub"
@@ -833,14 +838,20 @@ def _run_images(args, request: Mapping[str, Any],
                "--brand-file", str(Path(args.brand_file).resolve()),
                "--launch-record", str(Path(args.launch).resolve()),
                "--route-graph", str(Path(args.route_graph).resolve()),
+               *(["--design-style", args.design_style]
+                 if getattr(args, "design_style", None) else []),
                "--pipeline-command", "sh -c " + shlex.quote(" && ".join(steps))]
-    proc = subprocess.run(service, capture_output=True, text=True)
+    env = dict(os.environ)
+    if instance:  # the second downsell is labelled Downsell 2 on every file it makes
+        env["SIGNATURE_ROLE_INSTANCE"] = instance
+    proc = subprocess.run(service, capture_output=True, text=True, env=env)
     if proc.returncode != 0:
         tail = (proc.stdout + proc.stderr).strip().splitlines()[-12:]
         raise WrapperError(
             [f"images: the shared image service exited {proc.returncode}: "
              + " | ".join(tail)])
-    artifacts, stages = [], {}
+    page_set.stage_visual_bible(getattr(args, "inputs", None), run_dir)
+    artifacts, stages = list(page_set.design_artifacts(page_key, run_dir)), {}
     for stage in IMAGES_RUN_STAGES:
         record_path = run_dir / stage / "stage-executor-record.json"
         if not record_path.is_file():
@@ -859,7 +870,55 @@ def _run_images(args, request: Mapping[str, Any],
                          "overview_boards": (comp.get("overview_boards") or {}).get("status")}
         artifacts += [{"path": str(o), "sha256": _sha256(o.read_bytes())}
                       for o in outputs]
-    return {"run_dir": str(run_dir), "artifacts": artifacts, "stages": stages}
+    unique = {a["path"]: a for a in artifacts}  # every file once, sorted by path
+    return {"run_dir": str(run_dir), "artifacts": [unique[k] for k in sorted(unique)],
+            "stages": stages}
+
+
+# ---------------------------------------------------------------------------
+# The second downsell: a design page that rides on the downsell_1 request.
+# ---------------------------------------------------------------------------
+SECOND_DOWNSELL_BLOCKERS = (
+    "D2-DESIGN-ONLY: the launch record has one downsell offer (D1) by route law, so the second "
+    "downsell has no offer, price or entry guard to check; this result carries its wireframes and "
+    "mockups only, and its copy was not put through the Skill 81 contract checks",
+    "the design board and final-mockups wait for the image chain and the client's recorded "
+    "board approval (design_board.py gate)")
+
+
+def _run_second_downsell(args, request: Dict[str, Any], result_path: Path,
+                         work_dir: Path) -> Dict[str, Any]:
+    """Wireframes and mockups for downsell_2 through Skill 71's shared image service, labelled
+    Downsell 2. Never claims more than authored / L0."""
+    if request.get("page_role") != ROLE or request.get("assigned_skill") != SKILL:
+        raise WrapperError([f"the request is for page_role {request.get('page_role')!r}; "
+                            f"downsell_2 rides on the {ROLE!r} request (skill {SKILL})"])
+    if not args.skill71_root:
+        raise WrapperError(["downsell_2 is a design page: it needs --skill71-root for its images"])
+    for name in ("route_graph", "copy"):
+        if not getattr(args, name):
+            raise WrapperError([f"downsell_2 needs --{name.replace('_', '-')}"])
+    images = _run_images(args, request, work_dir)
+    copy_path = Path(args.copy)
+    artifacts = [{"path": str(copy_path), "sha256": _sha256(_read_bytes(copy_path, "copy document"))},
+                 *images["artifacts"]]
+    result = {
+        "schema_version": "1.0", **{k: request[k] for k in (
+            "tenant_id", "location_id", "launch_id", "revision", "request_id", "input_hash", "page_id")},
+        "status": "authored", "artifacts": artifacts,
+        "author_session": args.author_session or os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION")
+        or os.environ.get("OPENCLAW_SESSION_ID") or "s49-downsell-wrapper",
+        "reviewer_session": None, "independent_review": False, "proof_class": "L0",
+        "blockers": list(SECOND_DOWNSELL_BLOCKERS), "native_bindings_ref": None,
+        "test_only": request["test_only"]}
+    mode = _validate_result(result, request)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return {"role": ROLE, "role_instance": "downsell_2", "request_id": request["request_id"],
+            "result_path": str(result_path), "status": result["status"],
+            "proof_class": result["proof_class"], "receipt_validation": mode,
+            "blockers": result["blockers"],
+            "images": {"run_dir": images["run_dir"], "stages": images["stages"]}}
 
 
 # ---------------------------------------------------------------------------
@@ -874,6 +933,20 @@ def run(args) -> Dict[str, Any]:
     if not isinstance(request, dict):
         raise WrapperError(["page-request: the document is not a "
                             "JSON object"])
+    args.inputs = None
+    if args.image_inputs:
+        try:
+            args.inputs = page_set.load_image_inputs(args.image_inputs)
+        except page_set.PageSetError as exc:
+            raise WrapperError([str(exc)])
+        page_set.fill_args(args, args.inputs, {
+            "brand_file": "brand_file", "brand_owner": "brand_owner",
+            "image_cap": "image_cap", "design_style": "design_style",
+            "design_prose_ref": "design_prose"})
+        if args.image_provider == "stub" and args.inputs["image_provider"] == "kie":
+            args.image_provider, args.allow_paid = "kie", args.inputs["allow_paid"]
+    if args.role_instance:
+        return _run_second_downsell(args, request, result_path, work_dir)
     launch = _load_json(Path(args.launch), "launch record")
     graph_bytes = _read_bytes(Path(args.route_graph), "route graph")
     try:
@@ -1118,15 +1191,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--copy", required=True,
                     help="staged D1 page/copy document JSON "
                          "({work_dir}/copy-downsell_1.json)")
-    ap.add_argument("--journey", required=True,
+    ap.add_argument("--journey",
                     help="staged journey entry facts JSON "
-                         "({work_dir}/journey-downsell_1.json)")
-    ap.add_argument("--enrichment", required=True,
+                         "({work_dir}/journey-downsell_1.json); required "
+                         "for downsell_1")
+    ap.add_argument("--enrichment",
                     help="enrichment sidecar JSON "
-                         "({work_dir}/enrichment-downsell_1.json)")
-    ap.add_argument("--skill81-root", required=True,
+                         "({work_dir}/enrichment-downsell_1.json); "
+                         "required for downsell_1")
+    ap.add_argument("--skill81-root",
                     help="path to the landed 81-signature-downsell "
-                         "tree (validators + schemas, hash-pinned)")
+                         "tree (validators + schemas, hash-pinned); "
+                         "required for downsell_1")
+    ap.add_argument("--role-instance", choices=["downsell_2"],
+                    help="build the SECOND downsell's wireframes and mockups "
+                         "(design only, labelled Downsell 2) from this same "
+                         "downsell_1 request")
+    ap.add_argument("--image-inputs",
+                    help="the shared image inputs file (design style, brand "
+                         "file, owner, image cap, provider); a flag typed "
+                         "here still wins")
+    ap.add_argument("--design-style", choices=["A", "B", "C"],
+                    help="the client's design style (A Block, B Circle, C "
+                         "Hybrid), recorded in the image run's intake")
     ap.add_argument("--extension",
                     help="staged result-extension document (default: "
                          "extension-downsell_1.json beside the request)")
@@ -1169,6 +1256,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "OPENCLAW_SESSION_ID, then a fixed wrapper "
                          "label")
     args = ap.parse_args(argv)
+    if not args.role_instance:
+        absent = [f"--{f}" for f in ("journey", "enrichment", "skill81-root")
+                  if not getattr(args, f.replace("-", "_"))]
+        if absent:
+            ap.error("the following arguments are required: " + ", ".join(absent))
     try:
         summary = run(args)
     except WrapperError as exc:

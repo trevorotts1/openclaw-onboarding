@@ -48,6 +48,9 @@ def declared_page_role(run_dir):
     finally:
         sys.path.pop(0)
     role = page_role.declared_role(run_dir)
+    instance = _role_instance(run_dir, role)
+    if instance:
+        return instance
     if role == "landing":  # a sales page is role landing: name it by its kind, like the Design Board
         try:
             if page_kinds.declared(run_dir, {}) == "sales":
@@ -55,6 +58,21 @@ def declared_page_role(run_dir):
         except page_kinds.KindError:
             pass  # an unknown kind is refused by the gate; a label never crashes on it
     return role
+
+
+def _role_instance(run_dir, role):
+    """A second instance of one page role (downsell_2 beside downsell_1): intake.json
+    `role_instance`, else the SIGNATURE_ROLE_INSTANCE environment variable the launch wrapper sets
+    for that page's run. It must be the same family as the page role (downsell_1 -> downsell_2), so a
+    label can name Downsell 2 without the page-request enum gaining a role."""
+    import os
+    value = os.environ.get("SIGNATURE_ROLE_INSTANCE")
+    try:
+        value = json.loads((Path(run_dir) / "intake.json").read_text(encoding="utf-8")).get("role_instance") or value
+    except (OSError, ValueError, AttributeError):
+        pass
+    a, b = _NUMBERED.match(str(role or "")), _NUMBERED.match(str(value or ""))
+    return value if a and b and a.group(1) == b.group(1) else None
 
 
 def page_type(role):
@@ -152,4 +170,6 @@ if __name__ == "__main__":  # smoke: python3 deliverable_labels.py
     assert title_band("downsell_1", "desktop", "desktop-wireframe", 8) == "DOWNSELL 1 \u00b7 DESKTOP WIREFRAME \u00b7 8 SECTIONS"
     assert page_type("upsell_2") == "Upsell 2" and page_type("downsell_1") == "Downsell 1"
     assert page_type("some_new_page") == "Some New Page"
+    assert _NUMBERED.match("downsell_2") and pdf_name("downsell_2", "mobile", "visual-mockup") == \
+        "downsell-2_MOBILE_MOCKUPS-VISUAL.pdf"
     print("ok")

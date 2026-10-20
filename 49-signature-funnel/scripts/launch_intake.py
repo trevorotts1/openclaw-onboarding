@@ -43,6 +43,7 @@ Deterministic, stdlib only, no network, no model. Exit 0/2/3 as usual.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import uuid
@@ -127,6 +128,41 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
                 "value": entry, "state": "verified_existing",
                 "source_ref": "supplied-material", "question_id": None}
     return s
+
+
+def _client_intake():
+    """shared-utils/client_intake/engine.py: the repo checkout first, then the installed skills tree."""
+    here = Path(__file__).resolve()
+    for d in [p / "shared-utils" / "client_intake" for p in here.parents] + [
+            Path.home() / ".openclaw" / "skills" / "shared-utils" / "client_intake",
+            Path("/data/.openclaw/skills/shared-utils/client_intake")]:
+        if (d / "engine.py").is_file():
+            sys.path.insert(0, str(d))
+            import engine  # noqa: E402
+            return engine
+    raise IntakeError("shared-utils/client_intake not found; install or update the onboarding skills")
+
+
+def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
+                   brand_file: Optional[Path] = None) -> Dict[str, Any]:
+    """Fill the session from the one client answers file (client-intake-answers/v1), so the same answers
+    given in any harness never get asked again. A default or suggestion enters as recommended_unapproved,
+    never as approved. brand_ref and brand_hash come from the brand file the answers produced (Skill 71
+    brand_colors.py record-answers); without that file the brand question stays open."""
+    for field_key, entry in _client_intake().to_launch_known(answers).items():
+        session["answers"][field_key] = {"value": entry["value"], "state": entry["state"],
+                                         "source_ref": entry["source_ref"], "question_id": None}
+    mode = (session["answers"].get("interview.mode") or {}).get("value")
+    if mode in MODES:
+        session["mode"] = mode
+    if brand_file is not None:
+        bf = Path(brand_file)
+        session["brand_ref"] = str(bf)
+        session["brand_hash"] = hashlib.sha256(bf.read_bytes()).hexdigest()
+        _set(session, "brand_ref", session["brand_ref"], "verified_existing", "d1_brand", "answers-file")
+    session["history"].append({"at": _now(), "event": "answers_file_ingested"})
+    _persist(session)
+    return session
 
 
 def save_session(session: Dict[str, Any], path: Path) -> None:
@@ -413,7 +449,9 @@ def _h_brand(s, q, raw, value, ref):
         s["brand_ref"] = value["brand_ref"]
         s["brand_hash"] = value.get("brand_hash", s.get("brand_hash", ""))
         _set(s, "brand_ref", value["brand_ref"], "verified_existing", q["id"], ref)
-    elif _norm(choice) == "some are missing":
+    elif _norm(choice) in ("some are missing", "help me check"):
+        # never assume the brand is saved: unknown until the colors, logo and photos are answered
+        # (shared-utils/client_intake asks them, with help) and a brand file exists
         _set(s, "brand_ref", None, "unknown", q["id"], ref)
     else:
         _set(s, "brand_ref", s.get("brand_ref") or "existing-brand",
@@ -616,7 +654,7 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
                   {"upsell_1": False, "downsell_1": False, "upsell_2": False})
 
     offers: List[Dict[str, Any]] = []
-    if journey == "multiple_options":
+    if journey in ("multiple_options", "folded_levels"):  # levels are named, priced mains too; no invented ones
         offers.extend(_package_offers(session, missing))
     else:
         main = _offer_from_answers(session, "main", "offers.main.description",
@@ -1126,6 +1164,8 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--recap", action="store_true")
     ap.add_argument("--cancel", action="store_true")
+    ap.add_argument("--answers-file", help="client-intake-answers/v1 file to fill the session from")
+    ap.add_argument("--brand-file", help="brand file written from that answers file (brand_ref and hash)")
     args = ap.parse_args(argv)
     if args.self_test:
         return _self_test()
@@ -1148,6 +1188,10 @@ def main(argv: List[str]) -> int:
                    value=json.loads(args.value) if args.value else None,
                    source_message_ref=args.source_ref)
             print("recorded.")
+        elif args.answers_file:
+            ingest_answers(s, json.loads(Path(args.answers_file).read_text(encoding="utf-8")),
+                           Path(args.brand_file) if args.brand_file else None)
+            print("answers file ingested.")
         elif args.next:
             q = next_question(s)
             print(json.dumps(q, indent=2) if q else "no further questions")
@@ -1159,7 +1203,7 @@ def main(argv: List[str]) -> int:
             cancel(s)
             print("cancelled.")
         else:
-            print("USAGE ERROR: pass --next, --answer, --plan, --recap or --cancel.")
+            print("USAGE ERROR: pass --next, --answer, --answers-file, --plan, --recap or --cancel.")
             return EXIT_FAILCLOSED
     except (IntakeError, vlp.ApprovalError) as exc:
         print(f"FAIL: {exc}")

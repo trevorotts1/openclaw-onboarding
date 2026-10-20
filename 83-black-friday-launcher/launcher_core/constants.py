@@ -23,7 +23,7 @@ from pathlib import Path
 SKILL_NUMBER = "83"
 SKILL_DIR_NAME = SKILL_NUMBER + "-black-friday-launcher"
 SKILL_NAME = "black-friday-launcher"
-SKILL_VERSION = "0.2.3"
+SKILL_VERSION = "0.2.4"
 
 # The Launcher's own tree, derived from this file's location and never from a
 # directory name, so the skill works under either naming convention.

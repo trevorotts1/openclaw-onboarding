@@ -26,6 +26,12 @@ Usage:
       --background #HEX [--secondary #HEX] [--accent #HEX ...] [--background #HEX ...]
 `record` writes the client's answer into the run's client brand file (created from
 assets/brand/client-brand.template.json when the run has none) and points intake.json at it.
+  python3 scripts/brand_colors.py record-answers <run_dir> --answers-file FILE [--founder-photo PATH ...]
+`record-answers` builds the same client brand file from the one intake answers file
+(shared-utils/client_intake, schema client-intake-answers/v1): colors as roles with a palette_status,
+plus fonts, logo and photos. A palette the client did not know (status default_to_confirm) is a neutral
+palette that belongs to no client; it passes `check` and prints TO CONFIRM so the build is never blocked
+silently and the default is reported at delivery. Nothing provided and no default applied still fails.
 Exit codes: 0 resolved/recorded, 1 unresolved/refused, 2 usage.
 """
 from __future__ import annotations
@@ -50,11 +56,14 @@ IMAGE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup",
 
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 ASK = (
-    "What are your brand colors? Please send: your main color, your second color, any "
-    "accent colors, your background color or colors, and your text color. A color code "
-    "like #1A2B3C is best; a brand guide or logo file works too and we will read the "
-    "colors from it. Every wireframe and mockup will be made only in these colors."
+    "What are your brand colors? And which one is your MAIN (primary) color? Please send: "
+    "your main color, your second color, any accent colors, your background color or colors, "
+    "and your text color. A color code like #1A2B3C is best; a logo file or your website link "
+    "works too and we will read the colors from it. If you are not sure, say 'help me' and we "
+    "will show you three palettes. Every wireframe and mockup will be made only in these colors."
 )
+SENTINEL = "CLIENT_MUST_SUPPLY"
+PALETTE_STATUSES = ("provided", "suggested", "default_to_confirm")
 
 
 def _json(path):
@@ -108,6 +117,12 @@ class Resolution:
     @property
     def palette(self):
         return dict((self.brand or {}).get("palette") or {})
+
+    @property
+    def status(self):
+        """provided | suggested | default_to_confirm (files made before this field are provided)."""
+        s = (self.brand or {}).get("palette_status")
+        return s if s in ("suggested", "default_to_confirm") else "provided"
 
     def block(self):
         """The line the wireframe and mockup prompts carry."""
@@ -178,12 +193,7 @@ def _hex(value, role):
     return "#" + text.upper()
 
 
-def record(run_dir, primary, text, backgrounds, secondary=None, accents=()):
-    run_dir = Path(run_dir)
-    intake_path = run_dir / "intake.json"
-    intake = _json(intake_path)
-    if not intake or not intake.get("brand_owner"):
-        raise ValueError("intake.json with a brand_owner must exist before colors are recorded")
+def _roles(primary, text, backgrounds, secondary=None, accents=()):
     roles = {"primary": _hex(primary, "primary")}
     if secondary:
         roles["secondary"] = _hex(secondary, "secondary")
@@ -193,6 +203,15 @@ def record(run_dir, primary, text, backgrounds, secondary=None, accents=()):
     roles["text"] = _hex(text, "text")
     if not roles["background"]:
         raise ValueError("background: at least one background color is required")
+    return roles
+
+
+def _write_brand(run_dir, roles, source, extra=None):
+    run_dir = Path(run_dir)
+    intake_path = run_dir / "intake.json"
+    intake = _json(intake_path)
+    if not intake or not intake.get("brand_owner"):
+        raise ValueError("intake.json with a brand_owner must exist before colors are recorded")
     existing = _find(str(intake.get("brand_file") or ""), run_dir) if intake.get("brand_file") else None
     in_run = existing is not None and run_dir.resolve() in existing.resolve().parents
     target = existing if in_run else run_dir / CLIENT_BRAND
@@ -202,7 +221,7 @@ def record(run_dir, primary, text, backgrounds, secondary=None, accents=()):
     # Slots gold/navy/cream are positional (accent-CTA, dark, light) in the brand-file form
     # shared with shared-utils; the five roles are kept verbatim in palette_roles.
     palette = {"gold": roles["primary"], "navy": roles["text"], "cream": roles["background"][0]}
-    if secondary:
+    if roles.get("secondary"):
         palette["secondary"] = roles["secondary"]
     for i, a in enumerate(roles.get("accent", []), 1):
         palette[f"accent{i}"] = a
@@ -212,13 +231,86 @@ def record(run_dir, primary, text, backgrounds, secondary=None, accents=()):
     brand.pop("_palette_note", None)
     slug = re.sub(r"[^a-z0-9]+", "-", str(intake["brand_owner"]).lower()).strip("-")
     brand["brand_id"] = slug or brand.get("brand_id")
-    brand["source"] = f"client answer recorded {date.today().isoformat()} (brand_colors.py record)"
+    brand["source"] = source
+    brand.update(extra or {})
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(brand, indent=2) + "\n", encoding="utf-8")
     if not in_run:
         intake["brand_file"] = CLIENT_BRAND
         intake_path.write_text(json.dumps(intake, indent=2) + "\n", encoding="utf-8")
     return target
+
+
+def record(run_dir, primary, text, backgrounds, secondary=None, accents=()):
+    roles = _roles(primary, text, backgrounds, secondary, accents)
+    return _write_brand(run_dir, roles, f"client answer recorded {date.today().isoformat()} (brand_colors.py record)",
+                        {"palette_status": "provided"})
+
+
+def _answer(doc, key):
+    e = (doc.get("answers") or {}).get(key)
+    return e if isinstance(e, dict) and e.get("status") in ("provided", "suggested", "default_to_confirm") else None
+
+
+def brand_extras_from_answers(doc, founder_photos=()):
+    """fonts, logo, photos and the palette status the answers file decides. Nothing here is invented:
+    what the client did not give stays CLIENT_MUST_SUPPLY with an explicit status."""
+    statuses = [(_answer(doc, k) or {}).get("status") for k in
+                ("brand_colors", "brand_primary", "brand_secondary", "brand_accent", "brand_background")]
+    pstatus = ("default_to_confirm" if "default_to_confirm" in statuses
+               else "suggested" if "suggested" in statuses else "provided")
+    extra = {"palette_status": pstatus}
+    fonts = _answer(doc, "fonts")
+    if fonts and isinstance(fonts["value"], dict) and fonts["value"].get("mode") == "given":
+        f = fonts["value"]
+        extra["fonts"] = {"display": f["display"], "body": f["body"], "accent": f["display"]}
+        extra["fonts_status"] = fonts["status"]
+    else:
+        extra["fonts"] = {"display": SENTINEL, "body": SENTINEL, "accent": SENTINEL}  # derive-document policy applies
+        extra["fonts_status"] = (fonts or {}).get("status") or "default_to_confirm"
+        pair = (fonts or {}).get("value", {}).get("suggested") if fonts and isinstance(fonts["value"], dict) else None
+        if pair:
+            extra["fonts_suggested"] = {k: pair[k] for k in ("display", "body", "accent") if k in pair}
+    logo = _answer(doc, "logo")
+    lv = logo["value"] if logo and isinstance(logo["value"], dict) else {}
+    if lv.get("mode") == "file" and lv.get("path"):
+        extra["logo"] = {"files": lv["path"], "masthead_files": lv["path"], "status": logo["status"]}
+    else:
+        name = lv.get("text") or (_answer(doc, "business_name") or {}).get("value")
+        extra["logo"] = {"files": SENTINEL, "masthead_files": SENTINEL, "wordmark_text": name or SENTINEL,
+                         "status": (logo or {}).get("status") or "default_to_confirm"}
+    pf = _answer(doc, "photos_founder")
+    perm = _answer(doc, "photos_permission")
+    wants = bool(pf and pf["value"] == "yes" and (perm or {}).get("value") == "yes")
+    extra["photos"] = {"status": (pf or {}).get("status") or "default_to_confirm",
+                       "permission": (perm or {}).get("value") or "not_asked",
+                       "empty_frame": not (wants and founder_photos),
+                       "likeness_generation": "never"}
+    extra["founder_photos"] = list(founder_photos) if wants and founder_photos else SENTINEL
+    rep = _answer(doc, "representation")
+    if rep and isinstance(rep["value"], str):
+        extra["people_rule"] = rep["value"]
+    return extra
+
+
+def record_from_answers(run_dir, answers_path, founder_photos=()):
+    """Write the run's client brand file from the intake answers file (see module docstring)."""
+    doc = _json(answers_path)
+    if not doc or doc.get("schema") != "client-intake-answers/v1":
+        raise ValueError(f"{answers_path} is not a client-intake-answers/v1 file")
+
+    def role(key):
+        a = _answer(doc, f"brand_{key}")
+        return a["value"] if a else None
+
+    if not role("primary"):
+        raise ValueError("the answers file has no primary color yet; ask the client (or apply the safe default) before the brand file is written")
+    bg = role("background") or ["#FFFFFF"]
+    acc = role("accent") or []
+    roles = _roles(role("primary"), role("text") or "#1A1A1A", bg if isinstance(bg, list) else [bg], role("secondary"),
+                   acc if isinstance(acc, list) else [acc])
+    extra = brand_extras_from_answers(doc, founder_photos)
+    return _write_brand(run_dir, roles, f"client answers file {date.today().isoformat()} (brand_colors.py record-answers)", extra)
 
 
 def main(argv=None):
@@ -232,13 +324,20 @@ def main(argv=None):
     r.add_argument("--accent", action="append", default=[])
     r.add_argument("--background", action="append", required=True)
     r.add_argument("--text", required=True)
+    ra = sub.add_parser("record-answers")
+    ra.add_argument("run_dir", type=Path)
+    ra.add_argument("--answers-file", type=Path, required=True)
+    ra.add_argument("--founder-photo", action="append", default=[])
     a = p.parse_args(argv)
     if not a.run_dir.is_dir():
         print(f"FAIL: run dir {a.run_dir} does not exist")
         return 2
-    if a.cmd == "record":
+    if a.cmd in ("record", "record-answers"):
         try:
-            path = record(a.run_dir, a.primary, a.text, a.background, a.secondary, a.accent)
+            if a.cmd == "record":
+                path = record(a.run_dir, a.primary, a.text, a.background, a.secondary, a.accent)
+            else:
+                path = record_from_answers(a.run_dir, a.answers_file, a.founder_photo)
         except ValueError as exc:
             print(f"REFUSED: {exc}")
             return 1
@@ -249,6 +348,10 @@ def main(argv=None):
         for name, value in res.palette.items():
             print(f"  {name} {value}")
         print(res.block())
+        if res.status != "provided":
+            label = {"default_to_confirm": "a neutral default that belongs to no client", "suggested": "only suggested"}[res.status]
+            print(f"TO CONFIRM: these colors are {label}, not confirmed by the client yet. "
+                  "The build continues; report this at delivery and ask the client to confirm or send their own.")
         return 0
     print("BRAND_COLORS_MISSING; no wireframe, mockup or image stage may start. Sources tried:")
     for line in res.tried:

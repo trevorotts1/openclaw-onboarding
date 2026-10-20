@@ -12,7 +12,7 @@ description: >
   with a dependency preflight that verifies every dependency before it reports
   ready. Offline core only: no live payment, no entitlement creation, no paid
   model session.
-version: 0.2.3
+version: 0.2.4
 priority: HIGH
 ---
 

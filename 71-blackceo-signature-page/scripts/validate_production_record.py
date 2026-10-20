@@ -38,6 +38,18 @@ checks:
      section by name, whatever the recorded verdict claims; a recorded
      garbled-word list that differs from the recomputed set also FAILs.
 
+  4. Graphics hooks (SOP-GIP-02), both additive:
+     * TEXT READ-BACK (AF-G1), only with --ocr: each section image is read by
+       the Design Board's own machine reader (design_board.ocr_text), and the
+       section FAILs when the recorded read-back is not supported by the pixels
+       or when the image does not show its expected copy. A recorded read-back
+       that the image does not contain is a self-typed read, not a QC read.
+     * LOGO ACCURACY (AF-G2): a section that declares logo_expected true must
+       carry a logo_check record naming the logo reference, the method and a
+       verdict; a missing record or any verdict other than "pass" FAILs it.
+
+Usage: validate_production_record.py <production-record.json> [--ocr]
+
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
 import json
@@ -60,11 +72,67 @@ def garbled_words(expected_text, readback_text):
     return sorted({tok for tok in tokens(readback_text) if tok not in expected})
 
 
-def check_record(data, base_dir=None):
+LOGO_VERDICTS = ("pass", "fail")
+
+
+def logo_failures(label, section):
+    """AF-G2: a section that expects the client's logo must carry a passing logo_check."""
+    if section.get("logo_expected") is not True:
+        return []
+    check = section.get("logo_check")
+    if not isinstance(check, dict):
+        return [f"section {label}: AF-G2 logo_expected is true but there is no logo_check record "
+                f"(compare the section against the client's logo reference)"]
+    out = []
+    for key in ("logo_ref", "method"):
+        if not isinstance(check.get(key), str) or not check[key].strip():
+            out.append(f"section {label}: AF-G2 logo_check.{key} is required")
+    verdict = check.get("verdict")
+    if verdict not in LOGO_VERDICTS:
+        out.append(f"section {label}: AF-G2 logo_check.verdict must be one of {list(LOGO_VERDICTS)}")
+    elif verdict != "pass":
+        out.append(f"section {label}: AF-G2 the logo is mutated, recolored or invented "
+                   f"(logo_check.verdict is {verdict!r}); the section FAILS and is regenerated")
+    return out
+
+
+def ocr_failures(label, slice_path, qc, ocr, board):
+    """AF-G1: the image itself must support the recorded read-back and show the expected copy."""
+    seen = board.tokens(ocr(slice_path))
+    out = []
+    readback = qc.get("readback_text")
+    if isinstance(readback, str) and readback.strip():
+        share = board.support(board.tokens(readback), seen)
+        if share < board.OCR_FLOOR:
+            out.append(f"section {label}: AF-G1 the recorded read-back is not supported by the image "
+                       f"({share:.0%} of its words are on the pixels, floor {board.OCR_FLOOR:.0%}); "
+                       f"a read-back must come from the image, not be typed")
+    expected = qc.get("expected_text")
+    if isinstance(expected, str) and expected.strip():
+        share = board.support(board.tokens(expected), seen)
+        if share < board.OCR_FLOOR:
+            out.append(f"section {label}: AF-G1 the section image does not show its copy "
+                       f"({share:.0%} of the expected words are on the pixels, floor "
+                       f"{board.OCR_FLOOR:.0%}); regenerate before stitching")
+    return out
+
+
+def _design_board():
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import design_board
+    finally:
+        sys.path.pop(0)
+    return design_board
+
+
+def check_record(data, base_dir=None, ocr=None):
     """Return a list of named failure strings; empty means the record passes.
 
     base_dir, when given, is the folder slice paths resolve against; slice
-    existence and pixel dimensions are checked only then.
+    existence and pixel dimensions are checked only then. ocr, when given, is a
+    callable(path) -> text (design_board.ocr_text in production); with a base_dir
+    it adds the AF-G1 text read-back leg for every slice on disk.
     """
     failures = []
     if not isinstance(data, dict):
@@ -157,7 +225,12 @@ def check_record(data, base_dir=None):
                         f"section {label}: slice is {actual[0]}x{actual[1]} on disk but the record claims "
                         f"{width}x{height} (native-aspect output must match the filed bytes)")
 
+        failures.extend(logo_failures(label, section))
+
         qc = section.get("text_qc")
+        if (ocr is not None and base_dir is not None and slice_name
+                and isinstance(qc, dict) and (Path(base_dir) / slice_name).is_file()):
+            failures.extend(ocr_failures(label, Path(base_dir) / slice_name, qc, ocr, _design_board()))
         if not isinstance(qc, dict):
             failures.append(f"section {label}: text_qc record is required (the per-section text-QC leg runs before stitching)")
             continue
@@ -191,8 +264,10 @@ def check_record(data, base_dir=None):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    use_ocr = "--ocr" in argv
+    argv = [a for a in argv if a != "--ocr"]
     if len(argv) != 1:
-        print("FAIL: usage: validate_production_record.py <production-record.json>")
+        print("FAIL: usage: validate_production_record.py <production-record.json> [--ocr]")
         return 2
     path = Path(argv[0])
     try:
@@ -200,7 +275,18 @@ def main(argv=None):
     except Exception as exc:
         print(f"FAIL: could not read production record: {exc}")
         return 2
-    failures = check_record(data, base_dir=path.parent)
+    ocr = None
+    if use_ocr:
+        try:
+            ocr = _design_board().ocr_text
+        except Exception as exc:
+            print(f"FAIL: could not load the Design Board text reader: {exc}")
+            return 2
+    try:
+        failures = check_record(data, base_dir=path.parent, ocr=ocr)
+    except Exception as exc:  # the reader (tesseract) is missing or crashed: unreadable, not a pass
+        print(f"FAIL: the text read-back could not run: {exc}")
+        return 2
     if failures:
         print("FAIL")
         for failure in failures:
