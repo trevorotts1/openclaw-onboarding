@@ -296,6 +296,7 @@ case "\${1:-}" in
     if [ -f "\$STATE/bootstrap_fail" ]; then exit 1; fi
     [ -f "\$STATE/loaded_\$LBL" ] && exit 17     # already loaded / still tearing down
     touch "\$STATE/loaded_\$LBL"
+    rm -f "\$STATE/ps_etime"                    # a (re)started gateway is a brand-new process
     exit 0
     ;;
 esac
@@ -326,10 +327,14 @@ echo "a-box"
 EOF
   # node: the supervisor plist names a bare `node`; the resolver finds this one.
   printf '#!/bin/bash\nexit 0\n' > "$dir/node"
-  # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args).
+  # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args); its age is
+  # $STATE/ps_etime (default 00:00 = just started, i.e. after every fixture file was written).
   cat > "$dir/ps" <<EOF
 #!/bin/bash
-if [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi
+case "\$*" in
+  *etime*) if [ -f "$state/ps_etime" ]; then cat "$state/ps_etime"; else echo "00:00"; fi ;;
+  *) if [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi ;;
+esac
 EOF
   chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps"
 }
@@ -373,7 +378,7 @@ make_box() {
 # run_atomic <home> <stubs> <state> [script-override] -- returns the script's rc
 run_atomic() {
   local home="$1" stubs="$2" state="$3" script="${4:-$ATOMIC}"
-  touch "$state/loaded_ai.openclaw.gateway"     # the gateway starts out running
+  [ -n "${T_GATEWAY_DOWN:-}" ] || touch "$state/loaded_ai.openclaw.gateway"     # the gateway starts out running
   HOME="$home" PATH="$stubs:/usr/bin:/bin:/usr/sbin:/sbin" \
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
     OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
@@ -1010,6 +1015,78 @@ if grep -q 'DISAGREE' <<<"$OUT14" && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT1
 else
   fail "14c: no disagreement log / completion / gateway. Output: $OUT14"
 fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (15) CAN015 round 2: package at target is NOT 'already on target' unless the gateway runs it ---"
+# Probe A: the supervisor's package is already at the target but the live gateway was launched
+# from an OLD tree (an npm/openclaw update with no restart). Probe B: package at target, gateway
+# job not loaded at all. Both used to return 0 'nothing to do' with no gateway proof.
+H15="$(make_box b15 clean)"; S15="$SANDBOX/stubs15"; ST15="$SANDBOX/state15"
+make_stubs "$S15" "$ST15" versioned
+set_installed "$H15" "$ST15" "$NEW_V"
+printf 'node %s/OLD/lib/node_modules/openclaw/dist/index.js gateway\n' "$SANDBOX" > "$ST15/ps_args"
+OUT15="$(run_atomic "$H15" "$S15" "$ST15")"; RC15=$?
+if ! grep -q 'nothing to do' <<<"$OUT15" && grep -q 'launchctl bootout' "$ST15/events" && [ "$RC15" -ne 0 ]; then
+  pass "15a: package at target but live gateway on an old tree -> restarted and failed loudly (rc=$RC15), no false 'nothing to do'"
+else
+  fail "15a: rc=$RC15 (want nonzero, with a restart and no 'nothing to do'). Output: $OUT15"
+fi
+H15B="$(make_box b15b clean)"; S15B="$SANDBOX/stubs15b"; ST15B="$SANDBOX/state15b"
+make_stubs "$S15B" "$ST15B" versioned
+set_installed "$H15B" "$ST15B" "$NEW_V"
+OUT15B="$(T_GATEWAY_DOWN=1 run_atomic "$H15B" "$S15B" "$ST15B")"; RC15B=$?
+if ! grep -q 'nothing to do' <<<"$OUT15B" && grep -q 'launchctl bootstrap' "$ST15B/events" && [ -f "$ST15B/loaded_ai.openclaw.gateway" ]; then
+  pass "15b: package at target but gateway not loaded -> gateway started and proven, no false 'nothing to do'"
+else
+  fail "15b: rc=$RC15B. Output: $OUT15B"
+fi
+H15C="$(make_box b15c clean)"; S15C="$SANDBOX/stubs15c"; ST15C="$SANDBOX/state15c"
+make_stubs "$S15C" "$ST15C" versioned
+set_installed "$H15C" "$ST15C" "$NEW_V"
+OUT15C="$(run_atomic "$H15C" "$S15C" "$ST15C")"; RC15C=$?
+if [ "$RC15C" -eq 0 ] && grep -q 'nothing to do' <<<"$OUT15C" && ! grep -q 'launchctl bootout' "$ST15C/events"; then
+  pass "15c: package at target AND gateway running it with /healthz 200 -> still 'nothing to do', no restart"
+else
+  fail "15c: rc=$RC15C. Output: $OUT15C"
+fi
+
+# 15d: the package is at the target and the gateway's args/healthz look right, but the gateway was
+# started BEFORE the package was installed in place (npm i -g, no restart) -> not proven, restart.
+H15D="$(make_box b15d clean)"; S15D="$SANDBOX/stubs15d"; ST15D="$SANDBOX/state15d"
+make_stubs "$S15D" "$ST15D" versioned
+set_installed "$H15D" "$ST15D" "$NEW_V"
+printf '05-00:00:00\n' > "$ST15D/ps_etime"   # the pid is 5 days old; the fixture package.json is seconds old
+OUT15D="$(run_atomic "$H15D" "$S15D" "$ST15D")"; RC15D=$?
+if ! grep -q 'nothing to do' <<<"$OUT15D" && grep -q 'launchctl bootout' "$ST15D/events" && grep -q 'predates the installed build' <<<"$OUT15D"; then
+  pass "15d: gateway started before the package's last change -> not 'already on target'; restarted and re-proved (rc=$RC15D)"
+else
+  fail "15d: rc=$RC15D (want a restart, 'predates the installed build', no 'nothing to do'). Output: $OUT15D"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (16) CAN015 round 3: a systemd box is refused loudly, never a false success ---"
+# Only launchd is stopped, restarted and pid-proven. A systemd unit used to resolve to
+# SUPERVISOR=none: no restart, an EMPTY-pid "gateway pid  runs ..." proof, rc 0 -- while the old
+# gateway kept answering /healthz. A: package already at the target. B: package at the old build.
+for kind in A B; do
+  H16="$(make_box "b16$kind" clean)"; S16="$SANDBOX/stubs16$kind"; ST16="$SANDBOX/state16$kind"
+  make_stubs "$S16" "$ST16" versioned
+  rm -f "$H16/Library/LaunchAgents/ai.openclaw.gateway.plist"
+  mkdir -p "$H16/.config/systemd/user"
+  printf '[Service]\nExecStart=/usr/bin/env node %s/sup/lib/node_modules/openclaw/dist/index.js gateway\n' "$H16" \
+    > "$H16/.config/systemd/user/openclaw-gateway.service"
+  [ "$kind" = "A" ] && set_installed "$H16" "$ST16" "$NEW_V"
+  OUT16="$(T_GATEWAY_DOWN=1 run_atomic "$H16" "$S16" "$ST16")"; RC16=$?
+  if [ "$RC16" -eq 78 ] && grep -q 'systemd' <<<"$OUT16" \
+     && ! grep -Eq 'nothing to do|ATOMIC UPGRADE COMPLETE|gateway pid' <<<"$OUT16" \
+     && [ ! -f "$ST16/npm_installs" ] && ! grep -q 'launchctl boot' "$ST16/events"; then
+    pass "16$kind: systemd box -> refused (rc=78), nothing installed or stopped, no 'nothing to do' / empty-pid proof"
+  else
+    fail "16$kind: rc=$RC16 (want 78 with no install, no stop, no success text). Output: $OUT16"
+  fi
+done
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""

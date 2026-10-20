@@ -169,6 +169,18 @@ oc_pkg() {
 
 oc_version() { json_version "$(oc_pkg)"; }
 
+# openclaw_after for the status file. The supervisor's package.json at the target is only a
+# success once the atomic upgrade (which proves the live gateway runs it) exited 0; a failed
+# upgrade with the package at the target must not read as DONE.
+oc_after() {
+  _v="$(oc_version)"
+  if [ -n "${UPG_RC:-}" ] && [ "$UPG_RC" != 0 ] && [ -n "$_v" ] && [ "$_v" = "${TARGET_VERSION:-}" ]; then
+    printf 'unproven'
+  else
+    printf '%s' "$_v"
+  fi
+}
+
 nr_pkg() {
   for _p in "$HOME/.local/share/999/npm/lib/node_modules/9router/package.json" \
             "${NPM_CONFIG_PREFIX:-/nonexistent}/lib/node_modules/9router/package.json"; do
@@ -194,7 +206,7 @@ status_write() {  # phase finished stuck
   tail -n 20 "$LOG" 2>/dev/null | _redact > "$_tail" 2>/dev/null || : > "$_tail"
   [ -f "$ROOT/fleet-refresh/needs_host_restart" ] && NEEDS_RESTART=1 || NEEDS_RESTART=0
   python3 - "$STATUS_JSON" "$RUN_ID" "$ROLL_ID" "$1" "$STARTED" "$(now_utc)" "$2" \
-    "$STEP_CODES" "$STAMP_BEFORE" "$(read_stamp)" "$OC_BEFORE" "$(oc_version)" \
+    "$STEP_CODES" "$STAMP_BEFORE" "$(read_stamp)" "$OC_BEFORE" "$(oc_after)" \
     "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$3" "$_tail" <<'PY'
 import json, os, sys
 (dest, run_id, roll_id, phase, started, updated, finished, codes,
