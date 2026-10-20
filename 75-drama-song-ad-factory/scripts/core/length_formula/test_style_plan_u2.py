@@ -10,8 +10,9 @@ Proves, behaviourally:
   (c) music_styles._length_key(120) is accepted (before: UNKNOWN_LENGTH),
       and the card menu (words_fit.CARD_LENGTHS_S) offers 120;
   (d) a rap section in a soul-ballad sheet is refused.
-REGRESSION: Soul Ballad and Soul Rise plans stay BYTE-IDENTICAL to the base
-tree (the L=60 BSW result: 65 words, sha256 recorded below).
+REGRESSION: the unstyled plans stay BYTE-IDENTICAL to the base tree (the L=60
+BSW result: 65 words, sha256 recorded below); Soul Ballad and Soul Rise match
+it outside ``words``, whose budget v2.9.70 caps to what words_fit admits.
 
 Run: python3 core/length_formula/test_style_plan_u2.py
 stdlib only, no network, no spend.
@@ -174,9 +175,21 @@ def test_regression_soul_plans_are_byte_identical():
             check("regression %s is byte-identical to the base tree" % name,
                   False, str(exc))
             continue
-        got = hashlib.sha256(canon(plan).encode()).hexdigest()
-        check("regression %s is byte-identical to the base tree" % name,
+        # v2.9.70: a named non-rap style's word budget is capped to what
+        # words_fit.preflight admits at that style's rates (the 60 s Soul
+        # Ballad base plan, 66 words / 65.7 s, was refused WORDS_DO_NOT_FIT).
+        # Everything EXCEPT ``words`` stays byte-identical to the base L60.
+        base = LF.plan(60)
+        got = hashlib.sha256(canon(dict(plan, words=base["words"])).encode()).hexdigest()
+        check("regression %s is byte-identical to the base tree outside words" % name,
               got == BASE_SHA["L60"], "%s vs %s" % (got[:16], BASE_SHA["L60"][:16]))
+        w = plan["words"]
+        fit = W.preflight(plan["delivered_s"], w["sung"], w["spoken"],
+                          style=kwargs["style_id"])
+        check("regression %s words fit words_fit.preflight" % name,
+              fit["outcome"] == "ok", repr((fit["reason_code"], w)))
+        check("regression %s never adds words to the base plan" % name,
+              all(w[k] <= base["words"][k] for k in ("total", "spoken", "sung")), repr(w))
         check("regression %s adds no rap key" % name, "rap" not in plan["words"],
               repr(sorted(plan["words"])))
     # The acceptance number: the L=60 BSW result is 65 words.
