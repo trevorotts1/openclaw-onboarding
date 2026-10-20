@@ -261,6 +261,179 @@
     return true;
   }
 
+  // ------------------------------------------------------- real key points
+
+  /* An elder's full name, from the seat data when it is loaded; never a pronoun or a raw id. */
+  function nameOf(id) {
+    var seats = ns.seats;
+    var s = seats && typeof seats.get === 'function' ? seats.get(id) : null;
+    if (s && text(s.name) && s.name !== id) return s.name;
+    return String(id).split('-').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+  }
+
+  var SUMMARY_CHARS = 220;
+
+  /** One key point line. `full` is set only when the summary cut the text short. */
+  function item(kind, tag, body, by) {
+    var t = text(body);
+    if (!t) return null;
+    var out = { kind: kind, tag: tag, text: t, full: null, by: by || null };
+    if (t.length > SUMMARY_CHARS) {
+      // Prefer the first whole sentence; otherwise cut at a word.
+      var first = /^[\s\S]{40,220}?[.!?](?=\s|$)/.exec(t);
+      if (first) out.text = first[0];
+      else {
+        var cut = t.slice(0, 170);
+        var sp = cut.lastIndexOf(' ');
+        out.text = cut.slice(0, sp > 60 ? sp : 170).replace(/[\s,;:.\-]+$/, '') + '\u2026';
+      }
+      out.full = t.length > out.text.length ? t : null;
+    }
+    return out;
+  }
+
+  function finalCards(m) {
+    var out = [];
+    m.seatIds.forEach(function (id) {
+      var c = m.seats[id].cards[3];
+      if (c && c.card_kind === 'ratification') out.push({ id: id, card: c });
+    });
+    return out;
+  }
+
+  function cardsOf(m, round) {
+    var out = [];
+    m.seatIds.forEach(function (id) {
+      var c = m.seats[id].cards[round];
+      if (c && c.card_kind !== 'ratification') out.push({ id: id, card: c });
+    });
+    return out;
+  }
+
+  function compact(list) {
+    return list.filter(function (x) { return x; });
+  }
+
+  /** The chair's fault lines: crux reasons the verdict states, else the cruxes the engine journaled. */
+  function faultLines(m) {
+    var out = [];
+    var reasons = m.verdict && Array.isArray(m.verdict.main_reasons) ? m.verdict.main_reasons : [];
+    reasons.forEach(function (r) {
+      var t = text(r);
+      if (t && /^Crux-\d+\b/.test(t)) out.push(item('faultline', 'Fault line', t.replace(/^Crux-(\d+)/, 'Fault line $1'), 'The chair'));
+    });
+    if (!out.length) m.cruxes.filter(Boolean).forEach(function (c, i) { out.push(item('faultline', 'Fault line', 'Fault line ' + (i + 1) + ': ' + c, 'The chair')); });
+    return compact(out);
+  }
+
+  /** Conditions attached to the resolution, each credited to the first elder who wrote it. */
+  function conditionItems(m) {
+    var acts = m.verdict && Array.isArray(m.verdict.action_proposals) ? m.verdict.action_proposals : [];
+    return compact(acts.map(function (a) {
+      var who = null;
+      var ids = Array.isArray(a.source_condition_ids) ? a.source_condition_ids : [];
+      for (var i = 0; !who && i < m.seatIds.length; i++) {
+        [2, 1].forEach(function (r) {
+          var c = m.seats[m.seatIds[i]].cards[r];
+          var conds = c && Array.isArray(c.conditions) ? c.conditions : [];
+          if (!who && conds.some(function (k) { return k && ids.indexOf(k.id) >= 0; })) who = m.seatIds[i];
+        });
+      }
+      return item('condition', 'Condition', a.title || a.description, who ? nameOf(who) : 'The chair');
+    }));
+  }
+
+  function minorityItems(m) {
+    return compact(cardsOf(m, 2).map(function (e) { return item('dissent', 'Dissent', e.card.minority_position, nameOf(e.id)); }));
+  }
+
+  /** The body lines under one phase heading, from the cards and verdict the session already holds. */
+  function pointItems(m, label) {
+    var rd = /^ROUND (\d): ALL \d+ POSITIONS IN$/.exec(label);
+    if (rd) {
+      var r = Number(rd[1]);
+      if (r === 3) {
+        var out3 = [];
+        finalCards(m).forEach(function (e) {
+          (Array.isArray(e.card.amendments) ? e.card.amendments : []).forEach(function (a) {
+            if (a) out3.push(item('change', 'Change asked', a.new_value || a.reason, nameOf(e.id)));
+          });
+        });
+        return compact(out3);
+      }
+      return compact(cardsOf(m, r).map(function (e) {
+        return r === 1 ? item('argument', 'Argument', firstText(e.card.decisive_arguments), nameOf(e.id))
+          : item('concern', 'Concern', e.card.strongest_objection, nameOf(e.id));
+      }));
+    }
+    if (label === COPY.CRUX_REVIEW[0]) return faultLines(m);
+    if (label === COPY.DRAFT_RESOLUTION[0]) return conditionItems(m);
+    if (/^VERDICT: /.test(label)) return minorityItems(m);
+    return [];
+  }
+
+  /** The line under a round-3 heading: how the vote went, in words. */
+  function voteDetail(m) {
+    var fin = finalCards(m);
+    if (!fin.length) return null;
+    var cond = fin.filter(function (e) { return e.card.resolution_stance === 'conditional_support' || e.card.stance === 'conditional'; }).length;
+    var opp = fin.filter(function (e) { return e.card.stance === 'oppose' || e.card.resolution_stance === 'oppose'; }).length;
+    if (cond === fin.length) return 'All ' + fin.length + ' elders back it, each with conditions.';
+    return (fin.length - opp) + ' of ' + fin.length + ' elders back it' + (cond ? ', ' + cond + ' with conditions' : '') + (opp ? '; ' + opp + ' oppose' : '') + '.';
+  }
+
+  var EVIDENCE_TEXT = {
+    low: 'Low. The case rests mostly on the elders\' reasoning, with little checked evidence behind it yet.',
+    medium: 'Medium. Some facts back the case, with gaps still to fill.',
+    high: 'High. The facts supplied back the case well.',
+    insufficient: 'Not enough evidence to judge this.'
+  };
+
+  function whyHeadline(label, rec) {
+    var named = rec ? ' ' + rec : '';
+    switch (label) {
+      case 'WAIT': return 'Wait. The elders lean toward' + (rec ? named : ' an option') + ', but it should not start until the points below are settled.';
+      case 'GO': return 'Go. The elders back' + (rec ? named : ' this') + ' as it stands.';
+      case 'GO_WITH_CONDITIONS': return 'Go, with conditions. The elders back' + (rec ? named : ' this') + ' once the points below are in place.';
+      case 'RESHAPE': return 'Reshape. The elders want the option changed before anyone goes ahead.';
+      case 'DONT_DO_IT': return 'Do not do it. The elders advise against this.';
+      case 'INSUFFICIENT_EVIDENCE': return 'Not enough evidence. The elders could not judge this with what was supplied.';
+      default: return null;
+    }
+  }
+
+  /** Why the verdict says what it says, from the verdict record the session returned. No new model call. */
+  function whyOf(m, v, rec) {
+    var steps = [];
+    var acts = Array.isArray(v.action_proposals) ? v.action_proposals : [];
+    acts.forEach(function (a) { if (a && text(a.title)) steps.push(text(a.title)); });
+    if (!steps.length && Array.isArray(v.prerequisites)) v.prerequisites.forEach(function (t) { if (text(t)) steps.push(text(t)); });
+    var heading = steps.length ? 'What has to happen first' : null;
+    if (!steps.length && Array.isArray(v.critical_unknowns)) {
+      v.critical_unknowns.forEach(function (t) { if (text(t)) steps.push(text(t)); });
+      if (steps.length) heading = 'What is still unknown';
+    }
+    var shown = steps.slice(0, 4);
+    var strength = text(v.evidence_strength);
+    var dissent = null;
+    var sd = text(v.strongest_dissent);
+    if (sd) {
+      var who = null;
+      cardsOf(m, 2).concat(finalCards(m)).forEach(function (e) { if (!who && text(e.card.strongest_objection) === sd) who = e.id; });
+      dissent = { lead: 'Strongest dissent', text: sd, by: who ? nameOf(who) : null };
+    } else {
+      var mins = cardsOf(m, 2).filter(function (e) { return text(e.card.minority_position); });
+      if (mins.length) dissent = { lead: 'Sharpest caution', text: text(mins[0].card.minority_position), by: nameOf(mins[0].id) };
+    }
+    return {
+      headline: whyHeadline(text(v.label), rec),
+      stepsHeading: heading, steps: shown, moreSteps: steps.length - shown.length,
+      evidence: strength ? (has(EVIDENCE_TEXT, strength) ? EVIDENCE_TEXT[strength] : strength.charAt(0).toUpperCase() + strength.slice(1) + '.') : null,
+      support: voteDetail(m),
+      dissent: dissent
+    };
+  }
+
   // ------------------------------------------------------------------ view
 
   function clock(ms) {
@@ -324,14 +497,16 @@
     var v = m.verdict;
     if (!v) return null;
     if (v.result_kind === 'consult') {
-      return { label: null, labelText: 'Consult answer', recommendedOptionId: null, reasons: [], kind: 'consult' };
+      return { label: null, labelText: 'Consult answer', recommendedOptionId: null, reasons: [], kind: 'consult', why: null };
     }
     var label = text(v.label);
+    var recId = text(v.recommended_option_id);
     return {
       label: label, labelText: label && has(VERDICT_TEXT, label) ? VERDICT_TEXT[label] : (label || 'Verdict'),
-      recommendedOptionId: text(v.recommended_option_id),
+      recommendedOptionId: recId,
       reasons: Array.isArray(v.main_reasons) ? v.main_reasons.slice() : [],
-      kind: text(v.result_kind) || 'scored'
+      kind: text(v.result_kind) || 'scored',
+      why: whyOf(m, v, recId ? optionText(m, recId) : null)
     };
   }
 
@@ -463,10 +638,15 @@
       };
     });
 
-    var keyPoints = m.keyPoints.map(function (k) { return { label: k.label, detail: k.detail, at: k.at }; });
+    var keyPoints = m.keyPoints.map(function (k) {
+      var detail = k.detail;
+      if (!detail && /^ROUND 3: ALL /.test(k.label)) detail = voteDetail(m);
+      return { label: k.label, detail: detail, at: k.at, items: pointItems(m, k.label) };
+    });
     if (state === 'COMPLETED' && verdict) {
       var rec = verdict.recommendedOptionId ? optionText(m, verdict.recommendedOptionId) : null;
-      keyPoints.push({ label: 'VERDICT: ' + verdict.labelText.toUpperCase(), detail: rec, at: null });
+      var vlabel = 'VERDICT: ' + verdict.labelText.toUpperCase();
+      keyPoints.push({ label: vlabel, detail: rec, at: null, items: pointItems(m, vlabel) });
     }
 
     var status = state && has(STATUS_OF, state) ? STATUS_OF[state] : !state || PREP[state] ? 'preparing' : 'running';
