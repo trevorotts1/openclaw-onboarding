@@ -9,6 +9,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import deliverable_labels as dl  # noqa: E402
+
 ALLOWED = {
     "desktop-wireframes",
     "mobile-wireframes",
@@ -40,36 +43,60 @@ def check_name(category, path):
 
 
 # Stage plan (the pinned review-PDF step): for each image stage, where the
-# ordered section images live, which review category they are, and the PDF
-# name the client sees. One PDF per device per stage; one page per section,
-# at the section's native size, so a page break never cuts a section and
-# no scaling, cropping or gap is introduced between sections.
+# ordered section images live and which device they are. One PDF per device
+# per stage; one page per section: the section image at its native size plus a
+# clean label band above and below (added here, at compose time, never painted
+# into the AI image), so a page break never cuts a section and no scaling,
+# cropping or gap is introduced between sections. The PDF's name, the client
+# folder and the band text all come from deliverable_labels.py (page role +
+# stage + device).
 REVIEW_DIR = "review-pdfs"
-STAGE_PDFS = {
-    "desktop-wireframe": [("section-{n:02d}.png", "desktop-wireframes", "wireframes-desktop.pdf")],
-    "mobile-tablet": [("section-{n:02d}.png", "mobile-wireframes", "wireframes-mobile.pdf")],
-    "visual-mockup": [("desktop/part-{n:02d}.png", "desktop-mockups", "visual-mockups-desktop.pdf"),
-                      ("mobile/part-{n:02d}.png", "mobile-mockups", "visual-mockups-mobile.pdf")],
-    "final-mockups": [("desktop/part-{n:02d}.png", "desktop-mockups", "final-mockups-desktop.pdf"),
-                      ("mobile/part-{n:02d}.png", "mobile-mockups", "final-mockups-mobile.pdf")],
+STAGE_SETS = {
+    "desktop-wireframe": [("section-{n:02d}.png", "desktop")],
+    "mobile-tablet": [("section-{n:02d}.png", "mobile")],
+    "visual-mockup": [("desktop/part-{n:02d}.png", "desktop"), ("mobile/part-{n:02d}.png", "mobile")],
+    "final-mockups": [("desktop/part-{n:02d}.png", "desktop"), ("mobile/part-{n:02d}.png", "mobile")],
 }
 # The wireframe stage contract also requires <stage>/wireframe.pdf.
 CONTRACT_COPY = {"desktop-wireframe": "wireframe.pdf", "mobile-tablet": "wireframe.pdf"}
 
 
-def part_label(n):
-    return f"Part-{chr(64 + n)}" if n <= 26 else f"Part-{n}"
+def add_bands(im, top, bottom):
+    """The page: a header band, the untouched section image, a footer band."""
+    from PIL import Image, ImageDraw
+    import build_overview_board as bob
+    w, h = im.size
+    bh = dl.band_height(w)
+    page = Image.new("RGB", (w, h + 2 * bh), (255, 255, 255))
+    page.paste(im, (0, bh))
+    d = ImageDraw.Draw(page)
+    pad = max(8, bh // 3)
+    for y0, lines, kind in ((0, top, "bold"), (bh + h, bottom, "sans")):
+        d.rectangle([0, y0, w, y0 + bh - 1], fill=(242, 242, 242))
+        size = round(bh * 0.36)
+        fnt = bob.font(kind, size)
+        while size > 8 and max(d.textlength(t, font=fnt) for t in lines) > w - 2 * pad:  # ponytail: shrink-to-fit, never wraps
+            size -= 1
+            fnt = bob.font(kind, size)
+        for t, frac in zip(lines, (0.27, 0.73)):
+            d.text((pad, y0 + round(bh * frac)), t, font=fnt, fill=(17, 17, 17), anchor="lm")
+    d.line([0, bh - 1, w, bh - 1], fill=(120, 120, 120), width=2)
+    d.line([0, bh + h, w, bh + h], fill=(120, 120, 120), width=2)
+    return page
 
 
 def discover(run_dir, stage, expect=None):
     """Return [(template, category, pdf_name, [image paths in section order])].
+    The category (client folder) and pdf_name come from deliverable_labels.
 
     Raises ValueError (one named line) when a set has a gap, a stray
     higher-numbered section, or does not match the expected section count.
     """
     run_dir = Path(run_dir)
+    role = dl.declared_page_role(run_dir)
     out = []
-    for template, category, name in STAGE_PDFS[stage]:
+    for template, device in STAGE_SETS[stage]:
+        category, name = dl.folder(device, stage), dl.pdf_name(role, device, stage)
         pattern = re.compile("^" + re.escape(template).replace(re.escape("{n:02d}"), r"(\d+)") + "$")
         found = {}
         folder = (run_dir / stage / template).parent
@@ -89,6 +116,27 @@ def discover(run_dir, stage, expect=None):
     return out
 
 
+def section_names(run_dir, stage, count):
+    """Section names for the labels; 'Section N' when the run records none."""
+    import build_overview_board as bob
+    try:
+        names = [x["name"] for x in bob.load_sections(Path(run_dir), stage, bob.DEFAULT_REQUEST)]
+    except bob.BoardError:
+        names = []
+    return [names[i] if i < len(names) else f"Section {i + 1}" for i in range(count)]
+
+
+def write_labeled_images(folder, images, role, device, stage, names):
+    """Labeled copies of the section images (upsell-1_desktop_wireframe_s03-of-08_offer.png)
+    in the client folder; a rebuild never leaves an earlier set's file behind."""
+    folder.mkdir(parents=True, exist_ok=True)
+    first = dl.image_name(role, device, stage, 1, 1, "x")
+    for stale in folder.glob(first.split("_s01-of-")[0] + "_s*-of-*.png"):
+        stale.unlink()
+    for i, (src, name) in enumerate(zip(images, names), start=1):
+        shutil.copyfile(src, folder / dl.image_name(role, device, stage, i, len(images), name))
+
+
 def build_stage(run_dir, stage, expect=None, deliver=None):
     """Combine and validate every review PDF of one stage. Returns 0 on pass.
 
@@ -106,15 +154,22 @@ def build_stage(run_dir, stage, expect=None, deliver=None):
     review = run_dir / REVIEW_DIR
     review.mkdir(parents=True, exist_ok=True)
     here = Path(__file__).resolve().parent
-    for template, category, name, images in sets:
+    role = dl.declared_page_role(run_dir)
+    for (template, category, name, images), (_t, device) in zip(sets, STAGE_SETS[stage]):
+        names = section_names(run_dir, stage, len(images))
+        pages = []
+        for i, (p, sec) in enumerate(zip(images, names), start=1):
+            top, bottom = dl.page_band(role, device, stage, i, len(images), sec)
+            pages.append({"path": os.path.relpath(p, review), "label": " \u00b7 ".join(top),
+                          "band": {"top": top, "bottom": bottom}})
         manifest = review / (name[:-4] + ".order.json")
         manifest.write_text(json.dumps({
             "category": category,
             "output": name,
-            "pages": [{"path": os.path.relpath(p, review), "label": part_label(i)}
-                      for i, p in enumerate(images, start=1)],
+            "pages": pages,
         }, indent=2), encoding="utf-8")
-        dest = Path(deliver).resolve() / name if deliver else None
+        write_labeled_images(review / category, images, role, device, stage, names)
+        dest = Path(deliver).resolve() / category / name if deliver else None
 
         def run(script, *extra):
             proc = subprocess.run([sys.executable, str(here / script), str(manifest), *extra],
@@ -132,6 +187,7 @@ def build_stage(run_dir, stage, expect=None, deliver=None):
         if dest:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(review / name, dest)
+            write_labeled_images(dest.parent, images, role, device, stage, names)
             if run("validate_review_pdf.py", "--delivered-pdf", str(dest)):
                 return 1
         if stage in CONTRACT_COPY:
@@ -142,10 +198,10 @@ def build_stage(run_dir, stage, expect=None, deliver=None):
 def main():
     parser = argparse.ArgumentParser(description="Combine an explicit ordered BlackCEO wireframe/mockup image set into a review PDF.")
     parser.add_argument("manifest", type=Path, help="an order manifest, or a run dir with --stage")
-    parser.add_argument("--stage", choices=sorted(STAGE_PDFS),
+    parser.add_argument("--stage", choices=sorted(STAGE_SETS),
                         help="treat the first argument as a run dir: combine and validate that stage's desktop/mobile review PDFs")
     parser.add_argument("--expect", type=int, default=None, help="with --stage: the expected section count")
-    parser.add_argument("--deliver", type=Path, help="with --stage: also copy each validated PDF into this client folder and prove the copy is the build")
+    parser.add_argument("--deliver", type=Path, help="with --stage: also copy each validated PDF (and its labeled section images) into this client folder's desktop-wireframes / mobile-wireframes / desktop-mockups / mobile-mockups subfolder and prove the copy is the build")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--resolution", type=float, default=144.0)
     args = parser.parse_args()
@@ -193,9 +249,13 @@ def main():
         if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
             errors.append(f"Unsupported page image type: {path}")
         errors.extend(check_name(category, path))
-        resolved.append((path, item.get("label", f"Page {i}")))
+        band = item.get("band")
+        if band is not None and not (isinstance(band, dict) and band.get("top") and band.get("bottom")):
+            errors.append(f"pages[{i}].band needs top and bottom line lists.")
+            band = None
+        resolved.append((path, item.get("label", f"Page {i}"), band))
 
-    if len({str(p) for p, _ in resolved}) != len(resolved):
+    if len({str(p) for p, _, _ in resolved}) != len(resolved):
         errors.append("The ordered page list contains duplicate image paths.")
 
     if errors:
@@ -212,7 +272,7 @@ def main():
 
     pil_pages = []
     try:
-        for path, _ in resolved:
+        for path, _, band in resolved:
             im = Image.open(path)
             if im.mode in {"RGBA", "LA"}:
                 bg = Image.new("RGB", im.size, "white")
@@ -221,7 +281,7 @@ def main():
                 im = bg
             else:
                 im = im.convert("RGB")
-            pil_pages.append(im.copy())
+            pil_pages.append(add_bands(im, band["top"], band["bottom"]) if band else im.copy())
             im.close()
         first, rest = pil_pages[0], pil_pages[1:]
         # quality 95, no chroma subsampling: small printed text must stay legible.
@@ -240,7 +300,7 @@ def main():
         "page_count": len(resolved),
         "pages": [
             {"order": i, "label": label, "path": str(path), "sha256": sha256(path)}
-            for i, (path, label) in enumerate(resolved, start=1)
+            for i, (path, label, _band) in enumerate(resolved, start=1)
         ],
         "pdf_sha256": sha256(output),
     }

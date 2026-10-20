@@ -294,7 +294,8 @@ class RunTests(unittest.TestCase):
         proc = cli("combine_review_pdf.py", self.run, "--stage", "visual-mockup", "--expect", 8)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         pdfs = sorted(p.name for p in (self.run / "review-pdfs").glob("*.pdf"))
-        self.assertEqual(pdfs, ["visual-mockups-desktop.pdf", "visual-mockups-mobile.pdf"])
+        # the clear-labels names: page role, device and kind in every review PDF name
+        self.assertEqual(pdfs, ["upsell-1_DESKTOP_MOCKUPS-VISUAL.pdf", "upsell-1_MOBILE_MOCKUPS-VISUAL.pdf"])
 
     def test_the_runner_refuses_a_role_that_disagrees_with_its_bundle(self):
         request = self.run / "req.json"

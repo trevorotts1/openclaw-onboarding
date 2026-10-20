@@ -3445,19 +3445,12 @@ def declared_page_roles(run_dir):
     enum). A launch-context run records intake.json's launch.page_role and
     places the same request at run_dir/page-request.json; a classic run with
     neither builds the signature landing page, the skill's one page role."""
-    intake = intake_data(run_dir)
-    launch = intake.get("launch")
-    if isinstance(launch, dict) and isinstance(launch.get("page_role"), str) \
-            and launch["page_role"]:
-        return [launch["page_role"]]
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
-        request = json.loads((run_dir / "page-request.json").read_text(encoding="utf-8"))
-    except Exception:
-        request = None
-    if isinstance(request, dict) and isinstance(request.get("page_role"), str) \
-            and request["page_role"]:
-        return [request["page_role"]]
-    return ["landing"]
+        import page_role  # the one reader: a page type's own copy_version names its role too
+    finally:
+        sys.path.pop(0)
+    return [page_role.declared_role(run_dir)]
 
 def four_image_gaps(run_dir):
     """(page_role, glob) pairs whose glob resolves to no file in the run."""

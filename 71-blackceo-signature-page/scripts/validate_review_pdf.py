@@ -38,19 +38,25 @@ def page_sizes(pdf_path):
                 re.findall(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", data)]
 
 
-def check_geometry(pdf_path, image_paths):
+def check_geometry(pdf_path, image_paths, banded=None):
     """One page width for the whole set, and each page the same shape as its
-    source image: nothing cropped, stretched, padded or overlapped."""
+    source image plus, where the page carries label bands, exactly the header
+    and footer band (deliverable_labels.band_height): nothing cropped,
+    stretched, padded or overlapped."""
     from PIL import Image
+    import deliverable_labels as dl
+    banded = banded or [False] * len(image_paths)
     errors = []
     sizes = page_sizes(pdf_path)
     if len(sizes) != len(image_paths):
         return [f"PDF page sizes could not be read for all {len(image_paths)} pages (got {len(sizes)})."]
     if max(w for w, _ in sizes) - min(w for w, _ in sizes) > 0.5:
         errors.append(f"Pages have different widths {sorted({round(w, 1) for w, _ in sizes})}; a top-to-bottom set has one page width.")
-    for i, ((w, h), path) in enumerate(zip(sizes, image_paths), start=1):
+    for i, ((w, h), path, band) in enumerate(zip(sizes, image_paths, banded), start=1):
         with Image.open(path) as im:
             iw, ih = im.size
+        if band:
+            ih += 2 * dl.band_height(iw)
         if abs(w / h - iw / ih) / (iw / ih) > 0.005:
             errors.append(f"Page {i} is {w:.0f}x{h:.0f}pt but its source image is {iw}x{ih}px: the page was cropped, stretched or padded.")
     return errors
@@ -84,7 +90,7 @@ def main():
     parser.add_argument("pdf", nargs="?", type=Path)
     parser.add_argument("--delivered", type=Path, help="also require the sections in this delivered folder to be the exact images the PDF was built from")
     parser.add_argument("--delivered-pdf", type=Path, help="also require this delivered PDF to be byte-identical to the validated build")
-    parser.add_argument("--delivered-pdfs", type=Path, help="with --stage: a delivered folder that must hold each of the stage's PDFs, byte-identical to the validated builds")
+    parser.add_argument("--delivered-pdfs", type=Path, help="with --stage: a delivered folder that must hold each of the stage's PDFs, in its category subfolder (desktop-wireframes, mobile-mockups, ...), byte-identical to the validated builds")
     parser.add_argument("--stage", help="treat the first argument as a run dir and validate that stage's review PDFs")
     args = parser.parse_args()
     if args.stage:
@@ -158,7 +164,7 @@ def validate(manifest_path, pdf_arg=None, delivered=None, delivered_pdf=None):
         errors.extend(check_delivered_pdf(pdf_path, delivered_pdf))
     if not errors:
         try:
-            errors.extend(check_geometry(pdf_path, sources))
+            errors.extend(check_geometry(pdf_path, sources, [bool(e.get("band")) for e in expected_pages]))
         except ImportError:
             errors.append("Pillow is required to check page geometry.")
 
@@ -183,7 +189,7 @@ def validate_stage(run_dir, stage, delivered_pdfs=None):
         print(f"FAIL: {exc}")
         return 1
     rc = 0
-    for _template, _category, name, images in sets:
+    for _template, category, name, images in sets:
         manifest = run_dir / crp.REVIEW_DIR / (name[:-4] + ".order.json")
         if not manifest.exists():
             print(f"FAIL: {stage}: review PDF {name} was never built (no {manifest.name}); run combine_review_pdf.py --stage")
@@ -194,7 +200,7 @@ def validate_stage(run_dir, stage, delivered_pdfs=None):
             print(f"FAIL: {stage}: {name} was built from a different image list than the stage now holds (rebuild it).")
             rc = 1
             continue
-        rc = max(rc, validate(manifest, delivered_pdf=delivered_pdfs / name if delivered_pdfs else None))
+        rc = max(rc, validate(manifest, delivered_pdf=delivered_pdfs / category / name if delivered_pdfs else None))
     return rc
 
 

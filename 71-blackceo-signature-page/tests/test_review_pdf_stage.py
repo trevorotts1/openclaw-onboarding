@@ -14,6 +14,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import combine_review_pdf as crp  # noqa: E402
 import validate_review_pdf as vrp  # noqa: E402
+import deliverable_labels as dl  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("stage_executor", SCRIPTS / "stage_executor.py")
 exe = importlib.util.module_from_spec(spec)
@@ -54,20 +55,26 @@ class ReviewPdfStageTests(unittest.TestCase):
         proc = self.cli("combine_review_pdf.py", self.run_dir, "--stage", "final-mockups", "--expect", 3)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         review = self.run_dir / "review-pdfs"
-        for name, width in (("final-mockups-desktop.pdf", 600), ("final-mockups-mobile.pdf", 200)):
+        for name, width in (("landing_DESKTOP_MOCKUPS-FINAL.pdf", 600), ("landing_MOBILE_MOCKUPS-FINAL.pdf", 200)):
             sizes = vrp.page_sizes(review / name)
-            self.assertEqual([round(h * 2) for _, h in sizes], HEIGHTS)  # 144 dpi: 1px = 0.5pt
+            band = dl.band_height(width)  # 144 dpi: 1px = 0.5pt; the section image plus a header and a footer band
+            self.assertEqual([round(h * 2) for _, h in sizes], [h + 2 * band for h in HEIGHTS])
             self.assertTrue(all(round(w * 2) == width for w, _ in sizes))
             receipt = json.loads((review / (name + ".manifest.json")).read_text())
-            self.assertEqual([p["label"] for p in receipt["pages"]], ["Part-A", "Part-B", "Part-C"])
+            device = "DESKTOP" if "DESKTOP" in name else "MOBILE"
+            self.assertEqual([p["label"] for p in receipt["pages"]],
+                             [f"SIGNATURE LANDING PAGE \u00b7 {device} MOCKUP \u00b7 SECTION {n} OF 3" for n in (1, 2, 3)])
             self.assertEqual([Path(p["path"]).name for p in receipt["pages"]],
                              ["part-01.png", "part-02.png", "part-03.png"])
         self.assertEqual(self.cli("validate_review_pdf.py", self.run_dir, "--stage", "final-mockups").returncode, 0)
+        # labeled section images sit in the client folders, named by page type + device + kind + section
+        self.assertEqual(sorted(p.name for p in (review / "mobile-mockups").iterdir()),
+                         [f"landing_mobile_mockup-final_s0{n}-of-03_section-{n}.png" for n in (1, 2, 3)])
 
     def test_wireframe_stage_also_writes_the_contract_wireframe_pdf(self):
         make_images(self.run_dir, "desktop-wireframe", "section-{n:02d}.png", 600)
         self.assertEqual(self.cli("combine_review_pdf.py", self.run_dir, "--stage", "desktop-wireframe").returncode, 0)
-        self.assertTrue((self.run_dir / "review-pdfs" / "wireframes-desktop.pdf").is_file())
+        self.assertTrue((self.run_dir / "review-pdfs" / "landing_DESKTOP_WIREFRAMES.pdf").is_file())
         self.assertTrue((self.run_dir / "desktop-wireframe" / "wireframe.pdf").is_file())
 
     def test_a_missing_section_is_refused_and_leaves_no_pdf(self):
@@ -97,7 +104,7 @@ class ReviewPdfStageTests(unittest.TestCase):
         import shutil
         make_images(self.run_dir, "mobile-tablet", "section-{n:02d}.png", 200)
         self.assertEqual(self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet").returncode, 0)
-        manifest = self.run_dir / "review-pdfs" / "wireframes-mobile.order.json"
+        manifest = self.run_dir / "review-pdfs" / "landing_MOBILE_WIREFRAMES.order.json"
         delivered = self.run_dir / "delivered"
         shutil.copytree(self.run_dir / "mobile-tablet", delivered)
         self.assertEqual(self.cli("validate_review_pdf.py", manifest, "--delivered", delivered).returncode, 0)
@@ -115,8 +122,9 @@ class ReviewPdfStageTests(unittest.TestCase):
         gate = lambda *a: self.cli("validate_review_pdf.py", self.run_dir, "--stage", "mobile-tablet", *a)
         proc = self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet", "--deliver", client)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        built = self.run_dir / "review-pdfs" / "wireframes-mobile.pdf"
-        self.assertEqual(vrp.sha256(client / "wireframes-mobile.pdf"), vrp.sha256(built))
+        built = self.run_dir / "review-pdfs" / "landing_MOBILE_WIREFRAMES.pdf"
+        mine = client / "mobile-wireframes" / "landing_MOBILE_WIREFRAMES.pdf"  # client folder = the category name
+        self.assertEqual(vrp.sha256(mine), vrp.sha256(built))
         self.assertEqual(gate("--delivered-pdfs", client).returncode, 0)
         # a section is redone and the PDF rebuilt, but nobody copies it over: the client's PDF is the old build
         Image.new("RGB", (200, HEIGHTS[1]), "black").save(self.run_dir / "mobile-tablet" / "section-02.png")
@@ -124,9 +132,9 @@ class ReviewPdfStageTests(unittest.TestCase):
         proc = gate("--delivered-pdfs", client)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("stale or different PDF", proc.stdout)
-        manifest = self.run_dir / "review-pdfs" / "wireframes-mobile.order.json"
-        self.assertEqual(self.cli("validate_review_pdf.py", manifest, "--delivered-pdf", client / "wireframes-mobile.pdf").returncode, 1)
-        (client / "wireframes-mobile.pdf").unlink()
+        manifest = self.run_dir / "review-pdfs" / "landing_MOBILE_WIREFRAMES.order.json"
+        self.assertEqual(self.cli("validate_review_pdf.py", manifest, "--delivered-pdf", mine).returncode, 1)
+        mine.unlink()
         self.assertIn("is missing", gate("--delivered-pdfs", client).stdout)
         # re-running the build with --deliver replaces the client's copy and the gate passes again
         self.assertEqual(self.cli("combine_review_pdf.py", self.run_dir, "--stage", "mobile-tablet", "--deliver", client).returncode, 0)
@@ -143,7 +151,7 @@ class ReviewPdfStageTests(unittest.TestCase):
         make_images(self.run_dir, "visual-mockup", "mobile/part-{n:02d}.png", 200)
         done = exe.compose("visual-mockup", self.run_dir, Kie(), 3)
         self.assertEqual(done["review_pdf"]["status"], "pass", done)
-        self.assertTrue((self.run_dir / "review-pdfs" / "visual-mockups-mobile.pdf").is_file())
+        self.assertTrue((self.run_dir / "review-pdfs" / "landing_MOBILE_MOCKUPS-VISUAL.pdf").is_file())
         self.assertEqual(exe.compose("visual-mockup", self.run_dir, exe.StubProvider(), 3)["status"], "skipped")
         short = exe.compose("visual-mockup", self.run_dir, Kie(), 4)
         self.assertEqual(short["review_pdf"]["status"], "fail")

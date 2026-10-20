@@ -65,6 +65,7 @@ for f in \
   assets/BlackCEO-Master-Visual-Reference-Guide.png \
   scripts/validate_state.py scripts/validate_prompt.py scripts/validate_image_manifest.py \
   scripts/validate_public_copy.py scripts/combine_review_pdf.py scripts/validate_review_pdf.py \
+  scripts/deliverable_labels.py \
   scripts/stage_gate.py scripts/render_page.py scripts/compare_sheet.py \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
   scripts/calibrate_grade.py scripts/check_authority_pins.py \

@@ -1286,9 +1286,21 @@ same command once the stage's sections are all in place. Output is
 
 | Stage | Files |
 | --- | --- |
-| `desktop-wireframe`, `mobile-tablet` | `wireframes-desktop.pdf`, `wireframes-mobile.pdf` (also copied to `<stage>/wireframe.pdf`, the stage contract's artifact) |
-| `visual-mockup` | `visual-mockups-desktop.pdf`, `visual-mockups-mobile.pdf` |
-| `final-mockups` | `final-mockups-desktop.pdf`, `final-mockups-mobile.pdf` |
+| `desktop-wireframe`, `mobile-tablet` | `<role>_DESKTOP_WIREFRAMES.pdf`, `<role>_MOBILE_WIREFRAMES.pdf` (also copied to `<stage>/wireframe.pdf`, the stage contract's artifact) |
+| `visual-mockup` | `<role>_DESKTOP_MOCKUPS-VISUAL.pdf`, `<role>_MOBILE_MOCKUPS-VISUAL.pdf` |
+| `final-mockups` | `<role>_DESKTOP_MOCKUPS-FINAL.pdf`, `<role>_MOBILE_MOCKUPS-FINAL.pdf` |
+
+Labeling (Trevor order 2026-10-20): every deliverable says exactly what it is,
+PAGE TYPE + DEVICE + KIND + Section N of M + section name, all from
+`scripts/deliverable_labels.py` (page role + stage; any role, including ones
+added later). `<role>` is the page role slug (`landing`, `upsell-1`,
+`downsell-1`, `thank-you`). Every PDF page is the untouched section image plus a
+clean header and footer band added at compose time (never painted into the AI
+image; the validator checks the page is the image plus exactly those bands).
+Labeled section images (`upsell-1_desktop_wireframe_s03-of-08_offer.png`) sit
+beside the PDFs in `review-pdfs/<folder>/` and, with `--deliver`, in
+`<client folder>/<folder>/` together with the PDF, where `<folder>` is
+`desktop-wireframes`, `mobile-wireframes`, `desktop-mockups` or `mobile-mockups`.
 
 The step finds the sections as `section-NN.png` or `desktop|mobile/part-NN.png`,
 writes the ordered manifest `<name>.order.json`, builds the PDF, and runs
