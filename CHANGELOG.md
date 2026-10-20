@@ -1,3 +1,7 @@
+## [v27.1.48]  -  2026-10-20  -  Fleet-roll fix CAN015: atomic upgrade targets the OpenClaw the supervisor launches, not the copy on PATH (#2361)
+
+- CAN015 (#2361): oc-atomic-upgrade.sh now resolves the install the launchd supervisor launches (scripts/oc-supervisor-install.py), measures and installs with that node's npm into that prefix, proves the live gateway process runs the target version with /healthz 200, and refuses non-launchd supervisors (exit 78). self-update.sh reports openclaw_after from the supervisor install, so a second copy on PATH can no longer be upgraded while the running gateway stays old.
+
 ## [v27.1.47]  -  2026-10-19  -  Council (Skill 77) v1.0.30: verdict says why + real key points
 
 - In plain English: the Council screen now explains why the verdict is what it is (what has to happen first, how strong the evidence is, where the elders disagree), and the Key Points list shows what each elder actually argued, the fault lines the chair found, the conditions attached and the dissent, each by the elder's full name, instead of only phase headings.
