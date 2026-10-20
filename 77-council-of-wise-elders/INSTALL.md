@@ -249,11 +249,10 @@ Only with a real client-selected route:
 - The agent convenes with `blackceo-council` (or
   `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
   PATH) and sends the client the `chamber_url` when the command prints one.
-  When it prints none (`PUBLIC_ORIGIN_UNVERIFIED`), the agent never invents
-  or guesses a link and never sends a 127.0.0.1 link (that address only
-  works on the box itself); it tells the client the Council runs and the
-  result will be shared, and that the operator sets up their Council
-  address with `provision-council-access.sh` as part of the fleet roll.
+  When it prints none, the agent never invents or guesses a link and never
+  sends a 127.0.0.1 link (that address only works on the box itself); it
+  tells the client the Council runs, the result will be shared, and their
+  private Council link is still being set up.
 
 ## Step 10: Release receipt
 
@@ -300,13 +299,17 @@ operator (never by the client, never by a worker on a client box):
 
     bash scripts/provision-council-access.sh --all --apply
 
-That script records `public_origin` for the box, after which
+That script only publishes the address at Cloudflare; it writes nothing on
+the box. The next `wire.sh` run (`bash wire.sh --idempotent`) probes the
+address and records `public_origin` in service.json only when it answers
+with a Cloudflare Access sign-in (otherwise it prints
+`PUBLIC_ORIGIN_UNVERIFIED` and records nothing). Once recorded,
 `blackceo-council convene` prints `chamber_url =
-<public_origin>/chamber/#session=<id>`. Until it has run,
+<public_origin>/chamber/#session=<id>`. Until then,
 `verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and the agent
 sends no chamber link: it tells the client plainly that the Council runs,
-the result will be shared, and the operator sets up the Council address.
-It never invents a link or sends a local one. If the verifier ever reports
+the result will be shared, and their private Council link is still being
+set up. It never invents a link or sends a local one. If the verifier ever reports
 ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as a
 security failure and do not send the link.
 
