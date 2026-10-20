@@ -926,6 +926,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     let response: TransportResponse;
     try {
       response = await transport.generate({
+        signal: ctx.signal,
         purpose: 'advisor',
         session_id: session.spec.session_id,
         seat_id: seatId,

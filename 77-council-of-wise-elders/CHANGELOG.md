@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
+
+In plain English: a council run through claude-nine could stall or lose its settings partway through, and a blocked council said the chair was still working. Now every claude-nine call keeps its safety settings, a stuck call is stopped cleanly and tried once more if it never started, the deadline is decided in one place and written down, and a blocked council names the seats that are missing and why.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.51).
+
 ## v1.0.31: clients can use the Council on their own box, and Claude Code routes are proven
 
 In plain English: until now the Council worked end to end only on the operator's own machine. After the next fleet roll, every client box builds the Council engine itself, keeps it running, and gives the client a signed-in way to open the Roast Room. Nothing changes about the client's models, keys or settings.
