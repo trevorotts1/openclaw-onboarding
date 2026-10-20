@@ -248,8 +248,12 @@ Only with a real client-selected route:
   the council itself is unbuilt.
 - The agent convenes with `blackceo-council` (or
   `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
-  PATH) and sends the client the `chamber_url` the command prints. It never
-  sends a 127.0.0.1 link: that address only works on the box itself.
+  PATH) and sends the client the `chamber_url` when the command prints one.
+  When it prints none (`PUBLIC_ORIGIN_UNVERIFIED`), the agent never invents
+  or guesses a link and never sends a 127.0.0.1 link (that address only
+  works on the box itself); it tells the client the Council runs and the
+  result will be shared, and that the operator sets up their Council
+  address with `provision-council-access.sh` as part of the fleet roll.
 
 ## Step 10: Release receipt
 
@@ -300,8 +304,9 @@ That script records `public_origin` for the box, after which
 `blackceo-council convene` prints `chamber_url =
 <public_origin>/chamber/#session=<id>`. Until it has run,
 `verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and the agent
-must tell the client plainly that the chamber link is not set up yet
-instead of sending a local link. If the verifier ever reports
+sends no chamber link: it tells the client plainly that the Council runs,
+the result will be shared, and the operator sets up the Council address.
+It never invents a link or sends a local one. If the verifier ever reports
 ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as a
 security failure and do not send the link.
 
