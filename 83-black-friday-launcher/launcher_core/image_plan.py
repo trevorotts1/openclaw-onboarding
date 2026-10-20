@@ -234,14 +234,23 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool) -> Tuple[Dict[str
     return inputs, to_confirm
 
 
-def image_inputs_file(inputs: Dict[str, Any], *, route_graph: str) -> Dict[str, Any]:
-    """The document written to disk and bound into every adapter.
+# The contract C3 keys, exactly what Skill 49's page_set.load_image_inputs accepts (it refuses any other key).
+C3_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "image_provider",
+           "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only")
 
-    Carries the C3 keys unchanged, plus the three aliases Skill 78's existing reader expects
-    (route_graph, provider, test_run), so one file serves every role.
-    """
-    doc = dict(inputs)
-    doc["route_graph"] = route_graph
-    doc["provider"] = inputs["executor_provider"]
-    doc["test_run"] = bool(inputs["test_only"])
+
+def image_inputs_file(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """The shared image inputs written to disk and bound into every Skill 49 wrapper: the C3 keys and
+    nothing else. image_provider is the provider that really runs ("stub" on a free run)."""
+    doc = {k: inputs[k] for k in C3_KEYS}
+    doc["image_provider"] = inputs["executor_provider"]
     return doc
+
+
+def order_page_inputs_file(inputs: Dict[str, Any], *, route_graph: str) -> Dict[str, Any]:
+    """The same values in the shape Skill 78's run_image_stages.py reads (route_graph, provider, test_run).
+    Skill 49's own page_set.selection_inputs makes this shape; kept here so the file is written
+    before any Skill 49 module is loaded."""
+    return {"route_graph": route_graph, "brand_file": inputs["brand_file"], "brand_owner": inputs["brand_owner"],
+            "image_cap": inputs["image_cap"], "design_style": inputs["design_style"],
+            "provider": inputs["executor_provider"], "test_run": bool(inputs["test_only"])}

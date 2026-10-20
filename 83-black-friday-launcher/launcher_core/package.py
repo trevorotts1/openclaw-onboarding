@@ -42,7 +42,9 @@ from .intake import offer_facts
 # A second page of a role that the route graph does not repeat. The piece is keyed by its slot
 # (downsell_2), carries the parent role (downsell_1) and the instance, and is one more page of the
 # launch: its designs are required exactly like every other page's.
-EXTRA_SLOTS = {"downsell_2": "downsell_1"}
+EXTRA_SLOTS = {"downsell_2": "downsell_1", "sales": "landing"}
+# "sales" is the signature sales page when the client also has the landing (opt-in) page: two pages of
+# the one landing route node.
 
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _RECEIPTS_REL = "delegation_receipts.jsonl"
@@ -198,7 +200,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              council_runner=None, require_designs: bool = False,
              image_plan: Optional[Dict[str, Any]] = None,
              to_confirm: Optional[List[Dict[str, Any]]] = None,
-             design_approvals: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             design_approvals: Optional[Dict[str, Any]] = None,
+             landing_pages: Optional[List[str]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -236,6 +239,10 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             raise PackageError("AF-LAUNCH-PKG-MISSING",
                                f"route node {node['role']} has no delivered piece")
         ordered.append(_validate_piece(piece, node, intake))
+    if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces:
+        raise PackageError("AF-LAUNCH-PKG-MISSING",
+                           "the client's plan has both landing pages but no signature sales page piece "
+                           "was delivered; a package one page short is not delivered")
     for slot, parent in EXTRA_SLOTS.items():
         if slot not in pieces:
             continue

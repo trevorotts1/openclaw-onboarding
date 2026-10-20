@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,8 +60,10 @@ def approval_for(doc: dict, **over) -> dict:
 def consumer_config(extra_by_role=None, sleep=0.0) -> dict:
     extra_by_role = extra_by_role or {}
     roles = substrate.dispatch().PAGE_ROLES
+    landing_pages = ["--pages", "{landing_pages}"]  # the real landing bridge builds Skill 49's planned set
     return {"adapters": {role: {"command": [sys.executable, str(CONSUMER), "{request}", "{result}",
-                                            str(LABELS), "--sleep", str(sleep), *extra_by_role.get(role, [])],
+                                            str(LABELS), "--sleep", str(sleep), *extra_by_role.get(role, []),
+                                            *(landing_pages if role == "landing" else [])],
                                 "timeout_s": 60} for role in roles}}
 
 
@@ -73,6 +76,8 @@ def run_dispatch(doc, out, **kw):
 
 
 ELEVATION_ROLES = ["landing", "product_selection", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"]
+# Skill 49 plans the signature sales page beside the landing page for a full funnel
+ELEVATION_PAGES = ["landing", "sales"] + ELEVATION_ROLES[1:]
 
 
 class BridgeRecordTests(unittest.TestCase):
@@ -132,12 +137,12 @@ class DispatchTests(unittest.TestCase):
 
     def test_a_full_funnel_dispatches_every_page_and_writes_one_result_per_page(self):
         report = run_dispatch(payload("elevation"), self.out)
-        self.assertEqual(report["pages"], ELEVATION_ROLES)
-        for role in ELEVATION_ROLES:
-            result = json.loads((self.out / "pieces" / f"{role}.json").read_text(encoding="utf-8"))
-            self.assertEqual(result["page_kind"], role)
+        self.assertEqual(report["pages"], ELEVATION_PAGES)
+        for page in ELEVATION_PAGES:
+            result = json.loads((self.out / "pieces" / f"{page}.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["page_kind"], {"landing": "opt_in"}.get(page, page))
         self.assertEqual(report["execution"], "executed")
-        self.assertEqual(json.loads((self.out / "dispatch-report.json").read_text())["pages"], ELEVATION_ROLES)
+        self.assertEqual(json.loads((self.out / "dispatch-report.json").read_text())["pages"], ELEVATION_PAGES)
 
     def test_nothing_is_spent_on_a_practice_run(self):
         report = run_dispatch(payload("elevation"), self.out)
@@ -156,7 +161,7 @@ class DispatchTests(unittest.TestCase):
 
     def test_the_dispatch_report_has_no_waiting_choices_when_the_client_chose_everything(self):
         doc = payload("elevation", design_style="B", image_provider="kie", image_cap=200)
-        report = run_dispatch(doc, self.out)
+        report = run_dispatch(doc, self.out, landing_pages=["landing", "sales"])
         self.assertEqual(report["to_confirm"], [])
         self.assertIn("Every choice came from you", "\n".join(launch_bridge.summary_lines(report)))
 
@@ -190,7 +195,7 @@ class DispatchTests(unittest.TestCase):
         config["adapters"]["downsell_2"] = {"command": config["adapters"]["downsell_1"]["command"]
                                             + ["--instance", "downsell_2"], "timeout_s": 60}
         report = run_dispatch(doc, self.out, adapters_config=config, extra_pages=("downsell_2",))
-        self.assertEqual(sorted(report["pages"]), sorted(ELEVATION_ROLES + ["downsell_2"]))
+        self.assertEqual(sorted(report["pages"]), sorted(ELEVATION_PAGES + ["downsell_2"]))
         self.assertIn("downsell_2", report["lane_plan"]["phase_2_together"])
         normalized = intake.validate(doc)
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
@@ -250,7 +255,7 @@ class DispatchTests(unittest.TestCase):
         real = substrate.dispatch()
 
         class FakeDispatch:
-            vlp, clr, DispatchError = real.vlp, real.clr, real.DispatchError
+            vlp, clr, pset, DispatchError = real.vlp, real.clr, real.pset, real.DispatchError
             executor_from_config = staticmethod(real.executor_from_config)
 
             @staticmethod
@@ -286,7 +291,7 @@ class DispatchTests(unittest.TestCase):
         stop.__signature__ = __import__("inspect").signature(real.dispatch)  # the real argument list
 
         class Spy:
-            vlp, clr, DispatchError = real.vlp, real.clr, real.DispatchError
+            vlp, clr, pset, DispatchError = real.vlp, real.clr, real.pset, real.DispatchError
             swarm = real.swarm
             executor_from_config = staticmethod(real.executor_from_config)
             dispatch = staticmethod(stop)
@@ -328,7 +333,7 @@ class DispatchTests(unittest.TestCase):
             self.assertIn("Nothing was dispatched", ctx.exception.detail)
             return
         report = run_dispatch(doc, self.out)
-        self.assertEqual(report["pages"], ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
+        self.assertEqual(report["pages"], ["landing", "sales", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
 
     def test_folded_levels_path_is_ready_the_moment_the_validator_accepts_the_mode(self):
         """Lane 49 adds folded_levels to Skill 49's validator. This simulates only that one-word change
@@ -338,7 +343,7 @@ class DispatchTests(unittest.TestCase):
         doc = payload("seven-figure-preneur")
         with mock.patch.object(vlp, "JOURNEY_MODES", modes):
             report = run_dispatch(doc, self.out)
-        self.assertEqual(report["pages"], ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
+        self.assertEqual(report["pages"], ["landing", "sales", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
         self.assertNotIn("product_selection", report["pages"])
         side = report["parallel"].startswith("parallel")
         self.assertEqual(report["lane_plan"]["phase_1_alone"], [] if side else ["landing"])
@@ -352,6 +357,172 @@ class DispatchTests(unittest.TestCase):
                               worker_identity_ref=WORKER)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
         self.assertIn("Nothing was dispatched", ctx.exception.detail)
+
+
+class LandingPagesTests(unittest.TestCase):
+    """Skill 83's real adapter builder, Skill 49's landing-page check, and the sales page piece."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out = Path(self.tmp.name) / "fresh-run"   # a first run: the folder does not exist yet
+        self.brand = Path(self.tmp.name) / "brand.json"
+        self.brand.write_text("{}", encoding="utf-8")
+
+    def adapter_inputs(self):
+        files = Path(self.tmp.name) / "inputs"
+        files.mkdir()
+
+        def f(name):
+            path = files / name
+            path.write_text("{}", encoding="utf-8")
+            return str(path)
+        roles = ("upsell_1", "upsell_2", "downsell_1")
+        return {"bridge_config": f("bridge.json"), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
+                "copy": {r: f(f"copy-{r}.json") for r in roles},
+                "journey": {r: f(f"journey-{r}.json") for r in roles},
+                "enrichment": {r: f(f"enr-{r}.json") for r in roles}}
+
+    def real_config_run(self, check):
+        """Run the bridge with the real adapter builder; `check` sees the real config, then fake pages answer."""
+        doc = payload("elevation", brand_file=str(self.brand))
+        real = substrate.dispatch()
+        fake_pages = consumer_config()
+
+        def checked(config, work_dir, landing_pages=None):
+            check(config, work_dir, landing_pages, real)
+            return real.executor_from_config(fake_pages, work_dir, landing_pages=landing_pages)
+
+        class Spy:
+            vlp, clr, pset, DispatchError = real.vlp, real.clr, real.pset, real.DispatchError
+            swarm, dispatch = real.swarm, staticmethod(real.dispatch)
+            executor_from_config = staticmethod(checked)
+
+        with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
+            return run_dispatch(doc, self.out, adapters_config=None, adapter_inputs=self.adapter_inputs())
+
+    def test_a_first_run_with_the_real_adapter_builder_gets_past_skill_49s_landing_page_check(self):
+        seen = {}
+
+        def check(config, work_dir, landing_pages, real):
+            seen["command"] = config["adapters"]["landing"]["command"]
+            seen["landing_pages"] = landing_pages
+            real.executor_from_config(config, work_dir, landing_pages=landing_pages)  # Skill 49's real check
+
+        report = self.real_config_run(check)
+        self.assertIn("{landing_pages}", seen["command"])
+        self.assertEqual(seen["landing_pages"], ["landing", "sales"])
+        self.assertEqual(report["pages"], ELEVATION_PAGES)
+
+    def test_every_flag_in_a_real_adapter_command_is_one_its_page_script_declares(self):
+        """A flag the script only passes along (landing_bridge.py and upsell_wrapper.py mention --brand-file
+        as a string) is refused as an unrecognized argument, so a launch would build no page."""
+        checked = []
+
+        def check(config, work_dir, landing_pages, real):
+            for role, spec in config["adapters"].items():
+                command = spec["command"]
+                if command[0] == "bash":
+                    continue
+                usage = subprocess.run([command[0], command[1], "--help"], capture_output=True, text=True).stdout
+                for flag in (p for p in command if str(p).startswith("--")):
+                    self.assertIn(flag, usage, f"{role}: {Path(command[1]).name} does not accept {flag}")
+                    checked.append(flag)
+
+        self.real_config_run(check)
+        self.assertGreater(len(checked), 40)
+
+    def test_the_two_image_input_files_each_hold_only_what_their_reader_accepts(self):
+        self.real_config_run(lambda *a: None)
+        shared = json.loads((self.out / "image_inputs.json").read_text())
+        self.assertEqual(sorted(shared), sorted(image_plan.C3_KEYS))
+        order = json.loads((self.out / "order-page-inputs.json").read_text())
+        self.assertEqual((order["provider"], order["test_run"]), ("stub", True))
+        substrate.dispatch().pset.load_image_inputs(self.out / "image_inputs.json")  # Skill 49's strict reader
+
+    def test_a_missing_per_page_input_is_a_plain_refusal_not_a_traceback(self):
+        inputs = self.adapter_inputs()
+        Path(inputs["copy"]["upsell_1"]).unlink()
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            run_dispatch(payload("elevation", brand_file=str(self.brand)), self.out, adapters_config=None,
+                         adapter_inputs=inputs)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
+        self.assertIn("Nothing was dispatched", ctx.exception.detail)
+
+    def test_a_launch_without_the_order_forms_copy_is_refused_before_any_page_is_built(self):
+        inputs = self.adapter_inputs()
+        del inputs["checkout_manuscript"]
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            run_dispatch(payload("elevation", brand_file=str(self.brand)), self.out, adapters_config=None,
+                         adapter_inputs=inputs)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
+        self.assertIn("checkout_manuscript", ctx.exception.detail)
+        self.assertFalse((self.out / "pieces").exists())
+
+    def build(self, landing_pages=None, **consumer_extra):
+        doc = payload("elevation")
+        report = run_dispatch(doc, self.out, adapters_config=consumer_config(consumer_extra),
+                              landing_pages=landing_pages)
+        return doc, report
+
+    def assemble(self, doc, report):
+        normalized = intake.validate(doc)
+        pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
+        return package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
+                                source_root=self.out, require_designs=True, to_confirm=report["to_confirm"],
+                                landing_pages=report["landing_pages"],
+                                council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
+                                         "advice_state": "p", "blocks_build": False, "is_permission": False})
+
+    def test_the_sales_page_gets_its_own_piece_and_the_design_check_requires_its_designs(self):
+        doc, report = self.build()
+        self.assertEqual(report["page_labels"][:2], ["Signature Landing Page", "Signature Sales Page"])
+        built = self.assemble(doc, report)
+        sales = next(p for p in built["manifest"]["pieces"] if p["role_instance"] == "sales")
+        self.assertTrue(all(Path(a["path"]).name.startswith("sales-page_")
+                            for a in sales["artifacts"] if a.get("kind")))
+        manifest_path = Path(built["manifest_path"])
+        self.assertEqual(checks.check_package(manifest_path, self.out / "package"), [])
+        # remove the sales page's mobile mockup PDF from the delivered package: the check names the page
+        manifest = json.loads(manifest_path.read_text())
+        piece = next(p for p in manifest["pieces"] if p["role_instance"] == "sales")
+        piece["artifacts"] = [a for a in piece["artifacts"] if a.get("kind") != "mockup_mobile_pdf"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        fails = checks.check_package(manifest_path, self.out / "package", require_designs=True)
+        self.assertTrue(any("landing:sales:sales is missing mockup mobile pdf" in f for f in fails), fails)
+
+    def test_the_landing_pages_choice_is_reported_to_confirm_only_when_the_client_did_not_make_it(self):
+        _, report = self.build()
+        self.assertIn("landing_pages", {r["field"] for r in report["to_confirm"]})
+        self.assertIn("landing_pages", "\n".join(launch_bridge.summary_lines(report)))
+        self.out = self.out.parent / "second"
+        _, chosen = self.build(landing_pages=["sales"])
+        self.assertNotIn("landing_pages", {r["field"] for r in chosen["to_confirm"]})
+
+    def test_only_the_sales_page_or_only_the_landing_page_is_one_piece_with_its_own_kind(self):
+        _, report = self.build(landing_pages=["sales"])
+        self.assertEqual(report["pages"][0], "landing")
+        self.assertNotIn("sales", report["pages"])
+        piece = json.loads((self.out / "pieces" / "landing.json").read_text())
+        self.assertEqual(piece["page_kind"], "sales")
+        self.assertTrue(all("sales-page_" in Path(a["path"]).name for a in piece["artifacts"]))
+
+    def test_a_planned_sales_page_with_no_file_of_its_own_is_refused_not_dropped(self):
+        result = {"artifacts": [{"path": "landing_DESKTOP_WIREFRAMES.pdf", "sha256": "0" * 64,
+                                 "kind": "wireframe_desktop_pdf"}]}
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            launch_bridge.split_landing(result, ["landing", "sales"])
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-LANDING-SPLIT")
+
+    def test_a_package_for_both_landing_pages_without_the_sales_piece_is_refused(self):
+        doc, report = self.build()
+        normalized = intake.validate(doc)
+        pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text())
+                  for r in report["pages"] if r != "sales"}
+        with self.assertRaises(package.PackageError) as ctx:
+            package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
+                             source_root=self.out, landing_pages=report["landing_pages"])
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PKG-MISSING")
 
 
 class CliTests(unittest.TestCase):
@@ -369,7 +540,7 @@ class CliTests(unittest.TestCase):
                                "--worker", WORKER, "--adapters", str(tmp / "adapters.json"), "--parallel", "4"])
             self.assertEqual(rc, 0)
             text = buf.getvalue()
-            self.assertIn("Built 7 pages: landing, product_selection, checkout", text)
+            self.assertIn("Built 8 pages: Signature Landing Page, Signature Sales Page, Order Page", text)
             self.assertIn("practice placeholders only. Nothing was spent.", text)
             self.assertIn("waiting for your confirmation", text)
 

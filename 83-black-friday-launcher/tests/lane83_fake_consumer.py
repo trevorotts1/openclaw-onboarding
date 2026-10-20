@@ -6,6 +6,7 @@ substitutes {request} and {result}):
 
     lane83_fake_consumer.py <request.json> <result.json> <labels.py> [--omit KIND] [--provider stub|kie]
                             [--sleep SECONDS] [--instance downsell_2]
+                            [--pages landing,sales]
 
 The file names come from Skill 71's own deliverable_labels.py, so the tests prove the real labels, not
 a copy of them.
@@ -39,13 +40,16 @@ def main(argv):
     ap.add_argument("--provider", default="stub")
     ap.add_argument("--sleep", type=float, default=0.0)
     ap.add_argument("--instance", default=None)
+    ap.add_argument("--pages", default="", help="landing pages to draw in the one result (landing, sales)")
     args = ap.parse_args(argv)
     req = json.loads(Path(args.request).read_text(encoding="utf-8"))
     labels = load_labels(args.labels)
     time.sleep(args.sleep)
 
-    role = args.instance or req["page_role"]
-    run = Path(args.result).parent / f"{role}-run"
+    pages = [args.instance or req["page_role"]]
+    if req["page_role"] == "landing" and args.pages:  # the real landing bridge answers every planned page at once
+        pages = [{"landing": "landing", "sales": "sales_page"}[k] for k in args.pages.split(",")]
+    run = Path(args.result).parent / f"{pages[0]}-run"
     artifacts = []
 
     def put(kind, rel, data):
@@ -57,16 +61,17 @@ def main(argv):
         artifacts.append({"path": str(path), "sha256": hashlib.sha256(data).hexdigest(),
                           "kind": kind, "provider": args.provider})
 
-    for device, wire_stage, mock_stage in (("desktop", "desktop-wireframe", "final-mockups"),
-                                           ("mobile", "mobile-tablet", "final-mockups")):
-        for n in (1, 2):
-            put(f"wireframe_{device}_section",
-                f"{labels.folder(device, wire_stage)}/{labels.image_name(role, device, wire_stage, n, 2, 'hero')}", PNG)
-            put(f"mockup_{device}_section",
-                f"{labels.folder(device, mock_stage)}/{labels.image_name(role, device, mock_stage, n, 2, 'hero')}", PNG)
-        put(f"wireframe_{device}_pdf", f"review-pdfs/{labels.pdf_name(role, device, wire_stage)}", b"%PDF-1.4 wf\n")
-        put(f"mockup_{device}_pdf", f"review-pdfs/{labels.pdf_name(role, device, mock_stage)}", b"%PDF-1.4 mk\n")
-    put("board", f"review-pdfs/{labels.board_name(role, 'combined', 'final-mockups')}.png", PNG)
+    for role in pages:
+        for device, wire_stage, mock_stage in (("desktop", "desktop-wireframe", "final-mockups"),
+                                               ("mobile", "mobile-tablet", "final-mockups")):
+            for n in (1, 2):
+                put(f"wireframe_{device}_section",
+                    f"{labels.folder(device, wire_stage)}/{labels.image_name(role, device, wire_stage, n, 2, 'hero')}", PNG)
+                put(f"mockup_{device}_section",
+                    f"{labels.folder(device, mock_stage)}/{labels.image_name(role, device, mock_stage, n, 2, 'hero')}", PNG)
+            put(f"wireframe_{device}_pdf", f"review-pdfs/{labels.pdf_name(role, device, wire_stage)}", b"%PDF-1.4 wf\n")
+            put(f"mockup_{device}_pdf", f"review-pdfs/{labels.pdf_name(role, device, mock_stage)}", b"%PDF-1.4 mk\n")
+        put("board", f"review-pdfs/{labels.board_name(role, 'combined', 'final-mockups')}.png", PNG)
 
     result = {
         "schema_version": "1.0", "tenant_id": req["tenant_id"], "location_id": req["location_id"],

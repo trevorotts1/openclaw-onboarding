@@ -9,7 +9,7 @@ edited by the turn-on workflow, so this file carries the new behavior until that
 ```
 python3 -m launcher_core.cli dispatch --intake intake.json --out RUN \
     --approval approval.json --client CLIENT_ID --worker WORKER_ID \
-    (--adapters adapters.json | --adapter-inputs inputs.json) [--parallel N] [--extra-page downsell_2]
+    (--adapters adapters.json | --adapter-inputs inputs.json) [--parallel N] [--landing-pages landing,sales] [--extra-page downsell_2]
 python3 -m launcher_core.cli assemble --intake intake.json --pieces RUN/pieces --out PACKAGE
 python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --root PACKAGE
 ```
@@ -23,7 +23,18 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
    `--extra-page downsell_2` is the client's opt-in to a second downsell: Skill 49 builds it beside `downsell_1`
    (it rides on that page's request), the bridge lays its result in `pieces/downsell_2.json`, and the package
    names it `downsell-2_...` with the same required design set as every other page.
-4. `assemble` requires every page's designs by default. `--allow-no-designs` exists for old-style plan-only
+4. Skill 49's page set is the plan. `--landing-pages landing,sales` is the client's choice of landing pages;
+   without it Skill 49's recommended set is used and `landing_pages` is listed under "to confirm" in the
+   client summary. The landing build answers every planned landing page in one result, and the bridge lays
+   one piece per page: `pieces/landing.json` and, when both are planned, `pieces/sales.json` (the signature
+   sales page, `sales-page_...` files). A planned page with no file of its own is refused by name, and
+   `assemble` refuses a plan for both landing pages that has no sales piece. `dispatch-report.json` carries
+   `page_labels` and `landing_pages` so the summary names every page.
+5. With `--adapter-inputs` the bridge builds the real adapter commands itself. It needs `checkout_manuscript`
+   (the order form page's copy, so its wireframes and mockups can be drawn) and refuses plainly without it.
+   Two image-input files are written: `image_inputs.json` holds only the shared contract keys (Skill 49's
+   wrappers refuse any other key) and `order-page-inputs.json` holds the same values in the shape Skill 78 reads.
+6. `assemble` requires every page's designs by default. `--allow-no-designs` exists for old-style plan-only
    packages and is recorded in the manifest as `designs_required: false`.
 
 ## Build order and parallel lanes

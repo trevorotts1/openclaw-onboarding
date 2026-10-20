@@ -73,6 +73,8 @@ def classify(path: str, declared: Optional[str] = None) -> Optional[str]:
 def label_slug(piece: Dict[str, Any]) -> str:
     """The page's slug as Skill 71 names its files: upsell-1, downsell-2, sales-page, landing."""
     instance = piece.get("role_instance")
+    if instance == "sales":  # the landing route node's second page; Skill 71 labels it sales_page
+        instance = "sales_page"
     role = str(instance or piece.get("role") or "page")
     if not instance and role == "landing" and piece.get("page_kind") == "sales":
         role = "sales_page"

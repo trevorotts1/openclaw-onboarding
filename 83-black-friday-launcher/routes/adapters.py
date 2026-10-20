@@ -341,12 +341,15 @@ IMAGE_INPUTS_FLAG = "--image-inputs"
 
 
 def _declares(script: Path, flag: str) -> bool:
-    """True when the wrapper's source declares this command-line flag (so passing it cannot break it)."""
+    """True when the wrapper's own parser declares this flag (so passing it cannot break it).
+
+    A flag named only in a string (landing_bridge.py and upsell_wrapper.py pass --brand-file on to
+    Skill 71) is not declared: the wrapper would refuse it as an unrecognized argument."""
     try:
         text = script.read_text(encoding="utf-8")
     except OSError:
         return False
-    return f'"{flag}"' in text or f"'{flag}'" in text
+    return re.search(r"add_argument\(\s*[\"']" + re.escape(flag) + r"[\"']", text) is not None
 
 
 def image_flags(script: Path, command: List[str], plan: Dict[str, Any],
@@ -378,6 +381,7 @@ def build_dispatch_config(*, work_dir: str | Path,
                           journey: Dict[str, str | Path],
                           enrichment: Dict[str, str | Path],
                           image_inputs: str | Path,
+                          order_page_inputs: str | Path | None = None,
                           skill80_root: str | Path | None = None,
                           skill81_root: str | Path | None = None,
                           image_provider: str = "stub",
@@ -428,6 +432,9 @@ def build_dispatch_config(*, work_dir: str | Path,
             "image_inputs: required; a funnel with an order page gets its "
             "wireframes and mockups, so the image step cannot be skipped")
     images_path = _require_file("image_inputs", image_inputs)
+    # Skill 78 reads its own shape of the same values (route_graph, provider, test_run); Skill 49's
+    # wrappers refuse any key outside contract C3, so the two readers get two files.
+    order_inputs_path = _require_file("order_page_inputs", order_page_inputs or image_inputs)
     copy_files = {role: _require_file(f"copy.{role}", path)
                   for role, path in copy.items()}
     journey_files = {role: _require_file(f"journey.{role}", path)
@@ -449,7 +456,8 @@ def build_dispatch_config(*, work_dir: str | Path,
                         "--request", "{request}",
                         "--result", "{result}",
                         "--work-dir", "{work_dir}",
-                        "--bridge-config", str(bridge_path)],
+                        "--bridge-config", str(bridge_path),
+                        "--landing-pages", "{landing_pages}"],
             "timeout_s": ADAPTERS["landing"]["timeout_s"],
         },
         "product_selection": {
@@ -462,7 +470,7 @@ def build_dispatch_config(*, work_dir: str | Path,
                 f"--request \"{{request}}\" "
                 f"--run-dir {quote(work / 'order-page-images')} "
                 f"--launch-record {quote(launch_path)} "
-                f"--inputs {quote(images_path)} "
+                f"--inputs {quote(order_inputs_path)} "
                 f"&& {quote(python)} {quote(root78 / 'emit_page_result.py')} "
                 f"{quote(work / 'selection-plan.json')} "
                 f"--output \"{{result}}\" --author-session s49-native-selection "

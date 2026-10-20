@@ -5,13 +5,17 @@ Free: nothing here calls a provider.
 
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
+sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
+import substrate  # noqa: E402
 from launcher_core import image_plan  # noqa: E402
 from launcher_core.image_plan import ImagePlanError, resolve  # noqa: E402
 
@@ -119,16 +123,27 @@ class NeverDefaultedTests(unittest.TestCase):
 
 
 class FileTests(unittest.TestCase):
-    def test_one_file_serves_every_role_and_the_order_page_reader(self):
+    def inputs(self):
         inputs, _ = resolve({**BASE, "design_style": "C", "image_cap": 10, "image_provider": "kie"},
                             test_only=True)
-        doc = image_plan.image_inputs_file(inputs, route_graph="/x/route-graph.json")
-        for key in ("design_style", "brand_file", "brand_owner", "image_cap", "image_provider",
-                    "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only"):
-            self.assertIn(key, doc)  # the shared contract keys
-        for key in ("route_graph", "provider", "test_run"):
-            self.assertIn(key, doc)  # the keys Skill 78 already reads
-        self.assertEqual((doc["provider"], doc["test_run"]), ("stub", True))
+        return inputs
+
+    def test_the_shared_file_holds_the_contract_keys_and_nothing_else(self):
+        doc = image_plan.image_inputs_file(self.inputs())
+        self.assertEqual(sorted(doc), sorted(image_plan.C3_KEYS))  # Skill 49 refuses any other key
+        self.assertEqual(doc["image_provider"], "stub")            # the provider that really runs
+
+    def test_skill_49_accepts_the_shared_file_it_is_handed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "image_inputs.json"
+            path.write_text(json.dumps(image_plan.image_inputs_file(self.inputs())), encoding="utf-8")
+            got = substrate.dispatch().pset.load_image_inputs(path)
+        self.assertEqual((got["design_style"], got["image_provider"], got["allow_paid"]), ("C", "stub", False))
+
+    def test_the_order_page_reader_gets_its_own_shape_of_the_same_values(self):
+        doc = image_plan.order_page_inputs_file(self.inputs(), route_graph="/x/route-graph.json")
+        self.assertEqual((doc["route_graph"], doc["provider"], doc["test_run"], doc["design_style"], doc["image_cap"]),
+                         ("/x/route-graph.json", "stub", True, "C", 10))
 
 
 if __name__ == "__main__":

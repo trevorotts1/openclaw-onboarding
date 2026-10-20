@@ -49,7 +49,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     out = package.assemble(Path(args.out), normalized, graph, pieces,
                            source_root=Path(args.pieces).parent, council=advice,
                            require_designs=not args.allow_no_designs,
-                           to_confirm=report.get("to_confirm"))
+                           to_confirm=report.get("to_confirm"),
+                           landing_pages=report.get("landing_pages"))
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
            "to_confirm": out["manifest"]["to_confirm"]})
@@ -66,7 +67,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         adapters_config=adapters_config, adapter_inputs=adapter_inputs,
         parallel=args.parallel,
         scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None,
-        extra_pages=tuple(args.extra_page or ()))
+        extra_pages=tuple(args.extra_page or ()),
+        landing_pages=[k.strip() for k in args.landing_pages.split(",") if k.strip()]
+        if args.landing_pages else None)
     _emit(report)
     print()
     for line in launch_bridge.summary_lines(report):
@@ -143,7 +146,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="build the independent pages as this many parallel lanes (1 = one at a time; "
                         "default: this computer's worker count)")
     x.add_argument("--scoped-approvals", help="JSON array of extra scoped approvals")
-    x.add_argument("--extra-page", action="append", choices=sorted(package.EXTRA_SLOTS),
+    x.add_argument("--landing-pages",
+                   help="the landing pages the client wants: landing, sales or landing,sales "
+                        "(default: the set Skill 49 recommends, flagged 'to confirm')")
+    x.add_argument("--extra-page", action="append", choices=["downsell_2"],
                    help="an extra design page the client opted into (downsell_2); repeat for more")
     x.set_defaults(fn=cmd_dispatch)
 
