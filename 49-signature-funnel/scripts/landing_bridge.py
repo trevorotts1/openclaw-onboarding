@@ -16,7 +16,8 @@ consumption, but it is NOT a bare adapter-config entry:
     (which must be run-relative: no absolute path, no ".."), and the
     brand file at the request's brand_ref;
   * it needs operator arguments the S49 page-request does not carry:
-    --page-version (standard|long-form), --brand-owner, --image-cap;
+    --page-version (standard|long-form), --page-kind (sales|opt_in),
+    --brand-owner, --image-cap;
   * production is the 14-stage stage_gate.py pipeline run inside that
     run directory, and the result emitter (scripts/write_page_result.py)
     writes page-result.json INSIDE the run directory, while dispatch
@@ -34,6 +35,7 @@ The bridge config is a JSON object with exactly two sections:
               "python": "<optional interpreter, default sys.executable>"}
   "landing": {"run_dir": "<abs path; the Skill 71 run directory>",
               "page_version": "standard" | "long-form",
+              "page_kind": "sales" | "opt_in",
               "brand_owner": "<recorded brand owner string>",
               "image_cap": <int >= 0>,
               "launch_record": "<abs path to the launch record JSON>",
@@ -41,7 +43,11 @@ The bridge config is a JSON object with exactly two sections:
               "consent_statements": "<optional abs path to a JSON list
                                       of {id, text, required} objects>"}
 
-FAIL-CLOSED DISCIPLINE: page_version, brand_owner and image_cap come
+page_kind: a funnel's main page is the 12-section signature SALES page, so a
+funnel run sets "sales" (Standard or Long-Form); "opt_in" is the signature
+landing (opt-in) page and is Long-Form only (Skill 71 references/page-kinds.json).
+
+FAIL-CLOSED DISCIPLINE: page_version, page_kind, brand_owner and image_cap come
 from the bridge config ONLY. The bridge never invents them (no
 defaults, no derivation from the request: the launch-context importer
 itself records that these skill-local decisions stay with the
@@ -222,6 +228,14 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
             "intake decision the page-request does not carry, and the "
             "bridge never invents it: set landing.page_version to "
             "'standard' or 'long-form'")
+    page_kind = landing.get("page_kind")
+    if page_kind not in ("sales", "opt_in"):
+        raise BridgeError(
+            "bridge config: landing.page_kind is missing or invalid "
+            f"(got {page_kind!r}); the landing role is either the signature "
+            "sales page or the signature landing (opt-in) page, the "
+            "page-request does not say which, and the bridge never invents "
+            "it: set landing.page_kind to 'sales' or 'opt_in'")
     brand_owner = _require_str(landing, "brand_owner", "landing")
     image_cap = landing.get("image_cap")
     if isinstance(image_cap, bool) or not isinstance(image_cap, int) \
@@ -262,6 +276,7 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         "python": python,
         "run_dir": run_dir,
         "page_version": page_version,
+        "page_kind": page_kind,
         "brand_owner": brand_owner,
         "image_cap": image_cap,
         "launch_record": launch_record,
@@ -602,6 +617,7 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
     intake_argv = [python, str(skill_root / "scripts" / "write_intake.py"),
                    str(run_dir),
                    "--page-version", cfg["page_version"],
+                   "--page-kind", cfg["page_kind"],
                    "--brand-owner", cfg["brand_owner"],
                    "--brand-file", req["brand_ref"],
                    "--image-cap", str(cfg["image_cap"]),

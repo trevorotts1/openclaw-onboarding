@@ -32,6 +32,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import page_kinds  # noqa: E402  SPF030: signature sales page vs signature landing (opt-in) page
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SPEC_FILE = SKILL_ROOT / "references" / "wireframe-build-spec.json"
 STANDARDS = SKILL_ROOT / "assets" / "visual-standards"
@@ -238,6 +241,12 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     lines = [line.format(form_label=FORM_LABEL[form], platform="mobile" if mobile else "desktop",
                          width=width, tag=tag, name=name, position=index, total=total)
              for line in blocks["intro"]]
+    kind = request.get("page_kind")
+    if kind:  # SPF030: the page kind's head, and its closing band on the last slice
+        try:
+            lines += page_kinds.wireframe_lines(kind, FORM_LABEL[form], index, total)
+        except page_kinds.KindError as exc:
+            raise SpecError(str(exc))
     lines += [blocks["style_reference"], blocks["colour"], blocks["grammar_head"]]
     lines.append(blocks["chip"].format(tag=tag, name_caps=name.upper()))
     lines.append(blocks["type_specs"].format(type_specs=_type_specs(stage, section)))

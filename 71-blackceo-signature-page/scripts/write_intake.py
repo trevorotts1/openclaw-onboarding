@@ -14,6 +14,13 @@ Layout waivers (Item 13/14, S3 Request 3): --brand-fonts-waived and
 --layout-references-waived, each with its own reason argument, are recorded
 in intake.json as layout_waivers entries the gate's layout gate consumes;
 an unrecorded absence is never a waiver.
+Page kind (SPF030): --page-kind sales|opt_in records which landing-role page this
+run is, the signature sales page (Standard 12 sections by default, Long-Form
+allowed; buttons go to checkout) or the signature landing (opt-in) page (Long-Form
+15 sections; buttons open the form). The kind decides the canonical section
+sequence, the wireframe closing band and the Design Board label
+(references/page-kinds.json, scripts/page_kinds.py). A production run cannot close
+intake without it (gate:intake_page_kind); test runs are exempt.
 Exit 0 written, 2 invalid input.
 
 Delivery fields (Item 31, Amendment 4): the intake also records the publish
@@ -97,6 +104,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import design_style
 import launch_context
+import page_kinds
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
@@ -409,6 +417,11 @@ def main(argv=None):
                    help="the run's copy selection (required intake decision, "
                         "Amendment 6 Items 18/19); selects the copy guide, spec, "
                         "and emotional-quality extract for the copy stage")
+    p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=None,
+                   help="the landing-role page this run builds: sales (signature sales "
+                        "page) or opt_in (signature landing opt-in page); decides the "
+                        "canonical section sequence, wireframe closing band and Design "
+                        "Board label (references/page-kinds.json)")
     p.add_argument("--test-run", action="store_true")
     p.add_argument("--supplied-assets", type=Path, default=None,
                    help="Item 19: JSON file declaring the run's supplied assets "
@@ -507,6 +520,15 @@ def main(argv=None):
                   f"so drop the conflicting flag.")
             return 2
 
+    if a.page_kind:
+        effective_copy = a.copy_version or (
+            launch_prepared[0].get("copy_version") if launch_prepared else None) or a.page_version
+        try:
+            page_kinds.check(a.page_kind, effective_copy)
+        except page_kinds.KindError as exc:
+            print(f"REFUSED: {exc}")
+            return 2
+
     brand_path = resolve_brand_file(a.brand_file, a.run_dir)
     if brand_path is not None:
         problems = founder_photo_form_problems(brand_path, a.run_dir)
@@ -519,6 +541,11 @@ def main(argv=None):
               "creative_direction": a.creative_direction, "image_cap": a.image_cap,
               "image_engine": a.image_engine, "test_run": a.test_run,
               "copy_version": a.copy_version}
+    if a.page_kind:
+        intake["page_kind"] = a.page_kind
+    else:
+        print("NOTE page_kind: none recorded. Rerun with --page-kind sales|opt_in; a "
+              "production run cannot close intake without it (test runs are exempt).")
     if a.design_style:
         intake["design_style"] = a.design_style
         intake["design_style_source"] = a.design_style_source or "client_choice"

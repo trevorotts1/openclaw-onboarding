@@ -31,7 +31,8 @@
       "validators": [
         "gate:must_supply --brand {brand}",
         "gate:intake_engine",
-        "gate:intake_design_style"
+        "gate:intake_design_style",
+        "gate:intake_page_kind"
       ],
       "handoff": {
         "intake_field": "funnel_handoff",

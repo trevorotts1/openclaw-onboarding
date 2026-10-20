@@ -4,6 +4,13 @@
 
 - `tests/test_sync_allowlist.py`: the file that exists only in this repo must be absent in the 999 edition, so the same test passes in both. Version bumped so the G3 gate sees the skill content change. No production behavior changed.
 
+## Unreleased - 2026-10-20 - signature sales page and signature landing (opt-in) page are two page kinds (SPF030)
+
+- `references/page-kinds.json` and `scripts/page_kinds.py`: the landing role has two kinds, `sales` (Standard 12 or Long-Form 15 sections, buttons go to checkout) and `opt_in` (Long-Form 15 only, buttons open the form). The canonical section sequence is the copy spec's own; a kind that does not allow the declared copy form is refused.
+- `write_intake.py --page-kind sales|opt_in`, enforced for production runs by the new intake validator `gate:intake_page_kind` (test runs exempt). `build_production_request.py --page-kind`, `stage_executor.py` (kind check, `PREFLIGHT_PAGE`, kind line in the mockup prompts), `wireframe_spec.py` (kind head on every slice, closing checkout panel or registration strip on the last), `design_board.py` (label, emphasis and record by kind) and the run report all carry the kind. The wireframe, mockup, PDF and overview-board pipeline is unchanged and shared.
+- Routing: "signature sales page" is a Skill 71 trigger and a Skill 56 anti-signal; the Skill 49 bridge now requires `landing.page_kind`. The department map no longer claims Skill 56's sales page uses the shared image service.
+- `tests/test_page_kinds.py` (new, 21 tests, no provider call).
+
 ## Unreleased - 2026-10-19 - test honesty: fixture-dependent modules report SKIPPED, not PASS; mobile anchor floor 18px
 
 - `tests/`: two fixture-dependent modules (browser hygiene, swarm runner) now report SKIPPED with a named reason instead of a false PASS when their fixtures are not shipped; `test_validate_page.py` pins the 18px mobile anchor floor. Suite: 40 passed, 2 skipped. No production behavior changed.

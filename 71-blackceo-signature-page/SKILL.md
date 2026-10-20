@@ -1,6 +1,6 @@
 ---
 name: blackceo-signature-page
-description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
+description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
 version: 1.3.1
 ---
 
@@ -31,12 +31,12 @@ This is the canonical BlackCEO **single-page** landing-page production skill for
 
 ## Route boundaries first
 
-Use this skill for a focused single-page conversion experience: landing page, opt-in/squeeze page, event/registration page, challenge page, booking page, lead-generation page, or comparable page using the BlackCEO Standard or Long-Form system.
+Use this skill for a focused single-page conversion experience: landing page, signature sales page, opt-in/squeeze page, event/registration page, challenge page, booking page, lead-generation page, or comparable page using the BlackCEO Standard or Long-Form system.
 
 Route elsewhere when the assignment is specifically:
 
 - **Skill 49 `signature-funnel`** — multi-step 3/5/7 Signature Funnel with checkout / upsell / downsell / OTO chain.
-- **Skill 56 `sales-page-assets`** — Direct-Response / VSL / 8-section main / 9-section upsell / high-ticket / order-bump asset stack.
+- **Skill 56 `sales-page-assets`** — Direct-Response / VSL / 8-section main / 9-section upsell / high-ticket / order-bump asset stack. A request for a *signature sales page* is NOT this: it stays here as page kind `sales`.
 - **Skill 62 `cinematic-web-funnel-engine`** — animated, immersive, scroll-controlled cinematic website/funnel.
 - **Website-craft** — ordinary multi-page marketing website whose governing copy contract is not this BlackCEO single-page system.
 
@@ -80,6 +80,17 @@ Do not load all three style libraries at once. Load only the selected family/sty
 ### Design / wireframes / mockups
 
 Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
+
+## Page kinds: signature sales page and signature landing (opt-in) page
+
+Both are page role `landing`; intake records which one with `write_intake.py --page-kind sales|opt_in` (a production run cannot close intake without it, `gate:intake_page_kind`). The kind is data in `references/page-kinds.json`, read by `scripts/page_kinds.py`:
+
+| Kind | Copy form | Canonical sections | Buttons | Wireframe closing band |
+|---|---|---|---|---|
+| `sales` (signature sales page) | Standard (default) or Long-Form | 12, or 15 | go to the client's checkout | closing checkout panel, no price, no card fields |
+| `opt_in` (signature landing page) | Long-Form only | 15 | open the client's registration form | registration strip, no form fields |
+
+The section sequence is never copied: it is the copy spec's own `sequence` for the form. `stage_executor.py` refuses a kind that does not allow the declared `copy_version`, prints `PREFLIGHT_PAGE` (role, kind, canonical sequence length), and both wireframe stages, the mockup stages and the Design Board carry the kind. Everything else (wireframes, mockups, desktop and mobile, PDFs, overview boards, Design Board, style A/B/C, hypersaturation) is the one pipeline below, never a second one.
 
 ## Governing production order
 

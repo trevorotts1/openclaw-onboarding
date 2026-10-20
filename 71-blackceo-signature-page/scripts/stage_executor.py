@@ -252,6 +252,7 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import wireframe_spec  # noqa: E402  SPF016: wireframe style reference + build-spec prompt
+import page_kinds  # noqa: E402  SPF030: signature sales page vs signature landing (opt-in) page
 
 
 def style_refs(stage: str, request: dict, strict: bool = False) -> list:
@@ -612,6 +613,12 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             f"copy_version {version!r} is not one of standard, long-form "
             f"(no spec at {spec_path.name})")
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    try:  # SPF030: a declared page kind may only use the copy forms it allows
+        kind = page_kinds.declared(run_dir, request)
+        if kind:
+            page_kinds.check(kind, version)
+    except page_kinds.KindError as exc:
+        raise ExecutorError(f"page kind: {exc}")
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
     allowed = allowed_section_sequences(spec)
     if ids not in allowed:
@@ -727,6 +734,14 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
     data["_section_check"] = check_section_count(run_dir, data, paid)
+    try:
+        data["page_kind"] = page_kinds.declared(run_dir, data)
+    except page_kinds.KindError as exc:
+        raise ExecutorError(str(exc))
+    if data["page_kind"] is None:
+        print("NOTE page_kind: not declared (request, metadata or intake.json); the pages "
+              "carry no sales/opt-in label. Production intake requires it "
+              "(scripts/write_intake.py --page-kind)", file=sys.stderr)
     ctas = copy_source_ctas(run_dir, data)
     required = bool(data.get("cta_required"))
     for i, s in enumerate(sections):
@@ -841,6 +856,8 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = sanitize_prompt(body)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     body = wireframe_body(stage, section, index, width, request, body)
+    if request.get("page_kind") and stage in hypersaturation.MOCKUP_STAGES:
+        body = f"{page_kinds.mockup_line(request['page_kind'])}\n\n{body}"
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage)
@@ -1491,6 +1508,13 @@ def main(argv=None) -> int:
             request = load_request(run_dir, args.request)
             request["_brand_block"] = brand_block
             check = request.get("_section_check")
+            kind = request.get("page_kind")
+            print(f"PREFLIGHT_PAGE page_role={page_kinds.data()['page_role']} "
+                  f"page_kind={kind or 'undeclared'}"
+                  + (f" label={page_kinds.entry(kind)['tag']!r} "
+                     f"action={page_kinds.entry(kind)['action']} "
+                     f"canonical_sequence_len={len(page_kinds.sequence(kind, check[0]))}"
+                     if kind and check else ""))
             if check:
                 print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
                       f"sections={len(check[1])} canonical_ids={','.join(check[1])} "

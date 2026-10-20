@@ -16,12 +16,15 @@ A funnel gets one board for each page it actually has. Page roles are the page-r
 
 | Trevor's page | page_role | Owning skill |
 |---|---|---|
-| landing / sales page | `landing` | 71 |
+| signature sales page | `landing` + page kind `sales` | 71 |
+| signature landing (opt-in) page | `landing` + page kind `opt_in` | 71 |
 | order page (package choice) | `product_selection` | 78 |
 | checkout page | `checkout` | 79 |
 | upsell page | `upsell_1`, `upsell_2` | 80 |
 | downsell page | `downsell_1` | 81 |
 | thank-you page | `thank_you` | 82 |
+
+The landing role's board names its kind: the run's `page_kind` (intake) selects the label and the page-role emphasis printed on the board (`references/page-kinds.json`), the record stores `page_kind`, and `validate` fails a board whose kind differs from the run's.
 
 A single-offer funnel in combined mode has no product-selection page, so it has no order-page
 board; its `checkout` page carries the order form and gets its own board. A run is one page, so

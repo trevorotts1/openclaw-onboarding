@@ -39,7 +39,7 @@ What is proven:
   2. The emitted result validates against the page-result 1.0 schema
      AND passes collect_launch_receipts.validate_result AND rolls up
      in collect_launch_receipts.collect.
-  3. Fail-closed: a bridge config missing page_version, brand_owner,
+  3. Fail-closed: a bridge config missing page_version, page_kind, brand_owner,
      or image_cap (each) aborts with the value named, exit 2, and no
      consumer process runs (no intake.json, no staged request).
   4. Fail-closed: a configured brand file whose bytes do not hash to
@@ -185,6 +185,7 @@ class LandingBridgeCase(unittest.TestCase):
         landing = {
             "run_dir": str(self.run_dir),
             "page_version": "standard",
+            "page_kind": "sales",
             "brand_owner": "Fixture Brand Owner",
             "image_cap": 12,
             "launch_record": str(self.launch_path),
@@ -309,6 +310,7 @@ class TestEndToEnd(LandingBridgeCase):
         self.assertEqual(intake["launch_profile"],
                          "signature_launch_landing")
         self.assertEqual(intake["page_version"], "standard")
+        self.assertEqual(intake["page_kind"], "sales")
         self.assertEqual(intake["brand_owner"], "Fixture Brand Owner")
         self.assertEqual(intake["image_cap"], 12)
         self.assertEqual(intake["image_engine"], "agnes")
@@ -379,6 +381,17 @@ class TestFailClosed(LandingBridgeCase):
 
     def test_missing_page_version_fails_closed(self):
         self.assert_refused_before_staging("page_version", "page_version")
+
+    def test_missing_page_kind_fails_closed(self):
+        self.assert_refused_before_staging("page_kind", "page_kind")
+
+    def test_opt_in_page_kind_needs_long_form(self):
+        # the sales page may be standard; the opt-in page is long-form only
+        self.write_bridge_config(page_kind="opt_in")
+        req_path = self.make_request()
+        proc, result_path = self.run_bridge_directly(req_path, self.run_dir)
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("long-form", proc.stdout)
 
     def test_missing_brand_owner_fails_closed(self):
         self.assert_refused_before_staging("brand_owner", "brand_owner")

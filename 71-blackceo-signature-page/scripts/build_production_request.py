@@ -17,7 +17,7 @@ calls; the file is the only output.
 Usage:
   build_production_request.py --copy-version standard|long-form \\
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
-      --out <run_dir>/production-request.json [--slots slots.json] \\
+      --out <run_dir>/production-request.json [--page-kind sales|opt_in] [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
 
   slots.json:  {"<canonical section id>": [{"slot_id", "aspect_ratio", "art_direction"}]}
@@ -41,6 +41,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import stage_executor as exe  # noqa: E402
+import page_kinds  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
 LEADS = {
@@ -419,13 +420,22 @@ def run_blocks(request, run_dir):
     exe.resolve_design_style(Path(run_dir), request)
 
 
-def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path(".")):
+def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
+          page_kind=None):
     spec = json.loads((exe.SPEC_DIR / f"{version}-v6.json").read_text(encoding="utf-8"))
+    try:  # SPF030: the page kind (flag, else the run's intake) must allow this copy form
+        kind = page_kinds.normalize(page_kind) if page_kind else page_kinds.declared(run_dir, {})
+        if kind:
+            page_kinds.check(kind, version)
+    except page_kinds.KindError as exc:
+        raise BuildError(f"page kind: {exc}")
     sections = sections_from_manuscript(manuscript_text, spec, slots)
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
                "stage_prompts": {stage: template_for(stage, {})}}
+    if kind:
+        request["page_kind"] = kind
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
@@ -465,7 +475,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             raise BuildError(f"{exc} (supply --design-prose with the run's measured design system)")
         raise
     request["metadata"] = {
-        "stage": stage, "copy_version": version, "section_count": len(sections),
+        "stage": stage, "copy_version": version, "page_kind": kind, "section_count": len(sections),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
         "trimmed_blocks": [k for k in chosen if chosen[k] != prose[k]],
@@ -489,6 +499,9 @@ def main(argv=None) -> int:
     p.add_argument("--manuscript", type=Path, required=True)
     p.add_argument("--stage", choices=list(exe.STAGES), required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=None,
+                   help="sales or opt_in (default: the run's intake.json page_kind); "
+                        "references/page-kinds.json")
     p.add_argument("--slots", type=Path)
     p.add_argument("--design-prose", type=Path)
     p.add_argument("--references", default="")
@@ -506,14 +519,15 @@ def main(argv=None) -> int:
         load = lambda f: json.loads(f.read_text(encoding="utf-8")) if f else {}
         request = build(a.stage, a.copy_version, a.manuscript.read_text(encoding="utf-8"),
                         load(a.slots), load(a.design_prose),
-                        [r for r in a.references.split(",") if r], a.model, a.style, run_dir)
+                        [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
+                        a.page_kind)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(request, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     m = request["metadata"]
-    print(f"WROTE {a.out} copy_version={a.copy_version} stage={a.stage} "
+    print(f"WROTE {a.out} copy_version={a.copy_version} page_kind={m['page_kind']} stage={a.stage} "
           f"sections={m['section_count']} ids={','.join(m['canonical_ids'])}")
     cb = m["char_budget"]
     if cb["target"] and cb["min_seen"] < cb["target"]:  # floor passed (else refused); band goal missed

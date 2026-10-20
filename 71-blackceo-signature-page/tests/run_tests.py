@@ -76,6 +76,8 @@ MODULES = [
     "test_design_style.py",
     # SPF023: composition library (words over images, shaped crops, light fields).
     "test_composition_library.py",
+    # SPF030: signature sales page vs signature landing (opt-in) page kinds.
+    "test_page_kinds.py",
 ]
 
 def skip_reason(stdout):

@@ -46,8 +46,12 @@ SRC = HERE.parents[1] / "71-blackceo-signature-page"
 REAL_FILES = [
     "scripts/launch_context.py",
     "scripts/write_intake.py",
+    "scripts/design_style.py",  # write_intake imports it (its data file follows)
+    "scripts/page_kinds.py",  # write_intake imports it (SPF030: sales vs opt-in page kind)
     "scripts/page_result.py",
     "scripts/write_page_result.py",
+    "references/design-styles.json",
+    "references/page-kinds.json",
     "references/page-request.schema.json",
     "references/page-result.schema.json",
     "references/launch.schema.json",
