@@ -1,0 +1,259 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Chamber theme: BlackCEO brand tokens and shared primitives (Skill 77).
+   ───────────────────────────────────────────────────────────────────────────
+   Brand: black #000000, gold #C9A227, cream #F5F0E8. Surfaces are warm
+   black (R >= G >= B), never navy or blue.
+
+   This is the ONLY chamber-*.css file allowed to hold a raw colour literal.
+   Every other chamber stylesheet uses var(--ch-*) only; the theme test
+   (tests/chamber-theme.test.ts) enforces that, enforces the no-blue/purple
+   palette rule and computes the contrast of the token pairs below.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --ch-black: #000000;
+  --ch-gold: #C9A227;
+  --ch-cream: #F5F0E8;
+
+  --ch-bg: var(--ch-black);
+  --ch-surface-1: #0C0B09;
+  --ch-surface-2: #14130F;
+  --ch-surface-3: #1D1B16;
+  --ch-line: rgba(245, 240, 232, .12);
+  --ch-line-strong: rgba(245, 240, 232, .24);
+
+  --ch-ink: var(--ch-cream);
+  --ch-ink-muted: rgba(245, 240, 232, .70);
+  --ch-ink-faint: rgba(245, 240, 232, .56);
+
+  --ch-gold-strong: #DDB43A;
+  --ch-gold-soft: rgba(201, 162, 39, .16);
+  --ch-on-gold: #000000;
+  --ch-grid: rgba(245, 240, 232, .04);
+
+  --ch-font: 'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif;
+
+  --ch-radius-panel: 18px;
+  --ch-radius-card: 12px;
+  --ch-radius-chip: 6px;
+  --ch-radius-pill: 999px;
+
+  --ch-space-1: 4px;
+  --ch-space-2: 8px;
+  --ch-space-3: 12px;
+  --ch-space-4: 16px;
+  --ch-space-5: 24px;
+  --ch-space-6: 32px;
+
+  --ch-dur: 200ms;
+  --ch-ease: cubic-bezier(.22, .61, .36, 1);
+
+  --ch-focus: var(--ch-gold);
+}
+
+/* More contrast on request: stronger hairlines, full-strength secondary ink. */
+@media (prefers-contrast: more) {
+  :root {
+    --ch-line: rgba(245, 240, 232, .40);
+    --ch-line-strong: rgba(245, 240, 232, .70);
+    --ch-ink-muted: rgba(245, 240, 232, .88);
+    --ch-ink-faint: rgba(245, 240, 232, .78);
+    --ch-grid: rgba(245, 240, 232, .08);
+  }
+}
+
+/* ── Page ────────────────────────────────────────────────────────────────── */
+.ch {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ch-bg);
+  color: var(--ch-ink);
+  font-family: var(--ch-font);
+  font-size: 16px;
+  line-height: 1.5;
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+.ch *,
+.ch *::before,
+.ch *::after { box-sizing: border-box; }
+
+/* App frame: 16px gutters on phones, 24px from 600px, a rounded framed
+   card from 1200px (the room floats on the black page). */
+.ch-app {
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+  padding: var(--ch-space-4);
+}
+@media (min-width: 600px) {
+  .ch-app { padding: var(--ch-space-5); }
+}
+@media (min-width: 1200px) {
+  .ch-app {
+    width: calc(100% - 48px);
+    margin-block: var(--ch-space-5);
+    border: 1px solid var(--ch-line);
+    border-radius: 24px;
+  }
+}
+
+.ch-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  min-width: 0;
+}
+
+/* Room plus key points. One column below 1200px (key points after the
+   room); room + 320px key points side by side from 1200px, top-aligned. */
+.ch-stage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ch-space-4);
+  align-items: start;
+  min-width: 0;
+}
+.ch-stage-grid > * { min-width: 0; }
+@media (min-width: 1200px) {
+  .ch-stage-grid { grid-template-columns: minmax(0, 1fr) 320px; }
+}
+
+/* ── Primitives ──────────────────────────────────────────────────────────── */
+.ch-panel {
+  background: var(--ch-surface-1);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-panel);
+}
+
+.ch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  min-height: 40px;
+  padding: 0 var(--ch-space-4);
+  background: transparent;
+  color: var(--ch-ink);
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-pill);
+  font: 600 13px/1.2 var(--ch-font);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--ch-dur) var(--ch-ease),
+              background-color var(--ch-dur) var(--ch-ease),
+              color var(--ch-dur) var(--ch-ease);
+}
+@media (pointer: coarse) {
+  .ch-btn { min-height: 44px; min-width: 44px; }
+}
+.ch-btn:hover { border-color: var(--ch-gold); }
+.ch-btn:disabled,
+.ch-btn[aria-disabled='true'] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.ch-btn:disabled:hover,
+.ch-btn[aria-disabled='true']:hover { border-color: var(--ch-line-strong); }
+
+.ch-btn--primary {
+  background: var(--ch-gold);
+  border-color: var(--ch-gold);
+  color: var(--ch-on-gold);
+}
+.ch-btn--primary:hover {
+  background: var(--ch-gold-strong);
+  border-color: var(--ch-gold-strong);
+}
+.ch-btn--primary:disabled:hover,
+.ch-btn--primary[aria-disabled='true']:hover {
+  background: var(--ch-gold);
+  border-color: var(--ch-gold);
+}
+
+/* Keyboard focus: a 2px gold ring, offset 2px, on every focusable thing. */
+.ch :focus-visible {
+  outline: 2px solid var(--ch-focus);
+  outline-offset: 2px;
+}
+
+.ch-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+
+.ch-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--ch-space-2);
+  background: var(--ch-surface-3);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-chip);
+  color: var(--ch-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.ch-chip--gold {
+  background: var(--ch-gold);
+  border-color: var(--ch-gold);
+  color: var(--ch-on-gold);
+}
+
+.ch-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Native <dialog>.showModal(): the backdrop blurs and dims the whole page,
+   sticky top bar included. */
+.ch-dialog {
+  width: min(590px, 100vw - 32px);
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  padding: 20px;
+  overflow: auto;
+  background: var(--ch-surface-2);
+  color: var(--ch-ink);
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-card);
+  font-family: var(--ch-font);
+}
+.ch-dialog::backdrop {
+  background: rgba(0, 0, 0, .55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* ── Motion: every animation and transition stops. ───────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}

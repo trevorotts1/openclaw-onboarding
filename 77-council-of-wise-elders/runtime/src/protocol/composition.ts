@@ -62,9 +62,12 @@ import type { CouncilDatabase } from '../persistence/sqlite.js';
 import type { Clock, IdSource } from '../cli/host-ports.js';
 import {
   DurableJobRunner,
+  type DurableJobRunnerDeps,
   type OperationExecutorPort,
   type RunnerTimers,
+  systemTimers,
 } from '../queue/runner.js';
+import { OPERATION_LEASE_TTL_MS } from '../cli/leases.js';
 import { deriveHardConstraintFindings } from '../scoring/decision.js';
 import { OpeningRoundExecutor } from './opening.js';
 import { ChallengeRoundExecutor } from './challenge.js';
@@ -114,8 +117,12 @@ export interface DeliberationCompositionDeps {
   ) => readonly HardConstraintFinding[];
   settings?: CouncilSettings;
   timers?: RunnerTimers;
+  /** Poll interval while waiting for another worker's round jobs; default 250ms. */
+  roundWaitPollMs?: number;
   workerId?: string;
   distributable?: boolean;
+  /** Reported when a paid response is discarded by a fenced settle. */
+  onFencedSettle?: DurableJobRunnerDeps['onFencedSettle'];
 }
 
 export interface CompositionReadiness {
@@ -143,6 +150,7 @@ export type RunSessionResult =
     };
 
 const ESTIMATE_MINOR = 100;
+const ROUND_WAIT_POLL_MS = 250;
 
 export class DeliberationService {
   readonly repositories: CouncilRepositories;
@@ -226,6 +234,7 @@ export class DeliberationService {
       ids,
       executor: composite,
       timers: deps.timers,
+      onFencedSettle: deps.onFencedSettle,
     });
     this.workerId = deps.workerId ?? 'council-composition-worker';
 
@@ -406,15 +415,73 @@ export class DeliberationService {
       // the round's driving: the assembly step then reports the round
       // incomplete instead of the loop spinning on a job that cannot
       // proceed under this grant.
+      //
+      // A null claim is not "round done" when another worker (the
+      // service's background supervisor) holds this round's jobs under
+      // a live lease: wait, bounded, for them to reach a terminal
+      // state (or return to queued, which this loop then claims).
+      // With no competing worker the first null claim ends the round,
+      // exactly as before.
       const maxIterations = plans.size * 4 + 16;
-      for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      const timers = this.deps.timers ?? systemTimers;
+      const pollMs = this.deps.roundWaitPollMs ?? ROUND_WAIT_POLL_MS;
+      const maxWaits = Math.ceil((OPERATION_LEASE_TTL_MS * plans.size) / pollMs);
+      const heldByOthers = (): boolean =>
+        this.runner
+          .listSessionJobs(envelope, sessionId)
+          .some(
+            (job) =>
+              job.phase_job_key.startsWith(`round-${round}:`) &&
+              (job.state === 'leased' || job.state === 'running'),
+          );
+      let claims = 0;
+      let waits = 0;
+      while (claims < maxIterations) {
         const claim = this.runner.claimNextOperation(envelope, sessionId, this.workerId);
-        if (!claim) break;
+        if (!claim) {
+          if (waits >= maxWaits || !heldByOthers()) break;
+          waits += 1;
+          await timers.delay(pollMs);
+          continue;
+        }
+        claims += 1;
         const outcome = await this.runner.executeClaimedOperation(envelope, claim);
         if (outcome.status === 'admission_refused' || outcome.status === 'deferred') {
           break;
         }
       }
+    };
+
+    // A round that ended with its work unfinished must not feed the next
+    // round's plan: a job still queued/leased/running (the grant refused
+    // it, or the loop gave up) would later commit a card and change the
+    // draft input hash, so every Round 3 dispatch would refuse as input
+    // drift. In full mode a seat with no card can only end BLOCKED, so
+    // continuing would spend paid Round 2/3 calls on a session that cannot
+    // produce a verdict. Stop in place (BLOCKED is resumable).
+    const stalledRound = (round: 1 | 2): RunSessionResult | null => {
+      const prefix = `round-${round}:`;
+      const unfinished = this.runner
+        .listSessionJobs(envelope, sessionId)
+        .some(
+          (job) =>
+            job.phase_job_key.startsWith(prefix) &&
+            (job.state === 'queued' || job.state === 'leased' || job.state === 'running'),
+        );
+      const cards = this.repositories.listCards(envelope, sessionId);
+      const missing = session.spec.seat_ids.filter(
+        (seatId) => !cards.some((c) => c.card_kind === 'advisor' && c.round === round && c.seat_id === seatId),
+      );
+      if (!unfinished && !(session.spec.mode === 'full' && missing.length > 0)) return null;
+      transition('BLOCKED');
+      return {
+        status: 'incomplete',
+        detail: unfinished
+          ? `round ${round} ended with unfinished work (a job is still queued or running); the session is blocked and resumable instead of planning round ${round + 1} from a partial record`
+          : `full mode keeps all nine seats: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`,
+        missing: missing.map((seat_id) => ({ round, seat_id })),
+        budget: snapshotBudget(),
+      };
     };
 
     if (session.spec.mode === 'consult') {
@@ -477,6 +544,9 @@ export class DeliberationService {
       ),
     );
 
+    const stalledAfterRound1 = stalledRound(1);
+    if (stalledAfterRound1) return stalledAfterRound1;
+
     // Round 2: challenge.
     transition('CRUX_REVIEW');
     transition('ROUND_2');
@@ -501,6 +571,9 @@ export class DeliberationService {
         ]),
       ),
     );
+
+    const stalledAfterRound2 = stalledRound(2);
+    if (stalledAfterRound2) return stalledAfterRound2;
 
     // Draft + Round 3 (ratification), with the quick-mode skip rule.
     transition('DRAFT_RESOLUTION');

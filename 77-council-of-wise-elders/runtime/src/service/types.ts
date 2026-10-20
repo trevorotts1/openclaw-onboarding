@@ -14,6 +14,9 @@
  * WER-023 remote access) and is never claimed here.
  */
 
+import type { ConveneAccepted, ConveneInput } from './driver.js';
+import type { HARNESS_DEFAULTS, RouteOption } from './route-choice.js';
+
 /** Identity document schema served at /api/council/service/identity. */
 export const SERVICE_IDENTITY_SCHEMA = 'wise-elders.service-identity/v1';
 /** Readiness receipt schema. */
@@ -256,3 +259,31 @@ export interface StopOutcome {
     | 'ALREADY_STOPPED'
     | 'REUSED_SERVICE_NOT_OWNED';
 }
+
+// ---------------------------------------------------------------- convening
+
+/**
+ * The convening surface the composition root binds into the front door
+ * (W28). Types only: the front door never builds a session, a route or a
+ * grant itself; it forwards a validated request to the composed driver.
+ */
+export const CONVENE_HARNESSES = [
+  'claude-nine',
+  'claude-code',
+  'deepseek',
+  'unknown',
+] as const;
+
+export type ConveneHarnessName = (typeof CONVENE_HARNESSES)[number];
+
+/** `GET /api/council/routes` body. */
+export interface CouncilRoutesResponse {
+  routes: RouteOption[];
+  harness_defaults: typeof HARNESS_DEFAULTS;
+}
+
+export interface CouncilConveningPort {
+  routes(): CouncilRoutesResponse | Promise<CouncilRoutesResponse>;
+  convene(input: ConveneInput): Promise<ConveneAccepted>;
+}
+

@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.42"
+ONBOARDING_VERSION="v27.1.45"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2051,7 +2051,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.42 - safe_json_edit
+# v27.1.45 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5251,7 +5251,7 @@ main() {
   fi
 
   # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
-  # (skills.workshop.autonomous.mode=propose when unset/auto; explicit propose/off kept).
+  # (skills.workshop.autonomous.mode = propose where the build accepts it, else off; unset/auto are set, an explicit value the build accepts is kept; a stale propose is migrated).
   # Runs HERE — right after scripts/ is delivered and BEFORE the content-recheck
   # `exit 0` — so it runs on EVERY roll, including content-current re-rolls that
   # never reach the steps near the end of this file. Hot reload, backup only on

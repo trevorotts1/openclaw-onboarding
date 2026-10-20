@@ -31,7 +31,8 @@ import { renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { CouncilFrontDoor } from './front-door.js';
+import type { CouncilEventStreamAdapter, CouncilSessionReader } from './events.js';
+import { CouncilFrontDoor, type FrontDoorOptions } from './front-door.js';
 import { buildServiceIdentity } from './identity.js';
 import type { ReadinessObservation } from './readiness.js';
 import type { ServiceIdentity } from './types.js';
@@ -56,8 +57,10 @@ const nowUtc = (): string => FIXED_NOW;
 
 async function withService<T>(
   body: (service: CouncilFrontDoor, origin: string) => Promise<T>,
+  extra: Partial<FrontDoorOptions> = {},
 ): Promise<T> {
   const service = new CouncilFrontDoor({
+    ...extra,
     identity: identity(),
     ports: [0],
     readiness: {
@@ -171,6 +174,41 @@ test('GET /status serves the unchanged diagnostics page', async () => {
 
     assert.equal(service.getState(), 'running');
   });
+});
+
+// ------------------------------------------- notices follow the bindings
+
+const boundEvents: CouncilEventStreamAdapter = { open: () => ({ replay: () => [] }) };
+const boundReader: CouncilSessionReader = { read: () => null };
+
+test('GET /status drops the not-bound notice when the adapters are bound', async () => {
+  await withService(
+    async (_service, origin) => {
+      const body = await (await fetch(`${origin}/status`)).text();
+      assert.equal(
+        body.includes('EVENT_STREAM_ADAPTER_NOT_BOUND'),
+        false,
+        'a bound event stream must not be reported as unbound',
+      );
+      assert.equal(body.includes('adapter not bound'), false, 'no unbound route wording');
+      assert.equal(body.includes('not_bundled'), false, 'no unbound session wording');
+      assert.ok(body.includes('durable event stream'), 'the bound event route is described');
+      assert.ok(body.includes('durable session record'), 'the bound session route is described');
+      assert.ok(body.includes('UI_NOT_BUNDLED'), 'the UI blocker is still named');
+    },
+    { eventsAdapter: boundEvents, sessionReader: boundReader },
+  );
+});
+
+test('GET /status keeps the not-bound notice when only one adapter is bound', async () => {
+  await withService(
+    async (_service, origin) => {
+      const body = await (await fetch(`${origin}/status`)).text();
+      assert.equal(body.includes('EVENT_STREAM_ADAPTER_NOT_BOUND'), true);
+      assert.ok(body.includes('durable session record'), 'the bound reader is still described');
+    },
+    { sessionReader: boundReader },
+  );
 });
 
 // ------------------------------------------------ without packaged assets

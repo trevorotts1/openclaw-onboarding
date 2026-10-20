@@ -8,10 +8,11 @@ front-door agent needs most often.
 
 The deliberation runtime and the nine advisor packs are built and ship
 in this package (see SKILL.md, Build status). Every council request
-resolves the capability and runs through the real authorization
-lifecycle: no run grant, no client-selected route, or no compatible
+resolves the capability and runs through the council service: a service
+that reports not ready, no usable model route, or no compatible
 Command Center release for managed mode means the request refuses with
-the precise typed state and spends no provider requests. A completed
+the precise typed state and spends no provider requests. Convening is
+the approval; there is no separate grant or approval step. A completed
 live session is not yet established on any machine, so no instruction
 below is a claim that live completion is proven; composition, admission,
 and dispatch are the proven live legs.
@@ -30,10 +31,23 @@ and dispatch are the proven live legs.
    are not Round 1 inputs.
 4. Show the prepared brief before spending. Unknowns stay unknown; a
    standard-company placeholder is never presented as a confirmed fact.
-5. Confirm the route: the client's explicitly selected model, or their
-   configured default. Recommendations may be offered with reasons; the
-   selection is always the client's. Confirm the run grant for the
-   session's purpose and budget before the first provider request.
+5. Ask the client which model to use. Run `blackceo-council routes`,
+   list the options, and offer the harness default: the claude-nine
+   configured default on claude-nine, Sonnet on Claude Code, or the
+   latest DeepSeek Flash on DeepSeek (resolved from the provider's model
+   list at run time, never pinned). Never pick silently. Pass the
+   client's choice with `--route` and `--model`; when the client defers,
+   pass nothing and the detected harness decides (`--harness` overrides).
+6. For a question that depends on current facts, research the web first
+   with your own tools and pass the findings with `--fresh-facts FILE`, a
+   JSON array of `{claim, url, title, retrieved_at}`. Keep "From the
+   elder's books" and "From the web today" separate in everything you
+   tell the client, and never fabricate a finding, URL or date.
+7. Convene with `blackceo-council convene --brief FILE` (or `--sample`
+   for the built-in sample decision). Convening is the approval: no
+   grant, no approval prompt. Report the session id, the exact model
+   label, whether it was the client's choice or the harness default, and
+   the links the command prints.
 
 ## Modes
 

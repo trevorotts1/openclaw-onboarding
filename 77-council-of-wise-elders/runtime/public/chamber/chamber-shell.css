@@ -1,0 +1,260 @@
+/*
+ * Chamber shell (unit A): sticky top bar, phase stepper, demo banner, footer
+ * and the three shell dialogs. Colours come only from the --ch-* tokens in
+ * chamber-theme.css; this file holds no colour literals.
+ */
+
+/* ------------------------------------------------------------- top bar */
+
+.ch-top {
+  box-sizing: border-box;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "brand actions" "steps steps";
+  align-items: center;
+  gap: var(--ch-space-2) var(--ch-space-3);
+  padding: var(--ch-space-2) 0;
+  background: var(--ch-bg);
+  border-bottom: 1px solid var(--ch-line);
+}
+
+.ch-top-brand { grid-area: brand; display: flex; align-items: center; gap: var(--ch-space-3); min-width: 0; height: 40px; }
+.ch-top-steps { grid-area: steps; min-width: 0; display: flex; justify-content: center; position: relative; }
+.ch-top-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: var(--ch-space-2); }
+
+.ch-top-logo {
+  flex: none;
+  display: block;
+  width: 64px;
+  height: 26px;
+  background: var(--ch-ink);
+  -webkit-mask: url("blackceo-logo.png") center / contain no-repeat;
+  mask: url("blackceo-logo.png") center / contain no-repeat;
+}
+
+.ch-top-divider { flex: none; width: 1px; height: 18px; background: var(--ch-line-strong); }
+
+.ch-top-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ch-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Wide: one 56px row, stepper centred between brand and buttons. */
+@media (min-width: 1280px) {
+  .ch-top {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-areas: "brand steps actions";
+    height: 56px;
+    padding: 0;
+  }
+}
+
+/* Phone: brand row, button row, then a stepper strip that scrolls inside itself. */
+@media (max-width: 599px) {
+  .ch-top {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "actions" "steps";
+  }
+  .ch-top { position: static; }
+  .ch-top-actions { justify-content: center; flex-wrap: wrap; gap: 6px; }
+  .ch-top-actions .ch-btn { padding-left: 10px; padding-right: 10px; font-size: 13px; white-space: nowrap; }
+  .ch-top-steps { display: block; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .ch-step-list { width: max-content; margin: 0 auto; padding: 0 var(--ch-space-2); }
+}
+
+/* Narrow phones (up to 374px): tighten so the three buttons still share one row. */
+@media (max-width: 374px) {
+  .ch-top-actions { gap: 4px; }
+  .ch-top-actions .ch-btn { padding-left: 7px; padding-right: 7px; font-size: 12px; }
+}
+@media (max-width: 330px) {
+  .ch-top-actions .ch-btn { padding-left: 6px; padding-right: 6px; }
+}
+
+/* ------------------------------------------------------------- stepper */
+
+.ch-step-list { display: flex; align-items: center; gap: 18px; margin: 0; padding: 0; list-style: none; }
+
+.ch-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--ch-ink-faint);
+}
+
+.ch-step-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-ink-faint);
+}
+
+.ch-step[data-status="done"] { color: var(--ch-ink-muted); }
+.ch-step[data-status="done"] .ch-step-dot { background: var(--ch-gold); }
+
+.ch-step[data-status="current"] { color: var(--ch-ink); font-weight: 700; }
+.ch-step[data-status="current"] .ch-step-dot {
+  background: var(--ch-gold);
+  box-shadow: 0 0 0 3px var(--ch-gold-soft);
+}
+
+.ch-step[data-status="skipped"] { color: var(--ch-ink-faint); text-decoration: line-through; }
+.ch-step[data-status="skipped"] .ch-step-dot { background: transparent; box-shadow: inset 0 0 0 1px var(--ch-ink-faint); }
+
+/* ------------------------------------------------------------- banner, footer */
+
+/* Space between the top bar or banner and the decision panel. */
+.ch-app .ch-main { padding-top: var(--ch-space-4); }
+
+.ch-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2) var(--ch-space-3);
+  margin: var(--ch-space-3) 0 0;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  background: var(--ch-gold-soft);
+  border: 1px solid var(--ch-gold);
+  border-radius: var(--ch-radius-card);
+  color: var(--ch-ink);
+}
+.ch-banner[hidden] { display: none; }
+.ch-banner-text { margin: 0; flex: 1 1 18rem; font-size: 14px; line-height: 1.4; }
+
+.ch-noscript { margin: var(--ch-space-3) 0 0; padding: var(--ch-space-3); border: 1px solid var(--ch-gold); border-radius: var(--ch-radius-card); }
+
+.ch-foot { margin: var(--ch-space-5) 0 0; padding: var(--ch-space-3) 0 0; border-top: 1px solid var(--ch-line); }
+.ch-foot-text { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ch-ink-faint); text-align: center; }
+
+/* ------------------------------------------------------------- dialogs (shared bits) */
+
+.ch-how, .ch-sessions, .ch-composer { box-sizing: border-box; }
+.ch-dialog h2 { margin: 0 0 var(--ch-space-3); font-size: 20px; font-weight: 700; color: var(--ch-ink); }
+.ch-dialog[open] { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.ch-dialog a.ch-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* How it works */
+.ch-how-intro, .ch-how-note { margin: 0 0 var(--ch-space-3); font-size: 14px; line-height: 1.55; color: var(--ch-ink-muted); }
+.ch-how-note { font-size: 12px; color: var(--ch-ink-faint); }
+.ch-how-phases { margin: 0 0 var(--ch-space-3); padding-left: 1.25rem; display: grid; gap: var(--ch-space-2); font-size: 14px; line-height: 1.5; color: var(--ch-ink-muted); }
+.ch-how-phases strong { color: var(--ch-ink); }
+.ch-how-actions, .ch-sessions-actions { display: flex; flex-wrap: wrap; gap: var(--ch-space-2); }
+
+/* Past sessions */
+.ch-sessions-status { margin: 0 0 var(--ch-space-3); font-size: 14px; line-height: 1.5; color: var(--ch-ink-muted); }
+.ch-sessions-status:empty { display: none; }
+.ch-sessions-hint { margin: var(--ch-space-3) 0 0; font-size: 14px; line-height: 1.5; color: var(--ch-ink-muted); }
+.ch-sessions-list { list-style: none; margin: 0 0 var(--ch-space-3); padding: 0; display: grid; gap: var(--ch-space-2); }
+.ch-sessions-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  text-align: left;
+  font: inherit;
+  color: var(--ch-ink);
+  background: var(--ch-surface-3);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-card);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.ch-sessions-item:hover { border-color: var(--ch-gold); }
+.ch-sessions-item:focus-visible { outline: 2px solid var(--ch-gold); outline-offset: 2px; }
+.ch-sessions-item[aria-current="true"] { border-color: var(--ch-gold); box-shadow: inset 0 0 0 1px var(--ch-gold); }
+.ch-sessions-q { font-size: 14px; font-weight: 600; }
+.ch-sessions-meta { font-size: 12px; color: var(--ch-ink-muted); }
+
+/* New question */
+.ch-composer { width: min(640px, 100vw - 32px); }
+.ch-composer-form { display: grid; gap: var(--ch-space-3); }
+.ch-composer-form fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.ch-composer-label { display: block; margin: 0 0 6px; padding: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--ch-ink-muted); }
+.ch-composer-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--ch-ink-faint); }
+
+.ch-composer-input,
+.ch-composer-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ch-ink);
+  background: var(--ch-surface-1);
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-card);
+}
+textarea.ch-composer-input { resize: vertical; }
+.ch-composer-input:focus-visible,
+.ch-composer-select:focus-visible { outline: 2px solid var(--ch-gold); outline-offset: 2px; }
+
+.ch-composer-option-rows { display: grid; gap: var(--ch-space-2); }
+.ch-composer-option-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 9.5rem; gap: var(--ch-space-2); align-items: center; }
+.ch-composer-letter {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ch-ink);
+  background: var(--ch-surface-3);
+  border-radius: var(--ch-radius-chip);
+}
+
+.ch-composer-routes-list { display: grid; gap: var(--ch-space-2); }
+.ch-composer-route {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--ch-space-2);
+  align-items: start;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  background: var(--ch-surface-3);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-card);
+  cursor: pointer;
+}
+.ch-composer-route:has(input:checked) { border-color: var(--ch-gold); box-shadow: inset 0 0 0 1px var(--ch-gold); }
+.ch-composer-route:has(input:focus-visible) { outline: 2px solid var(--ch-gold); outline-offset: 2px; }
+.ch-composer-route[data-disabled="true"] { cursor: not-allowed; opacity: .75; }
+.ch-composer-route input { margin: 3px 0 0; accent-color: var(--ch-gold); grid-row: 1 / span 3; }
+.ch-composer-route-name { font-size: 14px; font-weight: 700; color: var(--ch-ink); overflow-wrap: anywhere; }
+.ch-composer-route-line { font-size: 12px; line-height: 1.45; color: var(--ch-ink-muted); overflow-wrap: anywhere; }
+
+.ch-composer-error {
+  padding: var(--ch-space-2) var(--ch-space-3);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ch-ink);
+  background: var(--ch-surface-3);
+  border: 1px solid var(--ch-gold);
+  border-radius: var(--ch-radius-card);
+  overflow-wrap: anywhere;
+}
+.ch-composer-error[hidden] { display: none; }
+.ch-composer-error p { margin: 0; }
+.ch-composer-error p + p { margin-top: 4px; }
+.ch-composer-error-code { font-weight: 700; }
+
+.ch-composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ch-space-2) var(--ch-space-3); }
+.ch-composer-approval { flex: 1 1 14rem; margin: 0; font-size: 12px; line-height: 1.45; color: var(--ch-ink-muted); }
+.ch-composer-actions .ch-btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 599px) {
+  .ch-composer-option-row { grid-template-columns: 24px minmax(0, 1fr); }
+  .ch-composer-option-row .ch-composer-select { grid-column: 2; }
+  .ch-composer-actions .ch-btn { width: 100%; }
+}

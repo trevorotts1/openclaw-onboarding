@@ -6,8 +6,8 @@
 // over ONE backend. A bare door leaves those unbound and /events answers 501.
 //
 // Host-supplied optional deps stay unpassed: materialCatalog (needs an
-// installed Skill 22 export) and routeBudget (needs a verified token->byte
-// conversion) remain honestly null, so readiness reports them not-ready.
+// installed Skill 22 export) remains honestly null, so readiness reports it
+// not-ready. Route limits are always bound (measured or conservative default).
 //
 // Run (from the skill root): runtime/node_modules/.bin/tsx runtime/scripts/service-launch.mjs
 //        (tsx is installed inside runtime/ only; it is required: the launcher imports src/, and the tsc output in

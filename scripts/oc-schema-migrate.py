@@ -504,6 +504,86 @@ def _find_agents_props(doc):
     return None
 
 
+# ─── skills.workshop.autonomous.mode (OpenClaw 2026.10.5) ────────────────────
+# 2026.10.5 retired Skill Workshop proposals: `autonomous.mode` accepts only
+# "off" | "auto" (2026.10.1-2026.10.4 also accept "propose"), and
+# `skills.workshop` is additionalProperties:false, so a config still holding
+# "propose" (or approvalPolicy / maxPending) is REJECTED and EVERY openclaw CLI
+# command exits 1. The vendor's own `openclaw doctor --fix` maps propose -> "off"
+# and drops approvalPolicy / maxPending (docs/gateway/doctor/config-migrations.md);
+# this is the same map, driven by the installed binary's schema so older builds
+# that still accept "propose" are left exactly as they are. "off" is also the
+# only value that keeps the burn-guard intent (no background learning review).
+WORKSHOP_MODE_MAP = {'propose': 'off'}
+WORKSHOP_RETIRED_KEYS = ('approvalPolicy', 'maxPending')
+
+
+def _walk_props(doc, path):
+    node = doc
+    for part in path:
+        node = _resolve_ref(doc, node)
+        props = node.get('properties') if isinstance(node, dict) else None
+        if not isinstance(props, dict) or part not in props:
+            return None
+        node = props[part]
+    return _resolve_ref(doc, node)
+
+
+def _workshop_schema(doc):
+    """(allowed_modes, workshop_property_names), or None when this build has no
+    skills.workshop.autonomous.mode at all. Raises Undetermined if the key exists
+    but its allowed values cannot be read."""
+    mode = _walk_props(doc, ('skills', 'workshop', 'autonomous', 'mode'))
+    if mode is None:
+        return None
+    allowed = set()
+    stack = [mode]
+    while stack:
+        node = _resolve_ref(doc, stack.pop())
+        if not isinstance(node, dict):
+            continue
+        if isinstance(node.get('const'), str):
+            allowed.add(node['const'])
+        allowed.update(v for v in (node.get('enum') or []) if isinstance(v, str))
+        stack.extend((node.get('anyOf') or []) + (node.get('oneOf') or []))
+    if not allowed:
+        raise Undetermined('skills.workshop.autonomous.mode exists in the schema but lists no allowed values')
+    ws = _walk_props(doc, ('skills', 'workshop'))
+    return allowed, set((ws or {}).get('properties') or {})
+
+
+def workshop_target(allowed):
+    """The value the burn guard should write: "propose" where the build still
+    accepts it (the proven behaviour on 2026.10.1-2026.10.4), else "off"."""
+    for want in ('propose', 'off'):
+        if want in allowed:
+            return want
+    raise Undetermined('build accepts neither "propose" nor "off"')
+
+
+def workshop_transform(cfg, allowed, props):
+    """Mutate cfg in place; return the list of changes made (empty = valid already)."""
+    skills = cfg.get('skills')
+    ws = skills.get('workshop') if isinstance(skills, dict) else None
+    if not isinstance(ws, dict):
+        return []
+    changes = []
+    auto = ws.get('autonomous')
+    mode = auto.get('mode') if isinstance(auto, dict) else None
+    if mode is not None and mode not in allowed:
+        new = WORKSHOP_MODE_MAP.get(mode) if isinstance(mode, str) else None
+        if new not in allowed:
+            raise Undetermined('skills.workshop.autonomous.mode holds a value this build rejects '
+                               'and no migration is known for it - refusing to guess')
+        auto['mode'] = new
+        changes.append('skills.workshop.autonomous.mode "%s" -> "%s"' % (mode, new))
+    for key in WORKSHOP_RETIRED_KEYS:
+        if key in ws and key not in props:
+            del ws[key]
+            changes.append('removed retired skills.workshop.%s' % key)
+    return changes
+
+
 def _usage(stream=sys.stderr):
     stream.write(
         'Usage:\n'
@@ -511,7 +591,9 @@ def _usage(stream=sys.stderr):
         '  oc-schema-migrate.py apply     <config> <out>    # 0=written 3=refused 1=write failed\n'
         '  oc-schema-migrate.py verify    <before> <after>  # 0=proven 1=FAILED 3=uncheckable\n'
         '  oc-schema-migrate.py workspace <config>          # prints the resolved workspace\n'
-        '  oc-schema-migrate.py schema-keys <schema.json>   # 0=answered 3=undeterminable\n')
+        '  oc-schema-migrate.py schema-keys <schema.json>   # 0=answered 3=undeterminable\n'
+        '  oc-schema-migrate.py workshop-target  <schema.json>                # prints propose|off (nothing if the build has no such key)\n'
+        '  oc-schema-migrate.py workshop-migrate <schema.json> <config> <out> # 0=ok (out written ONLY if changed) 3=refused\n')
 
 
 def main(argv):
@@ -609,6 +691,38 @@ def main(argv):
             return EXIT_UNDETERMINED
         for key in keys:
             print(key)
+        return EXIT_OK
+
+    if cmd in ('workshop-target', 'workshop-migrate'):
+        if len(argv) != (3 if cmd == 'workshop-target' else 5):
+            _usage()
+            return EXIT_USAGE
+        try:
+            found = _workshop_schema(_load(argv[2]))
+            if found is None:
+                if cmd == 'workshop-migrate':
+                    print('n/a: this build has no skills.workshop.autonomous.mode')
+                return EXIT_OK
+            allowed, props = found
+            if cmd == 'workshop-target':
+                print(workshop_target(allowed))
+                return EXIT_OK
+            cfg = _load(argv[3])
+            changes = workshop_transform(cfg, allowed, props)
+        except Undetermined as e:
+            sys.stderr.write('REFUSED: %s\n' % e)
+            return EXIT_UNDETERMINED
+        if not changes:
+            print('unchanged')
+            return EXIT_OK
+        try:
+            with open(argv[4], 'w', encoding='utf-8') as fh:
+                json.dump(cfg, fh, indent=_sniff_indent(argv[3]), ensure_ascii=False)
+                fh.write('\n')
+        except Exception as e:
+            sys.stderr.write('WRITE FAILED: could not write %s: %s\n' % (argv[4], e))
+            return EXIT_FAIL
+        print('migrated: ' + '; '.join(changes))
         return EXIT_OK
 
     _usage()

@@ -14,7 +14,19 @@
 # restart) and the reconciler flips every review job to enabled:false — KEPT, never
 # deleted. This script sets the key when it is unset or "auto", leaves an explicit
 # "propose"/"off" alone, then reads the review jobs back and reports:
-#   burn-guard: mode=propose, review crons disabled N (already off M)
+#   burn-guard: mode=<propose|off>, review crons disabled N (already off M)
+#
+# THE VALUE IS CHOSEN BY THE INSTALLED BUILD'S OWN SCHEMA, never hard-coded. OpenClaw
+# 2026.10.5 retired Skill Workshop proposals: the key accepts only "off" | "auto", and a
+# config still holding "propose" is REJECTED — every openclaw CLI command then exits 1
+# ("Invalid config ... skills.workshop.autonomous.mode"). So: builds that still accept
+# "propose" (2026.10.1-2026.10.4) get "propose"; 2026.10.5+ get "off" (the vendor's own
+# `doctor --fix` maps propose -> off; "off" disables the background review, which is the
+# burn-guard intent). A box already holding "propose" on a build that rejects it is
+# migrated IN THE FILE first (the CLI cannot read or write a config it rejects), via
+# `oc-schema-migrate.py workshop-migrate`; that is the only time this writes without
+# `config set`, and it takes the same backup. Report line then reads:
+#   burn-guard: mode=off, review crons disabled 0 (already off 0); migrated: ... backup ...
 #
 # CONTRACT: idempotent; backs up openclaw.json ONLY when it writes; never restarts the
 # gateway; any failure (no CLI, key unknown on this build, write rejected, cron list
@@ -51,6 +63,41 @@ print(len(jobs), sum(1 for j in jobs if j.get("enabled") is not False))
 PYEOF
 }
 
+# Ask the installed build what it accepts. A missing helper/schema falls back to the
+# pre-2026.10.5 behaviour ("propose"); `config set` below is validated by the build itself,
+# so a wrong guess is rejected (ADVISORY), never written.
+MIGRATOR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/oc-schema-migrate.py"
+TARGET="propose"; mig_note=""
+schema_f="$(mktemp "${TMPDIR:-/tmp}/burn-guard-schema.XXXXXX" 2>/dev/null)" || schema_f=""
+if [ -n "$schema_f" ] && [ -f "$MIGRATOR" ] && command -v python3 >/dev/null 2>&1 \
+   && openclaw config schema > "$schema_f" 2>/dev/null; then
+  # No answer (unparseable schema, or a build with no such key) = no migration: skip to the old path.
+  t="$(python3 "$MIGRATOR" workshop-target "$schema_f" 2>/dev/null)" && [ -n "$t" ] && TARGET="$t" || t=""
+  staged="$OC_JSON.burn-guard-staged.$$"
+  if [ -z "$t" ]; then
+    :
+  elif mig="$(python3 "$MIGRATOR" workshop-migrate "$schema_f" "$OC_JSON" "$staged" 2>&1)"; then
+    case "$mig" in
+      migrated:*)
+        bk="$OC_JSON.burn-guard-$(date +%Y%m%dT%H%M%S)"
+        cp -p "$OC_JSON" "$bk" 2>/dev/null || bk=""
+        # `cat >` writes THROUGH the existing inode: owner/group/mode survive (see oc-atomic-upgrade.sh).
+        if [ -n "$bk" ] && cat "$staged" > "$OC_JSON" 2>/dev/null; then
+          mig_note="; $mig, backup $bk"
+        else
+          [ -n "$bk" ] && rm -f "$bk"
+          rm -f "$staged" "$schema_f"
+          echo "$P ADVISORY this build rejects the workshop mode in openclaw.json but the file could not be migrated — left unchanged"; exit 0
+        fi ;;
+    esac
+  else
+    rm -f "$staged" "$schema_f"
+    echo "$P ADVISORY this build rejects the workshop mode in openclaw.json and it could not be migrated (${mig:0:120}) — left unchanged"; exit 0
+  fi
+  rm -f "$staged"
+fi
+[ -n "$schema_f" ] && rm -f "$schema_f"
+
 cur="$(openclaw config get skills.workshop.autonomous.mode 2>&1 | tr -d '\r')"
 case "$cur" in
   *"valid but unset"*) prior="unset" ;;
@@ -59,15 +106,15 @@ case "$cur" in
 esac
 
 before="$(review_counts)"
-mode="$prior"; note=""
+mode="$prior"; note="$mig_note"
 case "$prior" in
   unset|auto)
     bk="$OC_JSON.burn-guard-$(date +%Y%m%dT%H%M%S)"
     cp -p "$OC_JSON" "$bk" 2>/dev/null || bk=""
-    if openclaw config set skills.workshop.autonomous.mode propose >/dev/null 2>&1; then
+    if openclaw config set skills.workshop.autonomous.mode "$TARGET" >/dev/null 2>&1; then
       # A root-run write must hand openclaw.json back to the gateway user (uid 1000 on VPS).
       [ "$(id -u)" = "0" ] && [ -f /data/.openclaw/openclaw.json ] && chown 1000:1000 /data/.openclaw/openclaw.json 2>/dev/null
-      mode="propose"; note="; set from $prior, backup ${bk:-FAILED}"
+      mode="$TARGET"; note="; set from $prior, backup ${bk:-FAILED}"
     else
       [ -n "$bk" ] && rm -f "$bk"   # nothing changed, so no backup to keep
       echo "$P ADVISORY could not set skills.workshop.autonomous.mode (still $prior) — review crons stay ON until it is set"; exit 0

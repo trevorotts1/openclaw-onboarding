@@ -7,9 +7,10 @@
  * configuration names (the Claude Code / Claude-Nine launcher found
  * by route discovery) as a subprocess, in print mode, and reads its
  * structured JSON result envelope. The harness keeps its own routing,
- * its own configured model, and its own credentials: this delegate
- * passes NO model flag (the council never prescribes a model to the
- * harness), scrapes no OAuth token or cookie, and manufactures no API
+ * and its own credentials. It passes NO model flag unless the pinned
+ * route snapshot names a model (options.model, the client's explicit
+ * choice or the harness default the route choice pinned); otherwise the
+ * harness's own configured model applies. It scrapes no OAuth token or cookie, and manufactures no API
  * access from a subscription. What the harness resolves is reported
  * back to the CWE-010 guard by the bridge resolver, never invented
  * here.
@@ -57,6 +58,12 @@ export interface HostCallTransportOptions {
   configDir?: string;
   /** Extra environment for the child, merged over the inherited env. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Wire model the pinned route snapshot names. Non-null adds
+   * `--model <model>` to the harness call; null/absent passes no model
+   * flag, so the harness's own configured default applies.
+   */
+  model?: string | null;
   /** Verified operation deadline. Default: Section 15.8 initial default. */
   timeoutMs?: number;
   /** Injectable spawn for embedding; production uses node:child_process. */
@@ -88,6 +95,11 @@ export class SubprocessHostCallTransport implements ModelTransport {
     return this.options.executable;
   }
 
+  /** Wire model passed as --model, or null when the harness default applies. */
+  get model(): string | null {
+    return this.options.model ?? null;
+  }
+
   async generate(request: TransportRequest): Promise<TransportResponse> {
     const spawnImpl = this.options.spawnImpl ?? spawn;
     const timeoutMs = this.options.timeoutMs ?? DEFAULT_HOST_CALL_TIMEOUT_MS;
@@ -102,7 +114,9 @@ export class SubprocessHostCallTransport implements ModelTransport {
       try {
         child = spawnImpl(
           this.options.executable,
-          ['--print', '--output-format', 'json'],
+          this.options.model
+            ? ['--print', '--output-format', 'json', '--model', this.options.model]
+            : ['--print', '--output-format', 'json'],
           { env, stdio: ['pipe', 'pipe', 'pipe'] },
         );
       } catch (err) {
