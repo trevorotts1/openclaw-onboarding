@@ -127,6 +127,21 @@
 #                                    20s ExitTimeOut. 0 disables (and says so).
 #   Non-numeric values of the three timeouts above fall back to their defaults.
 #
+# ═══════════════════════════════════════════════════════════════════════════
+# WHICH OPENCLAW? THE ONE THE SUPERVISOR LAUNCHES (CAN015), NEVER THE ONE ON PATH
+# ═══════════════════════════════════════════════════════════════════════════
+# `openclaw` on PATH can be a different copy (nvm, brew, a stale shim) than the
+# tree launchd/systemd runs (`node <prefix>/lib/node_modules/openclaw/dist/index.js`).
+# Measuring or installing through PATH once logged "binary already at 2026.10.5 -
+# no install needed" and exited 0 while the gateway kept running 2026.10.4.
+# oc-supervisor-install.py reads the plist ProgramArguments / systemd ExecStart;
+# this script then measures package.json of THAT tree, installs with THAT node's
+# npm into THAT prefix (`npm install -g --prefix`), puts that prefix/node first on
+# PATH for every `openclaw` call, and only claims success when the package the
+# gateway launched is at the target AND the live gateway process was started from
+# it and answers /healthz. A disagreeing PATH copy is logged and ignored. A
+# supervisor definition that names no openclaw package REFUSES (never guesses).
+#
 # ⚠️ INTERPRETER: written for stock /bin/bash 3.2.57, which is what the fleet's
 # Macs run. No associative arrays, no `mapfile`, no `${x^^}`, and never a
 # heredoc nested inside `$( )` — that last one aborts at PARSE time on 3.2 and
@@ -137,6 +152,8 @@ set -uo pipefail
 VERSION="1.0.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
+SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
+ORIG_PATH="$PATH"
 
 MODE=""
 TARGET_VERSION=""
@@ -168,6 +185,9 @@ OC_ROOT_DIR=""
 LOCK_FILE=""
 SUPERVISOR=""
 UIDN=""
+SUP_PKG_ROOT=""   # the openclaw package the supervisor launches ("" = none found: PATH is all there is)
+SUP_PREFIX=""
+SUP_ENTRY=""
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
@@ -223,10 +243,56 @@ _running_in_container() {
 # ── MEASURED version. Never a recorded one: the fleet record for the box that
 # ── went dark was two minor versions stale, and every conclusion drawn from it
 # ── was wrong.
-_measured_version() {
-  command -v openclaw >/dev/null 2>&1 || { printf ''; return 0; }
-  openclaw --version 2>/dev/null | head -1 \
+_path_version() {
+  PATH="$ORIG_PATH" command -v openclaw >/dev/null 2>&1 || { printf ''; return 0; }
+  PATH="$ORIG_PATH" openclaw --version 2>/dev/null | head -1 \
     | grep -oE '[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.]+)?' | head -1
+}
+# CAN015: the version is the one the supervisor's package.json says, not whatever
+# `openclaw` PATH happens to resolve to.
+_measured_version() {
+  if [ -n "$SUP_PKG_ROOT" ]; then
+    python3 "$SUP_HELPER" version 2>/dev/null
+    return 0
+  fi
+  _path_version
+}
+
+# CAN015: find the install the supervisor launches. Sets globals, so it must run
+# in the parent shell (never inside $( )). rc 0 = resolved, or no supervisor
+# definition at all (PATH is then the only install and nothing can disagree);
+# rc 1 = a supervisor definition exists but names no installed openclaw.
+_resolve_supervisor_install() {
+  local out rc node_dir pv
+  out="$(python3 "$SUP_HELPER" show 2>/dev/null)"; rc=$?
+  [ "$rc" -eq 1 ] && return 0
+  [ "$rc" -eq 0 ] || return 1
+  SUP_PKG_ROOT="$(printf '%s\n' "$out" | sed -n 's/^pkg_root=//p' | head -1)"
+  SUP_PREFIX="$(printf '%s\n' "$out" | sed -n 's/^prefix=//p' | head -1)"
+  SUP_ENTRY="$(printf '%s\n' "$out" | sed -n 's/^entry=//p' | head -1)"
+  node_dir="$(printf '%s\n' "$out" | sed -n 's/^node=//p' | head -1)"
+  [ -n "$node_dir" ] && node_dir="$(dirname "$node_dir")"
+  [ -n "$SUP_PKG_ROOT" ] && [ -n "$SUP_PREFIX" ] || return 1
+  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
+  [ -d "$SUP_PREFIX/bin" ] && PATH="$SUP_PREFIX/bin:$PATH"
+  export PATH
+  # THAT node's npm, unless the operator pinned one.
+  [ -z "${OC_ATOMIC_NPM:-}" ] && [ -n "$node_dir" ] && [ -x "$node_dir/npm" ] && NPM_BIN="$node_dir/npm"
+  _say "supervisor install: $SUP_PKG_ROOT  (prefix $SUP_PREFIX, npm $NPM_BIN, measured $(_measured_version))"
+  pv="$(_path_version)"
+  if [ -n "$pv" ] && [ "$pv" != "$(_measured_version)" ]; then
+    _warn "PATH openclaw ($(PATH="$ORIG_PATH" command -v openclaw)) is $pv but the gateway launches $(_measured_version) - these DISAGREE; upgrading the supervisor's install and ignoring the PATH copy"
+  fi
+  return 0
+}
+
+# Install into the supervisor's prefix; with no supervisor definition, as before.
+_npm_install() {
+  if [ -n "$SUP_PREFIX" ]; then
+    "$NPM_BIN" install -g --prefix "$SUP_PREFIX" "openclaw@$1"
+  else
+    "$NPM_BIN" install -g "openclaw@$1"
+  fi
 }
 
 # ── Supervisor detection. Reports what would RESPAWN the gateway, because that
@@ -571,6 +637,33 @@ _prove_started() {
   return 0
 }
 
+# ── CAN015: success means the GATEWAY PROCESS runs the target, not that some
+# ── openclaw on PATH reports it. The package the supervisor launches must measure
+# ── the target now, and (launchd) the live pid's command line must be that very
+# ── launch path. (ps -o args= shows arguments only; the environment is never read.)
+_prove_gateway_on_target() {
+  local v pid args
+  v="$(_measured_version)"
+  if [ "$v" != "$TARGET_VERSION" ]; then
+    _err "the package the gateway launches measures '${v:-nothing}', not $TARGET_VERSION"
+    return 1
+  fi
+  if [ "$SUPERVISOR" = "launchd" ] && [ -n "$SUP_ENTRY" ]; then
+    pid="$(_gateway_pid)"
+    args="$(ps -o args= -p "$pid" 2>/dev/null)"
+    if [ -z "$args" ]; then
+      _warn "could not read the gateway process arguments (pid ${pid:-none}); package version and /healthz are the evidence"
+    else
+      case "$args" in
+        *"$SUP_ENTRY"*) ;;
+        *) _err "the live gateway (pid $pid) was not launched from $SUP_ENTRY"; return 1 ;;
+      esac
+    fi
+  fi
+  _ok "gateway pid $(_gateway_pid) runs $SUP_PKG_ROOT at $v (target $TARGET_VERSION), /healthz 200"
+  return 0
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ROLLBACK — undoes, in reverse, exactly what was recorded as done.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -600,7 +693,7 @@ _rollback() {
   if [ "$STATE_BINARY_CHANGED" = "1" ] && [ -n "$OLD_VERSION" ]; then
     _say "reinstalling the previous binary: openclaw@$OLD_VERSION"
     # The install's exit code is a claim; the MEASURED version is the result.
-    "$NPM_BIN" install -g "openclaw@$OLD_VERSION" >/dev/null 2>&1
+    _npm_install "$OLD_VERSION" >/dev/null 2>&1
     if [ "$(_measured_version)" = "$OLD_VERSION" ]; then
       _ok "binary restored to openclaw@$OLD_VERSION (measured)"
       proved="$proved binary=$OLD_VERSION"
@@ -640,7 +733,7 @@ _rollback() {
     echo "  ##  Previous build: ${OLD_VERSION:-<unknown>}" >&2
     echo "  ##  Repair by hand:" >&2
     echo "  ##    cat '${CONFIG_BACKUP:-BACKUP}' > '$OC_CONFIG'" >&2
-    echo "  ##    npm install -g openclaw@${OLD_VERSION:-<version>}" >&2
+    echo "  ##    npm install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@${OLD_VERSION:-<version>}" >&2
     echo "  ##    launchctl bootstrap gui/\$(id -u) \\" >&2
     echo "  ##      \$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" >&2
     echo "  ##    launchctl kickstart gui/\$(id -u)/$GATEWAY_LABEL" >&2
@@ -679,11 +772,20 @@ do_detect() {
   local verdict json rc mv
   _resolve_root
   SUPERVISOR="$(_detect_supervisor)"
+  if command -v python3 >/dev/null 2>&1 && [ -f "$SUP_HELPER" ] && ! _resolve_supervisor_install; then
+    echo "install    : UNRESOLVABLE (the supervisor definition names no installed openclaw package)"
+    SUP_PKG_ROOT=""
+  fi
   mv="$(_measured_version)"
 
   echo "config     : $OC_CONFIG"
   echo "supervisor : $SUPERVISOR"
-  echo "version    : ${mv:-UNMEASURABLE} (MEASURED via \`openclaw --version\`, never a recorded value)"
+  if [ -n "$SUP_PKG_ROOT" ]; then
+    echo "install    : $SUP_PKG_ROOT (the package the supervisor launches; PATH copy: $(_path_version | grep . || echo none))"
+    echo "version    : ${mv:-UNMEASURABLE} (MEASURED from that package.json, never a recorded value)"
+  else
+    echo "version    : ${mv:-UNMEASURABLE} (MEASURED via \`openclaw --version\`, never a recorded value)"
+  fi
 
   if ! command -v python3 >/dev/null 2>&1; then
     echo "shape      : UNDETERMINED (python3 is not available, so the config was never parsed)"
@@ -741,6 +843,16 @@ do_upgrade() {
   if [ ! -f "$MIGRATOR" ]; then
     _refuse_banner "The transform engine is MISSING at $MIGRATOR." \
       "Nothing was changed. Re-run update-skills.sh to deliver scripts/ to this box."
+    return 78
+  fi
+  if [ ! -f "$SUP_HELPER" ]; then
+    _refuse_banner "The supervisor-install resolver is MISSING at $SUP_HELPER." \
+      "Nothing was changed. Re-run update-skills.sh to deliver scripts/ to this box."
+    return 78
+  fi
+  if ! _resolve_supervisor_install; then
+    _refuse_banner "The gateway supervisor definition (LaunchAgent plist / systemd unit) does not name an installed openclaw package, so the install it launches cannot be measured. PATH is NOT a substitute: it can be a different copy at a different version." \
+      "Nothing was changed."
     return 78
   fi
   if ! command -v openclaw >/dev/null 2>&1; then
@@ -806,6 +918,9 @@ do_upgrade() {
   _say "version   : $OLD_VERSION (measured)  ->  $TARGET_VERSION (target)"
   _say "config    : $OC_CONFIG  [shape: $shape]"
 
+  # ponytail: "already on target" trusts the supervisor's package.json; it cannot tell a gateway
+  # process started BEFORE a manual install (npm resets file mtimes, so no mtime test) - add a
+  # pid-start vs package-ctime check if that case shows up.
   if [ "$OLD_VERSION" = "$TARGET_VERSION" ] && [ "$shape" != "LEGACY_LIST" ]; then
     # "Nothing to do" is only true if the installed build actually accepts the config.
     if [ "$shape" = "NO_CONFIG" ] || _config_valid_for_installed_binary; then
@@ -822,11 +937,11 @@ do_upgrade() {
     echo "    2. bootout $SELFHEAL_LABEL, then bootout $GATEWAY_LABEL (NOT kickstart)"
     echo "    3. prove quiescence: no pid, and config sha stable for ${QUIESCE_PROOF_SECONDS}s"
     echo "    4. back up the config"
-    echo "    5. $NPM_BIN install -g openclaw@$TARGET_VERSION"
+    echo "    5. $NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION   (the supervisor's install: ${SUP_PKG_ROOT:-none found, PATH})"
     echo "    6. ask the NEW binary: openclaw config schema  -> which keys does \`agents\` accept?"
     echo "    7. if it accepts \`entries\` and not \`list\`: migrate + verify losslessness; else leave the config alone"
     echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary; rejected = roll back"
-    echo "    8. bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s"
+    echo "    8. bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
     echo "    9. release the lock, re-arm $SELFHEAL_LABEL"
     echo "    Any failure from step 3 onward: restore config AND binary, start the gateway."
     return 0
@@ -859,8 +974,8 @@ do_upgrade() {
   # ── 5. INSTALL THE NEW BINARY (while nothing is running) ───────────────────
   if [ "$OLD_VERSION" != "$TARGET_VERSION" ]; then
     _say "installing openclaw@$TARGET_VERSION ..."
-    if ! "$NPM_BIN" install -g "openclaw@$TARGET_VERSION" >/dev/null 2>&1; then
-      _rollback "\`$NPM_BIN install -g openclaw@$TARGET_VERSION\` FAILED"
+    if ! _npm_install "$TARGET_VERSION" >/dev/null 2>&1; then
+      _rollback "\`$NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION\` FAILED"
       return $?
     fi
     STATE_BINARY_CHANGED=1
@@ -999,6 +1114,10 @@ do_upgrade() {
   fi
   if ! _prove_started; then
     _rollback "the gateway did not stay up after the upgrade"
+    return $?
+  fi
+  if ! _prove_gateway_on_target; then
+    _rollback "the gateway is not running the target build - exit 0 would be a false success"
     return $?
   fi
 
