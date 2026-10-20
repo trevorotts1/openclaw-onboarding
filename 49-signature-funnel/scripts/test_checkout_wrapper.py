@@ -10,6 +10,8 @@ network, no paid call). Proves:
     produce desktop and mobile wireframes plus desktop and mobile mockups (20 images);
   * the placed page-result validates against collect_launch_receipts.validate_result, is capped at
     authored / L0, has no native binding, and names the native-form and stub blockers;
+  * the adapter's own command (launch-adapters.example.json, no --model) runs to a valid result
+    once the staged design-prose-checkout.json is in the work dir, and the wrapper refuses without it;
   * fail-closed, with no result left behind: a request for another role, a missing manuscript, a
     manuscript that names card fields, a section-count mismatch.
 
@@ -124,6 +126,54 @@ class TestFailClosed(CheckoutWrapperCase):
         landing = S71 / "tests" / "fixtures" / "copy_examples" / "standard-path-b.md"
         self.refused(self.wrap(manuscript=landing), "5 canonical sections")
         self.assertFalse(any((self.run_dir / "desktop-wireframe").glob("*.png")))
+
+
+def measured_design_prose(chars=14500):
+    """Unique pseudo-sentences standing in for a run's measured design system (the size of a real one)."""
+    syl = ["ba", "ke", "lo", "mi", "su", "ta", "ve", "zo", "ri", "na"]
+    words = [a + b + c + d for a in syl for b in syl for c in syl for d in syl]
+    text, state = [], 7
+    while sum(len(t) + 1 for t in text) < chars:
+        sentence = []
+        for _ in range(12):
+            state = (state * 1103515245 + 12345) % 2147483648
+            sentence.append(words[state % len(words)])
+        text.append(" ".join(sentence) + ".")
+    return {"rules_md": "\n".join(text)}
+
+
+class TestAdapterCommand(CheckoutWrapperCase):
+    """Runs the checkout adapter command exactly as launch-adapters.example.json spells it: no --model."""
+
+    def adapter_cmd(self):
+        raw = json.loads((HERE.parent / "launch-adapters.example.json").read_text(encoding="utf-8"))
+        subs = {"{request}": self.request_path, "{result}": self.result_path, "{work_dir}": self.td,
+                "/path/to/49-signature-funnel": HERE.parent, "/path/to/71-blackceo-signature-page": S71,
+                "<approved brand file>": self.brand_path, "<recorded brand owner>": "blackceo",
+                "<image cap>": "2", "<A|B|C>": "C"}
+        cmd = []
+        for arg in raw["adapters"]["checkout"]["command"]:
+            for key, value in subs.items():
+                arg = arg.replace(key, str(value))
+            cmd.append(arg)
+        self.assertNotIn("--model", cmd)
+        self.assertIn("--design-prose", cmd)
+        (self.td / "copy-checkout.md").write_text(MANUSCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        return cmd
+
+    def test_adapter_command_with_staged_design_prose_and_no_model_succeeds(self):
+        (self.td / "design-prose-checkout.json").write_text(json.dumps(measured_design_prose()), encoding="utf-8")
+        proc = subprocess.run(self.adapter_cmd(), capture_output=True, text=True, timeout=600)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        result = json.loads(self.result_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipts.validate_result(result, self.request), [])
+        self.assertEqual(len([a for a in result["artifacts"] if "/visual-mockup/" in a["path"] and a["path"].endswith(".png")]), 10)
+
+    def test_adapter_command_without_the_staged_design_prose_fails_closed(self):
+        proc = subprocess.run(self.adapter_cmd(), capture_output=True, text=True, timeout=600)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("design-prose-checkout.json", proc.stderr)
+        self.assertFalse(self.result_path.exists())
 
 
 if __name__ == "__main__":
