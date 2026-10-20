@@ -1,0 +1,125 @@
+{
+  "id": "signature-launch-upsell",
+  "type": "sequence",
+  "name": "Signature Launch Upsell Follow-Up Sequence",
+  "tags": [
+    "sequence",
+    "signature-launch",
+    "upsell-followup",
+    "post-purchase",
+    "upsell-1",
+    "upsell-2",
+    "honor-the-purchase",
+    "value-multiplication",
+    "commitment-consistency",
+    "one-click",
+    "verified-purchase",
+    "route-graph-truth",
+    "no-invented-scarcity",
+    "moves-buyer-to-next-offer",
+    "founder-signature",
+    "convert-and-flow"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "signature-launch-clients",
+    "verified-buyers",
+    "upsell-1-page",
+    "upsell-2-page",
+    "post-purchase-ascension"
+  ],
+  "file": "signature-launch-upsell.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "upsell_followup",
+    "length": 3,
+    "preview_count": 2,
+    "preview_count_overridable": false,
+    "subject_mode": "convert_and_flow",
+    "objective": "upsell",
+    "profile": "signature_launch_upsell",
+    "pattern_count": 2,
+    "intake": "the approved S49 shared-launch brief plus the approved Skill-80 page request (offer, disclosure, route graph), consumed with per-field provenance; no separate questionnaire",
+    "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
+    "variant_pairing": {
+      "pairs": ["A", "B"],
+      "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
+      "pair_b_style": "pattern-breaking, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no offensive language, no misleading price)"
+    },
+    "patterns": {
+      "upsell_1": {
+        "page_role": "upsell_1",
+        "entry_context": "verified original purchase; buyer reached Upsell 1 and left without accepting",
+        "objective": "upsell",
+        "framework_map": {
+          "1": "features-to-benefit",
+          "2": "before-after-bridge",
+          "3": "pas"
+        },
+        "cta_rules": {
+          "default": 1
+        },
+        "next_offer": {
+          "on_accept": "upsell_2",
+          "on_decline": "downsell_1",
+          "on_already_owned": "upsell_2_or_final_thank_you",
+          "on_payment_pending_or_failed": "remain_on_page_recoverable"
+        },
+        "destination": "that upsell_1 page",
+        "length": 3,
+        "word_band": "150-300 words"
+      },
+      "upsell_2": {
+        "page_role": "upsell_2",
+        "entry_context": "verified accepted Upsell 1 or verified accepted Downsell 1; buyer reached Upsell 2 and left without accepting",
+        "objective": "upsell",
+        "framework_map": {
+          "1": "acca",
+          "2": "star-chain-hook",
+          "3": "three-b-plan"
+        },
+        "cta_rules": {
+          "default": 1
+        },
+        "next_offer": {
+          "on_accept": "thank_you",
+          "on_decline": "thank_you",
+          "on_already_owned": "thank_you",
+          "on_payment_pending_or_failed": "remain_on_page_recoverable"
+        },
+        "destination": "that upsell_2 page",
+        "length": 3,
+        "word_band": "150-300 words, E3 deliberately shorter (<150)",
+        "note": "Upsell 2 is the final offer in the route graph; both accept and explicit decline finish at the thank-you / access handoff."
+      }
+    },
+    "eligibility_rules": {
+      "requires": "verified succeeded original purchase before any upsell follow-up",
+      "upsell_2_qualifying_purchase": "verified succeeded upsell_1 OR verified succeeded downsell_1",
+      "bump_only_qualifies_for_upsell_2": false,
+      "client_side_claims_accepted_as_proof": false,
+      "already_owned_action": "suppress the offer email or route to the next page in the route graph"
+    },
+    "truth_rules": [
+      "Honor the previous purchase in the opening of every email; the upgrade continues a good decision and never corrects it.",
+      "No invented deadline, countdown, seat cap, bonus expiry or price. Use scarcity ONLY when the page request carries factual_scarcity_evidence; empty evidence means zero scarcity language.",
+      "State the amount, currency and billing terms exactly as the page disclosure states them, including recurring terms when billing_type is recurring.",
+      "One destination per pattern: the matching upsell page. Never introduce an alternate offer.",
+      "Every CTA is the same guarded one-click action on the upsell page; when one-click is unavailable the page blocks the paid action and offers safe continuation — the email must not promise otherwise.",
+      "The next offer comes from the route graph, never from assumption."
+    ],
+    "disruptive_required": false,
+    "trigger": "appended after each Skill-80 upsell page (upsell_1 or upsell_2) is written; one three-email sequence per page pattern",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-CTA-COUNT",
+      "AF-EMAIL-PREVIEW-COUNT",
+      "AF-EMAIL-SUBJECT-COUNT",
+      "AF-EMAIL-OBJECTIVE-INVALID",
+      "AF-EMAIL-WORDBAND",
+      "AF-EMAIL-SIGNATURE-PLACEHOLDER"
+    ]
+  }
+}
