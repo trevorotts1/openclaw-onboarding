@@ -455,6 +455,7 @@ const E2E_GOLDEN: Record<string, number[]> = {
 function e2eHarnessScript(counterPath: string): string {
   return `#!/usr/bin/env node
 const fs = require('node:fs');
+if (process.argv[2] === '--help') process.exit(0); // transport capability probe, not a model call
 // The fixture harness stands in for the client's harness binary at
 // the delegate boundary. Every call sleeps 3000 ms, beyond the
 // 2000 ms test lease window the host below composes, and answers

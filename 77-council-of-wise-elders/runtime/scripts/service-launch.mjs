@@ -9,8 +9,10 @@
 // installed Skill 22 export) remains honestly null, so readiness reports it
 // not-ready. Route limits are always bound (measured or conservative default).
 //
-// Run (from the skill root): runtime/node_modules/.bin/tsx runtime/scripts/service-launch.mjs
-//        (tsx is installed inside runtime/ only; it is required: the launcher imports src/, and the tsc output in
+// Run (started by the skill's wire.sh from the immutable release under
+//        $OPENCLAW_ROOT/council-runtime; nobody hand-runs npm):
+//        <node> <release>/node_modules/tsx/dist/cli.mjs <release>/scripts/service-launch.mjs
+//        (tsx is installed inside the release; it is required: the launcher imports src/, and the tsc output in
 //        dist/ uses extensionless imports that plain node cannot load)
 // Env (all optional):
 //   COUNCIL_SERVICE_DATA_DIR   durable data dir (default: platform default)

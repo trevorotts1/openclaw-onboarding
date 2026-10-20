@@ -38,7 +38,7 @@
  * words as before.
  */
 
-import { cardAuthorJsonSchema } from '../contracts/index.js';
+import { SEAT_ROSTER, cardAuthorJsonSchema } from '../contracts/index.js';
 
 export type CardContractPurpose = 'advisor' | 'ratification' | 'consult';
 
@@ -115,6 +115,19 @@ export function cardContractInstruction(
   return cardContractLines(purpose, challengeIds).join('\n');
 }
 
+/** Marks a repair issue as "the reply did not parse"; the text after it is the parser's message. */
+export const NOT_JSON_ISSUE = 'response was not valid JSON: ';
+
+/**
+ * For a validation code that concerns a closed set, list the allowed
+ * values from the same roster the validator checks against.
+ */
+function closedSetHints(issues: string[]): string[] {
+  if (!issues.some((issue) => issue.includes('JAKES_LENS_UNKNOWN'))) return [];
+  const lenses = SEAT_ROSTER.find((s) => s.seat_id === 'td-jakes')?.lenses ?? [];
+  return [`lenses_used may contain only these values: ${lenses.join(', ')}.`];
+}
+
 /**
  * The repair instruction (Section 15.5: the exact validation errors
  * AND the original constraints). The validator's failures verbatim,
@@ -126,8 +139,12 @@ export function cardRepairInstruction(
   challengeIds: string[] | null,
   issues: string[],
 ): string {
+  const notJson = issues[0]?.startsWith(NOT_JSON_ISSUE) ? issues[0].slice(NOT_JSON_ISSUE.length) : null;
   return [
-    `Your previous output failed validation: ${issues.join('; ')}.`,
+    notJson !== null
+      ? `Your previous reply was not valid JSON: ${notJson}. Reply with exactly one JSON object and nothing else.`
+      : `Your previous output failed validation: ${issues.join('; ')}.`,
+    ...closedSetHints(issues),
     'The contract for this call, restated in full:',
     ...cardContractLines(purpose, challengeIds),
     'Return the complete corrected card only: one JSON object with every required field present, and nothing else (no prose, no markdown, no code fences, no partial card).',

@@ -358,3 +358,31 @@ test('host-call transport passes --model only when the snapshot pins one', async
     assert.deepEqual(without.args, ['--print', '--output-format', 'json']);
   }
 });
+
+test('transportForSnapshot sets CLAUDE_CONFIG_DIR only for non-default config roots', async () => {
+  const home = makeHome();
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  try {
+    for (const [harness, expected] of [
+      ['claude-code', undefined],
+      ['claude-nine', join(home, '.claude-nine')],
+    ] as const) {
+      const { snapshot } = await resolveSessionRoute({ harness }, opts(home));
+      const seen: { env?: NodeJS.ProcessEnv; model?: boolean } = {};
+      const spawnImpl = ((_exe: string, args: readonly string[], o: { env: NodeJS.ProcessEnv }) => {
+        if (args[0] !== '--help') {
+          seen.env = o.env;
+          seen.model = args.includes('--model');
+        }
+        return fakeSpawn({})(_exe, args);
+      }) as unknown as typeof import('node:child_process').spawn;
+      const t = transportForSnapshot(snapshot, { homeDir: home, env: { PATH: '/usr/bin:/bin' }, spawnImpl });
+      await t!.generate(REQUEST);
+      assert.equal(seen.env?.CLAUDE_CONFIG_DIR, expected);
+      assert.equal(seen.model, harness === 'claude-code');
+    }
+  } finally {
+    if (saved !== undefined) process.env.CLAUDE_CONFIG_DIR = saved;
+  }
+});
