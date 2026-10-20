@@ -123,7 +123,7 @@ def parse_reply(q, reply):
     low = re.sub(r"[.!?]+$", "", t.lower().replace("\u2019", "'").replace("\u2018", "'"))
     if not t:
         return {"kind": "repeat", "value": None}
-    if low in _HELP_WORDS:
+    if not low or low in _HELP_WORDS:  # bare "?" or "??" strips to empty: still a help request
         return {"kind": "help", "value": None}
     if low in _DEFAULT_WORDS:  # a never-default question turns "skip" into help, not a silent gap
         return ({"kind": "default", "value": n["safe_default"]} if can_default(n)
