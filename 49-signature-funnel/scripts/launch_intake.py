@@ -53,6 +53,7 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compile_launch_route as clr  # noqa: E402
+import launch_plan as lpl  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
 
 EXIT_OK = 0
@@ -732,6 +733,19 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     session["plan"] = launch
     session["route_graph"] = graph
     session["plan_hash"] = plan_hash(launch)
+    # The FULL launch plan (pages + emails + texts + automations + AI choice) is
+    # planned beside the launch record, in the shared launch-plan contract. A
+    # missing calendar/AI fact never blocks the page plan; it is named, and the
+    # page-level launch still proceeds to its own approval.
+    try:
+        full = lpl.build_from_session(session)
+        session["launch_plan"] = full.get("plan")
+        session["launch_plan_missing"] = full.get("missing", [])
+    except (lpl.LaunchPlanError, ValueError) as exc:
+        # PageSetError / RouteError are ValueErrors; a full-plan defect is named,
+        # never allowed to block the page plan that was already validated above.
+        session["launch_plan"] = None
+        session["launch_plan_missing"] = [f"full launch plan: {exc}"]
     # Doc 03 §3 state machine (D4): a plan built on recommendations passes
     # through recommendation_ready; a plan of only supplied facts goes
     # straight to awaiting_plan_approval.
@@ -746,7 +760,9 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
                                "state": session["state"]})
     _persist(session)
     return {"state": session["state"], "plan": launch,
-            "plan_hash": session["plan_hash"]}
+            "plan_hash": session["plan_hash"],
+            "launch_plan": session.get("launch_plan"),
+            "launch_plan_missing": session.get("launch_plan_missing", [])}
 
 
 def plan_hash(launch: Dict[str, Any]) -> str:
@@ -802,9 +818,40 @@ def render_summary(session: Dict[str, Any]) -> str:
                      f"({price_of(u2)}).")
     lines.append("7. The final page confirms only what they actually bought "
                  "and gives access.")
+    lines.extend(_launch_plan_lines(session))
     lines.append("I will prepare the approved emails and follow-up automations as drafts.")
     lines.append("Do you approve this plan for building, or would you like a change?")
     return "\n".join(lines)
+
+
+def _launch_plan_lines(session: Dict[str, Any]) -> List[str]:
+    """The rest of the launch in plain language: emails, texts, automations and
+    the Conversation AI choice. Anything still missing is named so the client can
+    answer it; nothing is filled in here."""
+    plan = session.get("launch_plan")
+    missing = session.get("launch_plan_missing") or []
+    if not plan:
+        if missing:
+            return ["The full launch plan still needs: " + "; ".join(missing) + "."]
+        return []
+    emails = len(plan.get("email_sequences") or [])
+    texts = len(plan.get("text_sets") or [])
+    automations = len(plan.get("automations") or [])
+    lines = [f"The same launch plans {emails} email sequences (drafts), "
+             f"{texts} text sets (drafts) and {automations} automations (drafts)."]
+    ai = plan.get("conversation_ai") or {}
+    if ai.get("requested"):
+        lines.append(f"Conversation AI is on ({ai.get('mode')}): when a contact replies, "
+                     "the bot answers, books or sends the checkout link, as you chose.")
+    else:
+        lines.append("Conversation AI: not requested, so no bot is built.")
+    if texts and not plan.get("a2p_ready"):
+        lines.append("Texts stay drafts: A2P 10DLC registration is not approved yet, "
+                     "so they cannot send until it is.")
+    if (plan.get("launch_calendar") or {}).get("black_friday"):
+        lines.append("Black Friday timing is included: teaser, countdown, doors open, "
+                     "Cyber Monday and last call.")
+    return lines
 
 
 def present_plan(session: Dict[str, Any]) -> str:
@@ -1162,6 +1209,9 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--value", help="JSON payload for structured answers")
     ap.add_argument("--source-ref", default="")
     ap.add_argument("--plan", action="store_true")
+    ap.add_argument("--launch-plan", action="store_true",
+                    help="print the FULL launch plan (pages + emails + texts + automations + AI)")
+    ap.add_argument("--out", help="with --launch-plan: write the plan JSON here")
     ap.add_argument("--recap", action="store_true")
     ap.add_argument("--cancel", action="store_true")
     ap.add_argument("--answers-file", help="client-intake-answers/v1 file to fill the session from")
@@ -1197,6 +1247,20 @@ def main(argv: List[str]) -> int:
             print(json.dumps(q, indent=2) if q else "no further questions")
         elif args.plan:
             print(present_plan(s))
+        elif args.launch_plan:
+            if not s.get("plan"):
+                raise IntakeError("no plan has been assembled yet; assemble it first")
+            result = lpl.build_from_session(s)
+            if result["state"] != "ready":
+                print("FAIL: the launch plan is missing facts: " +
+                      "; ".join(result["missing"]))
+                return EXIT_VIOLATION
+            text = json.dumps(result["plan"], indent=2) + "\n"
+            if args.out:
+                Path(args.out).write_text(text, encoding="utf-8")
+                print(f"launch plan written to {args.out}")
+            else:
+                print(text, end="")
         elif args.recap:
             print(resume(s))
         elif args.cancel:

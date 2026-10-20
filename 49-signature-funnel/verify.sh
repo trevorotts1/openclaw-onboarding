@@ -94,6 +94,7 @@ run "board department slug is canonical (test_sf_department.py)" \
 run "page set, page types, image inputs (test_page_set.py)" "$PY" "$SCRIPTS/test_page_set.py"
 run "parallel page swarm (test_page_swarm.py)" "$PY" "$SCRIPTS/test_page_swarm.py"
 run "wrappers take the shared image inputs (test_page_image_inputs.py)" "$PY" "$SCRIPTS/test_page_image_inputs.py"
+run "full launch plan: pages + emails + texts + automations + AI (test_launch_plan.py)" "$PY" "$SCRIPTS/test_launch_plan.py"
 
 # ---------------------------------------------------------------------------
 # 5) GOLDEN REPRODUCE — the committed golden funnel clears every gate + certifies.
