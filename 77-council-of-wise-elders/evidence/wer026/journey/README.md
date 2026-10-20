@@ -1,4 +1,4 @@
-# WER-026 acceptance slice B — create-to-verdict journey (W11-U002)
+# WER-026 acceptance slice B - create-to-verdict journey (W11-U002)
 
 Real local run of the Council runtime built from the pinned base commit. No host
 service, no Command Center database, no network, no client credentials.
@@ -32,12 +32,12 @@ service, no Command Center database, no network, no client credentials.
    - the production host composes only routes discovered from the machine's
      live configuration, which would be a network/provider path;
    - headless approval is refused: `authorization approve` returned exit `3`
-     `RUN_AUTHORIZATION_REQUIRED` — *"Headless approval is refused: no
+     `RUN_AUTHORIZATION_REQUIRED` - *"Headless approval is refused: no
      controlling-terminal confirmation is available and no standing grant
      was presented."* (logged raw).
 
-   All downstream work — spec/brief validation, the three protocol rounds,
-   seat-pack loading, scoring, verdict, event journal, replay, export — is
+   All downstream work - spec/brief validation, the three protocol rounds,
+   seat-pack loading, scoring, verdict, event journal, replay, export - is
    the real product code in the pinned commit. The transport is the
    runtime's labeled deterministic fixture, so no model inference is claimed.
 
@@ -67,7 +67,7 @@ label `WAIT`, recommended option `B`):
   (`before == after`; events also unchanged).
 - **Export delta 0** for sessions/cards/verdicts/checkpoints. Export adds
   exactly **one** `operation_completed` (`kind: report_export`) journal event
-  per call, by design — not a task or session.
+  per call, by design - not a task or session.
 - **Authorization store delta 0** across an export: every `council_*` table
   in `council-authorization.db` unchanged (`council_sessions`, `council_jobs`,
   `council_task_links`, `council_run_previews` included).
@@ -80,7 +80,7 @@ label `WAIT`, recommended option `B`):
   - start with an unaccepted grant ref: exit `3`
     `RUN_AUTHORIZATION_REQUIRED`, session stays `DRAFT` (v0), 0 cards,
     0 verdicts; a later process gets `COUNCIL_VERDICT_NOT_READY` (exit 3)
-    and a duplicate create is refused (exit 3) — it is not adopted;
+    and a duplicate create is refused (exit 3) - it is not adopted;
   - SIGKILL mid-start (exit `137`): session left `ROUND_1` (v4), 1 card,
     2 checkpoints, 0 verdicts; later `start` exit `3`, `resume` exit `3`,
     `verdict` exit `3`. Nothing resumes it silently.
@@ -123,12 +123,12 @@ accounting. Live budget/wiring remains deferred to the installed/live slices.
 
 ## Files
 
-- `journey.json` — machine-readable receipt for all three rounds
-- `raw/logs/` — verbatim command outputs, replay/verdict JSON, delta counts,
+- `journey.json` - machine-readable receipt for all three rounds
+- `raw/logs/` - verbatim command outputs, replay/verdict JSON, delta counts,
   failed-round evidence, environment and export hash manifest
-- `raw/exports/` — the exported reports referenced by the hash assertions
-- `raw/fixtures/` — the exact spec/brief/route-snapshot inputs
-- `verify-journey.mjs` — runnable self-check over the recorded evidence:
+- `raw/exports/` - the exported reports referenced by the hash assertions
+- `raw/fixtures/` - the exact spec/brief/route-snapshot inputs
+- `verify-journey.mjs` - runnable self-check over the recorded evidence:
   `node verify-journey.mjs` (exit 0, 24 PASS lines)
 
 ## Reproduce

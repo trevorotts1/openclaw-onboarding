@@ -589,6 +589,7 @@ const E2E_GOLDEN: Record<string, number[]> = {
 function e2eHarnessScript(counterPath: string, promptPath: string): string {
   return `#!/usr/bin/env node
 const fs = require('node:fs');
+if (process.argv[2] === '--help') process.exit(0); // transport capability probe, not a model call
 // The fixture harness stands in for the client's harness binary at
 // the delegate boundary. It records every prompt it receives (so
 // the test can assert on the conveyance the model side actually

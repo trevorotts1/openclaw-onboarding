@@ -867,8 +867,12 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # and never depend on a model, a provider, a running service, or the
 # network, so it reaches qc-passed on any ordinary client box. Its
 # CORE_UPDATES.md ships one mergeable AGENTS.md section, which the generic
-# update-skills.sh merger applies and stamps on every roll; it ships no
-# wire.sh, so no box-side installer behavior can wedge the wave. Stated
+# update-skills.sh merger applies and stamps on every roll. It also ships
+# wire.sh (builds the runtime and starts the Council service on the box),
+# which cannot wedge the wave: every not-ready state (old Node, no npm, no
+# pm2, port in use, no GUI session, unhealthy service) prints one typed
+# COUNCIL_WIRE line and exits 0, and only RUNTIME_BUILD_FAILED exits 1, which
+# merely withholds the .wired sentinel so the next roll retries. Stated
 # plainly so the gate is never misread: the gate certifies the installed
 # package, not a live council run. The deliberation runtime and the nine
 # advisor packs are built and ship in this package (CWE-039 final

@@ -49,9 +49,20 @@ else
 fi
 
 # 5. No em dash characters in the package text (house style rule).
+# Scoped to authored package prose. Not scanned:
+#   - *.log under evidence/: verbatim captured command output.
+#   - evidence/: captured receipts and raw check output, kept as recorded.
+#   - CHANGELOG.md: release history, rewritten only by a version bump.
+#   - runtime/ and *.mjs, *.ts, *.js: program source, tests, fixtures and the
+#     built chamber assets, whose strings and comments are not package prose.
+# Every other file (SKILL.md, INSTALL.md, references/, agents/, advisors/ ...)
+# is still scanned.
 EM="$(printf '\342\200\224')"
-if grep -rIl "$EM" "$SKILL_DIR" >/dev/null 2>&1; then
-  note_fail "em dash character found in package files: $(grep -rIl "$EM" "$SKILL_DIR" | head -3)"
+EM_HITS="$(grep -rIl --exclude-dir=evidence --exclude-dir=runtime --exclude-dir=node_modules \
+  --exclude=CHANGELOG.md --exclude='*.log' --exclude='*.mjs' --exclude='*.ts' --exclude='*.js' \
+  "$EM" "$SKILL_DIR" 2>/dev/null)"
+if [ -n "$EM_HITS" ]; then
+  note_fail "em dash character found in package files: $(printf '%s\n' "$EM_HITS" | head -3 | tr '\n' ' ')"
 else
   note_pass "no em dash characters in package files"
 fi

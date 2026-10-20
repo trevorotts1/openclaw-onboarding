@@ -625,6 +625,7 @@ export class CouncilFrontDoor {
           session_id: sessionId,
           authority,
           url: known.url,
+          ...(record.blocked_reason ? { blocked_reason: record.blocked_reason } : {}),
           session: record,
           api: {
             session: known.url,

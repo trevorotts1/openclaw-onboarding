@@ -104,7 +104,7 @@ import type {
   TransportResponse,
 } from '../cli/host-ports.js';
 import { CHALLENGE_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
-import { parseCardResponseText } from '../cli/card-text.js';
+import { authorPayloadFromText } from '../cli/card-text.js';
 import {
   cardOutputContract,
   cardRequestSystem,
@@ -975,16 +975,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     // prose-wrapped or fenced output and validated unchanged. A
     // response with no recoverable object still yields the empty
     // author payload, so validation drives the same bounded repair.
-    let author: Record<string, unknown> = {};
-    const parsedCard = parseCardResponseText(response.text);
-    if (
-      parsedCard.ok &&
-      parsedCard.value !== null &&
-      typeof parsedCard.value === 'object' &&
-      !Array.isArray(parsedCard.value)
-    ) {
-      author = parsedCard.value as Record<string, unknown>;
-    }
+    const { author, parse_error } = authorPayloadFromText(response.text);
 
     const priced = this.deps.priceActual
       ? this.deps.priceActual({ response, snapshot: claim.route_snapshot })
@@ -992,6 +983,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
 
     return {
       author,
+      parse_error,
       provider_request_id: response.provider_request_id,
       actual_minor: priced ?? claim.descriptor.estimate_minor,
       input_tokens: response.usage.input_tokens,

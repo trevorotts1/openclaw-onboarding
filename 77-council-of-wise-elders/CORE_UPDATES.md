@@ -26,15 +26,18 @@ Add:
 
 ```
 ## Council of Wise Elders (77)
-When the client says "Ask my Council of Wise Elders", "Take this decision to the council", "Review this plan with the council", or asks for a named seat ("Ask the Tiffany Aliche seat"), use Skill 77 (77-council-of-wise-elders): read its SKILL.md and references/protocol.md first. Resolve existing-session controls before creating new work: "Stop that council" acts on the existing session, "What did they decide?" is a read of the stored verdict. A council result is advice, never execution permission: preview, approval, task creation, and execution authorization are separate steps. Every seat is an AI perspective, labeled exactly "AI perspective inspired by the published work of [name]. Not the individual and not an endorsement." Never present a seat as the real person, and never invent quotations.
+When the client says "Ask my Council of Wise Elders", "Take this decision to the council", "Review this plan with the council", or asks for a named seat ("Ask the Tiffany Aliche seat"), use Skill 77 (77-council-of-wise-elders): read its SKILL.md and references/protocol.md first. Resolve existing-session controls before creating new work: "Stop that council" acts on the existing session, "What did they decide?" is a read of the stored verdict. A council result is advice, never execution permission: preview, approval, task creation, and execution authorization are separate steps. Every seat is an AI perspective, labeled exactly "AI perspective inspired by the published work of [name]. Not the individual and not an endorsement." Never present a seat as the real person, and never invent quotations. Convene with `blackceo-council` (or `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on PATH) and always send the client the `chamber_url` it prints, never a 127.0.0.1 link; if the box is not usable, run the skill's `scripts/verify-council-box.sh` and report its `COUNCIL_BOX:` line.
 Trigger records (CWE-037): when a council session's work completes, the completion scan enqueues follow-up candidates onto the session's scan queue with their source session recorded; processing a scan item creates at most a proposal, never a task, and every enqueue is journaled, never silent. Council-generated work is tagged with its source session: the council capability cannot invoke itself from its own drafts, approvals, or outcome reminders, and a council-generated action cannot trigger another council without a separately authorized need. Scheduled outcome reviews are deduplicated by decision and review period. Department and CEO requests that route to the council preserve their source department and task references; a rerun never inherits the original approval.
 ```
 
 ---
 
 ## TOOLS.md - NO UPDATE NEEDED
-This skill registers no tools of its own at this stage. Its scripts are
-invoked by path from the skill folder during install and QC only.
+This skill registers no tools of its own. Its scripts are invoked by path
+from the skill folder during install and QC only. The `blackceo-council`
+command line tool is written by the skill's wire.sh into
+`$OPENCLAW_ROOT/council-runtime/bin`, and the AGENTS.md block above tells
+the agent how to use it.
 
 ## MEMORY.md - NO UPDATE NEEDED
 Council state is not memory. Sessions, briefs, and verdicts live in the
