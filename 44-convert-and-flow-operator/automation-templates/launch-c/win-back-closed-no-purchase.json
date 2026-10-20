@@ -1,0 +1,176 @@
+{
+  "id": "launch-win-back-closed-no-purchase",
+  "name": "Launch Win-Back — Closed, No Purchase → Next Offer Re-Engagement",
+  "aliases": [
+    "win-back",
+    "launch win-back",
+    "closed no purchase",
+    "did not buy re-engagement",
+    "next offer invite",
+    "lapsed launch lead",
+    "cart closed win-back",
+    "sunset non-buyers"
+  ],
+  "category": "launch-c",
+  "family": "win_back",
+  "template_start": "re-engagement-winback-broadcast",
+  "summary": "Re-engages people who opted in during the launch and did not purchase by the time the doors closed. It starts on the truthful doors-close moment, offers the next approved offer, exits the instant the contact clicks, replies, buys or opts out, and sunsets non-responders so the list stays healthy. Everything is a draft; nothing sends or goes live.",
+  "audience": {
+    "definition": "Contacts on this launch's opt-in / registration segment who have no paid transaction line for any launch offer after launch_plan.launch_calendar.doors_close_at.",
+    "must_have": [
+      "An approved launch opt-in / registration or lead tag for this launch",
+      "No launch buyer tag for this launch",
+      "No `sunset` or `launch-winback-sunset` state from an earlier win-back for the same launch"
+    ],
+    "must_not_have": [
+      "A paid transaction line for the main offer, any upsell or any downsell",
+      "An active abandoned-checkout recovery that is still inside its own window (that family owns the order recovery first)",
+      "DND / opt-out / unsubscribed from the broadcasting channel"
+    ],
+    "source": "launch_plan.pages + launch_plan.email_sequences (opt-in segment) and launch_plan.automations (post_sale buyer tag). Buyer state is a verified paid transaction line, never merely a page visit."
+  },
+  "draft_only": true,
+  "trigger": {
+    "primary_event": "Launch closed and still no purchase — launch_plan.launch_calendar.doors_close_at has passed",
+    "ghl_trigger": "Recurring / scheduled workflow that checks the launch segment against buyer state — not auto-built by CampaignBuilder; built with `caf workflows patch-trigger --trigger-json <file>` on the internal API (snapshot before write) or the Tier-4 managed browser (see U-GHL-PROBE)",
+    "start_rule": "First run at least 1 day after doors_close_at, inside the 8 a.m.–9 p.m. recipient-local window; never before the calendar says the doors are actually closed.",
+    "entry_conditions": [
+      "doors_close_at is in the past (truthful deadline from the launch plan)",
+      "Contact matches the launch opt-in segment",
+      "Contact has no verified paid line for any launch offer",
+      "Contact is not already `launch-winback-reengaged` or `launch-winback-sunset` for this launch"
+    ],
+    "exit_conditions": [
+      "Any click or reply → tag `launch-winback-reengaged`, remove `launch-winback-active`, route to the next offer / active broadcast",
+      "Any purchase → buyer suppression wins: end immediately, no promotional send, no further win-back",
+      "Opt-out / DND / unsubscribe",
+      "No response after the final takeaway → tag `launch-winback-sunset` and remove the launch broadcast tag"
+    ],
+    "reentry": "Once per contact per launch. A later distinct launch may enter again. Dedupe on tenant + launch_id + contact + action type — never on contact ID alone or on 'has tag'.",
+    "segmentation_inputs": [
+      "A2P approved (SMS allowed) vs email only",
+      "Email + text launch vs email-only launch",
+      "Cold vs previously engaged (engagement only decides channel mix, never eligibility)"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "step": "0 — Buyer check (before every send)",
+      "delay": "On entry",
+      "channel": "If/Else",
+      "subject_angle": null,
+      "body_framework": "If/Else on the launch buyer tag / verified paid line: TRUE → `workflow_goal` end (purchase stops every promotional win-back send). FALSE → continue. The same check runs before each later send so a purchase during the sequence stops the rest.",
+      "copy_notes": "Purchase is the highest-priority exit. The buyer never receives win-back copy after paying."
+    },
+    {
+      "step": "1 — Pattern interrupt: \"The doors closed. Are we breaking up?\"",
+      "delay": "Day 0 (>= 1 day after doors_close_at)",
+      "channel": "Email",
+      "subject_angle": "\"The doors closed — still a do-er… or a talker?\"",
+      "body_framework": "Short, personal, polarizing Us vs Them / Secret Telling hook. Name the honest fact that the launch closed and they did not join. One CTA: click to stay in the loop for the next offer. No fake deadline, no invented discount.",
+      "copy_notes": "Copy angles come from the approved Skill 50 voice; this template wires them and does not author them."
+    },
+    {
+      "step": "2 — Best-of value + next-offer invite",
+      "delay": "+3 days",
+      "channel": "Email",
+      "subject_angle": "\"The one story everyone replied to — and your next invite\"",
+      "body_framework": "Lead with the single most entertaining story from the launch + the next approved offer. Future-pace the result they originally wanted. One CTA to the next offer / waitlist. No invented price — read offer price from the launch plan.",
+      "copy_notes": "If the launch plan has no approved next offer, send value only and invite a reply; never invent an offer."
+    },
+    {
+      "step": "3 — Takeaway / sunset + SMS nudge",
+      "delay": "+3 days; SMS on the same day, inside 8 a.m.–9 p.m. recipient-local",
+      "channel": "Email + SMS",
+      "subject_angle": "\"I'll stop emailing you (unless you click)\"",
+      "body_framework": "Honest takeaway: one CTA to stay in the loop. SMS is one sentence with the same CTA, a reply invitation and STOP. Skipped entirely when launch_plan.a2p_ready is false or the launch is email-only; the build plan records the skip.",
+      "copy_notes": "No invented deadline or consequence. The only truthful fact is that the launch closed."
+    },
+    {
+      "step": "4 — Close out",
+      "delay": "+2 days after step 3",
+      "channel": "Tag",
+      "subject_angle": null,
+      "body_framework": "If no click, reply or purchase: add `launch-winback-sunset`, remove `launch-winback-active` and remove the launch broadcast tag so the contact drops out of launch promo sends. No further win-back for this launch.",
+      "copy_notes": "Sunsets protect deliverability. They do not delete the contact and do not touch other launches."
+    }
+  ],
+  "ghl_build": {
+    "engine": "Skill 44 engine (caf / CampaignBuilder) — the official GHL API cannot create, update, publish or trigger a workflow (U-GHL-PROBE, 2026-10-20)",
+    "build_rail": "skill44_engine",
+    "workflow_name": "Launch C — Win-Back (Closed, No Purchase)",
+    "draft_only": true,
+    "trigger_config": {
+      "ghl_trigger": "Recurring / scheduled segment check after doors close",
+      "build_note": "CampaignBuilder only auto-creates a Tag Added trigger; use `caf workflows patch-trigger --trigger-json <file>` (snapshot before write) or the Tier-4 managed browser for the scheduled trigger. Calendar-date waits outside the API builder need the browser — keep the timing contract."
+    },
+    "actions_in_order": [
+      "1. If/Else — launch buyer? TRUE -> workflow_goal end; FALSE -> continue",
+      "2. Send Email — win-back 1 (step 1)",
+      "3. Wait — 3 days",
+      "4. If/Else — buyer or re-engaged? TRUE -> end; FALSE -> continue",
+      "5. Send Email — best-of + next offer (step 2)",
+      "6. Wait — 3 days",
+      "7. If/Else — buyer or re-engaged? TRUE -> end; FALSE -> continue",
+      "8. Send Email — takeaway / sunset (step 3)",
+      "9. Send SMS — one-sentence nudge (step 3, skipped when a2p_ready is false)",
+      "10. Wait — 2 days",
+      "11. Add tag `launch-winback-sunset`; remove `launch-winback-active` and the launch broadcast tag"
+    ],
+    "goal_event": "Click, reply, purchase or opt-out → `launch-winback-reengaged` (or buyer suppression) exits the workflow immediately.",
+    "tags_used": [
+      "launch-winback-active",
+      "launch-winback-reengaged",
+      "launch-winback-sunset",
+      "launch-buyer",
+      "launch-broadcast"
+    ],
+    "notes": "Duration waits only in the API builder; the doors-close date wait and any calendar-date trigger need the managed browser. Every step stays inactive until a separate client approval switches it live."
+  },
+  "buyer_suppression": {
+    "rule": "A paid buyer receives no win-back or other promotional send for this launch, for any variant.",
+    "stops": [
+      "This win-back workflow at every if/else",
+      "Remaining launch promotional emails and texts",
+      "Doors-closing / last-call sends",
+      "Abandoned-checkout recovery and page-visit retargeting for the same offer"
+    ],
+    "does_not_stop": [
+      "Transactional access and receipt notices",
+      "The buyer's own onboarding / review / referral sequence",
+      "A genuinely different later offer approved in the launch plan"
+    ]
+  },
+  "inputs_required": [
+    "launch_plan.launch_calendar.doors_close_at (truthful deadline)",
+    "Launch opt-in / registration segment and launch buyer state",
+    "Approved next offer (name + URL) from the launch plan, or none (value-only variant)",
+    "Approved Skill 50 email copy hash and text copy (reply invitation + STOP)",
+    "launch_plan.a2p_ready and email-only vs email + text election",
+    "Location whitelist entry and Firebase refresh token (workflow writes); absent token → Tier-4 browser backstop"
+  ],
+  "source": {
+    "spec": "launch-automations.spec.md §3.3 — 'Win-back | Launch closed, no purchase → re-engagement for next offer | re-engagement-winback-broadcast'",
+    "template": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/re-engagement-winback-broadcast.{json,md}",
+    "capability": "44-convert-and-flow-operator/automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md — win-back: Skill 44 engine; recurring/scheduled trigger + last-open field check; scheduler triggers are not auto-built",
+    "fidelity_note": "The 30-day-cold trigger and sunset suppression come from the existing broadcast template. This launch variant changes the audience to 'launch closed, no purchase' and the offer to the approved next offer; it does not invent prices, deadlines or discounts."
+  },
+  "quality": {
+    "checklist_lines": ["A1", "A2", "X1"],
+    "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
+    "assertions": [
+      "Template starts from re-engagement-winback-broadcast (family win_back)",
+      "Audience is closed-no-purchase: doors_close_at passed and no verified paid line",
+      "Buyer check runs before every send; any purchase ends the workflow",
+      "SMS is skipped entirely when a2p_ready is false; every text has a reply invitation and STOP",
+      "Non-responders get launch-winback-sunset and drop out of launch promo sends",
+      "Everything is draft_only; no live switch-on",
+      "No client account touched during the build"
+    ]
+  },
+  "flexibility": {
+    "principle": "Recommended default, never a requirement. An explicit client request wins over this template.",
+    "note": "Only hard rules: draft_only, no sends before doors_close_at, and purchase always stops promotional sends."
+  }
+}
