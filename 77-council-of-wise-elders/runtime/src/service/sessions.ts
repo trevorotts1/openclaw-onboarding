@@ -134,14 +134,21 @@ export interface BlockedReason {
   code: string;
   detail: string;
   missing_seats: string[];
+  /** The round the missing seats belong to (1, 2 or 3); null when no seat is missing. */
+  missing_round: number | null;
   last_errors: Array<{ seat_id: string; outcome_code: string | null; message: string | null }>;
+  /** Provider calls that were reserved but never reported a result. */
+  unfinished_calls: Array<{ operation_id: string; outcome: string; minutes: number | null }>;
 }
+
+const ROUND_NAMES: Record<number, string> = { 1: 'round 1 (opening positions)', 2: 'round 2 (debate)', 3: 'round 3 (the vote)' };
 
 /**
  * Why a BLOCKED session is blocked, computed at read time from stored
- * data (spec seats minus accepted advisor cards, failed jobs, journaled
- * attempt failures), so sessions blocked before the journal carried
- * messages explain themselves too. Null when the session is not BLOCKED.
+ * data (spec seats minus accepted cards, failed jobs, journaled attempt
+ * failures, provider calls that never answered), so sessions blocked
+ * before the journal carried messages explain themselves too. Null when
+ * the session is not BLOCKED.
  */
 export function buildBlockedReason(input: {
   state: string;
@@ -149,41 +156,76 @@ export function buildBlockedReason(input: {
   seat_ids: readonly string[];
   cards: ReadonlyArray<{ card_kind: string; round: number; seat_id?: string }>;
   failures: ReadonlyArray<{ seat_id: string | null; outcome_code: string | null }>;
-  events: ReadonlyArray<{ type: string; payload: Record<string, unknown> }>;
+  events: ReadonlyArray<{ type: string; payload: Record<string, unknown>; created_at?: string; to_state?: string | null }>;
 }): BlockedReason | null {
   if (input.state !== 'BLOCKED') return null;
-  // The first advisor round (1, then 2) that is short of seats.
+  // The first round (1, 2, then the round 3 ratification) that is short of seats.
   let missing: string[] = [];
-  for (const round of [1, 2]) {
+  let missingRound: number | null = null;
+  // Round 3 counts only once the session reached it; blocked earlier, its seats are not "missing".
+  const reachedRound3 =
+    input.events.some((e) => e.to_state === 'ROUND_3') || input.cards.some((c) => c.card_kind === 'ratification');
+  for (const round of reachedRound3 ? [1, 2, 3] : [1, 2]) {
+    const kind = round === 3 ? 'ratification' : 'advisor';
     const have = new Set(
-      input.cards.filter((c) => c.card_kind === 'advisor' && c.round === round).map((c) => c.seat_id),
+      input.cards.filter((c) => c.card_kind === kind && c.round === round).map((c) => c.seat_id),
     );
     missing = input.seat_ids.filter((seat) => !have.has(seat));
-    if (missing.length > 0) break;
+    if (missing.length > 0) {
+      missingRound = round;
+      break;
+    }
   }
-  const attemptFailures = input.events
-    .filter((e) => e.type === 'operation_completed' && e.payload.kind === 'attempt_failed')
-    .map((e) => e.payload);
+  const completed = input.events.filter((e) => e.type === 'operation_completed');
+  const attemptFailures = completed.filter((e) => e.payload.kind === 'attempt_failed').map((e) => e.payload);
+  // A call reserved, then closed as completion_unknown: it never reported a result.
+  const unfinished = completed
+    .filter((e) => e.payload.outcome === 'completion_unknown' && typeof e.payload.operation_id === 'string')
+    .map((e) => {
+      const id = e.payload.operation_id as string;
+      const reserved = input.events.find(
+        (r) => r.type === 'operation_reserved' && r.payload.operation_id === id,
+      );
+      const ms = reserved?.created_at && e.created_at ? Date.parse(e.created_at) - Date.parse(reserved.created_at) : NaN;
+      return { operation_id: id, outcome: 'completion_unknown', minutes: Number.isFinite(ms) ? Math.round(ms / 60_000) : null };
+    });
+  const unanswered = unfinished.length > 0
+    ? `the provider call ended with no result recorded (completion unknown)${unfinished[0].minutes !== null ? ` about ${unfinished[0].minutes} minutes after it started` : ''}`
+    : null;
+  const unexplained = missing.filter(
+    (seat) => !attemptFailures.some((p) => p.seat_id === seat) && !input.failures.some((f) => f.seat_id === seat),
+  );
   const lastErrors = missing.flatMap((seat) => {
     const logged = attemptFailures.filter((p) => p.seat_id === seat).pop();
     const job = input.failures.filter((f) => f.seat_id === seat).pop();
-    if (!logged && !job) return [];
+    // Calls carry no seat, so a seat with no recorded error gets the
+    // unanswered-call cause only when there are enough such calls to cover
+    // every seat that has no other explanation.
+    if (!logged && !job) {
+      return unanswered && unfinished.length >= unexplained.length
+        ? [{ seat_id: seat, outcome_code: 'completion_unknown', message: unanswered.charAt(0).toUpperCase() + unanswered.slice(1) + '.' }]
+        : [];
+    }
     return [{
       seat_id: seat,
       outcome_code: (logged?.outcome_code as string | undefined) ?? job?.outcome_code ?? null,
       message: (logged?.message as string | undefined) ?? null,
     }];
   });
-  const settled = input.events
+  const worker = input.events
     .filter((e) => e.type === 'operation_completed' && e.payload.kind === 'worker_error')
-    .map((e) => e.payload.code)
-    .filter((c): c is string => typeof c === 'string')
+    .map((e) => e.payload)
     .pop();
+  const settled = typeof worker?.code === 'string' ? worker.code : undefined;
   const code = missing.length > 0
     ? input.mode === 'full' ? 'FULL_MODE_SEATS_MISSING' : 'SEATS_MISSING'
     : settled ?? 'BLOCKED_REASON_NOT_RECORDED';
+  const where = missingRound ? ` in ${ROUND_NAMES[missingRound]}` : '';
   const detail = missing.length > 0
-    ? `${input.mode === 'full' ? 'Full mode needs all nine seats' : 'The council is short of seats'}; no accepted card from: ${missing.join(', ')}.`
-    : 'The session is blocked and no seat is missing; no reason was recorded.';
-  return { code, detail, missing_seats: missing, last_errors: lastErrors };
+    ? `${input.mode === 'full' ? 'Full mode needs all nine seats' : 'The council is short of seats'}; no accepted card${where} from: ${missing.join(', ')}.` +
+      (unanswered && unfinished.length >= unexplained.length && unexplained.length > 0 ? ` Cause: ${unanswered}.` : '')
+    : typeof worker?.message === 'string' && worker.message
+      ? `The session is blocked: ${worker.message}`
+      : 'The session is blocked, but every seat has an accepted card and the service recorded no further reason.';
+  return { code, detail, missing_seats: missing, missing_round: missingRound, last_errors: lastErrors, unfinished_calls: unfinished };
 }

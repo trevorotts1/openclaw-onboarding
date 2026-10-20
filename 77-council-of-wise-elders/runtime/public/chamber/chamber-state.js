@@ -114,7 +114,7 @@
     return {
       sessionId: null, question: null, mode: null, options: [], route: { routeId: null, model: null },
       seatIds: [], seats: {}, sample: false, demo: false,
-      state: null, since: NaN, startAt: NaN, endedAt: null, step: 0, round: 0, consult: false, reason: null,
+      state: null, since: NaN, startAt: NaN, endedAt: null, step: 0, round: 0, consult: false, reason: null, blocked: null,
       roundNoted: {}, roundDoneAt: {}, playMs: PLAYBACK_MS,
       cruxes: [], draft: null, verdict: null, keyPoints: [], maxSeq: 0, frames: 0
     };
@@ -186,6 +186,7 @@
       });
     }
     if (rec.verdict && typeof rec.verdict === 'object') m.verdict = rec.verdict;
+    if (rec.blocked_reason && typeof rec.blocked_reason === 'object') m.blocked = rec.blocked_reason;
     return m;
   }
 
@@ -269,6 +270,32 @@
     var s = seats && typeof seats.get === 'function' ? seats.get(id) : null;
     if (s && text(s.name) && s.name !== id) return s.name;
     return String(id).split('-').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+  }
+
+  var ROUND_PLAIN = { 1: 'round 1 (opening positions)', 2: 'round 2 (debate)', 3: 'round 3 (the vote)' };
+
+  function listNames(ids) {
+    var names = ids.map(nameOf);
+    return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
+
+  /**
+   * One plain sentence for a blocked session, from the service's blocked_reason:
+   * which advisors are missing (by name) and why. Null when the service sent none.
+   */
+  function blockedText(m) {
+    var b = obj(m.blocked);
+    var missing = Array.isArray(b.missing_seats) ? b.missing_seats.filter(function (x) { return typeof x === 'string'; }) : [];
+    if (!missing.length) return text(b.detail);
+    var where = has(ROUND_PLAIN, b.missing_round) ? ' in ' + ROUND_PLAIN[b.missing_round] : '';
+    var out = 'The council is blocked because ' + listNames(missing) + (missing.length === 1 ? ' has' : ' have') + ' not answered' + where + '.';
+    var causes = [];
+    (Array.isArray(b.last_errors) ? b.last_errors : []).forEach(function (e) {
+      var msg = e && text(e.message);
+      if (msg) causes.push(nameOf(e.seat_id) + ': ' + msg.replace(/\.$/, '') + '.');
+      else if (e && text(e.outcome_code)) causes.push(nameOf(e.seat_id) + ': ' + e.outcome_code.replace(/_/g, ' ') + '.');
+    });
+    return out + (causes.length ? ' ' + causes.join(' ') : '');
   }
 
   var SUMMARY_CHARS = 220;
@@ -654,8 +681,9 @@
     }
 
     var status = state && has(STATUS_OF, state) ? STATUS_OF[state] : !state || PREP[state] ? 'preparing' : 'running';
+    var blockedMsg = state === 'BLOCKED' ? blockedText(m) : null;
     var statusText = { preparing: 'Getting ready.', running: 'In progress.', paused: state === 'PAUSE_REQUESTED' ? 'Pause requested.' : 'Paused.',
-      blocked: m.reason || 'Blocked.', cancelled: state === 'CANCEL_REQUESTED' ? 'Cancel requested.' : 'Cancelled.',
+      blocked: blockedMsg || m.reason || 'Blocked.', cancelled: state === 'CANCEL_REQUESTED' ? 'Cancel requested.' : 'Cancelled.',
       failed: m.reason || 'Failed.', complete: 'Verdict reached.' }[status];
 
     var headline = copy[1];
@@ -664,14 +692,15 @@
       var named = verdict.recommendedOptionId ? optionText(m, verdict.recommendedOptionId) : null;
       explain = 'Verdict: ' + verdict.labelText + (named ? '. Recommended: ' + named + '.' : '.');
     }
-    if ((state === 'BLOCKED' || state === 'FAILED') && m.reason) explain = m.reason;
+    if (blockedMsg) explain = blockedMsg;
+    else if ((state === 'BLOCKED' || state === 'FAILED') && m.reason) explain = m.reason;
 
     var inWork = inRound > 0;
     var progress;
     if (state === 'COMPLETED') progress = { indeterminate: false, value: 1 };
     else if (inWork && done > 0) progress = { indeterminate: false, value: total ? done / total : 0 };
     else progress = { indeterminate: true, value: 0 };
-    var progressText = inWork ? done + ' of ' + total + ' advisors in' : state === 'COMPLETED' ? 'Verdict reached' : 'The chair is working';
+    var progressText = inWork ? done + ' of ' + total + ' advisors in' : state === 'COMPLETED' ? 'Verdict reached' : state === 'BLOCKED' ? 'Blocked' : state === 'FAILED' ? 'Failed' : 'The chair is working';
 
     var end = m.endedAt !== null ? m.endedAt : nowMs;
     return {
