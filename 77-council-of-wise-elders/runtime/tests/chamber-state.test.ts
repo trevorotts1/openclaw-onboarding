@@ -294,6 +294,11 @@ test('copy table: headline, round label and explainer for each state', () => {
   assert.equal(S.routeLabel('demo-replay', null), 'Sample replay');
   assert.equal(S.routeLabel('deepseek-configured', 'latest_deepseek_flash'), 'DeepSeek (newest DeepSeek Flash)');
   assert.equal(S.routeLabel('claude-nine-configured', 'harness_default'), 'Claude Code (Nine)');
+  for (const id of ['google', 'ollama', 'openrouter', 'agnes', '9router', 'openai']) {
+    const name = S.routeLabel(id + '-configured', null);
+    assert.notEqual(name, 'the selected model', id);
+    assert.equal(name.includes('configured'), false, id);
+  }
   assert.equal(S.routeLabel('some-new-route', 'glm-5.3'), 'glm-5.3');
   assert.equal(S.routeLabel('some-new-route', null), 'the selected model');
   assert.equal(S.routeLabel(null, null), '');

@@ -903,7 +903,7 @@ export class CouncilFrontDoor {
    * Every value is read from this handle — identity, verified origin,
    * readiness layers and service state — so nothing is hardcoded, no
    * external asset is fetched and the page is explicit that the full
-   * chamber UI is not packaged.
+   * chamber UI is not packaged (the notice says so only then).
    */
   private async renderLanding(): Promise<string> {
     const identity = this.options.identity;
@@ -944,6 +944,12 @@ export class CouncilFrontDoor {
     const eventsLink = `${origin}/api/council/sessions/your-session-id/events`;
     // The notice and the route list must describe THIS composition. A bound
     // reader/adapter means the old unbound wording would be false.
+    // The UI notice follows the packaged assets: when the chamber is
+    // packaged the page points at it instead of reporting it missing.
+    const uiReady = chamberLandingReady();
+    const uiNotice = uiReady
+      ? `<div class="notice"><strong>Council room ready</strong> — the full Council room is open at <a href="${escapeHtml(`${origin}/chamber/`)}"><code>/chamber/</code></a>.</div>`
+      : '<div class="notice"><strong>UI_NOT_BUNDLED</strong> — the full Council chamber UI is not packaged in this build, so <code>/chamber/</code> is not served. Install the packaged Council runtime assets, then re-run service-readiness.</div>';
     const eventsBound = Boolean(this.options.eventsAdapter);
     const readerBound = Boolean(this.options.sessionReader);
     const eventsRouteNote = eventsBound
@@ -951,7 +957,7 @@ export class CouncilFrontDoor {
       : 'event stream (501, adapter not bound)';
     const sessionRouteNote = readerBound
       ? 'durable session record (200); an unknown id answers <code>404 SESSION_NOT_FOUND</code>'
-      : 'session record; reports <code>ui: "not_bundled"</code> with blocker <code>UI_NOT_BUNDLED</code> (200)';
+      : 'session record; a short placeholder answer (200) while no session store is connected';
 
     return `<!doctype html>
 <html lang="en">
@@ -978,7 +984,7 @@ ul{margin:.25rem 0;padding-left:1.25rem}
 <main>
 <h1>Council of Wise Elders — service landing</h1>
 <p class="ok">This is the Council service status and session landing page. It is <strong>not</strong> the full Council chamber UI.</p>
-<div class="notice"><strong>UI_NOT_BUNDLED</strong> — the full Council chamber UI is not packaged by this service slice. Packaging the accepted shared Council UI build (WER-021 full packaging) is the path to it, then re-run service-readiness.</div>
+${uiNotice}
 ${eventsBound ? '' : '<div class="notice"><strong>EVENT_STREAM_ADAPTER_NOT_BOUND</strong> — the durable event stream adapter is not bound here. <code>GET /api/council/sessions/&lt;id&gt;/events</code> answers 501 until the integration root binds the canonical journal/outbox adapter.</div>'}
 <h2>Service identity</h2>
 <table>${identityRows}</table>

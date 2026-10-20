@@ -1,5 +1,17 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.29: client polish on the live Council screen
+
+In plain English: five small clean-ups on what a client sees, found while checking the live Council screen. Nothing about how a council runs has changed.
+
+- **Plain wording in the New question window**: under the Convene button it now says "Convening starts the council now on the model you chose." It no longer talks about allowances or approval.
+- **Friendly model names**: Google Gemini, Ollama, OpenRouter, Agnes, 9Router and OpenAI now show their own names instead of "the selected model". A model that cannot be used yet says "Not available for the council yet" instead of a raw code.
+- **All six steps fit on a phone**: Brief, Openings, Fault lines, Debate, Vote and Verdict wrap onto two rows at phone width, so nothing hides off-screen in a sideways strip.
+- **Status page tells the truth**: the service status page (/status) no longer says the Council screen is not packaged. When it is packaged, the page links to it.
+- **Operator help cleaned up**: the command list no longer shows the old start/resume grant and authorization commands, and the recovery messages no longer send anyone to approve anything.
+- **Changelog wording**: the v1.0.26 note now says that release shipped inside v27.1.45 (it first carried the number v27.1.42 on its branch).
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.46).
+
 ## v1.0.28: Roast-Room chamber screen (full reference structure, brand colors, Pixar portraits)
 
 Eight Opus-passed pieces, integrated once on top of v1.0.26 (W29-U001). In plain English: the chamber page is rebuilt as the full Roast-Room screen. A sticky top bar, a decision header with live option bars, a room of nine seated advisors with typing bubbles and a round headline, a key-points rail, and a click-to-open advisor card, all in BlackCEO colors, with 3D Pixar-style portraits.
@@ -33,7 +45,7 @@ Eight Opus-QC-passed patches, integrated once on top of v1.0.25 (W28-U001). In p
 - **Real-run fix: the journal shows which knowledge each seat used** (`patch/W30-knowledge-layer`): each seat's briefing records once per session whether it used the client's live Book-to-Persona persona, the shipped brief, or nothing, plus the web fact count. QC verdict: PASS.
 - **A new install now convenes immediately; no approval step.** (`unit/W28-U001-live-council`): the first run on a fresh install is accepted on DeepSeek Flash and on any route without measured numbers; nothing is measured or approved first, and the routes list no longer carries an approval state.
 - **Real-run acceptance fix round 1: the model is told the last two card rules, and an unfinished round stops the session** (`unit/W28-U001-live-council`): the card instructions now say that evidence reference arrays may hold only evidence manifest IDs (never the brief's fact, assumption, unknown or constraint IDs) and that `lenses_used` belongs to T. D. Jakes alone, so two seats no longer fail Round 1 and block the council. A round that ends with work still queued (the grant refused a repair) or, in full mode, a seat with no card, now stops the session as BLOCKED and resumable instead of planning the next round from a partial record, which had made every Round 3 call refuse as input drift and wasted paid Round 2 calls. The convening repair ceiling now fits all 27 operations (27 repairs, 62 requests). A real DeepSeek Flash council on a private test instance completed: 27 cards, a verdict, 29 model calls, 2 Round 2 repairs.
-- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.42).
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (first numbered v27.1.42 on its branch; this release shipped to main inside v27.1.45).
 
 ## v1.0.25: W27 hardening batch (status cold path, launcher, skill root, live chamber)
 

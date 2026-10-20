@@ -334,18 +334,15 @@ const USAGE = [
   '  create --spec FILE --brief FILE     Create a session from frozen spec and brief JSON',
   '  create --sample                     Create the labeled synthetic sample session',
   '  sample run [--json]                 Run the labeled sample end to end (fixture transport, spends nothing)',
-  '  start SESSION --grant-ref REF       Start a session under a resolved run grant',
-  '  resume SESSION --grant-ref REF      Resume a paused or blocked session',
   '  status SESSION [--json]             Session state summary',
   '  pause SESSION                       Pause an active session',
   '  cancel SESSION                      Cancel a session (late results are fenced out)',
   '  verdict SESSION [--json]           The validated verdict, when one exists',
   '  replay SESSION [--json]             Committed event history (read only, spends nothing)',
   '  export SESSION --format md|json|pdf [--out FILE]',
-  '  authorization preview|approve|status|revoke   Run authorization service (CWE-049)',
   '  routes [--origin URL] [--json]      Model routes and harness defaults from the council service',
   '  convene (--sample | --brief FILE) [--route ID] [--model ID] [--harness H] [--fresh-facts FILE] [--mode M] [--origin URL]',
-  '                                      Convene a council on the running service (convening is the approval)',
+  '                                      Convene a council on the running service (starts it now)',
   '',
   'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
 ].join('\n');
@@ -455,7 +452,7 @@ export async function runCli(
           name: 'run_authorization_service',
           ok: true,
           detail:
-            'grant service composed (CWE-049, composed by CWE-050): authorization preview/approve/status/revoke are live and session starts resolve grants through the authorization store',
+            'run record service composed (CWE-049, composed by CWE-050): session starts resolve their run records through the store',
         });
         // Offline structural checks are not evidence of an installed,
         // runnable Council. Preserve the legacy `ok` field as the
