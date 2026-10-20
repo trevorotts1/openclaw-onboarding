@@ -29,7 +29,8 @@ Operator values come from one inputs file (--inputs), so dispatch binds a single
   {"route_graph", "brand_file", "brand_owner", "image_cap", "design_style" (A|B|C),
    and optionally "copy", "design_prose", "design_board_spec", "model", "stages",
    "provider" (stub|kie, default stub), "test_run"}
---inputs none means the launch did not ask for order page images: nothing runs, exit 0.
+--inputs none is refused (exit 2): a funnel with an order page gets all its pages, so the
+order page's wireframes and mockups are never skipped.
 Spending is never decided here: a paid run needs the explicit --allow-paid on this command
 line, which dispatch never passes.
 
@@ -37,7 +38,7 @@ Usage:
   run_image_stages.py --plan selection-plan.json --request page-request.json \\
       --run-dir DIR --launch-record launch.json --inputs inputs.json|none \\
       [--preflight] [--allow-paid] [--skill71-root DIR]
-Exit: 0 every step passed (or images not requested), 2 a step failed or was refused.
+Exit: 0 every step passed, 2 a step failed or was refused.
 """
 import argparse
 import json
@@ -95,8 +96,8 @@ def main(argv=None):
     p.add_argument("--skill71-root", type=Path, default=HERE.parents[1] / "71-blackceo-signature-page")
     a = p.parse_args(argv)
     if a.inputs == "none":
-        print("ORDER PAGE IMAGES NOT REQUESTED: --inputs none; no wireframes or mockups were made")
-        return 0
+        print("REFUSED: --inputs none; the order page's wireframes and mockups are required in a full funnel")
+        return 2
     s71 = a.skill71_root / "scripts"
     py, run_dir = sys.executable, a.run_dir
     try:

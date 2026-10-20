@@ -172,10 +172,10 @@ class RunTests(Fixture):
         import design_board
         self.assertEqual(design_board.declared_role(run), "product_selection")
 
-    def test_inputs_none_makes_no_images_and_says_so(self):
+    def test_inputs_none_is_refused_and_makes_no_images(self):
         proc = self.call(inputs="none")
-        self.assertEqual(proc.returncode, 0)
-        self.assertIn("NOT REQUESTED", proc.stdout)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("REFUSED", proc.stdout)
         self.assertFalse((self.dir / "run").exists())
 
     def test_refusals(self):
@@ -226,7 +226,7 @@ class ShippedAdapterTests(Fixture):
         self.result = work / "result.json"
         return [part.replace("/path/to", str(REPO))
                 .replace("<per-launch: approved launch record JSON>", str(self.dir / "launch.json"))
-                .replace("<per-launch: order page image inputs JSON, or none>", inputs)
+                .replace("<per-launch: order page image inputs JSON>", inputs)
                 .replace("{request}", str(self.dir / "page-request.json")).replace("{result}", str(self.result))
                 .replace("{work_dir}", str(work)) for part in spec["command"]]
 
@@ -247,10 +247,10 @@ class ShippedAdapterTests(Fixture):
         self.assertNotEqual(proc.returncode, 0)
         self.assertFalse(self.result.exists())
 
-    def test_inputs_none_is_the_plan_and_result_chain_alone(self):
+    def test_inputs_none_leaves_no_page_result(self):
         proc = subprocess.run(self.command("none"), capture_output=True, text=True)
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertTrue(self.result.is_file())
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse(self.result.exists())
         self.assertFalse((self.dir / "work" / "order-page-images").exists())
 
 

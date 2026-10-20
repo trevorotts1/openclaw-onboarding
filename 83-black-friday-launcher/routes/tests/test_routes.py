@@ -312,6 +312,8 @@ class AdapterWiringTests(unittest.TestCase):
                 path = tmp / f"{name}-{role}.json"
                 path.write_text("{}", encoding="utf-8")
                 mapping[role] = path
+        images = tmp / "order-page-image-inputs.json"
+        images.write_text("{}", encoding="utf-8")
         return {
             "work_dir": work,
             "launch_record": launch_path,
@@ -320,6 +322,7 @@ class AdapterWiringTests(unittest.TestCase):
             "copy": copy,
             "journey": journey,
             "enrichment": enrichment,
+            "image_inputs": images,
         }
 
     def test_all_real_entry_points_match_contract_signatures(self):
@@ -362,22 +365,23 @@ class AdapterWiringTests(unittest.TestCase):
                     if part.endswith(".py"):
                         self.assertTrue(Path(part).is_file(), part)
 
-    def test_order_page_images_bind_only_when_the_launch_asks_for_them(self):
+    def test_order_page_images_are_required_in_every_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             inputs = self.make_inputs(Path(tmp))
-            bare = adapters.build_dispatch_config(**inputs)["adapters"]["product_selection"]["command"][-1]
-            self.assertNotIn("run_image_stages.py", bare)
-            images = Path(tmp) / "order-page-image-inputs.json"
-            images.write_text("{}", encoding="utf-8")
-            bound = adapters.build_dispatch_config(
-                image_inputs=images, **inputs)["adapters"]["product_selection"]["command"][-1]
+            images = inputs["image_inputs"]
+            cmd = adapters.build_dispatch_config(**inputs)["adapters"]["product_selection"]["command"][-1]
             # plan, then the order page images, then the page result: a result exists only after the images
-            self.assertLess(bound.index("build_selection_plan.py"), bound.index("run_image_stages.py"))
-            self.assertLess(bound.index("run_image_stages.py"), bound.index("emit_page_result.py"))
-            self.assertIn(str(images), bound)
-            self.assertNotIn("--allow-paid", bound)  # dispatch never spends
-            with self.assertRaises(adapters.AdapterError):
-                adapters.build_dispatch_config(image_inputs=Path(tmp) / "missing.json", **inputs)
+            self.assertLess(cmd.index("build_selection_plan.py"), cmd.index("run_image_stages.py"))
+            self.assertLess(cmd.index("run_image_stages.py"), cmd.index("emit_page_result.py"))
+            self.assertIn(str(images), cmd)
+            self.assertNotIn("--allow-paid", cmd)  # dispatch never spends
+            # a full funnel gets every page: no way to leave the image step out
+            for bad in ("none", "NONE", "", Path(tmp) / "missing.json"):
+                with self.assertRaises(adapters.AdapterError):
+                    adapters.build_dispatch_config(**{**inputs, "image_inputs": bad})
+            del inputs["image_inputs"]
+            with self.assertRaises(TypeError):
+                adapters.build_dispatch_config(**inputs)
 
     def test_config_refuses_placeholder_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

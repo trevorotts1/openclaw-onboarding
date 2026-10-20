@@ -91,7 +91,7 @@ naming `kie` and `--allow-paid` added by hand; dispatch never passes it.
 - `scripts/emit_section_manuscript.py` - the approved plan as the five-section
   order page manuscript and manifest for Skill 71's image pipeline.
 - `scripts/run_image_stages.py` - the order page's wireframes and mockups,
-  through Skill 71's shared image service (`--inputs none` makes no images).
+  through Skill 71's shared image service (`--inputs none` is refused: the order page always gets its images).
 - `scripts/emit_binding_plan.py` - the explicit per-price-choice binding plan
   consumed by S79 and S06.
 - `scripts/emit_page_result.py` - page result emitter (Path A follow-on
