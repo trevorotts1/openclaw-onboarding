@@ -1,0 +1,164 @@
+{
+  "id": "launch-b-retarget-visited-sales-no-checkout",
+  "name": "Launch B — Retarget: Visited Sales Page, No Checkout (Nudge)",
+  "aliases": [
+    "Sales Page Drop-Off Nudge",
+    "Visited Sales, Never Checked Out",
+    "Offer Page Retargeting Nudge",
+    "Launch B Page-Visit Retarget Layer"
+  ],
+  "category": "multichannel-automation",
+  "source": {
+    "template": "44-convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire",
+    "primary": "Behavioral Retargeting — Page-Visit Pixel Fire: Audience C (visited offer/sales page, no purchase) and Audience C2 (repeat visit, high intent).",
+    "supporting": [
+      "Marketing Secrets Blackbook — Secret #49: retarget the people who looked but did not act.",
+      "Marketing Secrets Blackbook — Secret #66: switch modality after the drop-off instead of rebuilding the funnel (VSL drop-off → written proof; written drop-off → short video).",
+      "BRUNSON-FUNNEL-LIBRARY.md — Entry #24: Follow-Up Funnel, retargeting ads as a multichannel component."
+    ]
+  },
+  "purpose": "One job: take people who read the sales page and never reached checkout, and nudge them back to the page or straight to the offer. This layer is deliberately narrower than the parent 5-audience map. It fires on sales-page visits only, excludes anyone who reached checkout (that is the abandoned-cart family), and excludes buyers permanently. The nudge is gentle: proof and objection handling, not urgency theatre.",
+  "trigger": {
+    "what_starts_it": "A visit to the sales/offer page with no checkout page visit inside the attribution window.",
+    "channel": "GHL tracking pixel or external-page webhook → GHL tag → Facebook/Instagram custom audience sync. Nudge email/SMS runs from GHL in parallel; the ad audience updates on its own schedule.",
+    "fires": "On sales-page visit, then re-evaluates on each repeat visit and on every checkout or purchase event."
+  },
+  "channels": [
+    "Facebook / Instagram retargeting ads (custom audience built from the tag)",
+    "GHL email nudge (proof + objection, 1–2 sends max)",
+    "GHL SMS nudge (short, single send, opt-in list only)"
+  ],
+  "audience_definition": {
+    "name": "B — Visited sales page, no checkout",
+    "enter": "Sales page visit recorded and no checkout page visit within the attribution window (default 60 minutes).",
+    "exit_checkout": "Checkout page visit → remove immediately, hand to the abandoned-cart sequence. This layer never messages a checkout-starter.",
+    "exit_purchase": "Purchase event or confirmation page → remove from every B tag and suppress from all launch-B ads.",
+    "exclusions": [
+      "Existing buyers (purchased-[offer-id])",
+      "Contacts already tagged retarget-audience-d or retarget-audience-e-buyer",
+      "Contacts inside the abandoned-cart active window"
+    ]
+  },
+  "sequence": [
+    {
+      "step": "Setup",
+      "beat": "Pixel + tag + audience infrastructure",
+      "purpose": "Install once. Place the pixel on the sales page, checkout page and confirmation page. Wire tag add/remove actions to the Facebook custom audience. Confirm events actually fire before building anything downstream.",
+      "actions": [
+        "Install GHL tracking pixel (or Facebook pixel + GHL-to-Facebook integration) on sales page, checkout page, confirmation page",
+        "Create Facebook custom audience 'B — visited sales, no checkout' sourced from tag retarget-b-visited-sales",
+        "Create suppression audience from retarget-b-buyer and retarget-audience-d",
+        "Verify a test visit produces the tag within the expected window"
+      ]
+    },
+    {
+      "step": "Beat 1",
+      "beat": "Sales page visit → 60-minute wait → tag",
+      "timing": "Wait 60 minutes after the visit before tagging, so checkout-starters never enter the nudge audience.",
+      "purpose": "Separate the readers from the checkout-starters with a single delay rather than a second workflow.",
+      "actions": [
+        "Page Visit (sales page) → Wait 60 min → If/Else: checkout page visited? Yes → end, no tag. No → Add 'retarget-b-visited-sales'"
+      ]
+    },
+    {
+      "step": "Beat 2",
+      "beat": "First nudge — proof email (T+2h)",
+      "purpose": "Give the reader the thing the page could not give them: a specific, named result from a real customer. No discount, no fake scarcity.",
+      "actions": [
+        "Send email: one testimonial with numbers, one link back to the sales page",
+        "If no click in 48h → Beat 3"
+      ]
+    },
+    {
+      "step": "Beat 3",
+      "beat": "Second nudge — objection nudge (T+48h, non-openers and non-clickers only)",
+      "purpose": "Name the single most common objection for this offer and answer it in the body. Link returns to the sales page, not the checkout.",
+      "actions": [
+        "Send email: 'Still thinking about [offer]? The #1 question is…' + answer",
+        "SMS (only if opted in and only once): short reminder with the sales page link"
+      ]
+    },
+    {
+      "step": "Beat 4",
+      "beat": "Repeat-visit escalation (C2)",
+      "purpose": "A second or third sales-page visit is genuine intent. Escalate the ad creative to objection-handling, not more email.",
+      "actions": [
+        "Second Page Visit (sales page) → Add 'retarget-b-high-intent'; syncs to the high-intent ad set",
+        "Cap total reach at 3 ad impressions per contact per day at the ad-set level; do not build a per-contact counter"
+      ]
+    },
+    {
+      "step": "Guard",
+      "beat": "Checkout and purchase interrupts",
+      "purpose": "The two events that must win over the nudge.",
+      "actions": [
+        "Checkout page visit → Remove 'retarget-b-visited-sales' and 'retarget-b-high-intent'; stop email/SMS nudge",
+        "Purchase event → Remove all B tags; Add 'retarget-b-buyer'; suppress from all launch-B ads"
+      ]
+    }
+  ],
+  "ad_creative": [
+    {
+      "audience": "B — first visit",
+      "headline": "[Customer Name] got [specific result]",
+      "body": "One testimonial quote with a concrete before/after. No countdown, no cart language.",
+      "cta": "See how it works",
+      "destination": "Sales page"
+    },
+    {
+      "audience": "B — high intent (2+ visits)",
+      "headline": "Still thinking about [offer]?",
+      "body": "Answer the #1 objection in the first line. FAQ format works.",
+      "cta": "Read the answer",
+      "destination": "Sales page, anchored to the objection section"
+    }
+  ],
+  "copy_persona": {
+    "note": "The nudge is not the launch. No urgency language, no 'cart', no 'you left something behind' — those belong to the checkout family and using them here makes the sequence lie about where the reader actually is.",
+    "voice": "Plain, specific, unhurried. Proof over persuasion. One CTA per message.",
+    "only_one_urgency_source": "If a real deadline exists (launch close, bonus expiry), it may appear once in the ad creative. A manufactured one never appears."
+  },
+  "flexibility": {
+    "core_principle": "This is a guide, never a rule. If the operator has their own retargeting plan, that plan wins.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "Operator has a retargeting strategy: use this file as reference only.",
+      "mode_2_unsure": "No retargeting yet: ship Beat 1 and Beat 2 (tag + proof email) first. They carry most of the value and need no ad spend.",
+      "mode_3_just_do_it": "Build all four beats, the two ad creatives and both interrupts."
+    },
+    "always": "Never simplify away the checkout interrupt, the buyer suppression, or the SMS opt-in check."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator for the GHL tag/workflow side. Facebook audience management in Ads Manager.",
+    "dependencies_first": {
+      "tags": [
+        "retarget-b-visited-sales",
+        "retarget-b-high-intent",
+        "retarget-b-buyer",
+        "purchased-[offer-id]",
+        "retarget-audience-d"
+      ],
+      "integrations": [
+        "GHL Facebook Integration (custom audience sync) OR Facebook Pixel on the sales page",
+        "GHL tracking pixel on sales, checkout and confirmation pages",
+        "GHL email + SMS sending with a single opt-out that covers both"
+      ]
+    },
+    "workflow_structure": {
+      "sales_visit_delayed_tag": "Page Visit (sales page) → Wait 60 min → If/Else checkout page visited within wait? Yes → End. No → Add 'retarget-b-visited-sales'",
+      "proof_nudge": "Trigger: Tag Added 'retarget-b-visited-sales' → Send Email #1 (testimonial) → Wait 48h → If/Else clicked link? Yes → End. No → Send Email #2 (objection)",
+      "sms_nudge": "Trigger: Tag Added 'retarget-b-visited-sales' → If SMS opted in → Wait 48h → Send SMS once → End",
+      "repeat_visit": "Page Visit (sales page) count ≥ 2 → Add 'retarget-b-high-intent'",
+      "checkout_interrupt": "Page Visit (checkout) → Remove 'retarget-b-visited-sales', 'retarget-b-high-intent' → Remove 'retarget-b-visited-sales' from nudge workflow",
+      "purchase_interrupt": "Payment Event OR Page Visit (confirmation) → Remove all 'retarget-b-*' except buyer → Add 'retarget-b-buyer' → Add 'purchased-[offer-id]'",
+      "skill44_notes": "Set 'order' + 'parentKey' before first save on every node. Page Visit triggers need the funnel-step tracking or a webhook from an external page; confirm the pixel fires before building. Facebook audience sync can lag 1–24h — trust the email/SMS nudge for same-day contact and treat the ad audience as follow-up."
+    }
+  },
+  "scope": {
+    "includes": "Visited the sales page and did not reach checkout.",
+    "excludes": [
+      "Checkout visit without purchase — owned by the abandoned-cart family, not this file",
+      "Buyers — suppressed here, handled by ascension ads",
+      "Landing page visits without opt-in — owned by Audience A in the parent template"
+    ]
+  }
+}
