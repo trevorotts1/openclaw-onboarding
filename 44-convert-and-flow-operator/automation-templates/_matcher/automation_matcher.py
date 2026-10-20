@@ -245,7 +245,10 @@ class Catalog:
         templates: list[dict] = []
         for group in sorted(os.listdir(root)):
             gdir = os.path.join(root, group)
-            if not os.path.isdir(gdir) or group.startswith("_"):
+            # launch-* groups are the spec-driven launch automation families
+            # (launch-automations.spec.md §3.3/§3.4), chosen by family name, not by
+            # lexical intent matching. They are not part of the 28-template library.
+            if not os.path.isdir(gdir) or group.startswith("_") or group.startswith("launch-"):
                 continue
             for fn in sorted(os.listdir(gdir)):
                 if not fn.endswith(".json") or fn.startswith("_"):
