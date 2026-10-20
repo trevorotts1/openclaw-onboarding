@@ -287,5 +287,154 @@ class DownsellWrapperFailClosedTests(unittest.TestCase):
                     _request(None, bad), "is not 1.0 or 1.1")
 
 
+SKILL71 = REPO / "71-blackceo-signature-page"
+BRAND_BYTES = (SKILL71 / "assets" / "brand" / "blackceo-brand.json").read_bytes()
+
+
+def _full_graph_bytes():
+    """A route graph that also satisfies Skill 71's route-graph schema."""
+    graph = {
+        "schema_version": "1.0", "tenant_id": "TEST-TENANT",
+        "location_id": "TEST-LOCATION", "launch_id": "TEST-LAUNCH",
+        "revision": 1,
+        "nodes": [{"page_id": "TEST-LANDING", "role": "landing"},
+                  {"page_id": D1_PAGE_ID, "role": "downsell_1"},
+                  {"page_id": U2_PAGE_ID, "role": "upsell_2"}],
+        "edges": [{"from": D1_PAGE_ID, "to": U2_PAGE_ID,
+                   "event": "payment_succeeded", "guard": "payment_verified"}],
+        "pending_failed_payment_behavior":
+            "retain_current_purchase_state_until_resolved_or_explicit_decline",
+        "test_only": True,
+    }
+    return (json.dumps(graph, indent=2) + "\n").encode()
+
+
+def _full_launch(graph_hash, brand_hash):
+    """The wrapper's launch record, completed to Skill 71's launch schema."""
+    launch = _launch(graph_hash)
+    launch.update({
+        "schema_version": "1.0", "journey_mode": "multiple_options",
+        "status": "approved", "brand_ref": "brand/blackceo-brand.json",
+        "brand_hash": brand_hash, "route_graph_ref": "route-graph.json",
+        "plan_approval_ref": "TEST-APPROVAL", "bump_enabled": False,
+        "image_provider": "agnes", "source_refs": ["TEST-BRIEF"],
+        "test_only": True})
+    for offer in launch["offers"]:
+        offer.setdefault("display_name", offer["offer_id"])
+        offer.setdefault("exclusions", [])
+        offer.setdefault("requires", [])
+        offer.setdefault("excludes", [])
+        offer.update({"source_kind": "owner", "source_ref": "TEST-BRIEF",
+                      "test_only": True})
+        for i, price in enumerate(offer["prices"]):
+            price.setdefault("price_choice_id", f"{offer['offer_id']}-pc{i}")
+            price.setdefault("currency", "USD")
+            price.setdefault("schedule", [])
+            price["schedule"] = [
+                {"amount_minor": row["amount_minor"], "due": f"day {30 * (n + 1)}"}
+                for n, row in enumerate(price["schedule"])]
+    return launch
+
+
+class DownsellWrapperImagesTests(unittest.TestCase):
+    """--skill71-root: the wrapper calls Skill 71's shared image service
+    once and the downsell page gets wireframes and a visual mockup."""
+
+    def stage_images(self):
+        graph_bytes = _full_graph_bytes()
+        graph_hash = hashlib.sha256(graph_bytes).hexdigest()
+        brand_hash = hashlib.sha256(BRAND_BYTES).hexdigest()
+        request = _request(graph_hash)
+        request.update({"brand_ref": "brand/blackceo-brand.json",
+                        "brand_hash": brand_hash,
+                        "route_graph_ref": "route-graph.json"})
+        paths = stage(request)
+        paths["route-graph.json"].write_bytes(graph_bytes)
+        paths["launch.json"].write_text(
+            json.dumps(_full_launch(graph_hash, brand_hash), indent=2) + "\n")
+        paths["brand"] = paths["workdir"] / "brand.json"
+        paths["brand"].write_bytes(BRAND_BYTES)
+        return paths
+
+    def run_with_images(self, paths, *extra):
+        return subprocess.run(
+            [sys.executable, str(WRAPPER),
+             "--request", str(paths["request-downsell_1.json"]),
+             "--result", str(paths["result"]),
+             "--launch", str(paths["launch.json"]),
+             "--route-graph", str(paths["route-graph.json"]),
+             "--copy", str(paths["copy-downsell_1.json"]),
+             "--journey", str(paths["journey-downsell_1.json"]),
+             "--enrichment", str(paths["enrichment-downsell_1.json"]),
+             "--extension", str(paths["extension-downsell_1.json"]),
+             "--skill81-root", str(SKILL81),
+             "--skill71-root", str(SKILL71),
+             "--brand-file", str(paths["brand"]),
+             "--brand-owner", "blackceo", "--image-cap", "40", *extra],
+            capture_output=True, text=True, cwd=str(paths["workdir"]))
+
+    def test_images_stages_run_through_the_shared_service(self):
+        paths = self.stage_images()
+        proc = self.run_with_images(paths)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        summary = json.loads(proc.stdout)
+        run_dir = pathlib.Path(summary["images"]["run_dir"])
+        # the service staged the request with its marker and the page role
+        staged = json.loads((run_dir / "page-request.json").read_text())
+        self.assertEqual(staged["page_role"], "downsell_1")
+        self.assertEqual(staged["shared_image_service"],
+                         "71-blackceo-signature-page")
+        # eight sections, desktop and mobile, for each stage that ran
+        stages = summary["images"]["stages"]
+        self.assertEqual(sorted(stages), ["desktop-wireframe",
+                                          "mobile-tablet", "visual-mockup"])
+        self.assertEqual(len(list((run_dir / "desktop-wireframe").glob("section-*.png"))), 8)
+        self.assertEqual(len(list((run_dir / "mobile-tablet").glob("section-*.png"))), 8)
+        self.assertEqual(len(list((run_dir / "visual-mockup" / "desktop").glob("part-*.png"))), 8)
+        self.assertEqual(len(list((run_dir / "visual-mockup" / "mobile").glob("part-*.png"))), 8)
+        request = json.loads(
+            (run_dir / "production-request-desktop-wireframe.json").read_text())
+        self.assertEqual(request["page_role"], "downsell_1")
+        self.assertEqual(len(request["sections"]), 8)
+        # the result names the records as artifacts and the pending chain
+        result = json.loads(paths["result"].read_text())
+        self.assertEqual(result["status"], "locally_verified")
+        self.assertTrue(any("stage-executor-record.json" in a["path"]
+                            for a in result["artifacts"]))
+        self.assertTrue(any(b.startswith("D1-IMAGE-CHAIN-PENDING")
+                            for b in result["blockers"]))
+
+    def test_without_skill71_root_no_image_run(self):
+        paths, proc = stage_and_run(_request(None, "1.0"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("images", json.loads(proc.stdout))
+
+    def test_images_need_their_inputs(self):
+        paths = self.stage_images()
+        proc = subprocess.run(
+            [sys.executable, str(WRAPPER),
+             "--request", str(paths["request-downsell_1.json"]),
+             "--result", str(paths["result"]),
+             "--launch", str(paths["launch.json"]),
+             "--route-graph", str(paths["route-graph.json"]),
+             "--copy", str(paths["copy-downsell_1.json"]),
+             "--journey", str(paths["journey-downsell_1.json"]),
+             "--enrichment", str(paths["enrichment-downsell_1.json"]),
+             "--extension", str(paths["extension-downsell_1.json"]),
+             "--skill81-root", str(SKILL81),
+             "--skill71-root", str(SKILL71)],
+            capture_output=True, text=True, cwd=str(paths["workdir"]))
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("--brand-file", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_paid_provider_needs_allow_paid(self):
+        paths = self.stage_images()
+        proc = self.run_with_images(paths, "--image-provider", "kie")
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("--allow-paid", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -76,6 +76,9 @@ MODULES = [
     "test_design_style.py",
     # SPF023: composition library (words over images, shaped crops, light fields).
     "test_composition_library.py",
+    # SPF030: a non-landing page role's own canonical structure (downsell_1): section count,
+    # wireframe lines, request builder, free preflight.
+    "test_page_structures.py",
 ]
 
 def skip_reason(stdout):

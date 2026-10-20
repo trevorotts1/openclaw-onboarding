@@ -589,14 +589,46 @@ def allowed_section_sequences(spec: dict) -> list:
     return out
 
 
+STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
+
+
+def page_structure(role):
+    """The canonical section structure of a non-landing page role
+    (references/page-structures.json), or None: the landing page and any role
+    without an entry keep the landing copy-spec behaviour."""
+    if not role or role == "landing":
+        return None
+    try:
+        data = json.loads(STRUCTURES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {STRUCTURES_FILE.name}: {exc}")
+    entry = (data.get("roles") or {}).get(role)
+    return entry if isinstance(entry, dict) else None
+
+
+def page_role_for(run_dir: Path, request: dict) -> str:
+    """The page role of this run: the request's own page_role, else the run's
+    declared role (intake launch.page_role, else the page-request.json that
+    scripts/shared_page_service.py stages), else landing."""
+    metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    for value in (request.get("page_role"), metadata.get("page_role")):
+        if value:
+            return str(value)
+    return design_board_module().declared_role(run_dir)
+
+
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical copy
     section of the selected form (Standard 12, Long-Form 15), in order.
+    A non-landing page role with an entry in references/page-structures.json
+    is checked against that entry's sequence instead (Downsell 8).
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
     """
-    version = declared_copy_version(run_dir, request)
+    role = page_role_for(run_dir, request)
+    structure = page_structure(role)
+    version = structure["copy_version"] if structure else declared_copy_version(run_dir, request)
     if not version:
         if paid:
             raise ExecutorError(
@@ -606,19 +638,23 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
         print("NOTE section_count: no copy_version declared; the section-count "
               "check was skipped (it is mandatory for a paid run)", file=sys.stderr)
         return None
-    spec_path = SPEC_DIR / f"{version}-v6.json"
-    if not spec_path.is_file():
-        raise ExecutorError(
-            f"copy_version {version!r} is not one of standard, long-form "
-            f"(no spec at {spec_path.name})")
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    if structure:
+        spec, what = structure, f"{structure['label']} page ({role})"
+    else:
+        spec_path = SPEC_DIR / f"{version}-v6.json"
+        if not spec_path.is_file():
+            raise ExecutorError(
+                f"copy_version {version!r} is not one of standard, long-form "
+                f"(no spec at {spec_path.name})")
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        what = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
     allowed = allowed_section_sequences(spec)
     if ids not in allowed:
         want = allowed[0]
         raise ExecutorError(
             f"section count: the request has {len(ids)} sections {ids} but the "
-            f"{version} copy has {len(want)} canonical sections {want}; missing "
+            f"{what} has {len(want)} canonical sections {want}; missing "
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
@@ -713,6 +749,9 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
         print("WARN hypersaturation: no resolved client palette; mockup and image stages will refuse "
               "until the client's brand colors are resolved (scripts/brand_colors.py)", file=sys.stderr)
     resolve_design_style(run_dir, data)
+    role = page_role_for(run_dir, data)
+    if role != "landing":
+        data["page_role"] = role  # wireframe_spec reads the page profile from it
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
     if not (data.get("copy_version") or metadata.get("copy_version")):
         # The run's form is an intake decision (artifact-contracts.md, Intake);
@@ -1492,7 +1531,8 @@ def main(argv=None) -> int:
             request["_brand_block"] = brand_block
             check = request.get("_section_check")
             if check:
-                print(f"PREFLIGHT_SECTIONS copy_version={check[0]} "
+                print(f"PREFLIGHT_SECTIONS page_role={request.get('page_role') or 'landing'} "
+                      f"copy_version={check[0]} "
                       f"sections={len(check[1])} canonical_ids={','.join(check[1])} "
                       f"checked_against={'; '.join(check[2]) or 'request only'}")
             refused = 0
