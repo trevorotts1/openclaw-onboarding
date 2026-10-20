@@ -234,6 +234,46 @@
       "value": "existing",
       "status": "provided",
       "source": "client"
+    },
+    "launch_calendar": {
+      "value": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+      "status": "provided",
+      "source": "client"
+    },
+    "channels": {
+      "value": "Email only",
+      "status": "provided",
+      "source": "client"
+    },
+    "conversation_ai": {
+      "value": "No, not this launch",
+      "status": "provided",
+      "source": "client"
+    },
+    "access_delivery": {
+      "value": "Yes, send access after purchase",
+      "status": "provided",
+      "source": "client"
+    },
+    "payment_plans": {
+      "value": "Paid in full",
+      "status": "provided",
+      "source": "client"
+    },
+    "sender_name": {
+      "value": "Elevation Coaching Co",
+      "status": "provided",
+      "source": "client"
+    },
+    "reply_to_email": {
+      "value": "hello@elevationcoaching.com",
+      "status": "provided",
+      "source": "client"
+    },
+    "a2p_ready": {
+      "value": "No, not yet",
+      "status": "provided",
+      "source": "client"
     }
   },
   "to_confirm": [],
