@@ -22,6 +22,7 @@ SPEC_FILES = {
     "standard": "standard-v6.json",
     "long-form": "long-form-v6.json",
     "product-selection": "product-selection-v1.json",
+    "thank-you": "thank-you-v1.json",  # the thank-you page (page_role thank_you): five sections, scripts/page_role.py reads its wireframe wording
     "upsell": "upsell-v6.json",  # the upsell page (page_roles upsell_1, upsell_2): eight sections
 }
 FORMS = tuple(SPEC_FILES)

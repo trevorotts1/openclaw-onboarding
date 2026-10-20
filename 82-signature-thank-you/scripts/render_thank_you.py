@@ -10,8 +10,15 @@ Input is the order view produced by scripts/thank_you_resolver.py
                  "background": "#...", "text": "#..."},
       "support": {"label": "Contact support",
                   "email": "support@example.test" | "url": "https://..."},
-      "manage_purchase_url": "https://..."
+      "manage_purchase_url": "https://...",
+      "hero_image": {"src": "https://...", "shape": "rect" | "circle"}   # optional
     }
+
+``hero_image`` is the page's one celebration image (Skill 71 slot TY-IMG-01,
+see hero_image_from_map and references/wireframe-mockup-layout.md). It is
+decorative (empty alt text), placed in the header of the normal confirmation
+layout only, never in an error or reconciling fragment, so the built page
+matches the approved mockup without ever carrying order data in an image.
 
 Output is ONE self-contained HTML fragment (a <section class="ty82"> with
 its own namespaced <style>; every class is prefixed ``ty82-``). It is a
@@ -146,6 +153,34 @@ def _support_link(brand, css_class="ty82-button ty82-button--secondary"):
             f'href="{_esc(href)}">{_esc(label)}</a>')
 
 
+HERO_SLOT_ID = "TY-IMG-01"
+
+
+def hero_image_from_map(image_map, slot_id=HERO_SLOT_ID, shape="rect"):
+    """The hero image brand token from Skill 71's image-map-upload/image-map.json (either
+    dialect: an ``images`` list whose entries carry id or master_id and asset_file,
+    asset_path, file or filename), or None when the map has no entry for the slot."""
+    entries = image_map.get("images") if isinstance(image_map, dict) else None
+    for entry in entries or []:
+        if not isinstance(entry, dict) or slot_id not in (entry.get("id"), entry.get("master_id")):
+            continue
+        for key in ("asset_file", "asset_path", "file", "filename"):
+            if entry.get(key):
+                return {"src": str(entry[key]), "shape": shape}
+    return None
+
+
+def _hero_html(brand):
+    """The page's one celebration image: decorative, from a safe URL, or nothing."""
+    hero = (brand or {}).get("hero_image")
+    src = _safe_url(hero.get("src"), "") if isinstance(hero, dict) else ""
+    if not src:
+        return ""
+    shape = "circle" if hero.get("shape") == "circle" else "rect"
+    return (f'<figure class="ty82-hero ty82-hero--{shape}">'
+            f'<img src="{_esc(src)}" alt=""></figure>')
+
+
 def _style_block(brand):
     colors = (brand or {}).get("colors") or {}
     primary = _color(colors.get("primary"), "#1a56db")
@@ -161,6 +196,9 @@ def _style_block(brand):
 .ty82 * {{ box-sizing: border-box; }}
 .ty82-headline {{ font-size: 1.6rem; margin: 0 0 .5rem; }}
 .ty82-reassurance {{ margin: 0 0 1rem; }}
+.ty82-hero {{ margin: 0 0 1rem; }}
+.ty82-hero img {{ display: block; max-width: 100%; height: auto; }}
+.ty82-hero--circle img {{ border-radius: 50%; }}
 .ty82-order-ref {{ font-weight: 600; }}
 .ty82-button {{ display: inline-block; padding: .6rem 1rem; border-radius: .375rem;
   border: 2px solid var(--ty82-primary); text-decoration: none; font-weight: 600;
@@ -480,6 +518,7 @@ def render_order_view(view, brand=None, state=None):
              f'<p class="ty82-order-ref">Order reference: '
              f'{_esc(view.get("order_number"))}</p>',
              _primary_action_html(view),
+             _hero_html(brand),
              "</header>"]
     if mode == "reconciling":
         parts.append(_reconciling_banner(state, brand))

@@ -11,6 +11,12 @@ page, Skill 78) has 5 (product-selection-v1.json). Every stage therefore
 renders one image per section, per platform. A form's spec supplies its own
 neutral section names, skeleton rows and per-section notes; nothing else differs.
 
+A page type other than the landing page (the thank-you page) names its own canonical
+sequence in its own copy spec (references/copy-specs/thank-you-v1.json, read through
+scripts/page_role.py): the builder reads that spec the same way, seeds each section's
+composition role, ground and default image slots from it, and stamps `page_role` into the
+request, so every later stage draws that page's structure and never a landing page's.
+
 Fail-closed: a manuscript that does not carry exactly the form's sections in
 order is refused, and the finished request must pass the same
 check_section_count the executor runs before it is written. Zero provider
@@ -31,7 +37,7 @@ place of --manuscript.
 Usage:
   build_production_request.py --copy-version upsell --copy-json copy-upsell_1.json \
       --bundle bundle-upsell_1.json --stage visual-mockup --out <run_dir>/production-request.json
-  build_production_request.py [--page-role checkout] --copy-version standard|long-form|product-selection \
+  build_production_request.py [--page-role checkout] --copy-version standard|long-form|product-selection|thank-you \
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
@@ -434,8 +440,26 @@ def role_section_fields(spec: dict, sid: str, slots: dict, buttons: list) -> dic
     return out
 
 
-def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
-    names = spec.get("role_names") or ROLE_NAMES
+def spec_slots(entry: dict, style_id) -> list:
+    """A page-type section's default image slots, shaped for the client's design style
+    (a slot's `shape_by_style`, `style_ratio` and `treatment_by_style` pick circle, 1:1 and the
+    circle-crop treatment for style B)."""
+    by_style = ("shape_by_style", "style_ratio", "treatment_by_style")
+    out = []
+    for slot in entry.get("default_slots") or []:
+        shaped = {k: v for k, v in slot.items() if k not in by_style}
+        shape = (slot.get("shape_by_style") or {}).get(style_id)
+        if shape:
+            shaped["shape"] = shape
+            shaped["aspect_ratio"] = (slot.get("style_ratio") or {}).get(style_id, shaped.get("aspect_ratio"))
+        if (slot.get("treatment_by_style") or {}).get(style_id):
+            shaped["treatment"] = slot["treatment_by_style"][style_id]
+        out.append(shaped)
+    return out
+
+
+def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) -> list:
+    names = spec.get("role_names") or {}
     units, order, _notes = parse_manuscript(text)
     sequence = list(spec["sequence"])
     if order != sequence:
@@ -444,6 +468,8 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
             f"{spec_label(spec)} has {len(sequence)} canonical sections {sequence}; "
             f"missing {[i for i in sequence if i not in order]}, unexpected "
             f"{[i for i in order if i not in sequence]}")
+    role_page = bool(spec.get("page_role"))
+    entries = {e["id"]: e for e in spec["sections"]}
     out = []
     for sid in sequence:
         copy, buttons = section_copy([u for u in units if u.section == sid])
@@ -452,9 +478,11 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
         if len(buttons) > 1 and not per_card:
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
-        entry = {"section_id": sid, "section_name": names.get(sid), "copy": copy,
-                 "cta": None if per_card else (buttons[0] if buttons else None),
-                 "slots": slots.get(sid, [])}
+        entry = {"section_id": sid,
+                 "section_name": (names.get(sid) or (entries[sid].get("name") if role_page else None)
+                                  or ROLE_NAMES.get(sid)),
+                 "copy": copy, "cta": None if per_card else (buttons[0] if buttons else None),
+                 "slots": slots.get(sid) or (spec_slots(entries[sid], style_id) if role_page else [])}
         if per_card:  # one button per package card
             entry["cta_labels"] = buttons
         # a non-landing form's spec pins each section's composition role, ground and behaviour note
@@ -469,7 +497,7 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict) -> list:
         # Part 6): a name, not a sentence. It is a verbatim label of its own so the
         # executor's truncated-copy guard keeps reading prose only.
         rows = copy.splitlines()
-        if sid == "12" and len(rows) > 1 and rows[-1][-1] not in exe.TERMINAL and len(rows[-1].split()) <= 8:
+        if (sid == "12" or entries[sid].get("signature_label")) and len(rows) > 1 and rows[-1][-1] not in exe.TERMINAL and len(rows[-1].split()) <= 8:
             entry["copy"], entry["labels"] = "\n".join(rows[:-1]), [rows[-1]]
         out.append(entry)
     return out
@@ -620,9 +648,11 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             version = version or copy_forms.form_for_role(page_role)
             if not version:
                 raise BuildError("--copy-version is required for a landing page (standard, long-form, product-selection or upsell)")
+            if version not in copy_forms.SPEC_FILES:
+                raise BuildError(f"--copy-version {version!r} is not one of {', '.join(copy_forms.FORMS)}")
             spec = copy_forms.load_spec(version)
         if sections is None:
-            sections = sections_from_manuscript(manuscript_text, spec, slots)
+            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}))
         elif stage not in wireframe_spec.WIREFRAME_STAGES:
             # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
             # the mockup stages take them through the section layout.
@@ -680,8 +710,8 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             raise BuildError(f"{exc} (supply --design-prose with the run's measured design system)")
         raise
     request["metadata"] = {
-        "stage": stage, "copy_version": version, "section_count": len(sections),
-        **({"page_role": spec["page_role"]} if spec.get("page_role") else {}),
+        "stage": stage, "copy_version": version, "page_role": spec.get("page_role", "landing"),
+        "section_count": len(sections),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         **({"page_role": structure["role"], **notes} if structure else {}),
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
@@ -757,7 +787,7 @@ def main(argv=None) -> int:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(request, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     m = request["metadata"]
-    print(f"WROTE {a.out} page_role={a.page_role} copy_version={request['copy_version']} stage={a.stage} "
+    print(f"WROTE {a.out} copy_version={request['copy_version']} page_role={m['page_role']} stage={a.stage} "
           f"sections={m['section_count']} ids={','.join(m['canonical_ids'])}")
     cb = m["char_budget"]
     if cb["target"] and cb["min_seen"] < cb["target"]:  # floor passed (else refused); band goal missed

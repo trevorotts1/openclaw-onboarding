@@ -83,6 +83,7 @@ import hypersaturation  # noqa: E402  SPF020: page color system + image grade, c
 import composition  # noqa: E402  the composition library (treatments, typed references)
 import copy_forms  # noqa: E402  the one registry of copy forms (standard, long-form, product-selection)
 import role_spec  # noqa: E402  per-page-role section structure (checkout and any later role)
+import page_role  # noqa: E402  page types with their own wireframe wording (thank-you): sections, layout, style references
 STITCH = SKILL_ROOT / "scripts" / "stitch_sections.py"
 HYBRID_BOARD = SKILL_ROOT / "scripts" / "build_hybrid_board.py"
 OVERVIEW_BOARD = SKILL_ROOT / "scripts" / "build_overview_board.py"
@@ -517,7 +518,7 @@ def copy_contract(section: dict) -> str:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     return "\n".join(lines)
 
-def negative_block(stage: str | None = None, steps: bool = True) -> str:
+def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict | None = None) -> str:
     """The skill's own defect-class negative block, applied at the wire.
 
     Stage aware: a wireframe stage prints annotations (section number and
@@ -534,8 +535,12 @@ def negative_block(stage: str | None = None, steps: bool = True) -> str:
                 "(section number and name, type specs, slot labels with pixel size, "
                 "ratio and treatment, behavior notes); no placeholder tokens, no "
                 "agent notes, no lorem, no bracketed markers, no watermarks.")
-    step_rule = ("Do not mis-number the 7 steps: exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 "
-                 "once each, and exactly 7 step labels. ") if steps else ""
+    if page_spec:  # a page type with its own steps rule (the thank-you page: four to six steps)
+        step_rule = ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
+                     "once each, with one step label per badge and no badge the copy does not carry. ")
+    else:
+        step_rule = ("Do not mis-number the 7 steps: exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 "
+                     "once each, and exactly 7 step labels. ") if steps else ""
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
         "same number twice, do not skip a number. " + step_rule + "Do not garble any label, mug slogan, or caption: no "
@@ -635,13 +640,13 @@ def page_role_for(run_dir: Path, request: dict) -> str:
     for value in (request.get("page_role"), metadata.get("page_role")):
         if value:
             return str(value)
-    return design_board_module().declared_role(run_dir)
+    return page_role.declared_role(run_dir, request)  # also reads a role form's copy_version
 
 
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical section of
     the page it builds, in order: the selected form's copy sections (Standard 12,
-    Long-Form 15, Product Selection 5, Upsell 8) for a landing or registered-form run, or the
+    Long-Form 15, Product Selection 5, Upsell 8, Thank-You 5) for a landing or registered-form run, or the
     page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
     for a run whose page_role has one. A non-landing page role with an entry in
     references/page-structures.json is checked against that entry's sequence
@@ -664,6 +669,9 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
                 f"of the {rspec['page_role']} page's style reference)")
         spec, label = rspec, f"{rspec['page_role']} page"
     else:
+        pspec = page_role.spec_for_role(role)
+        if pspec and not version:
+            version = pspec["copy_version"]  # a role page needs no landing copy_version
         if not version:
             if paid:
                 raise ExecutorError(
@@ -678,6 +686,13 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
                 f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
                 "(no copy spec for it in references/copy-specs/)")
         spec = json.loads(copy_forms.spec_path(version).read_text(encoding="utf-8"))
+        spec_role = spec.get("page_role")
+        if (pspec or spec_role) and (spec_role or page_role.LANDING_ROLE) != role:
+            raise ExecutorError(
+                f"page role {role!r} and copy_version {version!r} disagree: copy_version "
+                f"{version!r} is the {spec_role or 'landing'} page's canonical form, and "
+                f"{role!r} has its own ({pspec['copy_version'] if pspec else 'landing'}); "
+                "declare the page's own form (a page type is never forced into another's sections)")
         label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
     allowed = allowed_section_sequences(spec)
@@ -874,7 +889,10 @@ def section_typed_references(stage: str, width: int, resolved: dict, section: di
     page with its own role spec never matches one by number (structure only)."""
     platform = "mobile" if width <= 768 else "desktop"
     used = [e["treatment"] for e in resolved.get("slots") or []]
-    sid = None if (request or {}).get("_role_spec") else section.get("section_id")
+    # a page-type section ("2" of the thank-you page) is not landing section 2: it matches no
+    # landing sheet, only the per-treatment examples
+    sid = None if (section.get("composition_role") or (request or {}).get("_role_spec")
+                   or page_role.request_spec(request or {})) else section.get("section_id")
     return composition.typed_references(stage, platform, sid, used, form=request_form)
 
 
@@ -919,7 +937,8 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     body = wireframe_body(stage, section, index, width, request, body)
     copy_block = copy_contract(section)
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS)
+    neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
+                               page_spec=page_role.request_spec(request))
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
@@ -941,15 +960,20 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     style_blk = (design_style.style_block(request["design_style"], stage, slots)
                  if request.get("design_style") else "")
     comp_block = composition.block(stage, resolved, typed_refs)
-    blocks = [b for b in (copy_block, color_block, page_color, image_grade, ref_block,
-                          frame_block, comp_block, neg_block, style_blk) if b]
+    role_block = page_role.layout_block(stage, section, request, width)
+    named = (("COPY", copy_block), ("BRAND COLORS", color_block), ("PAGE COLOR SYSTEM", page_color),
+             ("IMAGE GRADE", image_grade), ("REFERENCE ROLES", ref_block), ("FRAME CONTRACT", frame_block),
+             ("COMPOSITION", comp_block), ("PAGE TYPE STRUCTURE", role_block), ("NEGATIVE", neg_block),
+             ("DESIGN STYLE", style_blk))
+    blocks = [b for _, b in named if b]
     budget = prompt_budget(request.get("model"))
     sizes = {
         "chars": 0,
         "copy_chars": len(copy_block),
         "contract_chars": (len(frame_block) + len(neg_block) + len(ref_block)
                            + len(color_block) + len(page_color) + len(image_grade)
-                           + len(style_blk) + len(comp_block)),
+                           + len(style_blk) + len(comp_block) + len(role_block)),
+        "blocks": [n for n, b in named if b] + (["BODY"] if body else []),
         "hypersaturation_chars": len(page_color) + len(image_grade),
         "composition_chars": len(comp_block),
         "prose_chars": len(body),
@@ -1606,6 +1630,9 @@ def main(argv=None) -> int:
                             print(f"PREFLIGHT_HYPERSAT {stage} {name} "
                                   f"ground={hypersaturation.ground_for(index, section)} "
                                   f"chars={sizes['hypersaturation_chars']}")
+                        print(f"PREFLIGHT_BLOCKS {stage} {name} "
+                              f"page_role={page_role.declared_role(run_dir, request)} "
+                              f"blocks={','.join(sizes['blocks'])}")
                         print(f"PREFLIGHT {stage} {name} ratio={ratio} "
                               f"chars={sizes['chars']} copy={sizes['copy_chars']} "
                               f"contract={sizes['contract_chars']} "

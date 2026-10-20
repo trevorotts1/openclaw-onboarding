@@ -11,7 +11,8 @@ references/wireframe-build-spec.json.
 What this module owns (everything is data in that JSON file):
   - reference_urls(stage, request): the one style reference a desktop or
     mobile wireframe job attaches, chosen by stage and by the request's form
-    (standard, long-form or upsell). It refuses by name a request that still lists the
+    (standard, long-form or upsell, or a page type's own form such as the thank-you
+    page, read from its copy spec through scripts/page_role.py). It refuses by name a request that still lists the
     greyscale sheet.
   - prompt_block(...): the annotated build-spec block (section chip and name
     tab, inline type specs, labelled image plates, filled CTA, contiguous
@@ -34,6 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import copy_forms  # noqa: E402  the one registry of copy forms
+import page_role  # noqa: E402  a page type's own form: sections, layout, style references
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SPEC_FILE = SKILL_ROOT / "references" / "wireframe-build-spec.json"
@@ -94,6 +96,9 @@ def form_of(request: dict, strict: bool = False) -> str:
     profile = profile_of(request)
     if profile:  # a page role's own sheet form, never inferred from its section count
         return profile["sheet_form"]
+    pspec = page_role.request_spec(request)
+    if pspec:  # a page type is its own form, never inferred from its section ids
+        return pspec["copy_version"]
     metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
     check = request.get("_section_check")
     declared = [request.get("copy_version"), metadata.get("copy_version"),
@@ -119,9 +124,15 @@ def form_of(request: dict, strict: bool = False) -> str:
     return "standard"
 
 
+def _role(form: str):
+    """The page type's copy spec when `form` is a page type's own form (e.g. thank-you)."""
+    return page_role.role_specs().get(form)
+
+
 def style_reference(stage: str, form: str) -> dict:
     try:
-        entry = spec()["style_references"][form][stage]
+        role = _role(form)
+        entry = role["wireframe"]["style_references"][stage] if role else spec()["style_references"][form][stage]
     except KeyError:
         raise SpecError(f"no wireframe style reference for stage {stage!r}, form {form!r}")
     rel = entry["file"]
@@ -217,8 +228,9 @@ def _type_specs(stage: str, section: dict) -> str:
     return "; ".join(f"{k.upper()} / {v}" for k, v in spec()["type_scale_default"][stage].items())
 
 
-def _note(stage: str, section: dict, cta: str) -> str:
-    notes = section.get("behavior_notes")
+def _note(stage: str, section: dict, cta: str, role=None) -> str:
+    entry = page_role.section_spec(role, section.get("section_id")) if role else None
+    notes = section.get("behavior_notes") or (entry or {}).get("note")
     if isinstance(notes, str) and notes.strip():
         return notes.strip()
     if isinstance(notes, list) and any(isinstance(n, str) and n.strip() for n in notes):
@@ -272,6 +284,7 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     blocks = s["blocks"]
     form = form_of(request)
     profile = profile_of(request)
+    role = _role(form)  # a page type with its own wireframe wording (thank-you); None otherwise
     ref = style_reference(stage, form)
     tag = section_tag(section, index)
     name = str(section.get("section_name") or section.get("section_id") or tag)
@@ -280,17 +293,23 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     scale = s["type_scale_default"][stage]
     strip = s["header_strip"][stage]
     long_form = form == "long-form"
-    page_kind = copy_forms.load_spec(form).get("wireframe", {}).get("page_kind", "a landing page")
     layouts = s.get("form_layouts", {}).get(form)  # a non-landing form carries its own per-section layout text
     rspec = request.get("_role_spec")  # a page with its own structure (references/copy-specs/roles/)
     over = (rspec or {}).get("wireframe_blocks") or {}  # replaces the landing-only wording below
-    lines = [line.format(form_label=FORM_LABEL[form], platform="mobile" if mobile else "desktop",
+    page_kind = (f"a {role['wireframe']['page_label']}" if role else
+                 copy_forms.load_spec(form).get("wireframe", {}).get("page_kind", "a landing page"))
+    lines = [line.format(form_label=role["wireframe"]["form_label"] if role else FORM_LABEL[form],
+                         platform="mobile" if mobile else "desktop",
                          width=width, tag=tag, name=name, position=index, total=total, page_kind=page_kind,
-                         page_label=profile["page_label"] if profile else "landing page")
+                         page_label=(profile["page_label"] if profile else
+                                     role["wireframe"]["page_label"] if role else "landing page"))
              for line in (profile["intro"] if profile else blocks["intro"])]
     if rspec:
         lines[0] = lines[0].replace("a landing page", f"a {rspec['page_role']} page")
-    lines += [blocks["style_reference"], over.get("colour", blocks["colour"]), blocks["grammar_head"]]
+    lines += [blocks["style_reference"]]
+    if role:
+        lines.append(role["wireframe"]["reference_note"])
+    lines += [over.get("colour", blocks["colour"]), blocks["grammar_head"]]
     if rspec:  # the reference sheet is style only
         lines.insert(len(lines) - 1, (
             f"PAGE TYPE LAYOUT, {rspec['page_role']} page: {rspec['layout_reference']} The attached sheet "
@@ -318,18 +337,25 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     lines.append(over.get("bands", blocks["bands"]))
     lines.append(blocks["strip_first"].format(page=strip["page_px"], content=strip["content_px"])
                  if index == 1 else blocks["strip_other"])
-    lines.append(blocks["behaviour"].format(note=_note(stage, section, cta)))
+    lines.append(blocks["behaviour"].format(note=_note(stage, section, cta, role)))
     if mobile:
         lines.append(blocks["mobile"].format(width=width))
         if ref["extra_rule"] and form != "long-form":
             lines.append(ref["extra_rule"])
     elif not layouts and not profile:
-        lines.append(over.get("desktop") or blocks[form.replace("-", "_") + "_desktop"])
+        lines.append(role["wireframe"]["desktop_block"] if role else
+                     over.get("desktop") or blocks[form.replace("-", "_") + "_desktop"])
     if layouts:
         lines.append(layouts["mobile" if mobile else "desktop"][tag])
     if profile:
         lines += _profile_lines(profile, tag, mobile, cta, request)
         lines.append(blocks["do_not_copy"])
+        return "\n".join(lines)
+    if role:  # the page type's own section flags decide steps; landing section ids and names never apply
+        entry = page_role.section_spec(role, section.get("section_id")) or {}
+        if entry.get("steps"):
+            lines.append(role["wireframe"]["steps_block"])
+        lines.append(role["wireframe"]["do_not_copy"])
         return "\n".join(lines)
     lines += page_type_lines(form, section, tag)
     if long_form and tag in ("2", "3", "4"):

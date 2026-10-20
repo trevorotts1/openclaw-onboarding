@@ -118,6 +118,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import composition  # noqa: E402
 import copy_forms  # noqa: E402
+import page_role  # noqa: E402
 
 EXPECTED_WIDTH = {"desktop-wireframe": 1440, "mobile-tablet": 390}
 WIDTH_TOLERANCE_PX = 2
@@ -958,7 +959,9 @@ def main(argv):
             print(f"ERROR: unreadable input: Pillow is required to read PNG widths ({exc})")
             return 2
         want = EXPECTED_WIDTH[stage]
-        floor = height_floor(stage, run_dir)
+        # the floor is the landing standard set's own height; a page type with its own section
+        # structure (the thank-you page) has no measured floor, so none is asserted (like mobile)
+        floor = None if page_role.spec_for_role(page_role.declared_role(run_dir)) else height_floor(stage, run_dir)
         total_height = 0
         for p in slices:
             try:

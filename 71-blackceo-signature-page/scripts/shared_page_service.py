@@ -39,6 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import copy_forms  # noqa: E402  the one registry of copy forms
+import page_role  # noqa: E402  a page type's own spec: role to form check below
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
@@ -88,7 +89,8 @@ def main(argv=None) -> int:
                    required=True,
                    help="the page's form: standard or long-form for a landing page, "
                         "product-selection for the order page (page_role product_selection), "
-                        "upsell for the upsell pages (page_roles upsell_1, upsell_2)")
+                        "upsell for the upsell pages (page_roles upsell_1, upsell_2), "
+                        "thank-you for page_role thank_you")
     p.add_argument("--test-run", action="store_true")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--image-cap", type=int, required=True)
@@ -121,6 +123,15 @@ def main(argv=None) -> int:
             raise ServiceError(
                 f"page-request: page_role {role!r} is not one of "
                 f"{role_enum}")
+        own = page_role.spec_for_role(role)
+        want = own["copy_version"] if own else None
+        wrong_form = (a.page_version != want) if own else (
+            page_role.role_specs().get(a.page_version) is not None)
+        if wrong_form:
+            raise ServiceError(
+                f"page-request: page_role {role!r} takes --page-version "
+                f"{want or 'standard or long-form'}, not {a.page_version!r}; a page type is "
+                "never forced into another page type's canonical sections")
         if request.get("assigned_skill") not in SHARED_SKILLS:
             raise ServiceError(
                 f"page-request: assigned_skill is "

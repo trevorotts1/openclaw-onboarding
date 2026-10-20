@@ -161,21 +161,15 @@ def read_json(path: Path):
 # ---------------------------------------------------------------- inputs
 
 def declared_role(run_dir: Path) -> str:
-    """The run's page role: intake launch.page_role, else page-request.json, else the role the
-    run's copy_version belongs to (a product-selection run is the product_selection page), else landing."""
-    for name, key in (("intake.json", "launch"), ("page-request.json", None)):
-        try:
-            data = json.loads((run_dir / name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        data = data.get(key) if key and isinstance(data, dict) else data
-        if isinstance(data, dict) and isinstance(data.get("page_role"), str) and data["page_role"]:
-            return data["page_role"]
+    """The run's page role: intake page_role or launch.page_role, else page-request.json, else
+    landing. scripts/page_role.py is the one reader, so the board, the section-count check, the
+    wireframe prompt and the gate always agree on the role."""
+    sys.path.insert(0, str(HERE))
     try:
-        form = json.loads((run_dir / "intake.json").read_text(encoding="utf-8")).get("copy_version")
-    except (OSError, ValueError, AttributeError):
-        form = None
-    return (copy_forms.load_spec(form).get("page_role") if copy_forms.norm(form) else None) or "landing"
+        import page_role
+    finally:
+        sys.path.pop(0)
+    return page_role.declared_role(run_dir)
 
 
 def brand_resolution(run_dir: Path):

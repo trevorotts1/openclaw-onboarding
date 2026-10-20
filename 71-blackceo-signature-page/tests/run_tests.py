@@ -85,6 +85,8 @@ MODULES = [
     # SPF030: a non-landing page role's own canonical structure (downsell_1): section count,
     # wireframe lines, request builder, free preflight.
     "test_page_structures.py",
+    # Page types: the thank-you page's own canonical sections reach every image stage.
+    "test_page_role_thank_you.py",
 ]
 
 def skip_reason(stdout):

@@ -3,7 +3,7 @@
 
 image_engine is "kie" (default) or "agnes". stage_gate.py accepts the Agnes route on
 image-generation-qc only when intake.json says "agnes" (references/kie-generation-route.md).
-copy_version ("standard", "long-form" or "product-selection") is a required intake decision (fix plan
+copy_version ("standard", "long-form", "product-selection", "upsell", or a page type's own form such as "thank-you") is a required intake decision (fix plan
 Amendment 6, Items 18/19): it selects the ONE copy guide, copy spec, and
 emotional-quality extract the copy stage reads (see the copy stage's
 copy_selection block in references/stage-contract.json and the selection
@@ -98,6 +98,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import copy_forms
 import design_style
 import launch_context
+import page_role
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
@@ -395,7 +396,9 @@ def founder_photo_form_problems(brand_path, run_dir):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("run_dir", type=Path)
-    p.add_argument("--page-version", choices=list(copy_forms.FORMS), required=True)
+    p.add_argument("--page-version", choices=list(copy_forms.FORMS), required=True,
+                   help="standard or long-form for a landing page; a page type's own form "
+                        "(thank-you) for that page, which also records its page_role")
     p.add_argument("--brand-owner", required=True)
     p.add_argument("--brand-file", default="assets/brand/blackceo-brand.json")
     p.add_argument("--creative-direction", default=None)
@@ -477,6 +480,12 @@ def main(argv=None):
     if a.image_cap < 0 or not a.run_dir.is_dir():
         print("FAIL: run_dir must exist and image_cap must be >= 0")
         return 2
+    forms = page_role.role_specs()
+    if (forms.get(a.page_version) or forms.get(a.copy_version)) and a.copy_version not in (None, a.page_version):
+        print(f"REFUSED: --page-version \"{a.page_version}\" and --copy-version \"{a.copy_version}\" "
+              "disagree; a page type's own form is both its page_version and its copy_version, and a "
+              "page type is never forced into another page type's canonical sections.")
+        return 2
 
     # Launch-context import (S71-02): validate everything in memory before
     # anything is written; a refusal here leaves the run untouched.
@@ -520,6 +529,12 @@ def main(argv=None):
               "creative_direction": a.creative_direction, "image_cap": a.image_cap,
               "image_engine": a.image_engine, "test_run": a.test_run,
               "copy_version": a.copy_version}
+    # a page type's own form records its role, so every stage (section count, wireframe prompt,
+    # design board, gate) reads one declaration instead of guessing a landing page
+    own_form = page_role.role_specs().get(a.copy_version or a.page_version)
+    if own_form:
+        intake["page_role"] = own_form["page_role"]
+        intake["copy_version"] = own_form["copy_version"]  # a page type's page_version is its copy_version
     if a.design_style:
         intake["design_style"] = a.design_style
         intake["design_style_source"] = a.design_style_source or "client_choice"

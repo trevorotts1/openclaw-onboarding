@@ -101,6 +101,16 @@ NEXT_ROLES = ("product_selection", "checkout", "free_entry")
 IDENTITY_FIELDS = ("tenant_id", "location_id", "launch_id", "revision")
 
 
+def _page_role():
+    """scripts/page_role.py: the copy versions a copy_profile may map to (landing forms and
+    each page type's own form)."""
+    spec = importlib.util.spec_from_file_location(
+        "page_role", Path(__file__).resolve().parent / "page_role.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class LaunchContextError(Exception):
     """A named launch-context violation; the import writes nothing."""
 
@@ -610,6 +620,8 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
                 "resolved before intake, not silently defaulted")
         updates["image_engine"] = provider
     copy_version = COPY_PROFILE_VERSION.get(request["copy_profile"])
+    if copy_version is None and request["copy_profile"] in copy_forms.FORMS:
+        copy_version = request["copy_profile"]  # a copy_profile that names a registered form is that form
     copy_mapped = copy_version is not None
     if copy_mapped:
         updates["copy_version"] = copy_version
