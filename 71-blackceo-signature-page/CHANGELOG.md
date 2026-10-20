@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased - LANE-49 repair: a folded-levels sales page gets its levels panel in a real run
+## 1.3.3 - 2026-10-20 - batch: LANE-49 repair: a folded-levels sales page gets its levels panel in a real run
 
 - `scripts/build_production_request.py`: for a sales-kind request the builder reads `<run_dir>/launch.json` (staged by `write_intake.py --launch-context`) and, when its `journey_mode` is `folded_levels`, stamps `folded_levels` = the number of main offers into the production request. `wireframe_spec.py` already closes the last wireframe slice on an N-card levels panel when the request carries it; before this change nothing in a real run set it. The visual-mockup prompt now closes on the same levels panel: `stage_executor.py` passes `levels=request.get("folded_levels")` to `page_kinds.mockup_line` (a bad count is refused as an executor error), so the wireframes and the mockups of a folded-levels sales page end on the same N level cards. Tests: `tests/test_lane49_folded_levels.py`.
 
