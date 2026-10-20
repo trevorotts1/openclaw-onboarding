@@ -580,14 +580,20 @@ class ConfigFragmentTests(unittest.TestCase):
         # on main (PR #2229, train #2235) and the downsell_1 consumer
         # ships in this tree, so the merged config now wires six
         # roles; the presence assertion below is the exact six-role
-        # set and checkout is the one remaining honest absence. Every
+        # set; checkout has since been wired design-only. Every
         # per-entry assertion is unchanged.
         config = load(CONFIG)
         adapters = config["adapters"]
         self.assertEqual(set(adapters),
                          {"downsell_1", "landing", "product_selection",
-                          "upsell_1", "upsell_2", "thank_you"})
-        self.assertNotIn("checkout", adapters)
+                          "upsell_1", "upsell_2", "thank_you", "checkout"})
+        # checkout is wired design-only (checkout_wrapper.py): the native
+        # form stays out of dispatch (CR-S49-003 amended).
+        checkout_cmd = adapters["checkout"]["command"]
+        self.assertTrue(any("checkout_wrapper.py" in part
+                            for part in checkout_cmd))
+        self.assertIn("{request}", checkout_cmd)
+        self.assertIn("{result}", checkout_cmd)
         commands = {}
         for role in ("upsell_1", "upsell_2"):
             spec = adapters[role]
@@ -599,6 +605,76 @@ class ConfigFragmentTests(unittest.TestCase):
             self.assertTrue(any("upsell_wrapper.py" in part for part in cmd))
             self.assertTrue(any("produce.py" in part for part in cmd))
         self.assertNotEqual(commands["upsell_1"], commands["upsell_2"])
+
+
+SKILL71 = STAGE.parents[1] / "71-blackceo-signature-page"
+
+
+class Upsell1ImagesTests(unittest.TestCase):
+    """--bridge-config hands the page to Skill 71's page-type runner (stub provider, free):
+    eight sections per stage, desktop and mobile, review PDFs, the page role the Design
+    Board reads. The wrapper builds none of it; Skill 71 does. PDFs and overview boards need the paid provider and are pinned in Skill 71's
+    own tests (tests/test_page_type_upsell.py)."""
+
+    def _run(self, image_cap=40, drop=()):
+        brand = SKILL71 / "assets" / "brand" / "blackceo-brand.json"
+
+        def mutate(record):
+            record["brand_ref"] = "brand.json"
+            record["brand_hash"] = __import__("hashlib").sha256(brand.read_bytes()).hexdigest()
+        wd, record, graph, by_role = make_workdir(mutate)
+        self.addCleanup(shutil.rmtree, wd, True)
+        landing = {"brand_owner": "blackceo", "image_cap": image_cap,
+                   "brand_file": str(brand), "design_style": "B"}
+        for key in drop:
+            landing.pop(key)
+        config = wd / "bridge-config.json"
+        config.write_text(json.dumps({"skill71": {"root": str(SKILL71)}, "landing": landing}))
+        cmd = [sys.executable, str(WRAPPER), "--slot", "upsell_1",
+               "--request", str(wd / "request-upsell_1.json"),
+               "--result", str(wd / "result-upsell_1.json"),
+               "--launch", str(wd / "launch.json"),
+               "--copy", str(S80_FIX / "copy-upsell1-public.valid.json"),
+               "--journey", str(ADAPT_FIX / "journey-main-only.testonly.json"),
+               "--enrichment", str(FIXTURES / "enrichment-upsell_1.json"),
+               "--produce", str(PRODUCE), "--bridge-config", str(config),
+               "--image-provider", "stub"]
+        return wd, subprocess.run(cmd, capture_output=True, text=True)
+
+    def test_stub_images_for_every_stage_with_eight_sections(self):
+        wd, proc = self._run()
+        self.assertEqual(proc.returncode, 0, proc.stdout[-1500:] + proc.stderr[-1500:])
+        run = wd / "images-upsell_1"
+        self.assertEqual(load(run / "page-request.json")["page_role"], "upsell_1")
+        self.assertEqual(load(run / "intake.json")["copy_version"], "upsell")
+        self.assertEqual(load(run / "intake.json")["design_style"], "B")
+        for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup"):
+            request = load(run / f"production-request-{stage}.json")
+            self.assertEqual(len(request["sections"]), 8, stage)
+            self.assertEqual(request["metadata"]["canonical_ids"], list("12345678"), stage)
+            self.assertTrue((run / stage).is_dir(), stage)
+        self.assertEqual(len(list((run / "desktop-wireframe").glob("section-*.png"))), 8)
+        self.assertEqual(len(list((run / "visual-mockup" / "mobile").glob("part-*.png"))), 8)
+        # the stub provider never composes review PDFs or overview boards (a placeholder is not
+        # an approved input); the kie provider does, per Skill 71's stage executor
+        self.assertTrue((wd / "result-upsell_1.json").is_file())
+
+    def test_missing_operator_value_fails_closed_before_any_image(self):
+        wd, proc = self._run(drop=("brand_owner",))
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("brand_owner", proc.stderr)
+        self.assertFalse((wd / "images-upsell_1").exists())
+        self.assertFalse((wd / "result-upsell_1.json").exists())
+
+    def test_no_bridge_config_says_no_images_were_made(self):
+        wd, record, graph, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        proc = run_wrapper(wd, "upsell_1",
+                           copy_path=S80_FIX / "copy-upsell1-public.valid.json",
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("no wireframes or mockups were made", proc.stderr)
 
 
 if __name__ == "__main__":

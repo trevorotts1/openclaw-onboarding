@@ -18,6 +18,8 @@ MODULES = [
     "test_stage_executor_prompt_contract.py",
     "test_overview_board.py",
     "test_section_count.py",
+    # Per-page-role section structure (checkout): role spec, builder, composition roles, preflight.
+    "test_role_section_spec.py",
     # SPF021: Design Board contract, QC floor, approval binding and gates.
     "test_design_board.py",
     "test_review_pdf_stage.py",
@@ -60,6 +62,8 @@ MODULES = [
     "test_item12_hybrid_board.py",
     "test_item15_trait_gates.py",
     "test_wireframe_build_spec.py",
+    # Upsell page type: eight-section form, layout lines, page role, runner.
+    "test_page_type_upsell.py",
     "test_item25_part_naming.py",
     "test_item16_parity_gate.py",
     "test_item26_delivered_filename.py",
@@ -76,6 +80,15 @@ MODULES = [
     "test_design_style.py",
     # SPF023: composition library (words over images, shaped crops, light fields).
     "test_composition_library.py",
+    # The order page (page_role product_selection) as a third copy form of the one pipeline.
+    "test_product_selection_form.py",
+    # SPF030: a non-landing page role's own canonical structure (downsell_1): section count,
+    # wireframe lines, request builder, free preflight.
+    "test_page_structures.py",
+    # Page types: the thank-you page's own canonical sections reach every image stage.
+    "test_page_role_thank_you.py",
+    # SPF030: signature sales page vs signature landing (opt-in) page kinds.
+    "test_page_kinds.py",
 ]
 
 def skip_reason(stdout):

@@ -50,6 +50,21 @@ invocable command dispatch runs for the downsell_1 role:
      is additionalProperties: false), and the projection validated
      through collect_launch_receipts.validate_result before placement.
 
+  4. IMAGES  when --skill71-root is given, after the gauntlet passes the
+     wrapper calls Skill 71's shared image service ONCE
+     (71-blackceo-signature-page/scripts/shared_page_service.py). The
+     service stages the request and runs a pipeline command, which builds
+     the four per-stage production requests from the staged page copy
+     (build_production_request.py --page-role downsell_1: eight sections
+     from references/page-structures.json) and runs
+     stage_executor.py for desktop-wireframe, mobile-tablet and
+     visual-mockup: desktop and mobile, one top-to-bottom review PDF per
+     stage, overview boards. The Skill 71 code is reused, never copied.
+     The image chain, the Design Board approval and final-mockups are
+     the client-gated stages downstream of the board; they are named in
+     the result blockers, never claimed. Default provider is the offline
+     stub; a paid run needs --image-provider kie and --allow-paid.
+
 HONESTY CEILING: this wrapper executes no native action and records
 no install read-back, so a fully validated local run is capped at
 status locally_verified / proof_class L2, never higher, and the
@@ -84,6 +99,8 @@ import importlib.util
 import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -101,8 +118,12 @@ DECLINE_ROUTE = "thank_you"
 # main at 9ccd653644a9ed179933ea32a801ee631c520125 (PR #2229) into
 # vendor-81/ at build time. The runtime loads these files from
 # --skill81-root and refuses any byte that diverges from the pin.
+# PIN_VALIDATE_DOWNSELL was advanced (SPF030, 2026-10-20) from the PR #2229 bytes
+# (2a0d1d9f...) to the validator bytes on main after the S71-02b and S71-02e
+# entitlement-identity changes (a463111eb, 1e3c4183b, 460adbec1); the old pin
+# refused every run against the current Skill 81 tree.
 PIN_VALIDATE_DOWNSELL = \
-    "2a0d1d9fc8858080f58bcb9f08d84e76a0443332d387a3713e8402618476dd6d"
+    "43291ab4f8705b5a96da1f944f8a1c88869bfd52bb77dbc4a46128630a6edae1"
 # PIN_REQUEST_SCHEMA was advanced by the adoption map 1.5 candidate
 # (2026-10-18) to the dual-accept revision of Skill 81's request
 # contract (schema_version enum 1.0/1.1 plus the Q12
@@ -152,6 +173,14 @@ JOURNEY_KEYS = frozenset({"main_purchased_verified", "u1_event",
 
 STATUS_CAP = "locally_verified"
 PROOF_CAP = "L2"
+IMAGE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup",
+                "final-mockups")
+IMAGES_RUN_STAGES = IMAGE_STAGES[:3]
+IMAGES_PENDING_BLOCKER = (
+    "D1-IMAGE-CHAIN-PENDING: the wireframes and the visual mockup ran; "
+    "the image inventory, generation, the client-approved Design Board "
+    "and final-mockups are the downstream stages that need the "
+    "client's approval and were not run by this wrapper")
 BLOCKERS = (
     "D1-ACTION-OUTCOME-UNVERIFIED: no verified native action outcome "
     "exists for this run; the shared action component was not executed "
@@ -746,6 +775,94 @@ def canonical_u2_page_id(graph: Mapping[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# Skill 71 shared image service: wireframes and mockups for the page.
+# ---------------------------------------------------------------------------
+def _run_images(args, request: Mapping[str, Any],
+                work_dir: Path) -> Dict[str, Any]:
+    """Call shared_page_service.py once. Skill 71's builder and executor
+    run as its pipeline command; nothing of Skill 71 is reimplemented
+    here. Returns {run_dir, artifacts, stages}."""
+    missing = [name for name in ("brand_file", "brand_owner", "image_cap")
+               if getattr(args, name) in (None, "")]
+    if missing:
+        raise WrapperError(
+            ["images: --skill71-root needs " + ", ".join(
+                "--" + m.replace("_", "-") for m in missing)])
+    root = Path(args.skill71_root).resolve()
+    scripts = root / "scripts"
+    needed = [scripts / "shared_page_service.py",
+              scripts / "build_production_request.py",
+              scripts / "stage_executor.py",
+              root / "references" / "page-structures.json"]
+    absent = [str(p) for p in needed if not p.is_file()]
+    if absent:
+        raise WrapperError([f"images: the Skill 71 tree at {root} lacks "
+                            + ", ".join(absent)])
+    if args.image_provider == "kie" and not args.allow_paid:
+        raise WrapperError(["images: --image-provider kie spends money; "
+                            "it needs --allow-paid, approved by the owner"])
+    run_dir = Path(args.images_run_dir) if args.images_run_dir \
+        else work_dir / "downsell_1-images"
+    py = sys.executable
+    model = args.image_model or (
+        "STUB-NO-MODEL" if args.image_provider == "stub"
+        else "gpt-image-2-5-sunburst-image-to-image")
+    steps = []
+    for stage in IMAGE_STAGES:
+        build = [py, str(scripts / "build_production_request.py"),
+                 "--page-role", ROLE, "--page-copy", str(Path(args.copy).resolve()),
+                 "--stage", stage, "--model", model,
+                 "--out", f"production-request-{stage}.json",
+                 "--run-dir", "."]
+        if args.design_prose:
+            build += ["--design-prose", str(Path(args.design_prose).resolve())]
+        steps.append(shlex.join(build))
+    for stage in IMAGES_RUN_STAGES:
+        run_stage = [py, str(scripts / "stage_executor.py"), ".",
+                     "--request", f"production-request-{stage}.json",
+                     "--stages", stage, "--provider", args.image_provider]
+        if args.image_provider == "kie":
+            run_stage.append("--allow-paid")
+        steps.append(shlex.join(run_stage))
+    service = [py, str(scripts / "shared_page_service.py"),
+               "--request", str(Path(args.request).resolve()),
+               "--run-dir", str(run_dir),
+               "--page-version", "standard",
+               "--brand-owner", args.brand_owner,
+               "--image-cap", str(args.image_cap),
+               "--brand-file", str(Path(args.brand_file).resolve()),
+               "--launch-record", str(Path(args.launch).resolve()),
+               "--route-graph", str(Path(args.route_graph).resolve()),
+               "--pipeline-command", "sh -c " + shlex.quote(" && ".join(steps))]
+    proc = subprocess.run(service, capture_output=True, text=True)
+    if proc.returncode != 0:
+        tail = (proc.stdout + proc.stderr).strip().splitlines()[-12:]
+        raise WrapperError(
+            [f"images: the shared image service exited {proc.returncode}: "
+             + " | ".join(tail)])
+    artifacts, stages = [], {}
+    for stage in IMAGES_RUN_STAGES:
+        record_path = run_dir / stage / "stage-executor-record.json"
+        if not record_path.is_file():
+            raise WrapperError([f"images: stage {stage} wrote no record at "
+                                f"{record_path}"])
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        comp = record.get("composition") or {}
+        outputs = [record_path]
+        for key in ("review_pdf", "overview_boards"):
+            out = (comp.get(key) or {}).get("output")
+            for line in str(out or "").splitlines():
+                if line.strip() and Path(line.strip()).is_file():
+                    outputs.append(Path(line.strip()))
+        stages[stage] = {"images": len(record.get("images") or []),
+                         "review_pdf": (comp.get("review_pdf") or {}).get("status"),
+                         "overview_boards": (comp.get("overview_boards") or {}).get("status")}
+        artifacts += [{"path": str(o), "sha256": _sha256(o.read_bytes())}
+                      for o in outputs]
+    return {"run_dir": str(run_dir), "artifacts": artifacts, "stages": stages}
+
+
+# ---------------------------------------------------------------------------
 # The wrapper run.
 # ---------------------------------------------------------------------------
 def run(args) -> Dict[str, Any]:
@@ -833,6 +950,11 @@ def run(args) -> Dict[str, Any]:
         if codes:
             raise WrapperError([f"trial disclosure: {c}" for c in codes])
 
+    # ---- Images: wireframes and mockups through Skill 71 ----
+    images = None
+    if args.skill71_root:
+        images = _run_images(args, request, work_dir)
+
     # ---- Result assembly (translator pattern) ----
     extension_path = Path(args.extension) if args.extension \
         else work_dir / "extension-downsell_1.json"
@@ -909,6 +1031,9 @@ def run(args) -> Dict[str, Any]:
          "sha256": _sha256(extension_out.read_bytes())},
     ]
 
+    if images:
+        artifacts += images["artifacts"]
+
     author_session = args.author_session \
         or os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION") \
         or os.environ.get("OPENCLAW_SESSION_ID") \
@@ -928,7 +1053,7 @@ def run(args) -> Dict[str, Any]:
         "reviewer_session": None,
         "independent_review": False,
         "proof_class": PROOF_CAP,
-        "blockers": list(BLOCKERS),
+        "blockers": list(BLOCKERS) + ([IMAGES_PENDING_BLOCKER] if images else []),
         "native_bindings_ref": None,
         "test_only": request["test_only"],
     }
@@ -947,6 +1072,8 @@ def run(args) -> Dict[str, Any]:
         "enriched_request": str(enriched_path),
         "extension_artifact": str(extension_out),
         "blockers": projected["blockers"],
+        **({"images": {"run_dir": images["run_dir"],
+                       "stages": images["stages"]}} if images else {}),
     }
 
 
@@ -1008,6 +1135,33 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "(default: disclosure-downsell_1.json beside "
                          "the request; required for non-one-time D1 "
                          "billing)")
+    ap.add_argument("--skill71-root",
+                    help="path to 71-blackceo-signature-page; when given, "
+                         "the wrapper calls its shared image service once "
+                         "for the wireframes and mockups")
+    ap.add_argument("--brand-file",
+                    help="the approved brand file (its bytes hash to the "
+                         "request's brand_hash); with --skill71-root")
+    ap.add_argument("--brand-owner",
+                    help="the client's brand owner name; with --skill71-root")
+    ap.add_argument("--image-cap", type=int,
+                    help="the approved image cap; with --skill71-root")
+    ap.add_argument("--image-provider", choices=["stub", "kie"],
+                    default="stub",
+                    help="stub (offline, default) or kie (paid, needs "
+                         "--allow-paid)")
+    ap.add_argument("--allow-paid", action="store_true",
+                    help="confirms the spend cap is approved for kie")
+    ap.add_argument("--image-model",
+                    help="the image model id for the prompt budget "
+                         "(default: stub model for stub, the sunburst "
+                         "model for kie)")
+    ap.add_argument("--design-prose",
+                    help="the run's measured design-system prose JSON "
+                         "(build_production_request.py --design-prose)")
+    ap.add_argument("--images-run-dir",
+                    help="where the image run is staged (default "
+                         "<work_dir>/downsell_1-images)")
     ap.add_argument("--author-session",
                     help="the dispatch run's session identity (the "
                          "page-result author); falls back to "

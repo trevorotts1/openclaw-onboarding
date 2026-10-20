@@ -3,7 +3,7 @@
   "slug": "blackceo-signature-page",
   "name": "blackceo-signature-page",
   "client_facing": true,
-  "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6.",
+  "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, signature sales page, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6.",
   "departments": [
     "web-development",
     "marketing",
@@ -66,6 +66,9 @@
     "build my landing page",
     "create a BlackCEO landing page",
     "create a signature landing page",
+    "build a signature sales page",
+    "create a signature sales page",
+    "signature sales page",
     "build an opt-in page",
     "build a squeeze page",
     "build an event registration page",

@@ -312,6 +312,8 @@ class AdapterWiringTests(unittest.TestCase):
                 path = tmp / f"{name}-{role}.json"
                 path.write_text("{}", encoding="utf-8")
                 mapping[role] = path
+        images = tmp / "order-page-image-inputs.json"
+        images.write_text("{}", encoding="utf-8")
         return {
             "work_dir": work,
             "launch_record": launch_path,
@@ -320,6 +322,7 @@ class AdapterWiringTests(unittest.TestCase):
             "copy": copy,
             "journey": journey,
             "enrichment": enrichment,
+            "image_inputs": images,
         }
 
     def test_all_real_entry_points_match_contract_signatures(self):
@@ -361,6 +364,50 @@ class AdapterWiringTests(unittest.TestCase):
                 for part in spec["command"]:
                     if part.endswith(".py"):
                         self.assertTrue(Path(part).is_file(), part)
+
+    def test_order_page_images_are_required_in_every_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self.make_inputs(Path(tmp))
+            images = inputs["image_inputs"]
+            cmd = adapters.build_dispatch_config(**inputs)["adapters"]["product_selection"]["command"][-1]
+            # plan, then the order page images, then the page result: a result exists only after the images
+            self.assertLess(cmd.index("build_selection_plan.py"), cmd.index("run_image_stages.py"))
+            self.assertLess(cmd.index("run_image_stages.py"), cmd.index("emit_page_result.py"))
+            self.assertIn(str(images), cmd)
+            self.assertNotIn("--allow-paid", cmd)  # dispatch never spends
+            # a full funnel gets every page: no way to leave the image step out
+            for bad in ("none", "NONE", "", Path(tmp) / "missing.json"):
+                with self.assertRaises(adapters.AdapterError):
+                    adapters.build_dispatch_config(**{**inputs, "image_inputs": bad})
+            del inputs["image_inputs"]
+            with self.assertRaises(TypeError):
+                adapters.build_dispatch_config(**inputs)
+
+    def test_checkout_design_adapter_is_wired_only_on_request_and_never_for_the_form(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self.make_inputs(Path(tmp))
+            manuscript = Path(tmp) / "checkout.md"
+            brand = Path(tmp) / "brand.json"
+            for path in (manuscript, brand):
+                path.write_text("x", encoding="utf-8")
+            design = {"manuscript": manuscript, "brand_file": brand, "brand_owner": "blackceo",
+                      "image_cap": 2, "design_style": "B"}
+            config = adapters.build_dispatch_config(**inputs, checkout_design=design)
+            command = config["adapters"]["checkout"]["command"]
+            self.assertTrue(any(part.endswith("checkout_wrapper.py") for part in command))
+            self.assertTrue(Path([p for p in command if p.endswith("checkout_wrapper.py")][0]).is_file())
+            self.assertEqual(command[command.index("--design-style") + 1], "B")
+            self.assertIsNone(re.search(r"<[^>]+>|/path/to", json.dumps(config)))
+            self.assertEqual(set(config["adapters"]) - {"checkout"},
+                             {"landing", "product_selection", "upsell_1", "upsell_2", "downsell_1", "thank_you"})
+            surface = adapters.NATIVE_SURFACES["checkout"]  # the form is still native, never a dispatch adapter
+            self.assertTrue(surface["design_adapter"])
+            self.assertFalse(surface["dispatch_adapter"])
+            with self.assertRaises(adapters.AdapterError):
+                adapters.adapter_for("checkout")
+            design["manuscript"] = "/path/to/checkout.md"
+            with self.assertRaises(adapters.PlaceholderRefused):
+                adapters.build_dispatch_config(**inputs, checkout_design=design)
 
     def test_config_refuses_placeholder_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

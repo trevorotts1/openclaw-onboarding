@@ -1,6 +1,6 @@
 ---
 name: blackceo-signature-page
-description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
+description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
 version: 1.3.1
 ---
 
@@ -31,18 +31,20 @@ This is the canonical BlackCEO **single-page** landing-page production skill for
 
 ## Route boundaries first
 
-Use this skill for a focused single-page conversion experience: landing page, opt-in/squeeze page, event/registration page, challenge page, booking page, lead-generation page, or comparable page using the BlackCEO Standard or Long-Form system.
+Use this skill for a focused single-page conversion experience: landing page, signature sales page, opt-in/squeeze page, event/registration page, challenge page, booking page, lead-generation page, or comparable page using the BlackCEO Standard or Long-Form system.
 
 Route elsewhere when the assignment is specifically:
 
 - **Skill 49 `signature-funnel`** — multi-step 3/5/7 Signature Funnel with checkout / upsell / downsell / OTO chain.
-- **Skill 56 `sales-page-assets`** — Direct-Response / VSL / 8-section main / 9-section upsell / high-ticket / order-bump asset stack.
+- **Skill 56 `sales-page-assets`** — Direct-Response / VSL / 8-section main / 9-section upsell / high-ticket / order-bump asset stack. A request for a *signature sales page* is NOT this: it stays here as page kind `sales`.
 - **Skill 62 `cinematic-web-funnel-engine`** — animated, immersive, scroll-controlled cinematic website/funnel.
 - **Website-craft** — ordinary multi-page marketing website whose governing copy contract is not this BlackCEO single-page system.
 
 If the owner explicitly asks for this BlackCEO Signature Page skill, use it even when the page ultimately hands delivery to another rail.
 
-For the seven `signature_launch` page roles (`landing`, `product_selection`, `checkout`, `upsell_1`, `downsell_1`, `upsell_2`, `thank_you`), copy and page assembly route as above: landing stays in this skill, product selection to Skill 78, checkout to the native Convert and Flow order form installed by Skill 06, upsell 1 and 2 to Skill 80, downsell to Skill 81, thank-you to Skill 82. All seven roles take their four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) from this skill's shared image service, `scripts/shared_page_service.py`, called once from the owning skill's wrapper.
+For the seven `signature_launch` page roles (`landing`, `product_selection`, `checkout`, `upsell_1`, `downsell_1`, `upsell_2`, `thank_you`), copy and page assembly route as above: landing stays in this skill, product selection to Skill 78, checkout to the native Convert and Flow order form installed by Skill 06, upsell 1 and 2 to Skill 80, downsell to Skill 81, thank-you to Skill 82. All seven roles take their four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) from this skill's shared image service, `scripts/shared_page_service.py`, called once from the owning skill's wrapper. The service builds every page from one copy form: `standard` (12 sections) and `long-form` (15) for the landing page, `product-selection` (5 sections: bridge headline, how to choose, packages, compare, questions and trust) for the `product_selection` page, registered in `scripts/copy_forms.py` with its spec in `references/copy-specs/`. A further page type adds one spec file and one registry row; it never gets a second pipeline. Skill 78's `scripts/run_image_stages.py` is the first wrapper that makes the call. A role whose page is not a 12- or 15-section landing has its own section sequence in `references/copy-specs/roles/<role>.json` (checkout today: five sections, built with `build_production_request.py --page-role checkout`); the pipeline, the Design Board, the brand-colour, design-style, composition and hypersaturation rules are the same code for every role. The checkout page's design stages are run by Skill 49's `checkout_wrapper.py`; the order form itself stays the native form installed by Skill 06. The upsell roles (`upsell_1`, `upsell_2`) are wired end to end: the upsell is its own eight-section form, registered in `scripts/copy_forms.py` (`references/copy-specs/upsell-v6.json`, `copy_version: upsell`), `scripts/run_page_type.py` sequences the service, `build_production_request.py --copy-version upsell --copy-json --bundle` and `stage_executor.py` (the per-form layout lines live in `references/wireframe-build-spec.json` `page_type_blocks`), and Skill 49's `upsell_wrapper.py --bridge-config` calls the runner. A page role other than `landing` is checked and drawn against its own canonical section structure, `references/page-structures.json` (today `downsell_1`: eight sections, from Skill 81's page object), with its wireframe lines in `references/wireframe-build-spec.json` `page_profiles`; `scripts/build_production_request.py --page-role <role> --page-copy <page.json>` builds that role's production request. A role without an entry keeps the landing rules.
+
+Each page type has its own canonical sections, so a page is never forced into the landing page's. The landing forms are `standard` (12) and `long-form` (15). A page type with a structure of its own has a copy spec in `references/copy-specs/` carrying a `page_role` key, read through `scripts/page_role.py`: the thank-you page (`thank_you`, copy_version `thank-you`) has five sections (confirmation and welcome, order summary, access, what happens next, help manage and close; one celebration image, no offer button; its layout reference is `82-signature-thank-you/references/wireframe-mockup-layout.md`, proposed pending the owner's approval). Declare it with `write_intake.py --page-version thank-you` (or `shared_page_service.py --page-version thank-you`), which records `page_role` in `intake.json`; the section-count check, `build_production_request.py --copy-version thank-you`, the wireframe and mockup prompts (a `PAGE TYPE STRUCTURE` block), the Design Board and the gate all read that one declaration. `scripts/run_page_role_stages.py` runs the builder and the executor for the wireframe and mockup stages, so a request for this page gets desktop and mobile wireframes and mockups, one long PDF per stage and the overview boards, with client brand colors, the Design Board first, design style A, B or C, composition variety and the hypersaturated grade exactly as for a landing page. A page role with no copy spec yet (for example `product_selection`) keeps its present behavior until its structure is added the same way.
 
 Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
 
@@ -80,6 +82,17 @@ Do not load all three style libraries at once. Load only the selected family/sty
 ### Design / wireframes / mockups
 
 Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
+
+## Page kinds: signature sales page and signature landing (opt-in) page
+
+Both are page role `landing`; intake records which one with `write_intake.py --page-kind sales|opt_in` (a production run cannot close intake without it, `gate:intake_page_kind`). The kind is data in `references/page-kinds.json`, read by `scripts/page_kinds.py`:
+
+| Kind | Copy form | Canonical sections | Buttons | Wireframe closing band |
+|---|---|---|---|---|
+| `sales` (signature sales page) | Standard (default) or Long-Form | 12, or 15 | go to the client's checkout | closing checkout panel, no price, no card fields |
+| `opt_in` (signature landing page) | Long-Form only | 15 | open the client's registration form | registration strip, no form fields |
+
+The section sequence is never copied: it is the copy spec's own `sequence` for the form. `stage_executor.py` refuses a kind that does not allow the declared `copy_version`, prints `PREFLIGHT_PAGE` (role, kind, canonical sequence length), and both wireframe stages, the mockup stages and the Design Board carry the kind. Everything else (wireframes, mockups, desktop and mobile, PDFs, overview boards, Design Board, style A/B/C, hypersaturation) is the one pipeline below, never a second one.
 
 ## Governing production order
 
@@ -128,7 +141,7 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 - Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
 - Keep exact approved copy unless the owner explicitly authorizes copy changes.
 
-The client never receives loose section images: every image stage ends with `scripts/combine_review_pdf.py <run_dir> --stage <stage>` (run automatically by `stage_executor.py`), which combines the sections in order into validator-gated desktop and mobile PDFs under `review-pdfs/` (see references/artifact-contracts.md, Review-PDF manifest). Keep the individual PNGs as internal inputs.
+The client never receives loose section images: every image stage ends with `scripts/combine_review_pdf.py <run_dir> --stage <stage>` (run automatically by `stage_executor.py`), which combines the sections in order into validator-gated desktop and mobile PDFs under `review-pdfs/` (see references/artifact-contracts.md, Review-PDF manifest). **No notes between sections: the PDF reads as one continuous page, top to bottom, with one title band at the top of page 1 only.** Never put a header, footer, caption or label band between or after sections; `validate_review_pdf.py` fails any PDF that does, and a failing PDF is never delivered. Keep the individual PNGs as internal inputs.
 
 ## Design style: A Block, B Circle, C Hybrid
 
@@ -185,6 +198,8 @@ Ask whether the owner/client has an explicit image-engine preference when genera
 ### Section count: one image per copy section
 
 The selected `copy_version` fixes the canonical section count: Standard 12, Long-Form 15 (`references/copy-specs/standard-v6.json` and `long-form-v6.json`, `sequence`; Long-Form inserts 2A, 3A and 4A, and may expand Section 5 into 5A, 5B and 5C). Every image stage renders one image per canonical section, per platform. A request never merges sections into bands. Operator step, copy stage closed: `python3 scripts/build_production_request.py --copy-version <standard|long-form> --manuscript <run_dir>/copy/internal-manuscript.md --stage <stage> --out <run_dir>/production-request.json` (it refuses a manuscript that lacks a canonical section), then `python3 scripts/stage_executor.py <run_dir> --preflight --stages <stage>` and read its `PREFLIGHT_SECTIONS` and `PREFLIGHT_CTA` lines. `stage_executor.py` fails closed before any prompt or call when the request's section ids differ from the selected form's sequence, the request's copy source, or `copy/copy-manifest.json`; a paid run also refuses a request whose form is not declared. Contract: `references/generation-execution.md`.
+
+A page type's own form follows the same rule: `build_production_request.py --copy-version thank-you` reads `references/copy-specs/thank-you-v1.json` (5 sections, ids 1 to 5), and `stage_executor.py --preflight` prints `PREFLIGHT_SECTIONS ... page_role=thank_you sections=5` and, per slice, `PREFLIGHT_BLOCKS` naming the prompt's blocks. A landing-shaped request (12 sections) for that page is refused by name, and so is a `page_role` that disagrees with the declared `copy_version`.
 
 ### Generation execution path
 

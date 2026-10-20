@@ -254,7 +254,7 @@ STEP 0 (engine-first): resolve the page family BEFORE any selector call.
   NOT a template-first fallback and NOT a hand-author case: it confirms Skill 71 ownership.
   Never hand-author a single BlackCEO page in this stage.
 
-The four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) for upsell, downsell, thank-you, product selection and the sales page are produced by Skill 71 `blackceo-signature-page`'s shared image service (`scripts/shared_page_service.py`) and called from the owning skill's wrapper.
+The four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) are produced by Skill 71 `blackceo-signature-page`. Wired today: the upsell pages (`upsell_1`, `upsell_2`), where `upsell_wrapper.py --bridge-config` hands the page to Skill 71's page-type runner (`scripts/run_page_type.py`, which uses `shared_page_service.py`, the eight-section upsell copy spec and the page-role Design Board). Not yet wired: downsell, thank-you, product selection and the sales page; their wrappers do not call the image service, so they return copy without wireframes or mockups.
 Run v2-autonomous-build-sop.md (06-ghl-install-pages).
 Inputs: approved copy.md (P2) + assets-manifest.json (P3) + funnel-spec.json (P1).
 Gate-3 verbatim copy match required.

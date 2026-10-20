@@ -31,7 +31,8 @@
       "validators": [
         "gate:must_supply --brand {brand}",
         "gate:intake_engine",
-        "gate:intake_design_style"
+        "gate:intake_design_style",
+        "gate:intake_page_kind"
       ],
       "handoff": {
         "intake_field": "funnel_handoff",
@@ -72,7 +73,7 @@
         }
       ],
       "validators": [
-        "python3 scripts/validate_copy_structure.py {run_dir} --spec references/copy-specs/{copy_version}-v6.json",
+        "python3 scripts/validate_copy_structure.py {run_dir} --spec {copy_spec}",
         "python3 scripts/validate_public_copy.py {run_dir}/copy/public-copy.md",
         "gate:copy_handoff --manifest {run_dir}/copy/copy-manifest.json --public-copy {run_dir}/copy/public-copy.md --manuscript {run_dir}/copy/internal-manuscript.md"
       ],
@@ -95,6 +96,12 @@
             "guide": "references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md",
             "spec": "references/copy-specs/long-form-v6.json",
             "emotional_quality": "references/copy-specs/long-form-emotional-quality.md"
+          },
+          "thank-you": {
+            "guide": "82-signature-thank-you/references/layout-and-copy-profiles.md",
+            "spec": "references/copy-specs/thank-you-v1.json",
+            "emotional_quality": null,
+            "page_role": "thank_you"
           }
         }
       },
@@ -174,7 +181,8 @@
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
         "python3 scripts/design_style.py validate-inventory {run_dir}",
-        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json"
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage desktop-wireframe"
       ],
       "review_required": true,
       "min_scores": {
@@ -229,7 +237,8 @@
       ],
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
-        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json"
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json",
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage mobile-tablet"
       ],
       "review_required": true,
       "min_scores": {
@@ -274,11 +283,11 @@
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/visual-mockups-desktop.pdf",
+          "glob": "review-pdfs/*_DESKTOP_MOCKUPS-VISUAL.pdf",
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/visual-mockups-mobile.pdf",
+          "glob": "review-pdfs/*_MOBILE_MOCKUPS-VISUAL.pdf",
           "min_count": 1
         }
       ],
@@ -502,11 +511,11 @@
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/final-mockups-desktop.pdf",
+          "glob": "review-pdfs/*_DESKTOP_MOCKUPS-FINAL.pdf",
           "min_count": 1
         },
         {
-          "glob": "review-pdfs/final-mockups-mobile.pdf",
+          "glob": "review-pdfs/*_MOBILE_MOCKUPS-FINAL.pdf",
           "min_count": 1
         }
       ],

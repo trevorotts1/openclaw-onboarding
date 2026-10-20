@@ -782,7 +782,9 @@ class StageGateTest(unittest.TestCase):
         subprocess.run([PY, str(ROOT / "scripts" / "write_intake.py"), str(run), "--page-version", "standard",
                         "--brand-owner", "blackceo", "--brand-file", "private/brand.json", "--image-cap", "1",
                         # a production intake also needs the client's design style (gate:intake_design_style)
-                        "--design-style", "A"],
+                        "--design-style", "A",
+                        # and the landing-role page kind (gate:intake_page_kind, SPF030)
+                        "--page-kind", "sales"],
                        check=True, capture_output=True)
         run_gate("close", str(run), "intake", expect=0, env=env)
 

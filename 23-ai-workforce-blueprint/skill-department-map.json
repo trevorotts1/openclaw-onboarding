@@ -1317,7 +1317,7 @@
    "slug": "blackceo-signature-page",
    "name": "blackceo-signature-page",
    "client_facing": true,
-   "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6. The four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) for upsell, downsell, thank-you, product selection and the sales page are produced by Skill 71 `blackceo-signature-page`'s shared image service (`scripts/shared_page_service.py`) and called from the owning skill's wrapper.",
+   "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, signature sales page, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6. The four image stages (desktop wireframe, mobile wireframe, desktop mockup, mobile mockup) for upsell, downsell, thank-you and product selection are produced by Skill 71 `blackceo-signature-page`'s shared image service (`scripts/shared_page_service.py`) and called from the owning skill's wrapper. The signature sales page and the signature landing (opt-in) page are the two page kinds (`sales`, `opt_in`) of Skill 71's own landing role and take the four image stages natively inside Skill 71; the Skill 56 Direct-Response sales page is a separate stack with no wireframe or mockup stages.",
    "departments": [
     "web-development",
     "marketing",
@@ -1380,6 +1380,9 @@
     "build my landing page",
     "create a BlackCEO landing page",
     "create a signature landing page",
+    "build a signature sales page",
+    "create a signature sales page",
+    "signature sales page",
     "build an opt-in page",
     "build a squeeze page",
     "build an event registration page",
@@ -1551,6 +1554,9 @@
    ],
    "intent_triggers": [
     "build a product selection page",
+    "build my order page",
+    "wireframes and mockups for my order page",
+    "package selection page",
     "compare my packages",
     "a page to choose between my packages",
     "pricing options page for my launch"

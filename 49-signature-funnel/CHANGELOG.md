@@ -1,5 +1,10 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## Unreleased - 2026-10-20 - a full funnel gets all its pages: the sales page and the opt-in page (SPF030)
+
+- `scripts/landing_bridge.py`: a launch with every extra on (upsell_1, downsell_1, upsell_2) is a full funnel. The bridge now refuses a config that does not give it both pages (`landing.page_kind` `sales` plus `landing.opt_in.run_dir`), then stages and produces a Skill 71 run for each from the same request: the sales page, and the signature landing (opt-in) page, which is Long-Form only (so `page_version` and the dispatch `copy_profile` are `long-form`). The one result placed at `{result}` is the weaker of the two with both runs' artifacts listed. Smaller funnels are unchanged. The route graph, request schemas and funnel matrix are untouched: the opt-in page is a second page of the landing role, not a new node.
+- `scripts/test_landing_bridge.py`: `TestFullFunnelGetsAllPages` (refusals before staging, both pages produced, one merged result, smaller funnel unchanged).
+
 ## v2.1.2 - 2026-10-06 - feat: the image prompt floor uses the rule 12 band
 
 - `scripts/prove_sf_prompt_floor.py`: the 5,000 to 19,000 `PROMPT_CHAR_FLOOR` and `PROMPT_CHAR_CEILING` are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. AF-FUN-PROMPT-FLOOR and AF-FUN-PROMPT-CEILING keep their codes.

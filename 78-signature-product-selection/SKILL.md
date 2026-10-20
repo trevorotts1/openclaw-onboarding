@@ -1,18 +1,21 @@
 ---
 name: signature-product-selection
-description: Build the specificity-led Product Selection page for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
+description: Build the specificity-led Product Selection page (the order page: the page where a buyer chooses between packages, with its desktop and mobile wireframes and mockups) for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
 version: 0.2.3
 ---
 
-# Signature Product Selection (Skill 78) - BUILD CHECKPOINT, NOT INSTALLED
+# Signature Product Selection (Skill 78) - the order page (package selection)
 
-Status: engineering build in progress under the Signature Launch packet v1.0
-(spec `08_SKILL_78_PRODUCT_SELECTION_SPEC.md`). Version 0.2.0 adds the
-production session store, the runtime adapter, and the on-disk broken
-fixture set on top of the 0.1.0 checkpoint Trevor accepted as placed
-(PR #2143 at bf56760f). This directory is a checkpoint
-outside any installed skill folder until INTEGRATION packaging and Trevor's
-batch approval. Do not route live launches here yet.
+Status: the plan builder, page-result emitter and image route are wired into
+Skill 49 dispatch (product_selection) and Skill 83. The runtime descriptor
+(`runtime-manifest.json`) still states the honest installation proof level: a
+descriptor is not an installation, and no native page, route or price is
+claimed installed in any tenant by this skill. Engineering history: the packet
+v1.0 spec `08_SKILL_78_PRODUCT_SELECTION_SPEC.md`; version 0.2.0 added the
+production session store, the runtime adapter and the on-disk broken fixture
+set on top of the 0.1.0 checkpoint accepted as placed (PR #2143 at bf56760f).
+"Order page" in a request means this page: the page that lets a buyer choose
+between packages. The order form that takes payment is Skill 79 (checkout).
 
 ## Invocation boundary
 
@@ -28,7 +31,40 @@ batch approval. Do not route live launches here yet.
 
 Clean page copy model, comparison matrix, selection UI model, selection-state
 contract, responsive HTML/CSS (later tasks), asset list, native binding plan,
-and a page result in the shared doc 02 contract shapes.
+a page result in the shared doc 02 contract shapes, and, when the launch asks
+for them, the page's wireframes and mockups (next section).
+
+## Wireframes and mockups (desktop and mobile)
+
+This page gets its four image stages from Skill 71's shared image service, never
+from a pipeline of its own. `scripts/run_image_stages.py` is the one call
+the service expects from the owning skill:
+
+1. `71 shared_page_service.py --page-version product-selection` admits the page
+   as `page_role` `product_selection` and writes `intake.json`.
+2. `scripts/emit_section_manuscript.py` turns the approved plan into the page's
+   five sections (copy form `product-selection`, 71
+   `references/copy-specs/product-selection-v1.json`): 1 Bridge headline,
+   2 How to choose, 3 Packages (one card and one Choose button per approved
+   offer), 4 Compare, 5 Questions and trust. Every fact is the plan's; the two
+   sentences the plan has no field for are authored (`copy.json`) or derived from
+   the plan's own matrix, and the manifest says which.
+3. `71 build_production_request.py --copy-version product-selection` and
+   `71 stage_executor.py` make the desktop wireframe, mobile wireframe and the
+   visual mockup (desktop and mobile), then the one long PDF per stage and the
+   overview boards on the paid provider. `final-mockups` waits for the client's
+   approval of the Design Board (`page_role` `product_selection`).
+
+Everything taught for every page type applies unchanged because it is Skill 71's
+route: the client's brand colours only, the Design Board first, annotated
+build-spec wireframes (numbered section chips, type specs, labelled image
+plates, filled buttons, never grey line work), design style A, B or C (style B
+package images are circle PNGs with transparent corners), composition variety,
+the hypersaturated grade, references for structure only. Each approved package
+gets one image plate (`PKG-n`), so the Design Board's image grid is never empty.
+Free proof: `run_image_stages.py ... --preflight` composes and checks every
+prompt with no provider call. A paid run is the same command with the inputs
+naming `kie` and `--allow-paid` added by hand; dispatch never passes it.
 
 ## Scripts (stdlib only, fail-closed)
 
@@ -52,6 +88,10 @@ and a page result in the shared doc 02 contract shapes.
 - `scripts/render_selection_preview.py` - local-only responsive HTML preview
   from a plan (default, selected, error, reconfirm states), using
   `components/selection-ui/selection.css`.
+- `scripts/emit_section_manuscript.py` - the approved plan as the five-section
+  order page manuscript and manifest for Skill 71's image pipeline.
+- `scripts/run_image_stages.py` - the order page's wireframes and mockups,
+  through Skill 71's shared image service (`--inputs none` is refused: the order page always gets its images).
 - `scripts/emit_binding_plan.py` - the explicit per-price-choice binding plan
   consumed by S79 and S06.
 - `scripts/emit_page_result.py` - page result emitter (Path A follow-on
