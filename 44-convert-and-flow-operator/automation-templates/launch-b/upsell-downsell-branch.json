@@ -1,0 +1,138 @@
+{
+  "id": "upsell-downsell-branch",
+  "name": "Upsell / Downsell Bought-or-Declined Branch",
+  "aliases": [
+    "upsell downsell branch",
+    "bought declined follow-up",
+    "option page branch",
+    "post-offer-page branch",
+    "next-offer follow-up",
+    "smaller-option follow-up"
+  ],
+  "category": "launch-b",
+  "source": {
+    "spec": "launch-automations.spec.md section 3.3 — 'Upsell / downsell branch | Bought / declined → matching follow-up | new, small'",
+    "checklist": "A1 (family present, template = new, small), A2 (purchase stops promotional emails/texts; everything draft_only)"
+  },
+  "purpose": "One small branch per offer option page. When a contact reaches an upsell or downsell page, wait for the verified purchase event, then send exactly one matching follow-up: bought → the upsell follow-up that moves the buyer to the next offer; declined (explicit No-thanks or no verified purchase by the wait deadline) → the downsell follow-up for that downsell page. Never both. Everything is built as a draft and never sends to a real contact.",
+  "applies_to": {
+    "offer_slots": ["upsell_1", "downsell_1", "upsell_2"],
+    "one_workflow_per": "option page (one per upsell page and one per downsell page)"
+  },
+  "trigger": {
+    "what_starts_it": "Contact reaches an offer option page, or explicitly declines that option.",
+    "ghl_trigger_type": "Tag Added = `option-branch:<slot>:<offer_id>` (set by the option page view; the No-thanks link also adds `declined-<offer_id>` before this tag so the first IF/ELSE can skip the wait).",
+    "entry_conditions": [
+      "Tag `option-branch:<slot>:<offer_id>` is present",
+      "Contact is not already tagged `bought-<slot>` or `declined-<slot>` for this option (re-entry guard)"
+    ],
+    "exit_conditions": [
+      "Bought branch sent (tag `bought-<slot>`)",
+      "Declined branch sent (tag `declined-<slot>`)",
+      "Contact opts out / requests removal"
+    ],
+    "branch_authority": "The verified purchase tag `purchased-<offer_id>` written by the Skill 44 receiver/processor after a `purchase_observed` event with payment_status=succeeded. A raw page click or return URL never counts as a purchase."
+  },
+  "branch": {
+    "bought": {
+      "condition": "Tag `purchased-<offer_id>` present",
+      "follow_up": "Skill 50 sequence kind `upsell_followup` for this upsell page — moves the buyer to the next offer",
+      "channels": ["Email"],
+      "draft_only": true
+    },
+    "declined": {
+      "condition": "Tag `declined-<offer_id>` present, or no `purchased-<offer_id>` tag after the wait deadline",
+      "follow_up": "Skill 50 sequence kind `downsell_followup` for this option's downsell page — the smaller option",
+      "channels": ["Email"],
+      "draft_only": true
+    },
+    "exclusivity": "One branch only. The bought branch removes `declined-<offer_id>`; the declined branch never fires when `purchased-<offer_id>` is present."
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "If/Else — tag `declined-<offer_id>` present?",
+      "true": "Skip to step 6 (declined branch) immediately.",
+      "false": "Continue to step 2."
+    },
+    {
+      "step": 2,
+      "action": "Wait — 15 minutes (purchase webhook and processor settle window)."
+    },
+    {
+      "step": 3,
+      "action": "If/Else — tag `purchased-<offer_id>` present?",
+      "true": "Go to step 4 (bought branch).",
+      "false": "Go to step 6 (declined branch — timeout is a soft decline)."
+    },
+    {
+      "step": 4,
+      "action": "Add tag `bought-<slot>`; remove `declined-<offer_id>` and `option-branch:<slot>:<offer_id>`."
+    },
+    {
+      "step": 5,
+      "action": "Enroll in the matching Skill 50 `upsell_followup` sequence (draft). End workflow."
+    },
+    {
+      "step": 6,
+      "action": "Add tag `declined-<slot>`; remove `option-branch:<slot>:<offer_id>`."
+    },
+    {
+      "step": 7,
+      "action": "Enroll in the matching Skill 50 `downsell_followup` sequence (draft). End workflow."
+    }
+  ],
+  "suppression": {
+    "rule": "A verified purchase makes the contact a buyer: stop promotional launch emails and texts for that buyer (checklist A2). The branch keeps sending only the matching offer follow-up.",
+    "authority": "Skill 44's purchase processor and store re-check active entitlement state at dispatch time (A21); this workflow does not duplicate that check and never sends a promotional broadcast itself."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 engine (U-GHL-PROBE verdict: the official API cannot create, update, publish or trigger a workflow; it only reads them).",
+    "build_rail": "skill44_engine",
+    "workflow_name": "AUTO-B — Upsell/Downsell Branch — <slot> — <offer_id>",
+    "trigger_config": {
+      "ghl_trigger": "Tag Added `option-branch:<slot>:<offer_id>`",
+      "tag_only": true
+    },
+    "actions_in_order": [
+      "1. If/Else — `declined-<offer_id>` present? TRUE -> step 6; FALSE -> step 2",
+      "2. Wait 15 minutes",
+      "3. If/Else — `purchased-<offer_id>` present? TRUE -> step 4; FALSE -> step 6",
+      "4. Add `bought-<slot>`; remove `declined-<offer_id>`; remove `option-branch:<slot>:<offer_id>`",
+      "5. Add to Skill 50 `upsell_followup` sequence; end",
+      "6. Add `declined-<slot>`; remove `option-branch:<slot>:<offer_id>`",
+      "7. Add to Skill 50 `downsell_followup` sequence; end"
+    ],
+    "draft_only": true,
+    "live_allowed": false,
+    "tags": [
+      "option-branch:<slot>:<offer_id>",
+      "purchased-<offer_id>",
+      "declined-<offer_id>",
+      "bought-<slot>",
+      "declined-<slot>"
+    ],
+    "goal_event": "purchase_observed (payment_status=succeeded) for <offer_id>"
+  },
+  "launch_plan": {
+    "id": "upsell_downsell_branch",
+    "family": "upsell_downsell",
+    "template": "new",
+    "build_rail": "skill44_engine",
+    "draft_only": true,
+    "trigger": {
+      "type": "tag_added",
+      "detail": "option-branch:<slot>:<offer_id>"
+    },
+    "waits_for": [
+      "upsell_followup_option",
+      "downsell_followup_option",
+      "page_option"
+    ],
+    "waits_for_note": "Example unit ids at template level. Each per-page instance resolves them to that page's real email-sequence and page unit ids from the launch plan."
+  },
+  "acceptance": {
+    "A1": "Family `upsell_downsell` exists as a template with template = 'new' (spec calls it 'new, small'); failed_payment is not part of this family.",
+    "A2": "Every action is draft_only; the bought/declined branch never sends a promotional launch email or text, and a verified purchase suppresses them."
+  }
+}
