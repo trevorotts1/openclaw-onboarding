@@ -1,5 +1,16 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.31: clients can use the Council on their own box, and Claude Code routes are proven
+
+In plain English: until now the Council worked end to end only on the operator's own machine. After the next fleet roll, every client box builds the Council engine itself, keeps it running, and gives the client a signed-in way to open the Roast Room. Nothing changes about the client's models, keys or settings.
+
+- **Wiring on every box**: `wire.sh` builds the runtime the same way every time, starts the Council service, and restarts it after updates and reboots. Running it twice changes nothing.
+- **A private address per client**: `provision-council-access.sh` gives a box its own `<name>-council` address behind the same sign-in and email list as the client's Command Center. A box without a Command Center still gets Council answers from its agent, just no Roast Room link.
+- **Claude Code routes**: the Council now convenes through claude-nine and plain Claude Code, as well as a client's own configured provider such as DeepSeek. It uses the route the client already has and never switches it.
+- **Repair and clearer reasons**: a stuck session is repaired and a blocked one says why in plain words.
+- **Box check**: `verify-council-box.sh` reports whether a box is ready and names the exact missing step if not.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.49).
+
 ## v1.0.30: the verdict says why, and Key Points show what the elders actually said
 
 In plain English: two gaps found on the first real live council. The screen said "Verdict: Wait" and showed nine of nine votes for Option B, but never said why the answer was Wait. And the Key Points list held only phase headings. Nothing about how a council runs has changed; the screen now shows more of what the session already recorded, with no new model calls.

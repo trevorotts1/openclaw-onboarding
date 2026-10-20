@@ -1,3 +1,7 @@
+## [v27.1.49]  -  2026-10-20  -  Council (Skill 77) v1.0.31: clients can use the Council after the fleet roll, and Claude Code routes are proven
+
+- In plain English: Clients can now open and use the Council on their own box after the update; Claude Code routes proven. After the next fleet roll, each box builds the Council engine itself, keeps it running, and restarts it after updates and reboots. Where the operator access step has run, the client gets a private address behind the same sign-in as their Command Center. The Council convenes on the model route the client already uses, including Claude Code through claude-nine and plain Claude Code, and never changes their models, keys or logins.
+
 ## [v27.1.48]  -  2026-10-20  -  Fleet-roll fix CAN015: atomic upgrade targets the OpenClaw the supervisor launches, not the copy on PATH (#2361)
 
 - CAN015 (#2361): oc-atomic-upgrade.sh now resolves the install the launchd supervisor launches (scripts/oc-supervisor-install.py), measures and installs with that node's npm into that prefix, proves the live gateway process runs the target version with /healthz 200, and refuses non-launchd supervisors (exit 78). self-update.sh reports openclaw_after from the supervisor install, so a second copy on PATH can no longer be upgraded while the running gateway stays old.
