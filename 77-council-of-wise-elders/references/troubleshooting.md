@@ -18,7 +18,37 @@
   (SKILL.md step 4b) instead, and never ask the client to approve
   anything to get past this error.
 
+- **COUNCIL_WIRE / COUNCIL_BOX codes.** wire.sh prints one
+  `COUNCIL_WIRE:` line during the roll; `scripts/verify-council-box.sh`
+  prints one `COUNCIL_BOX:` line on demand. Every code, its cause and its
+  fix is tabulated in install-matrix.md. Short list:
+  COUNCIL_WIRE READY, NOOP, ADOPTED_EXISTING, DEFERRED_NO_GUI, NOT_READY
+  with NODE_TOO_OLD, NO_NPM, NO_PM2, RUNNING_AS_ROOT, PORT_IN_USE,
+  SERVICE_UNHEALTHY, RUNTIME_BUILD_FAILED or UNSUPPORTED_PLATFORM;
+  COUNCIL_BOX READY, DEGRADED or NOT_READY with RUNTIME_MISSING,
+  RELEASE_UNVERIFIED, SERVICE_NOT_REGISTERED, SERVICE_DOWN,
+  NO_USABLE_ROUTE, ACCESS_GATE_OPEN, CLI_SHIM_MISSING,
+  PUBLIC_ORIGIN_UNSET, ACCESS_GATE_MISSING or TUNNEL_NOT_IN_CONTAINER.
+  Report the code in plain words and never work around it by simulating
+  a session.
+
 ## Common situations
+
+**The client cannot open the chamber.** Run
+`bash scripts/verify-council-box.sh` first. PUBLIC_ORIGIN_UNSET means the
+operator has not yet run `scripts/provision-council-access.sh --all --apply`
+for this box. The client signs in at
+`https://<slug>-council.zerohumanworkforce.com` with their Command Center
+emails; an email that is not on the Command Center allow-list is refused by
+Cloudflare Access by design. Send the `chamber_url` the CLI prints, never a
+127.0.0.1 link, which only opens on the box itself.
+
+**The service is not running.** wire.sh owns it: the LaunchAgent
+`ai.blackceo.council-service` on a Mac, the pm2 app `council-of-wise-elders`
+on a VPS. Re-roll rather than starting it by hand. Do not run npm or tsx in
+the skill folder; the service runs from the immutable release in
+`$OPENCLAW_ROOT/council-runtime` and its data lives in
+`$OPENCLAW_ROOT/council-data`.
 
 **The council disappeared after an update.** It did not: update sync
 replaces the skill folder, and council state never lived there. Check

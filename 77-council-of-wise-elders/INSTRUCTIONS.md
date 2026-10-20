@@ -47,7 +47,24 @@ and dispatch are the proven live legs.
    for the built-in sample decision). Convening is the approval: no
    grant, no approval prompt. Report the session id, the exact model
    label, whether it was the client's choice or the harness default, and
-   the links the command prints.
+   the links the command prints. Send the client the `chamber_url`
+   (`https://<slug>-council.zerohumanworkforce.com/chamber/#session=<id>`),
+   never a 127.0.0.1 link. Use `blackceo-council`, or
+   `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
+   PATH. If the box cannot convene, run `bash scripts/verify-council-box.sh`
+   and report its `COUNCIL_BOX:` line and the matching fix from
+   references/install-matrix.md.
+
+## Where the service runs
+
+`wire.sh` (run by the fleet roll) keeps the service up: LaunchAgent
+`ai.blackceo.council-service` on a Mac, pm2 app `council-of-wise-elders` in
+the container on a VPS, release and receipts in
+`$OPENCLAW_ROOT/council-runtime`, durable data in
+`$OPENCLAW_ROOT/council-data`. The client signs in at their own
+`https://<slug>-council.zerohumanworkforce.com` with their Command Center
+emails. The operator publishes that address with
+`scripts/provision-council-access.sh --all --apply`. Nobody hand-runs npm.
 
 ## Modes
 
