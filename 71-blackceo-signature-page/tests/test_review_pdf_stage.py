@@ -64,6 +64,15 @@ class ReviewPdfStageTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPTS / script), *map(str, args)],
                               capture_output=True, text=True)
 
+    def test_sales_page_deliverables_are_named_sales_not_landing(self):
+        (self.run_dir / "intake.json").write_text(json.dumps({"page_role": "landing", "page_kind": "sales"}))
+        role = dl.declared_page_role(self.run_dir)
+        self.assertEqual(dl.title_band(role, "desktop", "desktop-wireframe", 10),
+                         "SIGNATURE SALES PAGE \u00b7 DESKTOP WIREFRAME \u00b7 10 SECTIONS")
+        self.assertEqual(dl.pdf_name(role, "desktop", "desktop-wireframe"), "sales-page_DESKTOP_WIREFRAMES.pdf")
+        (self.run_dir / "intake.json").write_text(json.dumps({"page_role": "landing", "page_kind": "opt_in"}))
+        self.assertEqual(dl.declared_page_role(self.run_dir), "landing")
+
     def test_every_stage_gets_named_ordered_pdfs_at_native_size(self):
         make_images(self.run_dir, "final-mockups", "desktop/part-{n:02d}.png", 600)
         make_images(self.run_dir, "final-mockups", "mobile/part-{n:02d}.png", 200)

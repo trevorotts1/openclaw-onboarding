@@ -9,7 +9,7 @@ delivery folders) and build_overview_board.py (board titles, headers, tile
 captions, file names) both take their words from here, so a page type added
 later is named once and every output follows.
 
-The labels are driven only by `page_role` and the stage; no role is special-cased
+The labels are driven only by `page_role` (a landing-role run whose page_kind is sales is named "sales_page") and the stage; no role is special-cased
 beyond a display-name table, and an unknown role still gets a readable name.
 Pure stdlib: no Pillow, no I/O except the run's own role files.
 """
@@ -43,10 +43,18 @@ def declared_page_role(run_dir):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
+        import page_kinds
         import page_role
     finally:
         sys.path.pop(0)
-    return page_role.declared_role(run_dir)
+    role = page_role.declared_role(run_dir)
+    if role == "landing":  # a sales page is role landing: name it by its kind, like the Design Board
+        try:
+            if page_kinds.declared(run_dir, {}) == "sales":
+                return "sales_page"
+        except page_kinds.KindError:
+            pass  # an unknown kind is refused by the gate; a label never crashes on it
+    return role
 
 
 def page_type(role):
