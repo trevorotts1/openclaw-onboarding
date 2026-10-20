@@ -1,0 +1,219 @@
+{
+  "id": "launch-text-keyword-opt-in",
+  "name": "Launch Text Keyword Opt-In — Text EARLY, Double Confirmation, Consent Tags",
+  "aliases": [
+    "keyword opt-in",
+    "text early",
+    "text keyword",
+    "sms keyword opt in",
+    "inbound keyword opt in",
+    "text me launch updates",
+    "double opt in text"
+  ],
+  "category": "launch-text",
+  "template_status": "new, small (spec §3.2 keyword opt-in)",
+  "source": {
+    "spec": "launch-automations.spec.md §3.2 — Opt-in confirmation + keyword opt-in (e.g. \"Text EARLY\")",
+    "capability_note": "automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md — Customer Replied / inbound-message triggers are not auto-built by CampaignBuilder; use `caf workflows patch-trigger` or the Tier-4 managed browser",
+    "consent_rules": "Every text ends with a reply invitation and STOP. Send window 08:00–21:00 recipient local. Nothing sends unless A2P 10DLC is approved.",
+    "voice": "Skill 50 copy voice — first person, short, plain, one idea per message, no hype, no fake urgency."
+  },
+  "purpose": "Turn an inbound text of the launch keyword (default EARLY) into a recorded, double-confirmed SMS subscriber. The keyword only starts the handshake: the contact must reply YES before any launch text is ever sent. STOP always wins. Outside the send window the confirmation waits for the next 08:00 local.",
+  "keyword": {
+    "example": "Text EARLY",
+    "value": "{{opt_in_keyword}}",
+    "default": "EARLY",
+    "normalization": "trim surrounding whitespace, uppercase, exact single token match",
+    "case_insensitive": true,
+    "note": "One keyword per launch. The value comes from the launch plan / launch intake, never from free text typed by a model."
+  },
+  "trigger": {
+    "primary_event": "Inbound SMS whose normalized body equals {{opt_in_keyword}}",
+    "ghl_trigger_type": "Customer Replied",
+    "trigger_filter": {
+      "channel": "SMS",
+      "match": "exact phrase",
+      "phrase": "{{opt_in_keyword}}",
+      "case_insensitive": true
+    },
+    "trigger_build": "CampaignBuilder creates Tag Added triggers only. Write this Customer Replied trigger with `caf workflows patch-trigger --trigger-json <file>` on the internal API (snapshot before write), or through the Tier-4 managed browser where the engine has no verified payload.",
+    "entry_conditions": [
+      "The inbound message is SMS from a contact with a valid phone number",
+      "The normalized body exactly equals {{opt_in_keyword}}",
+      "The contact does not already have sms-opted-out"
+    ],
+    "exit_conditions": [
+      "Contact replies YES and is tagged text-optin-confirmed + sms-subscribed",
+      "Contact does not confirm within 24 hours and is dropped (no further sends)",
+      "Contact texts STOP and is suppressed across every launch text set"
+    ],
+    "duplicate_handling": "If the contact already has text-optin-confirmed, do not re-send the handshake and do not re-tag. At most one confirmation message per 24 hours per contact.",
+    "unmatched_keyword": "No message, no tag. Do not auto-reply to any other body. A human or Conversation AI may answer separately and must not add SMS consent."
+  },
+  "channels": [
+    "SMS inbound (keyword)",
+    "SMS outbound (double opt-in prompt + confirmed acknowledgement)"
+  ],
+  "compliance": {
+    "draft_only": true,
+    "a2p_ready_required": true,
+    "a2p_not_ready_behavior": "The workflow stays a draft and nothing sends. The launch package records a warning: texts cannot send until A2P 10DLC is approved.",
+    "opt_out_keyword": "STOP",
+    "opt_out_handling": "STOP is honored by the carrier / GHL opt-out layer and by the workflow: add sms-opted-out, remove sms-subscribed, text-optin-pending, text-optin-confirmed and every launch text tag. No further launch text may send. No promotional reply to STOP.",
+    "reply_invitation": "Every outbound message in this set ends with an invitation to reply.",
+    "send_window": {
+      "start": "08:00",
+      "end": "21:00",
+      "timezone": "recipient_local"
+    },
+    "outside_window_behavior": "Hold the outbound confirmation and send it at the next 08:00 recipient local. Inbound messages are captured immediately; only the outbound send waits.",
+    "no_purchase_needed": "Keyword opt-in is consent capture. It is not a purchase and must not imply one.",
+    "promotional": false,
+    "promotional_note": "This set is consent and schedule information only. It carries no price, offer, bonus or checkout link, so it does not count against the 3–5 promotional text cap."
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "trigger",
+      "timing": "immediate on inbound SMS",
+      "what_it_does": "Match normalized body to {{opt_in_keyword}} (exact, case-insensitive). Non-match exits with no send.",
+      "build": "Customer Replied trigger, channel SMS, exact phrase, case-insensitive"
+    },
+    {
+      "step": 2,
+      "action": "if_else",
+      "timing": "immediate",
+      "what_it_does": "If sms-opted-out or text-optin-confirmed is present → exit (no send). Else continue.",
+      "build": "if_else on tags"
+    },
+    {
+      "step": 3,
+      "action": "add_contact_tag",
+      "timing": "immediate",
+      "what_it_does": "Add text-optin-pending. Set text_optin_keyword = {{opt_in_keyword}} and text_optin_started_at = now.",
+      "build": "add_contact_tag + custom values"
+    },
+    {
+      "step": 4,
+      "action": "wait",
+      "timing": "until 08:00 recipient local when the keyword arrives outside 08:00–21:00; otherwise no wait",
+      "what_it_does": "Holds the outbound confirmation inside the send window.",
+      "build": "Event/clock wait is not a verified API payload — managed browser (references/workflow-timing.md)"
+    },
+    {
+      "step": 5,
+      "action": "sms",
+      "timing": "inside the send window, immediately after step 4",
+      "what_it_does": "Sends the double opt-in prompt. This is message 1 of 2. Text ends with a reply invitation and STOP.",
+      "message": "Got it — this is {{founder_first_name}} with {{brand_name}}. Reply YES and I'll text you when the doors open and when they're about to close. Questions? Just reply here. Reply STOP to opt out.",
+      "build": "sms (in VERIFIED_ACTIONS)"
+    },
+    {
+      "step": 6,
+      "action": "wait",
+      "timing": "24 hours",
+      "what_it_does": "Waits for the YES reply.",
+      "build": "wait (duration — verified)"
+    },
+    {
+      "step": 7,
+      "action": "if_else",
+      "timing": "after the 24-hour wait",
+      "what_it_does": "Branches on tag text-optin-confirmed.",
+      "build": "if_else (verified)"
+    },
+    {
+      "step": 8,
+      "action": "add_contact_tag",
+      "timing": "on the confirmed branch",
+      "what_it_does": "Add text-optin-confirmed and sms-subscribed. Remove text-optin-pending. Set text_optin_confirmed_at = now.",
+      "build": "add_contact_tag / remove_contact_tag"
+    },
+    {
+      "step": 9,
+      "action": "sms",
+      "timing": "on the confirmed branch, inside the send window",
+      "what_it_does": "Sends the confirmed acknowledgement and the real launch timing. This is message 2 of 2. Text ends with a reply invitation and STOP.",
+      "message": "You're in. Doors open {{doors_open_at}} and close {{doors_close_at}}. I'll text you at both, and nothing in between unless you reply. Reply STOP to opt out.",
+      "build": "sms (in VERIFIED_ACTIONS)"
+    },
+    {
+      "step": 10,
+      "action": "remove_contact_tag",
+      "timing": "on the unconfirmed branch after the 24-hour wait",
+      "what_it_does": "Remove text-optin-pending. Send nothing. The contact can text {{opt_in_keyword}} again later.",
+      "build": "remove_contact_tag"
+    },
+    {
+      "step": 11,
+      "action": "workflow_goal",
+      "timing": "end",
+      "what_it_does": "Closes the keyword opt-in set. Launch reminders, doors-open, last-call and access-link texts are separate sets in launch-text/.",
+      "build": "workflow_goal (verified)"
+    }
+  ],
+  "yes_reply_branch": {
+    "trigger": "Customer Replied, SMS, exact YES, filtered to contacts holding text-optin-pending",
+    "scope": "Only this workflow and only while text-optin-pending is present, so a YES to any other conversation cannot grant SMS consent.",
+    "build": "Second Customer Replied trigger in the same workflow, or a small companion workflow — patch-trigger either way"
+  },
+  "launch_plan_text_set": {
+    "id": "text_keyword_opt_in",
+    "kind": "keyword_opt_in",
+    "messages": 2,
+    "promotional": false,
+    "draft_only": true,
+    "opt_out_keyword": "STOP",
+    "includes_reply_invitation": true,
+    "send_window": {
+      "start": "08:00",
+      "end": "21:00",
+      "timezone": "recipient_local"
+    },
+    "waits_for": []
+  },
+  "variables": [
+    "{{opt_in_keyword}}",
+    "{{founder_first_name}}",
+    "{{brand_name}}",
+    "{{doors_open_at}}",
+    "{{doors_close_at}}"
+  ],
+  "dependencies": {
+    "tags": [
+      "text-optin-pending",
+      "text-optin-confirmed",
+      "sms-subscribed",
+      "sms-opted-out"
+    ],
+    "custom_fields": [
+      "text_optin_keyword (text)",
+      "text_optin_started_at (date)",
+      "text_optin_confirmed_at (date)"
+    ]
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf)",
+    "draft_only": true,
+    "workflow_name": "Launch Text — Keyword Opt-In ({{opt_in_keyword}}) — [Offer Name]",
+    "nodes": [
+      "Trigger: Customer Replied (SMS, exact phrase {{opt_in_keyword}}, case-insensitive)",
+      "If/Else: sms-opted-out or text-optin-confirmed present → exit",
+      "Action: Add Tag text-optin-pending; Set text_optin_keyword, text_optin_started_at",
+      "Wait Until: next 08:00 recipient local (only when outside 08:00–21:00)",
+      "SMS 1: double opt-in prompt (reply invitation + STOP)",
+      "Wait: 24 hours",
+      "If/Else: text-optin-confirmed present? Yes → add text-optin-confirmed + sms-subscribed, remove text-optin-pending, set text_optin_confirmed_at, send SMS 2; No → remove text-optin-pending, no send",
+      "Goal: end"
+    ],
+    "notes": [
+      "Everything stays a draft. Nothing goes live, nothing sends, no client account is touched during the build.",
+      "When A2P is not approved the workflow is still built as a draft and the package warns that texts cannot send.",
+      "The second trigger (YES while text-optin-pending) is scoped to this workflow so it cannot capture consent from another conversation."
+    ]
+  },
+  "qc": {
+    "t1": "Two text points exist, both with a reply invitation and STOP, send window 08:00–21:00, promotional false.",
+    "t2": "a2p_ready = false → workflow stays draft and the package warns."
+  }
+}
