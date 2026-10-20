@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0.0",
+  "launch_id": "elevation-2026-11",
+  "offer": {
+    "name": "Elevation",
+    "price_usd": 497,
+    "currency": "USD",
+    "payment_plans": false,
+    "landing_url": "https://example.com/elevation",
+    "sales_page_url": "https://example.com/elevation/offer",
+    "checkout_url": "https://example.com/elevation/order",
+    "thank_you_url": "https://example.com/elevation/access"
+  },
+  "launch_calendar": {
+    "launch_at": "2026-11-03T12:00:00-05:00",
+    "doors_open_at": "2026-11-03T09:00:00-05:00",
+    "doors_close_at": "2026-11-10T23:59:00-05:00",
+    "timezone": "America/New_York"
+  },
+  "a2p_ready": false,
+  "conversation_ai": {
+    "requested": false,
+    "mode": "none"
+  },
+  "pages": [
+    {
+      "id": "page_landing",
+      "kind": "landing",
+      "url": "https://example.com/elevation",
+      "waits_for": []
+    },
+    {
+      "id": "page_sales",
+      "kind": "sales",
+      "url": "https://example.com/elevation/offer",
+      "waits_for": []
+    },
+    {
+      "id": "page_checkout",
+      "kind": "checkout",
+      "url": "https://example.com/elevation/order",
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "page_thank_you",
+      "kind": "thank_you",
+      "url": "https://example.com/elevation/access",
+      "waits_for": ["page_checkout"]
+    }
+  ],
+  "email_sequences": [
+    {
+      "id": "email_pre_launch",
+      "kind": "pre_launch",
+      "provider": "skill50",
+      "email_count": 4,
+      "draft_only": true,
+      "waits_for": ["page_landing"]
+    },
+    {
+      "id": "email_main_launch",
+      "kind": "main_launch",
+      "provider": "skill50",
+      "email_count": 10,
+      "draft_only": true,
+      "waits_for": ["page_sales"]
+    },
+    {
+      "id": "email_doors_closing",
+      "kind": "doors_closing",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["email_main_launch"]
+    },
+    {
+      "id": "email_abandoned_checkout",
+      "kind": "abandoned_checkout",
+      "provider": "skill50",
+      "email_count": 3,
+      "draft_only": true,
+      "waits_for": ["page_checkout"]
+    },
+    {
+      "id": "email_welcome_access",
+      "kind": "welcome_access",
+      "provider": "skill50",
+      "email_count": 2,
+      "draft_only": true,
+      "waits_for": ["page_thank_you"]
+    }
+  ],
+  "text_sets": [],
+  "automations": [
+    {
+      "id": "auto_pre_launch",
+      "family": "pre_launch",
+      "template": "cart-open-cart-close-launch-sequence",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "launch_calendar",
+        "detail": "doors open and doors close switches drive tags and the email schedule"
+      },
+      "waits_for": ["email_pre_launch", "email_main_launch", "email_doors_closing"]
+    },
+    {
+      "id": "auto_post_sale",
+      "family": "post_sale",
+      "template": "new",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "payment_succeeded",
+        "detail": "main offer purchase"
+      },
+      "waits_for": ["page_thank_you", "email_welcome_access"]
+    },
+    {
+      "id": "auto_abandoned_checkout",
+      "family": "abandoned_checkout",
+      "template": "abandoned-cart-multichannel-recovery",
+      "build_rail": "unknown",
+      "draft_only": true,
+      "trigger": {
+        "type": "checkout_started_unpaid",
+        "detail": "stops on purchase"
+      },
+      "waits_for": ["page_checkout", "email_abandoned_checkout"]
+    }
+  ]
+}

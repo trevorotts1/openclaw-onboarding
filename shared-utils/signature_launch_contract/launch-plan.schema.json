@@ -1,0 +1,327 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "launch-plan.schema.json",
+  "title": "Signature Launch Plan (U-CONTRACT v1)",
+  "description": "The shared launch-plan contract for Skill 49 / Skill 83 launches. One plan lists every unit (pages, email sequences, text sets, automations, optional Conversation AI) with the units it waits for. Written by the launch planner (WF-LAUNCHERS), consumed by the runtime swarm (WF-SWARM), email lane (WF-EMAIL-A/B), text lane (WF-TEXT), automation lanes (WF-AUTO-A/B/C), AI lane (WF-AI) and Command Center (WF-CC). Changes after the first published draft are ADDITIVE only. Validated offline by shared-utils/signature_launch_contract/validate_launch_plan.py against the four fixtures in fixtures/. Nothing in a plan authorizes a send or a live switch-on: every email, text and automation is draft_only.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "launch_id",
+    "offer",
+    "launch_calendar",
+    "a2p_ready",
+    "conversation_ai",
+    "pages",
+    "email_sequences",
+    "text_sets",
+    "automations"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Contract version. Bump only when a lane must change how it reads an existing field; additive fields keep this version."
+    },
+    "launch_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "minLength": 3,
+      "description": "Stable slug for this launch, e.g. elevation-2026-11. Used as the progress-file and package key."
+    },
+    "offer": {
+      "type": "object",
+      "required": ["name", "price_usd", "currency", "payment_plans"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "price_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Main offer price. The single source of every price a lane writes; never invent one."
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "payment_plans": {
+          "type": "boolean",
+          "description": "true opens the failed_payment automation family (spec 3.3). false forbids it."
+        },
+        "landing_url": {
+          "type": ["string", "null"]
+        },
+        "sales_page_url": {
+          "type": ["string", "null"]
+        },
+        "checkout_url": {
+          "type": ["string", "null"]
+        },
+        "thank_you_url": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "launch_calendar": {
+      "type": "object",
+      "required": ["launch_at", "doors_open_at", "doors_close_at", "timezone"],
+      "description": "Every deadline a lane writes comes from here. Truthful deadlines only (Skill 50 prover).",
+      "properties": {
+        "launch_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "doors_open_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "doors_close_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "description": "IANA zone for the calendar, e.g. America/New_York."
+        },
+        "black_friday": {
+          "type": "object",
+          "description": "Present only for Skill 83 Black Friday launches.",
+          "required": ["teaser_at", "countdown_at", "cyber_monday_at", "last_call_at"],
+          "properties": {
+            "teaser_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "countdown_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "cyber_monday_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "last_call_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "a2p_ready": {
+      "type": "boolean",
+      "description": "A2P 10DLC registration answered by the client. false keeps every text a draft and makes the package warn that texts cannot send until A2P is approved."
+    },
+    "conversation_ai": {
+      "type": "object",
+      "required": ["requested", "mode"],
+      "description": "Optional Skill 38 bot. requested=false means nothing is built and the package records 'Conversation AI: not requested'.",
+      "properties": {
+        "requested": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["none", "faq", "booking", "checkout", "full"],
+          "description": "none when not requested; otherwise the job the bot does when a contact replies."
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["sms", "chat"]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/page"
+      }
+    },
+    "email_sequences": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/email_sequence"
+      }
+    },
+    "text_sets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/text_set"
+      }
+    },
+    "automations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/automation"
+      }
+    }
+  },
+  "definitions": {
+    "unit_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Unit identifier, unique across pages, email_sequences, text_sets and automations."
+    },
+    "waits_for": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/unit_id"
+      },
+      "uniqueItems": true,
+      "description": "Unit ids that must be COMPLETE before this unit starts. Empty means ready now. Must resolve to units in the same plan and must not form a cycle."
+    },
+    "page": {
+      "type": "object",
+      "required": ["id", "kind", "url", "waits_for"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/unit_id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["landing", "sales", "order", "checkout", "upsell", "downsell", "thank_you", "waitlist", "access", "other"]
+        },
+        "url": {
+          "type": ["string", "null"],
+          "description": "Approved page URL, or null while the page is only planned."
+        },
+        "waits_for": {
+          "$ref": "#/definitions/waits_for"
+        }
+      }
+    },
+    "email_sequence": {
+      "type": "object",
+      "required": ["id", "kind", "provider", "email_count", "draft_only", "waits_for"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/unit_id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["pre_launch", "main_launch", "doors_closing", "upsell_followup", "downsell_followup", "abandoned_checkout", "welcome_access"]
+        },
+        "provider": {
+          "type": "string",
+          "const": "skill50"
+        },
+        "email_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "draft_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "waits_for": {
+          "$ref": "#/definitions/waits_for"
+        }
+      }
+    },
+    "text_set": {
+      "type": "object",
+      "required": ["id", "kind", "messages", "promotional", "draft_only", "opt_out_keyword", "includes_reply_invitation", "send_window", "waits_for"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/unit_id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["opt_in_confirmation", "keyword_opt_in", "event_reminder", "doors_open", "last_call", "abandoned_checkout", "access_link"]
+        },
+        "messages": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "promotional": {
+          "type": "boolean",
+          "description": "Promotional sets are capped at 5 per launch (spec 3.2)."
+        },
+        "draft_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "opt_out_keyword": {
+          "type": "string",
+          "const": "STOP"
+        },
+        "includes_reply_invitation": {
+          "type": "boolean",
+          "const": true
+        },
+        "send_window": {
+          "type": "object",
+          "required": ["start", "end", "timezone"],
+          "properties": {
+            "start": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "timezone": {
+              "type": "string",
+              "minLength": 1,
+              "description": "recipient_local unless the client asked otherwise."
+            }
+          }
+        },
+        "waits_for": {
+          "$ref": "#/definitions/waits_for"
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "required": ["id", "family", "template", "build_rail", "draft_only", "trigger", "waits_for"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/unit_id"
+        },
+        "family": {
+          "type": "string",
+          "enum": ["pre_launch", "opt_in", "event_reminders", "post_sale", "upsell_downsell", "abandoned_checkout", "page_retargeting", "onboarding_review", "win_back", "failed_payment", "conversation_ai_reply"]
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Skill 44 template id to start from, or 'new' when the spec calls it 'new, small'."
+        },
+        "build_rail": {
+          "type": "string",
+          "enum": ["ghl_api", "skill44_engine", "unknown"],
+          "description": "unknown until U-GHL-PROBE answers; automation lanes apply the answer when it arrives."
+        },
+        "draft_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "trigger": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "detail": {
+              "type": "string"
+            }
+          }
+        },
+        "waits_for": {
+          "$ref": "#/definitions/waits_for"
+        }
+      }
+    }
+  }
+}
