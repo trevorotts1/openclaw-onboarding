@@ -35,7 +35,16 @@ def name(value):
     return value
 
 
-def ensure(root, workspace, owner='', company='', interactive=False, slug=''):
+def owner_email(value):
+    # Confirmed intake owner email only: a pending+ placeholder or anything that
+    # is not a single syntactically valid address is treated as not supplied.
+    value = value.strip() if isinstance(value, str) else ''
+    if value.startswith('pending+') or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', value):
+        return ''
+    return value
+
+
+def ensure(root, workspace, owner='', company='', interactive=False, slug='', email=''):
     root = Path(root).resolve()
     workspace = Path(workspace).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -71,6 +80,11 @@ def ensure(root, workspace, owner='', company='', interactive=False, slug=''):
                 raise ValueError(key + ' conflicts with saved identity; use an explicit profile correction instead of replacing it')
             if value:
                 values[key] = value
+        email = owner_email(email)
+        if email and values.get('ownerEmail') and email != values['ownerEmail']:
+            raise ValueError('ownerEmail conflicts with saved identity; use an explicit profile correction instead of replacing it')
+        if email:
+            values['ownerEmail'] = email
         missing = [key for key in QUESTIONS if not name(values.get(key))]
         # Existing installations keep their identity and are not forced into fresh intake.
         if missing and not established and interactive:
@@ -120,10 +134,11 @@ def main():
     parser.add_argument('--owner-name', default=os.environ.get('OPENCLAW_OWNER_NAME', ''))
     parser.add_argument('--company-name', default=os.environ.get('OPENCLAW_COMPANY_NAME', ''))
     parser.add_argument('--company-slug', default='')
+    parser.add_argument('--owner-email', default=os.environ.get('OPENCLAW_OWNER_EMAIL', ''))
     parser.add_argument('--interactive', action='store_true')
     args = parser.parse_args()
     try:
-        result = ensure(args.root, args.workspace or args.root / 'workspace', args.owner_name, args.company_name, args.interactive, args.company_slug)
+        result = ensure(args.root, args.workspace or args.root / 'workspace', args.owner_name, args.company_name, args.interactive, args.company_slug, args.owner_email)
         print(json.dumps(result, ensure_ascii=False))
         return 8 if result['status'] == 'needs-input' else 0
     except (ValueError, OSError) as exc:

@@ -129,6 +129,7 @@ esac''')
         result = self.run_shell('source ' + shlex.quote(str(REPO / 'platform/vps/bootstrap.sh')),
                                 OPENCLAW_CONTAINER_NAME='client-runtime', FIXTURE_DOCKER_NAMES='client-runtime',
                                 OPENCLAW_OWNER_NAME="Jordan Example", OPENCLAW_COMPANY_NAME="Jordan's",
+                                OPENCLAW_OWNER_EMAIL='jordan@example.com',
                                 OPENCLAW_ROOT='/srv/client root', OPENCLAW_WORKSPACE_PATH='/srv/client workspace')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         captured = json.loads((self.root / 'docker-calls').read_text())
@@ -136,7 +137,7 @@ esac''')
         self.assertEqual(captured['owner'], "Jordan Example")
         self.assertEqual(captured['root'], '/srv/client root')
         self.assertEqual(captured['workspace'], '/srv/client workspace')
-        for key in ('OPENCLAW_COMPANY_NAME', 'OPENCLAW_OWNER_NAME', 'OPENCLAW_ROOT', 'OPENCLAW_WORKSPACE_PATH'):
+        for key in ('OPENCLAW_COMPANY_NAME', 'OPENCLAW_OWNER_NAME', 'OPENCLAW_OWNER_EMAIL', 'OPENCLAW_ROOT', 'OPENCLAW_WORKSPACE_PATH'):
             self.assertIn(key, captured['argv'])
         self.assertIn('OPENCLAW_NO_CONTAINER_REEXEC=1', captured['argv'])
 

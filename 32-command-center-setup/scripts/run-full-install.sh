@@ -2617,6 +2617,23 @@ else
   existing_url=$(state_get '.commandCenterUrl')
   # Backward-compat read: prefer the new key, fall back to the legacy 6b key.
   phase6h_status=$(state_get '.commandCenterPhase6hStatus // .commandCenterPhase6bStatus')
+  # A "requested" stamp is ambiguous (interrupted run, or the request was sent
+  # with no answer). After CC_TUNNEL_REQUEST_TIMEOUT_SEC it reconciles through
+  # the authenticated readiness probe: verified -> done (the probe records it);
+  # not verified -> retry-pending, re-sent once with the SAME installation-scoped
+  # Idempotency-Key. A stamp without a time predates this rule and counts as stale.
+  if [[ "$phase6h_status" == "requested" ]]; then
+    _6h_req_at=$(state_get '.commandCenterPhase6hRequestedAt')
+    if [[ ! "$_6h_req_at" =~ ^[0-9]+$ ]] || (( $(date +%s) - _6h_req_at >= ${CC_TUNNEL_REQUEST_TIMEOUT_SEC:-3600} )); then
+      if python3 "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --interview --env-file "$DASHBOARD_DIR/.env.local" >>"$LOG_FILE" 2>&1; then
+        log "INFO" "phase=6h tunnel: stale request reconciled — authenticated readiness verified"
+      else
+        log "WARN" "phase=6h tunnel: stale request not verified by authenticated readiness — retrying registration with the same idempotency key"
+        state_set '.commandCenterPhase6hStatus = "retry-pending"'
+      fi
+      phase6h_status=$(state_get '.commandCenterPhase6hStatus // .commandCenterPhase6bStatus')
+    fi
+  fi
   # Re-POST guard: once we have registered (success OR a webhook failure that may
   # have already created a tunnel/notified Trevor), NEVER POST to the n8n
   # registration webhook again on resume. The webhook is the duplicate-CC source;
@@ -2645,10 +2662,12 @@ else
         state_set '.commandCenterPhase6hStatus = "email-pending"'
         log "WARN" "phase=6h: contactEmail is a pending+ placeholder or empty — NOT registering the tunnel (no invented contact identity); re-run once the confirmed owner email exists"
       else
+      # The request carries the validated state address, never a raw argument.
+      CONTACT_EMAIL=$(state_get '.contactEmail')
       log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
       # Record the request before the external effect. Interrupted/ambiguous calls
       # reconcile via the authenticated readiness probe; never blindly re-POST.
-      state_set '.commandCenterPhase6hStatus = "requested"'
+      state_set '.commandCenterPhase6hStatus = "requested" | .commandCenterPhase6hRequestedAt = (now | floor)'
       export CC_TUNNEL_IDEMPOTENCY_KEY="$(state_get '.installationId')-command-center"
       # commandCenterUrl absent (a state initialized before it was seeded on every
       # path): seed the same slug default interview-launch.py uses, so the tunnel
@@ -2658,15 +2677,31 @@ else
         log "INFO" "phase=6h: commandCenterUrl was absent -- seeded the slug default https://${CLIENT_SLUG}.zerohumanworkforce.com"
       fi
       export CC_TUNNEL_EXPECTED_HOST="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.urlsplit(sys.argv[1]).hostname or "")' "$(state_get '.commandCenterUrl')")"
-      if ! OPENCLAW_ROOT="$OC_ROOT" bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
-        log "WARN" "phase=6h: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"
-        state_set '.commandCenterPhase6hStatus = "failed-webhook"'
-      else
-        # A successful webhook is creation evidence, not authenticated readiness.
-        # The requested URL was scoped before deployment; no .env-exists guessing.
-        state_set '.commandCenterPhase6hStatus = "created"'
-        log "INFO" "phase=6h tunnel: created; awaiting authenticated public verification"
-      fi
+      _6h_rc=0
+      OPENCLAW_ROOT="$OC_ROOT" bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1 || _6h_rc=$?
+      case "$_6h_rc" in
+        0)
+          # A successful webhook is creation evidence, not authenticated readiness.
+          # The requested URL was scoped before deployment; no .env-exists guessing.
+          state_set '.commandCenterPhase6hStatus = "created"'
+          log "INFO" "phase=6h tunnel: created; awaiting authenticated public verification"
+          ;;
+        75)
+          # Nothing was sent (prerequisite missing, n8n unreachable): retryable.
+          state_set '.commandCenterPhase6hStatus = "retry-pending"'
+          log "WARN" "phase=6h: create-tunnel.sh stopped BEFORE the registration request was sent — retry-pending; the next pass retries"
+          ;;
+        3)
+          # The webhook answered with a non-success body: the only terminal outcome.
+          log "WARN" "phase=6h: registration webhook returned a non-success body — leaving commandCenterUrl unset, dashboard still reachable locally"
+          state_set '.commandCenterPhase6hStatus = "failed-webhook"'
+          ;;
+        *)
+          # Sent but ambiguous (no answer, or a failure after acceptance): stays
+          # "requested" and reconciles via authenticated readiness after the timeout.
+          log "WARN" "phase=6h: create-tunnel.sh exited $_6h_rc after the request may have been sent — status stays requested; reconciles via authenticated readiness"
+          ;;
+      esac
       fi
     fi
   fi

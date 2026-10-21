@@ -54,6 +54,8 @@ Do not infer the company from the owner name, Telegram display name, hostname or
 
 The helper saves `<config-root>/onboarding-identity.json` before resources are created. Reuse it on retries. An established workforce keeps its existing company UUID, slug and answers; updates do not restart intake or rename it. Missing inputs return `needs-input` (exit 8); ask the missing question and resume. The terminal installer asks through `/dev/tty` when available. An agent must ask in the conversation, not leave a background terminal waiting for the client. Names are intake metadata, not fabricated interview answers.
 
+**Owner email (optional operator input).** When the intake already collected the owner's confirmed email, pass it the same way as `OPENCLAW_OWNER_EMAIL` (`curl ... | env OPENCLAW_OWNER_NAME="<answer 1>" OPENCLAW_COMPANY_NAME="<answer 2>" OPENCLAW_OWNER_EMAIL="<owner email>" bash`, or `--owner-email` on the helper). The installer saves it as `ownerEmail`, forwards it into a Docker client runtime, and hands it to the Command Center install as the contact email, so the tunnel registers on the first run instead of waiting for interview closeout. Only one syntactically valid address is used; leave it unset when you do not have it and the install stays owner-email-pending exactly as before. If the tunnel request could not be sent (cloudflared, n8n or the network unavailable), the status is `retry-pending` and the next install or update pass retries it; only a non-success webhook answer is the terminal `failed-webhook`.
+
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
 **0.1: Confirm AGENTS.md has the install kickoff flag (UPDATE PENDING or ONBOARDING PENDING)**
