@@ -66,10 +66,10 @@ start_fake() {
 run_script() {
   OUT="$WORK/out/case.$N.$RANDOM"
   env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" \
-      COUNCIL_EDGE_URL_TEMPLATE="http://127.0.0.1:$PORT/edge/%s/" \
+      COUNCIL_EDGE_URL_TEMPLATE="${TEST_EDGE_TPL:-http://127.0.0.1:$PORT/edge/%s/}" \
       COUNCIL_EDGE_TRIES=2 COUNCIL_EDGE_SLEEP=0 \
       CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct CLOUDFLARE_ZONE_ID=wrong-zone \
-      COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR" \
+      COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR" PATH="${TEST_PATH:-$PATH}" \
       TMPDIR="$SCRIPT_TMP" "$SCRIPT" "$@" >"$OUT" 2>&1
   RC=$?
 }
@@ -146,6 +146,90 @@ check "edge 200 without Access redirect: exits non-zero" test "$RC" != 0
 check "edge 200 without Access redirect: prints FAILED" bash -c "tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z FAILED'"
 check "edge 200: final tunnel config equals the original" test "$(state '.tunnels["'$TID'"].config')" = "$(jq -c '.tunnels["'$TID'"].config' "$WORK/orig-state.json")"
 check "edge 200: no council CNAME remains" test "$(state '[.dns[] | select(.name|test("-council."))] | length')" = 0
+
+echo "== 5b. edge gate asks the authoritative nameservers (stub dig + stub curl, no network)"
+# Stub curl: API calls pass through to the real curl (the fake server); a call to
+# https://*-council.* is the edge gate. Without --resolve it fails like a resolver
+# holding a cached "no such name" (exit 6) unless STUB_SYS=ok; with --resolve it
+# answers per STUB_EDGE (access | 200 | other). Stub dig: A/AAAA answers from any
+# @server, the first STUB_DIG_EMPTY A (and AAAA) queries answer nothing; NS -> fallback-ns.example.
+STUB="$WORK/stub"; mkdir -p "$STUB"
+export STUB_REAL_CURL; STUB_REAL_CURL="$(command -v curl)"
+export STUB_CURL_LOG="$WORK/stub-curl.log" STUB_DIG_LOG="$WORK/stub-dig.log" STUB_EDGE=access STUB_SYS=fail STUB_DIG_EMPTY=0
+cat > "$STUB/curl" <<'STUBEOF'
+#!/bin/bash
+edge=""; for a in "$@"; do case "$a" in https://*-council.*) edge=1 ;; esac; done
+[ -n "$edge" ] || exec "$STUB_REAL_CURL" "$@"
+printf '%s\n' "$*" >> "$STUB_CURL_LOG"
+case " $* " in *" --resolve "*) ;; *) [ "$STUB_SYS" = ok ] || { echo "curl: (6) Could not resolve host" >&2; exit 6; } ;; esac
+case "$STUB_EDGE" in
+  access) printf 'HTTP/2 302\r\nlocation: https://sweet-wave-ca28.cloudflareaccess.com/cdn-cgi/access/login/x\r\n\r\n' ;;
+  200)    printf 'HTTP/2 200\r\ncontent-type: text/html\r\n\r\n' ;;
+  other)  printf 'HTTP/2 302\r\nlocation: https://elsewhere.example.com/login\r\n\r\n' ;;
+esac
+STUBEOF
+cat > "$STUB/dig" <<'STUBEOF'
+#!/bin/bash
+printf '%s\n' "$*" >> "$STUB_DIG_LOG"
+case "$*" in
+  *" NS "*) echo "fallback-ns.example." ;;
+  *" A")    [ "$(grep -c ' A$' "$STUB_DIG_LOG")" -le "$STUB_DIG_EMPTY" ] || echo 104.16.1.1 ;;
+  *" AAAA") [ "$(grep -c ' AAAA$' "$STUB_DIG_LOG")" -le "$STUB_DIG_EMPTY" ] || echo 2606:4700::1 ;;
+esac
+STUBEOF
+chmod +x "$STUB/curl" "$STUB/dig"
+# A PATH with every tool except dig, for the "dig missing" case.
+FARM="$WORK/farm"; mkdir -p "$FARM"
+for d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin /usr/sbin /sbin; do
+  [ -d "$d" ] || continue
+  for f in "$d"/*; do b="${f##*/}"; [ "$b" = dig ] || [ -e "$FARM/$b" ] || ln -s "$f" "$FARM/$b"; done
+done
+NODIG="$WORK/nodig"; mkdir -p "$NODIG"; cp "$STUB/curl" "$NODIG/curl"
+stub_reset() { : > "$STUB_CURL_LOG"; : > "$STUB_DIG_LOG"; }
+PIN="--resolve qcbox-council.$Z:443:104.16.1.1,[2606:4700::1]"
+NS_FIXTURE() { fixture qcbox | jq -c '.zone.name_servers = ["ns-a.example","ns-b.example"]'; }
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+TEST_PATH="$STUB:$PATH" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "auth: system resolver fails but --resolve to the authoritative answer passes (PROVISIONED)" test "$(last_line)" = "COUNCIL_ACCESS: qcbox.$Z PROVISIONED"
+check "auth: curl was pinned to the A and AAAA answers" grep -qF -- "$PIN https://qcbox-council.$Z/" "$STUB_CURL_LOG"
+check "auth: asked the zone's API name_servers, not the system resolver" bash -c "grep -qx '+short +norecurse +time=3 +tries=1 @ns-a.example qcbox-council.$Z A' '$STUB_DIG_LOG' && ! grep -q ' NS ' '$STUB_DIG_LOG'"
+check "auth: the step line names the addresses and the server" grep -qF "edge gate try 1: qcbox-council.$Z -> 104.16.1.1,[2606:4700::1] (authoritative ns-a.example)" "$OUT"
+
+fixture qcbox > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+TEST_PATH="$STUB:$PATH" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "no name_servers in the zone object: falls back to dig NS and still passes" bash -c "test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED' && grep -q ' NS $Z\$' '$STUB_DIG_LOG' && grep -q '@fallback-ns.example qcbox-council.$Z A' '$STUB_DIG_LOG'"
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+STUB_DIG_EMPTY=2 TEST_PATH="$STUB:$PATH" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "retry re-queries: try 1 has no record yet (plain curl fails), try 2 is pinned and passes" bash -c "test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED' && ! sed -n 1p '$STUB_CURL_LOG' | grep -q -- --resolve && sed -n 2p '$STUB_CURL_LOG' | grep -qF -- '$PIN'"
+check "retry re-queries: both nameservers asked on try 1, asked again on try 2" test "$(grep -c ' A$' "$STUB_DIG_LOG")" = 3
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset; cp "$STATE" "$WORK/orig-state.json"
+STUB_EDGE=200 TEST_PATH="$STUB:$PATH" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "auth: a pinned 200 still fails the gate and rolls back" bash -c "tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z FAILED edge gate failed (HTTP 200, Location none, pinned to 104.16.1.1,\[2606:4700::1\]); rolled back'"
+check "auth: pinned 200: no council CNAME remains" test "$(state '[.dns[] | select(.name|test("-council."))] | length')" = 0
+check "auth: every try asks the authoritative server again (2 tries, 2 A queries)" test "$(grep -c ' A$' "$STUB_DIG_LOG")" = 2
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+STUB_EDGE=other TEST_PATH="$STUB:$PATH" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "auth: a pinned 302 to a non-Access host still fails the gate" bash -c "tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z FAILED edge gate failed (HTTP 302, Location https://elsewhere.example.com/login'"
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+check "the no-dig PATH really has no dig" bash -c "! PATH='$NODIG:$FARM' command -v dig"
+STUB_SYS=ok TEST_PATH="$NODIG:$FARM" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "dig missing: falls back to plain curl and passes" bash -c "test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED' && test -s '$STUB_CURL_LOG' && ! grep -q -- --resolve '$STUB_CURL_LOG'"
+check "dig missing: the step line says the system resolver was used" grep -q "no authoritative answer for qcbox-council.$Z (dig or nameservers unavailable); using the system resolver" "$OUT"
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+STUB_SYS=ok COUNCIL_EDGE_RESOLVE=system TEST_PATH="$STUB:$PATH" TEST_EDGE_TPL="https://%s/" run_script qcbox.$Z --apply
+check "COUNCIL_EDGE_RESOLVE=system: never runs dig, plain curl" bash -c "test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED' && test ! -s '$STUB_DIG_LOG' && ! grep -q -- --resolve '$STUB_CURL_LOG'"
+: > "$LOG"; COUNCIL_EDGE_RESOLVE=bogus run_script qcbox.$Z --apply
+check "COUNCIL_EDGE_RESOLVE=bogus: exit 2 before any API request" bash -c "test '$RC' = 2 && test ! -s '$LOG' && grep -q 'COUNCIL_EDGE_RESOLVE must be auth or system' '$OUT'"
+
+NS_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; stub_reset
+TEST_PATH="$STUB:$PATH" run_script qcbox.$Z --apply
+check "non-https edge URL (fake-server mode): authoritative step skipped, dig never runs" bash -c "test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED' && test ! -s '$STUB_DIG_LOG'"
 
 echo "== 6. refusals send zero writes"
 fixture qcbox | jq -c '.apps = [] | .policies = {}' > "$WORK/f.json"; start_fake "$WORK/f.json"
