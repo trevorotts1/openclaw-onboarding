@@ -1,0 +1,155 @@
+{
+  "schema": "signature-launch-session-contract/v1",
+  "contract_version": "1.0.0",
+  "title": "Signature Launch session contract — the eight launch answers, typed, from intake to plan",
+  "status": "published",
+  "owner": "audit lane L01 (UL-003); sole writer of this file",
+  "purpose": "One versioned contract for the eight launch answers a Signature Launch must carry end to end, the provenance every consumer may rely on, the approval invalidation cases, and the complete-plan digest fixture the Skill 50 consumer adapter (lane L06) reads. Additive changes only; bump contract_version when a lane must change how it reads an existing field.",
+  "producers": {
+    "answers_file": "client-intake-answers/v1 (shared-utils/client_intake/answers.schema.json), written by shared-utils/client_intake/engine.py",
+    "typed_adapter": "shared-utils/client_intake/engine.py — launch_answers(), parse_launch_calendar(), to_launch_known()",
+    "session_ledger": "signature-launch-intake/v1 (49-signature-funnel/scripts/launch_intake.py); each answer is {value, state, source_ref, question_id, provenance}",
+    "assembled_plan": "launch-plan.schema.json 1.0.0 plus the additive launch_answers block defined here"
+  },
+  "states": {
+    "provided": "the client said it; usable as a fact",
+    "verified_existing": "confirmed against an existing record or a supplied brand file",
+    "recommended_unapproved": "a default or a recommendation; never an approval, never a client fact",
+    "approved_recommendation": "a recommendation the client approved together with the plan",
+    "unknown": "not supplied; never coerced to a value, never to false, never to a deadline",
+    "not_applicable": "a real answer that nothing applies (for example no paid pieces)"
+  },
+  "launch_answers": [
+    {
+      "id": "launch_calendar",
+      "question_id": "launch_calendar",
+      "ledger_keys": ["launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone"],
+      "type": "object of ISO 8601 date-time strings plus one IANA timezone",
+      "rule": "Parsed only from the client's own sentence; a component that was not stated stays unknown and is named by the plan. Never defaulted, never invented. 'launch at noon' takes the doors-open day only because the client gave one day for the launch.",
+      "never_default": true,
+      "state_rule": "provided only for the components actually stated; otherwise unknown"
+    },
+    {
+      "id": "channels",
+      "question_id": "channels",
+      "ledger_keys": ["launch.channels"],
+      "type": "array of channel tokens, subset of [\"email\", \"text\"]",
+      "rule": "\"Email only\" -> [\"email\"]; \"Email and text\" -> [\"email\", \"text\"]. A list is normalised; anything unusable is unknown. Never a raw display string.",
+      "never_default": false,
+      "state_rule": "a default (Email only) enters as recommended_unapproved until the client confirms it"
+    },
+    {
+      "id": "conversation_ai",
+      "question_id": "conversation_ai",
+      "ledger_keys": ["launch.conversation_ai"],
+      "type": "boolean",
+      "rule": "\"Yes, add the bot\" -> true; \"No, not this launch\" -> false. A non-empty string is never truthy. A requested bot with no mode stays blocked by name (mode is a separate missing fact, never guessed).",
+      "never_default": false,
+      "state_rule": "a default (No) enters as recommended_unapproved"
+    },
+    {
+      "id": "access_delivery",
+      "question_id": "access_delivery",
+      "ledger_keys": ["launch.access_delivery"],
+      "type": "boolean",
+      "rule": "true plans the access email, access automation and delivery link; false plans none. Never defaulted.",
+      "never_default": true,
+      "state_rule": "provided, or unknown"
+    },
+    {
+      "id": "payment_plans",
+      "question_id": "payment_plans",
+      "ledger_keys": ["launch.payment_plans"],
+      "type": "boolean",
+      "rule": "\"Payment plans offered\" -> true and opens the failed-payment recovery automation; \"Paid in full\" -> false and forbids it. Never defaulted.",
+      "never_default": true,
+      "state_rule": "provided, or unknown"
+    },
+    {
+      "id": "sender_name",
+      "question_id": "sender_name",
+      "ledger_keys": ["launch.sender_name"],
+      "type": "non-empty string",
+      "rule": "From line and text signature. Blank or non-string is unknown; never invented.",
+      "never_default": true,
+      "state_rule": "provided, or unknown"
+    },
+    {
+      "id": "reply_to_email",
+      "question_id": "reply_to_email",
+      "ledger_keys": ["launch.reply_to_email"],
+      "type": "non-empty string (a real mailbox)",
+      "rule": "Replies must reach a mailbox the client reads; a no-reply address is refused by the asking layer, not rewritten here.",
+      "never_default": true,
+      "state_rule": "provided, or unknown"
+    },
+    {
+      "id": "a2p_ready",
+      "question_id": "a2p_ready",
+      "ledger_keys": ["launch.a2p_ready"],
+      "type": "boolean",
+      "rule": "\"Yes, it is approved\" -> true; \"No, not yet\" -> false. The string \"No, not yet\" must never read as truthy: false keeps every text a draft.",
+      "never_default": false,
+      "state_rule": "a default (No) enters as recommended_unapproved, which a consumer treats as not ready"
+    }
+  ],
+  "provenance": {
+    "entry_shape": {"value": "typed value or null", "state": "one of states", "source_ref": "answers-file:<question_id>", "question_id": "the launch question that produced it, or null when ingested", "provenance": {"question_id": "string", "raw": "the client's own answer text", "answer_status": "provided|suggested|default_to_confirm|unknown", "answer_source": "client|safe-default|palette-help:option-N|..."}},
+    "laws": [
+      "Every ledger entry keeps its provenance through ingest; no consumer re-derives a fact from free text.",
+      "A default or a suggestion is recommended_unapproved and can never be read as approved.",
+      "An unknown entry is carried, not dropped, and is named by the plan as a missing fact."
+    ]
+  },
+  "plan_block": {
+    "location": "assembled full launch plan (launch-plan.schema.json 1.0.0) at the additive key `launch_answers`",
+    "content": "the eleven ledger keys of the eight answers, each with value, state, source_ref, question_id and provenance",
+    "why": "sender_name, reply_to_email, access_delivery and payment_plans are not fields of launch-plan.schema.json; the block carries them to the consumer without forking the plan schema"
+  },
+  "approval": {
+    "binding": "the client's approval binds the plan document hash (validate_launch_plan.plan_document_hash), not the session",
+    "invalidation_cases": [
+      {"id": "answer_changed_after_approval", "trigger": "any answer recorded while the session is approved", "effect": "approval cleared, plan_approval_ref cleared, plan status collecting, session returns to collecting; a fresh assemble/present/approve is required", "enforced_in": "launch_intake.answer -> invalidate_approval"},
+      {"id": "revision_requested", "trigger": "request_revision()", "effect": "plan and plan_hash cleared, approval cleared, plan_revision incremented, session state revision_requested", "enforced_in": "launch_intake.request_revision"},
+      {"id": "answers_file_reingested", "trigger": "ingest_answers() into an approved session", "effect": "same as answer_changed_after_approval", "enforced_in": "launch_intake.ingest_answers"},
+      {"id": "plan_hash_mismatch", "trigger": "the plan changed (price, offer, route, revision) or the approval belongs to another plan", "effect": "approval rejected with a message naming the hash mismatch", "enforced_in": "validate_launch_plan._check_approval_record"},
+      {"id": "approval_revoked", "trigger": "revoked is not false", "effect": "approval rejected: 'approval has been revoked'", "enforced_in": "validate_launch_plan._check_approval_record"},
+      {"id": "approval_expired", "trigger": "recorded_at older than the gate window (default 72 hours)", "effect": "approval rejected; a new client approval is required", "enforced_in": "validate_launch_plan._check_approval_record"},
+      {"id": "not_the_client", "trigger": "owner_identity_ref is not the launch's client identity", "effect": "approval rejected", "enforced_in": "validate_launch_plan._check_approval_record"},
+      {"id": "worker_self_approval", "trigger": "owner_identity_ref equals the worker operating the run", "effect": "approval rejected", "enforced_in": "validate_launch_plan._check_approval_record"},
+      {"id": "plan_no_longer_validates", "trigger": "validate_launch returns violations at approval time", "effect": "approval refused, never spent on an unbuildable plan", "enforced_in": "launch_intake.approve"},
+      {"id": "session_not_awaiting_approval", "trigger": "approve() called while collecting or with no assembled plan", "effect": "actionable refusal naming the state and the required assemble/present step", "enforced_in": "launch_intake.approve"},
+      {"id": "build_already_started", "trigger": "answer() while the session is building", "effect": "refused; a change must go through request_revision()", "enforced_in": "launch_intake.answer"}
+    ]
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "input": "the complete launch plan document exactly as published (including the launch_answers block)",
+    "canonicalization": "json.dumps(plan, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')",
+    "value_shape": "64 lowercase hex characters"
+  },
+  "fixture": {
+    "path": "shared-utils/signature_launch/fixtures/session_contract.complete_plan.json",
+    "schema": "signature-launch-session-contract.fixture/v1",
+    "contents": ["the typed launch_answers ledger", "the complete launch plan", "the plan digest", "the required consumer behavior"],
+    "regenerated_by": "shared-utils/signature_launch/tests/test_session_contract.py (asserts the digest and the rebuild)"
+  },
+  "consumer_requirements": {
+    "L06_skill50": {
+      "owns": "the Skill 50 consumer adapter (not edited by lane L01)",
+      "reads": ["launch_plan.launch_answers (typed values, states, provenance)", "launch_plan.launch_calendar", "launch_plan.a2p_ready", "launch_plan.conversation_ai", "launch_plan.offer.payment_plans", "launch_plan.text_sets"],
+      "required_behavior": [
+        "Read channels as an array; text work is planned only when 'text' is present, and never from a display string.",
+        "Read a2p_ready, conversation_ai, access_delivery and payment_plans as real booleans. Treat any non-boolean or recommended_unapproved/unknown state as NOT ready and NOT approved.",
+        "a2p_ready false or unapproved keeps every text draft_only and attaches the warning that texts cannot send until A2P is approved; never send.",
+        "access_delivery true plans the access email, access automation and delivery link; false plans none.",
+        "payment_plans true plans the failed-payment recovery automation; false forbids it.",
+        "sender_name and reply_to_email must be present and non-empty before any email or text is composed; a missing one blocks that unit by name, never a placeholder.",
+        "Every deadline comes from launch_calendar as an ISO 8601 timestamp; never invent, round or shift one, and refuse a calendar whose timezone is unknown.",
+        "Never treat recommended_unapproved as approved; the plan's approval binds the plan hash, so a changed plan requires a new client approval.",
+        "Verify the fixture plan digest with the digest rules above before consuming a plan handed to a different lane."
+      ],
+      "fixture": "shared-utils/signature_launch/fixtures/session_contract.complete_plan.json"
+    }
+  }
+}
