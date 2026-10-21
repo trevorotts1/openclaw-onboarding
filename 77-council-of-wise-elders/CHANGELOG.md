@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.40: Council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address
+
+In plain English: council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address. The Council login list now matches the Command Center login list and never lets in someone the Command Center excludes; records for tunnels that no longer exist are skipped instead of failing the whole run; and a Mac client's Council address can ride its own rescue tunnel.
+
+- Sync refuses (reports FAILED, writes nothing) when the Command Center allow policies carry exclude or require rules that differ, so a revoked person is never kept.
+- The rescue-tunnel ride only picks a tunnel that has the rescue rule for this exact client, and a failed read after an edge-check failure no longer overwrites the rescue tunnel's ingress.
+- A live Command Center on a healthy tunnel is never skipped as an orphan.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.61).
+
 ## v1.0.39: Council: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss
 
 In plain English: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss. After a new client's Council address is created, the check that it opens now asks the zone's own nameservers directly for the address instead of trusting a cached answer, so an earlier "no such name" lookup can no longer make a good setup get rolled back.
