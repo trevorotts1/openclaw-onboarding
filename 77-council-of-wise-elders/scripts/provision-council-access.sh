@@ -26,13 +26,27 @@ fi
 #      council CNAME already points elsewhere        (-> CONFLICT)
 #   b. the CC host's Access app + allow rules        (none -> NOT_PROVISIONED)
 #   c. tunnel configuration is remote-managed        (local -> PENDING_LOCAL_TUNNEL)
+#      tunnel has an active connector (read-only)    (none  -> CONNECTOR_DOWN)
 #   d. create/reuse Access app 'Council - <slug>', read it back, diff the rules
 #      against the CC app (mismatch -> FAILED before any routing)
 #   e. merge the ingress rule (GET -> merge -> PUT, CC rule asserted unchanged)
 #   f. proxied CNAME -> <tunnel-id>.cfargotunnel.com
 #   g. edge gate: GET the host, no redirects; it must 302 to *.cloudflareaccess.com.
 #      Fail -> roll back what THIS run created, print FAILED.
-# Every refusal (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL, CONFLICT) sends zero writes.
+# Every refusal (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL, CONNECTOR_DOWN, CONFLICT)
+# sends zero writes.
+#
+# --all only considers Command Center hosts. A CNAME to a tunnel whose label is
+# rescue-*, *-gw or *webhook*, or whose tunnel ingress rule for that host is not
+# http://localhost:4000 / http://127.0.0.1:4000, is reported SKIPPED_NOT_CC (exit
+# 0, zero requests beyond the tunnel config read) so the exit code and the job log
+# only speak about real Command Centers.
+#
+# CONNECTOR_DOWN means the tunnel has no active cloudflared connection right now
+# (GET .../cfd_tunnel/<id>/connections is empty). It is a retryable not-ready
+# state, exit 0, zero writes: a 302 from Cloudflare Access proves only that the
+# edge answers, not that the client's connector and Council service are up. The
+# check cannot see the Council service itself, only the tunnel connector.
 # An already provisioned host makes zero writes and prints ALREADY_PROVISIONED.
 #
 # Dry-run is the default and sends GET requests only. --apply is the only way a
@@ -53,7 +67,8 @@ fi
 #
 # OUTPUT: one line per host: COUNCIL_ACCESS: <cc-host> <STATUS> [detail]
 #   STATUS = PROVISIONED | ALREADY_PROVISIONED | PENDING_LOCAL_TUNNEL |
-#            NOT_PROVISIONED | CONFLICT | FAILED | PLANNED (dry-run, writes needed)
+#            CONNECTOR_DOWN | NOT_PROVISIONED | SKIPPED_NOT_CC | CONFLICT | FAILED |
+#            PLANNED (dry-run, writes needed)
 # EXIT: 0 unless a host is FAILED or CONFLICT (1); 2 usage; 3 missing env/tool; 4 zone.
 set -uo pipefail
 
@@ -222,13 +237,22 @@ provision_host() {
   [ "$(ok_of "$cfg")" = "true" ] || { finish FAILED "could not read tunnel configuration for $tunnel_id: $(err_of "$cfg")"; return; }
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfg")"
   if [ "$src" != "cloudflare" ]; then
-    say "  Locally managed tunnel. On the box, add to the cloudflared config.yml ingress list (above the final http_status:404 rule), then restart cloudflared:"
-    say "    - hostname: $COUNCIL_HOST"
-    say "      service: $COUNCIL_SERVICE"
-    finish PENDING_LOCAL_TUNNEL "$cc rides a locally managed tunnel; add the ingress lines above on the box. No Cloudflare change made (the Access app and CNAME are created on a re-run once routing exists)"
+    # Never print ingress lines "for the box": a shared operator tunnel's connector
+    # is not on the client box. State the truth, send nothing.
+    say "  Tunnel $tunnel_id (serving $cc) has a locally managed configuration (source=$src): its ingress lives in a cloudflared config.yml on whichever machine runs that connector, so the Cloudflare API cannot add $COUNCIL_HOST to it."
+    say "  Safe fix: migrate that tunnel to remote-managed (Cloudflare Zero Trust, Networks, Tunnels, Configure), then re-run. Do not hand-edit a config.yml for this."
+    finish PENDING_LOCAL_TUNNEL "tunnel $tunnel_id for $cc is local-managed (source=$src); migrate it to remote-managed, then re-run. No Cloudflare change made"
     return
   fi
   cc_ingress_assert_cc_port "$cfg" "$cc" 1 || { finish FAILED "tunnel $tunnel_id has no valid Command Center rule for $cc; refusing to write"; return; }
+  # c2. read-only: does the tunnel have a live connector? (Access answering 302 proves only the edge.)
+  local conns nconn
+  conns="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tunnel_id}/connections")"
+  [ "$(ok_of "$conns")" = "true" ] || { finish FAILED "could not read tunnel connections for $tunnel_id: $(err_of "$conns")"; return; }
+  nconn="$(jq -r '[.result[]?.conns[]? | select((.is_pending_reconnect // false) | not)] | length' <<<"$conns" 2>/dev/null)"
+  if [ "${nconn:-0}" = "0" ]; then
+    finish CONNECTOR_DOWN "tunnel $tunnel_id for $cc has no active connector; not ready, retry later. No Cloudflare change made"; return
+  fi
 
   # d. Access app first
   local app app_id app_pol created_app=0 body inc
@@ -337,20 +361,38 @@ HOSTS=()
 valid_host() { [[ "$1" == *".$ZONE_NAME" ]] && [[ "${1%".$ZONE_NAME"}" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; }
 if [ "$TARGET" = "--all" ]; then
   recs="$(cf_all "/zones/${ZONE_ID}/dns_records?type=CNAME")" || { echo "REFUSED: could not list zone CNAMEs" >&2; exit 4; }
-  while IFS= read -r n; do
+  declare -A CFG_OF
+  SKIPPED=()   # "host|reason"
+  while read -r n content; do
     [ -n "$n" ] || continue
     valid_host "$n" || continue
     case "$n" in *-hooks.*|*-podcast.*|*-council.*) continue ;; esac
     case ",$EXCLUDE," in *",$n,"*) continue ;; esac
+    case "${n%%.*}" in
+      rescue-*|*-gw|*webhook*) SKIPPED+=("$n|name is a rescue/gateway/webhook host, not a Command Center"); continue ;;
+    esac
+    tid="${content%.cfargotunnel.com}"
+    if [ -z "${CFG_OF[$tid]+x}" ]; then CFG_OF[$tid]="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}/configurations")"; fi
+    # Only a readable remote config can prove a host is not a Command Center; an
+    # unreadable or local one falls through to provision_host to report honestly.
+    if [ "$(ok_of "${CFG_OF[$tid]}")" = "true" ] && [ "$(jq -r '.result.source // "cloudflare"' <<<"${CFG_OF[$tid]}")" = "cloudflare" ]; then
+      svc="$(cc_ingress_service_for_host "${CFG_OF[$tid]}" "$n")"
+      case "$svc" in
+        http://localhost:4000|http://127.0.0.1:4000) ;;
+        *) SKIPPED+=("$n|tunnel $tid routes it to ${svc:-no ingress rule}, not http://localhost:4000 or http://127.0.0.1:4000"); continue ;;
+      esac
+    fi
     HOSTS+=("$n")
-  done < <(jq -r '.[] | select((.content // "") | endswith(".cfargotunnel.com")) | .name' <<<"$recs" | sort -u)
+  done < <(jq -r '.[] | select((.content // "") | endswith(".cfargotunnel.com")) | "\(.name) \(.content)"' <<<"$recs" | sort -u)
 else
   valid_host "$TARGET" || { echo "host must be <slug>.$ZONE_NAME" >&2; exit 2; }
   case "$TARGET" in *-hooks.*|*-podcast.*|*-council.*) echo "give the Command Center host, not a -hooks/-podcast/-council host" >&2; exit 2 ;; esac
+  case "${TARGET%%.*}" in rescue-*|*-gw|*webhook*) echo "give the Command Center host, not a rescue-/-gw/webhook host" >&2; exit 2 ;; esac
   HOSTS=("$TARGET")
 fi
 
 say "provision-council-access: zone=$ZONE_NAME ($ZONE_ID) hosts=${#HOSTS[@]} mode=$([ "$APPLY" = 1 ] && echo apply || echo dry-run)"
+for sk in ${SKIPPED[@]+"${SKIPPED[@]}"}; do CC_HOST="${sk%%|*}"; COUNCIL_HOST=""; PLAN=(); finish SKIPPED_NOT_CC "${sk#*|}"; done
 for h in ${HOSTS[@]+"${HOSTS[@]}"}; do provision_host "$h"; done
 
 [ "$JSON" = "1" ] && jq . <<<"$RESULTS"

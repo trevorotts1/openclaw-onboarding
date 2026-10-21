@@ -152,7 +152,25 @@ check "no CC CNAME: NOT_PROVISIONED, zero writes" bash -c "test '$RC' = 0 && tes
 fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "local tunnel: PENDING_LOCAL_TUNNEL, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PENDING_LOCAL_TUNNEL'"
-check "local tunnel: prints the exact ingress lines" bash -c "grep -q 'hostname: qcbox-council.$Z' '$OUT' && grep -q 'service: http://127.0.0.1:8787' '$OUT'"
+check "local tunnel: names the tunnel, says local-managed and to migrate to remote-managed" bash -c "grep -q '$TID' '$OUT' && grep -q 'locally managed' '$OUT' && grep -q 'migrate that tunnel to remote-managed' '$OUT'"
+check "local tunnel: prints NO ingress lines and no instruction aimed at the box" bash -c "! grep -Eq 'hostname: |service: http|On the box|on the box|add the ingress' '$OUT'"
+check "local tunnel: no council app or CNAME was created" test "$(state '[.apps[]|select(.domain|test("-council."))]|length')" = 0 -a "$(state '[.dns[]|select(.name|test("-council."))]|length')" = 0
+
+fixture qcbox | jq -c '.tunnels["'$TID'"].conns = []' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "connector down (apply): CONNECTOR_DOWN, zero writes, exit 0" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_DOWN'"
+check "connector down: not reported as PROVISIONED/PLANNED" bash -c "! grep -Eq 'PROVISIONED|PLANNED' '$OUT'"
+run_script qcbox.$Z
+check "connector down (dry-run): CONNECTOR_DOWN, not PLANNED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_DOWN'"
+fixture qcbox | jq -c '.tunnels["'$TID'"].conns = [{id:"c9",is_pending_reconnect:true}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "only a pending-reconnect connection counts as down" bash -c "test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_DOWN'"
+fixture qcbox | jq -c '.fail.connections = true' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "connections endpoint error: FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED'"
+cp "$WORK/provisioned.json" "$WORK/f.json"; jq -c '.tunnels["'$TID'"].conns = []' "$WORK/provisioned.json" > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "already-provisioned host with a dead connector is CONNECTOR_DOWN, not ALREADY_PROVISIONED, zero writes" bash -c "test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_DOWN'"
 
 fixture qcbox | jq -c '.dns += [{id:"x1",type:"CNAME",name:"qcbox-council.'$Z'",content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
@@ -179,6 +197,34 @@ check "--all plans exactly the 3 Command Center hosts" test "$(grep '^COUNCIL_AC
 check "--all prints one result line per host" test "$(grep -c '^COUNCIL_ACCESS:' "$OUT")" = 3
 run_script --all --json
 check "--json prints a JSON array" bash -c "jq -e 'length == 3 and all(.[]; .status == \"PLANNED\")' '$OUT'"
+
+echo "== 7b. --all skips what is not a Command Center and stays quiet about it"
+ATID="$(printf '%032x' "$((0x0123456789abcdef + 1))")"
+fixture alpha beta | jq -c --arg z "$Z" --arg t "$ATID" '
+  .dns += ([ "rescue-alpha", "alpha-gw", "alpha-webhook", "weird", "norule" ] | map({id:("x-"+.),type:"CNAME",name:(.+"."+$z),content:($t+".cfargotunnel.com"),proxied:true}))
+  | .tunnels[$t].config.ingress = ([
+      {hostname:("rescue-alpha."+$z),service:"ssh://localhost:22"},
+      {hostname:("alpha-gw."+$z),service:"http://127.0.0.1:18789"},
+      {hostname:("weird."+$z),service:"http://localhost:3000"}] + .tunnels[$t].config.ingress)' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script --all
+check "--all with non-CC hosts: exit 0, GET only" bash -c "test '$RC' = 0 && ! grep -Ev '^GET ' '$LOG'"
+for h in rescue-alpha alpha-gw alpha-webhook weird norule; do
+  check "$h is SKIPPED_NOT_CC" bash -c "grep -q '^COUNCIL_ACCESS: $h.$Z SKIPPED_NOT_CC' '$OUT'"
+done
+check "skipped hosts are never provisioned or planned" bash -c "! grep -E '^COUNCIL_ACCESS: (rescue-alpha|alpha-gw|alpha-webhook|weird|norule)\.[^ ]* (PLANNED|PROVISIONED|FAILED)' '$OUT'"
+check "the 2 real Command Centers are still PLANNED" test "$(grep -c '^COUNCIL_ACCESS: .* PLANNED' "$OUT")" = 2
+check "skip reason names the wrong target" bash -c "grep -q 'weird.$Z SKIPPED_NOT_CC.*http://localhost:3000' '$OUT' && grep -q 'norule.$Z SKIPPED_NOT_CC.*no ingress rule' '$OUT'"
+run_script --all --apply
+check "--all --apply: only the 2 real Command Centers are written (6 writes)" test "$(nonget_count)" = 6
+check "--all --apply: final exit 0 and no -council record for a skipped host" bash -c "test '$RC' = 0 && test '$(state '[.dns[]|select(.name|test("^(rescue-alpha|alpha-gw|alpha-webhook|weird|norule)-council"))]|length')' = 0"
+run_script --all --json
+check "--json carries SKIPPED_NOT_CC entries" bash -c "jq -e '[.[]|select(.status==\"SKIPPED_NOT_CC\")]|length == 5' '$OUT'"
+fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script --all --apply
+check "--all: a local-managed Command Center is still reported PENDING_LOCAL_TUNNEL, not skipped" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q 'qcbox.$Z PENDING_LOCAL_TUNNEL' '$OUT'"
+run_script rescue-alpha.$Z
+check "explicit rescue- host is refused (exit 2)" test "$RC" = 2
 
 echo "== 8. zone is resolved by name, never from CLOUDFLARE_ZONE_ID"
 fixture qcbox > "$WORK/f.json"; start_fake "$WORK/f.json"

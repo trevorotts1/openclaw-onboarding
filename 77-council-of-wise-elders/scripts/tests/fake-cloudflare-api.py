@@ -10,9 +10,9 @@ state is dumped to --state-out. stdlib only; never a real network call.
 Fixture keys (all optional except zone):
   account  expected account id (default qc-acct)    token  expected bearer token
   zone     {id, name}                                dns    [{id,type,name,content,proxied}]
-  tunnels  {tunnel_id: {source, config}}             apps   [{id,name,domain,session_duration,...}]
+  tunnels  {tunnel_id: {source, config, conns}}   conns [] = connector down             apps   [{id,name,domain,session_duration,...}]
   policies {app_id: [policy,...]}                    edge   {host|"default": {status, location}}
-  fail     {dns_create: true}  -> POST dns_records answers 500
+  fail     {dns_create: true}  -> POST dns_records answers 500; {connections: true} -> connections answers 500
 """
 import argparse, json, re, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -123,6 +123,16 @@ class H(BaseHTTPRequestHandler):
         return self.send(405, env(None, False, [{"message": "method"}]))
 
     def account(self, method, rest, q):
+        m = re.match(r"^cfd_tunnel/([^/]+)/connections$", rest)
+        if m and method == "GET":
+            t = S["tunnels"].get(m.group(1))
+            if t is None:
+                return self.send(404, env(None, False, [{"message": "tunnel not found"}]))
+            if S["fail"].get("connections"):
+                return self.send(500, env(None, False, [{"message": "internal error (injected)"}]))
+            # default: one live connection; fixture "conns": [] means the connector is down
+            conns = t.get("conns", [{"id": "conn-1", "colo_name": "ORD", "is_pending_reconnect": False}])
+            return self.send(200, env([{"id": "client-1", "conns": conns}] if conns else []))
         m = re.match(r"^cfd_tunnel/([^/]+)/configurations$", rest)
         if m:
             t = S["tunnels"].get(m.group(1))
