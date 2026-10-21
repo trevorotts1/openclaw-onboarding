@@ -12,7 +12,10 @@
 # not ready yet (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL, TUNNEL_DOWN, CONNECTOR_DOWN,
 # CONNECTOR_PENDING, ORIGIN_NOT_LOOPBACK) is reported in the receipt under
 # "refused" and retried next run; it does not fail the run. A host that is not a
-# Command Center (SKIPPED_NOT_CC) is named under "skipped" and never fails the run. Nothing here depends on a box,
+# Command Center (SKIPPED_NOT_CC) or whose tunnel no longer exists (SKIPPED_ORPHAN) is
+# named under "skipped" and never fails the run. A Council login page brought back in
+# line with its Command Center login page (SYNCED) is counted and named under "synced".
+# Nothing here depends on a box,
 # the AI Workforce Interview, or .workforce-build-state.json.
 #
 # Dry-run (GET only) is the default. --apply is the only way a write can happen.
@@ -40,7 +43,7 @@
 # missing operator or client email to an existing one (RECONCILED). It keeps its
 # own receipts (cc-access-last-run.json, cc-access-runs.log) in the same state dir.
 # Its outcome is also summarised here as "cc_access" in last-run.json and as
-# cc_reconciled / cc_needs_email / cc_drift / cc_failed on the runs.log line. NEEDS_EMAIL (no verified
+# cc_reconciled / cc_needs_email / cc_drift / cc_orphans / cc_failed on the runs.log line. NEEDS_EMAIL (no verified
 # client email yet), DRIFT (existing app differs), a refusal or any failure of this
 # step is reported but NEVER fails the run; the next run retries it.
 #
@@ -127,11 +130,12 @@ if jq -e 'type == "array"' "$CCOUT" >/dev/null 2>&1; then
        already:([$r[] | select(.status == "ALREADY_PRESENT")] | length),
        needs_email:[$r[] | select(.status == "NEEDS_EMAIL") | .host],
        drift:[$r[] | select(.status == "DRIFT") | .host],
+       orphans:[$r[] | select(.status == "SKIPPED_ORPHAN") | .host],
        failed:[$r[] | select(.status == "FAILED") | .host]}' "$CCOUT")"
 else
-  CC="$(jq -cn --argjson rc "$CC_RC" '{ran:false, exit:$rc, created:0, planned:0, reconciled:0, already:0, needs_email:[], drift:[], failed:[]}')"
+  CC="$(jq -cn --argjson rc "$CC_RC" '{ran:false, exit:$rc, created:0, planned:0, reconciled:0, already:0, needs_email:[], drift:[], orphans:[], failed:[]}')"
 fi
-CC_LINE="$(jq -r '" cc_exit=\(.exit) cc_created=\(.created) cc_reconciled=\(.reconciled) cc_needs_email=\(.needs_email|length) cc_drift=\(.drift|length) cc_failed=\(.failed|length)"' <<<"$CC")"
+CC_LINE="$(jq -r '" cc_exit=\(.exit) cc_created=\(.created) cc_reconciled=\(.reconciled) cc_needs_email=\(.needs_email|length) cc_drift=\(.drift|length) cc_orphans=\(.orphans|length) cc_failed=\(.failed|length)"' <<<"$CC")"
 ARGS="--all --json"; [ "$MODE" = apply ] && ARGS="$ARGS --apply"
 # shellcheck disable=SC2086
 "$PROVISION" $ARGS >"$OUT" 2>"$ERR"; RC=$?
@@ -140,16 +144,17 @@ if jq -e 'type == "array"' "$OUT" >/dev/null 2>&1; then
   RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson rc "$RC" --argjson cc "$CC" '
     . as $r
     | ["NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","TUNNEL_DOWN","CONNECTOR_DOWN","CONNECTOR_PENDING","ORIGIN_NOT_LOOPBACK","CONFLICT","FAILED"] as $refusals
-    | (reduce (["PROVISIONED","ALREADY_PROVISIONED","PLANNED","SKIPPED_NOT_CC"] + $refusals)[] as $s
+    | (reduce (["PROVISIONED","ALREADY_PROVISIONED","SYNCED","PLANNED","SKIPPED_NOT_CC","SKIPPED_ORPHAN"] + $refusals)[] as $s
          ({}; .[$s] = ([$r[] | select(.status == $s)] | length))) as $c
     | ($c.CONFLICT + $c.FAILED) as $bad
     | {timestamp:$t, mode:$m, exit:(if $bad > 0 or $rc != 0 then 1 else 0 end), total:($r | length),
        counts:$c, cc_access:$cc,
        refused:   [$r[] | select(.status | IN($refusals[])) | {host:.cc_host, reason:.status, detail:.detail}],
-       skipped:   [$r[] | select(.status == "SKIPPED_NOT_CC") | {host:.cc_host, reason:.status, detail:.detail}],
-       provisioned:[$r[] | select(.status == "PROVISIONED") | .cc_host]}' "$OUT")"
+       skipped:   [$r[] | select(.status | IN("SKIPPED_NOT_CC","SKIPPED_ORPHAN")) | {host:.cc_host, reason:.status, detail:.detail}],
+       provisioned:[$r[] | select(.status == "PROVISIONED") | .cc_host],
+       synced:    [$r[] | select(.status == "SYNCED") | .cc_host]}' "$OUT")"
   EXIT="$(jq -r .exit <<<"$RECEIPT")"
-  LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) planned=\(.counts.PLANNED) skipped=\(.counts.SKIPPED_NOT_CC) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")$CC_LINE"
+  LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) synced=\(.counts.SYNCED) planned=\(.counts.PLANNED) skipped=\(.counts.SKIPPED_NOT_CC) orphans=\(.counts.SKIPPED_ORPHAN) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")$CC_LINE"
 else
   # No host report at all: API/zone failure, or a missing tool. A real failure.
   EXIT=1; [ "$RC" = 3 ] && EXIT=3

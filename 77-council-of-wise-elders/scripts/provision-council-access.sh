@@ -17,22 +17,43 @@ fi
 #  -> <slug>-council.zerohumanworkforce.com  (Council chamber, 127.0.0.1:8787)
 #
 # The new hostname rides the box's ONE existing cloudflared tunnel and gets its
-# own self-hosted Access app that copies the Command Center app's allow rules,
-# so the same people (client emails + operator) can open it and nobody else.
+# own self-hosted Access app that copies the Command Center app's allow rules and
+# then follows its email list (SYNCED, step d), so the same people (client emails +
+# operator) can open it and nobody else.
 # A box holds no Cloudflare API token, so this runs from the operator side only.
 #
 # ORDER (per host). Nothing is routed or published before the login exists:
 #   a. tunnel id from the CC host's CNAME            (none -> NOT_PROVISIONED)
 #   b. the CC host's Access app + allow rules        (none -> NOT_PROVISIONED)
-#   c. the CC tunnel is healthy (GET cfd_tunnel/<id>) (not healthy -> TUNNEL_DOWN)
+#   c. the CC tunnel exists (HTTP 404 on the tunnel or its configuration, "Configuration
+#      for tunnel not found", or a deleted tunnel -> SKIPPED_ORPHAN: an orphan record,
+#      zero writes, exit 0; a 5xx, timeout or auth error stays FAILED)
+#      and is healthy (GET cfd_tunnel/<id>) (not healthy -> TUNNEL_DOWN)
 #      remote-managed CC tunnel: the CC rule's origin is loopback (else ORIGIN_NOT_LOOPBACK)
 #        and the tunnel has an active connector     (none  -> CONNECTOR_DOWN)
-#      local-managed CC tunnel: the Council rides a DEDICATED remote-managed tunnel
+#      local-managed CC tunnel, RESCUE RIDE first: the Council rides the client's own
+#        rescue tunnel exactly like the remote path (detail "rides rescue tunnel <name>")
+#        when ALL hold: the CC tunnel reports this host at http://localhost:4000 or
+#        http://127.0.0.1:4000; exactly one tunnel is named rescue-<slug> (or
+#        rescue-<slug>-..., the slug as a whole word); it is healthy, remote-managed and
+#        has an ssh:// rule; the active connectors of both tunnels report origin_ip sets
+#        that are non-empty and overlap (same machine); no <slug>-council record points at
+#        another tunnel; and COUNCIL_TUNNEL_OVERRIDES has no entry for the slug. No new
+#        tunnel, no token file, no connector delivery.
+#      otherwise: the Council rides a DEDICATED remote-managed tunnel
 #        named council-<slug> (or the COUNCIL_TUNNEL_OVERRIDES name), created or reused
 #        (that tunnel local-managed -> PENDING_LOCAL_TUNNEL)
 #      council CNAME already points elsewhere        (-> CONFLICT)
-#   d. create/reuse Access app 'Council - <slug>', read it back, diff the rules
-#      against the CC app (mismatch -> FAILED before any routing)
+#   d. create/reuse Access app 'Council - <slug>', read it back, compare the rules with
+#      the CC app. An existing app whose rules differ is SYNCED: its allow EMAILS are made
+#      equal to the CC app's (missing ones added, ones the CC no longer lists removed, so
+#      a revocation on the CC login page also revokes the Council address) by GET-merge-PUT
+#      of its own app-scoped allow policy only, non-email rules untouched, then read back.
+#      The CC app is never written. Refused (FAILED, zero writes, before any routing) when
+#      the app is not 'Council - <slug>' on <slug>-council.<zone>, an email to remove sits
+#      on a reusable or non-allow policy (or the app has no app-scoped allow policy), the
+#      CC allow policy has a rule other than an email or a service token (everyone, email
+#      domain, group), or the Council app admits such a rule.
 #   e. dedicated path only: create the council tunnel (config_src=cloudflare)
 #   f. merge the ingress rule (GET -> merge -> PUT, CC rule asserted unchanged)
 #   g. proxied CNAME -> <tunnel-id>.cfargotunnel.com, only once the tunnel the
@@ -51,7 +72,7 @@ fi
 #      redirects; it must 302 to *.cloudflareaccess.com.
 #      Fail -> roll back what THIS run created, print FAILED.
 # Every refusal (NOT_PROVISIONED, TUNNEL_DOWN, ORIGIN_NOT_LOOPBACK, CONNECTOR_DOWN,
-# PENDING_LOCAL_TUNNEL, CONFLICT) sends zero writes.
+# PENDING_LOCAL_TUNNEL, CONFLICT, SKIPPED_ORPHAN) sends zero writes.
 #
 # TUNNEL_DOWN: the CC tunnel's status is not "healthy" (down, inactive, degraded).
 # A link published now would pass the Access login and then 502, so nothing is
@@ -104,10 +125,11 @@ fi
 #                                   system: plain curl through the system resolver
 #
 # OUTPUT: one line per host: COUNCIL_ACCESS: <cc-host> <STATUS> [detail]
-#   STATUS = PROVISIONED | ALREADY_PROVISIONED | CONNECTOR_PENDING | TUNNEL_DOWN |
+#   STATUS = PROVISIONED | ALREADY_PROVISIONED | SYNCED (only the login page emails
+#            changed; counts only) | CONNECTOR_PENDING | TUNNEL_DOWN |
 #            ORIGIN_NOT_LOOPBACK | PENDING_LOCAL_TUNNEL | CONNECTOR_DOWN |
-#            NOT_PROVISIONED | SKIPPED_NOT_CC | CONFLICT | FAILED |
-#            PLANNED (dry-run, writes needed)
+#            NOT_PROVISIONED | SKIPPED_NOT_CC | SKIPPED_ORPHAN | CONFLICT | FAILED |
+#            PLANNED (dry-run, writes needed; a sync is listed as counts to add/remove)
 # EXIT: 0 unless a host is FAILED or CONFLICT (1); 2 usage; 3 missing env/tool; 4 zone.
 set -uo pipefail
 
@@ -160,14 +182,27 @@ printf 'header = "Authorization: Bearer %s"\n' "$CLOUDFLARE_API_TOKEN" > "$CURL_
 
 # cf METHOD PATH [JSON]  -> response body on stdout (synthetic failure body if none)
 cf() {
-  local m="$1" p="$2" d="${3:-}" out
+  local m="$1" p="$2" d="${3:-}" out code
   if [ -n "$d" ]; then
-    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -H 'Content-Type: application/json' --data "$d" "$API$p" 2>/dev/null)" || out=""
+    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -H 'Content-Type: application/json' --data "$d" -w '\n%{http_code}' "$API$p" 2>/dev/null)"
   else
-    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" "$API$p" 2>/dev/null)" || out=""
+    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -w '\n%{http_code}' "$API$p" 2>/dev/null)"
   fi
-  [ -n "$out" ] || out='{"success":false,"errors":[{"message":"no response from the API"}]}'
+  # The HTTP status rides along as ._http (a string, "000" = no response) so gone_of can tell
+  # a tunnel that no longer exists (404) from a transient error (5xx, timeout, auth).
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  [ "$code" != "$out" ] || out=""
+  out="$(printf '%s' "$out" | jq -c --arg c "$code" 'if type == "object" then . + {_http:$c} else error end' 2>/dev/null)" || out=""
+  [ -n "$out" ] || out="$(jq -cn --arg c "${code:-000}" '{success:false, errors:[{message:"no response from the API"}], _http:$c}')"
   printf '%s' "$out"
+}
+# gone_of RESPONSE -> 0 when a tunnel read says the tunnel or its configuration no longer
+# exists: HTTP 404 (not a "No route" URL error), or another 4xx (not 401/403/429) whose error
+# says "not found". A 5xx, a timeout ("000") or an auth error is never "gone".
+gone_of() {
+  jq -e '(._http // "") as $c | [.errors[]?.message // "" | strings] as $m
+         | ($c == "404" and ($m | any(test("no route"; "i")) | not))
+           or (($c | test("^4[0-9][0-9]$")) and ($c | IN("401","403","429") | not) and ($m | any(test("not found"; "i"))))' <<<"$1" >/dev/null 2>&1
 }
 ok_of()  { printf '%s' "$1" | jq -r '.success // false' 2>/dev/null; }
 err_of() { printf '%s' "$1" | jq -c '[.errors[]?.message // empty]' 2>/dev/null || printf '[unparseable response]'; }
@@ -291,10 +326,132 @@ active_conns() {
   jq -r '[.result[]?.conns[]? | select((.is_pending_reconnect // false) | not)] | length' <<<"$r" 2>/dev/null || printf 'ERR'
 }
 
+# conn_ips TUNNEL_ID -> JSON array of the active connections' origin_ip (the public address
+# each cloudflared connects from; Cloudflare's TunnelConnection field), "ERR" when unreadable
+conn_ips() {
+  local r; r="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${1}/connections")"
+  [ "$(ok_of "$r")" = "true" ] || { printf 'ERR'; return; }
+  jq -c '[.result[]?.conns[]? | select((.is_pending_reconnect // false) | not) | .origin_ip // empty | strings] | unique' <<<"$r" 2>/dev/null || printf 'ERR'
+}
+
+# orphan_why TUNNEL_ID RESPONSE [WHY] -> SKIPPED_ORPHAN detail naming the evidence
+orphan_why() {
+  printf 'the CNAME for %s points at tunnel %s, which no longer exists (%s); an orphan record, not a Command Center to ride. Zero writes; nothing deleted' \
+    "$CC_HOST" "$1" "${3:-HTTP $(jq -r '._http // "?"' <<<"$2") $(err_of "$2")}"
+}
+
+# rescue_ride SLUG CC_CFG CC_TID -> 0 and RIDE_TID/RIDE_NAME/RIDE_CFG when the Council can ride
+# the client's own remote-managed rescue tunnel on the same machine; 1 and RIDE_WHY otherwise.
+# All reads. Every condition must hold:
+#   the local CC tunnel reports this host on loopback :4000 (Contabo's 19003-19005 never match);
+#   exactly one tunnel named rescue-<slug> or rescue-<slug><non-alphanumeric>..., healthy,
+#   remote-managed, with an ssh:// rule; both tunnels' active connector origin_ip sets are
+#   non-empty and overlap (same site); no <slug>-council record points at another tunnel.
+TUNNELS=""   # tunnel list, read once per run
+rescue_ride() {
+  local slug="$1" cccfg="$2" cctid="$3" svc cands n rcfg cips rips r cur
+  RIDE_TID=""; RIDE_NAME=""; RIDE_CFG=""; RIDE_WHY=""
+  svc="$(cc_ingress_service_for_host "$cccfg" "$CC_HOST")"
+  case "$svc" in
+    http://localhost:4000|http://localhost:4000/|http://127.0.0.1:4000|http://127.0.0.1:4000/) ;;
+    *) RIDE_WHY="the Command Center tunnel reports ${svc:-no rule} for $CC_HOST, not loopback :4000"; return 1 ;;
+  esac
+  if [ -z "$TUNNELS" ]; then
+    TUNNELS="$(cf_all "/accounts/${ACCT}/cfd_tunnel?is_deleted=false")" || { TUNNELS=""; RIDE_WHY="could not list tunnels"; return 1; }
+  fi
+  cands="$(jq -c --arg p "rescue-$slug" '[.[] | select(.deleted_at == null)
+            | select((.name // "" | ascii_downcase) as $n | $n == $p or (($n | startswith($p)) and ($n[($p | length):] | test("^[^a-z0-9]"))))]' <<<"$TUNNELS")"
+  n="$(jq 'length' <<<"$cands")"
+  [ "$n" = 1 ] || { RIDE_WHY="$n tunnels named rescue-$slug* (exactly one is needed)"; return 1; }
+  RIDE_TID="$(jq -r '.[0].id' <<<"$cands")"; RIDE_NAME="$(jq -r '.[0].name' <<<"$cands")"
+  [ "$(jq -r '.[0].status // "unknown"' <<<"$cands")" = "healthy" ] || { RIDE_WHY="rescue tunnel $RIDE_NAME is $(jq -r '.[0].status // "unknown"' <<<"$cands"), not healthy"; return 1; }
+  rcfg="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${RIDE_TID}/configurations")"
+  [ "$(ok_of "$rcfg")" = "true" ] || { RIDE_WHY="could not read rescue tunnel $RIDE_NAME configuration"; return 1; }
+  [ "$(jq -r '.result.source // "cloudflare"' <<<"$rcfg")" = "cloudflare" ] || { RIDE_WHY="rescue tunnel $RIDE_NAME is locally managed"; return 1; }
+  [ "$(cc_ingress_of "$rcfg" | jq '[.[] | .service // "" | select(startswith("ssh://"))] | length')" != "0" ] \
+    || { RIDE_WHY="rescue tunnel $RIDE_NAME has no ssh:// rule"; return 1; }
+  cips="$(conn_ips "$cctid")"; rips="$(conn_ips "$RIDE_TID")"
+  if [ "$cips" = "ERR" ] || [ "$rips" = "ERR" ] \
+     || [ "$(jq -n --argjson a "$cips" --argjson b "$rips" '($a | length) > 0 and ($b | length) > 0 and (($a - ($a - $b)) | length) > 0')" != "true" ]; then
+    RIDE_WHY="the Command Center and rescue $RIDE_NAME connectors share no origin address (not provably the same machine)"; return 1
+  fi
+  r="$(cf GET "/zones/${ZONE_ID}/dns_records?name=${COUNCIL_HOST}")"
+  [ "$(ok_of "$r")" = "true" ] || { RIDE_WHY="could not read DNS for $COUNCIL_HOST"; return 1; }
+  cur="$(jq -r '.result[0].content // empty' <<<"$r")"
+  if [ -n "$cur" ] && [ "$cur" != "${RIDE_TID}.cfargotunnel.com" ]; then
+    RIDE_WHY="$COUNCIL_HOST already points at $cur"; return 1
+  fi
+  RIDE_CFG="$rcfg"
+}
+
+# SYNC_JQ ($cc = CC policies response, $co = Council policies response) -> {refuse} or
+# {add, remove, pid, want, include, body}: the Council's app-scoped allow policy (lowest
+# precedence) with every email the CC lacks dropped and every CC email it lacks appended,
+# every other rule kept in order. Emails compare case-insensitively.
+SYNC_JQ='def em: select(has("email")) | .email.email | strings | ascii_downcase;
+  def safe: has("email") or has("service_token");
+  def drop($w): has("email") and ((.email.email // "" | tostring | ascii_downcase) as $e | $w | any(. == $e) | not);
+  [$cc.result[]? | select(.decision == "allow")] as $ca
+  | [$co.result[]?] as $cp
+  | ([$ca[].include[]? | em] | unique) as $want
+  | ([$ca[].include[]? | select(safe | not) | keys[]] | unique) as $ccbad
+  | ([$cp[] | select(.decision == "allow") | .include[]? | select(safe | not) | keys[]] | unique) as $cobad
+  | ([$cp[] | select(.decision == "allow") | .include[]? | em] | unique) as $have
+  | ([$cp[] | select(.decision == "allow" and (.reusable != true))] | sort_by(.precedence // 0) | .[0] // null) as $t
+  | if ($ccbad | length) > 0 then {refuse: ("the Command Center allow policy has " + ($ccbad | join(", ")) + " rule(s); mirroring a rule that is not an email is not safe")}
+    elif ($cobad | length) > 0 then {refuse: ("the Council app admits " + ($cobad | join(", ")) + " rule(s) the Command Center does not")}
+    elif $t == null then {refuse: "the Council app has no app-scoped allow policy to edit (it is reusable or missing)"}
+    else
+      ([$cp[] | select(.id != $t.id and .decision != "deny") | select(([.include[]? | em] - $want) | length > 0)
+        | "policy \(.name // .id | tojson) (\(.decision)\(if .reusable == true then ", reusable" else "" end))"]) as $others
+      | (($t.include // []) | map(select(drop($want) | not))
+         + (($want - $have) | map({email: {email: .}}))) as $ni
+      | if ($others | length) > 0 then {refuse: ("an email the Command Center does not list is on " + ($others | join(", ")) + ", which this script never edits")}
+        elif ($ni | length) == 0 then {refuse: "the edit would leave the Council allow policy empty"}
+        else {add: ($want - $have | length), remove: ($have - $want | length), pid: $t.id, want: $want, include: $ni,
+              body: ($t | del(.id, .created_at, .updated_at, .reusable, .app_count, .uid) | .include = $ni)} end
+    end'
+
+# sync_access APP_JSON APP_ID CC_POLICIES COUNCIL_POLICIES: keep the Council app's allow emails
+# equal to the CC app's (add and remove), editing only its app-scoped allow policy. The CC app is
+# never written. Sets SYNCED (1 = written, or planned in dry-run) and SYNC_NOTE; on a refusal it
+# reports FAILED (zero writes) and returns 1.
+sync_access() {
+  local app="$1" aid="$2" ccp="$3" cop="$4" plan nadd nrm pid back
+  SYNCED=0; SYNC_NOTE=""
+  if [ "$(jq -r '.name // ""' <<<"$app")" != "Council - $slug" ] || [ "$(jq -r '.domain // ""' <<<"$app")" != "$COUNCIL_HOST" ]; then
+    finish FAILED "the Access app on $COUNCIL_HOST is not the one this script makes ('Council - $slug' on $COUNCIL_HOST) and its rules differ from the Command Center app; not edited, no routing touched"; return 1
+  fi
+  plan="$(jq -cn --argjson cc "$ccp" --argjson co "$cop" "$SYNC_JQ")" || { finish FAILED "could not compare the Council and Command Center Access rules; no routing touched"; return 1; }
+  if [ "$(jq -r 'has("refuse")' <<<"$plan")" = "true" ]; then
+    finish FAILED "Access rules on $COUNCIL_HOST differ from the Command Center app and cannot be synced: $(jq -r '.refuse' <<<"$plan"). Zero writes, no routing touched"; return 1
+  fi
+  nadd="$(jq -r '.add' <<<"$plan")"; nrm="$(jq -r '.remove' <<<"$plan")"; pid="$(jq -r '.pid' <<<"$plan")"
+  if [ "$nadd" = "0" ] && [ "$nrm" = "0" ]; then
+    step "[ok] Council login page emails equal the Command Center's (its other rules are left untouched)"; return 0
+  fi
+  SYNCED=1
+  if [ "$APPLY" != "1" ]; then
+    step "[plan] PUT /accounts/${ACCT}/access/apps/${aid}/policies/${pid} (add $nadd, remove $nrm email(s))"
+    SYNC_NOTE="would add $nadd and remove $nrm email(s) on the Council login page to match the Command Center"; return 0
+  fi
+  w PUT "/accounts/${ACCT}/access/apps/${aid}/policies/${pid}" "$(jq -c '.body' <<<"$plan")"
+  [ "$(ok_of "$WRESP")" = "true" ] || { finish FAILED "Council allow policy update failed (nothing changed): $(err_of "$WRESP"); no routing touched"; return 1; }
+  back="$(cf GET "/accounts/${ACCT}/access/apps/${aid}/policies")"
+  # Proof: every policy reads back as before except the target's include list, and the allow emails equal the CC's.
+  if [ "$(ok_of "$back")" != "true" ] || [ "$(jq -n --argjson b "$cop" --argjson a "$back" --argjson p "$plan" '
+        def norm: [.result[]? | del(.created_at, .updated_at, .app_count, .uid)] | sort_by(.id);
+        (($b | norm | map(if .id == $p.pid then .include = $p.include else . end)) == ($a | norm))
+        and (([$a.result[]? | select(.decision == "allow") | .include[]? | select(has("email")) | .email.email | strings | ascii_downcase] | unique) == $p.want)')" != "true" ]; then
+    finish FAILED "Council allow policy updated but the read-back does not match the Command Center emails; check it in the Access dashboard. No routing touched"; return 1
+  fi
+  SYNC_NOTE="Council login page now matches the Command Center: added $nadd, removed $nrm email(s); non-email rules untouched"
+}
+
 # ---- one Command Center host ---------------------------------------------------
 provision_host() {
   local cc="$1"
-  CC_HOST="$cc"; PLAN=()
+  CC_HOST="$cc"; PLAN=(); SYNCED=0; SYNC_NOTE=""; RIDE_WHY=""
   local slug="${cc%%.*}" rest="${cc#*.}"
   COUNCIL_HOST="${slug}-council.${rest}"
   say "== $cc -> $COUNCIL_HOST ($([ "$APPLY" = 1 ] && echo apply || echo dry-run))"
@@ -328,16 +485,25 @@ provision_host() {
   # c. the CC tunnel: healthy, then which tunnel the Council rides (all read-only)
   local th tstatus cfg src
   th="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tunnel_id}")"
-  [ "$(ok_of "$th")" = "true" ] || { finish FAILED "could not read tunnel $tunnel_id: $(err_of "$th")"; return; }
+  if [ "$(ok_of "$th")" != "true" ]; then
+    gone_of "$th" && { finish SKIPPED_ORPHAN "$(orphan_why "$tunnel_id" "$th")"; return; }
+    finish FAILED "could not read tunnel $tunnel_id (HTTP $(jq -r '._http // "?"' <<<"$th")): $(err_of "$th")"; return
+  fi
+  if [ "$(jq -r '.result.deleted_at // empty' <<<"$th")" != "" ]; then
+    finish SKIPPED_ORPHAN "$(orphan_why "$tunnel_id" "$th" "the tunnel was deleted at $(jq -r '.result.deleted_at' <<<"$th")")"; return
+  fi
   tstatus="$(jq -r '.result.status // "unknown"' <<<"$th")"
   if [ "$tstatus" != "healthy" ]; then
     finish TUNNEL_DOWN "tunnel $tunnel_id for $cc is $tstatus, not healthy; a link now would pass the login and then fail. No Cloudflare change made; retried next run"; return
   fi
   cfg="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tunnel_id}/configurations")"
-  [ "$(ok_of "$cfg")" = "true" ] || { finish FAILED "could not read tunnel configuration for $tunnel_id: $(err_of "$cfg")"; return; }
+  if [ "$(ok_of "$cfg")" != "true" ]; then
+    gone_of "$cfg" && { finish SKIPPED_ORPHAN "$(orphan_why "$tunnel_id" "$cfg")"; return; }
+    finish FAILED "could not read tunnel configuration for $tunnel_id (HTTP $(jq -r '._http // "?"' <<<"$cfg")): $(err_of "$cfg")"; return
+  fi
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfg")"
 
-  local ride_tid ride_cfg ride_name="" ride_new=0 token_file="" dedicated=0
+  local ride_tid ride_cfg ride_name="" ride_new=0 token_file="" dedicated=0 rescue=0 note=""
   if [ "$src" = "cloudflare" ]; then
     cc_ingress_assert_cc_port "$cfg" "$cc" 1 || { finish FAILED "tunnel $tunnel_id has no valid Command Center rule for $cc; refusing to write"; return; }
     local cc_svc origin
@@ -354,6 +520,13 @@ provision_host() {
       finish CONNECTOR_DOWN "tunnel $tunnel_id for $cc has no active connector; not ready, retry later. No Cloudflare change made"; return
     fi
     ride_tid="$tunnel_id"; ride_cfg="$cfg"
+  elif [ "$(council_tunnel_name "$slug")" = "council-$slug" ] && rescue_ride "$slug" "$cfg" "$tunnel_id"; then
+    # The CC tunnel is locally managed, but the same machine already runs the client's
+    # remote-managed rescue tunnel: the Council rides it like the remote path (no new
+    # tunnel, no token, no connector delivery). COUNCIL_TUNNEL_OVERRIDES never rides.
+    rescue=1; ride_tid="$RIDE_TID"; ride_name="$RIDE_NAME"; ride_cfg="$RIDE_CFG"; note="rides rescue tunnel $ride_name"
+    say "  Tunnel $tunnel_id (serving $cc) is locally managed (source=$src); the Council rides rescue tunnel $ride_name ($ride_tid) on the same machine."
+    step "[ok] rescue tunnel $ride_name: healthy, remote-managed, ssh:// rule, shares a connector origin address with $tunnel_id"
   else
     # The CC tunnel's ingress lives in a config.yml on whichever machine runs it, so
     # the API cannot add a rule there. The Council gets its own remote-managed tunnel.
@@ -361,6 +534,7 @@ provision_host() {
     ride_name="$(council_tunnel_name "$slug")"
     token_file="$TOKEN_DIR/${ride_name}.token"
     say "  Tunnel $tunnel_id (serving $cc) is locally managed (source=$src); the Council rides its own remote-managed tunnel $ride_name."
+    [ -z "$RIDE_WHY" ] || step "[info] not riding a rescue tunnel: $RIDE_WHY"
     r="$(cf GET "/accounts/${ACCT}/cfd_tunnel?name=${ride_name}&is_deleted=false")"
     [ "$(ok_of "$r")" = "true" ] || { finish FAILED "could not look up tunnel $ride_name: $(err_of "$r")"; return; }
     ride_tid="$(jq -r --arg n "$ride_name" '[.result[]? | select(.name == $n and (.deleted_at == null))][0].id // empty' <<<"$r")"
@@ -424,10 +598,13 @@ provision_host() {
   if [ "$APPLY" = "1" ] || [ "$created_app" = "0" ]; then
     app_pol="$(cf GET "/accounts/${ACCT}/access/apps/${app_id}/policies")"
     [ "$(ok_of "$app_pol")" = "true" ] || { finish FAILED "could not read back the Council Access app: $(err_of "$app_pol"); no routing touched"; return; }
-    if [ "$(canon_rules "$app_pol")" != "$cc_rules" ]; then
-      finish FAILED "Access rules on $COUNCIL_HOST differ from the Command Center app; no routing touched. Fix the app in the Access dashboard and re-run"; return
+    if [ "$(canon_rules "$app_pol")" = "$cc_rules" ]; then
+      step "[ok] Council Access rules equal the Command Center rules"
+    elif [ "$created_app" = "1" ]; then
+      finish FAILED "Access rules on the new $COUNCIL_HOST app differ from the Command Center app; no routing touched. Fix the app in the Access dashboard and re-run"; return
+    else
+      sync_access "$app" "$app_id" "$cc_pol" "$app_pol" || return
     fi
-    step "[ok] Council Access rules equal the Command Center rules"
   fi
 
   # e. dedicated path: create the Council tunnel (remote-managed)
@@ -450,7 +627,11 @@ provision_host() {
     step "[ok] ingress rule $COUNCIL_HOST -> $COUNCIL_SERVICE present"
   else
     new_body="$(cc_ingress_merge "$ride_cfg" "$COUNCIL_HOST" "$COUNCIL_SERVICE")" || { finish FAILED "ingress merge failed"; return; }
-    if [ "$dedicated" = "0" ]; then
+    if [ "$rescue" = "1" ]; then
+      [ "$(jq -c --arg h "$COUNCIL_HOST" '.config.ingress | map(select(.hostname != $h))' <<<"$new_body")" \
+        = "$(cc_ingress_of "$ride_cfg" | jq -c --arg h "$COUNCIL_HOST" 'map(select(.hostname != $h))')" ] \
+        || { finish FAILED "merge would change an existing rule on rescue tunnel $ride_name; nothing written"; return; }
+    elif [ "$dedicated" = "0" ]; then
       cc_ingress_assert_cc_port "$new_body" "$cc" 1 \
         && [ "$(cc_ingress_service_for_host "$new_body" "$cc")" = "$(cc_ingress_service_for_host "$cfg" "$cc")" ] \
         || { finish FAILED "merge would change the Command Center ingress rule; nothing written"; return; }
@@ -513,16 +694,18 @@ provision_host() {
     if [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; then
       local tok_note="token saved operator side at $token_file"
       [ -s "$token_file" ] || tok_note="token NOT saved yet at $token_file; $([ "$APPLY" = 1 ] && echo "retried next run" || echo "--apply saves it")"
-      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. The box must run its connector ($tok_note); the next run that sees it creates the record"
+      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. The box must run its connector ($tok_note); the next run that sees it creates the record${SYNC_NOTE:+. $SYNC_NOTE}"
     else
-      finish PLANNED "dry-run: pass --apply to make the writes listed above; no DNS write until tunnel $ride_name has an active connection, so apply ends CONNECTOR_PENDING"
+      finish PLANNED "dry-run: pass --apply to make the writes listed above; no DNS write until tunnel $ride_name has an active connection, so apply ends CONNECTOR_PENDING${SYNC_NOTE:+. $SYNC_NOTE}"
     fi
     return
   fi
 
-  if [ "$wrote" = "0" ]; then finish ALREADY_PROVISIONED
-  elif [ "$APPLY" = "1" ]; then finish PROVISIONED
-  else finish PLANNED "dry-run: pass --apply to make the writes listed above"; fi
+  [ -z "$SYNC_NOTE" ] || note="${note:+$note; }$SYNC_NOTE"
+  if [ "$wrote" = "0" ] && [ "$SYNCED" = "0" ]; then finish ALREADY_PROVISIONED "$note"
+  elif [ "$wrote" = "0" ] && [ "$APPLY" = "1" ]; then finish SYNCED "$note"
+  elif [ "$APPLY" = "1" ]; then finish PROVISIONED "$note"
+  else finish PLANNED "dry-run: pass --apply to make the writes listed above${note:+; $note}"; fi
 }
 
 # rollback TUNNEL ING_CHANGED PRIOR_SVC NEW_DNS_ID WHY: undo what THIS run created.

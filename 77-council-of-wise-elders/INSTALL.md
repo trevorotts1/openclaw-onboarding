@@ -293,7 +293,16 @@ The client opens the Roast Room chamber at
 first label of their Command Center address, and signs in with the same
 email addresses that sign in to their Command Center. The address rides the
 box's one existing Cloudflare tunnel behind a Cloudflare Access application
-that copies the Command Center's allow-list.
+that copies the Command Center's allow-list and then follows its email list:
+when an email is added to or removed from the Command Center login page, the
+next run adds it to or removes it from the Council login page (`SYNCED`,
+counts only), editing only the Council app's own allow policy, keeping its
+other rules, and reading it back. The Command Center app is never edited by
+that step. It refuses (`FAILED`, zero writes) when the Council app is not
+`Council - <slug>` on `<slug>-council.<zone>`, when an email to remove sits
+on a reusable or non-allow policy, or when either app's allow rules hold
+something other than emails and service tokens (everyone, an email domain, a
+group).
 
 Nobody does anything to get it, for existing clients and for every client
 added later:
@@ -366,9 +375,30 @@ mentions scripts, fleet or Cloudflare to the client. If the verifier ever
 reports ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as
 a security failure and do not send the link.
 
-A box whose Command Center tunnel is local-managed (it cannot take an API
-ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
-the operator side instead. No `<slug>-council` DNS record exists until that
+A box whose Command Center tunnel is local-managed first tries to ride the
+client's own rescue tunnel on the same machine, exactly like a remote-managed
+Command Center tunnel (the result line says `rides rescue tunnel <name>`; no
+new tunnel, no token file, no connector delivery). It rides only when all of
+these hold: the Command Center tunnel reports the host at
+`http://localhost:4000` or `http://127.0.0.1:4000` (Contabo containers on
+19003-19005 never match); exactly one tunnel is named `rescue-<slug>` (or
+`rescue-<slug>-...`, the slug as a whole word); that tunnel is healthy,
+remote-managed and has an `ssh://` rule; the active connectors of both
+tunnels report `origin_ip` sets that are non-empty and overlap (the same
+machine); no `<slug>-council` record already points at another tunnel; and
+`COUNCIL_TUNNEL_OVERRIDES` has no entry for the slug (trevor keeps
+`council-desktop`). Otherwise it falls back to the dedicated tunnel below.
+
+A Command Center record whose tunnel, or the tunnel's configuration, no
+longer exists (HTTP 404, `Configuration for tunnel not found`, a deleted
+tunnel) is an orphan: both `ensure-cc-access.sh` and
+`provision-council-access.sh` report `SKIPPED_ORPHAN` (zero writes, exit 0,
+named in the receipts). A transient read error (5xx, timeout, auth) stays
+`FAILED`.
+
+Failing that, a box whose Command Center tunnel is local-managed (it cannot
+take an API ingress rule) gets a dedicated remote-managed tunnel
+`council-<slug>` from the operator side instead. No `<slug>-council` DNS record exists until that
 tunnel has an active connector: the first `--apply` creates the tunnel, its
 route, the Access app and the saved token and ends `CONNECTOR_PENDING` with
 zero DNS writes; the first run that sees the connector creates the record
