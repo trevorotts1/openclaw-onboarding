@@ -53,26 +53,28 @@ def approx(a, b, abs_tol=0.01):
     return abs(a - b) <= abs_tol
 
 
-#: What card_render printed for card {} with this fixture on origin/main
-#: f825bbff2, captured before this unit existed: a non-Agnes card must not
-#: move a byte (BUILD-PLAN W1-agnes-core-U7 acceptance).
+#: What card_render prints for card {} with this fixture on this branch
+#: (v2.9.73 — the shipped video model is Hailuo 02 Standard at $0.025/s, the
+#: KIE catalog carries it; the card total moved with the data): every rerun
+#: must stay byte-identical to THIS text (BUILD-PLAN W1-agnes-core-U7).
 GOLDEN_PLAIN_CARD = (
-    "  Length:      60 seconds   $2.40\n"
-    "  Shape:       9:16   $0.22\n"
-    "  Style:       Lifelike 3D   $0.22\n"
+    "  Length:      60 seconds   $1.50\n"
+    "  Shape:       9:16   $0.34\n"
+    "  Style:       Lifelike 3D   $0.34\n"
     "  Music:       Soul Ballad   $0.06\n"
     "  Voice:       All Suno   $0.06\n"
     "  Clips:       not offered (60/90-second lengths only)   $0.00\n"
-    "  Video model: MiniMax H3 768P (RECOMMENDED)   $2.40\n"
-    "  Images:      7 character reference pictures + 4 shot pictures "
+    "  Video model: Hailuo 02 Standard 768P (RECOMMENDED)   $1.50\n"
+    "  Images:      7 character reference pictures + 10 shot pictures "
     "(added $0.14 for the reference pictures, included in the total)\n"
     "  Storyboard:  8 storyboard pictures (cap 120 from configuration; "
-    "separate from the 4 video shots above)\n"
+    "separate from the 10 video shots above)\n"
     "\n"
-    "  Total:       $2.68 + $0.54 retake allowance (20%) = $3.22")
+    "  Total:       $1.90 + $0.38 retake allowance (20%) = $2.28")
 
-#: quote(1, "90 seconds") on origin/main f825bbff2 (table rates, no adapter).
-GOLDEN_QUOTE_90 = 4.7
+#: quote(1, "90 seconds") on this branch (table rates, no adapter; Hailuo
+#: 02 Standard's $0.025/s x 90 = $2.25 + music + voice rows = $3.30).
+GOLDEN_QUOTE_90 = 3.3
 
 
 class FakePrice:
@@ -162,7 +164,7 @@ class AgnesPriceTests(unittest.TestCase):
         self.assertIs(priced, True)
         # the Skill 74 questions the card asked on the base, unchanged
         self.assertEqual(fake.calls, [("ai-music-api/generate", 1),
-                                      ("google/imagen4-fast", 11)])
+                                      ("google/imagen4-fast", 17)])
 
         def never(card, price_fn):          # the Agnes path must not be entered
             raise AssertionError("agnes_price.envelope used on a non-Agnes card")

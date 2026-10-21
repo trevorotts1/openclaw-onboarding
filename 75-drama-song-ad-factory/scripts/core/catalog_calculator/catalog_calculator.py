@@ -33,7 +33,7 @@ UNIT_NAME = "catalog-calculator"
 CREDIT_USD = 0.005
 
 # Owner decision D5: MiniMax H3 default, 768P, card states it when no choice.
-DEFAULT_MODEL_FAMILY = "minimax-h3"
+DEFAULT_MODEL_FAMILY = "hailuo"
 DEFAULT_RESOLUTION = "768P"
 
 SHAPES = ("9:16", "16:9")

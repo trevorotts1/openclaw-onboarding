@@ -1,23 +1,71 @@
 {
-  "_doc": "The one table behind the VIDEO MODEL question. KIE list prices, 1 credit = $0.005, silent shots, no video input, before any top-up bonus.",
-  "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-5",
-  "source_note": "pricingDesc of each model in the KIE live model list (read through Skill 74 `price`), checked 2026-10-09; Veo: https://docs.kie.ai/veo3-api/generate-veo-3-video",
-  "checked": "2026-10-09",
-  "keyframe_usd": 0.02,
-  "song_usd": 0.06,
-  "redo_rate": 0.20,
-  "models": [
-    {"n": 1, "recommended": true, "name": "MiniMax H3", "blurb": "great quality, best value",
-     "kie_model": "minimax-h3/image-to-video", "lock": "minimax-h3/*", "resolution": "768P",
-     "unit": "second", "rate_usd": 0.04, "shot_s": 15},
-    {"n": 2, "recommended": false, "name": "Seedance 2.5", "blurb": "premium detail and motion",
-     "kie_model": "bytedance/seedance-2-5", "resolution": "720p",
-     "unit": "second", "rate_usd": 0.315, "shot_s": 15},
-    {"n": 3, "recommended": false, "name": "Seedance 2.0 Mini", "blurb": "quicker and cheaper",
-     "kie_model": "bytedance/seedance-2-mini", "resolution": "720p",
-     "unit": "second", "rate_usd": 0.041, "shot_s": 15},
-    {"n": 4, "recommended": false, "name": "Google Veo 3.1", "blurb": "top-tier realism",
-     "kie_model": "veo-3-1", "kie_tier": "veo3_fast", "resolution": "720p",
-     "unit": "clip", "rate_usd": 0.30, "shot_s": 8}
-  ]
+ "_doc": "The one table behind the VIDEO MODEL question. KIE list prices, 1 credit = $0.005, silent shots, no video input, before any top-up bonus.",
+ "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-5",
+ "source_note": "Hailuo 02 Standard: 5 credits ($0.025) per second at 768p, one generation yields a 6-second clip (KIE registry pricing, checked 2026-10-21). Replaces the retired MiniMax H3 row, which the live catalog never carried.",
+ "checked": "2026-10-09",
+ "keyframe_usd": 0.02,
+ "song_usd": 0.06,
+ "redo_rate": 0.2,
+ "models": [
+  {
+   "n": 1,
+   "recommended": true,
+   "name": "Hailuo 02 Standard",
+   "blurb": "great quality, best value",
+   "kie_model": "hailuo/02-image-to-video-standard",
+   "lock": "hailuo/02-image-to-video-*",
+   "resolution": "768P",
+   "unit": "second",
+   "rate_usd": 0.025,
+   "shot_s": 6,
+   "shape": "plain",
+   "clip_s": [
+    6,
+    10
+   ]
+  },
+  {
+   "n": 2,
+   "recommended": false,
+   "name": "Seedance 2.5",
+   "blurb": "premium detail and motion",
+   "kie_model": "bytedance/seedance-2-5",
+   "resolution": "720p",
+   "unit": "second",
+   "rate_usd": 0.315,
+   "shot_s": 15,
+   "shape": "silent_aspect"
+  },
+  {
+   "n": 3,
+   "recommended": false,
+   "name": "Seedance 2.0 Mini",
+   "blurb": "quicker and cheaper",
+   "kie_model": "bytedance/seedance-2-mini",
+   "resolution": "720p",
+   "unit": "second",
+   "rate_usd": 0.041,
+   "shot_s": 15,
+   "shape": "silent_aspect"
+  },
+  {
+   "n": 4,
+   "recommended": false,
+   "name": "Google Veo 3.1",
+   "blurb": "top-tier realism",
+   "kie_model": "veo-3-1",
+   "kie_tier": "veo3_fast",
+   "resolution": "720p",
+   "unit": "clip",
+   "rate_usd": 0.3,
+   "shot_s": 8,
+   "clip_s": [
+    4,
+    6,
+    8
+   ],
+   "shape": "tiered_input",
+   "aspect_ratio": true
+  }
+ ]
 }

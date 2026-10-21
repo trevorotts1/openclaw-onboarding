@@ -4,6 +4,100 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.73 - 2026-10-21 - reliability fixes proven by the Voyage To Virtue run
+
+Every fix below is proven by measured evidence from the Voyage To Virtue run
+(13 shots, 65 lip-sync receipts, a 17-20 h stale session); no gate was weakened.
+
+L1.1 - LIP-SYNC GATE CONDITIONAL (final_assembler). Live: a faceless 13x6.67 s
+plan — zero lip_sync markers, zero speaker-keyed lines — was refused
+LIPSYNC_COVERAGE_SHORT+LIPSYNC_LINES_TOO_FEW. `lipsync_gate` now mirrors
+`face_speaks_gate`: a plan declaring no lip-sync work records
+{verdict: NOT_APPLICABLE, reason_code: LIPSYNC_NOT_IN_PLAN, ...numbers} on the
+receipt and advances; a plan that DECLARES lines keeps the hard gate unchanged
+(declared-short still refuses, measured live).
+
+L1.2 - HOLD CLIP TO SLOT (final_assembler). Live: planned 83.17 s from thirteen
+6 s clips, render produced 68.70 s (EOF trimming). Inputs are now ffprobed
+(readable-or-refuse), and a short source is held with tpad=stop_mode=clone to
+its slot then trimmed back to the slot exactly. Measured: a 3.6 s clip in a
+6.0 s slot rendered 6.533333 s (was 3.6 s); a 13x5.3 s-in-6.0 s voyage replica
+rendered 78.0/78.0 planned with 13/13 holds; longer clips trim byte-for-byte as
+before (7.34 s slot from a short source now renders 7.34 s, was 6.0 s).
+
+L1.3 - LANE_SIZE_BROKEN SILENCED (final_assembler). Live: four
+`size() missing 2 required positional arguments: 'runtime' and 'provider'`
+warnings per assembly. The internal call now invokes
+lane_size.size("claude-code","openrouter",units=999) — the same documented call
+intake_preflight/factory.py makes — and a normal assembly prints zero
+LANE_SIZE_BROKEN warnings (was 2 per dry assemble, 4 in the preflight+build
+sequence).
+
+L1.4 - HEADLESS + RECEIPT BESIDE OUTPUT (final_assembler). assemble() is now a
+thin wrapper over _assemble() and the receipt is written beside the output on
+EVERY non-dry-run outcome, error paths included: a headless CLI
+assemble (stdin=devnull, no prompt, no browser) assembles and writes
+<output>.receipt.json even on a gate refusal (was: refusal wrote no receipt).
+
+L2 - WW-21 OPERATOR DECISION (song_dispatch, intake_preflight). Live: song
+master delivered, summary PASS, stage music FAILED_BLOCKED
+ACCEPTANCE_NOT_PROVEN, `music/acceptance/` held five empty dirs across 90 takes,
+D5 measured FAIL across four estimators, `_MANUAL_SOURCES` forbids a relabel —
+no honest way to close the stage. `factory.py music --action complete
+--operator-decision <path>` now accepts a DOCUMENTED decision file recording
+{decision: ACCEPTED_RISK, operator, at_utc, gates_not_proven,
+measured_evidence_digest, reason}; the digest is CHECKED against the on-disk
+measured-evidence records (a fabricated digest is refused, 13 fabrications
+tested), the take-level records stay untouched (D5 verdict UNMEASURED kept),
+`_MANUAL_SOURCES` stands, and an invalid or missing file writes nothing. A valid
+decision measured: state FAILED_BLOCKED -> COMPLETE with the gates-not-proven
+list recorded.
+
+L3 - CARD OFFERS ONLY REGISTRY-RESOLVED MODELS (choice_card, style_defaults).
+Live: the client's card said "MiniMax H3"; the live KIE registry (218 models)
+does not carry it; the run stopped to ask a human at 21:57Z. choice_card's
+video-model list is now built from the registry the skill already ships
+(resolve/require/lock gated on the live table), the card question is built
+fail-closed from require_choices(), and lock_choice refuses to write
+video_model_lock for an unresolvable model. Measured: a registry without the
+MiniMax entries refuses by name (MiniMax H3 named in the refusal), renders no
+lock row, and the end-to-end `card --format text` renders RECOMMENDED pricing
+from the live table on the live registry.
+
+L4.1 - RECONCILE FROM ARTIFACTS (intake_preflight). Live: gate.json
+approved_at 2026-10-20T21:56:49Z with 13 stills while the storyboard row said
+NOT_STARTED, so `next` kept handing back the music command. `next` now
+reconciles stage rows from proven artifacts on disk FIRST, through state_store's
+version-CAS transitions (owner "reconcile", lease, events) — never a
+hand-written sqlite UPDATE. Measured: storyboard NOT_STARTED -> COMPLETE with
+13 approved shots and 13 stills found; unproven rows and lease rows are never
+seized.
+
+L4.2 - STALE-SESSION GUARD (intake_preflight). Live: sessions ran 17-20 h on
+code older than the installed skill; three merged fixes could not reach them.
+A process that booted on an older skill-version.txt than the one on disk now
+refuses every stage command with SKILL_UPDATED naming both versions (e.g.
+installed v2.9.72 > boot v2.9.71). Measured live end-to-end with exit 1.
+
+L4.3 - WAITER TEMPLATE FIXED (references/stage-runbook.md). Live: two shells
+spun ~8 h on `while pgrep -f "run_vtv_music.py"`, which matches its own command
+line. The documented waiter now anchors on the interpreter with the bracket
+trick (`pgrep -f "python.*[r]un_vtv_music\.py"`), never matching the waiter
+shell's own pid, with an artifact-based second exit and a self-check command;
+a test proves the OLD pattern reproduces the 8 h bug and the NEW one does not.
+
+L4.4 - ATTEMPT CEILING (lip_sync/lip_gate). Live: 65 lip-sync attempts, all FAIL
+FACE_COUNT, still retrying. After N=3 consecutive identical structural failures
+the gate stops before another paid attempt: {cause: ATTEMPT_CEILING_REACHED,
+structural_code: FACE_COUNT, count: 65, ceiling: 3, "no face in these stills —
+choose a face-visible format"}.
+
+L4.5 - SAFE-DEFAULT COST FORKS (intake_preflight). A cost/approval fork now
+carries a safe DEFAULT bounded by the remaining spend-ledger balance and the
+run's declared budget, recorded as a decision in control/fork-decisions.json:
+cost 2000 of a 3500 remaining balance -> "proceed"; 999999 -> "wait" naming both
+numbers (2000 < 3500 <= budget 5000, all live-measured).
+
 ## v2.9.72 - 2026-10-20 - R&B Flow fits, or is refused before stage 3; brief words count
 
 Two defects left over from the stage-3 and music-stage fixes. Both are the same

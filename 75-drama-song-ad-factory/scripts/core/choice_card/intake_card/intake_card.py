@@ -234,21 +234,30 @@ def _vm():
 
 
 def _model_question(length_label, agnes_yes=False):
-    """VIDEO MODEL: four models, each priced for the client's chosen length.
-    A client who said yes to Agnes reads it as the backup it now is (SPEC A10):
-    same models, same prices, one question of when they are used."""
+    """VIDEO MODEL: the models the live KIE catalog proves it carries, each
+    priced for the client's chosen length. A client who said yes to Agnes
+    reads it as the backup it now is (SPEC A10): same models, same prices,
+    one question of when they are used.
+
+    L3 (v2.9.73): the choices come from the price table filtered through the
+    LIVE registry (refs/kie-model-registry.json, the file dispatch reads).
+    A list that cannot be resolved -- the registry is unreadable, or a row's
+    model is not in the catalog (the live defect: a card row the KIE catalog
+    did not carry) -- refuses with the reason and never renders a model the
+    catalog does not have."""
     from choice_card.video_models import video_models as VM
     from catalog_calculator import card_render as CR
-    cost = {m["n"]: "$%.2f" % CR.quote(m["n"], length_label) for m in VM.MODELS}
+    models = VM.require_choices()               # raises ModelResolutionError fail-closed
+    cost = {m["n"]: "$%.2f" % CR.quote(m["n"], length_label) for m in models}
     ask = ("Which video model should make your shots if Agnes cannot? " if agnes_yes
            else "Which video model should make your shots? ")
     return {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
             "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
             "ask": ask + _model_price_line(length_label),
             "price": _model_price_line(length_label),
-            "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in VM.MODELS],
-            "values": [cost[m["n"]] for m in VM.MODELS],
-            "recommended": next(i for i, m in enumerate(VM.MODELS) if m["recommended"])}
+            "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in models],
+            "values": [cost[m["n"]] for m in models],
+            "recommended": next(i for i, m in enumerate(models) if m["recommended"])}
 
 
 def _priced(qs, answers):

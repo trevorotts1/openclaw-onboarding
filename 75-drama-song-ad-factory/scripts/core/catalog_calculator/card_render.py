@@ -51,7 +51,7 @@ CARD_ROWS = ("Length", "Shape", "Style", "Music", "Voice", "Clips",
              "Video model")
 
 #: Skill 74 model ids behind each row's priced work (fixture + D5 default).
-DEFAULT_VIDEO_MODEL = "minimax-h3/image-to-video"   # MiniMax H3 at 768P (D5)
+DEFAULT_VIDEO_MODEL = "hailuo/02-image-to-video-standard"   # Hailuo 02 Standard at 768P (D5)
 DEFAULT_IMAGE_MODEL = "google/imagen4-fast"         # one keyframe per shot
 DEFAULT_MUSIC_MODEL = "ai-music-api/generate"       # one Suno generation
 
