@@ -289,6 +289,58 @@ python3 shared-bridge/studio_bridge.py status --base-url "$DS_BASE_URL" \
 The page then shows the video link, and the board (when a Command Center is
 configured) carries the one epic card and the stage cards for this run.
 
+## RUN KEEPALIVE (10-MINUTE HEARTBEAT)
+
+**Run keepalive (10-minute heartbeat)** - after intake is answered and the run
+has started, the client hears from us every 10 minutes until the job is
+COMPLETE or the 3-hour cap is reached. One watcher does the thinking:
+
+```bash
+python3 scripts/core/heartbeat/run_watch.py --run-dir "$RUN" --interval-check
+# exit 0  = keep looping; exit 10 = loop is over; exit 1 = state unreadable (loud)
+```
+
+It reads `control/state.sqlite3` (`mode=ro`), `control/fork-decisions.json`,
+`control/run-state.json`, `song-choices/` and the spend ledger, and prints one
+JSON envelope: `stage`, `stage_state`, `elapsed_minutes`, `decisions_pending`,
+`stalled`, `loud`, `expired`, `message_for_client`. **It never changes a run.**
+Stall recovery is the envelope's `recovery_command`; the agent runs that
+command, never the watcher.
+
+**In this session (claude-nine / Claude Code).** While a drama run is active,
+run the watcher on a 10-minute loop - the `/loop` skill
+(`/loop 10m python3 scripts/core/heartbeat/run_watch.py --run-dir "$RUN" --interval-check`)
+or an equivalent self-scheduled wakeup. Every tick:
+
+1. Print `message_for_client` to the client through the run's own delivery
+   lane for this session (the chat, or `openclaw message send --channel
+   telegram --target <chat id>` when the run carries a target).
+2. Read `decisions_pending` and ask each one plainly - the message already
+   lists every question with its options. Never answer a card question for the
+   client.
+3. If `stalled` is true, run `recovery_command` once, then report.
+4. **The loop MUST stop itself at 3 hours**: `expired` true ends it (or
+   `loop_should_stop` true on a COMPLETE run), and `--interval-check` exits 10
+   at the same point. Never keep looping past the cap, and never say the video
+   is done unless `stage_state` is `COMPLETE`.
+
+**On an OpenClaw box.** The same watcher runs as one cron:
+`timer-artifacts/install-keepalive-cron.sh --apply` registers `skill75-keepalive`
+every 10 minutes (silent, isolated, cheap/local model, one agent) from
+`timer-artifacts/keepalive-cron-prompt.txt`; `timer-artifacts/uninstall.sh
+--apply` removes it and writes the durable tombstone so no later install
+resurrects it.
+
+**What the client hears.** Plain, warm, direct: "Here's where we are in the
+process: your ad's music is being created." A stall reads "I hit a problem with
+the music step and I'm on it - here's what happened: ...". A cap reads as a
+final wrap-up with a person picking it up. Internal codes (`HEARTBEAT_STALLED`,
+`HEARTBEAT_EXPIRED`, `HEARTBEAT_STATE_UNREADABLE`) go to stderr and the receipt,
+never into the client's sentence.
+
+Tests: `python3 scripts/core/heartbeat/test_run_watch.py` and
+`python3 timer-artifacts/checks/test_keepalive_cron.py`.
+
 ## CONTROL ENTRYPOINT, ENVELOPE AND EXIT CODES
 
 `scripts/core/intake_preflight/factory.py` is the single entrypoint
