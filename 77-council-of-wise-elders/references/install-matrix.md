@@ -14,7 +14,17 @@ not-ready states when they do not.
   `https://<slug>-council.zerohumanworkforce.com` published behind
   Cloudflare Access automatically, by the operator-side job
   `scripts/council-access-autoprovision.sh` (every 30 minutes). No client
-  or operator step, and no dependence on the AI Workforce Interview.
+  or operator step, and no dependence on the AI Workforce Interview. Its
+  first step, `scripts/ensure-cc-access.sh`, gives every Command Center a
+  login page and adds any missing operator or client email to an existing
+  one (`CREATED` / `RECONCILED`, additive only; `ALREADY_PRESENT`,
+  `NEEDS_EMAIL`, `DRIFT` are reported). Client emails come from the emails
+  file `~/.claude/state/council-elders/cc-access-emails.json`
+  (`{"operator":[...],"clients":{"<host-slug>":[...]},"ghl":{"location_id":"<id>"}}`),
+  the client's own login and `rescue-<slug>` pages, and a read-only,
+  strict GoHighLevel lookup (`scripts/ghl-client-emails.py`; skipped with
+  `ghl: skipped (no credentials/location)` when `GOHIGHLEVEL_API_KEY` or
+  the location id is not configured).
 - **Managed visual mode (optional):** compatible Command Center,
   authenticated pairing and scope, council migration applied through the
   Command Center, job and event integration, UI assets. The standalone
@@ -45,7 +55,12 @@ runs from the immutable release as
 
 **Dedicated Council tunnel (local-managed Command Center tunnels).** A box whose Command Center tunnel is local-managed (it cannot take an API
 ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
-the operator side instead. File contract: the connector token sits at
+the operator side instead. No `<slug>-council` DNS record exists until that
+tunnel has an active connector: the first `--apply` creates the tunnel, its
+route, the Access app and the saved token and ends `CONNECTOR_PENDING` with
+zero DNS writes; the first run that sees the connector creates the record
+(`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
+zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
 token. How it reaches the box is an operator delivery step, never wire.sh,
 which fetches nothing. When the file exists, wire.sh keeps

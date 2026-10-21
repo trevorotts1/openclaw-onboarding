@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.38: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live
+
+In plain English: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live. A client's Council login page now keeps the operator and each client email found in GoHighLevel, and the Council address is only published once its connector is running.
+
+- The provisioner creates the Council address only after a connector shows as active, and says plainly when the connector is still pending or down.
+- The login page rule is kept in sync with the operator and GoHighLevel client emails without removing anyone already allowed.
+- A GoHighLevel contact is matched to a client only by a safe rule: a first name alone, a full name alone, or a contact with no name never gets added.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.59).
+
 ## v1.0.37: Every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled
 
 In plain English: every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled. The operator's access job now covers older Command Centers, tunnels that are down and tunnels managed on the operator's machine, and each client box runs its own Council connector without touching the Command Center tunnel.

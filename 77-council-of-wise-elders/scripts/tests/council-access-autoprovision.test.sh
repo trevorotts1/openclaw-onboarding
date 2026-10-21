@@ -13,6 +13,7 @@ FAKE="$HERE/fake-cloudflare-api.py"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/council-autoprov-test.XXXXXX")"
 SD="$WORK/state"           # the job's receipt dir
 export COUNCIL_TUNNEL_TOKEN_DIR="$WORK/tunnel-tokens"   # connector tokens: never the real operator store
+export COUNCIL_GHL_ENV_FILE="$WORK/no-ghl.env" COUNCIL_GHL_API_BASE="http://127.0.0.1:9" COUNCIL_GHL_LOCATION_ID=""   # never the real GoHighLevel
 FAKE_PID=""; FAILS=0; N=0
 TOKEN="qc-secret-TOKEN-456"
 Z="zerohumanworkforce.com"
@@ -98,7 +99,7 @@ FIXTURE_OFFSET=0 fixture alpha beta gamma | jq -c --arg z "$Z" --arg g "00000000
 start_fake "$WORK/f.json"
 run_job --apply
 check "apply exit 0 though two hosts are not ready" test "$RC" = 0
-check "7 writes: alpha 3, gamma 4 (app, dedicated council-gamma tunnel, ingress, DNS)" test "$(nonget_count)" = 7
+check "6 writes: alpha 3, gamma 3 (app, dedicated council-gamma tunnel, ingress; no DNS before its connector)" test "$(nonget_count)" = 6
 check "receipt counts: 1 provisioned, 1 not-provisioned, 1 connector-pending" test "$(rcpt '[.mode, .counts.PROVISIONED, .counts.NOT_PROVISIONED, .counts.CONNECTOR_PENDING, .counts.PENDING_LOCAL_TUNNEL, .counts.FAILED]')" = '["apply",1,1,1,0,0]'
 check "receipt names each refusal with host and reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["beta.'$Z'=NOT_PROVISIONED","gamma.'$Z'=CONNECTOR_PENDING"]'
 check "receipt lists alpha as provisioned" test "$(rcpt '.provisioned')" = '["alpha.'$Z'"]'
@@ -141,7 +142,7 @@ check "receipt counts every new code" test "$(rcpt '[.counts.PROVISIONED, .count
 check "receipt names the skipped host with its reason" test "$(rcpt '[.skipped[] | .host + "=" + .reason]')" = '["up-openclawdashboard.'$Z'=SKIPPED_NOT_CC"]'
 check "receipt names each not-ready host with its reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["bridge.'$Z'=ORIGIN_NOT_LOOPBACK","down.'$Z'=TUNNEL_DOWN","loc.'$Z'=CONNECTOR_PENDING"]'
 check "runs.log line carries skipped=1 and each host:REASON" bash -c "l=\"\$(tail -n1 '$SD/runs.log')\"; case \"\$l\" in *skipped=1*down.$Z:TUNNEL_DOWN*) ;; *) exit 1;; esac; case \"\$l\" in *bridge.$Z:ORIGIN_NOT_LOOPBACK*) ;; *) exit 1;; esac; case \"\$l\" in *loc.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac"
-check "writes only for up (3) and loc (4): down and bridge got none" test "$(nonget_count)" = 7
+check "writes only for up (3) and loc (3, no DNS before its connector): down and bridge got none" test "$(nonget_count)" = 6
 
 echo "== 6. a real failure exits 1"
 FIXTURE_OFFSET=0 fixture alpha | jq -c --arg z "$Z" '.dns += [{id:"x1",type:"CNAME",name:("alpha-council."+$z),content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"
@@ -187,7 +188,8 @@ check "cc-access receipts are written in the same state dir" bash -c "test -s '$
 run_job --apply
 check "apply: NEEDS_EMAIL and DRIFT are surfaced but the run exits 0" test "$RC" = 0
 check "apply receipt: newbox app created, noemail needs an email, driftbox drift (not overwritten)" test "$(rcpt '[.cc_access.created, .cc_access.needs_email, .cc_access.drift]')" = '[1,["noemail.'$Z'"],["driftbox.'$Z'"]]'
-check "runs.log line carries cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_needs_email=1 cc_drift=1'"
+check "runs.log line carries cc_reconciled=0 cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_reconciled=0 cc_needs_email=1 cc_drift=1'"
+check "receipt carries the cc_access reconciled count" test "$(rcpt '.cc_access.reconciled')" = 0
 check "the Access app write for newbox comes before newbox is provisioned" bash -c "
   a=\$(grep -n 'POST .*access/apps' '$LOG' | head -n1 | cut -d: -f1); d=\$(grep -n 'POST .*dns_records' '$LOG' | head -n1 | cut -d: -f1);
   test -n \"\$a\" && test -n \"\$d\" && test \"\$a\" -lt \"\$d\""
