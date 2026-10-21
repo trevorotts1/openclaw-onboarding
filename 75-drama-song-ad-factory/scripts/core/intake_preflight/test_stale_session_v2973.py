@@ -5,7 +5,7 @@ Live proof: sessions ran 17-20 h on code older than the installed skill;
 three merged fixes could not reach them.
 
 Proves, behaviourally (stdlib only, $0, no provider):
-  1. a process that booted on v2.9.71 while the installed skill is v2.9.72
+  1. a process that booted on v2.9.71 while the installed skill is v2.9.73
      REFUSES `next`: outcome error, reason SKILL_UPDATED, exit code 1, and
      BOTH versions are named (installed_version, boot_version);
   2. the refusal names the stage command in no part (no stage, no command in
@@ -75,11 +75,11 @@ def main():
           env["outcome"] == "error" and env["reason_code"] == "SKILL_UPDATED",
           str(env)[:220])
     check("both versions named",
-          env["data"]["installed_version"] == "v2.9.72"
+          env["data"]["installed_version"] == "v2.9.73"
           and env["data"]["boot_version"] == "v2.9.71",
           str(env.get("data")))
     check("the refusal text names both versions too",
-          "v2.9.72" in (env.get("next_action") or "")
+          "v2.9.73" in (env.get("next_action") or "")
           and "v2.9.71" in (env.get("next_action") or ""),
           env.get("next_action", "")[:160])
 
@@ -103,13 +103,13 @@ def main():
     check("CLI refusal names installed %s and boot %s"
           % (env_cli_both.get("installed_version"),
              env_cli_both.get("boot_version")),
-          env_cli_both.get("installed_version") == "v2.9.72"
+          env_cli_both.get("installed_version") == "v2.9.73"
           and env_cli_both.get("boot_version") == "v2.9.70",
           str(env_cli_both))
-    F._BOOT_SKILL_VERSION = "v2.9.72"       # restore equal boot
+    F._BOOT_SKILL_VERSION = "v2.9.73"       # restore equal boot
 
     # 4. equal version: never stale
-    F._BOOT_SKILL_VERSION = "v2.9.72"
+    F._BOOT_SKILL_VERSION = "v2.9.73"
     env4 = F.cmd_next(A())
     check("equal boot version proceeds normally",
           env4["reason_code"] not in ("SKILL_UPDATED",), str(env4)[:120])
@@ -145,7 +145,7 @@ def main():
               env8["outcome"] == "ok", str(env8)[:120])
     finally:
         F._skill_version_on_disk = orig2
-        F._BOOT_SKILL_VERSION = "v2.9.72"
+        F._BOOT_SKILL_VERSION = "v2.9.73"
 
     print()
     if FAILS:
