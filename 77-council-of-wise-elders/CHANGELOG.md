@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.39: Council: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss
+
+In plain English: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss. After a new client's Council address is created, the check that it opens now asks the zone's own nameservers directly for the address instead of trusting a cached answer, so an earlier "no such name" lookup can no longer make a good setup get rolled back.
+
+- The edge check asks the zone's authoritative nameservers on every try and connects to the answer it gets, then still requires the Cloudflare Access login redirect.
+- If the lookup tool or nameservers are unavailable it falls back to the normal lookup; `COUNCIL_EDGE_RESOLVE=system` turns the new behavior off.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.60).
+
 ## v1.0.38: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live
 
 In plain English: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live. A client's Council login page now keeps the operator and each client email found in GoHighLevel, and the Council address is only published once its connector is running.

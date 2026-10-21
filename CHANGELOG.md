@@ -1,3 +1,7 @@
+## [v27.1.60]  -  2026-10-21  -  Council (Skill 77) v1.0.39: Council: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss
+
+- In plain English: Council: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss.
+
 ## [v27.1.59]  -  2026-10-21  -  Council (Skill 77) v1.0.38: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live
 
 - In plain English: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live.
