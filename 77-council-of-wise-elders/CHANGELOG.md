@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.36: A brand-new client's Council address now sets itself up with no human step
+
+In plain English: a brand-new client's Council address now sets itself up with no human step. The operator's automatic access job first gives the new client's Command Center its login, then creates the Council address, and tells the operator plainly when it is still waiting for the client's email.
+
+- The access job now runs `ensure-cc-access.sh` before `provision-council-access.sh` and records the result as `cc_access` in its receipt.
+- A missing client email or a login that differs from the expected one is reported and retried on the next run; it never fails the run.
+- Provisioning skips hosts that are not Command Centers and never reports a down connector as done.
+- The installer passes the client's owner email through, and the tunnel request retries instead of failing early.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.57).
+
 ## v1.0.35: The client Council link is now fully automatic for every client, new and existing
 
 In plain English: the client Council link is now fully automatic for every client, new and existing. Every client gets a Command Center, so every client gets a link, even before the AI Workforce interview is done. The link is found when the Council is convened, and the operator's automatic access job keeps it working with no manual step.

@@ -79,6 +79,7 @@ if [[ "$_oc_try_container" == true ]]; then
                 -e OPENCLAW_OWNER_NAME
                 -e OPENCLAW_COMPANY_NAME
                 -e OPENCLAW_COMPANY_SLUG
+                -e OPENCLAW_OWNER_EMAIL
                 -e OPENCLAW_ROOT
                 -e OPENCLAW_WORKSPACE_PATH
                 -e OPENCLAW_WORKSPACE_ROOT

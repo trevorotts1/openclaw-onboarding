@@ -25,10 +25,20 @@
 #   COUNCIL_ACCESS_ENV_FILE    operator env file (default $HOME/.openclaw/.env)
 #   COUNCIL_ACCESS_STALE_MIN   lock considered stale after this many minutes (default 120)
 #   COUNCIL_ACCESS_PROVISION   provision script path (default: sibling provision-council-access.sh)
+#   COUNCIL_ACCESS_ENSURE_CC   ensure script path (default: sibling ensure-cc-access.sh)
 #   (every provision-council-access.sh variable passes through unchanged)
 #
 # RECEIPTS in the state dir: last-run.json (overwritten) and runs.log (append-only,
 # one line per run) with the time, mode, counts, and every refusal as host:REASON.
+#
+# STEP 1 each run is ensure-cc-access.sh (same mode, so --apply only when this job
+# has --apply): it gives every new client's Command Center host its login-gated
+# Access application so step 2 (provision-council-access.sh) finds it. It keeps its
+# own receipts (cc-access-last-run.json, cc-access-runs.log) in the same state dir.
+# Its outcome is also summarised here as "cc_access" in last-run.json and as
+# cc_needs_email / cc_drift / cc_failed on the runs.log line. NEEDS_EMAIL (no verified
+# client email yet), DRIFT (existing app differs), a refusal or any failure of this
+# step is reported but NEVER fails the run; the next run retries it.
 #
 # EXIT: 0 when every host is provisioned, already provisioned, or merely not ready
 #       yet (also 0 when another run holds the lock); 1 on a real failure (API
@@ -37,6 +47,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROVISION="${COUNCIL_ACCESS_PROVISION:-$HERE/provision-council-access.sh}"
+ENSURE="${COUNCIL_ACCESS_ENSURE_CC:-$HERE/ensure-cc-access.sh}"
 STATE_DIR="${COUNCIL_ACCESS_STATE_DIR:-$HOME/.claude/state/council-elders/access-provision}"
 ENV_FILE="${COUNCIL_ACCESS_ENV_FILE:-$HOME/.openclaw/.env}"
 STALE_MIN="${COUNCIL_ACCESS_STALE_MIN:-120}"
@@ -89,32 +100,55 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   fi
 fi
 OUT="$(mktemp "${TMPDIR:-/tmp}/council-autoprov.XXXXXX")"; ERR="$(mktemp "${TMPDIR:-/tmp}/council-autoprov.XXXXXX")"
-trap 'rm -rf "$LOCK"; rm -f "$OUT" "$ERR"' EXIT
+trap 'rm -rf "$LOCK"; rm -f "$OUT" "$ERR" "${CCOUT:-}"' EXIT
 trap 'exit 130' INT TERM HUP
 
+# Step 1: make sure each Command Center host has its Access app (before step 2 looks for it).
+CC_ARGS="--json"; [ "$MODE" = apply ] && CC_ARGS="$CC_ARGS --apply"
+CCOUT="$(mktemp "${TMPDIR:-/tmp}/council-autoprov.XXXXXX")"
+if [ -x "$ENSURE" ]; then
+  # shellcheck disable=SC2086
+  "$ENSURE" $CC_ARGS >"$CCOUT" 2>/dev/null; CC_RC=$?   # 0 ok, 1 a host FAILED, 3 refused (e.g. no operator email), 4 zone
+else
+  CC_RC=127; : > "$CCOUT"
+fi
+if jq -e 'type == "array"' "$CCOUT" >/dev/null 2>&1; then
+  CC="$(jq -c --argjson rc "$CC_RC" '
+    . as $r
+    | {ran:true, exit:$rc,
+       created:([$r[] | select(.status == "CREATED")] | length),
+       planned:([$r[] | select(.status == "PLANNED")] | length),
+       already:([$r[] | select(.status == "ALREADY_PRESENT")] | length),
+       needs_email:[$r[] | select(.status == "NEEDS_EMAIL") | .host],
+       drift:[$r[] | select(.status == "DRIFT") | .host],
+       failed:[$r[] | select(.status == "FAILED") | .host]}' "$CCOUT")"
+else
+  CC="$(jq -cn --argjson rc "$CC_RC" '{ran:false, exit:$rc, created:0, planned:0, already:0, needs_email:[], drift:[], failed:[]}')"
+fi
+CC_LINE="$(jq -r '" cc_exit=\(.exit) cc_created=\(.created) cc_needs_email=\(.needs_email|length) cc_drift=\(.drift|length) cc_failed=\(.failed|length)"' <<<"$CC")"
 ARGS="--all --json"; [ "$MODE" = apply ] && ARGS="$ARGS --apply"
 # shellcheck disable=SC2086
 "$PROVISION" $ARGS >"$OUT" 2>"$ERR"; RC=$?
 
 if jq -e 'type == "array"' "$OUT" >/dev/null 2>&1; then
-  RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson rc "$RC" '
+  RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson rc "$RC" --argjson cc "$CC" '
     . as $r
     | (reduce ("PROVISIONED","ALREADY_PROVISIONED","PLANNED","NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","CONFLICT","FAILED") as $s
          ({}; .[$s] = ([$r[] | select(.status == $s)] | length))) as $c
     | ($c.CONFLICT + $c.FAILED) as $bad
     | {timestamp:$t, mode:$m, exit:(if $bad > 0 or $rc != 0 then 1 else 0 end), total:($r | length),
-       counts:$c,
+       counts:$c, cc_access:$cc,
        refused:   [$r[] | select(.status | IN("NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","CONFLICT","FAILED")) | {host:.cc_host, reason:.status, detail:.detail}],
        provisioned:[$r[] | select(.status == "PROVISIONED") | .cc_host]}' "$OUT")"
   EXIT="$(jq -r .exit <<<"$RECEIPT")"
-  LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) planned=\(.counts.PLANNED) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")"
+  LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) planned=\(.counts.PLANNED) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")$CC_LINE"
 else
   # No host report at all: API/zone failure, or a missing tool. A real failure.
   EXIT=1; [ "$RC" = 3 ] && EXIT=3
   DETAIL="$(head -c 300 "$ERR" | tr '\n' ' ')"
-  RECEIPT="$(jq -cn --arg t "$TS" --arg m "$MODE" --argjson e "$EXIT" --argjson rc "$RC" --arg d "$DETAIL" \
-    '{timestamp:$t, mode:$m, exit:$e, error:("provision-council-access.sh exit " + ($rc|tostring) + ": " + $d)}')"
-  LINE="$TS mode=$MODE exit=$EXIT error=provision-exit-$RC"
+  RECEIPT="$(jq -cn --arg t "$TS" --arg m "$MODE" --argjson e "$EXIT" --argjson rc "$RC" --arg d "$DETAIL" --argjson cc "$CC" \
+    '{timestamp:$t, mode:$m, exit:$e, cc_access:$cc, error:("provision-council-access.sh exit " + ($rc|tostring) + ": " + $d)}')"
+  LINE="$TS mode=$MODE exit=$EXIT error=provision-exit-$RC$CC_LINE"
 fi
 write_receipt "$RECEIPT" "$LINE"
 echo "$LINE"
