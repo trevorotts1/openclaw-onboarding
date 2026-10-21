@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import tempfile
+from datetime import date, datetime, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -755,6 +756,228 @@ def _offer_text(x):
 
 _STATE = {"provided": "provided", "suggested": "recommended_unapproved", "default_to_confirm": "recommended_unapproved", "unknown": "unknown"}
 
+# ---------------------------------------------------------------- launch answers, typed
+# The eight launch answers a Signature Launch (Skill 49) must carry end to end. Raw
+# client text is NEVER forwarded as-is: a string is not a boolean, and "No, not yet"
+# must never read as a truthy A2P approval. Each adapter below returns a typed value
+# or None (kept unknown), plus the provenance of the answer it came from.
+LAUNCH_LEDGER_KEYS = (
+    ("launch_calendar", ("launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone")),
+    ("channels", ("launch.channels",)),
+    ("conversation_ai", ("launch.conversation_ai",)),
+    ("access_delivery", ("launch.access_delivery",)),
+    ("payment_plans", ("launch.payment_plans",)),
+    ("sender_name", ("launch.sender_name",)),
+    ("reply_to_email", ("launch.reply_to_email",)),
+    ("a2p_ready", ("launch.a2p_ready",)),
+)
+
+_TRUE_WORDS = {"conversation_ai": ("yes, add the bot",),
+               "access_delivery": ("yes, send access after purchase",),
+               "payment_plans": ("payment plans offered",),
+               "a2p_ready": ("yes, it is approved",)}
+_FALSE_WORDS = {"conversation_ai": ("no, not this launch",),
+                "access_delivery": ("no, nothing to deliver",),
+                "payment_plans": ("paid in full",),
+                "a2p_ready": ("no, not yet",)}
+
+_TZ_ALIASES = (
+    ("new york", "America/New_York"), ("eastern", "America/New_York"),
+    ("los angeles", "America/Los_Angeles"), ("pacific", "America/Los_Angeles"),
+    ("chicago", "America/Chicago"), ("central", "America/Chicago"),
+    ("denver", "America/Denver"), ("mountain", "America/Denver"),
+    ("phoenix", "America/Phoenix"), ("toronto", "America/Toronto"),
+    ("london", "Europe/London"), ("berlin", "Europe/Berlin"), ("paris", "Europe/Paris"),
+    ("dubai", "Asia/Dubai"), ("singapore", "Asia/Singapore"),
+    ("mumbai", "Asia/Kolkata"), ("kolkata", "Asia/Kolkata"),
+    ("sydney", "Australia/Sydney"), ("utc", "UTC"), ("gmt", "UTC"),
+)
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+
+
+def _typed_bool(qid, value):
+    """A real boolean from a chosen answer, or None. A non-empty string is never truthy."""
+    if isinstance(value, bool):
+        return value
+    if not isinstance(value, str):
+        return None
+    n = _norm(value)
+    if any(n == w or n.startswith(w) for w in _TRUE_WORDS.get(qid, ())):
+        return True
+    if any(n == w or n.startswith(w) for w in _FALSE_WORDS.get(qid, ())):
+        return False
+    if n == "yes" or n.startswith("yes "):
+        return True
+    if n == "no" or n.startswith("no "):
+        return False
+    return None
+
+
+def _typed_channels(value):
+    """["email"] or ["email", "text"], or None when the answer says nothing usable."""
+    if isinstance(value, str):
+        low = value.lower()
+        has_text = "text" in low or "sms" in low
+        if "email" in low or has_text:
+            return ["email", "text"] if has_text else ["email"]
+        return None
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            low = str(item).strip().lower()
+            if low in ("email", "e-mail") and "email" not in out:
+                out.append("email")
+            elif ("text" in low or "sms" in low) and "text" not in out:
+                out.append("text")
+        return out or None
+    return None
+
+
+def _find_date(text):
+    m = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", text)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3))), m.span()
+        except ValueError:
+            return None, None
+    for pattern, order in (
+            (r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})", "dmy"),
+            (r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})", "mdy")):
+        m = re.search(pattern, text, re.I)
+        if m:
+            g = [x for x in m.groups()]
+            month = _MONTHS[g[0][:3].lower()] if order == "mdy" else _MONTHS[g[1][:3].lower()]
+            day = int(g[1]) if order == "mdy" else int(g[0])
+            try:
+                return date(int(g[2]), month, day), m.span()
+            except ValueError:
+                return None, None
+    return None, None
+
+
+def _find_time(text):
+    low = text.lower()
+    if re.search(r"\bnoon\b", low):
+        return time(12, 0)
+    if re.search(r"\bmidnight\b", low):
+        return time(0, 0)
+    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b", text, re.I)
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2) or 0)
+    pm = m.group(3).lower().startswith("p")
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    if pm and hour != 12:
+        hour += 12
+    elif not pm and hour == 12:
+        hour = 0
+    return time(hour, minute)
+
+
+def _find_timezone(text):
+    low = str(text).lower()
+    for alias, zone in _TZ_ALIASES:
+        if re.search(r"\b" + re.escape(alias) + r"\b", low):
+            return zone
+    return None
+
+
+def _iso(day, clock, zone):
+    """ISO 8601 for the client's own words. With no zone the wall time is kept and the
+    plan names the missing timezone; nothing is guessed."""
+    dt = datetime.combine(day, clock)
+    if zone:
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.replace(tzinfo=ZoneInfo(zone))
+        except Exception:  # no tz database: keep the wall time rather than invent an offset
+            pass
+    return dt.isoformat()
+
+
+def parse_launch_calendar(text):
+    """The client's launch sentence as four typed timestamps. Anything not stated stays
+    None; a partial calendar is never filled in from another sentence unless the client
+    said only the time (e.g. 'launch at noon' after naming the doors-open day)."""
+    out = {"launch_at": None, "doors_open_at": None, "doors_close_at": None, "timezone": None}
+    if not isinstance(text, str) or not text.strip():
+        return out
+    zone = _find_timezone(text)
+    out["timezone"] = zone
+    parsed = {}
+    for clause in re.split(r"[;]", text):
+        for piece in re.split(r",", clause):
+            low = piece.lower()
+            key = None
+            if re.search(r"doors?\s+open", low):
+                key = "doors_open_at"
+            elif re.search(r"doors?\s+close", low):
+                key = "doors_close_at"
+            elif re.search(r"\blaunch(?:es|ing)?\b", low) and not re.search(r"launch\s+(?:e-?mail)", low):
+                key = "launch_at"
+            if key is None or key in parsed:
+                continue
+            day, span = _find_date(piece)
+            rest = (piece[:span[0]] + " " + piece[span[1]:]) if span else piece
+            clock = _find_time(rest)
+            if day and clock:
+                parsed[key] = (day, clock)
+            elif clock and key == "launch_at":
+                parsed[key] = (None, clock)  # resolved from the doors day below
+    for key, (day, clock) in parsed.items():
+        if day is None:
+            day = (parsed.get("doors_open_at") or (None, None))[0] or \
+                  (parsed.get("doors_close_at") or (None, None))[0]
+        if day:
+            out[key] = _iso(day, clock, zone)
+    return out
+
+
+def launch_answers(doc):
+    """The eight launch answers as typed ledger entries, keyed by the launch ledger names.
+
+    Each entry is {value, state, source_ref, provenance}; state is the launch intake
+    field state (provided / recommended_unapproved / unknown) so a default or a
+    suggestion can never be read as an approval."""
+    if doc.get("meta", {}).get("mode") == "legacy":
+        return {}
+    out = {}
+
+    def put(qid, key, value):
+        e = get(doc, qid)
+        if e is None:
+            return
+        state = _STATE[e["status"]]
+        v = value
+        if state == "unknown" or v is None:
+            state, v = "unknown", None
+        out[key] = {"value": v, "state": state, "source_ref": f"answers-file:{qid}",
+                    "provenance": {"question_id": qid, "raw": e.get("value"),
+                                   "answer_status": e["status"], "answer_source": e.get("source", "")}}
+
+    cal = get(doc, "launch_calendar")
+    if cal is not None:
+        typed = parse_launch_calendar(cal.get("value"))
+        cal_state = _STATE[cal["status"]]
+        for key in ("launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone"):
+            put("launch_calendar", key, typed[key.split(".", 1)[1]])
+            if cal_state != "provided" and key in out:  # a defaulted calendar is a proposal, not a fact
+                out[key]["state"] = cal_state
+    put("channels", "launch.channels", _typed_channels((get(doc, "channels") or {}).get("value")))
+    for qid, key in (("conversation_ai", "launch.conversation_ai"),
+                     ("access_delivery", "launch.access_delivery"),
+                     ("payment_plans", "launch.payment_plans"),
+                     ("a2p_ready", "launch.a2p_ready")):
+        put(qid, key, _typed_bool(qid, (get(doc, qid) or {}).get("value")))
+    for qid, key in (("sender_name", "launch.sender_name"), ("reply_to_email", "launch.reply_to_email")):
+        e = get(doc, qid)
+        if e is not None:
+            raw = e.get("value")
+            put(qid, key, str(raw).strip() if isinstance(raw, str) and raw.strip() else None)
+    return out
+
 
 def to_launch_known(doc):
     """Skill 49 launch_intake `known` entries ({field: {value, state, source_ref}}) from the one answers file.
@@ -803,6 +1026,7 @@ def to_launch_known(doc):
                                         "approval": "separate paid_asset_budget approval required"}, "paid_render_approval")
     elif pra:  # no paid pieces, or decide later: nothing paid is approved
         out["paid_asset_budget"] = {"value": None, "state": "not_applicable", "source_ref": "answers-file:paid_render_approval"}
+    out.update(launch_answers(doc))  # typed, with provenance; unknown and unapproved survive
     return out
 
 

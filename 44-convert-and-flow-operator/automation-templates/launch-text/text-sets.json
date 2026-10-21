@@ -13,6 +13,7 @@
   "promotional_budget": {
     "cap": 5,
     "used": 3,
+    "contact_marketing_cap": 5,
     "sets": [
       "text_doors_open",
       "text_last_call",
@@ -46,6 +47,7 @@
     {
       "id": "text_optin_confirmation",
       "kind": "opt_in_confirmation",
+      "category": "operational",
       "messages": 1,
       "promotional": false,
       "draft_only": true,
@@ -73,6 +75,7 @@
     {
       "id": "text_event_reminders",
       "kind": "event_reminder",
+      "category": "operational",
       "messages": 3,
       "promotional": false,
       "draft_only": true,
@@ -113,6 +116,7 @@
     {
       "id": "text_doors_open",
       "kind": "doors_open",
+      "category": "marketing",
       "messages": 1,
       "promotional": true,
       "draft_only": true,
@@ -140,6 +144,7 @@
     {
       "id": "text_last_call",
       "kind": "last_call",
+      "category": "marketing",
       "messages": 2,
       "promotional": true,
       "draft_only": true,
@@ -173,6 +178,7 @@
     {
       "id": "text_abandoned_checkout",
       "kind": "abandoned_checkout",
+      "category": "marketing",
       "messages": 2,
       "promotional": true,
       "draft_only": true,
@@ -207,6 +213,7 @@
     {
       "id": "text_access_link",
       "kind": "access_link",
+      "category": "operational",
       "messages": 1,
       "promotional": false,
       "draft_only": true,

@@ -1,0 +1,47 @@
+{
+  "workflow": {"id": "wf_text_doors_open", "name": "Launch Text — Doors Open", "draft": true},
+  "steps": [
+    {
+      "name": "Suppressed?",
+      "type": "if_else",
+      "conditions": [
+        {"type": "tag_absent", "value": "sms-opted-out"},
+        {"type": "tag", "operator": "is_not", "value": "STOP"}
+      ]
+    },
+    {
+      "name": "Consented?",
+      "type": "if_else",
+      "conditions": [
+        {"type": "tag_present", "value": "sms-subscribed"},
+        {"type": "tag_present", "value": "text-optin-confirmed"}
+      ]
+    },
+    {
+      "name": "Aggregate contact cap?",
+      "type": "if_else",
+      "conditions": [
+        {"type": "field_lt", "field": "contact_marketing_sends", "value": 5}
+      ]
+    },
+    {
+      "name": "Quiet hours",
+      "type": "wait_until",
+      "conditions": [
+        {"type": "time_window", "start": "08:00", "end": "21:00", "timezone": "recipient_local"}
+      ]
+    },
+    {
+      "name": "Before the deadline?",
+      "type": "if_else",
+      "conditions": [
+        {"type": "deadline", "anchor": "doors_close_at"}
+      ]
+    },
+    {
+      "name": "Send",
+      "type": "sms",
+      "copy": "{{first_name}}, doors are open: {{offer_name}} is live at {{price}}. Get it here: {{sales_url}} Reply STOP to opt out."
+    }
+  ]
+}

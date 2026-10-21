@@ -10,6 +10,46 @@
     "schema_version": { "type": "string", "const": "1.0.0" },
     "launch_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
     "draft_only": { "type": "boolean", "const": true },
+    "calendar": {
+      "type": "object",
+      "description": "L07 compiled launch calendar: normalized ISO instants, IANA zone, DST overlap flag and strict phase order.",
+      "required": ["timezone", "doors_open_at", "launch_at", "doors_close_at"],
+      "additionalProperties": true,
+      "properties": {
+        "timezone": { "type": "string", "minLength": 1 },
+        "doors_open_at": { "type": "string" },
+        "launch_at": { "type": "string" },
+        "doors_close_at": { "type": "string" },
+        "dst_ambiguous": { "type": "boolean" },
+        "phases": { "type": "object" },
+        "black_friday": { "type": "object" }
+      }
+    },
+    "schedule_policy": {
+      "type": "object",
+      "description": "Deterministic evaluation instant and suppression policy for this compile.",
+      "required": ["now", "past_time", "close_time"],
+      "additionalProperties": true,
+      "properties": {
+        "now": { "type": "string" },
+        "past_time": { "type": "string" },
+        "close_time": { "type": "string" },
+        "close_guard_seconds": { "type": "integer", "minimum": 0 },
+        "timezone": { "type": "string" }
+      }
+    },
+    "journal": {
+      "type": "object",
+      "description": "Stable unit keys mapped to the expected graph hash the builder journals and verifies on readback.",
+      "required": ["stable_unit_keys"],
+      "additionalProperties": false,
+      "properties": {
+        "stable_unit_keys": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
     "sources": {
       "type": "object",
       "required": ["launch_plan", "build_plans"],
@@ -87,8 +127,54 @@
         },
         "blocked_by": {
           "type": "array",
-          "description": "Email sequence ids with no bound build plan.",
+          "description": "Why the build is blocked. A bare id is a missing email_sequence build plan; prefixed reasons name page_url:, email_count:, text_set:, upstream:, guards: or schedule_suppressed: failures. A blocked build is never upgraded by assumption.",
           "items": { "type": "string" }
+        },
+        "unit_key": {
+          "type": "string",
+          "description": "Stable journal key <launch_id>/<automation_id>.",
+          "pattern": "^[a-z0-9][a-z0-9-]*/[a-z][a-z0-9_]*$"
+        },
+        "phase": { "type": "string", "minLength": 1 },
+        "depends_on": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "eligibility": {
+          "type": "array",
+          "description": "Enrollment/eligibility rules carried verbatim from the Skill 50 build plan; named references only.",
+          "items": { "type": "object" }
+        },
+        "lifecycle": {
+          "type": "object",
+          "description": "Stop and suppression rules compiled into provider-native conditions/settings. Purchase suppresses this campaign only; entitled access is never suppressed.",
+          "additionalProperties": true
+        },
+        "sender": {
+          "type": "object",
+          "description": "Sender configuration REFERENCES only (never credential values).",
+          "additionalProperties": true
+        },
+        "content_hashes": {
+          "type": "object",
+          "description": "Declared Skill 50 content hashes per workflow key.",
+          "additionalProperties": true
+        },
+        "expected_graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "required_outputs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "schedule": {
+          "type": "object",
+          "required": ["timezone", "calendar_nodes", "nodes", "suppressed"],
+          "additionalProperties": true,
+          "properties": {
+            "timezone": { "type": "string" },
+            "calendar_nodes": { "type": "array", "items": { "type": "object" } },
+            "sequences": { "type": "object" },
+            "nodes": { "type": "array", "items": { "type": "object" } },
+            "suppressed": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "suppressed": {
+          "type": "array",
+          "description": "Schedule nodes suppressed by past-time policy or close-time suppression.",
+          "items": { "type": "object" }
         }
       }
     },

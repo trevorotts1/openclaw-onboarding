@@ -46,13 +46,18 @@ class PlanReaderTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         builds = by_id(doc)
         self.assertEqual(sorted(builds), ["auto_abandoned_checkout", "auto_post_sale", "auto_pre_launch"])
-        self.assertEqual(builds["auto_pre_launch"]["state"], "ready")
+        # L07: an email-count mismatch is a REQUIRED-OUTPUT failure, so a build
+        # whose bound plans do not match the launch plan's counts is blocked.
+        self.assertEqual(builds["auto_pre_launch"]["state"], "blocked")
+        self.assertIn("email_count:email_pre_launch",
+                      builds["auto_pre_launch"]["blocked_by"])
         self.assertEqual(builds["auto_pre_launch"]["email_sequences"],
                          ["email_pre_launch", "email_main_launch", "email_doors_closing"])
         self.assertEqual(len(builds["auto_pre_launch"]["workflows"]), 3)
         self.assertEqual(builds["auto_post_sale"]["state"], "blocked")
-        self.assertEqual(builds["auto_post_sale"]["blocked_by"], ["email_welcome_access"])
-        self.assertEqual(builds["auto_abandoned_checkout"]["blocked_by"], ["email_abandoned_checkout"])
+        self.assertIn("email_welcome_access", builds["auto_post_sale"]["blocked_by"])
+        self.assertIn("email_abandoned_checkout",
+                      builds["auto_abandoned_checkout"]["blocked_by"])
         for build in builds.values():
             self.assertTrue(build["draft_only"])
             for workflow in build["workflows"]:
@@ -60,14 +65,38 @@ class PlanReaderTests(unittest.TestCase):
         codes = {warning["code"] for warning in doc["warnings"]}
         self.assertIn("EMAIL-COUNT-MISMATCH", codes)
 
-    def test_complete_builds_are_all_ready(self):
+    def test_complete_builds_block_on_count_mismatch(self):
         rc, doc = run_reader([PRE, MAIN, DOORS, ABANDONED, WELCOME])
         self.assertEqual(rc, 0)
         builds = by_id(doc)
-        self.assertEqual({b["state"] for b in builds.values()}, {"ready"})
+        self.assertEqual({b["state"] for b in builds.values()}, {"blocked"})
         self.assertEqual(doc["unused_build_plan_workflows"], [])
         self.assertEqual(doc["launch_id"], "elevation-2026-11")
-        self.assertTrue(doc["draft_only"])
+        for build in builds.values():
+            self.assertTrue(all(reason.startswith("email_count:")
+                                for reason in build["blocked_by"]), build["blocked_by"])
+
+    def test_complete_and_count_matching_builds_are_ready(self):
+        plan = json.loads(PLAN_FIXTURE.read_text())
+        counts = {seq["id"]: seq["email_count"] for seq in plan["email_sequences"]}
+        temp = Path(tempfile.mkdtemp())
+        paths = []
+        for seq_id, count in counts.items():
+            templates = [
+                {"id": "e%d" % index, "type": "email", "name": "Email %d" % index,
+                 "attributes": {"subject": "s%d" % index, "body": "<p>b</p>",
+                                "html": "<p>b</p>", "fromName": "n"}}
+                for index in range(count)
+            ]
+            doc = {"folder": "F", "_meta": {"sequence_id": seq_id},
+                   seq_id: {"name": seq_id, "status": "draft", "templates": templates}}
+            path = temp / ("%s.json" % seq_id)
+            path.write_text(json.dumps(doc))
+            paths.append(path)
+        rc, result = run_reader(paths)
+        self.assertEqual(rc, 0)
+        self.assertEqual({b["state"] for b in by_id(result).values()}, {"ready"})
+        self.assertTrue(result["journal"]["stable_unit_keys"])
 
     def test_steps_pass_through_verbatim(self):
         rc, doc = run_reader([PRE])

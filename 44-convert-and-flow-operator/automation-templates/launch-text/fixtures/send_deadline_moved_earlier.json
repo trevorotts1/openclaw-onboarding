@@ -1,0 +1,33 @@
+{
+  "name": "quiet-hours conflict resolved earlier, before the deadline",
+  "send": {
+    "kind": "last_call",
+    "template": "{{first_name}}, last call. Doors close at {{doors_close_at}}. {{offer_name}} at {{price}}: {{sales_url}} Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "offer_name": "Signature Launch",
+      "price": "$497",
+      "sales_url": "https://example.com/offer",
+      "doors_close_at": "2026-10-22T23:00"
+    },
+    "send_at": "2026-10-22T22:30:00",
+    "now": "2026-10-22T19:00:00",
+    "deadline": "2026-10-22T23:00:00",
+    "a2p_ready": true,
+    "price_per_segment_usd": 0.01,
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed"],
+      "suppression": [],
+      "marketing_sends": 3,
+      "operational_sends": 2
+    }
+  },
+  "expect": {
+    "action": "hold",
+    "category": "marketing",
+    "reason": "quiet_hours_moved_earlier",
+    "send_at": "2026-10-22T20:00:00"
+  }
+}

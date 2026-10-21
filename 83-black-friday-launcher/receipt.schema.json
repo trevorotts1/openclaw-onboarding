@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "83-black-friday-launcher/receipt.schema.json",
+  "title": "Black Friday Launcher package receipt (typed per-unit, v1.1)",
+  "description": "The receipt this skill writes beside package-manifest.json. Every delivered unit gets its own typed row bound to tenant, location, launch, revision and the approved plan hash. A row proves itself with artifact bytes (path + sha256 + size), the request it answers and the lane that validated it; proof classes are separate booleans so authored, draft-installed, tested and live-verified evidence can never be read as one another. Validated by launcher_core/checks.py at package check and again on recovery (verify_package_receipt).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "receipt_type",
+    "receipt_schema",
+    "receipt_id",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "revision",
+    "approved_plan_hash",
+    "assembled_at",
+    "manifest",
+    "units",
+    "lane_validations",
+    "receipt_evidence",
+    "live_effects"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.1"},
+    "receipt_type": {"type": "string", "const": "launcher.package.v1"},
+    "receipt_schema": {"type": "string", "const": "receipt.schema.json"},
+    "receipt_id": {"type": "string", "minLength": 1},
+    "tenant_id": {"type": "string", "minLength": 1},
+    "location_id": {"type": "string", "minLength": 1},
+    "launch_id": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1},
+    "approved_plan_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "assembled_at": {"type": "string", "minLength": 1},
+    "manifest": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "const": "package-manifest.json"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/definitions/unit_receipt"}
+    },
+    "lane_validations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["lane", "contract", "state"],
+        "properties": {
+          "lane": {"type": "string", "minLength": 1},
+          "contract": {"type": "string", "minLength": 1},
+          "state": {"type": "string", "enum": ["passed", "recorded", "not_applicable"]},
+          "detail": {"type": "string"}
+        }
+      }
+    },
+    "receipt_evidence": {
+      "type": "object",
+      "required": ["store", "state"],
+      "properties": {
+        "store": {"type": "string", "minLength": 1},
+        "state": {"type": "string", "enum": ["verified", "absent"]}
+      }
+    },
+    "live_effects": {"type": "string", "const": "none"},
+    "launch_plan": {"type": ["object", "null"]}
+  },
+  "definitions": {
+    "unit_receipt": {
+      "type": "object",
+      "required": [
+        "unit_id",
+        "unit_type",
+        "tenant_id",
+        "location_id",
+        "launch_id",
+        "revision",
+        "approved_plan_hash",
+        "request",
+        "artifacts",
+        "lane_validation",
+        "proof",
+        "status"
+      ],
+      "properties": {
+        "unit_id": {"type": "string", "minLength": 1},
+        "unit_type": {
+          "type": "string",
+          "enum": ["page", "email", "text", "automation", "conversation_ai"]
+        },
+        "tenant_id": {"type": "string", "minLength": 1},
+        "location_id": {"type": "string", "minLength": 1},
+        "launch_id": {"type": "string", "minLength": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "approved_plan_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "request": {
+          "type": "object",
+          "required": ["plan_sha256"],
+          "properties": {
+            "plan_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+            "request_id": {"type": ["string", "null"]},
+            "input_hash": {"type": ["string", "null"]}
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "sha256", "size"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+              "size": {"type": "integer", "minimum": 1},
+              "kind": {"type": "string"},
+              "provider": {"type": "string"}
+            }
+          }
+        },
+        "lane_validation": {
+          "type": "object",
+          "required": ["lane", "contract", "state"],
+          "properties": {
+            "lane": {"type": "string", "minLength": 1},
+            "contract": {"type": "string", "minLength": 1},
+            "state": {"type": "string", "const": "passed"},
+            "detail": {"type": "string"}
+          }
+        },
+        "proof": {
+          "type": "object",
+          "required": ["authored", "draft_installed", "tested", "live_verified"],
+          "properties": {
+            "authored": {"type": "boolean"},
+            "draft_installed": {"type": "boolean"},
+            "tested": {"type": "boolean"},
+            "live_verified": {"type": "boolean"}
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "authored",
+            "draft_delivered",
+            "locally_verified",
+            "installed_test_verified",
+            "ready_for_activation",
+            "live_verified"
+          ]
+        },
+        "draft_only": {"type": "boolean"},
+        "delivery": {"type": "string", "enum": ["declared"]}
+      }
+    }
+  }
+}
