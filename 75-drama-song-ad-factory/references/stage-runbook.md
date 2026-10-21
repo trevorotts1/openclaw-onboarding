@@ -83,6 +83,89 @@ Note: `music`, `image-keyframes` and `video-generation` share one command shape 
 Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.
 Video model ids come from `python3 scripts/core/video_router/video_router.py --request <request.json>`.
 
+## Waiting for a background stage job (the waiter) — L4, v2.9.73
+
+Long jobs (Agnes segments, music takes, a big render) run in the background and
+the stage waits for them. Two shells sat ~8 h on a watcher that matched its own
+command line and never saw the job finish. The bug:
+
+```sh
+# WRONG — `pgrep -f "run_vtv_music.py"` matches THE WAITER ITSELF, because
+# every waiter pass's shell argv holds the quoted string, so the loop waits
+# on itself and never ends:
+while pgrep -f "run_vtv_music.py" >/dev/null; do sleep 30; done
+
+# RIGHT — anchor on the interpreter AND bracket the script name's first
+# character: the regex means "python … run_vtv_music.py", and a waiter that
+# quotes THIS pattern never matches it (its own argv carries
+# "[r]un_vtv_music\.py", whose text has no literal 'run_vtv_music.py' — the
+# bracket breaks self-matching on every pass). pgrep -f is an ERE over the
+# full argv, so the interpreter word covers python3 AND a framework python.
+while pgrep -f "python.*[r]un_vtv_music\.py" >/dev/null; do sleep 30; done
+# and on top of the process check, poll the job's own completion artifact:
+until [ -s "$RUN/music/picked-song.mp3" ]; do sleep 30; done   # or the row:
+until [ "$(sqlite3 "$RUN/control/state.sqlite3" "SELECT state FROM stages WHERE stage='video-generation'")" = "COMPLETE" ]; do sleep 30; done
+```
+
+Rules for any waiter `new` in this runbook, on ANY job:
+
+1. Anchor on the interpreter: match `python3 <path>` of the SCRIPT's real argv,
+   not a bare script-name fragment a quoting shell shares.
+2. Never quote a pattern in the waiter that regex-matches the waiter's own
+   argv. `grep`/`pgrep` with a leading `[<first-char>]` class (or `-x` with the
+   full exact command line) is the documented self-exclusion.
+3. The loop MUST have a second, artifact-based exit: the file the job writes
+   last (`-s`, non-empty), or the stage row reaching `COMPLETE` through
+   `state.sqlite3`. A waiter that can only exit on a process name can spin
+   forever when the job died without a matching process. This is what the
+   runbook's waiter section REQUIRES of every waiter: the process check is
+   the guard, the artifact check (or the stage row) is the exit.
+4. Poll no faster than 15 s (agnes/5411) and cap the WAIT yourself: a bounded
+   timeout (for example 30 consecutive quiet checks past the job's ETA) is a
+   FAILURE to investigate, not silence to wait past.
+5. Self-check before trusting a waiter one-off: run
+   `python3 scripts/core/intake_preflight/test_waiter_pattern_v2973.py` —
+   it proves the documented pattern does not match a shell holding the same
+   string and does match a real sleeping job.
+
+## Stop on 3 identical structural failures — L4, v2.9.73
+
+Live proof: 65 lip-sync attempts, every one FAIL FACE_COUNT ("0 faces found"),
+~8 h of paid retries on stills that could never pass. Rule: after 3
+consecutive identical STRUCTURAL failures (the deciding measured field is the
+same — the same face count, the same shape of unmeasurable — anything a re-try
+of an unchanged input can only repeat), STOP and report the cause instead of
+retrying:
+
+```sh
+python3 -c "from attempt_ceiling import ceiling_check
+import json,sys
+h=json.load(open(\"$RUN/lipsync/attempt-history.json\"))
+print(json.dumps(ceiling_check(h)))"
+```
+
+`stop: true` names the cause — for the stills case, "no face in these stills —
+choose a face-visible format" — and names the measured value every attempt
+agreed on. The remedy is a HUMAN change (face-visible shot format, a different
+source picture format), never a further auto-attempt. A transient failure
+(provider 429/5xx, a changed measured value) breaks the streak and never
+counts. Module: `scripts/core/lip_sync/lip_gate/attempt_ceiling.py`
+(`structural_key`, `consecutive_identical`, `ceiling_check`, ceiling 3).
+
+## Cost / approval forks with a safe default — L4, v2.9.73
+
+A run must not sit for hours on a small money question. When `next` meets a
+cost fork whose paid branch is bigger than the remaining ledger balance (or of
+unknown cost), the recorded decision is the FREE branch ("wait") and the
+decision — cost, remaining balance, declared budget, reason, UTC timestamp —
+is appended to `control/fork-decisions.json` and carried on the envelope under
+`data.cost_fork`. Never a default spend above the remaining balance or above
+the run's declared budget; a fork whose cost fits both records "proceed" with
+the paid command standing. Reader: `factory.py` `_remaining_ledger_balance`
+(the run's own `spend.sqlite3` via `spend_ledger.summary`); writer:
+`factory.py` `cost_fork` (test:
+`scripts/core/intake_preflight/test_cost_fork_v2973.py`).
+
 ## FU-U16 story doctrine: villain, pain, rise (Trevor order 2026-10-08)
 
 > "People don't care about the hero until they meet the villain." - Trevor Otts

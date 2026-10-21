@@ -55,6 +55,16 @@ try:
 except ImportError:                    # script import (tests run from here)
     import picture_measure as PM
 
+try:
+    from . import attempt_ceiling as _AC
+except ImportError:                    # script import
+    import attempt_ceiling as _AC
+
+def _ceiling():
+    """The L4.4 attempt-ceiling module (same package); a missing module is
+    never a stop: no ceiling check runs (picture_gate's own caps still hold)."""
+    return _AC
+
 TOOL_NAME = "lipsync_picture_gate"
 SCHEMA = "blackceo.lipsync-picture-receipt/v1"
 
@@ -327,6 +337,18 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                 continue
         if regenerate is None or regens >= max_regens:
             return dict(rec, image=cur)
+        # L4.4 (v2.9.73): the attempt ceiling over THIS call's history —
+        # three consecutive identical structural failures stop before the
+        # next paid regeneration, with the cause named. picture_gate's own
+        # regens cap (2) plus this ceiling keeps any single call bounded;
+        # the cross-call guard (the caller's attempt history) is
+        # attempt_ceiling.ceiling_check on the receipts on disk.
+        ceil = _ceiling().ceiling_check(attempts)
+        if ceil.get("stop"):
+            reasons = reasons + [(ceil["cause"], ceil["message"])]
+            return dict(write_receipt(cur, sha, FAIL, nums, reasons, flags,
+                                      attempts, rdir), image=cur,
+                    ceiling=ceil)
         regens += 1                                          # paid, capped
         try:
             cur = regenerate(cur, REGEN_PROMPT)
