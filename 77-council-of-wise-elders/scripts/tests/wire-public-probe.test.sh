@@ -48,6 +48,17 @@ rm -f "$T/app/.env.local"
 src "no source at all: no candidate" ""
 printf '{"commandCenterUrl":"https://cy.zerohumanworkforce.com"}' >"$TEST_OC/.workforce-build-state.json"; mkdir -p "$TEST_OC/workspace"; mv "$TEST_OC/.workforce-build-state.json" "$TEST_OC/workspace/"
 src "build-state commandCenterUrl last resort" "https://cy-council.zerohumanworkforce.com"
-src "IP literal never a candidate" "" CC_PUBLIC_URL=http://203.0.113.9:3000
-src "localhost never a candidate" "" CC_PUBLIC_URL=http://localhost:3000
+src "IP literal falls through to the next source" "https://cy-council.zerohumanworkforce.com" CC_PUBLIC_URL=http://203.0.113.9:3000
+src "localhost falls through to the next source" "https://cy-council.zerohumanworkforce.com" CC_PUBLIC_URL=http://localhost:3000
+rm -f "$TEST_OC/workspace/.workforce-build-state.json"
+src "IP literal and nothing else: no candidate" "" CC_PUBLIC_URL=http://203.0.113.9:3000
+printf '{"companySlug":"dee"}' >"$TEST_OC/onboarding-identity.json"
+src "install-time companySlug alone yields a candidate" "https://dee-council.zerohumanworkforce.com"
+printf '{"commandCenterUrl":"http://localhost:4000"}' >"$TEST_OC/workspace/.workforce-build-state.json"
+src "legacy localhost commandCenterUrl falls through to companySlug" "https://dee-council.zerohumanworkforce.com"
+printf 'MC_TENANT_PUBLIC_URL=https://legacy-host.zerohumanworkforce.com\n' >"$T/pinned.env"
+printf '{"commandCenterUrl":"http://localhost:4000","launchBootstrap":{"serviceEnvPath":"%s"}}' "$T/pinned.env" >"$TEST_OC/workspace/.workforce-build-state.json"
+src "service env file pinned in the launch state is read" "https://legacy-host-council.zerohumanworkforce.com"
+printf '{"companySlug":"../x"}' >"$TEST_OC/onboarding-identity.json"; rm -f "$TEST_OC/workspace/.workforce-build-state.json"
+src "a non-slug companySlug is ignored" ""
 echo "wire-public-probe: $FAILS failed"; [ "$FAILS" = 0 ]

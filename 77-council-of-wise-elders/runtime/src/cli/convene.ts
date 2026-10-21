@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import type { CliIo } from './dispatcher.js';
 import { CouncilError, invalidInput, usageError, type CouncilErrorCode } from './errors.js';
 
@@ -162,36 +162,42 @@ function envFileValue(path: string, key: string): string | undefined {
   }
 }
 
+function jsonFile(path: string | undefined): Record<string, unknown> {
+  try {
+    const o: unknown = path ? JSON.parse(readFileSync(path, 'utf8')) : null;
+    return o !== null && typeof o === 'object' ? (o as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 // Candidate Council addresses, best first, re-derived at convene time from
 // every Command Center host source that exists from install time (none of
 // them needs the AI Workforce Interview): the process env, the Command Center
-// app's own .env.local, and the launch state's seeded commandCenterUrl. The
-// address baked in by wire.sh is the last resort. Duplicates are dropped.
+// service env file (the path pinned in the launch state, then the app's own
+// .env.local), the launch state's seeded commandCenterUrl, and the install-time
+// companySlug. The address baked in by wire.sh is the last resort. Sources that
+// are not a real DNS name are skipped; duplicates are dropped.
 export function conveneCandidates(env: NodeJS.ProcessEnv): string[] {
   // Files are read only when the env says where they live (the shim always has HOME).
   const home = env.HOME;
-  const app = env.CC_APP_DIR || (home ? join(home, 'projects', 'command-center') : undefined);
   const oc =
     env.OPENCLAW_ROOT ||
     env.WISE_ELDERS_OPENCLAW_ROOT ||
     (home ? (existsSync('/data/.openclaw') ? '/data/.openclaw' : join(home, '.openclaw')) : undefined);
-  let stateUrl: string | undefined;
-  try {
-    if (oc) {
-      const st = JSON.parse(readFileSync(join(oc, 'workspace', '.workforce-build-state.json'), 'utf8')) as Record<string, unknown>;
-      if (typeof st.commandCenterUrl === 'string') stateUrl = st.commandCenterUrl;
-    }
-  } catch {
-    /* no launch state yet */
+  const app =
+    env.CC_APP_DIR ||
+    (oc === '/data/.openclaw' ? '/data/projects/command-center' : home ? join(home, 'projects', 'command-center') : undefined);
+  const st = jsonFile(oc && join(oc, 'workspace', '.workforce-build-state.json'));
+  const lb = st.launchBootstrap as Record<string, unknown> | undefined;
+  const pinned = typeof lb?.serviceEnvPath === 'string' && isAbsolute(lb.serviceEnvPath) ? lb.serviceEnvPath : undefined;
+  const slug = jsonFile(oc && join(oc, 'onboarding-identity.json')).companySlug;
+  const hosts: Array<string | undefined> = [env.CC_PUBLIC_URL, env.MC_TENANT_PUBLIC_URL];
+  for (const f of [pinned, app && join(app, '.env.local')]) {
+    if (f) hosts.push(envFileValue(f, 'CC_PUBLIC_URL'), envFileValue(f, 'MC_TENANT_PUBLIC_URL'));
   }
-  const envFile = app ? join(app, '.env.local') : undefined;
-  const hosts = [
-    env.CC_PUBLIC_URL,
-    env.MC_TENANT_PUBLIC_URL,
-    envFile && envFileValue(envFile, 'CC_PUBLIC_URL'),
-    envFile && envFileValue(envFile, 'MC_TENANT_PUBLIC_URL'),
-    stateUrl,
-  ] as Array<string | undefined>;
+  hosts.push(typeof st.commandCenterUrl === 'string' ? st.commandCenterUrl : undefined);
+  if (typeof slug === 'string' && /^[a-z0-9-]+$/.test(slug)) hosts.push(`https://${slug}.zerohumanworkforce.com`);
   const out = hosts.map(councilOriginFor).filter((o): o is string => o !== null);
   if (env.WISE_ELDERS_PUBLIC_CANDIDATE) out.push(env.WISE_ELDERS_PUBLIC_CANDIDATE);
   return [...new Set(out)];

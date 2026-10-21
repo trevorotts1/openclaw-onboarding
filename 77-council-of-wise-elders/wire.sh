@@ -201,21 +201,29 @@ CHANGED=0
 # ---------------------------------------------- 6. public origin (hostname rule)
 # Every source below is populated at INSTALL time (the Command Center ships first,
 # locked to /interview, so the interview never gates the link): the process env,
-# the Command Center app's own .env.local (written by interview-launch.py), then
-# the launch state's seeded commandCenterUrl. First non-empty wins.
+# the Command Center's service env file (the path pinned in the launch state, then
+# the app's own .env.local), the launch state's seeded commandCenterUrl, then the
+# install-time companySlug. The first source that yields a real DNS name wins, so a
+# localhost or IP value in one source falls through to the next.
+council_for() { # <Command Center URL or host> -> https://<slug>-council.<domain>, empty when not a DNS name
+  local h="${1#*://}"; h="${h%%/*}"; h="${h%%:*}"
+  case "$h" in ''|localhost|localhost.*|*.localhost|'['*) return 0 ;; esac   # never localhost or an IPv6 literal
+  case "$h" in *[!0-9.]*) ;; *) return 0 ;; esac                            # never an IPv4 literal
+  case "$h" in *.*) printf 'https://%s-council.%s' "${h%%.*}" "${h#*.}" ;; esac
+}
 CC_APP="${CC_APP_DIR:-$HOME/projects/command-center}"
-CC_URL="${CC_PUBLIC_URL:-${MC_TENANT_PUBLIC_URL:-}}"
-if [ -z "$CC_URL" ]; then CC_URL="$(envget "$CC_APP/.env.local" CC_PUBLIC_URL)"; fi
-if [ -z "$CC_URL" ]; then CC_URL="$(envget "$CC_APP/.env.local" MC_TENANT_PUBLIC_URL)"; fi
-if [ -z "$CC_URL" ]; then CC_URL="$(jget "$OC/workspace/.workforce-build-state.json" commandCenterUrl)"; fi
+if [ -z "${CC_APP_DIR:-}" ] && [ "$OC" = /data/.openclaw ]; then CC_APP=/data/projects/command-center; fi
+_st="$OC/workspace/.workforce-build-state.json"
+_pin="$("$NODE" -e 'try{const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).launchBootstrap.serviceEnvPath;if(typeof v==="string"&&v[0]==="/")process.stdout.write(v)}catch(e){}' "$_st" 2>/dev/null)"
+_slug="$(jget "$OC/onboarding-identity.json" companySlug)"
+case "$_slug" in ''|*[!a-z0-9-]*) _slug="" ;; esac
 PUBLIC=""
-if [ -n "$CC_URL" ]; then
-  _h="${CC_URL#*://}"; _h="${_h%%/*}"; _h="${_h%%:*}"
-  case "$_h" in
-    ''|localhost|localhost.*|'['*) ;;          # never localhost or an IPv6 literal
-    *[!0-9.]*) case "$_h" in *.*) PUBLIC="https://${_h%%.*}-council.${_h#*.}" ;; esac ;;  # not an IPv4 literal
-  esac
-fi
+for _u in "${CC_PUBLIC_URL:-}" "${MC_TENANT_PUBLIC_URL:-}" \
+    "$([ -n "$_pin" ] && envget "$_pin" CC_PUBLIC_URL)" "$([ -n "$_pin" ] && envget "$_pin" MC_TENANT_PUBLIC_URL)" \
+    "$(envget "$CC_APP/.env.local" CC_PUBLIC_URL)" "$(envget "$CC_APP/.env.local" MC_TENANT_PUBLIC_URL)" \
+    "$(jget "$_st" commandCenterUrl)" "${_slug:+https://$_slug.zerohumanworkforce.com}"; do
+  [ -z "$PUBLIC" ] && [ -n "$_u" ] && PUBLIC="$(council_for "$_u")"
+done
 if [ -z "$PUBLIC" ]; then PUBLIC="$(jget "$P/service.json" public_origin)"; fi
 # The candidate is always baked into the shim; the CLI re-checks it at convene time.
 CANDIDATE="$PUBLIC"

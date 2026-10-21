@@ -125,3 +125,27 @@ test('candidate is re-derived at convene time with no interview state, from inst
     'https://cy-council.zerohumanworkforce.com',
   ]);
 });
+
+test('pinned service env file, then install-time companySlug; localhost or IP values fall through', () => {
+  const oc = mkdtempSync(join(tmpdir(), 'cvo-'));
+  mkdirSync(join(oc, 'workspace'), { recursive: true });
+  const pinned = join(oc, 'pinned.env');
+  writeFileSync(pinned, 'MC_TENANT_PUBLIC_URL=https://legacy-host.zerohumanworkforce.com\n');
+  const state = (o: unknown) => writeFileSync(join(oc, 'workspace', '.workforce-build-state.json'), JSON.stringify(o));
+  // only the install-time identity exists: the slug alone yields a candidate
+  writeFileSync(join(oc, 'onboarding-identity.json'), JSON.stringify({ companySlug: 'dee' }));
+  assert.deepEqual(conveneCandidates({ OPENCLAW_ROOT: oc }), ['https://dee-council.zerohumanworkforce.com']);
+  // legacy fake localhost commandCenterUrl is skipped, not a dead end
+  state({ commandCenterUrl: 'http://localhost:4000' });
+  assert.deepEqual(conveneCandidates({ OPENCLAW_ROOT: oc, CC_PUBLIC_URL: 'http://10.0.0.5:4000' }), ['https://dee-council.zerohumanworkforce.com']);
+  // the service env file pinned in the launch state is read first among files
+  state({ commandCenterUrl: 'http://localhost:4000', launchBootstrap: { serviceEnvPath: pinned } });
+  assert.deepEqual(conveneCandidates({ OPENCLAW_ROOT: oc }), [
+    'https://legacy-host-council.zerohumanworkforce.com',
+    'https://dee-council.zerohumanworkforce.com',
+  ]);
+  // a relative pinned path is ignored; a non-slug companySlug is ignored
+  state({ launchBootstrap: { serviceEnvPath: 'pinned.env' } });
+  writeFileSync(join(oc, 'onboarding-identity.json'), JSON.stringify({ companySlug: '../x' }));
+  assert.deepEqual(conveneCandidates({ OPENCLAW_ROOT: oc }), []);
+});
