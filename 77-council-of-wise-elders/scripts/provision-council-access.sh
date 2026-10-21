@@ -464,7 +464,9 @@ provision_host() {
   # dedicated path: the box must run the tunnel's connector before the record exists
   if [ "$dns_held" = "1" ]; then
     if [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; then
-      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. The box must run its connector (token saved operator side at $token_file); the next run that sees it creates the record"
+      local tok_note="token saved operator side at $token_file"
+      [ -s "$token_file" ] || tok_note="token NOT saved yet at $token_file; $([ "$APPLY" = 1 ] && echo "retried next run" || echo "--apply saves it")"
+      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. The box must run its connector ($tok_note); the next run that sees it creates the record"
     else
       finish PLANNED "dry-run: pass --apply to make the writes listed above; no DNS write until tunnel $ride_name has an active connection, so apply ends CONNECTOR_PENDING"
     fi

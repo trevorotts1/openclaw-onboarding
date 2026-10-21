@@ -211,6 +211,11 @@ run_script qcbox.$Z --apply
 check "second apply, still no connector: zero writes, CONNECTOR_PENDING, still no DNS record" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING' && test '$(state '[.dns[] | select(.name=="qcbox-council.'$Z'")] | length')' = 0"
 run_script qcbox.$Z
 check "dry-run, no connector, nothing else to write: CONNECTOR_PENDING, GET only" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+check "dry-run, token on disk: pending line says the token is saved" bash -c "tail -n1 '$OUT' | grep -q 'token saved operator side at'"
+mv "$TOKDIR/council-qcbox.token" "$WORK/tok.bak"
+run_script qcbox.$Z
+check "dry-run, no token on disk: pending line says NOT saved, never 'token saved'" bash -c "tail -n1 '$OUT' | grep -q 'token NOT saved yet at .*--apply saves it' && ! tail -n1 '$OUT' | grep -q 'token saved operator side'"
+mv "$WORK/tok.bak" "$TOKDIR/council-qcbox.token"
 jq -c '(.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .key) as $k | .tunnels[$k].conns = [{id:"c1",is_pending_reconnect:false}]' "$WORK/ded.json" > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z
 check "connector up (dry-run): plans exactly the DNS write, PLANNED" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q '\[plan\] POST /zones/zone-real/dns_records' '$OUT' && ! grep -q '\[hold\]' '$OUT' && test \"\$(grep -c '\[plan\]' '$OUT')\" = 1 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
