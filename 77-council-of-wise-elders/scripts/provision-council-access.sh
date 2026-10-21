@@ -31,6 +31,14 @@ fi
 #      whose configuration cannot be read (404 included) is FAILED, never an orphan
 #      remote-managed CC tunnel: the CC rule's origin is loopback (else ORIGIN_NOT_LOOPBACK)
 #        and the tunnel has an active connector     (none  -> CONNECTOR_DOWN)
+#        CONTAINER-HOST SHAPE (a remote-managed CC tunnel whose CC rule origin is a
+#        private bridge address: 10.x, 172.16-31.x, 192.168.x or host.docker.internal,
+#        on the CC port): the box's Council runs inside a docker container bound to
+#        the container's own loopback, so the Council takes the dedicated-tunnel path
+#        below unchanged (tunnel council-<slug>, route <slug>-council ->
+#        http://127.0.0.1:8787 -- the connector runs INSIDE the client's container,
+#        where the Council's loopback lives), token file, CONNECTOR_PENDING, DNS only
+#        after the connector. A bridge origin on any other port stays ORIGIN_NOT_LOOPBACK.
 #      local-managed CC tunnel, RESCUE RIDE first: the Council rides the client's own
 #        rescue tunnel exactly like the remote path (detail "rides rescue tunnel <name>")
 #        when ALL hold: the CC tunnel reports this host at http://localhost:4000 or
@@ -42,7 +50,8 @@ fi
 #        tunnel, no token file, no connector delivery.
 #      otherwise: the Council rides a DEDICATED remote-managed tunnel
 #        named council-<slug> (or the COUNCIL_TUNNEL_OVERRIDES name), created or reused
-#        (that tunnel local-managed -> PENDING_LOCAL_TUNNEL)
+#        (that tunnel local-managed -> PENDING_LOCAL_TUNNEL). The container-host shape
+#        (a.) reaches this same dedicated path: no rescue ride, no CC-tunnel ride.
 #      council CNAME already points elsewhere        (-> CONFLICT)
 #   d. create/reuse Access app 'Council - <slug>', read it back, compare the rules with
 #      the CC app (exclude/require rules that differ are refused, never synced). An existing app whose rules differ is SYNCED: its allow EMAILS are made
@@ -77,8 +86,9 @@ fi
 # TUNNEL_DOWN: the CC tunnel's status is not "healthy" (down, inactive, degraded).
 # A link published now would pass the Access login and then 502, so nothing is
 # written; retried every run. ORIGIN_NOT_LOOPBACK: the CC rule's origin is not
-# localhost/127.x/[::1] (e.g. a docker bridge IP), so the connector runs outside
-# the box's loopback and cannot reach the Council on 127.0.0.1:8787.
+# localhost/127.x/[::1] (e.g. a docker bridge IP) and not the container-host shape
+# (private bridge address on the CC port), so the connector runs outside the
+# box's loopback and cannot reach the Council on 127.0.0.1:8787.
 #
 # --all classifies by SERVICE, the hostname's own ingress rule (path-scoped rules
 # do not hide the host's path-less rule): ssh:// (rescue), anything not on :4000,
@@ -506,7 +516,7 @@ provision_host() {
   fi
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfg")"
 
-  local ride_tid ride_cfg ride_name="" ride_new=0 token_file="" dedicated=0 rescue=0 note=""
+  local ride_tid ride_cfg ride_name="" ride_new=0 token_file="" dedicated=0 rescue=0 container=0 note=""
   if [ "$src" = "cloudflare" ]; then
     cc_ingress_assert_cc_port "$cfg" "$cc" 1 || { finish FAILED "tunnel $tunnel_id has no valid Command Center rule for $cc; refusing to write"; return; }
     local cc_svc origin
@@ -514,30 +524,70 @@ provision_host() {
     origin="$(printf '%s' "$cc_svc" | sed -n -E 's#^[a-z]+://(\[[^]]*\]|[^]/:[]+).*#\1#p')"
     case "$origin" in
       localhost|127.*|"[::1]") ;;
+      host.docker.internal|10.*|172.1[6-9].*|172.2[0-9].*|172.30.*|172.31.*|192.168.*)
+        # Container-host shape: the box runs the Council inside a docker container
+        # bound to the container's own loopback, and the CC rule points at the
+        # container's bridge address. The dedicated connector runs INSIDE the
+        # container, where 127.0.0.1:8787 is reachable, so the dedicated path
+        # applies unchanged. Any other non-loopback origin keeps the refusal.
+        local origin_port; origin_port="$(cc_ingress_port_of "$cc_svc")"
+        if [ "$origin_port" != "$CC_INGRESS_PORT" ]; then
+          finish ORIGIN_NOT_LOOPBACK "the Command Center rule for $cc points at $cc_svc, not loopback and not the Command Center port $CC_INGRESS_PORT; that connector cannot reach the Council on $COUNCIL_SERVICE. No Cloudflare change made"; return
+        fi
+        container=1
+        step "[ok] container host: the Command Center rule for $cc points at the container bridge $cc_svc, and the Council rides a dedicated tunnel whose connector runs inside the client's container"
+        ;;
       *) finish ORIGIN_NOT_LOOPBACK "the Command Center rule for $cc points at $cc_svc, not loopback; that connector cannot reach the Council on $COUNCIL_SERVICE (it binds the box's IPv4 loopback only). No Cloudflare change made"; return ;;
     esac
-    # read-only: does the tunnel have a live connector? (Access answering 302 proves only the edge.)
-    local nconn; nconn="$(active_conns "$tunnel_id")"
-    [ "$nconn" != "ERR" ] || { finish FAILED "could not read tunnel connections for $tunnel_id"; return; }
-    if [ "$nconn" = "0" ]; then
-      finish CONNECTOR_DOWN "tunnel $tunnel_id for $cc has no active connector; not ready, retry later. No Cloudflare change made"; return
+  fi
+  if [ "$container" = "0" ]; then
+    if [ "$src" = "cloudflare" ]; then
+      # read-only: does the tunnel have a live connector? (Access answering 302 proves only the edge.)
+      local nconn; nconn="$(active_conns "$tunnel_id")"
+      [ "$nconn" != "ERR" ] || { finish FAILED "could not read tunnel connections for $tunnel_id"; return; }
+      if [ "$nconn" = "0" ]; then
+        finish CONNECTOR_DOWN "tunnel $tunnel_id for $cc has no active connector; not ready, retry later. No Cloudflare change made"; return
+      fi
+      ride_tid="$tunnel_id"; ride_cfg="$cfg"
+    elif [ "$(council_tunnel_name "$slug")" = "council-$slug" ] && rescue_ride "$slug" "$cfg" "$tunnel_id"; then
+      # The CC tunnel is locally managed, but the same machine already runs the client's
+      # remote-managed rescue tunnel: the Council rides it like the remote path (no new
+      # tunnel, no token, no connector delivery). COUNCIL_TUNNEL_OVERRIDES never rides.
+      rescue=1; ride_tid="$RIDE_TID"; ride_name="$RIDE_NAME"; ride_cfg="$RIDE_CFG"; note="rides rescue tunnel $ride_name"
+      say "  Tunnel $tunnel_id (serving $cc) is locally managed (source=$src); the Council rides rescue tunnel $ride_name ($ride_tid) on the same machine."
+      step "[ok] rescue tunnel $ride_name: healthy, remote-managed, ssh:// rule, shares a connector origin address with $tunnel_id"
+    else
+      # The CC tunnel's ingress lives in a config.yml on whichever machine runs it, so
+      # the API cannot add a rule there. The Council gets its own remote-managed tunnel.
+      dedicated=1
+      ride_name="$(council_tunnel_name "$slug")"
+      token_file="$TOKEN_DIR/${ride_name}.token"
+      say "  Tunnel $tunnel_id (serving $cc) is locally managed (source=$src); the Council rides its own remote-managed tunnel $ride_name."
+      [ -z "$RIDE_WHY" ] || step "[info] not riding a rescue tunnel: $RIDE_WHY"
+      r="$(cf GET "/accounts/${ACCT}/cfd_tunnel?name=${ride_name}&is_deleted=false")"
+      [ "$(ok_of "$r")" = "true" ] || { finish FAILED "could not look up tunnel $ride_name: $(err_of "$r")"; return; }
+      ride_tid="$(jq -r --arg n "$ride_name" '[.result[]? | select(.name == $n and (.deleted_at == null))][0].id // empty' <<<"$r")"
+      if [ -n "$ride_tid" ]; then
+        ride_cfg="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${ride_tid}/configurations")"
+        [ "$(ok_of "$ride_cfg")" = "true" ] || { finish FAILED "could not read tunnel configuration for $ride_name ($ride_tid): $(err_of "$ride_cfg")"; return; }
+        src="$(jq -r '.result.source // "cloudflare"' <<<"$ride_cfg")"
+        if [ "$src" != "cloudflare" ]; then
+          finish PENDING_LOCAL_TUNNEL "the Council tunnel $ride_name ($ride_tid) for $cc is locally managed (source=$src); migrate it to remote-managed (Cloudflare Zero Trust, Networks, Tunnels, Configure), then re-run. No Cloudflare change made"
+          return
+        fi
+        step "[ok] Council tunnel $ride_name exists ($ride_tid)"
+      else
+        ride_new=1; ride_cfg='{"result":{"config":{}}}'
+      fi
     fi
-    ride_tid="$tunnel_id"; ride_cfg="$cfg"
-  elif [ "$(council_tunnel_name "$slug")" = "council-$slug" ] && rescue_ride "$slug" "$cfg" "$tunnel_id"; then
-    # The CC tunnel is locally managed, but the same machine already runs the client's
-    # remote-managed rescue tunnel: the Council rides it like the remote path (no new
-    # tunnel, no token, no connector delivery). COUNCIL_TUNNEL_OVERRIDES never rides.
-    rescue=1; ride_tid="$RIDE_TID"; ride_name="$RIDE_NAME"; ride_cfg="$RIDE_CFG"; note="rides rescue tunnel $ride_name"
-    say "  Tunnel $tunnel_id (serving $cc) is locally managed (source=$src); the Council rides rescue tunnel $ride_name ($ride_tid) on the same machine."
-    step "[ok] rescue tunnel $ride_name: healthy, remote-managed, ssh:// rule, shares a connector origin address with $tunnel_id"
   else
-    # The CC tunnel's ingress lives in a config.yml on whichever machine runs it, so
-    # the API cannot add a rule there. The Council gets its own remote-managed tunnel.
+    # Container host: the Council cannot ride the CC tunnel (a connector on the host
+    # cannot reach the container's loopback), so it takes the same dedicated path as
+    # a local-managed CC tunnel, unchanged in every other respect.
     dedicated=1
     ride_name="$(council_tunnel_name "$slug")"
     token_file="$TOKEN_DIR/${ride_name}.token"
-    say "  Tunnel $tunnel_id (serving $cc) is locally managed (source=$src); the Council rides its own remote-managed tunnel $ride_name."
-    [ -z "$RIDE_WHY" ] || step "[info] not riding a rescue tunnel: $RIDE_WHY"
+    say "  Tunnel $tunnel_id (serving $cc) is remote-managed and the Command Center runs inside a container (bridge origin); the Council rides its own remote-managed tunnel $ride_name, whose connector must run INSIDE the client's container."
     r="$(cf GET "/accounts/${ACCT}/cfd_tunnel?name=${ride_name}&is_deleted=false")"
     [ "$(ok_of "$r")" = "true" ] || { finish FAILED "could not look up tunnel $ride_name: $(err_of "$r")"; return; }
     ride_tid="$(jq -r --arg n "$ride_name" '[.result[]? | select(.name == $n and (.deleted_at == null))][0].id // empty' <<<"$r")"
@@ -694,12 +744,14 @@ provision_host() {
 
   # dedicated path: the box must run the tunnel's connector before the record exists
   if [ "$dns_held" = "1" ]; then
+    local where_note="The box must run its connector"
+    [ "$container" = "1" ] && where_note="The connector must run INSIDE the client's container (the Council binds the container's loopback, not the host's)"
     if [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; then
       local tok_note="token saved operator side at $token_file"
       [ -s "$token_file" ] || tok_note="token NOT saved yet at $token_file; $([ "$APPLY" = 1 ] && echo "retried next run" || echo "--apply saves it")"
-      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. The box must run its connector ($tok_note); the next run that sees it creates the record${SYNC_NOTE:+. $SYNC_NOTE}"
+      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. $where_note ($tok_note); the next run that sees it creates the record${SYNC_NOTE:+. $SYNC_NOTE}"
     else
-      finish PLANNED "dry-run: pass --apply to make the writes listed above; no DNS write until tunnel $ride_name has an active connection, so apply ends CONNECTOR_PENDING${SYNC_NOTE:+. $SYNC_NOTE}"
+      finish PLANNED "dry-run: pass --apply to make the writes listed above; no DNS write until tunnel $ride_name has an active connection, so apply ends CONNECTOR_PENDING ($where_note)${SYNC_NOTE:+. $SYNC_NOTE}"
     fi
     return
   fi
