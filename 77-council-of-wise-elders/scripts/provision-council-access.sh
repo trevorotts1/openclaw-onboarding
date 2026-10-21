@@ -39,11 +39,7 @@ fi
 #   h. dedicated path only: save the tunnel's connector token (GET .../token) to
 #      COUNCIL_TUNNEL_TOKEN_DIR/<tunnel-name>.token, mode 600, never printed
 #   i. edge gate: GET the host, no redirects; it must 302 to *.cloudflareaccess.com.
-#      Fail -> roll back what THIS run created, print FAILED. Each try first asks the
-#      zone's AUTHORITATIVE nameservers (the zone's name_servers from the API, else
-#      dig NS) for the host's A/AAAA and pins curl to them with --resolve, so a
-#      recursive resolver's cached "no such name" (zone negative TTL) from a lookup
-#      before the record existed cannot fail the gate. No dig or no answer -> plain curl.
+#      Fail -> roll back what THIS run created, print FAILED.
 #   j. dedicated path only: no active connection on the council tunnel yet ->
 #      CONNECTOR_PENDING (the box must run that connector; retried every run)
 # Every refusal (NOT_PROVISIONED, TUNNEL_DOWN, ORIGIN_NOT_LOOPBACK, CONNECTOR_DOWN,
@@ -90,8 +86,13 @@ fi
 #                                   (default $HOME/.openclaw/secrets/council-tunnels)
 #   COUNCIL_EDGE_URL_TEMPLATE       default https://%s/   (%s = council host)
 #   COUNCIL_EDGE_TRIES / COUNCIL_EDGE_SLEEP   edge gate retries (default 5 / 4s)
-#   COUNCIL_EDGE_RESOLVE            auth (default): resolve the host at the zone's
-#                                   authoritative nameservers (https://<host>/ URLs only);
+#   COUNCIL_EDGE_RESOLVE            auth (default): every edge gate try asks the zone's
+#                                   AUTHORITATIVE nameservers (zone name_servers from the
+#                                   API, else dig NS) for the host's A/AAAA and pins curl
+#                                   with --resolve, so a recursive resolver's cached "no
+#                                   such name" (zone negative TTL) from a lookup before the
+#                                   record existed cannot fail the gate; https://<host>/
+#                                   URLs only; no dig or no answer -> plain curl.
 #                                   system: plain curl through the system resolver
 #
 # OUTPUT: one line per host: COUNCIL_ACCESS: <cc-host> <STATUS> [detail]
