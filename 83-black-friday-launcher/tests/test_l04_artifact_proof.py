@@ -99,6 +99,36 @@ def all_delivered(plan: dict) -> dict:
     return {unit["id"]: {"state": "complete"} for unit in launch_plan.planned_units(plan)}
 
 
+def lane_deliveries(plan: dict, run_dir: Path, plan_sha: str | None = None) -> dict:
+    """One producing-lane delivery receipt per planned non-launcher unit.
+
+    Each lane stages its own artifact bytes under run_dir and records the
+    request it answers plus its own passed validation — the exact record
+    package.assemble consumes. A bare state claim is never built here.
+    Page units with a launcher piece ride on that piece; pages the route does
+    not carry (sales, upsell, downsell) ride on another lane's receipt.
+    """
+    out = {}
+    for unit in launch_plan.planned_units(plan):
+        rel = f"lane/{unit['id']}/delivery.html"
+        target = run_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f"<html>{unit['id']}</html>\n".encode("utf-8"))
+        out[unit["id"]] = {
+            "state": "complete",
+            "artifacts": [{"path": rel,
+                           "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                           "size": target.stat().st_size}],
+            "lane_validation": {"lane": "L06", "contract": "lane.output.v1",
+                                "state": "passed",
+                                "detail": "synthetic producing-lane validation"},
+            "request": {"plan_sha256": plan_sha,
+                        "request_id": f"lane-{unit['id']}",
+                        "input_hash": "d" * 64},
+        }
+    return out
+
+
 class _RunFixture(unittest.TestCase):
     """One assembled offline package in a temp run dir."""
 
@@ -118,13 +148,18 @@ class _RunFixture(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def assemble(self, pieces=None, plan=_UNSET):
+    def assemble(self, pieces=None, plan=_UNSET, deliveries=_UNSET):
         if plan is _UNSET:
             plan = self.plan
         kwargs = {"council": self.advice}
         if plan is not None:
             kwargs["launch_plan"] = plan
-            kwargs["deliveries"] = all_delivered(plan)
+            if deliveries is _UNSET:
+                plan_sha = hashlib.sha256(
+                    (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")
+                ).hexdigest()
+                deliveries = lane_deliveries(plan, self.run_dir, plan_sha=plan_sha)
+            kwargs["deliveries"] = deliveries
         return package.assemble(self.run_dir, self.normalized, self.graph,
                                 pieces or self.pieces, **kwargs)
 
@@ -367,6 +402,44 @@ class PlannedUnitReceiptTests(_RunFixture):
         fails = checks.check_package(self.manifest_path, self.run_dir)
         self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-DRAFT") for f in fails), fails)
 
+    def test_lane_rows_carry_the_producing_lane_not_l04(self):
+        receipt = self.read_receipt()
+        lanes = {row["lane_validation"]["lane"] for row in receipt["units"]
+                 if row["unit_type"] in ("email", "text", "automation")}
+        self.assertTrue(lanes)
+        self.assertNotIn("L04", lanes)
+
+    def test_a_bare_state_claim_stays_planned_and_refuses_assembly(self):
+        (self.run_dir / "receipt.json").unlink()
+        with self.assertRaises(package.PackageError) as ctx:
+            self.assemble(deliveries=all_delivered(self.plan))
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PKG-RECEIPT-ARTIFACT")
+        self.assertFalse((self.run_dir / "receipt.json").exists())
+
+    def test_plan_bytes_are_never_delivery_proof(self):
+        receipt = self.read_receipt()
+        manifest = self.read_manifest()
+        plan_path = manifest["launch_plan"]["plan"]["path"]
+        target = next(row for row in receipt["units"] if row["unit_type"] == "email")
+        target["artifacts"] = [{"path": plan_path,
+                                "sha256": manifest["launch_plan"]["plan"]["sha256"],
+                                "size": (self.run_dir / plan_path).stat().st_size}]
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any("never delivery proof" in f for f in fails), fails)
+
+    def test_an_l04_stamped_lane_row_fails(self):
+        receipt = self.read_receipt()
+        for row in receipt["units"]:
+            if row["unit_type"] == "email":
+                row["lane_validation"] = {"lane": "L04",
+                                          "contract": package.RECEIPT_TYPE,
+                                          "state": "passed"}
+                break
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-LANE") for f in fails), fails)
+
     @unittest.skipUnless(importlib.util.find_spec("jsonschema") is not None,
                          "the S79 validator needs jsonschema; unavailable is recorded, not guessed")
     def test_a_probe_verdict_the_contract_does_not_reproduce_fails(self):
@@ -384,6 +457,47 @@ class PlannedUnitReceiptTests(_RunFixture):
         self.write_manifest(manifest)
         fails = checks.check_package(self.manifest_path, self.run_dir)
         self.assertTrue(any(f.startswith("AF-LAUNCH-CHECKOUT-VALIDATOR") for f in fails), fails)
+
+
+class CheckoutProducerTests(unittest.TestCase):
+    """The group-7 L04 slice: the probe replays the inner envelope only.
+
+    Uses a stub Skill 79 validator so the envelope shape is proved even where
+    jsonschema is not installed: no document-level key may ride inside
+    checkout_request, and a shape rejection must never read as a missing fact.
+    """
+
+    def _probe_with(self, validate):
+        import types
+        from launcher_core import checkout as checkout_module
+        stub = types.SimpleNamespace(validate_request=validate)
+        original = checkout_module._load_validator
+        checkout_module._load_validator = lambda: stub
+        try:
+            return checkout_module._probe_validator(
+                {"contract_schema_version": "0.2-draft"},
+                {"tenant_id": "t", "launch_id": "x", "test_only": True})
+        finally:
+            checkout_module._load_validator = original
+
+    def test_the_probe_envelope_carries_no_document_level_keys(self):
+        seen = {}
+
+        def validate(request):
+            seen.update(request)
+
+        probe = self._probe_with(validate)
+        self.assertEqual(probe["probe"]["result"], "accepted")
+        self.assertNotIn("schema_version", seen)
+
+    def test_a_shape_rejection_is_recorded_not_masked(self):
+        def validate(request):
+            raise ValueError("Additional properties are not allowed "
+                             "('schema_version' was unexpected)")
+
+        probe = self._probe_with(validate)
+        self.assertEqual(probe["probe"]["result"], "rejected")
+        self.assertIn("Additional properties", probe["probe"]["error"])
 
 
 if __name__ == "__main__":
