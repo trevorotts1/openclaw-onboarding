@@ -320,12 +320,18 @@ def test_access_resolution() -> None:
         "the approved access destination is resolved and its source recorded")
     say(plan["access"]["entitlements"] == ["base-a", "upgrade-b"],
         "every purchased entitlement is kept (main + upsell)")
+    say(plan["access"]["base_entitlements"] == ["base-a"]
+        and plan["access"]["upsell_entitlements"] == {"upsell_1": ["upgrade-b"]},
+        "entitlements stay tied to the offer that grants them (base vs upsell)")
     for unit_id in ("email_welcome_access", "text_access_link", "auto_post_sale"):
         units = [u for u in plan["email_sequences"] + plan["text_sets"]
                  + plan["automations"] if u["id"] == unit_id]
         say(units and units[0]["access_destination"] == "https://example.test/access"
-            and units[0]["entitlements"] == ["base-a", "upgrade-b"],
-            f"{unit_id}: carries the usable destination and the entitlements")
+            and units[0]["entitlements"] == ["base-a"],
+            f"{unit_id}: carries the usable destination and the base entitlements only")
+    upsells = [u for u in plan["email_sequences"] if u["id"] == "email_upsell_1"]
+    say(upsells and upsells[0].get("entitlements") == ["upgrade-b"],
+        "email_upsell_1: carries its own upsell entitlement, not every buyer's welcome")
 
     fallback = dict(ANSWERS)
     fallback.pop("launch.access_url")
@@ -353,6 +359,23 @@ def test_access_resolution() -> None:
     plan = launch_plan.build_launch_plan(prerequisites, _answers())["plan"]
     say(plan["access"]["prerequisites"] == ["community-access"],
         "entitlement prerequisites are resolved, not assumed")
+
+    no_delivery = _answers(**{"launch.access_delivery": "No, nothing to deliver"})
+    plan = launch_plan.build_launch_plan(_launch(), no_delivery)["plan"]
+    say(plan["access"]["deliver_access"] is False,
+        "the access-delivery choice is respected (no delivery)")
+    welcome = [u for u in plan["email_sequences"] if u["id"] == "email_welcome_access"]
+    say(welcome and welcome[0]["access_destination"] is None
+        and welcome[0]["entitlements"] == [],
+        "no-delivery choice: welcome units carry no destination or entitlements")
+
+    yes_delivery = _answers(
+        **{"launch.access_delivery": "Yes, send access after purchase"})
+    plan = launch_plan.build_launch_plan(_launch(), yes_delivery)["plan"]
+    welcome = [u for u in plan["email_sequences"] if u["id"] == "email_welcome_access"]
+    say(plan["access"]["deliver_access"] is True
+        and welcome and welcome[0]["entitlements"] == ["base-a"],
+        "yes-delivery choice: welcome units carry the base entitlements")
 
 
 # ---------------------------------------------------------------------------

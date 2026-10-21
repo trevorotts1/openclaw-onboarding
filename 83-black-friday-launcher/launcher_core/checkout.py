@@ -251,8 +251,11 @@ def _probe_validator(mapping: Dict[str, Any],
     if module is None or not callable(getattr(module, "validate_request", None)):
         return {"module": validator_ref(), "state": "unavailable",
                 "error": "validate_request is absent"}
-    request = {"schema_version": mapping.get("contract_schema_version")}
-    request.update(supplied)
+    # The probe replays the inner checkout_request envelope only: document-level
+    # fields (schema_version) live on the document, and $defs/checkout_request
+    # sets additionalProperties false, so smuggling one in makes every probe a
+    # shape rejection instead of evidence about the launch's missing facts.
+    request = dict(supplied)
     for name, (value, _reason) in OPERATIONAL_DEFAULTS.items():
         request[name] = value
     probe: Dict[str, Any] = {"module": validator_ref(), "state": "bound"}

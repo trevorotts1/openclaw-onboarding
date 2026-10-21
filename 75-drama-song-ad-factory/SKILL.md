@@ -185,6 +185,53 @@ silently.
 
 **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
+## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
+
+Once intake is answered and the run has started, one watcher speaks to the
+client every 10 minutes until the job is COMPLETE or the 3-hour cap is
+reached. The client is never left wondering what happened.
+
+`scripts/core/heartbeat/run_watch.py --run-dir $RUN [--interval-check] [--max-hours 3]`
+takes ONE read-only look (`control/state.sqlite3` opened `mode=ro`,
+`control/fork-decisions.json`, `control/run-state.json`, `song-choices/`, and
+the spend ledger's `runs.created_at`) and prints one JSON envelope: `run_id`,
+`stage`, `stage_state`, `elapsed_minutes`, `decisions_pending` (intake
+outstanding, approval gates, a cost fork still on the safe default `wait` -
+each with its own question text and options), `stalled`, `loud`, `expired`,
+`message_for_client`. It NEVER mutates a run: stall recovery is the printed
+`recovery_command` (`factory.py next --run-dir $RUN`), run by the agent, never
+by the watcher.
+
+- **Stall** = the current stage made no progress for 30 minutes, its lease ran
+  out, or it is `STALE`. Loud code `HEARTBEAT_STALLED`.
+- **Cap** = 3 hours from the run's own start (the earlier of spend_ledger
+  `runs.created_at` and the state store's first row). At the cap the client
+  gets a final wrap-up and `HEARTBEAT_EXPIRED` is a FAILURE unless the run is
+  COMPLETE. The cap is a FLAG with a client-facing wrap-up, never a silent
+  pass and never a claim that unfinished work is done.
+- **Unreadable state** = `HEARTBEAT_STATE_UNREADABLE`, loud, exit 1.
+
+Two drivers, one watcher:
+
+1. **OpenClaw box.** `timer-artifacts/install-keepalive-cron.sh --apply`
+   registers ONE cron named `skill75-keepalive`, every 10 minutes, silent
+   (`--no-deliver`), isolated session, cheap/local model pinned, one agent.
+   Its prompt is `timer-artifacts/keepalive-cron-prompt.txt`: it finds the
+   active run, runs the watcher and delivers `message_for_client` through the
+   client's existing Telegram lane (`openclaw message send`, the choice card's
+   sender). The registrar is idempotent (exact-name JSON presence check; an
+   UNKNOWN list refuses rather than risk a duplicate) and
+   tombstone-respecting; `timer-artifacts/uninstall.sh --apply` removes the job
+   AND writes the durable tombstone.
+2. **claude-nine / Claude Code session.** `INSTRUCTIONS.md`, section "RUN
+   KEEPALIVE (10-MINUTE HEARTBEAT)": a 10-minute loop while a run is active.
+   The loop stops itself when the envelope's `expired` flag is true (or
+   `loop_should_stop` on a COMPLETE run), and `--interval-check` exits 10 for
+   the same stop.
+
+Tests: `python3 scripts/core/heartbeat/test_run_watch.py`,
+`python3 timer-artifacts/checks/test_keepalive_cron.py`.
+
 ## Script approval before the song (card question SCRIPT APPROVAL)
 
 The last card question asks: "Do you want to read and approve the script - your
@@ -1091,7 +1138,7 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+- **Video model question.** Four models (Hailuo 02 Standard RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
   video_model_rates.json`) and one price function shared by the question and
@@ -1160,7 +1207,7 @@ SOP named above.
   shot with its own storyboard field, never a patch**: INNER CHANEL is a named
   cast member, receipt line 252 names S6 (S030 to S031 two-shot), built as
   still `IMG-SHOT-S031-T2` and clip `VID-S031-T3` with the overlay assembled
-  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by MiniMax-H3 768p, Kling
+  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by Hailuo 02 Standard 768P, Kling
   for lip-sync only.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows

@@ -107,11 +107,26 @@ launch.
 
 ## 7. Behaviour evidence
 
-The bundle records the eight launch outcomes — `booking_success`,
-`no_availability`, `answered_not_booked`, `timeout`, `repeat_reply`,
-`keyword_wake`, `stop_opt_out`, `human_handoff` — each with an `outcome` and an
-`evidence_ref`. `human_handoff` also names `observable_owner` and
-`closure_path`.
+The bundle records the eight launch outcomes, each with a typed `outcome`
+token and an `evidence_ref` that must equal the digest of this bundle's
+targeted evidence for the matching playbook. `human_handoff` also names
+`observable_owner` and `closure_path`.
+
+| Scenario | Required `outcome` |
+|---|---|
+| `booking_success` | `booked` |
+| `no_availability` | `no_availability` |
+| `answered_not_booked` | `answered` |
+| `timeout` | `timed_out` |
+| `repeat_reply` | `answered_once` |
+| `keyword_wake` | `reactivated` |
+| `stop_opt_out` | `opted_out` |
+| `human_handoff` | `handed_off` |
+
+Any other value — including `failed`, an empty string, or a prose sentence —
+fails `SCENARIO_OUTCOME`. A failed required scenario never satisfies
+completion. An `evidence_ref` naming no targeted digest in this bundle fails
+`SCENARIO_EVIDENCE`.
 
 `qa_probes` holds at least 30 buyer questions. Each is `grounded` (with a
 `grounded_ref` naming the plan field) or `escalated` (with an

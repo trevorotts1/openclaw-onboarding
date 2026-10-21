@@ -293,6 +293,47 @@ class ApprovalInvalidation(unittest.TestCase):
         self.assertEqual(s["state"], "collecting")
         self.assertIsNone(s["approval"])
 
+    def test_ingesting_into_a_building_session_is_refused(self):
+        # A fact that changes during building must go through
+        # request_revision(); the ledger must not silently drift under a
+        # spent approval.
+        s = self.ready()
+        li.approve(s, approval_for(s), worker_identity_ref="worker-9")
+        li.begin_build(s)
+        before = dict(s["answers"]["launch.sender_name"])
+        with self.assertRaisesRegex(li.IntakeError, "request_revision"):
+            li.ingest_answers(s, doc())
+        self.assertEqual(s["state"], "building")
+        self.assertIsNotNone(s["approval"])
+        self.assertEqual(s["plan"]["plan_approval_ref"], "APPR-L01")
+        self.assertEqual(s["answers"]["launch.sender_name"], before)
+
+    def test_invalidation_clears_the_full_plan_artifacts(self):
+        # A stale launch_plan with a stale launch_answers block must never
+        # read as approved after the approval is spent.
+        s = self.ready()
+        self.assertIsNotNone(s["launch_plan"])
+        li.approve(s, approval_for(s), worker_identity_ref="worker-9")
+        self.assertIsNotNone(s["approved_launch_plan_digest"])
+        li.answer(s, "a1_offer", "A new offer, same client")
+        self.assertEqual(s["state"], "collecting")
+        self.assertIsNone(s["launch_plan"])
+        self.assertEqual(s["launch_plan_missing"], [])
+        self.assertIsNone(s["approved_launch_plan"])
+        self.assertIsNone(s["approved_launch_plan_digest"])
+
+    def test_approval_pins_the_full_plan_digest(self):
+        # The approval binds the page-plan hash through the gate AND pins the
+        # full-plan digest the Skill 50 consumer verifies against the fixture.
+        s = self.ready()
+        li.approve(s, approval_for(s), worker_identity_ref="worker-9")
+        fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        self.assertEqual(s["approved_launch_plan"], fixture["launch_plan"])
+        self.assertEqual(s["approved_launch_plan_digest"],
+                         fixture["plan_digest"]["value"])
+        self.assertEqual(li.full_plan_digest(s["launch_plan"]),
+                         s["approved_launch_plan_digest"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
