@@ -71,15 +71,25 @@ class QuestionsInIntake(unittest.TestCase):
     """The bible fields are asked by intake, not bolted on afterwards."""
 
     def test_declared_new_character_asks_for_every_part(self):
+        """One entry per part, in FIELD_PHRASES order (Trevor 2026-10-21:
+        intake asks them one at a time, so each part is its own question)."""
         qs = CB.questions({"character_new": "1", "offer": "a thing"})
-        self.assertEqual([q["id"] for q in qs], ["character"])
-        q = qs[0]["question"]
-        self.assertTrue(q.startswith("Tell me about the character"))
-        for phrase in ("their name",
-                       "one or two sentences describing them",
-                       "their background",
-                       "their ethnicity"):
-            self.assertIn(phrase, q)
+        self.assertEqual([q["id"] for q in qs], ["character"] * 4)
+        phrases = ("their name",
+                   "one or two sentences describing them",
+                   "their background",
+                   "their ethnicity")
+        for q, phrase in zip(qs, phrases):
+            self.assertTrue(q["question"].startswith("Tell me about the character"))
+            self.assertIn(phrase, q["question"])
+        # intake carries only the first one this turn
+        r = I.evaluate({"character_new": "1", "offer": "a class",
+                        "website": "example.com", "placement": "9:16 vertical",
+                        "audience": "Women 35-55", "action": "register"}, {})
+        self.assertEqual(r["reason_code"], "missing-character", repr(r.get("reason_code")))
+        self.assertEqual([q["id"] for q in r["questions"]], ["character"])
+        self.assertIn("their name", r["questions"][0]["question"])
+        self.assertNotIn("their ethnicity", r["questions"][0]["question"])
 
     def test_a_complete_character_asks_nothing(self):
         self.assertEqual(CB.questions(FIXTURE), [])
@@ -120,8 +130,9 @@ class QuestionsInIntake(unittest.TestCase):
         """DEL-02 must not steal a slot from offer / audience / spend."""
         r = I.evaluate({"character_new": "1"}, {})
         self.assertEqual(r["outcome"], "waiting")
+        # one question per turn: the first story slot, exactly as catalogued
         self.assertEqual([q["id"] for q in r["questions"]],
-                         [q["id"] for q in I.missing_essentials(*I.normalize({}, {}))])
+                         [q["id"] for q in I.missing_essentials(*I.normalize({}, {}))][:1])
 
     def test_injection_is_still_refused_before_any_character_question(self):
         r = I.evaluate({"character_new": "1",
@@ -155,8 +166,10 @@ class SavedCharacterCarriesTheBible(unittest.TestCase):
                           [self.img])
         fields = CL.brief_fields(CL.get_character(self.client, "Sample Character"))
         self.assertEqual(fields["character_background"], "")
-        self.assertEqual(len(CB.questions(fields)), 1)   # only ethnicity + background go
+        # only background + ethnicity are missing, and each is its own question
+        self.assertEqual(len(CB.questions(fields)), 2)
         self.assertIn("their background", CB.questions(fields)[0]["question"])
+        self.assertIn("their ethnicity", CB.questions(fields)[1]["question"])
 
     def test_command_line_saves_the_bible_fields(self):
         script = os.path.join(CORE, "character_library", "character_library.py")

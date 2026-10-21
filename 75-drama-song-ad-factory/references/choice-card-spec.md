@@ -171,7 +171,9 @@ write them free hand and never carry them as one JSON string.
   --target <chat id>` and execute each argv list without a shell, one message
   per list. The card is split between questions under 4000 characters; a
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
-- The intake `question_message` uses the same layout (`format_questions`).
+- The intake `question_message` carries ONE question (`format_questions`), its
+  own message and unnumbered; the next question is asked only after the
+  client answers.
 
 ## 2.5 Fit stop card (FU-U4, normative)
 

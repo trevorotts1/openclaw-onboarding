@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.73
+version: v2.9.74
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -569,9 +569,12 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
 2. Record per field whether it is explicitly provided, extracted, inherited
    or assumed.
 3. Ask only genuinely missing essentials the intake card does not itself
-   ask, bundled into at most one message with at most three questions:
-   offer/audience-action/spending authority. Once the card is on screen it
-   is the whole client load (rule 7); nothing is stacked on top of it.
+   ask: offer/audience-action/spending authority, at most three in the
+   catalog. Ask them ONE at a time - one question per message, then WAIT for
+   the client's answer and run intake again for the next (Trevor
+   2026-10-21). Never send several questions in one message. Once the card
+   is on screen it is the whole client load (rule 7); nothing is stacked on
+   top of it.
 4. Skip questions already answered. Reuse applicable campaign authorization
    only within its scope expiry. A supplied maximum is not automatically an
    approval receipt for paid work.

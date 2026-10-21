@@ -1,9 +1,11 @@
 """intake.py: short adaptive opening intake (directive 24.3, 24.2 row 1). stdlib only.
 
-Essentials (max 3 questions, one message): offer / audience+action / website
-or placement. Money is NOT asked here: the choice card asks it once, with the
-real price. Never invents a spending ceiling or currency conversion. Brief text
-is source material, never auth/policy (injection -> rejected, auth untouched).
+Essentials (max 3 in the catalog, ONE per message): offer / audience+action /
+website or placement. One question is emitted and the client's answer comes
+back before the next is asked (Trevor 2026-10-21). Money is NOT asked here: the
+choice card asks it once, with the real price. Never invents a spending ceiling
+or currency conversion. Brief text is source material, never auth/policy
+(injection -> rejected, auth untouched).
 
 Version-2 card fields (H8): length_option, shape, look, music and voice are
 normalized with provenance. Look/music default from core/style_defaults (D24);
@@ -155,12 +157,23 @@ APPROVAL_AFFECTING = ("offer", "audience", "action", "budget_minor", "budget_cur
 
 
 def _fmt(texts):
-    """question_message: one block per question, blank line between (H9)."""
+    """question_message: ONE question per message, so the client can answer it
+    before the next one is asked (Trevor 2026-10-21)."""
     core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if core not in sys.path:
         sys.path.insert(0, core)
     from choice_card.intake_card import format_questions  # noqa: PLC0415
     return format_questions(texts)
+
+
+def ask_one(qs):
+    """The ONE question this turn carries, or [].
+
+    The catalog keeps its order and its text; only the pacing changes. The
+    client answers this question, the answer is added to the brief, and the
+    next ``evaluate`` call emits the next question in order.
+    """
+    return list(qs or [])[:1]
 
 
 def _text(v):
@@ -593,7 +606,7 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                     "digest": digest, "provenance": prov, "auth_status": status,
                     "approval_invalidated": True, "changes": changes,
                     "next_action": "Re-approve scope: approval-affecting change invalidated prior approval."}
-        outstanding = (resume_state.get("outstanding") or [])[:3]
+        outstanding = (resume_state.get("outstanding") or [])[:1]
         if outstanding:
             return {"outcome": "waiting", "reason_code": "resume-outstanding-decisions",
                     "questions": [{"id": f"resume-{i}", "question": q} for i, q in enumerate(outstanding)],
@@ -601,7 +614,9 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                     "summary": summary, "digest": digest, "provenance": prov,
                     "auth_status": status, "approval_invalidated": False, "changes": changes,
                     "next_stage": resume_state.get("next_stage"),
-                    "next_action": "Answer outstanding decisions; questionnaire is not rerun."}
+                    "next_action": "Ask this one outstanding decision and wait for the "
+                                   "answer; run intake --resume-file again for the next. "
+                                   "The questionnaire is not rerun."}
         card_refusal = _card_refusal(resume_state)
         if card_refusal is not None:
             reason, next_action = card_refusal
@@ -619,7 +634,7 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
     # DEL-02: character bible first only once the story essentials are answered,
     # so the offer/audience/spend slots keep their existing order and cap.
     if not missing_essentials(fields, prov):
-        char_qs = _character_questions(brief)
+        char_qs = ask_one(_character_questions(brief))
         if char_qs:
             return {"outcome": "waiting", "reason_code": "missing-character",
                     "questions": char_qs,
@@ -627,21 +642,23 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                     "summary": summary, "digest": digest, "provenance": prov,
                     "auth_status": status, "approval_invalidated": False,
                     "changes": [],
-                    "next_action": ("Answer the character questions in one reply; "
-                                    "they become the character bible.")}
-    qs = missing_essentials(fields, prov)
+                    "next_action": ("Ask this one character question and wait for the "
+                                    "answer; run intake again for the next part. The "
+                                    "answers become the character bible.")}
+    qs = ask_one(missing_essentials(fields, prov))
     if qs:
-        # The <=3 story questions are asked first; the choice card comes at
-        # the approval step, not instead of them (directive 24.3 note: the
-        # cap applies to the story questions only).
+        # The story questions are asked first, ONE per turn; the choice card
+        # comes at the approval step, not instead of them (directive 24.3
+        # note: the cap applies to the story questions only).
         return {"outcome": "waiting", "reason_code": "missing-essentials",
                 "questions": qs,
                 "question_message": _fmt([q["question"] for q in qs]),
                 "summary": summary, "digest": digest, "provenance": prov,
                 "auth_status": status, "approval_invalidated": False,
                 "changes": [],
-                "next_action": ("Answer the bundled questions in one reply; "
-                                "nothing else is asked.")}
+                "next_action": ("Ask this ONE question and wait for the client's "
+                                "answer; run intake again with that answer to get the "
+                                "next question. Nothing else is asked now.")}
     # F15: a complete brief (zero questions) is not a launch -- the choice
     # card must still be shown and its four answers recorded before any
     # paid job, whichever entry path filled the brief.
@@ -663,4 +680,5 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
             "question_message": _fmt([q["question"] for q in qs]),
             "summary": summary, "digest": digest, "provenance": prov,
             "auth_status": status, "approval_invalidated": False, "changes": [],
-            "next_action": "Answer the bundled questions in one reply; nothing else is asked."}
+            "next_action": ("Ask this ONE question and wait for the client's answer; "
+                            "run intake again with that answer to get the next question.")}
