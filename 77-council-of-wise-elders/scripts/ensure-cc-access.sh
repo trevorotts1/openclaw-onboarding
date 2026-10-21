@@ -26,7 +26,12 @@ fi
 # COUNCIL_ACCESS_EXCLUDE list), then kept only with POSITIVE proof it is a Command
 # Center: its tunnel is remote-managed and has an ingress rule for that exact host
 # on :4000. rescue-<slug>, <slug>-gw, webhook hosts and locally managed tunnels are
-# SKIPPED (zero writes): gating a non-Command-Center host could break it.
+# SKIPPED (zero writes): gating a non-Command-Center host could break it. A host whose
+# tunnel or tunnel configuration no longer exists (HTTP 404, "Configuration for tunnel
+# not found") is an orphan record: SKIPPED_ORPHAN, zero writes, exit 0, named in the
+# receipt. A transient read error (5xx, timeout, auth) stays FAILED, and so does a
+# healthy, not-deleted tunnel whose configuration is missing: a live tunnel is never
+# an orphan.
 #
 # WHO MAY LOG IN. The operator emails + the client's verified email(s). Never
 # everyone, never a service token. The emails file (COUNCIL_CC_EMAILS_FILE, default
@@ -85,7 +90,7 @@ fi
 # OUTPUT: one line per host: CC_ACCESS: <host> <STATUS> [detail]  (SKIPPED hosts are
 #   counted in the summary line and listed only in --json)
 #   STATUS = CREATED | RECONCILED | PLANNED (dry-run) | ALREADY_PRESENT | NEEDS_EMAIL |
-#            DRIFT | FAILED | SKIPPED
+#            DRIFT | FAILED | SKIPPED | SKIPPED_ORPHAN
 #   then the summary line, then one GoHighLevel counts line ("ghl: ...").
 # RECEIPTS in the state dir: cc-access-last-run.json (replaced) and
 #   cc-access-runs.log (append-only, one line per run).
@@ -170,14 +175,27 @@ trap 'exit 130' INT TERM HUP
 printf 'header = "Authorization: Bearer %s"\n' "$CLOUDFLARE_API_TOKEN" > "$CURL_CFG"
 
 cf() {  # METHOD PATH [JSON] -> response body (synthetic failure body when none)
-  local m="$1" p="$2" d="${3:-}" out
+  local m="$1" p="$2" d="${3:-}" out code
   if [ -n "$d" ]; then
-    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -H 'Content-Type: application/json' --data "$d" "$API$p" 2>/dev/null)" || out=""
+    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -H 'Content-Type: application/json' --data "$d" -w '\n%{http_code}' "$API$p" 2>/dev/null)"
   else
-    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" "$API$p" 2>/dev/null)" || out=""
+    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -w '\n%{http_code}' "$API$p" 2>/dev/null)"
   fi
-  [ -n "$out" ] || out='{"success":false,"errors":[{"message":"no response from the API"}]}'
+  # The HTTP status rides along as ._http (a string, "000" = no response) so gone_of can tell
+  # a tunnel that no longer exists (404) from a transient error (5xx, timeout, auth).
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  [ "$code" != "$out" ] || out=""
+  out="$(printf '%s' "$out" | jq -c --arg c "$code" 'if type == "object" then . + {_http:$c} else error end' 2>/dev/null)" || out=""
+  [ -n "$out" ] || out="$(jq -cn --arg c "${code:-000}" '{success:false, errors:[{message:"no response from the API"}], _http:$c}')"
   printf '%s' "$out"
+}
+# gone_of RESPONSE -> 0 when a tunnel read says the tunnel or its configuration no longer
+# exists: HTTP 404 (not a "No route" URL error), or another 4xx (not 401/403/429) whose error
+# says "not found". A 5xx, a timeout ("000") or an auth error is never "gone".
+gone_of() {
+  jq -e '(._http // "") as $c | [.errors[]?.message // "" | strings] as $m
+         | ($c == "404" and ($m | any(test("no route"; "i")) | not))
+           or (($c | test("^4[0-9][0-9]$")) and ($c | IN("401","403","429") | not) and ($m | any(test("not found"; "i"))))' <<<"$1" >/dev/null 2>&1
 }
 ok_of()  { printf '%s' "$1" | jq -r '.success // false' 2>/dev/null; }
 err_of() { printf '%s' "$1" | jq -c '[.errors[]?.message // empty]' 2>/dev/null || printf '[unparseable response]'; }
@@ -314,7 +332,20 @@ ensure_host() {
   # positive proof this is a Command Center: remote-managed tunnel, this host on :4000
   if [ -z "${CFG[$tid]+x}" ]; then CFG[$tid]="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}/configurations")"; fi
   cfgr="${CFG[$tid]}"
-  [ "$(ok_of "$cfgr")" = "true" ] || { finish "$h" FAILED "could not read tunnel configuration for $tid: $(err_of "$cfgr")"; return; }
+  if [ "$(ok_of "$cfgr")" != "true" ]; then
+    local tr=""
+    gone_of "$cfgr" && tr="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}")"
+    # a live (healthy, not deleted) tunnel is never an orphan, whatever its configuration says
+    if [ -n "$tr" ] && [ "$(ok_of "$tr")" = "true" ] && [ -z "$(jq -r '.result.deleted_at // empty' <<<"$tr")" ] \
+       && [ "$(jq -r '.result.status // ""' <<<"$tr")" = "healthy" ]; then
+      finish "$h" FAILED "could not read tunnel configuration for $tid (HTTP $(jq -r '._http' <<<"$cfgr")), but the tunnel is healthy: not an orphan"
+    elif [ -n "$tr" ] && { [ "$(ok_of "$tr")" = "true" ] || gone_of "$tr"; }; then
+      finish "$h" SKIPPED_ORPHAN "the CNAME points at tunnel $tid, whose configuration no longer exists (HTTP $(jq -r '._http' <<<"$cfgr") $(err_of "$cfgr")); an orphan record. Zero writes; nothing deleted"
+    else
+      finish "$h" FAILED "could not read tunnel configuration for $tid (HTTP $(jq -r '._http // "?"' <<<"$cfgr")): $(err_of "$cfgr")"
+    fi
+    return
+  fi
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfgr")"
   [ "$src" = "cloudflare" ] || { finish "$h" SKIPPED "tunnel is locally managed; cannot confirm this is the Command Center host"; return; }
   svc="$(cc_ingress_service_for_host "$cfgr" "$h")"; port="$(cc_ingress_port_of "$svc")"
@@ -408,15 +439,16 @@ GHL_SUM="$(jq -cn --argjson ok "$GHL_OK" --argjson none "$GHL_NONE" --argjson am
    else {skipped:false, matched:$ok, none:$none, ambiguous:$amb, errors:$err, skipped_hosts:$skip, emails:$em} end')"
 RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson bad "$ANY_BAD" --argjson ghl "$GHL_SUM" '
   . as $r
-  | (reduce ("CREATED","RECONCILED","PLANNED","ALREADY_PRESENT","NEEDS_EMAIL","DRIFT","FAILED","SKIPPED") as $s
+  | (reduce ("CREATED","RECONCILED","PLANNED","ALREADY_PRESENT","NEEDS_EMAIL","DRIFT","FAILED","SKIPPED","SKIPPED_ORPHAN") as $s
        ({}; .[$s] = ([$r[] | select(.status == $s)] | length))) as $c
   | {timestamp:$t, mode:$m, exit:$bad, total:($r | length), counts:$c, ghl:$ghl,
      needs_email:[$r[] | select(.status == "NEEDS_EMAIL") | .host],
      drift:[$r[] | select(.status == "DRIFT") | .host],
+     orphans:[$r[] | select(.status == "SKIPPED_ORPHAN") | {host:.host, detail:.detail}],
      failed:[$r[] | select(.status == "FAILED") | {host:.host, detail:.detail}],
      created:[$r[] | select(.status == "CREATED") | .host],
      reconciled:[$r[] | select(.status == "RECONCILED") | .host]}' <<<"$RESULTS")"
-LINE="$(jq -r '"\(.timestamp) cc-access mode=\(.mode) exit=\(.exit) created=\(.counts.CREATED) reconciled=\(.counts.RECONCILED) planned=\(.counts.PLANNED) already=\(.counts.ALREADY_PRESENT) needs_email=\(.counts.NEEDS_EMAIL) drift=\(.counts.DRIFT) failed=\(.counts.FAILED) skipped=\(.counts.SKIPPED) " + (if .ghl.skipped then "ghl=skipped" else "ghl_matched=\(.ghl.matched) ghl_ambiguous=\(.ghl.ambiguous) ghl_errors=\(.ghl.errors)" end)' <<<"$RECEIPT")"
+LINE="$(jq -r '"\(.timestamp) cc-access mode=\(.mode) exit=\(.exit) created=\(.counts.CREATED) reconciled=\(.counts.RECONCILED) planned=\(.counts.PLANNED) already=\(.counts.ALREADY_PRESENT) needs_email=\(.counts.NEEDS_EMAIL) drift=\(.counts.DRIFT) failed=\(.counts.FAILED) skipped=\(.counts.SKIPPED) orphans=\(.counts.SKIPPED_ORPHAN) " + (if .ghl.skipped then "ghl=skipped" else "ghl_matched=\(.ghl.matched) ghl_ambiguous=\(.ghl.ambiguous) ghl_errors=\(.ghl.errors)" end)' <<<"$RECEIPT")"
 GHL_LINE="$(jq -r 'if .ghl.skipped then "ghl: skipped (no credentials/location)"
   else "ghl: matched=\(.ghl.matched) none=\(.ghl.none) ambiguous=\(.ghl.ambiguous) errors=\(.ghl.errors) skipped=\(.ghl.skipped_hosts) emails_found=\(.ghl.emails)" end' <<<"$RECEIPT")"
 printf '%s\n' "$RECEIPT" > "$STATE_DIR/.cc-access-last-run.tmp" && mv "$STATE_DIR/.cc-access-last-run.tmp" "$STATE_DIR/cc-access-last-run.json"
