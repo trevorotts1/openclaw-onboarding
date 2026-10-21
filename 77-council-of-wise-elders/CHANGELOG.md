@@ -1,5 +1,11 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.35: The client Council link is now fully automatic for every client, new and existing
+
+In plain English: the client Council link is now fully automatic for every client, new and existing. Every client gets a Command Center, so every client gets a link, even before the AI Workforce interview is done. The link is found when the Council is convened, and the operator's automatic access job keeps it working with no manual step.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.56).
+
 ## v1.0.34: Clients only get a Council link that actually opens
 
 In plain English: clients only get a Council link that actually opens. Before handing one over, setup now checks that the link answers from the public internet and drops it if it does not. If there is no working link, the Council says so plainly and tells the client what to do next instead of sending a dead address.
