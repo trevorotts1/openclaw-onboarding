@@ -205,6 +205,20 @@ check "a crashing Access step never fails the run; its exit shows in the receipt
 COUNCIL_ACCESS_ENSURE_CC="$WORK/missing.sh" run_job
 check "a missing Access step script never fails the run" test "$RC" = 0 -a "$(rcpt '.cc_access.exit')" = 127
 
+echo "== 8c. SYNCED and SKIPPED_ORPHAN are carried as non-failures (the live case)"
+FIXTURE_OFFSET=60 fixture alpha orph | jq -c --arg z "$Z" '(.dns[] | select(.name == ("orph."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $o | del(.tunnels[$o])' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_job --apply
+check "orphan host: SKIPPED_ORPHAN counted and named under skipped; alpha provisioned; exit 0" bash -c "test $RC = 0 && test \"\$(jq -c '[.exit, .counts.PROVISIONED, .counts.SKIPPED_ORPHAN, [.skipped[] | .host + \"=\" + .reason]]' '$SD/last-run.json')\" = '[0,1,1,[\"orph.$Z=SKIPPED_ORPHAN\"]]'"
+check "runs.log line carries orphans=1" bash -c "tail -n1 '$SD/runs.log' | grep -q ' orphans=1 '"
+cp "$STATE" "$WORK/after-sync.json"; start_fake "$WORK/after-sync.json"
+printf '{"operator":["ops-sync@example.test"],"clients":{}}\n' > "$WORK/cc-emails-sync.json"
+COUNCIL_CC_EMAILS_FILE="$WORK/cc-emails-sync.json" run_job --apply
+check "step 1 adds the operator to alpha's CC page (RECONCILED) and names the orphan; step 2 SYNCs the Council page; exit 0" bash -c "test $RC = 0 && test \"\$(jq -c '[.exit, .cc_access.reconciled, .cc_access.orphans, .counts.SYNCED, .synced, .counts.FAILED]' '$SD/last-run.json')\" = '[0,1,[\"orph.$Z\"],1,[\"alpha.$Z\"],0]'"
+check "runs.log line carries synced=1 and cc_orphans=1" bash -c "tail -n1 '$SD/runs.log' | grep -q ' synced=1 ' && tail -n1 '$SD/runs.log' | grep -q ' cc_orphans=1 '"
+check "the Council page now lets in exactly the CC page's emails" test "$(jq -c '[.apps[] | select(.domain == "alpha-council.'$Z'") | .id][0] as $c | [.policies[$c][].include[].email.email] | sort' "$STATE")" = "$(jq -c '[.policies["app-cc-alpha"][].include[].email.email] | sort' "$STATE")"
+check "no address in the receipts or the job output" bash -c "! grep -q '@' '$SD/last-run.json' '$SD/runs.log' '$OUT'"
+
 echo "== 9. the token never leaks"
 check "token in no output, receipt or log" bash -c "! grep -rq -e '$TOKEN' '$WORK' --include='out*' --include='*.json' --include='*.log' --exclude='f.json' --exclude='after*' --exclude='delta.json' --exclude='state.*' --exclude='log.*'"
 check "no temp file left behind by the job" bash -c "test -z \"\$(ls '$WORK' | grep council-autoprov)\""

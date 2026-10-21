@@ -69,8 +69,10 @@ It creates a missing login page, adds missing emails to an existing one
 without removing anything (RECONCILED), and finds client emails itself: the
 emails file `~/.claude/state/council-elders/cc-access-emails.json`
 (`{"operator","clients","ghl":{"location_id"}}`), the client's own login and
-rescue pages, and a read-only, strict GoHighLevel lookup. Details in
-INSTALL.md, "Command Center login pages".
+rescue pages, and a read-only, strict GoHighLevel lookup. The Council login
+page then follows the Command Center login page's email list, additions and
+removals alike (SYNCED). Details in INSTALL.md, "Client access" and "Command
+Center login pages".
 
 To learn whether this box is usable right now, run
 `bash scripts/verify-council-box.sh` (read-only). Its last line,
