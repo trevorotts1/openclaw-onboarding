@@ -150,6 +150,18 @@ run_script --apply
 check "no One-Time PIN IdP: every create FAILED and zero writes" bash -c "grep -q '^CC_ACCESS: newbox.$Z FAILED.*One-Time PIN' '$OUT' && grep -q '^CC_ACCESS: rescbox.$Z FAILED' '$OUT' && test \"$(nonget_count)\" = 0"
 check "open (everyone) app reported as non-email rule drift" grep -q "^CC_ACCESS: openbox.$Z DRIFT.*non-email" "$OUT"
 
+echo "== 7. the rescue-app email source and the env file cannot be abused"
+fixture | jq -c '.policies["app-resc"][0].include += [{everyone:{}}]' > "$WORK/f8.json"; start_fake "$WORK/f8.json"
+run_script --apply
+check "rescue app that also admits everyone is not a verified email source: NEEDS_EMAIL, no app" bash -c "grep -q '^CC_ACCESS: rescbox.$Z NEEDS_EMAIL.*non-email' '$OUT' && test \"$(app_count rescbox)\" = 0"
+printf 'CLOUDFLARE_API_TOKEN="%s"\nCLOUDFLARE_ACCOUNT_ID=qc-acct\nX=1 touch %s\n$(touch %s)\n' "$TOKEN" "$WORK/pwned1" "$WORK/pwned2" > "$WORK/op.env"
+start_fake "$WORK/f.json"
+env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID CF_API_BASE="http://127.0.0.1:$PORT/client/v4" COUNCIL_ACCESS_STATE_DIR="$WORK/state" \
+    COUNCIL_CC_EMAILS_FILE="$WORK/emails.json" COUNCIL_ACCESS_ENV_FILE="$WORK/op.env" TMPDIR="$WORK/tmp" "$SCRIPT" >"$WORK/out/case.envfile" 2>&1; RC=$?
+check "credentials load from the env file (dry-run exit 0, GET only)" bash -c "test '$RC' = 0 && grep -q '^CC_ACCESS: newbox.$Z PLANNED' '$WORK/out/case.envfile'"
+check "the env file is parsed, never executed" test ! -e "$WORK/pwned1" -a ! -e "$WORK/pwned2"
+check "env-file run printed no token" bash -c "! grep -q 'qc-secret-TOKEN' '$WORK/out/case.envfile'"
+
 echo
 if [ "$FAILS" = 0 ]; then echo "ALL $N CHECKS PASSED"; else echo "$FAILS of $N FAILED"; fi
 [ "$FAILS" = 0 ]

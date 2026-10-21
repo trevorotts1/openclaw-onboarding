@@ -35,7 +35,8 @@ fi
 #              else the emails already on that client's own rescue-<slug> Access app
 #              (the fleet onboarding doc puts the client's own email there next to the
 #              operator emails): the allow-list emails minus the operator emails, only
-#              when that leaves 1 or 2 addresses, otherwise ambiguous.
+#              when that leaves 1 or 2 addresses (otherwise ambiguous) and only when
+#              that app's allow rules are emails alone (otherwise unverified).
 #   No verified client email -> NEEDS_EMAIL, zero writes, retried every run.
 #   Placeholder addresses (pending+...) and malformed addresses never count.
 # Emails are NEVER printed, logged or put in receipts (counts only).
@@ -45,8 +46,9 @@ fi
 # ALREADY_PRESENT, different rules -> DRIFT (reported, not overwritten).
 #
 # ENV (token and account id never printed):
-#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   required (else loaded from
-#                                   COUNCIL_ACCESS_ENV_FILE, default $HOME/.openclaw/.env)
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   required (else BOTH read from
+#                                   COUNCIL_ACCESS_ENV_FILE, default $HOME/.openclaw/.env;
+#                                   that file is parsed for those two keys, never sourced)
 #   CF_API_BASE, COUNCIL_ZONE_NAME, COUNCIL_ACCESS_EXCLUDE   as provision-council-access.sh
 #   COUNCIL_ACCESS_STATE_DIR   receipts dir, same as the autoprovision job
 #                              (default $HOME/.claude/state/council-elders/access-provision)
@@ -84,9 +86,17 @@ for _t in curl jq; do command -v "$_t" >/dev/null 2>&1 || { echo "missing depend
 STATE_DIR="${COUNCIL_ACCESS_STATE_DIR:-$HOME/.claude/state/council-elders/access-provision}"
 ENV_FILE="${COUNCIL_ACCESS_ENV_FILE:-$HOME/.openclaw/.env}"
 EMAILS_FILE="${COUNCIL_CC_EMAILS_FILE:-$HOME/.claude/state/council-elders/cc-access-emails.json}"
-if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-  # shellcheck source=/dev/null
-  if [ -r "$ENV_FILE" ]; then set -a; . "$ENV_FILE" >/dev/null 2>&1; set +a; fi
+env_file_val() {  # KEY -> last KEY=value in ENV_FILE, quotes stripped. The file is parsed, never executed.
+  local v
+  v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '\r')"
+  v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+  printf '%s' "$v"
+}
+if { [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; } && [ -r "$ENV_FILE" ]; then
+  # Take the pair from the file together so a token and an account id never come from two places.
+  _tok="$(env_file_val CLOUDFLARE_API_TOKEN)"; _acc="$(env_file_val CLOUDFLARE_ACCOUNT_ID)"
+  if [ -n "$_tok" ] && [ -n "$_acc" ]; then CLOUDFLARE_API_TOKEN="$_tok"; CLOUDFLARE_ACCOUNT_ID="$_acc"; fi
+  unset _tok _acc
 fi
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
   echo "REFUSED: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must both be set (environment or the operator env file)." >&2
@@ -205,7 +215,7 @@ declare -A CFG      # tunnel id -> configuration response (several hosts can sha
 IDPS=""; IDPS_OK=   # allowed_idps JSON array + 0/1 result, resolved once and only when an app must be created
 
 CLIENT_JSON="[]"; CLIENT_SRC=""
-resolve_client_emails() {  # SLUG -> sets CLIENT_JSON (array) and CLIENT_SRC (file|rescue-app|none|ambiguous|error)
+resolve_client_emails() {  # SLUG -> sets CLIENT_JSON (array) and CLIENT_SRC (file|rescue-app|none|ambiguous|unverified|error)
   local slug="$1" rapp rpol info
   CLIENT_SRC=none
   CLIENT_JSON="$(jq -c --arg s "$slug" "((\$f.clients[\$s] // []) | if type == \"array\" then . else [.] end) | $CLEAN" --argjson f "$FILE_JSON" <<<"null")"
@@ -215,6 +225,8 @@ resolve_client_emails() {  # SLUG -> sets CLIENT_JSON (array) and CLIENT_SRC (fi
   rpol="$(cf GET "/accounts/${ACCT}/access/apps/$(jq -r '.id' <<<"$rapp")/policies")"
   [ "$(ok_of "$rpol")" = "true" ] || { CLIENT_SRC=error; return; }
   info="$(allow_emails "$rpol")"
+  # An allow-list that also admits non-email rules (everyone, a domain, a token) is not a verified list.
+  [ "$(jq -r '.other' <<<"$info")" = "0" ] || { CLIENT_SRC=unverified; return; }
   CLIENT_JSON="$(jq -c --argjson op "$OP_JSON" "(.emails | $CLEAN) - \$op" <<<"$info")"
   case "$(jq 'length' <<<"$CLIENT_JSON")" in
     0) CLIENT_JSON="[]" ;;
@@ -275,6 +287,7 @@ ensure_host() {
   if [ "$have_client" = "0" ]; then
     case "$CLIENT_SRC" in
       ambiguous) finish "$h" NEEDS_EMAIL "rescue-${slug} Access app lists more than $RESCUE_MAX_CLIENT_EMAILS non-operator emails; add \"$slug\" to the emails file. No app created" ;;
+      unverified) finish "$h" NEEDS_EMAIL "rescue-${slug} Access app admits non-email rules, so its emails are not a verified list; add \"$slug\" to the emails file. No app created" ;;
       error)     finish "$h" NEEDS_EMAIL "could not read the rescue-${slug} Access app; no verified client email. No app created" ;;
       *)         finish "$h" NEEDS_EMAIL "no verified client email for $slug (emails file or rescue-${slug} Access app). No app created" ;;
     esac
