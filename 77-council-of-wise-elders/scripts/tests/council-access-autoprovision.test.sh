@@ -13,6 +13,7 @@ FAKE="$HERE/fake-cloudflare-api.py"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/council-autoprov-test.XXXXXX")"
 SD="$WORK/state"           # the job's receipt dir
 export COUNCIL_TUNNEL_TOKEN_DIR="$WORK/tunnel-tokens"   # connector tokens: never the real operator store
+export COUNCIL_GHL_ENV_FILE="$WORK/no-ghl.env" COUNCIL_GHL_API_BASE="http://127.0.0.1:9" COUNCIL_GHL_LOCATION_ID=""   # never the real GoHighLevel
 FAKE_PID=""; FAILS=0; N=0
 TOKEN="qc-secret-TOKEN-456"
 Z="zerohumanworkforce.com"
@@ -187,7 +188,8 @@ check "cc-access receipts are written in the same state dir" bash -c "test -s '$
 run_job --apply
 check "apply: NEEDS_EMAIL and DRIFT are surfaced but the run exits 0" test "$RC" = 0
 check "apply receipt: newbox app created, noemail needs an email, driftbox drift (not overwritten)" test "$(rcpt '[.cc_access.created, .cc_access.needs_email, .cc_access.drift]')" = '[1,["noemail.'$Z'"],["driftbox.'$Z'"]]'
-check "runs.log line carries cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_needs_email=1 cc_drift=1'"
+check "runs.log line carries cc_reconciled=0 cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_reconciled=0 cc_needs_email=1 cc_drift=1'"
+check "receipt carries the cc_access reconciled count" test "$(rcpt '.cc_access.reconciled')" = 0
 check "the Access app write for newbox comes before newbox is provisioned" bash -c "
   a=\$(grep -n 'POST .*access/apps' '$LOG' | head -n1 | cut -d: -f1); d=\$(grep -n 'POST .*dns_records' '$LOG' | head -n1 | cut -d: -f1);
   test -n \"\$a\" && test -n \"\$d\" && test \"\$a\" -lt \"\$d\""

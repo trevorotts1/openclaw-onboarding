@@ -314,6 +314,50 @@ added later:
   <public_origin>/chamber/#session=<id>`: no roll, no `wire.sh` re-run, no
   manual step.
 
+### Command Center login pages (operator side)
+
+Step 1 of that job, `scripts/ensure-cc-access.sh`, keeps every client's
+Command Center login page (its Cloudflare Access application) letting in
+the operator emails and every verified client email, so the client can sign
+in with Google or a one-time PIN:
+
+- A Command Center with no login page gets one (`CREATED`), only once a
+  verified client email is known; otherwise `NEEDS_EMAIL`, retried every run.
+- An existing login page gets each missing operator or client email added
+  to its allow policy (`RECONCILED`). Additive only: every existing rule
+  (emails, service tokens, anything else) is kept in place and in order,
+  nothing is removed, and the policy is read back to prove it. Nothing to
+  add is `ALREADY_PRESENT` with zero writes. A page that admits everyone,
+  has no allow policy, or uses a reusable (shared) allow policy is `DRIFT`:
+  reported, never edited.
+- Client emails are found by the automation, not asked for: the emails
+  file, the non-operator emails already on the client's own login page and
+  on its `rescue-<slug>` page, and a read-only GoHighLevel (Convert and
+  Flow) lookup in the Black CEO LLC location (`scripts/ghl-client-emails.py`):
+  contacts carrying one of those emails, or whose company name is the host
+  name read as a business name, plus the same person's duplicate contacts
+  (same full name and same phone). Never a one-word host name (often a
+  first name) and never a company that is only the contact's own name.
+  Two different people matched, or a nameless contact among several, is
+  `ambiguous` and adds nothing.
+
+The emails file is `~/.claude/state/council-elders/cc-access-emails.json`
+(override `COUNCIL_CC_EMAILS_FILE`), every key optional:
+
+```json
+{"operator": ["<operator email>"],
+ "clients": {"<host-slug>": ["<client email>"]},
+ "ghl": {"location_id": "<Black CEO LLC location id>"}}
+```
+
+The GoHighLevel token is `GOHIGHLEVEL_API_KEY`, parsed (never sourced) from
+`~/.openclaw/secrets/.env`, then `~/.openclaw/.env`. The location id comes
+from `COUNCIL_GHL_LOCATION_ID`, else `ghl.location_id` above; the location
+variables in the env files name a different location, so it is never taken
+from them. With no token or no location id the lookup is skipped and the run
+prints one line, `ghl: skipped (no credentials/location)`. Emails are never
+printed, logged or put in receipts: counts only.
+
 Until then `verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and
 the agent sends no chamber link: it tells the client plainly that the
 Council runs, the result will be shared here, and their private Council
