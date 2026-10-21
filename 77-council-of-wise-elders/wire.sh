@@ -85,6 +85,7 @@ TUN_APP=cloudflared-council
 TUN_PLIST="$HOME/Library/LaunchAgents/$TUN_LABEL.plist"
 TUN_LOG="$LOGDIR/council-tunnel.log"
 TUN_STATE="$P/council-tunnel.state"
+TUN_CFG="$P/council-tunnel.yml"
 
 # ------------------------------------------------------------------- 2. node
 node_version_ok() { # <node> ; prints the version, returns 0 when supported
@@ -200,6 +201,9 @@ council_connector() {
   fp="$(sha_file "$TUN_TF") $cf"           # token fingerprint + binary; never the token
   mkdir -p "$P" "$LOGDIR" 2>/dev/null
   prev="$(cat "$TUN_STATE" 2>/dev/null)"
+  # Own config: without --config cloudflared loads ~/.cloudflared/config.yml,
+  # which on these boxes is the Command Center's local-managed tunnel config.
+  [ "$(cat "$TUN_CFG" 2>/dev/null)" = "no-autoupdate: true" ] || printf 'no-autoupdate: true\n' >"$TUN_CFG"
   if [ "$PLATFORM" = "mac" ]; then
     mkdir -p "$(dirname "$TUN_PLIST")"
     cat >"$TUN_PLIST.tmp.$$" <<PL
@@ -209,9 +213,10 @@ council_connector() {
 <dict>
   <key>Label</key><string>$(xe "$TUN_LABEL")</string>
   <key>ProgramArguments</key>
-  <array><string>$(xe "$cf")</string><string>tunnel</string><string>--no-autoupdate</string><string>--protocol</string><string>http2</string><string>run</string><string>--token-file</string><string>$(xe "$TUN_TF")</string></array>
+  <array><string>$(xe "$cf")</string><string>tunnel</string><string>--config</string><string>$(xe "$TUN_CFG")</string><string>--no-autoupdate</string><string>--protocol</string><string>http2</string><string>run</string><string>--token-file</string><string>$(xe "$TUN_TF")</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>EnvironmentVariables</key><dict><key>TUNNEL_TOKEN</key><string></string></dict>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>ProcessType</key><string>Standard</string>
   <key>StandardOutPath</key><string>$(xe "$TUN_LOG")</string>
@@ -243,8 +248,10 @@ PL
     pid="$(pm2_pid "$TUN_APP")"
     if [ -z "$pid" ] || [ "$pid" = "0" ] || [ "$fp" != "$prev" ]; then
       [ -n "$pid" ] && "$PM2" delete "$TUN_APP" >>"$LOGDIR/council-pm2.log" 2>&1
-      "$PM2" start "$cf" --name "$TUN_APP" --interpreter none --time --output "$TUN_LOG" --error "$TUN_LOG" \
-        -- tunnel --no-autoupdate --protocol http2 run --token-file "$TUN_TF" >>"$LOGDIR/council-pm2.log" 2>&1 \
+      # TUNNEL_TOKEN= : an inherited TUNNEL_TOKEN (box .env) beats --token-file
+      # and would run the Command Center tunnel here instead of the Council's.
+      env TUNNEL_TOKEN= "$PM2" start "$cf" --name "$TUN_APP" --interpreter none --time --output "$TUN_LOG" --error "$TUN_LOG" \
+        -- tunnel --config "$TUN_CFG" --no-autoupdate --protocol http2 run --token-file "$TUN_TF" >>"$LOGDIR/council-pm2.log" 2>&1 \
         || { csay "NOT_READY CONNECTOR_START_FAILED pm2 start $TUN_APP failed (see $LOGDIR/council-pm2.log)"; return 0; }
       "$PM2" save >>"$LOGDIR/council-pm2.log" 2>&1
       changed=1

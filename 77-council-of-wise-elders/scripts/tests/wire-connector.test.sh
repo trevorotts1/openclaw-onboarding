@@ -20,6 +20,7 @@ bad() { echo "FAIL $1"; FAILS=$((FAILS+1)); }
 has() { case "$1" in *"$2"*) return 0 ;; esac; return 1; }
 TOKEN1="tokA-$$-not-a-real-token-eyJhIjoiMSJ9"
 TOKEN2="tokB-$$-not-a-real-token-eyJhIjoiMiJ9"
+CCTOKEN="ccTok-$$-inherited-command-center-token" # a box .env TUNNEL_TOKEN in wire.sh's env
 
 S="$T/stub"; mkdir -p "$S/bin" "$S/state"
 LOGF="$S/calls.log"; : >"$LOGF"
@@ -38,6 +39,7 @@ EOF
 cat >"$S/bin/pm2" <<EOF
 #!/bin/sh
 echo "pm2 \$*" >>"$LOGF"
+[ "\$1" = start ] && echo "pm2-start-env TUNNEL_TOKEN=[\${TUNNEL_TOKEN-unset}]" >>"$LOGF"
 case "\$1" in
   pid) [ -f "$S/state/pm2.\$2" ] && cat "$S/state/pm2.\$2"; exit 0 ;;
   start) n=""; while [ \$# -gt 0 ]; do [ "\$1" = --name ] && n="\$2"; shift; done; echo 4242 >"$S/state/pm2.\$n" ;;
@@ -63,7 +65,7 @@ case_platform() { # <mac|vps>
   # the Command Center connector is already running and must stay untouched
   touch "$S/state/ld.com.cloudflare.cloudflared"; echo 777 >"$S/state/pm2.cloudflare-tunnel"
   w() { local o r
-    o="$(env PATH="$SPATH" HOME="$H" OPENCLAW_ROOT="$OC" COUNCIL_WIRE_PLATFORM="$pf" COUNCIL_NODE="$NODE" \
+    o="$(env PATH="$SPATH" HOME="$H" TUNNEL_TOKEN="$CCTOKEN" OPENCLAW_ROOT="$OC" COUNCIL_WIRE_PLATFORM="$pf" COUNCIL_NODE="$NODE" \
           COUNCIL_NPM="$S/bin/npm" COUNCIL_PM2="$S/bin/pm2" COUNCIL_CLOUDFLARED="$S/bin/cloudflared" \
           /bin/bash "$WIRE" --idempotent --connector-only 2>&1)"; r=$?
     printf '%s\n' "$o" >>"$S/all-output"; printf '%s' "$o"; return "$r"; }
@@ -82,9 +84,14 @@ case_platform() { # <mac|vps>
     plutil -lint "$PL" >/dev/null 2>&1 && grep -q '<string>Standard</string>' "$PL" && ! grep -q Background "$PL" \
       && grep -q "<string>$S/bin/cloudflared</string>" "$PL" && grep -q '<string>--token-file</string>' "$PL" \
       && ok "mac plist: Standard, absolute cloudflared, --token-file" || bad "mac plist: Standard, absolute cloudflared, --token-file"
+    grep -q "<string>--config</string><string>$OC/council-runtime/council-tunnel.yml</string>" "$PL" \
+      && grep -q '<key>TUNNEL_TOKEN</key><string></string>' "$PL" \
+      && ok "mac plist: own --config, TUNNEL_TOKEN blanked" || bad "mac plist: own --config, TUNNEL_TOKEN blanked"
   else
     grep -q "pm2 start $S/bin/cloudflared --name cloudflared-council .*-- tunnel .*run --token-file $TF" "$LOGF" \
       && ok "vps pm2 cloudflared-council runs tunnel run --token-file" || bad "vps pm2 cloudflared-council runs tunnel run --token-file"
+    grep -q -- "-- tunnel --config $OC/council-runtime/council-tunnel.yml " "$LOGF" && grep -q 'pm2-start-env TUNNEL_TOKEN=\[\]' "$LOGF" \
+      && ! grep -qF "$CCTOKEN" "$LOGF" && ok "vps pm2: own --config, inherited TUNNEL_TOKEN blanked" || bad "vps pm2: own --config, inherited TUNNEL_TOKEN blanked"
   fi
 
   CNT="$(starts)"; OUT="$(w)"; RC=$?
