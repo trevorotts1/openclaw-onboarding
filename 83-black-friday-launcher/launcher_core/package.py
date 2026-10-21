@@ -15,7 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from .constants import (
     COUNCIL_ENTRY_POINT,
@@ -302,45 +302,130 @@ def _piece_receipt(piece: Dict[str, Any], unit_id: str, unit_type: str,
     }
 
 
-def _declared_receipt(unit: Dict[str, Any], intake: Dict[str, Any], approved: str,
-                      plan_ref: Dict[str, Any], run_dir: Path,
-                      unit_type: Optional[str] = None,
-                      delivery: Optional[str] = None) -> Dict[str, Any]:
-    """A unit declared delivered by the sealed plan, not by a launcher-owned piece.
+def _nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
+                  approved: str, plan_sha: Optional[str], plan_path: Optional[str],
+                  run_dir: Path, unit_type: Optional[str] = None,
+                  delivery_marker: Optional[str] = None) -> Dict[str, Any]:
+    """One non-launcher unit's typed receipt, from the producing lane's own output.
 
     The launcher owns no bytes for an email, text, automation or for a page
-    another lane delivers, so the artifact is the sealed launch plan that
-    carries the unit and its ``waits_for``. Nothing is invented and no draft is
-    ever labelled installed, tested or live.
+    another lane delivers, so the proof is the lane's delivery receipt: its own
+    artifact bytes (hashed and sized here, never trusted on sight), the request
+    it answers and the lane that validated it. The sealed launch plan is planning
+    evidence and stays PLANNED: a unit with no lane delivery is never sealed as
+    delivered, and plan bytes are never delivery proof. No draft is ever labelled
+    installed, tested or live.
     """
-    plan_size = (run_dir / plan_ref["path"]).stat().st_size
+    label = f"unit {unit['id']!r}"
+    if not isinstance(delivery, Mapping) \
+            or launch_plan_module._delivery_state(delivery) != "complete":
+        raise PackageError(
+            "AF-LAUNCH-PLAN-MISSING",
+            f"{label} carries no complete lane delivery; planning evidence stays PLANNED")
+    artifacts_in = delivery.get("artifacts")
+    if not isinstance(artifacts_in, list) or not artifacts_in:
+        raise PackageError(
+            "AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+            f"{label} carries no lane delivery artifacts; planning evidence stays PLANNED")
+    artifacts: List[Dict[str, Any]] = []
+    for index, art in enumerate(artifacts_in):
+        if not isinstance(art, dict):
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                               f"{label} artifacts[{index}] is not an object")
+        path, digest, size = art.get("path"), art.get("sha256"), art.get("size")
+        if not isinstance(path, str) or not path.strip():
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                               f"{label} artifacts[{index}].path is missing")
+        if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                               f"{label} artifacts[{index}].sha256 is not 64 lowercase hex")
+        if Path(path).is_absolute():
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                               f"{label} artifact {path!r} escapes the run")
+        target = (run_dir / path).resolve()
+        if not target.is_relative_to(run_dir.resolve()):
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                               f"{label} artifact {path!r} escapes the run")
+        if plan_path is not None and target == (run_dir / plan_path).resolve():
+            raise PackageError(
+                "AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                f"{label} points at the sealed launch plan; planning evidence stays "
+                f"PLANNED and is never delivery proof")
+        if not target.is_file():
+            raise PackageError("AF-LAUNCH-PKG-ARTIFACT-MISSING",
+                               f"{label} artifact {path!r} does not resolve")
+        actual_size = target.stat().st_size
+        if actual_size == 0:
+            raise PackageError("AF-LAUNCH-PKG-ARTIFACT-EMPTY",
+                               f"{label} artifact {path!r} is zero bytes")
+        if _sha256_file(target) != digest:
+            raise PackageError("AF-LAUNCH-PKG-HASH",
+                               f"{label} artifact {path!r} does not match its hash")
+        if not isinstance(size, int) or isinstance(size, bool) or size != actual_size:
+            raise PackageError("AF-LAUNCH-PKG-ARTIFACT-SIZE",
+                               f"{label} artifact {path!r} is {actual_size} bytes, "
+                               f"the lane receipt says {size!r}")
+        artifacts.append({"path": path, "sha256": digest, "size": actual_size})
+
+    lane = delivery.get("lane_validation")
+    if not isinstance(lane, dict) or not _nonempty_str(lane.get("lane")) \
+            or not _nonempty_str(lane.get("contract")) or lane.get("state") != "passed":
+        raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE",
+                           f"{label} carries no passed producing-lane validation")
+
+    request = delivery.get("request")
+    if not isinstance(request, dict):
+        raise PackageError("AF-LAUNCH-PKG-RECEIPT-REQUEST",
+                           f"{label} carries no lane request echo")
+    if plan_sha is not None:
+        echo = request.get("plan_sha256")
+        if not _nonempty_str(echo):
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-REQUEST",
+                               f"{label} carries no plan echo for the sealed plan")
+        if echo != plan_sha:
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-REQUEST",
+                               f"{label} echoes plan {echo!r}, not the sealed plan")
+    elif not _nonempty_str(request.get("request_id")) \
+            or not _nonempty_str(request.get("input_hash")):
+        raise PackageError("AF-LAUNCH-PKG-RECEIPT-REQUEST",
+                           f"{label} carries no request echo")
+
     row = {
         **_identity(intake, approved),
         "unit_id": unit["id"],
         "unit_type": unit_type or unit["type"],
-        "request": {"plan_sha256": plan_ref["sha256"]},
-        "artifacts": [{"path": plan_ref["path"], "sha256": plan_ref["sha256"],
-                       "size": plan_size}],
-        "lane_validation": dict(LANE_VALIDATION),
+        "request": {"plan_sha256": request.get("plan_sha256"),
+                    "request_id": request.get("request_id"),
+                    "input_hash": request.get("input_hash")},
+        "artifacts": artifacts,
+        "lane_validation": {"lane": lane["lane"], "contract": lane["contract"],
+                            "state": "passed",
+                            **({"detail": lane["detail"]} if "detail" in lane else {})},
         "proof": _proof("draft_delivered"),
         "status": "draft_delivered",
     }
     if row["unit_type"] in ("email", "text", "automation"):
         row["draft_only"] = True
-    if delivery:
-        row["delivery"] = delivery
+    if delivery_marker:
+        row["delivery"] = delivery_marker
     return row
 
 
 def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
                    plan: Optional[Dict[str, Any]], pieces: Dict[str, Any],
-                   plan_ref: Optional[Dict[str, Any]], run_dir: Path) -> List[Dict[str, Any]]:
+                   plan_ref: Optional[Dict[str, Any]], run_dir: Path,
+                   lane_deliveries: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Every planned unit's typed receipt, or every delivered piece's when page-only."""
     approved = intake["approval"]["hash"]
     if plan is None or plan_ref is None:
         return [_piece_receipt(piece, piece["slot"], "page", intake, approved, None, run_dir)
                 for piece in ordered]
     by_slot = {piece["slot"]: piece for piece in ordered}
+    lane_deliveries = lane_deliveries or {}
     deliveries = _page_deliveries(plan, pieces)
     rows: List[Dict[str, Any]] = []
     for unit in launch_plan_module.planned_units(plan):
@@ -351,11 +436,15 @@ def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
                 rows.append(_piece_receipt(piece, unit["id"], "page", intake, approved,
                                            plan_ref["sha256"], run_dir))
             else:
-                # Delivered by another lane and declared in the plan: sealed, never invented.
-                rows.append(_declared_receipt(unit, intake, approved, plan_ref, run_dir,
-                                              unit_type="page", delivery="declared"))
+                # A page another lane delivered: its lane receipt proves it, never the plan.
+                rows.append(_lane_receipt(unit, lane_deliveries.get(unit["id"]), intake,
+                                          approved, plan_ref["sha256"], plan_ref["path"],
+                                          run_dir, unit_type="page",
+                                          delivery_marker="declared"))
         else:
-            rows.append(_declared_receipt(unit, intake, approved, plan_ref, run_dir))
+            rows.append(_lane_receipt(unit, lane_deliveries.get(unit["id"]), intake,
+                                      approved, plan_ref["sha256"], plan_ref["path"],
+                                      run_dir))
     return rows
 
 
@@ -389,8 +478,14 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
 
     A shared launch plan (U-CONTRACT) makes the package fail closed: the Black
     Friday calendar is validated, every planned email, text, automation and the
-    requested Conversation AI must arrive as a delivery, and the calendar and
-    completeness percentages travel into the manifest and the receipt.
+    requested Conversation AI must arrive as a lane delivery receipt, and the
+    calendar and completeness percentages travel into the manifest and the
+    receipt. A delivery is the producing lane's own output record for one unit:
+    {"state": "complete", "artifacts": [{"path", "sha256", "size"}],
+    "lane_validation": {"lane", "contract", "state": "passed"},
+    "request": {...}} with artifact bytes already staged inside run_dir. A bare
+    state claim with no lane receipt is planning evidence, never delivery proof:
+    the unit stays PLANNED and assembly refuses.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -560,7 +655,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "approved_plan_hash": intake["approval"]["hash"],
         "assembled_at": manifest["assembled_at"],
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
-        "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir),
+        "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir,
+                                lane_deliveries=deliveries),
         "lane_validations": [
             dict(LANE_VALIDATION),
             {"lane": "L05", "contract": checkout["contract"], "state": "recorded",
