@@ -5,7 +5,7 @@
     "minimax-h3/text-to-video",
     "minimax-h3/reference-to-video"
   ],
-  "default_for": "choice card decision 5: MiniMax H3 768P",
+  "default_for": "retired 2026-10-21; decision 5 now defaults to Hailuo 02 Standard 768P",
   "request_shape": {
     "duration_s": "clamp(ceil(shot_seconds + 1.0), 4, 15): one second of trim handle; catalog window 4-15 s, default 6",
     "resolution": "768P (card default) or 2K",

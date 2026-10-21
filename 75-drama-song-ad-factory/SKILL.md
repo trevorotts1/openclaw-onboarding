@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.75
+version: v2.9.76
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -1091,7 +1091,7 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+- **Video model question.** Four models (Hailuo 02 Standard RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
   video_model_rates.json`) and one price function shared by the question and
@@ -1160,7 +1160,7 @@ SOP named above.
   shot with its own storyboard field, never a patch**: INNER CHANEL is a named
   cast member, receipt line 252 names S6 (S030 to S031 two-shot), built as
   still `IMG-SHOT-S031-T2` and clip `VID-S031-T3` with the overlay assembled
-  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by MiniMax-H3 768p, Kling
+  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by Hailuo 02 Standard 768P, Kling
   for lip-sync only.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows
