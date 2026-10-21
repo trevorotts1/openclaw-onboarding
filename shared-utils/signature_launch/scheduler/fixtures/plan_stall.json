@@ -1,0 +1,16 @@
+{
+  "_note": "Synthetic local fixture for audit lane L03 (UL-009). Used to prove a normally returned failure is persisted with partial results and causal blockers instead of raising and discarding them.",
+  "launch_id": "l03-stall",
+  "conversation_ai": {"requested": false, "mode": "none"},
+  "pages": [
+    {"id": "page_landing", "kind": "landing", "url": "https://example.invalid/landing", "waits_for": []},
+    {"id": "page_sales", "kind": "sales", "url": null, "waits_for": ["page_landing"]}
+  ],
+  "email_sequences": [],
+  "text_sets": [
+    {"id": "text_doors", "waits_for": []}
+  ],
+  "automations": [
+    {"id": "auto_opt_in", "family": "opt_in", "waits_for": ["text_doors"]}
+  ]
+}

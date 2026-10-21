@@ -1,0 +1,163 @@
+{
+  "counts": {
+    "awaiting_facts": 1,
+    "blocked": 1,
+    "done": 0,
+    "dropped": 0,
+    "empty": 0,
+    "failed": 1,
+    "pending": 2,
+    "ready": 1,
+    "retryable": 1,
+    "running": 0,
+    "terminal": 0,
+    "total": 4
+  },
+  "created_at": "2030-01-01T00:00:00Z",
+  "empty": false,
+  "launch_id": "l03-stall",
+  "percent": 0.0,
+  "plan_hash": "sha256:bd71d8227676171e771255736616c7c20a0a86d9d8205197243fe5eb4009e702",
+  "schema_version": "1.0",
+  "stall": {
+    "auto_opt_in": [
+      {
+        "detail": "waits for text_doors",
+        "kind": "dependency",
+        "state": "unresolved",
+        "unit": "text_doors"
+      }
+    ],
+    "page_landing": [
+      {
+        "detail": "synthetic provider timeout; no artifact",
+        "kind": "failed",
+        "state": "failed",
+        "unit": "page_landing"
+      }
+    ],
+    "page_sales": [
+      {
+        "detail": "waits for page_landing",
+        "kind": "dependency",
+        "state": "unresolved",
+        "unit": "page_landing"
+      }
+    ],
+    "text_doors": [
+      {
+        "detail": "sender_name, reply_to_email",
+        "kind": "awaiting_fact",
+        "state": "blocked",
+        "unit": "text_doors"
+      },
+      {
+        "detail": "two answers are missing",
+        "kind": "awaiting_facts",
+        "state": "blocked",
+        "unit": "text_doors"
+      }
+    ]
+  },
+  "units": {
+    "auto_opt_in": {
+      "artifact": null,
+      "attempts": 0,
+      "charged": false,
+      "kind": "automation",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": null,
+      "owner": null,
+      "reason": null,
+      "result": null,
+      "state": "pending",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": [
+        "text_doors"
+      ]
+    },
+    "page_landing": {
+      "artifact": null,
+      "attempts": 1,
+      "charged": false,
+      "kind": "page",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": "synthetic provider timeout; no artifact",
+      "owner": null,
+      "reason": {
+        "blocker": null,
+        "detail": "synthetic provider timeout; no artifact",
+        "kind": "failed"
+      },
+      "result": {
+        "artifacts": [],
+        "blocker": null,
+        "detail": "synthetic provider timeout; no artifact",
+        "missing_facts": [],
+        "owner": null,
+        "payload": null,
+        "retryable": true,
+        "status": "failed",
+        "verified": false
+      },
+      "state": "failed",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": []
+    },
+    "page_sales": {
+      "artifact": null,
+      "attempts": 0,
+      "charged": false,
+      "kind": "page",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": null,
+      "owner": null,
+      "reason": null,
+      "result": null,
+      "state": "pending",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": [
+        "page_landing"
+      ]
+    },
+    "text_doors": {
+      "artifact": null,
+      "attempts": 1,
+      "charged": false,
+      "kind": "text_set",
+      "lease_expires_at": null,
+      "missing_facts": [
+        "sender_name",
+        "reply_to_email"
+      ],
+      "note": "two answers are missing",
+      "owner": null,
+      "reason": {
+        "blocker": null,
+        "detail": "two answers are missing",
+        "kind": "awaiting_facts"
+      },
+      "result": {
+        "artifacts": [],
+        "blocker": null,
+        "detail": "two answers are missing",
+        "missing_facts": [
+          "sender_name",
+          "reply_to_email"
+        ],
+        "owner": null,
+        "payload": null,
+        "retryable": true,
+        "status": "awaiting_facts",
+        "verified": false
+      },
+      "state": "blocked",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": []
+    }
+  },
+  "updated_at": "2030-01-01T00:00:00Z"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "operational access link after doors close, held to 08:00",
+  "send": {
+    "kind": "access_link",
+    "template": "{{first_name}}, here is your access link for {{offer_name}}: {{access_url}} Save this text. Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "offer_name": "Signature Launch",
+      "access_url": "https://example.com/access"
+    },
+    "send_at": "2026-10-25T02:00:00",
+    "now": "2026-10-25T02:00:00",
+    "deadline": "2026-10-24T23:59:00",
+    "a2p_ready": true,
+    "price_per_segment_usd": 0.01,
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed"],
+      "suppression": [],
+      "marketing_sends": 5,
+      "operational_sends": 12
+    }
+  },
+  "expect": {
+    "action": "hold",
+    "category": "operational",
+    "reason": "quiet_hours_held",
+    "send_at": "2026-10-25T08:00:00"
+  }
+}

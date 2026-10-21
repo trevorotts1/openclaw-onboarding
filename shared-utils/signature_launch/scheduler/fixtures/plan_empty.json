@@ -1,0 +1,9 @@
+{
+  "_note": "Synthetic local fixture for audit lane L03 (UL-009). A plan with no units is explicitly empty everywhere (scheduler, progress, package, UI), never a fake 100%.",
+  "launch_id": "l03-empty",
+  "conversation_ai": {"requested": false, "mode": "none"},
+  "pages": [],
+  "email_sequences": [],
+  "text_sets": [],
+  "automations": []
+}

@@ -1,0 +1,27 @@
+{
+  "name": "UCS-2 copy over the 2-segment ceiling",
+  "send": {
+    "kind": "doors_open",
+    "template": "{{first_name}} 🎉🔥 {{offer_name}} is live at {{price}}! Get it here: {{sales_url}} Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "offer_name": "Signature Launch",
+      "price": "$497",
+      "sales_url": "https://example.com/offer"
+    },
+    "send_at": "2026-10-22T09:00:00",
+    "now": "2026-10-22T09:00:00",
+    "deadline": "2026-10-24T23:59:00",
+    "a2p_ready": true,
+    "max_segments": 1,
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed"],
+      "suppression": [],
+      "marketing_sends": 0,
+      "operational_sends": 0
+    }
+  },
+  "expect": {"action": "skip", "category": "marketing", "encoding": "ucs2"}
+}

@@ -11,9 +11,16 @@ date and never invents a unit.
 from __future__ import annotations
 
 import datetime
+import functools
+import importlib.util
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from .constants import REPO_ROOT
 
 PLAN_CONTRACT_REF = "shared-utils/signature_launch_contract/launch-plan.schema.json"
+PLAN_VALIDATOR_REF = "shared-utils/signature_launch_contract/validate_launch_plan.py"
+PLAN_SCHEMA_VERSION = "1.0.0"
 
 CALENDAR_KEYS = ("launch_at", "doors_open_at", "doors_close_at", "timezone")
 BLACK_FRIDAY_KEYS = ("teaser_at", "countdown_at", "cyber_monday_at", "last_call_at")
@@ -40,7 +47,85 @@ def _nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _time(value: Any, field: str) -> datetime.datetime:
+@functools.lru_cache(maxsize=1)
+def _contract_module():
+    """The shared U-CONTRACT validator and its schema. None when not installed."""
+    path = REPO_ROOT / PLAN_VALIDATOR_REF
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("s_launch_plan_contract", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_CONTRACT_CODES = (
+    ("waits_for cycle", "AF-LAUNCH-PLAN-CYCLE"),
+    ("waits_for unknown unit", "AF-LAUNCH-PLAN-DEPENDENCY"),
+    ("waits_for itself", "AF-LAUNCH-PLAN-DEPENDENCY"),
+    ("used by more than one unit", "AF-LAUNCH-PLAN-DUPLICATE"),
+    ("schema_version", "AF-LAUNCH-PLAN-SCHEMA"),
+    ("draft_only", "AF-LAUNCH-PLAN-DRAFT"),
+    ("promotional sets exceeds", "AF-LAUNCH-PLAN-TEXT-CAP"),
+    ("conversation_ai", "AF-LAUNCH-PLAN-AI"),
+    ("failed_payment", "AF-LAUNCH-PLAN-PAYMENT"),
+)
+
+
+def _contract_code(errors: List[str]) -> str:
+    for needle, code in _CONTRACT_CODES:
+        if any(needle in error for error in errors):
+            return code
+    return "AF-LAUNCH-PLAN-SCHEMA"
+
+
+def contract_violations(plan: Any) -> List[str]:
+    """Every violation the shared U-CONTRACT validator names, or one named refusal.
+
+    Canonical validation is the shared validator's own: shape, schema_version,
+    unique unit ids, ``waits_for`` resolution, cycles, ``draft_only`` consts,
+    Conversation AI law and the promotional cap. This module never restates
+    those rules; it only maps them to this skill's autofail codes.
+    """
+    module = _contract_module()
+    if module is None:
+        return [f"{PLAN_VALIDATOR_REF} is not installed; the launch plan cannot be validated"]
+    try:
+        return list(module.validate_plan(plan, module.load_json(module.SCHEMA_PATH)))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [f"the shared launch-plan validator is unusable ({exc})"]
+
+
+def validate_plan(plan: Any) -> None:
+    """Fail closed on a plan the shared contract refuses. File existence is not proof."""
+    if not isinstance(plan, Mapping):
+        raise LaunchPlanError("AF-LAUNCH-PLAN-SHAPE", "the launch plan must be an object")
+    errors = contract_violations(plan)
+    if errors:
+        raise LaunchPlanError(_contract_code(errors), "; ".join(errors))
+
+
+def _zone(value: Any) -> ZoneInfo:
+    if not _nonempty_str(value):
+        raise LaunchPlanError("AF-LAUNCH-CALENDAR-ZONE",
+                              "launch_calendar.timezone must name an IANA zone")
+    try:
+        return ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+        raise LaunchPlanError("AF-LAUNCH-CALENDAR-ZONE",
+                              f"launch_calendar.timezone {value!r} is not an IANA zone") from exc
+
+
+def parse_deadline(value: Any, field: str,
+                   zone: Optional[ZoneInfo] = None) -> datetime.datetime:
+    """One aware deadline. A zone-less or DST-wrong offset is never a deadline.
+
+    ``zone`` checks the claimed UTC offset against the IANA zone the calendar
+    names at that instant, so a New York deadline written with a summer offset
+    in winter is refused rather than silently moved by an hour.
+    """
     if not _nonempty_str(value):
         raise LaunchPlanError("AF-LAUNCH-CALENDAR-MISSING", f"{field} must be an ISO-8601 date-time")
     try:
@@ -51,7 +136,19 @@ def _time(value: Any, field: str) -> datetime.datetime:
     if parsed.tzinfo is None:
         raise LaunchPlanError("AF-LAUNCH-CALENDAR-TIME",
                               f"{field} {value!r} has no UTC offset; a deadline is never zone-less")
+    if zone is not None:
+        claimed = parsed.utcoffset()
+        actual = parsed.astimezone(zone).utcoffset()
+        if claimed != actual:
+            raise LaunchPlanError(
+                "AF-LAUNCH-CALENDAR-OFFSET",
+                f"{field} {value!r} claims UTC offset {claimed} but {zone.key} is at "
+                f"{actual} at that instant (DST-aware offsets only)")
     return parsed
+
+
+def _time(value: Any, field: str, zone: Optional[ZoneInfo] = None) -> datetime.datetime:
+    return parse_deadline(value, field, zone)
 
 
 def black_friday_calendar(plan: Mapping[str, Any]) -> Dict[str, Any]:
@@ -84,13 +181,14 @@ def black_friday_calendar(plan: Mapping[str, Any]) -> Dict[str, Any]:
             raise LaunchPlanError("AF-LAUNCH-CALENDAR-MISSING",
                                   f"launch_calendar.black_friday.{key} is required")
 
-    teaser = _time(black_friday["teaser_at"], "black_friday.teaser_at")
-    countdown = _time(black_friday["countdown_at"], "black_friday.countdown_at")
-    doors_open = _time(calendar["doors_open_at"], "doors_open_at")
-    launch_at = _time(calendar["launch_at"], "launch_at")
-    cyber_monday = _time(black_friday["cyber_monday_at"], "black_friday.cyber_monday_at")
-    last_call = _time(black_friday["last_call_at"], "black_friday.last_call_at")
-    doors_close = _time(calendar["doors_close_at"], "doors_close_at")
+    zone = _zone(calendar["timezone"])
+    teaser = _time(black_friday["teaser_at"], "black_friday.teaser_at", zone)
+    countdown = _time(black_friday["countdown_at"], "black_friday.countdown_at", zone)
+    doors_open = _time(calendar["doors_open_at"], "doors_open_at", zone)
+    launch_at = _time(calendar["launch_at"], "launch_at", zone)
+    cyber_monday = _time(black_friday["cyber_monday_at"], "black_friday.cyber_monday_at", zone)
+    last_call = _time(black_friday["last_call_at"], "black_friday.last_call_at", zone)
+    doors_close = _time(calendar["doors_close_at"], "doors_close_at", zone)
 
     order = (
         ("teaser", teaser, "countdown", countdown),
@@ -106,9 +204,9 @@ def black_friday_calendar(plan: Mapping[str, Any]) -> Dict[str, Any]:
                 "AF-LAUNCH-CALENDAR-ORDER",
                 f"{earlier_name} ({earlier.isoformat()}) is after {later_name} "
                 f"({later.isoformat()}); a deadline may not move backwards")
-    if doors_open > doors_close:
+    if doors_open >= doors_close:
         raise LaunchPlanError("AF-LAUNCH-CALENDAR-ORDER",
-                              "doors open after doors close")
+                              "doors open at or after doors close; the open window is never empty")
 
     phases = [
         {"phase": "teaser", "at": black_friday["teaser_at"]},
@@ -118,6 +216,9 @@ def black_friday_calendar(plan: Mapping[str, Any]) -> Dict[str, Any]:
         {"phase": "last_call", "at": black_friday["last_call_at"]},
         {"phase": "doors_close", "at": calendar["doors_close_at"]},
     ]
+    # The calendar's own deadlines are proved first so a malformed deadline keeps
+    # its precise code; the shared contract then validates the rest of the plan.
+    validate_plan(plan)
     return {
         "contract": PLAN_CONTRACT_REF,
         "timezone": calendar["timezone"],
@@ -130,14 +231,52 @@ def black_friday_calendar(plan: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def calendar_violations(plan: Any) -> List[Dict[str, str]]:
+    """The calendar's violations as data, for a compiler that cannot raise.
+
+    L07 compiles schedule nodes from this calendar; it needs the refusal as a
+    record, not an exception mid-compile. Empty list means the calendar holds.
+    """
+    try:
+        black_friday_calendar(plan)
+    except LaunchPlanError as exc:
+        return [{"code": exc.code, "detail": exc.detail}]
+    return []
+
+
+def calendar_instants(plan: Mapping[str, Any]) -> Dict[str, datetime.datetime]:
+    """Every phase as an aware instant, after the calendar has been validated.
+
+    L07 compiles absolute and relative schedule nodes and applies past-time
+    policy; both need the instant, never the string, and both must use the
+    same validated calendar this skill seals.
+    """
+    calendar = black_friday_calendar(plan)
+    zone = _zone(calendar["timezone"])
+    black_friday = calendar["black_friday"]
+    return {
+        "teaser": parse_deadline(black_friday["teaser_at"], "black_friday.teaser_at", zone),
+        "countdown": parse_deadline(black_friday["countdown_at"],
+                                    "black_friday.countdown_at", zone),
+        "doors_open": parse_deadline(calendar["doors_open_at"], "doors_open_at", zone),
+        "launch": parse_deadline(calendar["launch_at"], "launch_at", zone),
+        "cyber_monday": parse_deadline(black_friday["cyber_monday_at"],
+                                       "black_friday.cyber_monday_at", zone),
+        "last_call": parse_deadline(black_friday["last_call_at"],
+                                    "black_friday.last_call_at", zone),
+        "doors_close": parse_deadline(calendar["doors_close_at"], "doors_close_at", zone),
+    }
+
+
 def planned_units(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Every unit the plan promises, in plan order: pages, emails, texts, automations, AI.
 
     A unit id is unique across all sections (contract ``unit_id``). The optional
     Conversation AI is a planned unit exactly when the client requested it.
+    The plan is canonically validated first, so a cycle or an unknown dependency
+    is refused here, long before a scheduler could stall on it.
     """
-    if not isinstance(plan, Mapping):
-        raise LaunchPlanError("AF-LAUNCH-PLAN-SHAPE", "the launch plan must be an object")
+    validate_plan(plan)
     units: List[Dict[str, Any]] = []
     seen: Dict[str, str] = {}
     for section, unit_type in UNIT_SECTIONS:

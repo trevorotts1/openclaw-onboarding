@@ -61,6 +61,17 @@ the Council is running, the result will be shared here, and their private
 Council link is still being set up. Never mention scripts, servers, fleet
 or Cloudflare to the client.
 
+Operator side only (never on a client box): the operator Mac's job
+`scripts/council-access-autoprovision.sh` first runs
+`scripts/ensure-cc-access.sh`, which keeps every client's Command Center
+login page letting in the operator emails and every verified client email.
+It creates a missing login page, adds missing emails to an existing one
+without removing anything (RECONCILED), and finds client emails itself: the
+emails file `~/.claude/state/council-elders/cc-access-emails.json`
+(`{"operator","clients","ghl":{"location_id"}}`), the client's own login and
+rescue pages, and a read-only, strict GoHighLevel lookup. Details in
+INSTALL.md, "Command Center login pages".
+
 To learn whether this box is usable right now, run
 `bash scripts/verify-council-box.sh` (read-only). Its last line,
 `COUNCIL_BOX: READY|DEGRADED|NOT_READY <codes>`, is the truth. Report a

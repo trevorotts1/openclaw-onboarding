@@ -18,6 +18,9 @@ Fixture keys (all optional except zone):
   fail     {dns_create: true}  -> POST dns_records answers 500; {connections: true} -> connections answers 500
            {app_create: true}  -> POST access/apps answers 500
            {tunnel_create: true} -> POST cfd_tunnel answers 500
+           {policy_update: true} -> PUT access/apps/<id>/policies/<pid> answers 400
+  PUT access/apps/<id>/policies/<pid> replaces an app-scoped policy (reusable or a
+  read-only field in the body -> 400); every PUT body is kept in state put_bodies.
   POST cfd_tunnel creates a remote-managed tunnel with no connector (status "inactive").
 """
 import argparse, json, re, sys
@@ -191,6 +194,26 @@ class H(BaseHTTPRequestHandler):
                         pols.append(dict(pol, id=nid("pol")))
                 S["apps"].append(app); S["policies"][app["id"]] = pols; dump()
                 return self.send(200, env(app))
+        m = re.match(r"^access/apps/([^/]+)/policies/([^/]+)$", rest)
+        if m and method == "PUT":
+            # app-scoped policy update; a reusable policy or a read-only field in the body is refused, as Cloudflare does
+            pols = S["policies"].get(m.group(1))
+            old = next((x for x in (pols or []) if x["id"] == m.group(2)), None)
+            if old is None:
+                return self.send(404, env(None, False, [{"message": "policy not found"}]))
+            b = self.body(); S["put_bodies"].append(b)
+            if old.get("reusable") or S["fail"].get("policy_update"):
+                return self.send(400, env(None, False, [{"code": 12130, "message": "reusable policy cannot be edited here"}]))
+            bad = sorted(set(b) & {"id", "created_at", "updated_at", "reusable", "app_count", "uid"})
+            if bad:
+                return self.send(400, env(None, False, [{"message": "read-only field(s): " + ",".join(bad)}]))
+            new = dict(b, id=old["id"])
+            for k in ("created_at", "reusable"):
+                if k in old:
+                    new[k] = old[k]
+            new["updated_at"] = "2026-10-21T00:00:00Z"
+            pols[pols.index(old)] = new; dump()
+            return self.send(200, env(new))
         m = re.match(r"^access/apps/([^/]+)(/policies)?$", rest)
         if m and method == "GET":
             app = next((a for a in S["apps"] if a["id"] == m.group(1)), None)

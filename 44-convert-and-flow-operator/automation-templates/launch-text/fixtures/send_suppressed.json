@@ -1,0 +1,25 @@
+{
+  "name": "STOP landed after the workflow was built",
+  "send": {
+    "kind": "abandoned_checkout",
+    "template": "{{first_name}}, your {{offer_name}} order is still open. Did something go wrong? Finish here: {{checkout_url}} Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "offer_name": "Signature Launch",
+      "checkout_url": "https://example.com/checkout"
+    },
+    "send_at": "2026-10-22T10:30:00",
+    "now": "2026-10-22T10:30:00",
+    "deadline": "2026-10-24T23:59:00",
+    "a2p_ready": true,
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed", "sms-opted-out"],
+      "suppression": ["STOP"],
+      "marketing_sends": 0,
+      "operational_sends": 4
+    }
+  },
+  "expect": {"action": "skip", "category": "marketing", "reason": "failed: not_suppressed"}
+}

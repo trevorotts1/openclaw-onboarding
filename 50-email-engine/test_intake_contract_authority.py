@@ -50,6 +50,7 @@ class IntakeContractAuthority(unittest.TestCase):
         self.root = Path(self._tmp.name)
         shutil.copytree(SKILL_DIR / "tools", self.root / "tools")
         shutil.copytree(SKILL_DIR / "intake", self.root / "intake")
+        shutil.copytree(SKILL_DIR / "profiles", self.root / "profiles")
         self.contract = self.root / "intake" / "email-intake-questions.json"
 
     def tearDown(self):

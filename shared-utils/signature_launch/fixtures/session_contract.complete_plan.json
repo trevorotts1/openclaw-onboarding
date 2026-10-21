@@ -1,0 +1,588 @@
+{
+  "schema": "signature-launch-session-contract.fixture/v1",
+  "contract_version": "1.0.0",
+  "for_consumer": "L06 Skill 50 consumer adapter",
+  "answers_file": "shared-utils/client_intake/fixtures/answers.elevation.json",
+  "session": {
+    "session_id": "l01fixture001",
+    "tenant_id": "tenant-l01",
+    "location_id": "loc-l01",
+    "launch_id": "elevation-2026-11",
+    "client_identity_ref": "client:l01-fixture",
+    "brand_ref": "brand:l01-fixture",
+    "brand_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "test_only": true
+  },
+  "launch_answers": {
+    "launch.launch_at": {
+      "value": "2026-11-03T12:00:00-05:00",
+      "state": "provided",
+      "source_ref": "answers-file:launch_calendar",
+      "question_id": null,
+      "provenance": {
+        "question_id": "launch_calendar",
+        "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.doors_open_at": {
+      "value": "2026-11-03T09:00:00-05:00",
+      "state": "provided",
+      "source_ref": "answers-file:launch_calendar",
+      "question_id": null,
+      "provenance": {
+        "question_id": "launch_calendar",
+        "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.doors_close_at": {
+      "value": "2026-11-10T23:59:00-05:00",
+      "state": "provided",
+      "source_ref": "answers-file:launch_calendar",
+      "question_id": null,
+      "provenance": {
+        "question_id": "launch_calendar",
+        "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.timezone": {
+      "value": "America/New_York",
+      "state": "provided",
+      "source_ref": "answers-file:launch_calendar",
+      "question_id": null,
+      "provenance": {
+        "question_id": "launch_calendar",
+        "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.channels": {
+      "value": [
+        "email"
+      ],
+      "state": "provided",
+      "source_ref": "answers-file:channels",
+      "question_id": null,
+      "provenance": {
+        "question_id": "channels",
+        "raw": "Email only",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.conversation_ai": {
+      "value": false,
+      "state": "provided",
+      "source_ref": "answers-file:conversation_ai",
+      "question_id": null,
+      "provenance": {
+        "question_id": "conversation_ai",
+        "raw": "No, not this launch",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.access_delivery": {
+      "value": true,
+      "state": "provided",
+      "source_ref": "answers-file:access_delivery",
+      "question_id": null,
+      "provenance": {
+        "question_id": "access_delivery",
+        "raw": "Yes, send access after purchase",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.payment_plans": {
+      "value": false,
+      "state": "provided",
+      "source_ref": "answers-file:payment_plans",
+      "question_id": null,
+      "provenance": {
+        "question_id": "payment_plans",
+        "raw": "Paid in full",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.sender_name": {
+      "value": "Elevation Coaching Co",
+      "state": "provided",
+      "source_ref": "answers-file:sender_name",
+      "question_id": null,
+      "provenance": {
+        "question_id": "sender_name",
+        "raw": "Elevation Coaching Co",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.reply_to_email": {
+      "value": "hello@elevationcoaching.com",
+      "state": "provided",
+      "source_ref": "answers-file:reply_to_email",
+      "question_id": null,
+      "provenance": {
+        "question_id": "reply_to_email",
+        "raw": "hello@elevationcoaching.com",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    },
+    "launch.a2p_ready": {
+      "value": false,
+      "state": "provided",
+      "source_ref": "answers-file:a2p_ready",
+      "question_id": null,
+      "provenance": {
+        "question_id": "a2p_ready",
+        "raw": "No, not yet",
+        "answer_status": "provided",
+        "answer_source": "client"
+      }
+    }
+  },
+  "launch_plan": {
+    "schema_version": "1.0.0",
+    "launch_id": "elevation-2026-11",
+    "offer": {
+      "name": "Starter / Premium",
+      "price_usd": 297.0,
+      "currency": "USD",
+      "payment_plans": false,
+      "landing_url": null,
+      "sales_page_url": null,
+      "checkout_url": null,
+      "thank_you_url": null
+    },
+    "launch_calendar": {
+      "launch_at": "2026-11-03T12:00:00-05:00",
+      "doors_open_at": "2026-11-03T09:00:00-05:00",
+      "doors_close_at": "2026-11-10T23:59:00-05:00",
+      "timezone": "America/New_York"
+    },
+    "a2p_ready": false,
+    "conversation_ai": {
+      "requested": false,
+      "mode": "none"
+    },
+    "pages": [
+      {
+        "id": "page_landing",
+        "kind": "landing",
+        "url": null,
+        "waits_for": []
+      },
+      {
+        "id": "page_sales",
+        "kind": "sales",
+        "url": null,
+        "waits_for": []
+      },
+      {
+        "id": "page_product_selection",
+        "kind": "order",
+        "url": null,
+        "waits_for": [
+          "page_sales"
+        ]
+      },
+      {
+        "id": "page_checkout",
+        "kind": "checkout",
+        "url": null,
+        "waits_for": [
+          "page_product_selection"
+        ]
+      },
+      {
+        "id": "page_upsell_1",
+        "kind": "upsell",
+        "url": null,
+        "waits_for": [
+          "page_checkout"
+        ]
+      },
+      {
+        "id": "page_downsell_1",
+        "kind": "downsell",
+        "url": null,
+        "waits_for": [
+          "page_upsell_1"
+        ]
+      },
+      {
+        "id": "page_thank_you",
+        "kind": "thank_you",
+        "url": null,
+        "waits_for": [
+          "page_downsell_1"
+        ]
+      }
+    ],
+    "email_sequences": [
+      {
+        "id": "email_pre_launch",
+        "kind": "pre_launch",
+        "provider": "skill50",
+        "email_count": 4,
+        "draft_only": true,
+        "waits_for": [
+          "page_landing"
+        ]
+      },
+      {
+        "id": "email_main_launch",
+        "kind": "main_launch",
+        "provider": "skill50",
+        "email_count": 10,
+        "draft_only": true,
+        "waits_for": [
+          "page_sales"
+        ]
+      },
+      {
+        "id": "email_doors_closing",
+        "kind": "doors_closing",
+        "provider": "skill50",
+        "email_count": 3,
+        "draft_only": true,
+        "waits_for": [
+          "email_main_launch"
+        ]
+      },
+      {
+        "id": "email_upsell_1",
+        "kind": "upsell_followup",
+        "provider": "skill50",
+        "email_count": 2,
+        "draft_only": true,
+        "waits_for": [
+          "page_upsell_1"
+        ]
+      },
+      {
+        "id": "email_downsell_1",
+        "kind": "downsell_followup",
+        "provider": "skill50",
+        "email_count": 2,
+        "draft_only": true,
+        "waits_for": [
+          "page_downsell_1"
+        ]
+      },
+      {
+        "id": "email_abandoned_checkout",
+        "kind": "abandoned_checkout",
+        "provider": "skill50",
+        "email_count": 3,
+        "draft_only": true,
+        "waits_for": [
+          "page_checkout"
+        ]
+      },
+      {
+        "id": "email_welcome_access",
+        "kind": "welcome_access",
+        "provider": "skill50",
+        "email_count": 2,
+        "draft_only": true,
+        "waits_for": [
+          "page_thank_you"
+        ]
+      }
+    ],
+    "text_sets": [],
+    "automations": [
+      {
+        "id": "auto_pre_launch",
+        "family": "pre_launch",
+        "template": "cart-open-cart-close-launch-sequence",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "launch_calendar",
+          "detail": "teaser, countdown, doors open and doors close switches drive tags and the email/text schedule"
+        },
+        "waits_for": [
+          "email_pre_launch",
+          "email_main_launch",
+          "email_doors_closing"
+        ]
+      },
+      {
+        "id": "auto_opt_in",
+        "family": "opt_in",
+        "template": "post-optin-multichannel-stack",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "form_submitted",
+          "detail": "waitlist / registration opt-in tags the contact and starts nurture"
+        },
+        "waits_for": [
+          "email_pre_launch"
+        ]
+      },
+      {
+        "id": "auto_event_reminders",
+        "family": "event_reminders",
+        "template": "webinar-registration-reminder-replay-stack",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "registration",
+          "detail": "confirm, 1 week / 3 days / 1 day / 1 hour / 15 minutes before, then replay and no-show follow-up"
+        },
+        "waits_for": [
+          "email_pre_launch"
+        ]
+      },
+      {
+        "id": "auto_post_sale",
+        "family": "post_sale",
+        "template": "new",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "payment_succeeded",
+          "detail": "access + welcome, promotional sends stop, next follow-up starts"
+        },
+        "waits_for": [
+          "email_welcome_access",
+          "page_thank_you"
+        ]
+      },
+      {
+        "id": "auto_upsell_branch",
+        "family": "upsell_downsell",
+        "template": "new",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "upsell_decision",
+          "detail": "bought or declined routes to the matching follow-up"
+        },
+        "waits_for": [
+          "email_upsell_1",
+          "email_downsell_1"
+        ]
+      },
+      {
+        "id": "auto_abandoned_checkout",
+        "family": "abandoned_checkout",
+        "template": "abandoned-cart-multichannel-recovery",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "checkout_started_unpaid",
+          "detail": "recovery stops on purchase"
+        },
+        "waits_for": [
+          "email_abandoned_checkout"
+        ]
+      },
+      {
+        "id": "auto_page_retargeting",
+        "family": "page_retargeting",
+        "template": "behavioral-retargeting-page-visit-fire",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "page_visit_no_checkout",
+          "detail": "sales page visit without checkout gets one nudge"
+        },
+        "waits_for": [
+          "page_landing"
+        ]
+      },
+      {
+        "id": "auto_onboarding_review",
+        "family": "onboarding_review",
+        "template": "membership-stick-retention",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "purchase",
+          "detail": "first hour / day / week, then a review and referral ask"
+        },
+        "waits_for": [
+          "auto_post_sale"
+        ]
+      },
+      {
+        "id": "auto_win_back",
+        "family": "win_back",
+        "template": "re-engagement-winback-broadcast",
+        "build_rail": "skill44_engine",
+        "draft_only": true,
+        "trigger": {
+          "type": "launch_closed_no_purchase",
+          "detail": "re-engagement for the next offer"
+        },
+        "waits_for": [
+          "auto_post_sale"
+        ]
+      }
+    ],
+    "launch_answers": {
+      "launch.launch_at": {
+        "value": "2026-11-03T12:00:00-05:00",
+        "state": "provided",
+        "source_ref": "answers-file:launch_calendar",
+        "question_id": null,
+        "provenance": {
+          "question_id": "launch_calendar",
+          "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.doors_open_at": {
+        "value": "2026-11-03T09:00:00-05:00",
+        "state": "provided",
+        "source_ref": "answers-file:launch_calendar",
+        "question_id": null,
+        "provenance": {
+          "question_id": "launch_calendar",
+          "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.doors_close_at": {
+        "value": "2026-11-10T23:59:00-05:00",
+        "state": "provided",
+        "source_ref": "answers-file:launch_calendar",
+        "question_id": null,
+        "provenance": {
+          "question_id": "launch_calendar",
+          "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.timezone": {
+        "value": "America/New_York",
+        "state": "provided",
+        "source_ref": "answers-file:launch_calendar",
+        "question_id": null,
+        "provenance": {
+          "question_id": "launch_calendar",
+          "raw": "Doors open 3 Nov 2026 9:00 a.m. New York, launch at noon, doors close 10 Nov 2026 11:59 p.m.",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.channels": {
+        "value": [
+          "email"
+        ],
+        "state": "provided",
+        "source_ref": "answers-file:channels",
+        "question_id": null,
+        "provenance": {
+          "question_id": "channels",
+          "raw": "Email only",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.conversation_ai": {
+        "value": false,
+        "state": "provided",
+        "source_ref": "answers-file:conversation_ai",
+        "question_id": null,
+        "provenance": {
+          "question_id": "conversation_ai",
+          "raw": "No, not this launch",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.access_delivery": {
+        "value": true,
+        "state": "provided",
+        "source_ref": "answers-file:access_delivery",
+        "question_id": null,
+        "provenance": {
+          "question_id": "access_delivery",
+          "raw": "Yes, send access after purchase",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.payment_plans": {
+        "value": false,
+        "state": "provided",
+        "source_ref": "answers-file:payment_plans",
+        "question_id": null,
+        "provenance": {
+          "question_id": "payment_plans",
+          "raw": "Paid in full",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.sender_name": {
+        "value": "Elevation Coaching Co",
+        "state": "provided",
+        "source_ref": "answers-file:sender_name",
+        "question_id": null,
+        "provenance": {
+          "question_id": "sender_name",
+          "raw": "Elevation Coaching Co",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.reply_to_email": {
+        "value": "hello@elevationcoaching.com",
+        "state": "provided",
+        "source_ref": "answers-file:reply_to_email",
+        "question_id": null,
+        "provenance": {
+          "question_id": "reply_to_email",
+          "raw": "hello@elevationcoaching.com",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      },
+      "launch.a2p_ready": {
+        "value": false,
+        "state": "provided",
+        "source_ref": "answers-file:a2p_ready",
+        "question_id": null,
+        "provenance": {
+          "question_id": "a2p_ready",
+          "raw": "No, not yet",
+          "answer_status": "provided",
+          "answer_source": "client"
+        }
+      }
+    }
+  },
+  "plan_digest": {
+    "algorithm": "sha256",
+    "canonicalization": "json.dumps(plan, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')",
+    "value": "73a6a8dfe09712dee9c714fb998f53d480b9c7bcc3df5fb7cfc3100a5fdd53ea"
+  },
+  "required_behavior": [
+    "channels is an array; text work only when 'text' is present",
+    "a2p_ready / conversation_ai / access_delivery / payment_plans are real booleans; recommended_unapproved or unknown means NOT ready",
+    "a2p_ready false keeps every text draft_only with the cannot-send warning",
+    "access_delivery false plans no access email, automation or link",
+    "payment_plans false plans no failed-payment recovery",
+    "sender_name and reply_to_email must be present before composing a send; missing blocks by name, never a placeholder",
+    "every deadline comes from launch_calendar ISO timestamps; never invent one",
+    "recommended_unapproved is never approved; a changed plan needs a new client approval bound to the new plan hash",
+    "verify plan_digest before consuming a plan from another lane"
+  ]
+}

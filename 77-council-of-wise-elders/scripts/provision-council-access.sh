@@ -35,13 +35,21 @@ fi
 #      against the CC app (mismatch -> FAILED before any routing)
 #   e. dedicated path only: create the council tunnel (config_src=cloudflare)
 #   f. merge the ingress rule (GET -> merge -> PUT, CC rule asserted unchanged)
-#   g. proxied CNAME -> <tunnel-id>.cfargotunnel.com
+#   g. proxied CNAME -> <tunnel-id>.cfargotunnel.com, only once the tunnel the
+#      Council rides has an active connection read in THIS run (remote path: the
+#      health + connector reads in c; dedicated path: GET council tunnel connections).
+#      Cloudflare's login page answers 302 at the edge even when the tunnel behind
+#      it is down, and a box announces its link on that 302, so no record may exist
+#      before the connector does.
+#      dedicated path, no connection yet: NO DNS write -> CONNECTOR_PENDING; the
+#        first run that sees the connector creates the record -> PROVISIONED
+#      dedicated path, record exists but the connector is gone -> CONNECTOR_DOWN,
+#        zero writes, nothing deleted
 #   h. dedicated path only: save the tunnel's connector token (GET .../token) to
 #      COUNCIL_TUNNEL_TOKEN_DIR/<tunnel-name>.token, mode 600, never printed
-#   i. edge gate: GET the host, no redirects; it must 302 to *.cloudflareaccess.com.
+#   i. edge gate (skipped while the DNS record is held back): GET the host, no
+#      redirects; it must 302 to *.cloudflareaccess.com.
 #      Fail -> roll back what THIS run created, print FAILED.
-#   j. dedicated path only: no active connection on the council tunnel yet ->
-#      CONNECTOR_PENDING (the box must run that connector; retried every run)
 # Every refusal (NOT_PROVISIONED, TUNNEL_DOWN, ORIGIN_NOT_LOOPBACK, CONNECTOR_DOWN,
 # PENDING_LOCAL_TUNNEL, CONFLICT) sends zero writes.
 #
@@ -381,6 +389,17 @@ provision_host() {
     finish CONFLICT "$COUNCIL_HOST already exists as $rec_type -> $rec_content, not $([ "$ride_new" = 1 ] && echo "the new tunnel $ride_name" || echo "$expected"); nothing changed"; return
   fi
 
+  # dedicated path: read the council tunnel's connector BEFORE any write. A brand-new
+  # tunnel has none. A published record with no connector is a dead link: report, never delete.
+  local cconn=0
+  if [ "$dedicated" = "1" ] && [ "$ride_new" = "0" ]; then
+    cconn="$(active_conns "$ride_tid")"
+    [ "$cconn" != "ERR" ] || { finish FAILED "could not read tunnel connections for $ride_name ($ride_tid); no Cloudflare change made"; return; }
+    if [ -n "$rec_id" ] && [ "$cconn" = "0" ]; then
+      finish CONNECTOR_DOWN "$COUNCIL_HOST has its DNS record but tunnel $ride_name ($ride_tid) has no active connection; the link would open the login page and then fail. No Cloudflare change made, nothing deleted; the box must restart its connector. Retried next run"; return
+    fi
+  fi
+
   # d. Access app first
   local app app_id app_pol created_app=0 body
   app="$(jq -c --arg h "$COUNCIL_HOST" '[.[] | select(.domain == $h or ((.self_hosted_domains // []) | index($h)))][0] // empty' <<<"$apps")"
@@ -441,10 +460,13 @@ provision_host() {
     ing_changed=1
   fi
 
-  # g. DNS (an existing correct record is reused)
-  local dns_created=0 new_dns_id=""
+  # g. DNS (an existing correct record is reused; none is created before a connector)
+  local dns_created=0 new_dns_id="" dns_held=0
   if [ -n "$rec_id" ]; then
     step "[ok] CNAME $COUNCIL_HOST -> $expected present"
+  elif [ "$dedicated" = "1" ] && [ "$cconn" = "0" ]; then
+    dns_held=1
+    step "[hold] no DNS record for $COUNCIL_HOST: tunnel $ride_name has no active connection yet (zero DNS writes; the first run that sees the connector creates it)"
   else
     w POST "/zones/${ZONE_ID}/dns_records" \
       "$(jq -cn --arg n "$COUNCIL_HOST" --arg c "$expected" '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1}')"; r="$WRESP"
@@ -475,7 +497,7 @@ provision_host() {
 
   # i. edge gate (dry-run only runs it when nothing would be written)
   local wrote=$((created_app + created_tunnel + ing_changed + dns_created))
-  if [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; then
+  if [ "$dns_held" = "0" ] && { [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; }; then
     EDGE_WHY=""
     if edge_gate "$COUNCIL_HOST"; then
       step "[ok] edge gate: $COUNCIL_HOST answers 302 to Cloudflare Access"
@@ -486,13 +508,16 @@ provision_host() {
     fi
   fi
 
-  # j. dedicated path: the box must run the new tunnel's connector before the link opens
-  if [ "$dedicated" = "1" ] && { [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; }; then
-    local cconn; cconn="$(active_conns "$ride_tid")"
-    if [ "$cconn" = "ERR" ] || [ "$cconn" = "0" ]; then
-      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; the box must run its connector (token saved operator side at $token_file). Retried next run"
-      return
+  # dedicated path: the box must run the tunnel's connector before the record exists
+  if [ "$dns_held" = "1" ]; then
+    if [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; then
+      local tok_note="token saved operator side at $token_file"
+      [ -s "$token_file" ] || tok_note="token NOT saved yet at $token_file; $([ "$APPLY" = 1 ] && echo "retried next run" || echo "--apply saves it")"
+      finish CONNECTOR_PENDING "$COUNCIL_HOST rides tunnel $ride_name ($ride_tid), which has no active connection yet; no DNS record created (zero DNS writes), so no link can open. The box must run its connector ($tok_note); the next run that sees it creates the record"
+    else
+      finish PLANNED "dry-run: pass --apply to make the writes listed above; no DNS write until tunnel $ride_name has an active connection, so apply ends CONNECTOR_PENDING"
     fi
+    return
   fi
 
   if [ "$wrote" = "0" ]; then finish ALREADY_PROVISIONED

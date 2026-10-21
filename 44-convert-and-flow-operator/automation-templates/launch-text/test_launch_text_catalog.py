@@ -18,6 +18,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CATALOG = HERE / "text-sets.json"
+sys.path.insert(0, str(HERE))
+
+from sms_eligibility import MARKETING_CAP, category  # noqa: E402
 
 EXPECTED_KINDS = {
     "opt_in_confirmation",
@@ -28,7 +31,7 @@ EXPECTED_KINDS = {
     "access_link",
 }
 REQUIRED_SET_FIELDS = (
-    "id", "kind", "messages", "promotional", "draft_only",
+    "id", "kind", "category", "messages", "promotional", "draft_only",
     "opt_out_keyword", "includes_reply_invitation", "send_window",
     "waits_for", "steps",
 )
@@ -70,6 +73,7 @@ def check(catalog: dict) -> list[str]:
     seen_ids: set[str] = set()
     seen_kinds: list[str] = []
     promotional: list[str] = []
+    marketing_messages = 0
 
     for index, item in enumerate(sets, 1):
         where = "text_sets[%d]" % index
@@ -86,8 +90,19 @@ def check(catalog: dict) -> list[str]:
         seen_ids.add(unit_id)
         where = str(unit_id)
         seen_kinds.append(item.get("kind"))
+        try:
+            expected_category = category(item.get("kind"))
+        except ValueError as exc:
+            errors.append("%s: %s" % (where, exc))
+            expected_category = None
+        if item.get("category") != expected_category:
+            errors.append("%s: category %r must be %r"
+                          % (where, item.get("category"), expected_category))
+        if (item.get("category") == "marketing") != (item.get("promotional") is True):
+            errors.append("%s: promotional must match the marketing category" % where)
         if item.get("promotional") is True:
             promotional.append(where)
+            marketing_messages += int(item.get("messages") or 0)
 
         if item.get("draft_only") is not True:
             errors.append("%s: draft_only must be true" % where)
@@ -142,6 +157,12 @@ def check(catalog: dict) -> list[str]:
         errors.append("kinds must be exactly %s, got %s" % (sorted(EXPECTED_KINDS), sorted(seen_kinds)))
     if len(promotional) > 5:
         errors.append("%d promotional sets exceeds the cap of 5" % len(promotional))
+    if budget.get("contact_marketing_cap") != MARKETING_CAP:
+        errors.append("promotional_budget.contact_marketing_cap must be %d"
+                      % MARKETING_CAP)
+    if marketing_messages > MARKETING_CAP:
+        errors.append("%d marketing messages exceed the aggregate contact cap of %d"
+                      % (marketing_messages, MARKETING_CAP))
     if budget.get("used") != len(promotional):
         errors.append("promotional_budget.used=%r but %d sets are promotional" % (budget.get("used"), len(promotional)))
     if sorted(budget.get("sets") or []) != sorted(promotional):
