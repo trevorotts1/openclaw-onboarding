@@ -58,6 +58,7 @@ run_job() {  # <args...> : stdout+stderr to $OUT, status to $RC
       COUNCIL_EDGE_URL_TEMPLATE="http://127.0.0.1:$PORT/edge/%s/" COUNCIL_EDGE_TRIES=2 COUNCIL_EDGE_SLEEP=0 \
       CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct \
       COUNCIL_ACCESS_STATE_DIR="$SD" COUNCIL_ACCESS_ENV_FILE="$WORK/no-such-env" TMPDIR="$WORK" \
+      COUNCIL_CC_EMAILS_FILE="${COUNCIL_CC_EMAILS_FILE:-$WORK/no-cc-emails}" COUNCIL_CC_OPERATOR_EMAILS="" \
       "$JOB" "$@" >"$OUT" 2>&1
   RC=$?
 }
@@ -87,6 +88,7 @@ check "dry-run sends GET only" test "$(nonget_count)" = 0
 check "receipt says dry-run, 2 hosts PLANNED" test "$(rcpt '[.mode, .total, .counts.PLANNED]')" = '["dry-run",2,2]'
 check "runs.log has one line" test "$(wc -l < "$SD/runs.log" | tr -d ' ')" = 1
 check "lock released after the run" test ! -e "$SD/run.lock"
+check "no operator email: the Access step refuses (exit 3), writes nothing, and the run still exits 0" test "$(rcpt '[.cc_access.ran, .cc_access.exit]')" = '[false,3]'
 
 echo "== 3. apply: provisions a ready host, reports refusals, still exits 0"
 FIXTURE_OFFSET=0 fixture alpha beta gamma | jq -c --arg z "$Z" --arg g "00000000000000000123456789abcdf2" '
@@ -146,6 +148,38 @@ check "fresh lock: skipped, exit 0, no requests" bash -c "test $RC = 0 && test !
 touch -t 202001010000 "$SD/run.lock"
 run_job --apply
 check "stale lock (older than 2h) is recovered and the run proceeds" bash -c "test $RC = 0 && test -s '$LOG' && test ! -e '$SD/run.lock'"
+
+echo "== 8b. step 1: ensure-cc-access.sh runs before provisioning, new client needs no human step"
+printf '{"operator":["ops@cx-test.example"],"clients":{"newbox":["owner-new@cx-test.example"]}}\n' > "$WORK/cc-emails.json"
+export COUNCIL_CC_EMAILS_FILE="$WORK/cc-emails.json"
+FIXTURE_OFFSET=20 fixture newbox noemail driftbox | jq -c --arg z "$Z" '
+  .apps |= map(select(.domain == ("driftbox."+$z)))                          # newbox and noemail have no Command Center login yet
+  | .idps = [{id:"idp-otp",type:"onetimepin",name:"otp"}]
+  | .policies |= with_entries(select(.key == "app-cc-driftbox"))
+  | .policies["app-cc-driftbox"][0].include += [{everyone:{}}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_job
+check "dry-run: exit 0 and GET only" bash -c "test $RC = 0 && test $(nonget_count) = 0"
+check "dry-run receipt: cc_access ran, 1 planned, 1 needs-email, 1 drift" test "$(rcpt '[.cc_access.ran, .cc_access.planned, (.cc_access.needs_email|length), (.cc_access.drift|length)]')" = '[true,1,1,1]'
+check "cc-access receipts are written in the same state dir" bash -c "test -s '$SD/cc-access-last-run.json' && test -s '$SD/cc-access-runs.log'"
+run_job --apply
+check "apply: NEEDS_EMAIL and DRIFT are surfaced but the run exits 0" test "$RC" = 0
+check "apply receipt: newbox app created, noemail needs an email, driftbox drift (not overwritten)" test "$(rcpt '[.cc_access.created, .cc_access.needs_email, .cc_access.drift]')" = '[1,["noemail.'$Z'"],["driftbox.'$Z'"]]'
+check "runs.log line carries cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_needs_email=1 cc_drift=1'"
+check "the Access app write for newbox comes before newbox is provisioned" bash -c "
+  a=\$(grep -n 'POST .*access/apps' '$LOG' | head -n1 | cut -d: -f1); d=\$(grep -n 'POST .*dns_records' '$LOG' | head -n1 | cut -d: -f1);
+  test -n \"\$a\" && test -n \"\$d\" && test \"\$a\" -lt \"\$d\""
+check "newbox is provisioned in that same run (no second step)" test "$(rcpt '.provisioned')" = '["newbox.'$Z'"]'
+check "noemail is retried, not failed" test "$(rcpt '[.refused[] | select(.host == "noemail.'$Z'") | .reason]')" = '["NOT_PROVISIONED"]'
+cp "$STATE" "$WORK/after-cc.json"; start_fake "$WORK/after-cc.json"
+run_job --apply
+check "second apply: zero writes (idempotent)" test "$(nonget_count)" = 0
+unset COUNCIL_CC_EMAILS_FILE COUNCIL_CC_OPERATOR_EMAILS
+printf '#!/usr/bin/env bash\necho boom >&2; exit 9\n' > "$WORK/crash.sh"; chmod +x "$WORK/crash.sh"
+COUNCIL_ACCESS_ENSURE_CC="$WORK/crash.sh" run_job
+check "a crashing Access step never fails the run; its exit shows in the receipt" test "$RC" = 0 -a "$(rcpt '[.cc_access.ran, .cc_access.exit]')" = '[false,9]'
+COUNCIL_ACCESS_ENSURE_CC="$WORK/missing.sh" run_job
+check "a missing Access step script never fails the run" test "$RC" = 0 -a "$(rcpt '.cc_access.exit')" = 127
 
 echo "== 9. the token never leaks"
 check "token in no output, receipt or log" bash -c "! grep -rq -e '$TOKEN' '$WORK' --include='out*' --include='*.json' --include='*.log' --exclude='f.json' --exclude='after*' --exclude='delta.json' --exclude='state.*' --exclude='log.*'"

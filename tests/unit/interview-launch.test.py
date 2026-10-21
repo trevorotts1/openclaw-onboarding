@@ -222,6 +222,124 @@ STUB
         result=subprocess.run(['bash',str(ROOT/'32-command-center-setup/scripts/create-tunnel.sh'),'client-a','Client A','a@example.test'],env=env,capture_output=True,text=True)
         self.assertEqual(result.returncode,1);self.assertEqual(calls.read_text().splitlines(),['call'])
         self.assertFalse((self.root/'oc/.env').exists())
+    # ---- W41-E: create-tunnel exit split (pre-send retryable, body terminal) ----
+    def tunnel_fixture(self,curl_body,cloudflared=True):
+        # Hermetic PATH: only these tools, so no real brew/cloudflared/pm2 is ever reached.
+        import shutil,sys
+        bindir=self.root/'bin';bindir.mkdir(exist_ok=True)
+        (bindir/'python3').symlink_to(sys.executable)
+        for tool in ('uname','dirname','mkdir','chmod','mv','rm','cat','grep','mktemp'):
+            found=shutil.which(tool)
+            if found:(bindir/tool).symlink_to(found)
+        if cloudflared:
+            (bindir/'cloudflared').write_text('#!/bin/sh\nexit 0\n');(bindir/'cloudflared').chmod(0o755)
+        (bindir/'curl').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE_CALLS"\n'+curl_body);(bindir/'curl').chmod(0o755)
+        home=self.root/'home';home.mkdir(exist_ok=True)
+        return dict(PATH=str(bindir),HOME=str(home),OPENCLAW_ROOT=str(self.root/'oc'),CC_TUNNEL_IDEMPOTENCY_KEY='fixture-installation-command-center',
+                    CC_TUNNEL_EXPECTED_HOST='client-a.zerohumanworkforce.com',FIXTURE_CALLS=str(self.root/'calls'))
+    def run_tunnel(self,env):
+        import subprocess,shutil
+        bash=shutil.which('bash')
+        return subprocess.run([bash,str(ROOT/'32-command-center-setup/scripts/create-tunnel.sh'),'client-a','Client A','a@example.test'],env=env,capture_output=True,text=True)
+    def posts(self):
+        calls=self.root/'calls'
+        return [c for c in calls.read_text().splitlines() if '-X POST' in c] if calls.exists() else []
+    def test_tunnel_connect_refused_is_retryable_not_terminal(self):
+        env=self.tunnel_fixture('printf "\\n000 0"\nexit 7\n')
+        result=self.run_tunnel(env)
+        self.assertEqual(result.returncode,75,result.stderr);self.assertEqual(len(self.posts()),1)
+        self.assertFalse((self.root/'oc/.env').exists())
+    def test_tunnel_connect_timeout_with_nothing_uploaded_is_retryable(self):
+        result=self.run_tunnel(self.tunnel_fixture('printf "\\n000 0"\nexit 28\n'))
+        self.assertEqual(result.returncode,75,result.stderr)
+    def test_tunnel_timeout_after_upload_stays_ambiguous(self):
+        result=self.run_tunnel(self.tunnel_fixture('printf "\\n000 120"\nexit 28\n'))
+        self.assertEqual(result.returncode,1,result.stderr);self.assertEqual(len(self.posts()),1)
+    def test_tunnel_proxy_origin_down_page_is_retryable(self):
+        result=self.run_tunnel(self.tunnel_fixture('printf "<html>bad gateway</html>\\n502 120"\n'))
+        self.assertEqual(result.returncode,75,result.stderr)
+    def test_tunnel_non_success_body_is_terminal(self):
+        result=self.run_tunnel(self.tunnel_fixture('printf \'{"status":"error"}\\n200 120\'\n'))
+        self.assertEqual(result.returncode,3,result.stderr);self.assertEqual(len(self.posts()),1)
+    def test_tunnel_missing_python_never_posts(self):
+        env=self.tunnel_fixture('exit 0\n');(self.root/'bin/python3').unlink()
+        result=self.run_tunnel(env)
+        self.assertEqual(result.returncode,75,result.stderr);self.assertEqual(self.posts(),[])
+    def test_tunnel_installs_cloudflared_user_local_when_system_dir_not_writable(self):
+        locked=self.root/'locked-bin';locked.mkdir();locked.chmod(0o555)   # empty: tmp cleanup still removes it
+        body=('for a in "$@"; do if [ "$next" = 1 ]; then printf "#!/bin/sh\\nexit 0\\n" > "$a"; exit 0; fi; [ "$a" = "-o" ] && next=1; done\n'
+              'printf \'{"status":"error"}\\n200 120\'\n')
+        env=dict(self.tunnel_fixture(body,cloudflared=False),CLOUDFLARED_INSTALL_DIR=str(locked))
+        result=self.run_tunnel(env)
+        self.assertTrue((self.root/'home/.local/bin/cloudflared').exists(),result.stderr)
+        self.assertFalse((locked/'cloudflared').exists())
+        self.assertEqual(result.returncode,3,result.stderr);self.assertEqual(len(self.posts()),1)
+    def test_tunnel_uninstallable_cloudflared_is_retryable_and_never_posts(self):
+        env=self.tunnel_fixture('exit 22\n',cloudflared=False)
+        result=self.run_tunnel(env)
+        self.assertEqual(result.returncode,75,result.stderr);self.assertEqual(self.posts(),[])
+    # ---- W41-E: run-full-install phase 6h maps the split exits ----
+    def phase6h(self,state,tunnel_rc=0,ready_rc=1,email_arg='arg@example.test'):
+        import subprocess,shlex
+        source=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
+        block=source[source.index('cc_interview_email_pending() {'):source.index('# Persist the final saved process list')]
+        skill=self.root/'skill';(skill/'scripts').mkdir(parents=True,exist_ok=True)
+        tunnel=skill/'scripts/create-tunnel.sh'
+        tunnel.write_text('#!/bin/bash\nprintf "%s\\n" "$3" >> "$FIXTURE_TUNNEL_CALLS"\nexit $FIXTURE_TUNNEL_RC\n');tunnel.chmod(0o755)
+        (skill/'scripts/verify-tenant-readiness.py').write_text('import os,sys\nopen(os.environ["FIXTURE_PROBES"],"a").write("probe\\n")\nsys.exit(int(os.environ["FIXTURE_READY_RC"]))\n')
+        self.state.parent.mkdir(parents=True,exist_ok=True);self.state.write_text(json.dumps(state))
+        setup='\n'.join(['UPDATE_ONLY=false','STATE_FILE='+shlex.quote(str(self.state)),'SKILL_DIR='+shlex.quote(str(skill)),
+            'OC_ROOT='+shlex.quote(str(self.root)),'DASHBOARD_DIR='+shlex.quote(str(self.app)),'LOG_FILE='+shlex.quote(str(self.root/'6h.log')),
+            'CLIENT_SLUG=client-a','COMPANY_NAME="Client A"','CONTACT_EMAIL='+shlex.quote(email_arg),
+            'log() { :; }',
+            'state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }',
+            'state_set() { local t; t=$(jq "$1" "$STATE_FILE") && printf "%s\\n" "$t" > "$STATE_FILE"; }'])
+        env=dict(os.environ,FIXTURE_TUNNEL_RC=str(tunnel_rc),FIXTURE_READY_RC=str(ready_rc),
+                 FIXTURE_TUNNEL_CALLS=str(self.root/'tunnel-calls'),FIXTURE_PROBES=str(self.root/'probes'))
+        result=subprocess.run(['bash','-c','set -u\n'+setup+'\n'+block],env=env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        return json.loads(self.state.read_text())
+    def tunnel_calls(self):
+        f=self.root/'tunnel-calls';return f.read_text().splitlines() if f.exists() else []
+    def probes(self):
+        f=self.root/'probes';return len(f.read_text().splitlines()) if f.exists() else 0
+    BASE={'contactEmail':'owner@example.test','installationId':'inst-1','commandCenterUrl':'https://client-a.zerohumanworkforce.com'}
+    def test_phase6h_pre_send_failure_is_retried_on_next_pass(self):
+        s=self.phase6h(dict(self.BASE),tunnel_rc=75)
+        self.assertEqual(s['commandCenterPhase6hStatus'],'retry-pending')
+        s=self.phase6h(s,tunnel_rc=0)
+        self.assertEqual(s['commandCenterPhase6hStatus'],'created');self.assertEqual(len(self.tunnel_calls()),2)
+    def test_phase6h_non_success_body_is_terminal(self):
+        s=self.phase6h(dict(self.BASE),tunnel_rc=3)
+        self.assertEqual(s['commandCenterPhase6hStatus'],'failed-webhook')
+        self.phase6h(s,tunnel_rc=0);self.assertEqual(len(self.tunnel_calls()),1)
+    def test_phase6h_ambiguous_request_reconciles_only_after_timeout(self):
+        s=self.phase6h(dict(self.BASE),tunnel_rc=1)
+        self.assertEqual(s['commandCenterPhase6hStatus'],'requested');self.assertIsInstance(s['commandCenterPhase6hRequestedAt'],int)
+        s=self.phase6h(s,tunnel_rc=0)   # fresh stamp: duplicate-CC guard holds, no probe, no POST
+        self.assertEqual((len(self.tunnel_calls()),self.probes(),s['commandCenterPhase6hStatus']),(1,0,'requested'))
+        s['commandCenterPhase6hRequestedAt']-=7200
+        s=self.phase6h(s,tunnel_rc=0,ready_rc=0)   # stale + verified: no re-POST
+        self.assertEqual((len(self.tunnel_calls()),self.probes()),(1,1))
+        s.pop('commandCenterPhase6hRequestedAt')   # legacy stamp without a time counts as stale
+        s=self.phase6h(s,tunnel_rc=0,ready_rc=1)   # stale + not verified: re-sent once
+        self.assertEqual((len(self.tunnel_calls()),self.probes(),s['commandCenterPhase6hStatus']),(2,2,'created'))
+    def test_phase6h_placeholder_email_unchanged_and_state_email_is_sent(self):
+        s=self.phase6h(dict(self.BASE,contactEmail='pending+client-a@zerohumanworkforce.com'))
+        self.assertEqual(s['commandCenterPhase6hStatus'],'email-pending');self.assertEqual(self.tunnel_calls(),[])
+        self.phase6h(dict(self.BASE),email_arg='not-validated@example.test')
+        self.assertEqual(self.tunnel_calls(),['owner@example.test'])
+    def test_initialize_ignores_an_invalid_supplied_email(self):
+        for bad in ('not-an-email','two@@example.test','a b@example.test'):
+            with self.subTest(email=bad):
+                self.state.unlink(missing_ok=True)
+                m.initialize(self.state,'client-a','Client A',bad,{})
+                self.assertEqual(json.loads(self.state.read_text())['contactEmail'],'')
+        self.state.unlink()
+        m.initialize(self.state,'client-a','Client A','pending+client-a@zerohumanworkforce.com',{})
+        self.assertEqual(json.loads(self.state.read_text())['contactEmail'],'pending+client-a@zerohumanworkforce.com')
+        m.initialize(self.state,'client-a','Client A','owner@example.test',{})
+        self.assertEqual(json.loads(self.state.read_text())['contactEmail'],'owner@example.test')
     def test_missing_state_real_preflight_negative_control(self):
         import subprocess,shlex
         source=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
