@@ -54,7 +54,7 @@ def test_model_screen_carries_the_live_prices_and_the_model_example():
     assert screen["question"].endswith(screen["price"])       # card ask and export agree
     prices = [o["price"] for o in screen["options"]]
     assert len(prices) == 4 and all(p and p.startswith("$") for p in prices), prices
-    assert screen["example"].startswith('"MiniMax H3.'), screen["example"]
+    assert screen["example"].startswith('"Hailuo 02 Standard.'), screen["example"]
 
 
 def test_every_other_screen_has_no_price_but_still_an_example():

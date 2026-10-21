@@ -133,7 +133,7 @@ GET /questions.json -> HTTP 200
 2. id=length     example='"60 seconds. It\'s for Instagram." …'                options=5 recommended=[1]
 3. id=music      example='"Soul Rise. It starts with the problem…'             options=3 recommended=[1]
 4. id=look       example='"Lifelike 3D. I want it to look real." …'            options=5 recommended=[1]
-5. id=model      example='"MiniMax H3. Good quality at a fair price."'         options=4 recommended=[1]
+5. id=model      example='"Hailuo 02 Standard. Good quality at a fair price."'         options=4 recommended=[1]
 6. id=spend      example='"1. The recommended price." Clear, and it includes…' options=1 recommended=[]
 7. id=storyboard example='"Approved. Change shot 4 to show the storefront."'   options=2 recommended=[1]
 8. id=song       example='"Version B. I can\'t stop humming the chorus."'      options=2 recommended=[1]
@@ -266,7 +266,7 @@ Run dir listing:
   { "n": 1, "text": "60 seconds",       "value": null, "id": "length" },
   { "n": 1, "text": "Soul Ballad",      "value": null, "id": "music" },
   { "n": 1, "text": "Lifelike 3D",      "value": null, "id": "look" },
-  { "n": 1, "text": "MiniMax H3",       "value": null, "id": "model" },
+  { "n": 1, "text": "Hailuo 02 Standard", "value": null, "id": "model" },
   { "n": 1, "text": "up to $25.00",     "value": "25", "id": "spend" },
   { "n": 1, "text": "Yes, show me first", "value": null, "id": "storyboard" },
   { "n": 1, "text": "Yes, send me 3 versions to choose from", "value": null, "id": "song" },

@@ -68,6 +68,20 @@ SCENARIOS = (
     "booking_success", "no_availability", "answered_not_booked", "timeout",
     "repeat_reply", "keyword_wake", "stop_opt_out", "human_handoff",
 )
+# Typed completion values. A required scenario is satisfied only by its exact
+# outcome token — any other string (including "failed") is incomplete, even
+# with an evidence_ref present. ponytail: single-token outcomes; upgrade to a
+# versioned outcome enum when a second consumer needs structured reasons.
+SCENARIO_OUTCOMES = {
+    "booking_success": ("booked",),
+    "no_availability": ("no_availability",),
+    "answered_not_booked": ("answered",),
+    "timeout": ("timed_out",),
+    "repeat_reply": ("answered_once",),
+    "keyword_wake": ("reactivated",),
+    "stop_opt_out": ("opted_out",),
+    "human_handoff": ("handed_off",),
+}
 KNOWLEDGE_FIELDS = (
     "deliverables", "eligibility", "terms", "payment_schedule",
     "supported_claims", "access",
@@ -247,6 +261,7 @@ def validate(bundle):
     if not isinstance(evidence, list):
         add("EVIDENCE", "evidence must be a list")
         evidence = []
+    targeted_digests = set()
     for adapter_name in REQUIRED_MODES[mode]:
         playbook = PLAYBOOK[adapter_name]
         candidates = [e for e in evidence if isinstance(e, dict)
@@ -276,6 +291,8 @@ def validate(bundle):
             if not nonempty(entry.get("digest")):
                 continue
             targeted.append(entry)
+            if isinstance(entry.get("digest"), str) and entry["digest"].strip():
+                targeted_digests.add(entry["digest"])
         if not targeted:
             if global_only:
                 add("EVIDENCE_GLOBAL",
@@ -303,6 +320,18 @@ def validate(bundle):
         for key in ("outcome", "evidence_ref"):
             if not nonempty(scenario.get(key)):
                 add("SCENARIO", "scenarios.%s.%s must be nonempty" % (name, key))
+        expected = SCENARIO_OUTCOMES[name]
+        if scenario.get("outcome") not in expected:
+            add("SCENARIO_OUTCOME",
+                "scenarios.%s.outcome must be %s (got %r); "
+                "a failed required scenario never satisfies completion"
+                % (name, " or ".join(repr(v) for v in expected),
+                   scenario.get("outcome")))
+        ref = scenario.get("evidence_ref")
+        if nonempty(ref) and ref not in targeted_digests:
+            add("SCENARIO_EVIDENCE",
+                "scenarios.%s.evidence_ref must equal the digest of this "
+                "bundle's targeted %s evidence" % (name, name))
         if name == "human_handoff":
             for key in ("observable_owner", "closure_path"):
                 if not nonempty(scenario.get(key)):

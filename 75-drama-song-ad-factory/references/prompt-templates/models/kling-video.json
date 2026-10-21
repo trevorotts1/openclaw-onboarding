@@ -1,7 +1,7 @@
 {
   "model_block": "kling-video",
   "applies_to": ["kling-3.0-omni/image-to-video", "kling-3.0-omni/text-to-video", "kling-3.0/video", "kling/v2-5-turbo-image-to-video-pro"],
-  "when_used": "Only when the card's video model (price menu, F14 lock) is a Kling video model instead of MiniMax H3. Never for lip-sync (that is kling/ai-avatar-standard, models/kling-ai-avatar-standard.json).",
+  "when_used": "Only when the card's video model (price menu, F14 lock) is a Kling video model instead of Hailuo 02 Standard. Never for lip-sync (that is kling/ai-avatar-standard, models/kling-ai-avatar-standard.json).",
   "section_order": "Same order as minimax-h3.json, compressed: header, subject, action, reference, camera, lens_light, continuity, look, book, pages, physics, beats, policy, negatives.",
   "section_scale": 0.38,
   "differences_from_h3": [

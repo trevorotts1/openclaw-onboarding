@@ -279,17 +279,17 @@ If you accept Lifelike 3D, we move on.
 
 ## STEP 10: Question 7, Pick the Quality Level (Video Model)
 
-**What happens.** We ask: *Which video model?* This is the engine that films your shots. The options are MiniMax H3 (recommended), Seedance 2.5, Seedance 2.0 Mini and Google Veo 3.1. Your card shows the cost for your length, so you can choose with your eyes open.
+**What happens.** We ask: *Which video model?* This is the engine that films your shots. The options are Hailuo 02 Standard (recommended), Seedance 2.5, Seedance 2.0 Mini and Google Veo 3.1. Your card shows the cost for your length, so you can choose with your eyes open.
 
 **Why it matters.** The model controls the quality and the cost of the video shots. Higher quality can cost more. The recommended option is a strong balance for most videos, so most people simply accept it.
 
 **How to do it.** Look at the cost on your card and decide how much quality this particular video is worth. For a flagship offer you may want the best. For a quick social video, the recommended choice is plenty. Make sure the matching account has enough credit (see Step 2).
 
-**Great answer:** "MiniMax H3. Good quality at a fair price."
+**Great answer:** "Hailuo 02 Standard. Good quality at a fair price."
 
 **Weak answer (and how to fix it):** "The best one." Best at what? Fix it by naming the model, or by saying "recommended." We can also explain the differences if you ask.
 
-**What Maya said:** "MiniMax H3. It's my first video, so I'll go with the recommended one."
+**What Maya said:** "Hailuo 02 Standard. It's my first video, so I'll go with the recommended one."
 
 > **Pro tip:** If you are unsure, take the recommended option. You can always step up for the next video.
 
@@ -339,7 +339,7 @@ If you accept Lifelike 3D, we move on.
 > 4. Length: 60 seconds
 > 5. Music: Soul Rise
 > 6. Video style: 2D Hand-Painted
-> 7. Video model: MiniMax H3
+> 7. Video model: Hailuo 02 Standard
 > 8. Budget: the recommended price, with a 20% redo allowance
 
 **Great answer:** "Yes." Or: "Change 4 to 90 seconds."

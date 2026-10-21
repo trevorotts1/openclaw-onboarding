@@ -231,6 +231,86 @@ class CompileTests(unittest.TestCase):
         errors = wb._contract_errors(campaign)
         self.assertTrue(any("unknown workflow" in error for error in errors), errors)
 
+    def test_approved_send_date_reaches_saved_templates(self):
+        def with_open(open_at, launch_at):
+            document = synthetic_document()
+            plan = {
+                "schema_version": "1.0.0",
+                "launch_id": "l07-build",
+                "offer": {"name": "Synthetic", "price_usd": 1,
+                          "currency": "USD", "payment_plans": False},
+                "launch_calendar": {
+                    "launch_at": launch_at,
+                    "doors_open_at": open_at,
+                    "doors_close_at": "2026-11-10T23:59:00-05:00",
+                    "timezone": "America/New_York",
+                },
+                "pages": [{"id": "page_landing", "kind": "landing",
+                           "url": "https://example.test", "waits_for": []}],
+                "email_sequences": [
+                    {"id": "email_pre_launch", "kind": "pre_launch",
+                     "provider": "skill50", "email_count": 2,
+                     "draft_only": True, "waits_for": []},
+                ],
+                "text_sets": [],
+                "automations": [
+                    {"id": "auto_pre_launch", "family": "pre_launch",
+                     "template": "new", "build_rail": "skill44_engine",
+                     "draft_only": True, "trigger": {"type": "tag_added"},
+                     "waits_for": ["email_pre_launch", "page_landing"]},
+                ],
+            }
+            temp = Path(tempfile.mkdtemp(prefix="l07-date-"))
+            plan_path = temp / "plan.json"
+            plan_path.write_text(json.dumps(plan))
+            seq = {"folder": "F",
+                   "_meta": {"sequence_id": "email_pre_launch"},
+                   "email_pre_launch": {
+                       "name": "pre", "status": "draft",
+                       "templates": [
+                           {"id": "e0", "type": "email", "name": "E0",
+                            "attributes": {"subject": "s", "body": "<p>b</p>",
+                                           "html": "<p>b</p>",
+                                           "fromName": "n"}},
+                           {"id": "w0", "type": "wait", "name": "Wait",
+                            "attributes": {"type": "time", "startAfter": {
+                                "type": "days", "value": 1, "when": "after"}}},
+                           {"id": "e1", "type": "email", "name": "E1",
+                            "attributes": {"subject": "s", "body": "<p>b</p>",
+                                           "html": "<p>b</p>",
+                                           "fromName": "n"}},
+                       ]}}
+            seq_path = temp / "pre.json"
+            seq_path.write_text(json.dumps(seq))
+            out = temp / "out.json"
+            rc = plan_reader.main([
+                "--launch-plan", str(plan_path),
+                "--build-plan", str(seq_path),
+                "--out", str(out), "--now", NOW])
+            self.assertEqual(rc, 0)
+            return wb.compile_launch_builds(
+                json.loads(out.read_text()))
+
+        early = with_open("2026-11-03T09:00:00-05:00",
+                          "2026-11-03T12:00:00-05:00")
+        late = with_open("2026-11-05T09:00:00-05:00",
+                         "2026-11-05T12:00:00-05:00")
+        key_early = next(k for k in early if "pre_launch" in k)
+        key_late = next(k for k in late if "pre_launch" in k)
+        sched = {t["id"]: t["attributes"].get("schedule")
+                 for t in early[key_early]["templates"]
+                 if t.get("type") == "email"}
+        self.assertTrue(all(sched.values()),
+                        "every saved email template carries its compiled send date")
+        self.assertNotEqual(
+            [t["attributes"]["schedule"]["at"]
+             for t in early[key_early]["templates"]
+             if t.get("type") == "email"],
+            [t["attributes"]["schedule"]["at"]
+             for t in late[key_late]["templates"]
+             if t.get("type") == "email"],
+            "an approved send-date shift must move the saved workflow")
+
 
 class JournalBuildTests(unittest.TestCase):
     def setUp(self):

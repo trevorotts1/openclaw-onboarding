@@ -150,6 +150,11 @@ def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
     given in any harness never get asked again. A default or suggestion enters as recommended_unapproved,
     never as approved. brand_ref and brand_hash come from the brand file the answers produced (Skill 71
     brand_colors.py record-answers); without that file the brand question stays open."""
+    if session["state"] == "building":
+        raise IntakeError("this launch is already building on an approved plan; a change "
+                          "must go through request_revision(), which invalidates the "
+                          "approval and returns the session to collecting")
+    was_approved = session["state"] == "approved"
     for field_key, entry in _client_intake().to_launch_known(answers).items():
         session["answers"][field_key] = {"value": entry["value"], "state": entry["state"],
                                          "source_ref": entry["source_ref"], "question_id": None}
@@ -164,7 +169,7 @@ def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
         session["brand_hash"] = hashlib.sha256(bf.read_bytes()).hexdigest()
         _set(session, "brand_ref", session["brand_ref"], "verified_existing", "d1_brand", "answers-file")
     session["history"].append({"at": _now(), "event": "answers_file_ingested"})
-    if session["state"] == "approved":
+    if was_approved:
         invalidate_approval(session, "answers file re-ingested after approval")
     _persist(session)
     return session
@@ -228,10 +233,16 @@ def launch_answers_block(session: Dict[str, Any]) -> Dict[str, Any]:
 def invalidate_approval(session: Dict[str, Any], reason: str) -> Dict[str, Any]:
     """A changed fact, a changed plan, or a revision request invalidates the client's
     approval. The plan is kept for inspection but no longer authorized: the session
-    returns to collecting and must be re-assembled, re-presented and re-approved."""
+    returns to collecting and must be re-assembled, re-presented and re-approved.
+    Full-plan artifacts travel with the session, so they are cleared too: a stale
+    launch_plan with a stale launch_answers block must never read as approved."""
     approval = session.get("approval") or {}
     session["approval"] = None
     session["plan_hash"] = None
+    session["launch_plan"] = None
+    session["launch_plan_missing"] = []
+    session["approved_launch_plan"] = None
+    session["approved_launch_plan_digest"] = None
     if session.get("plan"):
         session["plan"]["plan_approval_ref"] = None
         session["plan"]["status"] = "collecting"
@@ -825,6 +836,17 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
             "launch_plan_missing": session.get("launch_plan_missing", [])}
 
 
+def full_plan_digest(full_plan: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Canonical digest of the FULL launch plan (pages + emails + texts +
+    automations + AI + launch_answers block) — the same digest rule the
+    session contract publishes for the Skill 50 consumer fixture."""
+    if full_plan is None:
+        return None
+    return hashlib.sha256(json.dumps(full_plan, sort_keys=True,
+                                     separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def plan_hash(launch: Dict[str, Any]) -> str:
     """The hash an approval binds to — the plan's CONTENT (offers, prices,
     route, revision, mode). Lifecycle fields (status, plan_approval_ref) are
@@ -942,7 +964,10 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
             *, worker_identity_ref: str) -> Dict[str, Any]:
     """Bind the client's approval to the exact plan. Runs the gate; on
     success the launch record flips to approved, recommended fields the plan
-    used become approved_recommendation, and the session may build."""
+    used become approved_recommendation, and the session may build. The full
+    launch plan (pages + emails + texts + automations + AI) is pinned beside
+    the record with its digest at approval time: any later rebuild that does
+    not reproduce the digest proves the plan changed and the approval is spent."""
     if session["state"] == "recommendation_ready" and session.get("plan"):
         # The approval act itself is the presentation acknowledgment: the
         # client is approving THIS hashed plan, recommendations included.
@@ -962,6 +987,13 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
         session["plan"], approval,
         client_identity_ref=session["client_identity_ref"],
         worker_identity_ref=worker_identity_ref)
+    # Pin the FULL plan the client approved, next to the record the gate bound.
+    # The digest is canonical JSON; a later rebuild that differs proves the plan
+    # changed after approval (plan_hash_mismatch), never a second approval.
+    session["approved_launch_plan"] = session.get("launch_plan")
+    session["approved_launch_plan_digest"] = (
+        full_plan_digest(session["launch_plan"])
+        if session.get("launch_plan") is not None else None)
     session["plan"]["status"] = "approved"
     session["plan"]["plan_approval_ref"] = approval["approval_id"]
     session["approval"] = approval
@@ -990,12 +1022,16 @@ def begin_build(session: Dict[str, Any]) -> Dict[str, Any]:
 
 def request_revision(session: Dict[str, Any], note: str = "") -> Dict[str, Any]:
     if session["state"] not in ("awaiting_plan_approval", "recommendation_ready",
-                                "approved"):
+                                "approved", "revision_requested"):
         raise IntakeError("no plan to revise")
     session["plan_revision"] += 1
     session["plan"] = None
     session["plan_hash"] = None
     session["approval"] = None
+    session["launch_plan"] = None
+    session["launch_plan_missing"] = []
+    session["approved_launch_plan"] = None
+    session["approved_launch_plan_digest"] = None
     session["asked_ids"] = []  # a revised plan may need answers revisited
     session["state"] = "revision_requested"
     session["history"].append({"at": _now(), "event": "revision_requested",

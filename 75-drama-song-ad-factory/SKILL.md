@@ -1138,7 +1138,7 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+- **Video model question.** Four models (Hailuo 02 Standard RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
   video_model_rates.json`) and one price function shared by the question and
@@ -1207,7 +1207,7 @@ SOP named above.
   shot with its own storyboard field, never a patch**: INNER CHANEL is a named
   cast member, receipt line 252 names S6 (S030 to S031 two-shot), built as
   still `IMG-SHOT-S031-T2` and clip `VID-S031-T3` with the overlay assembled
-  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by MiniMax-H3 768p, Kling
+  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by Hailuo 02 Standard 768P, Kling
   for lip-sync only.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows

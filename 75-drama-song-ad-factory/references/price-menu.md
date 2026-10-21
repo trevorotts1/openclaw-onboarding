@@ -354,9 +354,9 @@ total before approval. Books and authors are never mixed.
 - Retake allowance = 20% of (video + keyframes) for one shape; not included
   in the "One shape" or "Both shapes" figures. For both shapes, double it.
 - Silent rates only; the shots carry no audio.
-- Seedance 2.0 Mini 1080p and MiniMax H3 720p/1080p do not exist: Mini
-  offers 480p/720p; H3 offers 768P and 2K. Both are shown with their
-  nearest tiers.
+- Seedance 2.0 Mini 1080p and Hailuo 02 720p/1080p do not exist: Mini
+  offers 480p/720p; Hailuo 02 Standard offers 768P. Both are shown with
+  their nearest tiers.
 - Gemini Omni Flash 1.1 is billed per clip by length (126 credits for 10 s),
   so 720p and 1080p cost the same and one row covers both.
 

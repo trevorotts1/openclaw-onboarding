@@ -620,6 +620,7 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
 
     manifest_plan = manifest.get("launch_plan") or {}
     plan_sha = (manifest_plan.get("plan") or {}).get("sha256")
+    plan_ref_path = (manifest_plan.get("plan") or {}).get("path")
     units = receipt.get("units")
     if not isinstance(units, list) or not units:
         fails.append("AF-LAUNCH-PKG-RECEIPT-UNITS: the receipt carries no typed "
@@ -627,6 +628,7 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
         return fails
 
     seen: List[str] = []
+    plan_artifact = _resolve(root, plan_ref_path) if plan_ref_path else None
     for index, row in enumerate(units):
         fails.extend(_unit_receipt_violations(row, index, manifest, approved, plan_sha,
                                               root, receipt.get("live_effects")))
@@ -635,6 +637,27 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
                 fails.append(f"AF-LAUNCH-PKG-RECEIPT-UNITS: unit {row['unit_id']!r} carries "
                              f"more than one receipt")
             seen.append(row["unit_id"])
+            if plan_artifact is not None:
+                for art in row.get("artifacts") or []:
+                    if not isinstance(art, dict):
+                        continue
+                    try:
+                        target = _resolve(root, art.get("path"))
+                    except (TypeError, ValueError):
+                        continue
+                    if target == plan_artifact:
+                        fails.append(
+                            "AF-LAUNCH-PKG-RECEIPT-ARTIFACT: "
+                            f"unit {row['unit_id']!r} points at the sealed launch plan; "
+                            "planning evidence stays PLANNED and is never delivery proof")
+                        break
+            if row.get("unit_type") in ("email", "text", "automation", "conversation_ai"):
+                lane = (row.get("lane_validation") or {}).get("lane")
+                if lane == "L04":
+                    fails.append(
+                        "AF-LAUNCH-PKG-RECEIPT-LANE: "
+                        f"unit {row['unit_id']!r} is validated by L04 itself; a lane the "
+                        "launcher does not own must validate its own delivery")
 
     if manifest_plan and plan_sha:
         plan_ref = manifest_plan.get("plan") or {}
