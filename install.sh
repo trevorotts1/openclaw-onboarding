@@ -3096,7 +3096,11 @@ collect_onboarding_identity() {
     # Item 06: the CONFIRMED intake owner email, when the intake supplied one.
     # Absent means pending — Step 15c passes no email argument and the launch
     # gate classifies it; nothing here ever invents a sign-in identity.
+    # The helper validates and saves an operator-exported OPENCLAW_OWNER_EMAIL;
+    # an older downloaded helper returns none, so the export is kept, never wiped.
+    local operator_email="${OPENCLAW_OWNER_EMAIL:-}"
     OPENCLAW_OWNER_EMAIL=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerEmail", ""))')
+    [ -n "$OPENCLAW_OWNER_EMAIL" ] || OPENCLAW_OWNER_EMAIL="$operator_email"
     export OPENCLAW_OWNER_NAME OPENCLAW_COMPANY_NAME OPENCLAW_COMPANY_SLUG OPENCLAW_OWNER_EMAIL
 }
 collect_onboarding_identity || exit 8

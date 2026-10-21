@@ -132,6 +132,41 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.workspace.exists())
 
+    def test_owner_email_saved_only_when_valid_and_never_replaced(self):
+        for ignored in ('pending+fixture@zerohumanworkforce.com', 'not-an-email', ' '):
+            self.assertNotIn('ownerEmail', self.collect(owner='Fixture Owner', company='Fixture Business', email=ignored))
+        value = self.collect(email='  owner@example.test ')
+        self.assertEqual(value['ownerEmail'], 'owner@example.test')
+        saved = json.loads((self.root/'onboarding-identity.json').read_text())
+        self.assertEqual(saved['ownerEmail'], 'owner@example.test')
+        self.assertEqual(self.collect()['ownerEmail'], 'owner@example.test')
+        before = (self.root/'onboarding-identity.json').read_bytes()
+        with self.assertRaises(ValueError): self.collect(email='other@example.test')
+        self.assertEqual((self.root/'onboarding-identity.json').read_bytes(), before)
+
+    def test_real_installer_gate_keeps_the_operator_owner_email(self):
+        import shlex
+        source = (ROOT/'install.sh').read_text()
+        start = source.index('collect_onboarding_identity() {')
+        function = source[start:source.index('\n}\ncollect_onboarding_identity', start)+2]
+        def run(script_dir):
+            driver = 'set -eu\n' + function + '\n' + '\n'.join([
+                '_SCRIPT_DIR='+shlex.quote(str(script_dir)),
+                'OC_CONFIG='+shlex.quote(str(self.root)),
+                'OC_WORKSPACE_DEFAULT='+shlex.quote(str(self.workspace)),
+                'export OPENCLAW_OWNER_NAME="Fixture Owner" OPENCLAW_COMPANY_NAME="Fixture Business" OPENCLAW_OWNER_EMAIL=owner@example.test',
+                'collect_onboarding_identity',
+                'test "$OPENCLAW_OWNER_EMAIL" = owner@example.test'])
+            return subprocess.run(['bash', '-c', driver], capture_output=True, text=True)
+        result = run(ROOT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads((self.root/'onboarding-identity.json').read_text())['ownerEmail'], 'owner@example.test')
+        # An older helper (no ownerEmail in its answer) must not wipe the export.
+        old = self.root/'old'; (old/'scripts').mkdir(parents=True)
+        (old/'scripts/onboarding-identity.py').write_text('print(\'{"status":"ready","ownerName":"Fixture Owner","companyName":"Fixture Business","companySlug":"fixture-business"}\')\n')
+        result = run(old)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_real_terminal_prompts_for_both_answers(self):
         pid, fd = pty.fork()
         if pid == 0:
