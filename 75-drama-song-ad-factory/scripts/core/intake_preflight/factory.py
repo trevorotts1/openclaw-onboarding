@@ -1694,7 +1694,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="factory.py",
                                  description="Drama-song factory control CLI (intake/preflight/next).")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    i = sub.add_parser("intake", help="Normalize brief, batch <=3 missing essentials.")
+    i = sub.add_parser("intake", help="Normalize brief, ask ONE missing essential per turn.")
     i.add_argument("--brief", default=None, help="Brief as JSON string.")
     i.add_argument("--brief-file", default=None)
     i.add_argument("--settings-file", default=None)

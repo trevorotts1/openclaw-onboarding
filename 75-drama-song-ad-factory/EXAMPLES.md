@@ -65,11 +65,15 @@ EXAMPLE 1: INTAKE - THIN BRIEF ASKS STORY QUESTIONS ONLY (NEVER MONEY)
     --brief '{"offer": "demo offer"}'
 
 Observed: exit 2, outcome=waiting, reason_code=missing-essentials,
-digest f533196064a9d066, two questions bundled in ONE message (at most three):
+digest f533196064a9d066, ONE question in the message (the catalog holds at
+most three, asked one per turn):
 
-  1. Who is this ad for, and what should they do after watching it?
-     For example: 'Women 35-55 who want a second income - register for my free masterclass.'
-  2. What placement/format should we produce (aspect ratio + target length)?
+  Who is this ad for, and what should they do after watching it?
+  For example: 'Women 35-55 who want a second income - register for my free masterclass.'
+
+Add the client's answer to the brief and run intake again: the next
+question (here, the placement/format one) is the message then - never both
+at once.
 
 Placement substitutes into a leftover question slot; the story essentials are
 offer / audience+action (plus the exact website when the ad sends people to
