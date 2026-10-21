@@ -1,0 +1,14 @@
+# Skill 75 lip-sync gate dependencies. Read by scripts/lipsync_preflight.py.
+#
+# These are the ONLY Python packages the skill needs. The control layer
+# (factory.py intake/preflight, state, ledger, QC gates) is stdlib only, so a
+# missing entry here disables lip-sync picture generation and nothing else.
+#
+# Install into the interpreter that runs the skill, never into a different one:
+#   python3 -m pip install -r requirements-lipsync.txt
+# or, for the exact interpreter that ran the check:
+#   python3 scripts/lipsync_preflight.py --repair
+
+mediapipe>=0.10.14
+opencv-python-headless
+numpy

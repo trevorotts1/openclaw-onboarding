@@ -56,18 +56,102 @@ per-item copy; verify afterwards:
 cat "$SKILLS_DIR/75-drama-song-ad-factory/skill-version.txt"
 ```
 
-## Step 2b: Lip-sync picture gate (face model + mediapipe)
+## Step 2b: Lip-sync picture gate (mediapipe + OpenCV + numpy + face model)
 
-Without these the gate refuses every lip-sync job (nothing else in the skill needs them):
+The lip-sync picture gate needs four things: the `mediapipe`, `cv2` (OpenCV) and
+`numpy` imports, and the pinned `face_landmarker.task` model file. One command
+installs or repairs all four, and is safe to re-run at any time:
 
 ```bash
-python3 -m pip install 'mediapipe>=0.10.14' opencv-python-headless numpy
-python3 "$SKILLS_DIR/75-drama-song-ad-factory/scripts/core/lip_sync/lip_gate/install_face_model.py"
+python3 "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --repair
 ```
 
-The second command downloads `face_landmarker.task` from Google's official URL, verifies its
-pinned sha256, and places it in `assets/face_landmarker.task` (or `$LIPSYNC_FACE_MODEL`).
-Re-run it after every skill update (an update replaces the skill folder).
+Check without changing anything, safe to run at any time:
+
+```bash
+python3 "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --check
+```
+
+It prints one line per prerequisite in one of three states, and the exact
+copy-paste repair command for every line that is not PRESENT:
+
+```text
+mediapipe   PRESENT              0.10.21
+opencv      PRESENT              4.13.0
+numpy       PRESENT              2.4.6
+face-model  MISSING              assets: no file at .../assets/face_landmarker.task
+mediapipe   repair: <python> -m pip install -r .../requirements-lipsync.txt
+face-model  repair: <python> .../lip_gate/install_face_model.py
+            repair all: <python> .../scripts/lipsync_preflight.py --repair
+```
+
+The states are `PRESENT`, `MISSING` (no such module, or no such file), and
+`PRESENT-BUT-BROKEN` (the import raises for another reason, the model file is
+present but is not the pinned 3758596 bytes and sha256, or the model is good at
+`assets/` but unreadable to the clip gate that falls back to
+`scripts/core/lip_sync/lip_gate/face_landmarker.task`).
+
+Exit codes match `shared-utils/check-skill-prereqs.sh`, so nothing downstream
+changes: `0` every prerequisite present and valid, `2` one or more missing or
+broken (informational, exactly like the checker's Rule 16 behaviour), `1` the
+check itself could not run. This never blocks a non-lip-sync run, and it never
+lets a lip-sync job through: the gate still refuses without all four.
+
+### Which interpreter the three packages go into
+
+They must be installed into the same interpreter that runs the skill, not into
+some other Python on the box. The preflight prints the exact path it checked and
+puts that same path in every repair command, so a copy-paste cannot land the
+packages in the wrong interpreter. To see the path on its own:
+
+```bash
+python3 -c 'import sys; print(sys.executable)'
+```
+
+Never install into a venv the skill is not launched from. If the box has more
+than one Python, launch the skill and this preflight with one and the same
+interpreter every time; `sys.executable` in the repair line is that one.
+
+If `pip install` stops with `No matching distribution found` (mediapipe publishes
+no CPython 3.14 wheel at the time of writing), build a 3.13 venv and run the
+skill from it, or the gate stays MISSING on the bare interpreter:
+
+```bash
+python3.13 -m venv ~/.openclaw/venvs/lipsync      # VPS: /data/.openclaw/venvs/lipsync
+~/.openclaw/venvs/lipsync/bin/python "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --repair
+```
+
+The venv then has to be the interpreter for every later run of the skill.
+
+### The model file
+
+`install_face_model.py` downloads Google's official float16 model from
+
+```text
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
+```
+
+verifies the pinned sha256 `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff`
+and the 3758596-byte size, and places it at `assets/face_landmarker.task`. It
+ignores `$LIPSYNC_FACE_MODEL`, which the gates read but nothing writes. With a
+good file already in place a re-run is a no-op. A failed download exits non-zero
+and names the URL and the HTTP status, never a skip. `--repair` also links the
+verified file into `scripts/core/lip_sync/lip_gate/` so the clip gate finds it
+without the environment variable.
+
+Run this step after every install and after every update: an update replaces the
+skill folder, and `assets/face_landmarker.task` goes with it.
+
+### What is unavailable until all four are present
+
+Lip-sync picture generation is unavailable until all four are present. The
+picture gate and the measured clip gate both refuse without them, and that
+refusal is deliberate: a missing prerequisite is never a pass.
+
+Everything else in the skill works with none of them: music, lyrics, vocals,
+clips, assembly, QC and delivery stage and run to delivery normally. A campaign
+that uses no lip-sync picture finishes today; only the lip-sync picture stage
+waits.
 
 ## Step 2c: Drama Studio enrollment and the pickup timer
 
@@ -171,6 +255,10 @@ python3 scripts/core/intake_preflight/factory.py preflight \
   --root "$PWD/scratch-storage" --storage-dir "$PWD/scratch-storage" \
   --auth-file /path/to/auth-ok.json --summary-digest testdigest
 echo "rc=$?"     # expect 0 (preflight-pass)
+
+# 5d. lip-sync prerequisites (Step 2b): one line per prerequisite, three states
+python3 scripts/lipsync_preflight.py --check
+echo "rc=$?"     # 0 all present; 2 missing or broken (informational, per Step 2b)
 ```
 
 Exact fixture shapes and captured outputs for 5b/5c: `EXAMPLES.md`
