@@ -39,7 +39,11 @@ fi
 #   h. dedicated path only: save the tunnel's connector token (GET .../token) to
 #      COUNCIL_TUNNEL_TOKEN_DIR/<tunnel-name>.token, mode 600, never printed
 #   i. edge gate: GET the host, no redirects; it must 302 to *.cloudflareaccess.com.
-#      Fail -> roll back what THIS run created, print FAILED.
+#      Fail -> roll back what THIS run created, print FAILED. Each try first asks the
+#      zone's AUTHORITATIVE nameservers (the zone's name_servers from the API, else
+#      dig NS) for the host's A/AAAA and pins curl to them with --resolve, so a
+#      recursive resolver's cached "no such name" (zone negative TTL) from a lookup
+#      before the record existed cannot fail the gate. No dig or no answer -> plain curl.
 #   j. dedicated path only: no active connection on the council tunnel yet ->
 #      CONNECTOR_PENDING (the box must run that connector; retried every run)
 # Every refusal (NOT_PROVISIONED, TUNNEL_DOWN, ORIGIN_NOT_LOOPBACK, CONNECTOR_DOWN,
@@ -86,6 +90,9 @@ fi
 #                                   (default $HOME/.openclaw/secrets/council-tunnels)
 #   COUNCIL_EDGE_URL_TEMPLATE       default https://%s/   (%s = council host)
 #   COUNCIL_EDGE_TRIES / COUNCIL_EDGE_SLEEP   edge gate retries (default 5 / 4s)
+#   COUNCIL_EDGE_RESOLVE            auth (default): resolve the host at the zone's
+#                                   authoritative nameservers (https://<host>/ URLs only);
+#                                   system: plain curl through the system resolver
 #
 # OUTPUT: one line per host: COUNCIL_ACCESS: <cc-host> <STATUS> [detail]
 #   STATUS = PROVISIONED | ALREADY_PROVISIONED | CONNECTOR_PENDING | TUNNEL_DOWN |
@@ -130,6 +137,8 @@ TOKEN_DIR="${COUNCIL_TUNNEL_TOKEN_DIR:-$HOME/.openclaw/secrets/council-tunnels}"
 EDGE_TPL="${COUNCIL_EDGE_URL_TEMPLATE:-https://%s/}"
 EDGE_TRIES="${COUNCIL_EDGE_TRIES:-5}"
 EDGE_SLEEP="${COUNCIL_EDGE_SLEEP:-4}"
+EDGE_RESOLVE="${COUNCIL_EDGE_RESOLVE:-auth}"
+case "$EDGE_RESOLVE" in auth|system) ;; *) echo "COUNCIL_EDGE_RESOLVE must be auth or system" >&2; exit 2 ;; esac
 COUNCIL_SERVICE="http://127.0.0.1:8787"
 
 # The token reaches curl only through a mode-600 config file that is removed on
@@ -201,16 +210,53 @@ finish() {  # STATUS DETAIL
     '. + [{cc_host:$cc, council_host:$ch, status:$s, detail:$d, steps:$plan}]' <<<"$RESULTS")"
 }
 
+# edge_ns: the zone's authoritative nameservers into EDGE_NS (one per line, cached for
+# the run): name_servers of the zone object from the API lookup, else `dig NS <zone>`.
+EDGE_NS=""
+edge_ns() {
+  [ -z "$EDGE_NS" ] || return 0
+  EDGE_NS="$(jq -r --arg n "$ZONE_NAME" '[.result[]? | select(.name == $n)][0].name_servers[]? // empty' <<<"$zr" 2>/dev/null)"
+  [ -n "$EDGE_NS" ] || EDGE_NS="$(dig +short +time=3 +tries=1 NS "$ZONE_NAME" 2>/dev/null)"
+  EDGE_NS="$(printf '%s\n' "$EDGE_NS" | sed 's/\.$//' | grep -E '^[A-Za-z0-9][A-Za-z0-9.-]*$')"
+}
+
+# edge_addrs HOST -> 0 and EDGE_ADDRS="v4,...,[v6],..." (curl --resolve form) from the first
+# authoritative nameserver that answers; EDGE_FROM names it. 1 when dig or every server
+# gives nothing. Authoritative servers keep no negative cache, so a new record shows at once.
+edge_addrs() {
+  local ns a6
+  EDGE_ADDRS=""; EDGE_FROM=""
+  command -v dig >/dev/null 2>&1 || return 1
+  edge_ns
+  for ns in $EDGE_NS; do
+    EDGE_ADDRS="$(dig +short +norecurse +time=3 +tries=1 "@$ns" "$1" A 2>/dev/null | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$')"
+    a6="$(dig +short +norecurse +time=3 +tries=1 "@$ns" "$1" AAAA 2>/dev/null | grep -Ei '^[0-9a-f]*:[0-9a-f:]*$' | sed 's/.*/[&]/')"
+    EDGE_ADDRS="$(printf '%s\n%s\n' "$EDGE_ADDRS" "$a6" | grep . | tr '\n' ',' | sed 's/,$//')"
+    [ -z "$EDGE_ADDRS" ] || { EDGE_FROM="$ns"; return 0; }
+  done
+  return 1
+}
+
 edge_gate() {  # COUNCIL_HOST -> 0 when the host answers 302 to *.cloudflareaccess.com
-  local url="${EDGE_TPL//%s/$1}" i hdrs code loc
+  local url="${EDGE_TPL//%s/$1}" i hdrs code loc pin
   for ((i = 1; i <= EDGE_TRIES; i++)); do
-    hdrs="$(curl -sS -o /dev/null -D - --max-time 15 "$url" 2>/dev/null | tr -d '\r')" || hdrs=""
+    pin=()
+    # Asked again on every try. Only for a plain https://<host>/ URL (the default template).
+    if [ "$EDGE_RESOLVE" = "auth" ] && case "$url" in "https://$1"|"https://$1/"*) true ;; *) false ;; esac; then
+      if edge_addrs "$1"; then
+        pin=(--resolve "$1:443:$EDGE_ADDRS")
+        step "[info] edge gate try $i: $1 -> $EDGE_ADDRS (authoritative $EDGE_FROM)"
+      else
+        step "[info] edge gate try $i: no authoritative answer for $1 (dig or nameservers unavailable); using the system resolver"
+      fi
+    fi
+    hdrs="$(curl -sS -o /dev/null -D - --max-time 15 ${pin[@]+"${pin[@]}"} "$url" 2>/dev/null | tr -d '\r')" || hdrs=""
     code="$(printf '%s\n' "$hdrs" | sed -n '1s#^HTTP/[0-9.]* \([0-9]*\).*#\1#p')"
     loc="$(printf '%s\n' "$hdrs" | sed -n 's/^[Ll]ocation: *//p' | head -n1)"
     if [ "$code" = "302" ] && printf '%s' "$loc" | grep -Eiq '^https://[^/]*\.cloudflareaccess\.com(/|$)'; then return 0; fi
     [ "$i" -lt "$EDGE_TRIES" ] && sleep "$EDGE_SLEEP"
   done
-  EDGE_WHY="HTTP ${code:-none}, Location ${loc:-none}"
+  EDGE_WHY="HTTP ${code:-none}, Location ${loc:-none}${pin[0]+, pinned to $EDGE_ADDRS}"
   return 1
 }
 
