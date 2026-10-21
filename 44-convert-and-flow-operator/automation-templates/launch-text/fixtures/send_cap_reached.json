@@ -1,0 +1,26 @@
+{
+  "name": "aggregate contact-level marketing cap reached",
+  "send": {
+    "kind": "doors_open",
+    "template": "{{first_name}}, doors are open: {{offer_name}} is live at {{price}}. Get it here: {{sales_url}} Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "offer_name": "Signature Launch",
+      "price": "$497",
+      "sales_url": "https://example.com/offer"
+    },
+    "send_at": "2026-10-22T09:00:00",
+    "now": "2026-10-22T09:00:00",
+    "deadline": "2026-10-24T23:59:00",
+    "a2p_ready": true,
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed"],
+      "suppression": [],
+      "marketing_sends": 5,
+      "operational_sends": 0
+    }
+  },
+  "expect": {"action": "skip", "category": "marketing", "reason": "failed: aggregate_contact_cap"}
+}

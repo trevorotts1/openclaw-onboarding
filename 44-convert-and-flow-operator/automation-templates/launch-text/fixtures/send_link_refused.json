@@ -1,0 +1,25 @@
+{
+  "name": "http and shortener links are refused",
+  "send": {
+    "kind": "abandoned_checkout",
+    "template": "{{first_name}}, your {{offer_name}} order is open. Finish here: http://bit.ly/xyz Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "offer_name": "Signature Launch"
+    },
+    "send_at": "2026-10-22T10:30:00",
+    "now": "2026-10-22T10:30:00",
+    "deadline": "2026-10-24T23:59:00",
+    "a2p_ready": true,
+    "link_allowlist": ["example.com"],
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed"],
+      "suppression": [],
+      "marketing_sends": 0,
+      "operational_sends": 0
+    }
+  },
+  "expect": {"action": "skip", "category": "marketing"}
+}

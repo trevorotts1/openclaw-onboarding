@@ -9,11 +9,15 @@ SMS copy and step timing for the six text sets a Signature Launch can carry. **T
 
 | File | Purpose |
 |---|---|
-| `text-sets.json` | The six sets, contract-shaped, each with its ordered SMS steps |
-| `test_launch_text_catalog.py` | Runnable check: shape, promo cap, quiet hours, STOP, step/message parity |
+| `text-sets.json` | The six sets, contract-shaped, each with its ordered SMS steps and its `category` (`marketing` / `operational`) |
+| `sms_eligibility.py` | Pre-send gate: consent, suppression, quiet hours, launch deadline, aggregate contact cap, merged-text/link/encoding/segment/cost checks, and saved-native-condition proof |
+| `fixtures/` | Synthetic-local send requests and saved workflow exports used by the regression tests |
+| `test_launch_text_catalog.py` | Runnable check: shape, promo cap, quiet hours, STOP, step/message parity, category/cap consistency |
+| `test_sms_eligibility.py` | Runnable check: the gate's decisions and the native-condition verifier |
 
 ```bash
 python3 44-convert-and-flow-operator/automation-templates/launch-text/test_launch_text_catalog.py
+python3 44-convert-and-flow-operator/automation-templates/launch-text/test_sms_eligibility.py
 ```
 
 ## The six sets
@@ -33,14 +37,34 @@ python3 44-convert-and-flow-operator/automation-templates/launch-text/test_launc
 
 1. **STOP** — every message carries `STOP`; the keyword is the contract constant `STOP` in every set. HELP is named in the opt-in confirmation.
 2. **Quiet hours** — `08:00–21:00` in the recipient's local time (`recipient_local`). No send before 08:00 or at/after 21:00.
-   - A step whose computed time is outside the window moves to 08:00 the same day, or 08:00 the next day if that is still before the step's own deadline.
-   - A deadline step (`doors_open`, `last_call`) moves **earlier** to 20:00 — never later into the night.
-   - Event reminders stay event-relative; if the event itself sits outside quiet hours, the reminder uses the nearest allowed slot before it.
+   - A step whose computed time is outside the window moves to 08:00 the same day, or 08:00 the next day.
+   - That later move is never allowed past the step's own deadline. When it would be, the step moves **earlier** to a permitted time (`20:00` for deadline steps; the nearest truthful slot for event reminders) or is **skipped** explicitly — never sent later into the night and never sent after the deadline.
+   - Event reminders stay event-relative; if the event itself sits outside quiet hours and no earlier slot keeps the copy truthful, the reminder is skipped.
 3. **Draft only** — `draft_only: true` in every set. Nothing here authorizes a send.
 4. **A2P guard** — when `a2p_ready` is false, all six sets stay drafts and the package warns texts cannot send until A2P 10DLC is approved.
 5. **Truthful deadlines only** — `{{doors_close_at}}` and `{{event_start_at}}` come from the launch plan. Never write a date or time the calendar does not contain.
 6. **Reply invitation** — `includes_reply_invitation: true` in every set; every set's copy invites a reply or names HELP.
 7. **Purchase exit** — `abandoned_checkout` exits on the buyer tag at either step; never text a buyer a recovery message.
+
+## Pre-send eligibility gate
+
+`evaluate_send()` in `sms_eligibility.py` is called **immediately before every marketing send**, with the contact's state at that instant — never once at build time. It returns `send`, `hold` (with the resolved `send_at`) or `skip` (with the reason):
+
+| Check | Marketing | Operational |
+|---|---|---|
+| Suppression (`sms-opted-out`, `STOP`, suppression list) | blocks | blocks |
+| Consent (`confirmed` + `sms-subscribed`) | required | `opt_in_confirmation` / `keyword_opt_in` may run on `pending`; the rest need confirmed |
+| A2P approved | required | required |
+| Quiet hours, resolved before the deadline | required | required |
+| Launch deadline (`doors_close_at`) | required | not applied — access/fulfilment stays deliverable |
+| Aggregate contact-level marketing count (`contact_marketing_sends + 1 <= 5`) | required | not consumed; operational sends are counted separately |
+| Merged text: STOP, link, https/no-shortener, NFC, encoding, segments, cost | required | required |
+
+Marketing sets are `doors_open`, `last_call`, `abandoned_checkout`; operational sets are `opt_in_confirmation`, `keyword_opt_in`, `event_reminder`, `access_link`. The catalog's three promotional sets total exactly 5 messages, so a fully engaged contact can never exceed the aggregate cap.
+
+`verify_saved_conditions()` reads the **saved native workflow export** and requires each rule to exist as a native `if_else` / `wait_until` condition (tag, field, time window, deadline). Prose in a `purpose`, `copy` or note field never satisfies a rule; the verifier reports `prose_only` when the words exist but the condition does not.
+
+The AI nudge template (`launch-ai/`) is built by L10 under this same cap/STOP contract; it is not edited here.
 
 ## Placeholders
 
