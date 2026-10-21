@@ -84,7 +84,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None,
         extra_pages=tuple(args.extra_page or ()),
         landing_pages=[k.strip() for k in args.landing_pages.split(",") if k.strip()]
-        if args.landing_pages else None)
+        if args.landing_pages else None,
+        mode=args.mode,
+        launch_plan=_read_json(args.launch_plan) if args.launch_plan else None,
+        lane_adapters=_read_json(args.lane_adapters) if args.lane_adapters else None,
+        progress_path=Path(args.progress) if args.progress else None)
     _emit(report)
     print()
     for line in launch_bridge.summary_lines(report):
@@ -177,6 +181,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "(default: the set Skill 49 recommends, flagged 'to confirm')")
     x.add_argument("--extra-page", action="append", choices=["downsell_2"],
                    help="an extra design page the client opted into (downsell_2); repeat for more")
+    x.add_argument("--mode", choices=("page_only", "turnkey_launch"), default="page_only",
+                   help="page_only builds the pages; turnkey_launch also runs every "
+                        "non-page plan unit through its registered lane adapter")
+    x.add_argument("--launch-plan",
+                   help="the FULL approved launch plan (JSON); required for turnkey_launch")
+    x.add_argument("--lane-adapters",
+                   help="lane adapter registry JSON ({adapters: {<unit id>: {command: [...]}}}); "
+                        "required for turnkey_launch")
+    x.add_argument("--progress",
+                   help="durable progress file for turnkey_launch (default: <out>/dispatch/progress.json)")
     x.set_defaults(fn=cmd_dispatch)
 
     q = sub.add_parser("questions", help="the picture questions a client is asked, as data")
