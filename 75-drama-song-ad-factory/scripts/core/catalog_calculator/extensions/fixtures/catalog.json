@@ -222,7 +222,7 @@
     {
       "id": "hailuo/02-image-to-video-standard",
       "task": "video",
-      "family": "minimax-h3",
+      "family": "hailuo",
       "resolution": "768P",
       "status": "APPROVED",
       "max_shot_seconds": 15,
