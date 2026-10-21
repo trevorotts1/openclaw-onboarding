@@ -1,0 +1,11 @@
+{
+  "workflow": {"id": "wf_text_doors_open", "name": "Launch Text — Doors Open", "draft": true},
+  "steps": [
+    {
+      "name": "Send",
+      "type": "sms",
+      "purpose": "Only send to sms-subscribed contacts, never sms-opted-out or STOP. Cap at 5 aggregate marketing sends. Quiet hours 08:00-21:00 recipient_local. Never after doors_close_at.",
+      "copy": "{{first_name}}, doors are open: {{offer_name}} is live at {{price}}. Get it here: {{sales_url}} Reply STOP to opt out."
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "event reminder outside quiet hours with no truthful earlier slot",
+  "send": {
+    "kind": "event_reminder",
+    "template": "{{first_name}}, {{event_name}} starts in 10 minutes. Join here: {{access_url}} Reply STOP to opt out.",
+    "variables": {
+      "first_name": "Ada",
+      "event_name": "Signature Launch Live",
+      "access_url": "https://example.com/live"
+    },
+    "send_at": "2026-10-22T21:30:00",
+    "now": "2026-10-22T18:00:00",
+    "deadline": "2026-10-22T22:00:00",
+    "a2p_ready": true,
+    "contact": {
+      "consent": "confirmed",
+      "sms_subscribed": true,
+      "tags": ["sms-subscribed"],
+      "suppression": [],
+      "marketing_sends": 0,
+      "operational_sends": 1
+    }
+  },
+  "expect": {
+    "action": "skip",
+    "category": "operational",
+    "reason": "quiet_hours_conflict_no_permitted_slot"
+  }
+}
