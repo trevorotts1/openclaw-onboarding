@@ -59,13 +59,15 @@ CARD_REQUIRED_FIELDS = ("video_style", "audio_style", "length", "video_model")
 #: The fail-closed reason code every refusal here carries.
 CARD_UNANSWERED = "CARD_UNANSWERED"
 
-#: The RECOMMENDED pick per field (D24 style/music, decision 32 length,
-#: decision 5 video model). Every pick can be changed on the card.
+#: The RECOMMENDED pick per field: D24 style/music and decision 32 length, and
+#: the video model from the rates table's own recommended row (L3: read off
+#: the registry-carried table, never a name literal in this module). Every
+#: pick can be changed on the card. ``video_model`` is set right below, where
+#: the table reader exists.
 RECOMMENDED = {
     "video_style": "Lifelike 3D",
     "audio_style": "Soul Ballad",
     "length": "60 seconds",
-    "video_model": "MiniMax H3 768P",
 }
 
 CARD_NEXT_ACTION = ("Show the choice card (one card, four picks) and record "
@@ -74,6 +76,19 @@ CARD_NEXT_ACTION = ("Show the choice card (one card, four picks) and record "
 
 #: The length-menu note the owner ordered, F15.
 LENGTH_MENU_NOTE = "2 minutes is new, added by F15 (owner order 2026-10-08)."
+
+#: L3: the video-model RECOMMENDED pick is the rates table's own recommended
+#: row (name + resolution) -- one read, no name literal in this module.
+def _default_video_model_label():
+    from choice_card.video_models import video_models as _VM
+    try:
+        m = next(m for m in _VM.MODELS if m.get("recommended"))
+    except StopIteration:
+        return ""
+    return "%s %s" % (m["name"], m["resolution"])
+
+
+RECOMMENDED["video_model"] = _default_video_model_label()
 
 
 class CardGateError(Exception):
@@ -89,8 +104,6 @@ class CardGateError(Exception):
 #: What an answer value may still be while meaning "not answered".
 _REFUSAL_WORDS = frozenset(("", "none", "no choice", "nochoice", "unanswered",
                             "skip", "default"))
-
-_VIDEO_MODEL_RECOMMENDED_PREFIX = "MiniMax H3"
 
 
 def _unanswered(value):
@@ -281,7 +294,7 @@ def _price_menu_path():
 
 
 def _clean_model(cell):
-    """"MiniMax H3 **(CHEAPEST)**" -> ("MiniMax H3", "(CHEAPEST)"/None)."""
+    """A menu cell -> (row model name, its CHEAPEST/PREMIUM note)."""
     note = None
     m = re.search(r"\*\*\(?(CHEAPEST|PREMIUM)\)?\*\*", cell)
     if m:
@@ -370,18 +383,34 @@ def _model_sentence(row, rates):
 
 
 def _is_recommended_model(row):
-    return (row["model"].startswith(_VIDEO_MODEL_RECOMMENDED_PREFIX)
+    """The rates table's recommended row, at the low picture class the run
+    renders (L3: derived from the table, no name literal)."""
+    rec = _default_video_model_row()
+    return (rec is not None and row["model"] == rec["name"]
             and _res_class(row["resolution"]) == "low")
+
+def _default_video_model_row():
+    from choice_card.video_models import video_models as _VM
+    try:
+        return next(m for m in _VM.MODELS if m.get("recommended"))
+    except StopIteration:
+        return None
 
 
 def video_model_picks(length_label="60 seconds", prices=None):
-    """Video-model menu lines for the card: MiniMax H3 768P RECOMMENDED with
-    every other approved model, its price and one plain sentence each.
+    """Video-model menu lines for the card, each model proven in the LIVE KIE
+    catalog first (L3, v2.9.73): the table's recommended model marked
+    RECOMMENDED with every other approved model, its price and one plain
+    sentence each.
 
     ``prices``: a dict from ``parse_price_menu`` (or live Skill 74 data in
     the same shape); when None the repo snapshot is parsed. Order follows
     the menu's own tables, so the RECOMMENDED default is the decision-5
     pick and the CHEAPEST/PREMIUM markers travel with their rows.
+
+    Menu rows the live registry does not carry are never printed: the card
+    refuses, naming the model(s) and the registry (VideoModelUnresolvable),
+    instead of offering one the catalog cannot dispatch.
     """
     data = prices if isinstance(prices, dict) and prices else parse_price_menu()
     if not data:
@@ -390,7 +419,88 @@ def video_model_picks(length_label="60 seconds", prices=None):
                 "unavailable and no paid work starts."]
     rows = data.get(length_label) or []
     rates = data.get("rates") or {}
-    return [_model_sentence(r, rates) for r in rows]
+    lines = [_model_sentence(r, rates) for r in rows]
+    # L3 fail-closed: every menu row must resolve in the live registry. The
+    # row's model NAME resolves through the "Rates used" table the menu
+    # itself carries (its first cell names the row and spells the KIE ids,
+    # exactly the table F14's lock reads); every listed id must then be
+    # carried by the live kie-model-registry.json -- the file dispatch
+    # proves the model against. No fuzzy matching, no invented ids.
+    from kie_dispatch import model_lock as _ML
+    from choice_card.video_models import video_models as _VM
+    reg = _VM.resolve_registry()
+    if not reg:
+        raise VideoModelUnresolvable(
+            "the live KIE model registry cannot be read -- the video "
+            "model menu cannot be proven against the catalog")
+    entry_ids = set(_VM.registry_ids() or ())
+    name_ids = _rates_name_ids()            # display name -> sanctioned KIE ids
+    off = [r["model"] for r in rows
+           if not _registry_hit(r["model"], name_ids, entry_ids)]
+    if off:
+        raise VideoModelUnresolvable(
+            "the video model menu names model(s) the live KIE registry does "
+            "not carry: %s (registry %s) -- the card refuses instead of "
+            "offering a model the catalog does not have"
+            % (", ".join(sorted(set(off))), reg))
+    return lines
+
+
+class VideoModelUnresolvable(Exception):
+    """L3 (v2.9.73): the card's video-model list cannot be resolved from the
+    live KIE catalog. Raised with the named reason, never silently."""
+
+
+def _rates_name_ids():
+    """Display model name -> every KIE id its "Rates used" row spells,
+    table order. The parenthesized id cell is the menu's own sanction for
+    that row ('Veo 3.1 Fast (veo3_fast; market id veo-3-1)'), so a row's
+    ids never have to be guessed from its name."""
+    from kie_dispatch import model_lock as _ML
+    path = _ML.resolve_price_menu()
+    if not path:
+        raise VideoModelUnresolvable(
+            "price menu unreadable -- the video model menu cannot be "
+            "matched to the live catalog")
+    in_section = False
+    name_ids = {}
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("#"):
+                in_section = _RATES_HEADING in line
+                continue
+            if not in_section or not line.strip().startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 5 or cells[0].startswith("Model") \
+                    or set(cells[0]) <= {"-"}:
+                continue
+            disp = re.split(r"\s*\(", cells[0].replace("**", ""), 1)[0].strip()
+            ids = []
+            for group in re.findall(r"\(([^)]*)\)", cells[0]):
+                for tok in group.split(";"):
+                    tok = tok.strip()
+                    if tok.startswith("market id "):
+                        tok = tok[len("market id "):].strip()
+                    if tok and not re.search(r"[\s=,]", tok) and tok not in ids:
+                        ids.append(tok)
+            if disp and ids:
+                name_ids.setdefault(disp, ids)
+    return name_ids
+
+
+def _registry_hit(name, name_ids, entry_ids):
+    """True when the row's names ids have a live-registry member.
+
+    An id resolves when the registry carries it exactly, or carries a
+    member of its family ('minimax-h3/*'). A model whose every id is
+    absent from the registry is exactly the live defect."""
+    for mid in name_ids.get(name, []):
+        base = mid[:-2] if mid.endswith("/*") else mid
+        if any(str(e) == base or str(e).startswith(base + "/")
+               for e in entry_ids):
+            return True
+    return False
 
 
 def render_card(length_label="60 seconds", prices=None):
