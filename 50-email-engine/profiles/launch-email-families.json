@@ -1,0 +1,384 @@
+{
+  "registry_version": "1.0.0",
+  "contract": "signature-launch-email-profiles",
+  "owner": "Skill 50 Email Engine — one profile registry for the planner, the launch intake adapter, authoring, the prover (tools/prove-email.py) and build emission (tools/emit_build_plan.py)",
+  "source_of_truth": "50-email-engine/email-library/sequences/*.json (each family's sequence record); this registry is the machine-readable projection those consumers share, so a count, pairing rule, purpose or timing is defined ONCE",
+  "consumers": [
+    "planner",
+    "adapter",
+    "authoring",
+    "prover",
+    "build_emission"
+  ],
+  "intake_mode": "signature_launch",
+  "override_policy": {
+    "word_band_override": "locked_brief_only",
+    "expected_preview_count": "refused",
+    "subject_mode": "locked_brief_only",
+    "note": "An override is honored only when it is declared reviewable here AND echoed in the LOCKED brief; anything else is AF-EMAIL-OVERRIDE-UNLOGGED and the profile default re-applies. Preview count is a profile property, never an override surface."
+  },
+  "families": [
+    {
+      "kind": "pre_launch",
+      "profile": "signature_launch_prelaunch",
+      "sequence_position": "signature-launch-prelaunch",
+      "sequence_id": "signature-launch-prelaunch",
+      "sequence_record": "email-library/sequences/signature-launch-prelaunch.json",
+      "purpose": "Teaser -> value -> doors open soon: warm the list and send every CTA to the opt-in / waitlist page.",
+      "destination": "opt-in / waitlist page",
+      "email_count": 5,
+      "preview_count": 2,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "promotional",
+      "framework_map": {
+        "1": "star-chain-hook",
+        "2": "pastor-story",
+        "3": "features-to-benefit",
+        "4": "before-after-bridge",
+        "5": "pas"
+      },
+      "cta_rules": {
+        "default": 1
+      },
+      "word_band": {
+        "default": [150, 300]
+      },
+      "disruptive_required": false,
+      "strict_review": false,
+      "timing": {
+        "anchor": "launch_calendar.doors_open_at",
+        "rule": "E1 at announcement, E2-E4 spaced across the pre-launch window, E5 on the day before doors open; every stated date or deadline comes from the brief, never invented",
+        "wait_after_hours": [72, 48, 24, 24]
+      },
+      "eligibility": [
+        {"rule": "enroll_from_waitlist_or_optin", "source_ref": "approved_signature_landing_page"},
+        {"rule": "email_consent_required", "policy_ref": "approved_communication_policy"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"},
+          {"rule": "stop_on_launch_calendar_superseded", "scope": "this_campaign_only"}
+        ],
+        "suppression_rules": [
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["unsubscribe", "launch_calendar_current"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    },
+    {
+      "kind": "main_launch",
+      "profile": "signature_launch_landing_10",
+      "sequence_position": "signature-launch-landing-10",
+      "sequence_id": "sequence-signature-launch-landing-10",
+      "sequence_record": "email-library/sequences/sequence-signature-launch-landing-10.json",
+      "purpose": "The owner's 10-framework promo map; every CTA returns the reader to the landing / sales page.",
+      "destination": "landing / sales page",
+      "email_count": 10,
+      "preview_count": 2,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "promotional",
+      "framework_map": {
+        "1": "pastor-solutions",
+        "2": "pastor-solutions",
+        "3": "pastor-solutions",
+        "4": "features-to-benefit",
+        "5": "six-ws",
+        "6": "before-after-bridge",
+        "7": "three-b-plan",
+        "8": "million-dollar-sales",
+        "9": "aida",
+        "10": "pas"
+      },
+      "cta_rules": {
+        "1": 3,
+        "2": 3,
+        "3": 3,
+        "default": 1
+      },
+      "word_band": {
+        "default": [150, 300]
+      },
+      "disruptive_required": false,
+      "strict_review": true,
+      "timing": {
+        "anchor": "launch_calendar.doors_open_at",
+        "rule": "one email per day across the launch window, anchored to the approved launch calendar; a deadline is stated only when the brief supplies it",
+        "wait_after_hours": 24
+      },
+      "eligibility": [
+        {"rule": "enroll_from_approved_launch_optin", "source_ref": "approved_signature_landing_page"},
+        {"rule": "email_consent_required", "policy_ref": "approved_communication_policy"},
+        {"rule": "exclude_verified_buyers", "check": "verified_purchase", "timing": "at_enrollment"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_verified_purchase", "scope": "this_campaign_only"},
+          {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"},
+          {"rule": "stop_on_offer_version_superseded", "scope": "this_campaign_only"}
+        ],
+        "suppression_rules": [
+          {"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"},
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "unsubscribe", "offer_version_current"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    },
+    {
+      "kind": "doors_closing",
+      "profile": "signature_launch_doors_closing",
+      "sequence_position": "signature-launch-doors-closing",
+      "sequence_id": "signature-launch-doors-closing",
+      "sequence_record": "email-library/sequences/signature-launch-doors-closing.json",
+      "purpose": "Last 48 hours: a truthful deadline only, every CTA back to the winning page before doors close.",
+      "destination": "landing / sales page",
+      "email_count": 3,
+      "preview_count": 2,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "promotional",
+      "framework_map": {
+        "1": "aida",
+        "2": "pas",
+        "3": "three-b-plan"
+      },
+      "cta_rules": {
+        "default": 1
+      },
+      "word_band": {
+        "default": [150, 300],
+        "by_slot": {"3": [0, 149]}
+      },
+      "disruptive_required": false,
+      "strict_review": false,
+      "timing": {
+        "anchor": "launch_calendar.doors_close_at",
+        "rule": "E1 at doors_close_at minus 48 hours, E2 at doors_close_at minus 24 hours, E3 in the final hours of the closing day; no other timing is invented",
+        "wait_after_hours": [24, 24]
+      },
+      "eligibility": [
+        {"rule": "deadline_requires_doors_close_at", "field": "launch_calendar.doors_close_at", "on_missing": "refuse_to_generate"},
+        {"rule": "email_consent_required", "policy_ref": "approved_communication_policy"},
+        {"rule": "exclude_verified_buyers", "check": "verified_purchase", "timing": "at_enrollment"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_verified_purchase", "scope": "this_campaign_only"},
+          {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"},
+          {"rule": "stop_at_doors_close", "field": "launch_calendar.doors_close_at", "scope": "this_campaign_only"}
+        ],
+        "suppression_rules": [
+          {"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"},
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "unsubscribe", "doors_close_at_not_passed"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    },
+    {
+      "kind": "upsell_followup",
+      "profile": "signature_launch_upsell",
+      "sequence_position": "signature-launch-upsell",
+      "sequence_id": "signature-launch-upsell",
+      "sequence_record": "email-library/sequences/signature-launch-upsell.json",
+      "purpose": "Move a verified buyer to the next offer after that buyer leaves an upsell page without accepting.",
+      "destination": "that upsell page",
+      "email_count": 3,
+      "preview_count": 2,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "upsell",
+      "framework_map": {
+        "1": "features-to-benefit",
+        "2": "before-after-bridge",
+        "3": "pas"
+      },
+      "pattern_maps": {
+        "upsell_1": {"1": "features-to-benefit", "2": "before-after-bridge", "3": "pas"},
+        "upsell_2": {"1": "acca", "2": "star-chain-hook", "3": "three-b-plan"}
+      },
+      "cta_rules": {
+        "default": 1
+      },
+      "word_band": {
+        "default": [150, 300],
+        "by_pattern_slot": {"upsell_2": {"3": [0, 149]}}
+      },
+      "disruptive_required": false,
+      "strict_review": false,
+      "timing": {
+        "anchor": "upsell_page_abandonment",
+        "rule": "E1 after the buyer leaves the matching upsell page, E2 and E3 spaced across the follow-up window; one sequence instance per upsell page pattern (upsell_1, upsell_2)",
+        "wait_after_hours": [24, 48]
+      },
+      "eligibility": [
+        {"rule": "requires_verified_original_purchase", "check": "verified_purchase", "timing": "before_enrollment"},
+        {"rule": "upsell_2_requires_verified_upsell_1_or_downsell_1", "applies_to": "upsell_2"},
+        {"rule": "bump_only_does_not_qualify_for_upsell_2", "applies_to": "upsell_2"},
+        {"rule": "client_side_claims_are_not_proof"},
+        {"rule": "already_owned_suppresses_the_offer_email", "action": "route_to_next_page_in_route_graph"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"},
+          {"rule": "stop_on_purchase_of_followed_offer", "scope": "this_campaign_only"},
+          {"rule": "stop_on_refund_of_original_purchase", "scope": "this_campaign_only"}
+        ],
+        "suppression_rules": [
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["unsubscribe", "already_owned", "payment_state"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    },
+    {
+      "kind": "downsell_followup",
+      "profile": "signature_launch_downsell",
+      "sequence_position": "signature-launch-downsell",
+      "sequence_id": "signature-launch-downsell",
+      "sequence_record": "email-library/sequences/signature-launch-downsell.json",
+      "purpose": "Offer the smaller option after a recorded no, without arguing with the no.",
+      "destination": "that downsell page",
+      "email_count": 3,
+      "preview_count": 2,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "downsell",
+      "framework_map": {
+        "1": "pas",
+        "2": "before-after-bridge",
+        "3": "aida"
+      },
+      "cta_rules": {
+        "default": 1
+      },
+      "word_band": {
+        "default": [150, 300]
+      },
+      "disruptive_required": false,
+      "strict_review": false,
+      "timing": {
+        "anchor": "offer_declined",
+        "rule": "E1 after the decline is recorded, E2 and E3 spaced across the follow-up window the brief supplies; every date, deadline or countdown comes from the brief, never invented",
+        "wait_after_hours": [24, 48]
+      },
+      "eligibility": [
+        {"rule": "requires_recorded_decline", "check": "offer_declined", "timing": "before_enrollment"},
+        {"rule": "one_instance_per_downsell_page", "binding": "smaller_option_of_that_page"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_purchase_of_main_smaller_or_later_upsell", "scope": "this_campaign_only"},
+          {"rule": "second_decline_ends_the_sequence", "scope": "this_campaign_only"},
+          {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"}
+        ],
+        "suppression_rules": [
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["unsubscribe", "verified_purchase", "decline_recorded"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    },
+    {
+      "kind": "abandoned_checkout",
+      "profile": "signature_launch_abandoned_checkout",
+      "sequence_position": "signature-launch-abandoned-checkout",
+      "sequence_id": "signature-launch-abandoned-checkout",
+      "sequence_record": "email-library/sequences/signature-launch-abandoned-checkout.json",
+      "purpose": "Recover the order: a fast, compact reminder -> objection -> last call, always back to the same approved checkout page.",
+      "destination": "checkout page",
+      "email_count": 3,
+      "preview_count": 1,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "abandoned-cart",
+      "framework_map": {
+        "1": "three-b-plan",
+        "2": "pas",
+        "3": "before-after-bridge"
+      },
+      "cta_rules": {
+        "default": 1
+      },
+      "word_band": {
+        "default": [0, 149]
+      },
+      "disruptive_required": false,
+      "strict_review": false,
+      "timing": {
+        "anchor": "checkout_abandoned",
+        "rule": "E1 inside the 1-3 hour window, E2 at 24 hours, E3 at 48-72 hours; every stated deadline, price or scarcity fact comes from the approved offer version, never invented",
+        "wait_after_hours": [2, 24]
+      },
+      "eligibility": [
+        {"rule": "requires_checkout_abandoned", "event": "checkout_started", "timing": "within_1_3_hours"},
+        {"rule": "suppress_on_verified_purchase_or_active_order", "check": "verified_purchase"},
+        {"rule": "pending_or_failed_payment_is_not_a_decline", "owner": "failed_payment_lane"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_verified_purchase", "scope": "this_campaign_only"},
+          {"rule": "stop_on_active_order_for_same_offer", "scope": "this_campaign_only"},
+          {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"}
+        ],
+        "suppression_rules": [
+          {"rule": "suppress_recovery_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"},
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "active_order", "unsubscribe", "offer_version_current"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    },
+    {
+      "kind": "welcome_access",
+      "profile": "signature_launch_welcome_access",
+      "sequence_position": "signature-launch-welcome-access",
+      "sequence_id": "signature-launch-welcome-access",
+      "sequence_record": "email-library/sequences/signature-launch-welcome-access.json",
+      "purpose": "Deliver access, the receipt and the next steps after payment; operational email with no promotional claim.",
+      "destination": "access link / thank-you page",
+      "email_count": 2,
+      "preview_count": 1,
+      "subject_count": 2,
+      "subject_mode": "convert_and_flow",
+      "objective": "promotional",
+      "framework_map": {
+        "1": "six-ws",
+        "2": "before-after-bridge"
+      },
+      "cta_rules": {
+        "default": 1
+      },
+      "word_band": {
+        "default": [150, 300]
+      },
+      "disruptive_required": false,
+      "strict_review": false,
+      "timing": {
+        "anchor": "payment_succeeded",
+        "rule": "E1 immediately on payment_succeeded (same minute where the platform allows), E2 at 24 hours; any date, session time or deadline comes from the approved brief and launch calendar, never invented",
+        "wait_after_hours": [0, 24]
+      },
+      "eligibility": [
+        {"rule": "requires_payment_succeeded", "event": "payment_succeeded", "timing": "immediate"},
+        {"rule": "transactional_not_suppressed_by_marketing_optout"},
+        {"rule": "suppress_on_refund_cancel_or_chargeback", "check": "order_refunded_or_cancelled"},
+        {"rule": "send_at_most_once_per_order", "dedupe_key": "order_reference"}
+      ],
+      "lifecycle": {
+        "stop_rules": [
+          {"rule": "stop_on_refund_or_cancelled_order", "scope": "this_order_only"},
+          {"rule": "never_resend_an_email_already_delivered", "dedupe_key": "order_reference"}
+        ],
+        "suppression_rules": [
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["order_not_refunded", "order_not_cancelled", "not_already_sent"]}
+        ]
+      },
+      "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": true},
+      "overrides": {"word_band_override": "locked_brief_only", "expected_preview_count": "refused", "subject_mode": "locked_brief_only"}
+    }
+  ]
+}

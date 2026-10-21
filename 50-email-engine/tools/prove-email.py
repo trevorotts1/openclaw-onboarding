@@ -49,6 +49,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import launch_profiles  # noqa: E402
+
 # ---- exit codes -------------------------------------------------------------
 EXIT_PASS = 0
 EXIT_AUTOFAIL = 2
@@ -124,6 +127,30 @@ SEQ_LENGTHS = {"landing_page_10": 10, "high_ticket_12": 12, "buyer_type_12": 12,
                "signature_launch_landing_10": 10}
 PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 2,
                     "signature_launch_landing_10": 2}
+
+# ---- ONE profile registry (profiles/launch-email-families.json) --------------
+# The seven planned launch families define their count, paired variants, purpose,
+# timing, framework map, CTA floors, word bands, eligibility and lifecycle in ONE
+# registry read by the planner, the adapter, authoring, this prover and the P4
+# emitter. The prover does NOT keep a second copy: it derives SEQ_LENGTHS,
+# PREVIEW_EXPECTED and the per-family maps below from the registry. A registry
+# that cannot be read is a USAGE FAILURE (see prove()), never a silent fallback
+# to built-in numbers.
+try:
+    PROFILE_REGISTRY = launch_profiles.load_registry()
+    PROFILE_REGISTRY_ERROR = None
+except launch_profiles.RegistryError as exc:      # unreadable/incomplete registry
+    PROFILE_REGISTRY = {"families": []}
+    PROFILE_REGISTRY_ERROR = str(exc)
+
+PROFILE_SPECS = {fam["profile"]: fam for fam in PROFILE_REGISTRY["families"]}
+for _fam in PROFILE_REGISTRY["families"]:
+    SEQ_LENGTHS[_fam["profile"]] = _fam["email_count"]
+    PREVIEW_EXPECTED[_fam["profile"]] = _fam["preview_count"]
+# The main landing profile keeps its strict-review battery (sections, CTA
+# placement, slot trace, label split) from the Signature Launch spec 13.
+LAUNCH_PROFILE_IDS = tuple(PROFILE_SPECS)
+
 # The named Signature Launch profile (Signature Launch build, spec 13). It rides
 # the SAME ten-email LANDING_MAP, but its two-preview rule is a property of the
 # PROFILE, encoded here and in the profile's locked brief — the ordinary
@@ -418,8 +445,21 @@ def _schema_copy_coverage(schema_path=None):
 def _sequence_type(obj):
     st = obj.get("sequence_type")
     if _nonempty_str(st):
-        return st
-    # infer from sequence_id / sequence_position
+        fam = launch_profiles.family_for(st, PROFILE_REGISTRY)
+        if fam:
+            return fam["profile"]
+        if st in SEQ_LENGTHS:
+            return st
+    # A declared profile / sequence id / sequence position naming a registry
+    # family is resolved EXACTLY. The old "signature-launch in the id" heuristic
+    # made every new launch family resolve to the main landing profile, so a
+    # pre-launch or doors-closing run was graded against the wrong family.
+    for key in ("profile", "sequence_position", "sequence_id"):
+        value = obj.get(key)
+        if _nonempty_str(value):
+            fam = launch_profiles.family_for(value, PROFILE_REGISTRY)
+            if fam:
+                return fam["profile"]
     sid = (obj.get("sequence_id") or obj.get("sequence_position") or "").lower()
     if "high-ticket" in sid or "high_ticket" in sid:
         return "high_ticket_12"
@@ -495,6 +535,7 @@ def evaluate_email(email, ctx):
     fails = []
     tag = ctx.get("tag", "email")
     seq_type = ctx.get("seq_type", "single")
+    spec = PROFILE_SPECS.get(seq_type)
 
     if not isinstance(email, dict):
         return [(AF_FRAMEWORK_UNKNOWN, "%s: not a JSON object" % tag)]
@@ -514,7 +555,8 @@ def evaluate_email(email, ctx):
     #     and the SACRED default is enforced. ---
     locked = ctx.get("locked_overrides") or {}
     smode_override = _override_honored(email, "subject_mode", locked, tag, fails)
-    mode = smode_override if _nonempty_str(smode_override) else _subject_mode(seq_type, email)
+    mode = smode_override if _nonempty_str(smode_override) else (
+        spec["subject_mode"] if spec else _subject_mode(seq_type, email))
     prev_override = _override_honored(email, "expected_preview_count", locked, tag, fails)
 
     # --- framework set (AF-EMAIL-FRAMEWORK-UNKNOWN) ---
@@ -533,7 +575,7 @@ def evaluate_email(email, ctx):
         # Signature Launch profile: sections[] are REQUIRED and ORDERED, so the
         # framework's structure is provable on every profile run (the generic
         # engine still treats sections as opt-in for every other profile).
-        if seq_type == SIGNATURE_LAUNCH_TYPE and framework in PROFILE_PART_ORDER:
+        if spec and spec.get("strict_review") and framework in PROFILE_PART_ORDER:
             canonical = PROFILE_PART_ORDER[framework]
             secs = ([s for s in sections if _nonempty_str(s)]
                     if isinstance(sections, list) else [])
@@ -595,18 +637,16 @@ def evaluate_email(email, ctx):
         subjects = subjects if isinstance(subjects, list) else []
 
     # --- preview count (AF-EMAIL-PREVIEW-COUNT) ---
-    if seq_type == SIGNATURE_LAUNCH_TYPE:
-        # The Signature Launch profile fixes exactly 2 preview lines. The count
-        # is a profile property, NOT a client-exact override surface: even a
-        # LOCKED-brief-logged expected_preview_count cannot lower it (spec 13
-        # section 1/3; doc 19 conflict register — the profile carries two, other
-        # profiles keep their own defaults).
-        if isinstance(prev_override, int) and prev_override != 2:
+    if spec is not None:
+        # A registry family fixes its preview count (paired variants, 1 or 2).
+        # The count is a PROFILE property, NOT a client-exact override surface:
+        # even a LOCKED-brief-logged expected_preview_count cannot change it.
+        want_prev = spec["preview_count"]
+        if isinstance(prev_override, int) and prev_override != want_prev:
             fails.append((AF_PREVIEW_COUNT,
-                          "%s: profile %s fixes exactly 2 preview lines; a preview-count "
+                          "%s: profile %s fixes exactly %d preview line(s); a preview-count "
                           "override (%r) is not permitted on this profile"
-                          % (tag, SIGNATURE_LAUNCH_TYPE, prev_override)))
-        want_prev = 2
+                          % (tag, spec["profile"], want_prev, prev_override)))
     else:
         want_prev = prev_override if isinstance(prev_override, int) else _expected_previews(seq_type, mode)
     if not (isinstance(previews, list) and len(previews) == want_prev and all(_nonempty_str(p) for p in previews)):
@@ -620,6 +660,9 @@ def evaluate_email(email, ctx):
     if isinstance(override, list) and len(override) == 2 and all(isinstance(x, int) for x in override):
         lo, hi = override[0], override[1]
         band_note = "client-exact override (logged) %d-%d" % (lo, hi)
+    elif isinstance(ctx.get("word_band"), list) and len(ctx["word_band"]) == 2:
+        lo, hi = ctx["word_band"]
+        band_note = "profile %s band %d-%d" % (seq_type, lo, hi)
     elif framework == "three-b-plan":
         lo, hi, band_note = 1, 149, "3-B Plan (< 150)"
     else:
@@ -670,7 +713,7 @@ def evaluate_email(email, ctx):
     # Signature Launch profile: a subject or preview that uses the first-name
     # merge field must declare the approved empty-first-name fallback, so an
     # empty name renders clean copy instead of broken punctuation.
-    if seq_type == SIGNATURE_LAUNCH_TYPE:
+    if spec is not None and spec.get("strict_review"):
         uses_merge = any("{{contact.first_name}}" in (s or "")
                          for s in list(subjects or []) + list(previews or []))
         if uses_merge and not _nonempty_str(email.get("merge_fallback")):
@@ -682,7 +725,7 @@ def evaluate_email(email, ctx):
     # (AF-EMAIL-LABEL-LEAK). Review direction — the authored record must carry
     # the framework label the private review document renders from. Payload
     # direction — no recipient-visible field may carry production labeling.
-    if seq_type == SIGNATURE_LAUNCH_TYPE:
+    if spec is not None and spec.get("strict_review"):
         tokens = REVIEW_LABEL_TOKENS.get(framework, ())
         # Normalize punctuation away so the owner's own stylized label
         # ("P.A.S.T.O.R. V1 (Solutions)") matches its framework token.
@@ -737,19 +780,38 @@ def evaluate_sequence(ledger, brief=None):
     fails = []
     locked = _locked_overrides(brief)
     seq_type = _sequence_type(ledger)
+    spec = PROFILE_SPECS.get(seq_type)
     if seq_type not in SEQ_LENGTHS:
         fails.append((AF_TYPE_MISMATCH,
                       "sequence_type %r is not one of %s" % (seq_type, "|".join(SEQ_LENGTHS))))
         seq_type = seq_type if seq_type in SEQ_LENGTHS else "buyer_type_12"
+        spec = PROFILE_SPECS.get(seq_type)
+
+    # Wrong family: a sequence that names its profile / sequence id must name the
+    # family its sequence_type resolved to. A pre-launch ledger marked as the
+    # main landing profile (or vice versa) is refused rather than graded against
+    # another family's counts and maps.
+    if spec is not None:
+        for key in ("profile", "sequence_id", "sequence_position"):
+            declared = ledger.get(key)
+            if not _nonempty_str(declared):
+                continue
+            fam = launch_profiles.family_for(declared, PROFILE_REGISTRY)
+            if fam and fam["profile"] != seq_type:
+                fails.append((AF_TYPE_MISMATCH,
+                              "%s %r names family %r but the sequence resolves to "
+                              "family %r — a sequence is graded against its own family only"
+                              % (key, declared, fam["profile"], seq_type)))
 
     emails = ledger.get("emails")
     if not isinstance(emails, list):
-        return [(AF_SEQUENCE_LENGTH, "sequence has no emails[] array")]
+        return [(AF_SEQUENCE_LENGTH, "sequence has no emails[] array")] + fails
 
     want_len = SEQ_LENGTHS.get(seq_type)
     if want_len is not None and len(emails) != want_len:
         fails.append((AF_SEQUENCE_LENGTH,
-                      "sequence has %d emails, needs exactly %d for %s" % (len(emails), want_len, seq_type)))
+                      "sequence has %d emails, needs exactly %d for %s"
+                      % (len(emails), want_len, seq_type)))
 
     # slot contiguity 1..N
     slots = []
@@ -761,15 +823,26 @@ def evaluate_sequence(ledger, brief=None):
                       "e_slot values are not the contiguous set 1..%d (got %s)" % (len(emails), sorted(slots))))
 
     founder = ledger.get("founder_name", "")
-    require_disruptive = (seq_type == "high_ticket_12")
+    require_disruptive = bool(spec and spec.get("disruptive_required")) \
+        or seq_type == "high_ticket_12"
+    pattern = ledger.get("pattern")
 
     for i, e in enumerate(emails, 1):
         slot = e.get("e_slot", i) if isinstance(e, dict) else i
         ctx = {"tag": "E%d" % slot, "seq_type": seq_type,
                "founder_name": founder, "require_disruptive": require_disruptive,
                "cta_min": 1, "locked_overrides": locked}
-        # framework map + CTA floor per map
-        if seq_type in ("landing_page_10", SIGNATURE_LAUNCH_TYPE):
+        if spec is not None:
+            want_fw = launch_profiles.framework_map(spec, pattern).get(slot)
+            if want_fw and isinstance(e, dict) and e.get("framework") != want_fw:
+                fails.append((AF_SEQUENCE_MAP,
+                              "E%d: framework %r must be %r (family %s map)"
+                              % (slot, e.get("framework"), want_fw, spec["kind"])))
+            ctx["cta_min"] = launch_profiles.cta_floor(spec, slot)
+            band = launch_profiles.word_band(spec, slot, pattern)
+            if band != [150, 300]:
+                ctx["word_band"] = band
+        elif seq_type == "landing_page_10":
             want_fw = LANDING_MAP.get(slot)
             if want_fw and isinstance(e, dict) and e.get("framework") != want_fw:
                 fails.append((AF_SEQUENCE_MAP,
@@ -792,7 +865,7 @@ def evaluate_sequence(ledger, brief=None):
 
     # Signature Launch profile: slot-level enforcement that needs the whole
     # sequence in view — PASTOR CTA placement and landing-source traceability.
-    if seq_type == SIGNATURE_LAUNCH_TYPE:
+    if spec is not None and spec.get("strict_review"):
         by_slot = {}
         for i, e in enumerate(emails, 1):
             if isinstance(e, dict):
@@ -902,20 +975,25 @@ def _launch_prov_errors(rec, answers):
     at import time in the adapter; a brief that reaches this prover has
     already crossed that gate."""
     errs = []
-    if _sequence_type({"sequence_position": answers.get("sequence_position")}) \
-            != SIGNATURE_LAUNCH_TYPE:
-        errs.append("intake_mode %r is only valid for profile %s "
+    answer_family = launch_profiles.family_for(answers.get("sequence_position"),
+                                               PROFILE_REGISTRY)
+    if answer_family is None:
+        errs.append("intake_mode %r is only valid for a registered launch family "
                     "(sequence_position is %r)"
-                    % (LAUNCH_INTAKE_MODE, SIGNATURE_LAUNCH_TYPE,
-                       answers.get("sequence_position")))
+                    % (LAUNCH_INTAKE_MODE, answers.get("sequence_position")))
     prov = rec.get("launch_provenance")
     if not isinstance(prov, dict):
         return errs + ["intake_mode %r brief carries no launch_provenance "
                        "object" % LAUNCH_INTAKE_MODE]
-    if _sequence_type({"sequence_position": prov.get("profile")}) \
-            != SIGNATURE_LAUNCH_TYPE:
-        errs.append("launch_provenance.profile is %r, expected the %s "
-                    "profile" % (prov.get("profile"), SIGNATURE_LAUNCH_TYPE))
+    prov_family = launch_profiles.family_for(prov.get("profile"), PROFILE_REGISTRY)
+    if prov_family is None:
+        errs.append("launch_provenance.profile is %r, not a registered launch "
+                    "family" % (prov.get("profile"),))
+    elif answer_family is not None \
+            and prov_family["profile"] != answer_family["profile"]:
+        errs.append("launch_provenance.profile is %r but the brief answers were "
+                    "locked for %r — the wrong family cannot be certified"
+                    % (prov.get("profile"), answer_family["profile"]))
     if not _nonempty_str(prov.get("launch_id")):
         errs.append("launch_provenance.launch_id is missing/empty")
     plan_hash = prov.get("plan_hash")
@@ -1006,6 +1084,10 @@ def evaluate_intake(rec):
     skill = rec.get("skill") or rec.get("skill_type")
     if skill is not None and skill != "email-engine":
         fails.append((AF_TYPE_MISMATCH, "skill is %r, expected 'email-engine'" % skill))
+    if PROFILE_REGISTRY_ERROR:
+        fails.append((AF_TYPE_MISMATCH,
+                      "cannot resolve the launch profile family: %s"
+                      % PROFILE_REGISTRY_ERROR))
 
     seq_pos = (rec.get("answers") or {}).get("sequence_position") if isinstance(rec.get("answers"), dict) else None
     if _nonempty_str(seq_pos):
@@ -1024,6 +1106,26 @@ def evaluate_intake(rec):
         _ans = rec.get("answers") if isinstance(rec.get("answers"), dict) else {}
         for _lmsg in _launch_prov_errors(rec, _ans):
             fails.append((AF_LAUNCH_PROVENANCE, _lmsg))
+        # Wrong family on the brief: when the adapter stamps the family block it
+        # must be the SAME family the locked answers name. A brief that carries
+        # pre-launch answers under a doors-closing family block (or any other
+        # swap) is refused, never graded against the other family's profile.
+        fam_block = rec.get("family")
+        if isinstance(fam_block, dict) and _nonempty_str(fam_block.get("profile")):
+            declared = launch_profiles.family_for(fam_block.get("profile"),
+                                                  PROFILE_REGISTRY)
+            answer_fam = launch_profiles.family_for(_ans.get("sequence_position"),
+                                                    PROFILE_REGISTRY)
+            if declared is None:
+                fails.append((AF_TYPE_MISMATCH,
+                              "brief family block names %r, not a registered "
+                              "launch family" % fam_block.get("profile")))
+            elif answer_fam is not None \
+                    and declared["profile"] != answer_fam["profile"]:
+                fails.append((AF_TYPE_MISMATCH,
+                              "brief family block is %r but the locked answers "
+                              "name %r" % (declared["profile"],
+                                           answer_fam["profile"])))
 
     # one-block delivery (FIX-S36-47) — when an INDEPENDENT conversation-ledger
     # export is supplied it is AUTHORITATIVE (derived from the transcript, not a
@@ -1107,6 +1209,12 @@ def decide_exit(failures):
 
 # ---- runner -----------------------------------------------------------------
 def prove(path, as_json=False, kind=None, brief_path=None):
+    # The profile registry is the single definition of every launch family. If it
+    # cannot be read the prover does not know which family it is proving — report
+    # that as a USAGE failure, never grade against built-in numbers.
+    if PROFILE_REGISTRY_ERROR:
+        _emit(str(path), "?", [("USAGE", PROFILE_REGISTRY_ERROR)], as_json)
+        return EXIT_USAGE
     # T2-38: the intake contract is the declared authority for the required brief
     # fields. If it cannot be read, the prover does not know what it is proving —
     # report that and stop, rather than grading against a stale built-in list.
@@ -1422,6 +1530,45 @@ def _valid_launch_brief():
     }
 
 
+def _family_brief(fam):
+    """A launch brief locked for one registry family (same approved provenance
+    shape as the adapter emits; synthetic, no real client data)."""
+    brief = json.loads(json.dumps(_valid_launch_brief()))
+    brief["launch_provenance"]["profile"] = fam["profile"]
+    brief["answers"]["sequence_position"] = fam["sequence_position"]
+    brief["answers"]["objective"] = fam["objective"]
+    brief["family"] = {"kind": fam["kind"], "profile": fam["profile"]}
+    return brief
+
+
+def _family_ledger(fam):
+    """A valid synthetic sequence for one registry family, built from the
+    registry itself (count, framework map, CTA floors, word bands, preview
+    count) so a family can never be "passed" against another family's numbers."""
+    if fam["kind"] == "main_launch":
+        return _signature_ledger()
+    emails = []
+    for slot in range(1, fam["email_count"] + 1):
+        fw = fam["framework_map"][str(slot)]
+        band = launch_profiles.word_band(fam, slot)
+        cta_min = launch_profiles.cta_floor(fam, slot)
+        ctas = ["[Take step %d ->]" % (k + 1) for k in range(cta_min)]
+        if cta_min >= 3:
+            body = _placed_body(ctas, FOUNDER)
+        else:
+            body = _make_body(90 if band[1] < 150 else 200, cta=ctas[0])
+        previews = ["Preview line %d (pair A)" % slot,
+                    "Bolder disruptive preview line %d (pair B)" % slot]
+        emails.append({
+            "e_slot": slot, "framework": fw, "objective": fam["objective"],
+            "subjects": _cf_subjects(), "previews": previews[:fam["preview_count"]],
+            "body": body, "ctas": ctas,
+        })
+    return {"sequence_type": fam["profile"], "profile": fam["profile"],
+            "sequence_id": fam["sequence_id"], "founder_name": FOUNDER,
+            "emails": emails}
+
+
 def self_test():
     ok = True
 
@@ -1685,6 +1832,39 @@ def self_test():
         {"role": "user", "kind": "answer", "msg_id": "u1"},
     ]
     check_pass("intake-ledger-oneblock", it2)
+
+    # ---- UL-007: ONE profile registry drives the prover for all seven planned
+    #      families. Each family must pass its OWN profile checks from one
+    #      approved intake; a wrong count, a wrong family or a missing email
+    #      must fail. The fixtures are built FROM the registry, so a stale
+    #      hardcoded list cannot pass by agreeing with itself.
+    print("== self-test: launch family registry ==")
+    fam_by_kind = launch_profiles.families(PROFILE_REGISTRY) \
+        if not PROFILE_REGISTRY_ERROR else {}
+    reg_ok = (not PROFILE_REGISTRY_ERROR
+              and len(fam_by_kind) == len(launch_profiles.PLANNED_KINDS)
+              and all(k in fam_by_kind for k in launch_profiles.PLANNED_KINDS)
+              and len(PROFILE_SPECS) == len(launch_profiles.PLANNED_KINDS))
+    ok = ok and reg_ok
+    print("  [%s] REGISTRY %-22s -> %d families (version %s)%s"
+          % ("PASS" if reg_ok else "MISS", "seven-families",
+             len(PROFILE_SPECS), PROFILE_REGISTRY.get("registry_version"),
+             "" if reg_ok else (" error=%r" % (PROFILE_REGISTRY_ERROR,))))
+    for kind in launch_profiles.PLANNED_KINDS:
+        fam = fam_by_kind.get(kind)
+        if fam is None:
+            continue
+        check_pass("family-%s" % kind, _family_ledger(fam))
+        check_pass("brief-%s" % kind, _family_brief(fam), kind="intake")
+        short = _family_ledger(fam)
+        short["emails"] = short["emails"][:-1]
+        check_fail("family-%s-count" % kind, short, AF_SEQUENCE_LENGTH, kind="sequence")
+        other = fam_by_kind[next(k for k in launch_profiles.PLANNED_KINDS
+                                 if k != kind)]
+        wrong = _family_ledger(fam)
+        wrong["sequence_id"] = other["sequence_id"]
+        check_fail("family-%s-wrong" % kind, wrong, AF_TYPE_MISMATCH,
+                   kind="sequence")
 
     # ---- ONB-50-001 coverage gate: the guard's field list is re-derived from
     #      schema/email.schema.json. A new free-text field on the contract that
