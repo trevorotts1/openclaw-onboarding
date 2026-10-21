@@ -292,7 +292,9 @@ The client opens the Roast Room chamber at
 `https://<slug>-council.zerohumanworkforce.com`, where `<slug>` is the
 first label of their Command Center address, and signs in with the same
 email addresses that sign in to their Command Center. The address rides the
-box's one existing Cloudflare tunnel behind a Cloudflare Access application
+box's existing Cloudflare tunnel (or the box's own dedicated `council-<slug>`
+tunnel when the Command Center tunnel is local-managed or the Command Center
+runs inside a container) behind a Cloudflare Access application
 that copies the Command Center's allow-list and then follows its email list:
 when an email is added to or removed from the Command Center login page, the
 next run adds it to or removes it from the Council login page (`SYNCED`,
@@ -418,6 +420,23 @@ never prints the token, and prints one `COUNCIL_CONNECTOR:` line
 `NO_CLOUDFLARED` or `CONNECTOR_START_FAILED`). With no file it does nothing.
 The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
 when it is not running).
+
+A box that runs the Council inside a docker container bound to the
+container's own loopback, with a remote-managed Command Center tunnel whose
+rule points at the container's bridge address (an IPv4 in 172.16.0.0/12,
+10.0.0.0/8 or 192.168.0.0/16, or the literal `host.docker.internal`, on the
+Command Center port), takes that same dedicated tunnel path: the Council
+never rides the Command Center tunnel (a connector on the host cannot reach
+the container's loopback), `provision-council-access.sh` creates
+`council-<slug>` remote-managed with the route
+`<slug>-council -> http://127.0.0.1:8787` (the connector runs inside the
+container, where that loopback lives), saves the token operator side, and
+the pending line says the connector must run INSIDE the client's container.
+The DNS record still appears only after the connector is active, and the
+Council login page still mirrors the Command Center's. Every other
+non-loopback origin keeps the `ORIGIN_NOT_LOOPBACK` refusal; a bridge
+origin on a non-Command-Center port is allowed only on the local-managed
+path, never the remote-managed one.
 
 ## Front-door service launcher
 

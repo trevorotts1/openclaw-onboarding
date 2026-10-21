@@ -137,12 +137,12 @@ FIXTURE_OFFSET=30 fixture up down bridge loc | jq -c --arg z "$Z" '
   | .tunnels[$l] = {source:"local",config:null}' > "$WORK/f.json"
 start_fake "$WORK/f.json"
 run_job --apply
-check "SKIPPED_NOT_CC + TUNNEL_DOWN + ORIGIN_NOT_LOOPBACK + CONNECTOR_PENDING: exit 0" test "$RC" = 0 -a "$(rcpt '.exit')" = 0
-check "receipt counts every new code" test "$(rcpt '[.counts.PROVISIONED, .counts.SKIPPED_NOT_CC, .counts.TUNNEL_DOWN, .counts.ORIGIN_NOT_LOOPBACK, .counts.CONNECTOR_PENDING]')" = '[1,1,1,1,1]'
+check "SKIPPED_NOT_CC + TUNNEL_DOWN + the container shape (bridge, remote-managed + 172.16.1.2:4000) + CONNECTOR_PENDING: exit 0" test "$RC" = 0 -a "$(rcpt '.exit')" = 0
+check "receipt counts every new code" test "$(rcpt '[.counts.PROVISIONED, .counts.SKIPPED_NOT_CC, .counts.TUNNEL_DOWN, .counts.ORIGIN_NOT_LOOPBACK, .counts.CONNECTOR_PENDING]')" = '[1,1,1,0,2]'
 check "receipt names the skipped host with its reason" test "$(rcpt '[.skipped[] | .host + "=" + .reason]')" = '["up-openclawdashboard.'$Z'=SKIPPED_NOT_CC"]'
-check "receipt names each not-ready host with its reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["bridge.'$Z'=ORIGIN_NOT_LOOPBACK","down.'$Z'=TUNNEL_DOWN","loc.'$Z'=CONNECTOR_PENDING"]'
-check "runs.log line carries skipped=1 and each host:REASON" bash -c "l=\"\$(tail -n1 '$SD/runs.log')\"; case \"\$l\" in *skipped=1*down.$Z:TUNNEL_DOWN*) ;; *) exit 1;; esac; case \"\$l\" in *bridge.$Z:ORIGIN_NOT_LOOPBACK*) ;; *) exit 1;; esac; case \"\$l\" in *loc.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac"
-check "writes only for up (3) and loc (3, no DNS before its connector): down and bridge got none" test "$(nonget_count)" = 6
+check "receipt names each not-ready host with its reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["bridge.'$Z'=CONNECTOR_PENDING","down.'$Z'=TUNNEL_DOWN","loc.'$Z'=CONNECTOR_PENDING"]'
+check "runs.log line carries skipped=1 and each host:REASON" bash -c "l=\"\$(tail -n1 '$SD/runs.log')\"; case \"\$l\" in *skipped=1*down.$Z:TUNNEL_DOWN*) ;; *) exit 1;; esac; case \"\$l\" in *bridge.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac; case \"\$l\" in *loc.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac"
+check "writes only for up (3), loc (3) and bridge (3, the container shape's dedicated tunnel; no DNS before its connector): down got none" test "$(nonget_count)" = 9
 
 echo "== 6. a real failure exits 1"
 FIXTURE_OFFSET=0 fixture alpha | jq -c --arg z "$Z" '.dns += [{id:"x1",type:"CNAME",name:("alpha-council."+$z),content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"
