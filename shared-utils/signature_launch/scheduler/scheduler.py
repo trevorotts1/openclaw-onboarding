@@ -5,23 +5,32 @@ WHY THIS EXISTS
 ---------------
 Every launch unit (page, email sequence, text set, automation) declares
 ``waits_for``: the units that must be COMPLETE before it may start. This
-module turns that field into waves and enforces the two readiness rules the
+module turns that field into waves and enforces the readiness rules the
 runtime swarm depends on:
 
   * every unit whose ``waits_for`` is complete starts in the SAME wave —
     ready work is never queued behind unrelated work
   * an automation additionally waits for the page URLs its family targets:
     a completed page whose ``url`` is still null has no approved URL, so the
-    automation cannot reference it yet. Emails and texts are gated by the
-    automation's own ``waits_for`` entries.
+    automation cannot reference it yet
+  * a unit a runner is executing right now is not "ready": ready-to-start and
+    running are separate sets, so a concurrent resume never restarts it
 
-A plan with units left but none ready is a stall: ``SchedulerError`` names
-the blocked units and why. Nothing is silently dropped.
+The authoritative unit expansion and the result envelope live in
+``scheduler/model.py`` (lane L03).  A runner result is judged by that envelope:
+a failure *returned normally* is a failure, never a satisfied dependency.
+
+A plan with units left but none ready is a stall.  ``schedule_waves`` raises
+``SchedulerError`` (planning cannot proceed); ``run_all`` does NOT raise — it
+returns the partial results plus each blocked unit's causal blockers, so a
+stalled run is reported and persisted rather than thrown away.
 
 Start means "handed to the caller's runner". This module executes nothing:
 page dispatch is emission, not execution (see dispatch_launch.py). ``start``
 fans a wave across a thread pool and contains each unit's failure, so one
-failing unit never cancels the rest (spec §4.5).
+failing unit never cancels the rest (spec §4.5).  A runner needs execution
+ownership of a unit before it produces side effects; that ownership is the
+progress file's lease (progress.py ``claim``/``heartbeat``/``complete``).
 
 USAGE
 -----
@@ -39,15 +48,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+try:  # package import (shared-utils/signature_launch/scheduler/__init__.py)
+    from . import model  # type: ignore[import-not-found]
+except ImportError:  # direct script import
+    import model  # noqa: E402  (authoritative expansion + envelope)
+
 _CONTRACT_DIR = _HERE.parent.parent / "signature_launch_contract"
 
 # plan array name -> lane label used by automation prerequisites
-_LANES = {
-    "pages": "page",
-    "email_sequences": "email",
-    "text_sets": "text",
-    "automations": "automation",
-}
+_LANES = {array: lane for array, _kind, lane in model.LANES}
 
 # ponytail: derived map until the plan carries an explicit automation->page
 # link. Upgrade when the launch planner emits page ids on the automation.
@@ -62,7 +74,7 @@ _FAMILY_PAGE_KINDS = {
     "onboarding_review": ("thank_you",),
     "win_back": ("landing", "sales"),
     "failed_payment": ("checkout",),
-    "conversation_ai_reply": (),  # attaches after the reply workflow exists
+    "conversation_ai_reply": (),  # reply wiring; the requested AI config is separate
 }
 
 _VALIDATOR = None
@@ -100,13 +112,22 @@ def load_plan(path) -> dict:
     return plan
 
 
+def expansion(plan: dict) -> dict:
+    """The authoritative expansion (see scheduler/model.py)."""
+    try:
+        return model.expand_plan(plan)
+    except model.ExpansionError as error:
+        raise SchedulerError(str(error))
+
+
 def unit_index(plan: dict) -> dict:
-    """id -> {lane, array, data} for every unit in the plan."""
-    index = {}
-    for array, lane in _LANES.items():
-        for unit in plan.get(array, []):
-            index[unit["id"]] = {"lane": lane, "array": array, "data": unit}
-    return index
+    """id -> expanded unit (lane, array, waits_for, family, data, ...)."""
+    return expansion(plan)["by_id"]
+
+
+def ai_state(plan: dict) -> dict:
+    """Requested AI configuration and reply-workflow wiring, kept distinct."""
+    return expansion(plan)["ai"]
 
 
 def _automation_pages(unit: dict, index: dict) -> set:
@@ -119,43 +140,77 @@ def _automation_pages(unit: dict, index: dict) -> set:
     }
 
 
-def blockers(unit_id: str, index: dict, completed: set) -> list:
-    """Why this unit may not start yet. Empty list means ready."""
-    entry = index[unit_id]
+def _resolved_set(completed, outcomes=None) -> set:
+    """Ids whose work may unlock dependents.
+
+    ``outcomes`` (id -> envelope or runner value) is authoritative when given:
+    only ``model.satisfies_dependency`` unlocks.  A plain ``completed`` set is
+    accepted for callers that already made that judgement.
+    """
+    if outcomes is None:
+        return set(completed)
+    return {unit_id for unit_id, value in outcomes.items()
+            if model.satisfies_dependency(value)}
+
+
+def blockers(unit_id: str, index: dict, completed, outcomes=None) -> list:
+    """Why this unit may not start yet. Empty list means ready.
+
+    A dependency whose runner returned a failure is reported as failed and
+    never counted complete, whether it arrived by exception or by return.
+    """
+    entry = index.get(unit_id)
+    if entry is None:
+        return ["unknown unit %s" % unit_id]
     unit = entry["data"]
     reasons = []
-    waits_for = unit.get("waits_for", [])
+    waits_for = entry.get("waits_for") or unit.get("waits_for") or []
+    done = _resolved_set(completed, outcomes)
 
     for dependency in waits_for:
-        if dependency not in completed:
+        if dependency in done:
+            continue
+        outcome = (outcomes or {}).get(dependency)
+        if outcome is None:
             reasons.append("waits for %s" % dependency)
+        else:
+            status = model.normalize_result(outcome)["status"]
+            reasons.append("waits for %s (%s returned)" % (dependency, status))
+
     if entry["lane"] != "automation":
         return reasons
 
     # emails/texts are already covered by waits_for; the extra automation
     # rule is that the page URLs it needs must exist, not merely be planned.
-    explicit_pages = [dep for dep in waits_for if index[dep]["lane"] == "page"]
+    explicit_pages = [dep for dep in waits_for if dep in index and index[dep]["lane"] == "page"]
     for page_id in explicit_pages:
-        if page_id in completed and index[page_id]["data"].get("url") is None:
+        if page_id in done and index[page_id]["data"].get("url") is None:
             reasons.append("page %s has no approved URL" % page_id)
     for page_id in sorted(_automation_pages(unit, index) - set(explicit_pages)):
-        if page_id not in completed:
+        if page_id not in done:
             reasons.append("waits for page %s" % page_id)
         elif index[page_id]["data"].get("url") is None:
             reasons.append("page %s has no approved URL" % page_id)
     return reasons
 
 
-def ready_units(plan: dict, completed, index: dict = None, skip=()) -> list:
-    """Every unit not yet complete, not skipped, whose prerequisites are met."""
+def ready_units(plan: dict, completed, index: dict = None, skip=(),
+                running=(), outcomes=None) -> list:
+    """Every unit not complete, not skipped, not running, prerequisites met.
+
+    ``running`` ids are units an execution owner already claimed; they are
+    reported separately and never handed out as fresh work.
+    """
     index = index if index is not None else unit_index(plan)
-    done = set(completed)
+    done = _resolved_set(completed, outcomes)
     skipped = set(skip)
+    active = set(running)
     return [
         unit_id
         for unit_id in sorted(index)
         if unit_id not in done
         and unit_id not in skipped
+        and unit_id not in active
         and not blockers(unit_id, index, done)
     ]
 
@@ -183,16 +238,33 @@ def schedule_waves(plan: dict, index: dict = None) -> list:
     return waves
 
 
+def _outcome_entry(unit_id, envelope, error=None) -> dict:
+    satisfied = model.satisfies_dependency(envelope)
+    return {
+        "id": unit_id,
+        "ok": envelope["status"] == model.VERIFIED_SUCCESS and envelope["verified"] is True,
+        "terminal": satisfied,
+        "status": envelope["status"],
+        "verified": envelope["verified"],
+        "envelope": envelope,
+        "result": envelope.get("payload"),
+        "error": error,
+    }
+
+
 def start(plan: dict, completed, runner, max_workers: int = None,
-          index: dict = None, skip=()) -> list:
+          index: dict = None, skip=(), running=(), outcomes=None) -> list:
     """Run every currently-ready unit together; return per-unit results.
 
     ``runner(unit_id, entry)`` is called once per ready unit in the wave.
-    A runner exception is recorded as ``ok=False`` and never cancels the rest.
-    ``skip`` ids are never handed to the runner (already attempted this run).
+    A runner exception is recorded as ``failed`` and never cancels the rest.
+    A runner *return* is judged by ``model.normalize_result``: a normally
+    returned failure is ``ok=False`` and does not satisfy dependencies.
+    ``skip`` ids are never handed to the runner (already attempted this run);
+    ``running`` ids belong to another execution owner and are left alone.
     """
     index = index if index is not None else unit_index(plan)
-    ready = ready_units(plan, completed, index, skip)
+    ready = ready_units(plan, completed, index, skip, running, outcomes)
     if not ready:
         return []
     results = {}
@@ -201,35 +273,92 @@ def start(plan: dict, completed, runner, max_workers: int = None,
         for future in as_completed(futures):
             unit_id = futures[future]
             try:
-                results[unit_id] = {"ok": True, "result": future.result()}
+                declared = model.normalize_result(future.result())
+                results[unit_id] = _outcome_entry(unit_id, declared)
             except Exception as error:  # contained failure, per spec §4.5
-                results[unit_id] = {"ok": False, "error": "%s: %s" % (type(error).__name__, error)}
-    return [dict(id=unit_id, **results[unit_id]) for unit_id in ready]
+                message = "%s: %s" % (type(error).__name__, error)
+                results[unit_id] = _outcome_entry(
+                    unit_id, model.envelope(model.FAILED, detail=message), error=message)
+    return [dict(results[unit_id]) for unit_id in ready]
 
 
-def run_all(plan: dict, runner, max_workers: int = None, index: dict = None) -> dict:
-    """Drive plan to completion wave by wave.
+def run_all(plan: dict, runner, max_workers: int = None, index: dict = None,
+            running=()) -> dict:
+    """Drive plan to completion wave by wave; never raise on a stall.
 
     A unit is handed to the runner at most once per call: a failed unit is
-    never retried here (a page retry would pay KIE twice) — it stays blocked
-    in the report until the caller resumes it deliberately.
+    never retried here (a page retry would pay KIE twice) — it is reported as
+    retryable and the caller resumes it deliberately.
+
+    The report keeps partial results: ``completed`` (verified successes),
+    ``dropped`` (client-terminal units), ``resolved`` (both), ``failed``,
+    and ``blocked`` where every entry names its causal blockers.  ``stall`` is
+    None only when every unit resolved.  An empty plan is explicitly empty:
+    zero units, complete, percent 0 — never a fake 100% or an exception.
     """
     index = index if index is not None else unit_index(plan)
-    completed = set()
+    resolved = set()
     attempted = set()
+    outcomes = {}
+    success, dropped, failed = [], [], []
     waves = []
     while len(attempted) < len(index):
-        started = start(plan, completed, runner, max_workers, index, skip=attempted)
+        started = start(plan, resolved, runner, max_workers, index,
+                        skip=attempted, running=running, outcomes=outcomes)
         if not started:
-            raise SchedulerError(_stall_message(index, completed, skip=attempted))
+            break
         waves.append(started)
-        attempted.update(entry["id"] for entry in started)
-        completed.update(entry["id"] for entry in started if entry["ok"])
+        for entry in started:
+            unit_id = entry["id"]
+            attempted.add(unit_id)
+            outcomes[unit_id] = entry["envelope"]
+            if entry["ok"]:
+                success.append(unit_id)
+            if entry["status"] == model.DROPPED:
+                dropped.append(unit_id)
+            elif not entry["terminal"]:
+                failed.append(unit_id)
+            if entry["terminal"]:
+                resolved.add(unit_id)
+
+    blocked = []
+    for unit_id in sorted(set(index) - resolved):
+        outcome = outcomes.get(unit_id)
+        if outcome is not None:
+            status = model.normalize_result(outcome)["status"]
+        elif unit_id in set(running):
+            status = "running"
+        else:
+            status = "not_started"
+        blocked.append({
+            "id": unit_id,
+            "status": status,
+            "retryable": status in (model.FAILED, model.AWAITING_FACTS),
+            "blockers": blockers(unit_id, index, resolved, outcomes),
+            "causal": model.causal_blockers(unit_id, index, resolved),
+        })
+
+    stall = None
+    if blocked:
+        stall = {
+            "units": len(blocked),
+            "detail": "; ".join(
+                "%s (%s)" % (row["id"], ", ".join(row["blockers"]) or row["status"])
+                for row in blocked),
+        }
+
     return {
         "launch_id": plan.get("launch_id"),
+        "empty": not index,
+        "complete": not blocked,
+        "ai": ai_state(plan),
         "waves": waves,
-        "completed": sorted(completed),
-        "blocked": sorted(set(index) - completed),
+        "completed": sorted(success),
+        "dropped": sorted(dropped),
+        "resolved": sorted(resolved),
+        "failed": sorted(failed),
+        "blocked": blocked,
+        "stall": stall,
     }
 
 
@@ -248,7 +377,8 @@ def main(argv: list) -> int:
         print("cannot read plan: %s" % error, file=sys.stderr)
         return 2
     if "--json" in argv:
-        print(json.dumps({"launch_id": plan["launch_id"], "waves": waves}, indent=2))
+        print(json.dumps({"launch_id": plan["launch_id"], "waves": waves,
+                          "ai": ai_state(plan)}, indent=2))
     else:
         for number, wave in enumerate(waves, 1):
             print("wave %d: %s" % (number, ", ".join(wave)))

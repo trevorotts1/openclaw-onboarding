@@ -8,6 +8,10 @@ Semantics are identical to the L1 reference model (work/events/events.py):
   - inbox key:  (tenant_id, provider, verified event_id)
   - action key: (tenant_id, transaction_ref or order_ref, native_line_ref,
                  action_type, entitlement/campaign version)
+  - right key:  (tenant_id, transaction_ref or order_ref, native_line_ref,
+                 action_type, entitlement) — the entitlement identity is
+                 part of the durable per-entitlement claim key, so two
+                 entitlements on one line never collapse onto one claim
   - uniqueness is enforced by PRIMARY KEY constraints, never check-then-act
   - claims are atomic: exactly one winner per action key, across threads
     AND processes
@@ -46,6 +50,17 @@ CREATE TABLE IF NOT EXISTS actions (
     evidence_ref   TEXT,
     updated_at     REAL NOT NULL,
     PRIMARY KEY (tenant_id, txn_ref, line_ref, action_type, version)
+);
+CREATE TABLE IF NOT EXISTS right_claims (
+    tenant_id   TEXT NOT NULL,
+    txn_ref     TEXT NOT NULL,
+    line_ref    TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    entitlement TEXT NOT NULL,
+    state       TEXT NOT NULL,
+    evidence_ref TEXT,
+    updated_at  REAL NOT NULL,
+    PRIMARY KEY (tenant_id, txn_ref, line_ref, action_type, entitlement)
 );
 CREATE TABLE IF NOT EXISTS requests (
     request_id      TEXT NOT NULL PRIMARY KEY,
@@ -401,6 +416,99 @@ class Store:
         return [{"key": (tenant_id, r[0], r[1], r[2], r[3]),
                  "payload": json.loads(r[4]), "evidence_ref": r[5]}
                 for r in rows]
+
+    def reopen_action(self, key: tuple) -> bool:
+        """Return a parked (unknown) action to claimed after a reconciler
+        has confirmed the remote effect did NOT happen, making exactly one
+        fenced retry possible. A done action is never reopened. True iff
+        this call performed the transition."""
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = conn.execute(
+                "UPDATE actions SET state='claimed', updated_at=?"
+                " WHERE tenant_id=? AND txn_ref=? AND line_ref=?"
+                " AND action_type=? AND version=? AND state='unknown'",
+                (time.time(), *key))
+            conn.execute("COMMIT")
+            return cur.rowcount == 1
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+    # ── Per-entitlement right claims (grants and revocations) ───────────
+    def claim_right(self, key: tuple,
+                    evidence_ref: Optional[str] = None) -> Optional[dict]:
+        """Atomically claim one per-entitlement right action.
+
+        Key: (tenant_id, txn_ref, line_ref, action_type, entitlement).
+        Entitlement identity is part of the durable key, so two
+        entitlements on one line get two claims instead of collapsing
+        onto the line's first one.
+
+        Returns None to the single winner; returns the existing record
+        (state, evidence_ref) to everyone else. A parked (unknown) claim
+        also returns its record: it blocks a blind repeat."""
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO right_claims"
+                " (tenant_id, txn_ref, line_ref, action_type, entitlement,"
+                "  state, evidence_ref, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, 'claimed', ?, ?)",
+                (*key, evidence_ref, time.time()))
+            if cur.rowcount == 1:
+                conn.execute("COMMIT")
+                return None
+            row = conn.execute(
+                "SELECT state, evidence_ref FROM right_claims"
+                " WHERE tenant_id=? AND txn_ref=? AND line_ref=?"
+                " AND action_type=? AND entitlement=?", key).fetchone()
+            conn.execute("COMMIT")
+            return {"state": row[0], "evidence_ref": row[1]}
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+    def mark_right(self, key: tuple, state: str,
+                   evidence_ref: Optional[str] = None) -> None:
+        """Transition a claimed right to done or unknown. Same parking
+        rule as the action ledger: unknown is never silently cleared,
+        only reconciled by an explicit mark to done."""
+        assert state in ("done", "unknown"), state
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "UPDATE right_claims SET state=?, evidence_ref=?,"
+                " updated_at=? WHERE tenant_id=? AND txn_ref=?"
+                " AND line_ref=? AND action_type=? AND entitlement=?",
+                (state, evidence_ref, time.time(), *key))
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+    def get_right(self, key: tuple) -> Optional[dict]:
+        row = self._conn().execute(
+            "SELECT state, evidence_ref FROM right_claims"
+            " WHERE tenant_id=? AND txn_ref=? AND line_ref=?"
+            " AND action_type=? AND entitlement=?", key).fetchone()
+        if row is None:
+            return None
+        return {"state": row[0], "evidence_ref": row[1]}
+
+    def entitlement_state(self, tenant_id: str, line_ref: str,
+                          entitlement: str) -> Optional[str]:
+        """The recorded book state of one right: 'active', 'revoked', or
+        None when no row was ever recorded. Read-only; the processor's
+        expected-versus-recorded reconciliation consults it."""
+        row = self._conn().execute(
+            "SELECT state FROM entitlements"
+            " WHERE tenant_id=? AND line_ref=? AND entitlement=?",
+            (tenant_id, line_ref, entitlement)).fetchone()
+        return row[0] if row else None
 
     # ── Request store (receiver redispatch) ──────────────────────────────
     def get_request(self, request_id: str) -> Optional[dict]:

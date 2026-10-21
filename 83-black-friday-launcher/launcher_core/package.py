@@ -50,6 +50,27 @@ EXTRA_SLOTS = {"downsell_2": "downsell_1", "sales": "landing"}
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _RECEIPTS_REL = "delegation_receipts.jsonl"
 
+# The typed receipt this lane owns. ``receipt.schema.json`` beside this tree is
+# the published contract; the producer here and the validator in checks.py are
+# the two halves that must agree with it.
+RECEIPT_SCHEMA_REF = "receipt.schema.json"
+RECEIPT_SCHEMA_VERSION = "1.1"
+RECEIPT_TYPE = "launcher.package.v1"
+
+# Proof classes are separate facts, never one ladder collapsed into a status:
+# authored bytes, a draft installation, a test record, a live observation.
+PROOF_BY_STATUS = {
+    "authored": (True, False, False, False),
+    "draft_delivered": (True, False, False, False),
+    "locally_verified": (True, False, True, False),
+    "installed_test_verified": (True, True, True, False),
+    "ready_for_activation": (True, True, True, False),
+    "live_verified": (True, True, True, True),
+}
+PROOF_KEYS = ("authored", "draft_installed", "tested", "live_verified")
+LANE_VALIDATION = {"lane": "L04", "contract": RECEIPT_TYPE, "state": "passed",
+                   "detail": "artifact bytes hashed and sized at assembly"}
+
 # A plan page kind -> the delivered piece slot that satisfies it. Ambiguous kinds
 # consume their candidate slots in plan order, so two upsell pages never claim
 # one piece twice.
@@ -239,6 +260,105 @@ def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dic
     return record
 
 
+def _identity(intake: Dict[str, Any], approved_plan_hash: str) -> Dict[str, Any]:
+    """The launch identity every typed receipt row is bound to."""
+    return {
+        "tenant_id": intake["tenant_id"],
+        "location_id": intake["location_id"],
+        "launch_id": intake["launch_id"],
+        "revision": intake["revision"],
+        "approved_plan_hash": approved_plan_hash,
+    }
+
+
+def _proof(status: Any) -> Dict[str, bool]:
+    expected = PROOF_BY_STATUS.get(status)
+    if expected is None:
+        raise PackageError("AF-LAUNCH-PKG-RECEIPT-PROOF",
+                           f"unknown delivered status {status!r}; no proof class fits it")
+    return dict(zip(PROOF_KEYS, expected))
+
+
+def _piece_receipt(piece: Dict[str, Any], unit_id: str, unit_type: str,
+                   intake: Dict[str, Any], approved: str, plan_sha: Optional[str],
+                   run_dir: Path) -> Dict[str, Any]:
+    """One page's typed receipt: its request echo and its own copied artifact bytes."""
+    artifacts = []
+    for art in piece["artifacts"]:
+        target = run_dir / art["path"]
+        artifacts.append({"path": art["path"], "sha256": art["sha256"],
+                          "size": target.stat().st_size})
+    return {
+        **_identity(intake, approved),
+        "unit_id": unit_id,
+        "unit_type": unit_type,
+        "request": {"plan_sha256": plan_sha,
+                    "request_id": piece["request_id"],
+                    "input_hash": piece["input_hash"]},
+        "artifacts": artifacts,
+        "lane_validation": dict(LANE_VALIDATION),
+        "proof": _proof(piece["status"]),
+        "status": piece["status"],
+    }
+
+
+def _declared_receipt(unit: Dict[str, Any], intake: Dict[str, Any], approved: str,
+                      plan_ref: Dict[str, Any], run_dir: Path,
+                      unit_type: Optional[str] = None,
+                      delivery: Optional[str] = None) -> Dict[str, Any]:
+    """A unit declared delivered by the sealed plan, not by a launcher-owned piece.
+
+    The launcher owns no bytes for an email, text, automation or for a page
+    another lane delivers, so the artifact is the sealed launch plan that
+    carries the unit and its ``waits_for``. Nothing is invented and no draft is
+    ever labelled installed, tested or live.
+    """
+    plan_size = (run_dir / plan_ref["path"]).stat().st_size
+    row = {
+        **_identity(intake, approved),
+        "unit_id": unit["id"],
+        "unit_type": unit_type or unit["type"],
+        "request": {"plan_sha256": plan_ref["sha256"]},
+        "artifacts": [{"path": plan_ref["path"], "sha256": plan_ref["sha256"],
+                       "size": plan_size}],
+        "lane_validation": dict(LANE_VALIDATION),
+        "proof": _proof("draft_delivered"),
+        "status": "draft_delivered",
+    }
+    if row["unit_type"] in ("email", "text", "automation"):
+        row["draft_only"] = True
+    if delivery:
+        row["delivery"] = delivery
+    return row
+
+
+def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
+                   plan: Optional[Dict[str, Any]], pieces: Dict[str, Any],
+                   plan_ref: Optional[Dict[str, Any]], run_dir: Path) -> List[Dict[str, Any]]:
+    """Every planned unit's typed receipt, or every delivered piece's when page-only."""
+    approved = intake["approval"]["hash"]
+    if plan is None or plan_ref is None:
+        return [_piece_receipt(piece, piece["slot"], "page", intake, approved, None, run_dir)
+                for piece in ordered]
+    by_slot = {piece["slot"]: piece for piece in ordered}
+    deliveries = _page_deliveries(plan, pieces)
+    rows: List[Dict[str, Any]] = []
+    for unit in launch_plan_module.planned_units(plan):
+        if unit["type"] == "page":
+            delivery = deliveries.get(unit["id"]) or {}
+            piece = by_slot.get(delivery.get("piece"))
+            if piece is not None:
+                rows.append(_piece_receipt(piece, unit["id"], "page", intake, approved,
+                                           plan_ref["sha256"], run_dir))
+            else:
+                # Delivered by another lane and declared in the plan: sealed, never invented.
+                rows.append(_declared_receipt(unit, intake, approved, plan_ref, run_dir,
+                                              unit_type="page", delivery="declared"))
+        else:
+            rows.append(_declared_receipt(unit, intake, approved, plan_ref, run_dir))
+    return rows
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
@@ -383,6 +503,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "location_id": intake["location_id"],
         "launch_id": intake["launch_id"],
         "revision": intake["revision"],
+        "approved_plan_hash": intake["approval"]["hash"],
         "journey_mode": intake["journey_mode"],
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
         "route_graph": {"path": "route-graph.json", "sha256": _sha256_file(route_path)},
@@ -428,14 +549,26 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     receipt = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "receipt_type": RECEIPT_TYPE,
+        "receipt_schema": RECEIPT_SCHEMA_REF,
         "receipt_id": f"launcher-{intake['launch_id']}-r{intake['revision']}",
         "launch_id": intake["launch_id"],
         "tenant_id": intake["tenant_id"],
         "location_id": intake["location_id"],
         "revision": intake["revision"],
+        "approved_plan_hash": intake["approval"]["hash"],
         "assembled_at": manifest["assembled_at"],
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
+        "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir),
+        "lane_validations": [
+            dict(LANE_VALIDATION),
+            {"lane": "L05", "contract": checkout["contract"], "state": "recorded",
+             "detail": f"Skill 79 validator {checkout['validator']['state']}"},
+            {"lane": "L07", "contract": launch_plan_module.PLAN_CONTRACT_REF,
+             "state": "passed" if plan_record is not None else "not_applicable",
+             "detail": "calendar validated for the automation compiler"},
+        ],
         "pieces": [
             {"page_id": p["page_id"], "role": p["role"], "slot": p["slot"], "status": p["status"],
              "proof_class": p["proof_class"], "artifact_count": len(p["artifacts"])}
