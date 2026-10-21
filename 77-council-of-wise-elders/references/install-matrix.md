@@ -12,8 +12,9 @@ not-ready states when they do not.
   the Council service running (built and started by the skill's wire.sh).
 - **Client access:** the client's own address
   `https://<slug>-council.zerohumanworkforce.com` published behind
-  Cloudflare Access by the operator step
-  `scripts/provision-council-access.sh --all --apply`.
+  Cloudflare Access automatically, by the operator-side job
+  `scripts/council-access-autoprovision.sh` (every 30 minutes). No client
+  or operator step, and no dependence on the AI Workforce Interview.
 - **Managed visual mode (optional):** compatible Command Center,
   authenticated pairing and scope, council migration applied through the
   Command Center, job and event integration, UI assets. The standalone
@@ -37,7 +38,7 @@ runs from the immutable release as
 
 | Platform | Service manager | Public access | Status |
 |---|---|---|---|
-| Mac (fleet-mac) | LaunchAgent `ai.blackceo.council-service`, started by wire.sh, restarts on update and reboot | The box's one tunnel publishes `https://<slug>-council.zerohumanworkforce.com` behind Access (operator step) | Supported. A Mac with no logged-in GUI session reports `COUNCIL_WIRE: DEFERRED_NO_GUI` and finishes on a later roll |
+| Mac (fleet-mac) | LaunchAgent `ai.blackceo.council-service`, started by wire.sh, restarts on update and reboot | The box's one tunnel publishes `https://<slug>-council.zerohumanworkforce.com` behind Access (published automatically) | Supported. A Mac with no logged-in GUI session reports `COUNCIL_WIRE: DEFERRED_NO_GUI` and finishes on a later roll |
 | Hostinger VPS (fleet-hostinger) | pm2 app `council-of-wise-elders` inside the container; the tunnel connector runs inside the container as a pm2 app named cloudflared | Same address, same Access gate | Supported once the connector runs in the container; otherwise DEGRADED TUNNEL_NOT_IN_CONTAINER |
 | Contabo container (fleet-contabo) | pm2 app `council-of-wise-elders` inside the container | The connector today runs on the host, and a host-side connector cannot reach the container's loopback | Service supported; public access pending a connector inside the container. Verifier reports DEGRADED TUNNEL_NOT_IN_CONTAINER |
 | Standalone, no Command Center | Same as the platform above | Same | The supported shape for any box without a council-capable Command Center; managed visual mode is never promised |
@@ -83,7 +84,7 @@ read-only and checks, in this order:
 | `NO_USABLE_ROUTE` | NOT_READY | `GET /api/council/routes` lists at least one usable route (ids and usable flags are printed) | The client's own model route is not usable (for example claude-nine or claude-configured is not set up). The client or operator fixes the route; never change client credentials, models or sovereignty to get past it |
 | `ACCESS_GATE_OPEN` | NOT_READY | `GET <public_origin>/status` without following redirects answered 2xx, or redirected to its own host | Security failure: the address works with no sign-in. Do not send any chamber link. The operator removes the council hostname route or repairs its Access app, then re-runs `provision-council-access.sh --apply` |
 | `CLI_SHIM_MISSING` | DEGRADED | `blackceo-council` on PATH, else `council-runtime/bin/blackceo-council` | Re-roll; meanwhile call the absolute path |
-| `PUBLIC_ORIGIN_UNSET` | DEGRADED | `public_origin` in `service.json` is not null | Operator runs `provision-council-access.sh --all --apply`, then `bash wire.sh --idempotent` on the box so it probes the address. Until then tell the client the chamber link is not ready; never send a 127.0.0.1 link |
+| `PUBLIC_ORIGIN_UNSET` | DEGRADED | `public_origin` in `service.json` is not null | Nothing to run: the address is published automatically within about 30 minutes of the Command Center existing, and the next council carries the link (no re-roll). Until then tell the client the private Council link is still being set up; never send a 127.0.0.1 link. If it is still unset more than an hour after the Command Center existed, report the `COUNCIL_BOX:` line to the operator |
 | `ACCESS_GATE_MISSING` | DEGRADED | `GET <public_origin>/status` is a 3xx to `*.cloudflareaccess.com` | The address did not answer or redirects elsewhere: operator checks the tunnel route and Access app, re-runs `provision-council-access.sh --apply` |
 | `TUNNEL_NOT_IN_CONTAINER` | DEGRADED | VPS only: `pm2 jlist` lists a cloudflared app | A host-side connector cannot reach the container's loopback. Run the connector inside the container as a pm2 app named cloudflared (Contabo: pending) |
 

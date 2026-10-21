@@ -31,8 +31,9 @@ wire.sh checks this and reports NODE_TOO_OLD when it is not met.
 Installed means usable. A box counts as installed only when the Council
 service is running from a verified release AND the client has a signed-in
 way to open the Roast Room chamber. Copying the skill folder is only the
-first step; Step 4 (wire.sh) and the client access step below finish the
-job, and `scripts/verify-council-box.sh` is the proof.
+first step; Step 4 (wire.sh) builds and starts the service, the client's
+Council address is published automatically (see Client access below), and
+`scripts/verify-council-box.sh` is the proof.
 
 Optional, for the Command Center managed visual mode only: a compatible
 Command Center, an authenticated pairing and scope, the council migration
@@ -285,33 +286,41 @@ standard-company placeholder is not evidence of actual revenue, cash,
 mission, or customer demand, and council intake must keep unconfirmed
 scaffold data separate from client-confirmed facts.
 
-## Client access (operator step)
+## Client access (automatic)
 
 The client opens the Roast Room chamber at
 `https://<slug>-council.zerohumanworkforce.com`, where `<slug>` is the
 first label of their Command Center address, and signs in with the same
-email addresses that sign in to their Command Center. The address is
-published on the box's one existing Cloudflare tunnel behind a Cloudflare
-Access application that copies the Command Center's allow-list.
+email addresses that sign in to their Command Center. The address rides the
+box's one existing Cloudflare tunnel behind a Cloudflare Access application
+that copies the Command Center's allow-list.
 
-Publishing it is an operator step, run from the onboarding repository by the
-operator (never by the client, never by a worker on a client box):
+Nobody does anything to get it, for existing clients and for every client
+added later:
 
-    bash scripts/provision-council-access.sh --all --apply
+- Every client has a Command Center from install (it ships first, locked to
+  the interview until closeout), so every client gets an address whether or
+  not the AI Workforce Interview is finished. Nothing in this path reads the
+  interview or `.workforce-build-state.json`.
+- An operator-side job, `scripts/council-access-autoprovision.sh`, runs every
+  30 minutes on the operator Mac. It finds every Command Center from the
+  Cloudflare zone and publishes any missing Council address, so a new
+  client has one within about 30 minutes of their Command Center existing.
+  It is idempotent, writes nothing on any client box, and is never run on
+  a client box or by a client.
+- The box resolves its address each time `blackceo-council convene` runs and
+  uses it only when it answers with a Cloudflare Access sign-in. The first
+  council after the address exists prints `chamber_url =
+  <public_origin>/chamber/#session=<id>`: no roll, no `wire.sh` re-run, no
+  manual step.
 
-That script only publishes the address at Cloudflare; it writes nothing on
-the box. The next `wire.sh` run (`bash wire.sh --idempotent`) probes the
-address and records `public_origin` in service.json only when it answers
-with a Cloudflare Access sign-in (otherwise it prints
-`PUBLIC_ORIGIN_UNVERIFIED` and records nothing). Once recorded,
-`blackceo-council convene` prints `chamber_url =
-<public_origin>/chamber/#session=<id>`. Until then,
-`verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and the agent
-sends no chamber link: it tells the client plainly that the Council runs,
-the result will be shared, and their private Council link is still being
-set up. It never invents a link or sends a local one. If the verifier ever reports
-ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as a
-security failure and do not send the link.
+Until then `verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and
+the agent sends no chamber link: it tells the client plainly that the
+Council runs, the result will be shared here, and their private Council
+link is still being set up. It never invents a link, sends a local one, or
+mentions scripts, fleet or Cloudflare to the client. If the verifier ever
+reports ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as
+a security failure and do not send the link.
 
 ## Front-door service launcher
 

@@ -1,5 +1,5 @@
 ---
-version: 1.0.34
+version: 1.0.35
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -49,14 +49,17 @@ inside the container on a VPS. Nobody hand-runs npm. The result is the
 The agent convenes with `blackceo-council` (or
 `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
 PATH). The client opens the Roast Room chamber at their own Council
-address and signs in with their Command Center emails; the operator
-publishes that address with `scripts/provision-council-access.sh --all
---apply`. If the command prints a `chamber_url`, send the client exactly
-that link. If it prints no `chamber_url`, the address was not
-verified: do not invent, guess, or build a link, and never send a
-127.0.0.1 link (it only works on the box itself). Tell the client the
-Council is running, the result will be shared, and their private
-Council link is still being set up.
+address and signs in with their Command Center emails. That address is
+set up automatically for every client, finished AI Workforce Interview or
+not, and the command looks for it every time a council is convened, so
+nobody (client or operator) does anything. If the command prints a
+`chamber_url`, send the client exactly that link. If it prints no
+`chamber_url`, the address is not ready yet and the first council after it
+is ready carries the link: do not invent, guess, or build a link, and never
+send a 127.0.0.1 link (it only works on the box itself). Tell the client
+the Council is running, the result will be shared here, and their private
+Council link is still being set up. Never mention scripts, servers, fleet
+or Cloudflare to the client.
 
 To learn whether this box is usable right now, run
 `bash scripts/verify-council-box.sh` (read-only). Its last line,
@@ -148,8 +151,9 @@ operational reference for a follow-up or an existing-session control.
    output has no `chamber_url` (COUNCIL_BOX code PUBLIC_ORIGIN_UNSET):
    do not invent or guess a link and never substitute a 127.0.0.1
    link. Tell the client the Council is running and the result will be
-   shared, give the session id, and say their private Council link is
-   still being set up.
+   shared here, give the session id, and say their private Council link is
+   still being set up. It arrives by itself with a later council; ask the
+   client for nothing.
    A fresh install convenes immediately on any usable route; there is
    no setup or approval step. If convening is refused for any other
    reason, read the refusal to the client in plain words and never

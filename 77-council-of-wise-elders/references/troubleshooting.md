@@ -36,11 +36,13 @@
 
 **The client cannot open the chamber.** Run
 `bash scripts/verify-council-box.sh` first. PUBLIC_ORIGIN_UNSET means the
-box has no verified Council address: the operator has not yet run
-`scripts/provision-council-access.sh --all --apply`, or has run it since the
-last `wire.sh` (then `bash wire.sh --idempotent` picks it up). The client
-signs in at the `chamber_url` the CLI prints with their Command Center
-emails; an email that is not on the Command Center allow-list is refused by
+box has no verified Council address yet. The address is published
+automatically (an operator-side job runs every 30 minutes) and the box looks
+for it each time a council is convened, so there is nothing to run: the
+first council after it exists prints the `chamber_url`. If it is still
+unset more than an hour after the client's Command Center existed, report
+the `COUNCIL_BOX:` line to the operator. The client signs in at the
+`chamber_url` the CLI prints with their Command Center emails; an email that is not on the Command Center allow-list is refused by
 Cloudflare Access by design. Never build the address by hand and never send
 a 127.0.0.1 link, which only opens on the box itself.
 
