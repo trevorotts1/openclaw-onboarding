@@ -99,11 +99,19 @@ j = SD.judge_take(GOOD, dict(plan, sheet_text=INP["lyrics"]), script, hook, (15,
 assert j["verdict"] in ("PASS", "FLAG"), j
 # each gate bites
 for k, v, gate in (("tail_rms_dbfs", -70.0, "clean_ending"), ("music_under_speech_ratio", 0.05, "music_under_speech"),
-                   ("duration_s", 60.0, "length"), ("first_sung_s", 30.0, "first_sung"),
+                   ("duration_s", 45.0, "length"), ("first_sung_s", 30.0, "first_sung"),
                    ("detector", "singcheck v1", "detector"),
                    ("aligned_words", words[:5], "script_words")):
     r = SD.judge_take(dict(GOOD, **{k: v}), dict(plan, sheet_text=INP["lyrics"]), script, hook, (15, 20))
     assert r["verdict"] == "FAIL" and gate in r["failed"], (gate, r)
+
+# ORDER 2026-10-21: an overshoot is a FLAG, never a stop. A take 2 s over the
+# delivered target keeps the take moving and names the warning on the gate.
+_over = SD.judge_take(dict(GOOD, duration_s=60.0), dict(plan, sheet_text=INP["lyrics"]),
+                      script, hook, (15, 20))
+assert _over["gates"]["length"]["verdict"] == "PASS", _over["gates"]["length"]
+assert "within the 10-second allowance" in _over["gates"]["length"]["detail"], _over["gates"]["length"]
+assert "length" not in _over["failed"], _over["failed"]
 
 # FU-HOOK-PLACEMENT: Suno moving/adding a hook earlier than the sheet fails
 # the take before any picture spend (the One-Check Chanel v2 shape).

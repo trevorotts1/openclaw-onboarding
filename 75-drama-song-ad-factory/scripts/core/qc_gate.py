@@ -115,6 +115,18 @@ def required_checks(stage, required, campaign_type=None):
 EXIT = {"ok": 0, "waiting": 3, "parked": 4, "rejected": 5, "error": 1}
 
 
+def _warn(code, detail):
+    """Record a named WARNING on the receipt (loud_failure.warn). A gate that
+    only flags still advances; the warning keeps the reason visible."""
+    if not code:
+        return
+    try:
+        import loud_failure  # noqa: PLC0415 - sibling module, same buffer
+        loud_failure.warn(code, detail or "")
+    except Exception:  # noqa: BLE001 - the warning is already on the result
+        pass
+
+
 class GateError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -339,6 +351,7 @@ def evaluate(run_id, stage, records, makers, required,
     independent judge that reads the beats, not by a later stage.
     """
     failures = []
+    warnings = []
     required = required_checks(stage, required, campaign_type)
     required = list(required)
     if ledger_jobs and PROMPT_COMPLIANCE_CHECK not in required:
@@ -370,6 +383,12 @@ def evaluate(run_id, stage, records, makers, required,
                      "reason_code": "MASTER_LENGTH_MISSING", "detail": str(e)}
             if m["outcome"] != "ok":
                 fail("i4-master-length", m["reason_code"], m["detail"], True)
+            elif m.get("warning"):
+                # Order 2026-10-21: an overshoot is a FLAG, never a stop.
+                # The named warning reaches the receipt through loud_failure;
+                # whether the master is redone belongs to the client.
+                _warn(m["warning"].get("code"), m["warning"].get("detail"))
+                warnings.append(dict(m["warning"]))
 
     by_check = {}
     seen = set()  # required checks with at least one offered record
@@ -452,7 +471,7 @@ def evaluate(run_id, stage, records, makers, required,
 
     if not failures:
         return {"gate": "PASS", "reason_code": "ALL_REQUIRED_PASS",
-                "failures": [], "repair_scope": [],
+                "failures": [], "repair_scope": [], "warnings": warnings,
                 "critical_failures": []}
     codes = {f["code"] for f in failures}
     # FILL_CLAIM_MEASURED (DEL-14) joins SUNG_CLAIM_UNMEASURED as structural:
@@ -469,6 +488,7 @@ def evaluate(run_id, stage, records, makers, required,
     return {"gate": gate,
             "reason_code": "+".join(sorted(codes)),
             "failures": failures, "repair_scope": scope,
+            "warnings": warnings,
             "critical_failures": crit}
 
 
@@ -516,7 +536,8 @@ def cmd_evaluate(ns):
         return envelope(
             "evaluate", "ok", res["reason_code"], "advance stage",
             run_id=ns.run, stage=ns.stage,
-            evidence={"failures": [], "repair_scope": []}), EXIT["ok"]
+            evidence={"failures": [], "repair_scope": [],
+                      "warnings": res.get("warnings") or []}), EXIT["ok"]
     if res["gate"] == "FAIL":
         action = "repair checks %s with new attempt ids; approved assets stand" \
             % ",".join(res["repair_scope"])

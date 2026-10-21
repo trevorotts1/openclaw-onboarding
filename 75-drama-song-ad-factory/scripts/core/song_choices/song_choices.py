@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,6 +45,8 @@ from song_choices import overlap as _OV            # noqa: E402  (WWFIX D2 item 
 
 TOOL_NAME = "song_choices"
 DIRNAME = "SONG-CHOICES"
+#: Failed takes are presented for listening only, never on the offer surface.
+FOR_LISTENING = "FOR-LISTENING"
 BANNED_WORDS = ("choir", "reverb", "echo", "rap", "spoken", "speak", "acapella")
 #: WW-26: words no complete brief may carry whatever the style -- a sound the
 #: style bans outright, or a delivery the style text already names once.
@@ -299,28 +302,39 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
                 spoken_range_pct=None, **kw):
     """THE single-variant worker path. Every caller (the umbrella three-up
     run and the per-unit `--variant`/`--unit-id` run) calls this ONE helper:
-    there is no second worker path to drift. One generation per attempt; a
-    FAIL is regenerated ONCE, then reported.
+    there is no second worker path to drift. ONE generation per attempt.
+
+    SONG-FAILURE VERDICT BELONGS TO THE CLIENT (order 2026-10-21): a take the
+    song judge FAILS is NEVER regenerated here. It is returned with the judge's
+    named concerns so the client can listen and answer the one fork question
+    (``failure_fork_message``); only the client's recorded answer authorizes a
+    new paid round. There is no silent retry loop.
 
     WW-18: `run_takes` delivers only a take whose REQUIRED gate set all PASSed
     (its constituent receipt is current), so `status` is never a take that a
     required gate blocked; the receipt rides the result to the delivery gate."""
-    receipts, got, attempt = [], None, 0
     opts = dict(kw)
     opts.setdefault("style_id", request.get("_style_id"))
     req = {k: x for k, x in request.items() if k != "_style_id"}
-    for attempt in (1, 2):
-        r = _SD.run_takes(req, plan, lambda rq: generate(variant, rq), measure,
-                          lambda t, rc: save(variant, t, rc), script_words, hook_text,
-                          spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **opts)
-        receipts += r["receipts"]
-        if r["verdict"] != "FAIL":
-            got = r
-            break
-    return {"n": n, "variant": variant, "status": got["verdict"] if got else "FAILED",
+    heard = []
+
+    def _save(t, rc):
+        heard.append(dict(t))          # the paid take, kept for the client's listen
+        return save(variant, t, rc)
+
+    r = _SD.run_takes(req, plan, lambda rq: generate(variant, rq), measure,
+                      _save, script_words, hook_text,
+                      spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **opts)
+    got = None if r["verdict"] == "FAIL" else r
+    return {"n": n, "variant": variant,
+            "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
-            "receipt": got.get("receipt") if got else None,
-            "attempt": attempt, "attempts": attempt, "receipts": receipts}
+            # ``heard`` is LISTENING ONLY: a take the judge failed is presented
+            # to the client, never offered for a pick (WW-18 stays).
+            "heard": None if got else (heard[-1] if heard else None),
+            "concerns": [] if got else failure_concerns(r),
+            "receipt": got.get("receipt") if got else (r.get("receipt")),
+            "attempt": 1, "attempts": 1, "receipts": r["receipts"]}
 
 
 def run_unit(requests, unit_id=None, variant_id=None, **kw):
@@ -598,30 +612,40 @@ def archive_before_publish(run_dir, items, stamp="published", copier=None):
 
 def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=None, send=None):
     """Write SONG-CHOICES/ and the offered list into state.json. Returns the
-    client message. Zero good versions raises (fail closed). With a target the
-    message and the files go to the client right away (send_choices). No target
-    argument: the client's chat id the card recorded in the run is used. No
-    target anywhere (CLI-only run): the message and file paths are printed.
+    client message. With a target the message and the files go to the client
+    right away (send_choices). No target argument: the client's chat id the
+    card recorded in the run is used. No target anywhere (CLI-only run): the
+    message and file paths are printed.
 
     WW-18: a take whose REQUIRED gate set is not all PASS is NOT offered, so a
-    failed or unmeasured required gate can never reach the client; its paid file
-    still stands on disk. The block reaches this DELIVERY boundary, not just the
-    judge's verdict string.
+    failed or unmeasured required gate can never be PICKED; its paid file is
+    still presented for LISTENING because the song-failure verdict belongs to
+    the client (order 2026-10-21). Nothing regenerates and nothing loops here:
+    every take that failed is delivered with the judge's named concerns and the
+    ONE fork question. Only a production that produced no take at all raises.
+
+    WW-21: OFFER is a delivery boundary. A take whose required gate set is not
+    all PASS -- or whose five results are missing, unbound or stale -- is never
+    offered. Zero purchases on this path.
     """
     hold = _overlap_refusal(run_dir, "delivery")
     if hold:
         raise ChoiceError(hold["detail"])
-    # WW-21: OFFER is a delivery boundary. A take whose required gate set is
-    # not all PASS -- or whose five results are missing, unbound or stale --
-    # is never offered. Zero purchases on this path.
-    ahold = _acceptance_refusal(run_dir, "the offer")
-    if ahold:
-        raise ChoiceError(ahold["detail"])
     _require_three(results, key=lambda r: r["variant"]["id"])
     good = [r for r in results
             if r.get("take") and r.get("status") != "FAILED" and _accepted(r)[0]]
-    if not good:
+    # LISTENING ONLY: a take the JUDGE failed (status FAILED with its named
+    # concerns). A take blocked by WW-21's acceptance binding is NOT presented
+    # here -- that refusal path is unchanged.
+    heard = [r for r in results
+             if r not in good and str(r.get("status") or "").upper() == "FAILED"
+             and (r.get("take") or r.get("heard"))]
+    if not good and not heard:
         raise ChoiceError("no song version passed every required song gate; nothing to offer")
+    if good:
+        ahold = _acceptance_refusal(run_dir, "the offer")
+        if ahold:
+            raise ChoiceError(ahold["detail"])
     folder = os.path.join(delivery_dir, DIRNAME)
     # WW-25: COPY-FIRST archive BEFORE any replacement output is published. Every
     # approved take file is copied into a NEW noncolliding archive and each copy
@@ -631,38 +655,62 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     # fixtures prove reachable from the production delivery path.
     plan = [(_safe("%d - %s (%s)" % (r["n"], r["variant"]["label"],
                                      r["variant"]["description"])) + ".mp3",
-             r["take"]["audio_path"], r) for r in good]
+             (r.get("take") or r.get("heard"))["audio_path"], r) for r in good]
+    plan += [(_safe("%d - %s (%s) - NOT PASSED"
+                    % (r["n"], r["variant"]["label"], r["variant"]["description"]))
+              + ".mp3", (r.get("take") or r.get("heard"))["audio_path"], r)
+             for r in heard]
     archive_before_publish(run_dir, [{"name": n, "source": s} for n, s, _ in plan])
     os.makedirs(folder, exist_ok=True)
-    offered, lines = {}, []
+    listen_dir = os.path.join(folder, FOR_LISTENING)
+    offered, lines, concerns, presented = {}, [], {}, []
     for name, _src, r in plan:
-        v, take = r["variant"], r["take"]
+        v, take = r["variant"], (r.get("take") or r.get("heard"))
         label = "%d - %s (%s)" % (r["n"], v["label"], v["description"])
-        dst = os.path.join(folder, name)
+        # A failed take is presented for LISTENING under its own folder, so the
+        # offer surface (WW-21/WW-18) carries accepted takes only.
+        dst = os.path.join(folder if r in good else listen_dir, name)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
         runner(["ffmpeg", "-y", "-i", take["audio_path"], "-c", "copy",
                 "-metadata", "title=" + label, dst])
+        presented.append(dst)
         dur = _mmss(take.get("duration_s", 0))
-        lines.append("%s - %s - %s" % (label.split(" (")[0], dur, v["description"]))
-        offered[str(r["n"])] = {"label": label, "file": dst, "duration": dur,
-                                "take": take, "receipt": r.get("receipt")}
+        if r in good:
+            lines.append("%s - %s - %s" % (label.split(" (")[0], dur, v["description"]))
+            offered[str(r["n"])] = {"label": label, "file": dst, "duration": dur,
+                                    "take": take, "receipt": r.get("receipt")}
+        else:
+            # Presented to LISTEN to, never offered for a pick (WW-18).
+            why = r.get("concerns") or failure_concerns(r)
+            concerns[str(r["n"])] = why
+            lines.append("%s - %s - %s - NOT PASSED: %s"
+                         % (label.split(" (")[0], dur, v["description"],
+                            "; ".join(why) if why else "did not pass the song checks"))
     with open(os.path.join(folder, "README.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     st = _state(run_dir) or {"required": True}
-    st.update(required=True, offered=offered)
+    st.update(required=True, offered=offered,
+              failure_fork=bool(heard), concerns=concerns)
     _write(run_dir, "state.json", st)
     # Method Step 14 (inert until the run carries control/method.json): the
     # message RECOMMENDS the strongest compliant version with a concrete reason.
     # `recommend` ranks only the versions `good` above offers, so it can never
     # name one the client was not sent.
-    rec = recommend(results) if method_run(run_dir) else None
-    msg = client_message(offered, [r["n"] for r in results if r["status"] == "FAILED"],
-                         recommend=rec)
+    rec = recommend(results) if method_run(run_dir) and offered else None
+    st["presented"] = presented
+    _write(run_dir, "state.json", st)
+    failed_nums = sorted(int(r["n"]) for r in heard)
+    if not offered:
+        # Every take failed: the client hears them and answers the ONE fork.
+        msg = failure_fork_message(results)
+    else:
+        msg = client_message(offered, failed_nums, recommend=rec, concerns=concerns)
     target = target or st.get("target")
     if target:
         send_choices(run_dir, target, send, msg)
     else:
         print(msg + "\n\nNO CLIENT TARGET RECORDED FOR THIS RUN - nothing was sent. Send these files to the client yourself, in order:")
-        print("\n".join(offered[n]["file"] for n in sorted(offered, key=int)))
+        print("\n".join(st["presented"]))
     return msg
 
 
@@ -672,15 +720,22 @@ def _run_send(argv):
 
 def send_choices(run_dir, target, send=None, message=None):
     """Client delivery: the intake card's own send path (intake_card.openclaw_send_argv,
-    `openclaw message send`) with the offered files attached in order 1, 2, 3.
-    send(argv) is the sink (default: run it). Returns the argv. Raises when
-    nothing is offered or the send fails, so a lost message is never silent."""
+    `openclaw message send`) with the files attached in order. send(argv) is the
+    sink (default: run it). Returns the argv. Raises when nothing was presented
+    or the send fails, so a lost message is never silent.
+
+    A failed production still sends: the takes the judge failed are presented
+    for LISTENING (never offered for a pick) so the client can answer the fork.
+    """
     from choice_card.intake_card import intake_card as _IC   # noqa: PLC0415
-    offered = (_state(run_dir) or {}).get("offered") or {}
-    if not offered:
-        raise ChoiceError("no song versions are offered yet; nothing to send")
-    nums = sorted(offered, key=int)
-    argv = _IC.openclaw_send_argv(target, message or client_message(offered), media=[offered[n]["file"] for n in nums])
+    st = _state(run_dir) or {}
+    offered = st.get("offered") or {}
+    media = [f for f in (st.get("presented") or []) if os.path.isfile(f)]
+    if not media:
+        media = [offered[n]["file"] for n in sorted(offered, key=int)]
+    if not media:
+        raise ChoiceError("no song versions are ready yet; nothing to send")
+    argv = _IC.openclaw_send_argv(target, message or client_message(offered), media=media)
     (send or _run_send)(argv)
     return argv
 
@@ -761,15 +816,129 @@ def method_run(run_dir):
     return os.path.isfile(os.path.join(run_dir or "", METHOD_RECORD))
 
 
-def client_message(offered, failed=(), recommend=None):
+# ---- the client's song-failure fork (order 2026-10-21) --------------------
+#
+# SONG-FAILURE VERDICT BELONGS TO THE CLIENT. When the song judge fails a
+# take, nothing regenerates and nothing loops: the take keeps the judge's
+# NAMED concerns, every take is presented for listening, and the client
+# answers ONE question. That answer is authoritative and recorded in the run
+# state (song-choices/fork-decision.json, appended, never clobbered). Only a
+# recorded answer authorizes a new paid round; the pick/constituent gates are
+# untouched, so nothing advances on a FAIL by itself.
+
+FAILURE_FORK = ("Want me to redo all of them, keep one of these three, "
+                "or generate three new options?")
+FORK_ANSWERS = ("redo_all", "keep_one", "new_three")
+_FORK_ALIASES = (
+    ("redo all of them", "redo_all"), ("redo all", "redo_all"),
+    ("redo", "redo_all"), ("redo them", "redo_all"),
+    ("keep one of these three", "keep_one"), ("keep one", "keep_one"),
+    ("generate three new options", "new_three"), ("three new options", "new_three"),
+    ("new three", "new_three"),
+)
+FORK_FILE = "fork-decision.json"
+
+
+def parse_fork_answer(reply):
+    """The client's answer folded onto the three branches, or None (never
+    guessed -- a pick number goes through record_pick, not here)."""
+    t = re.sub(r"[^a-z0-9 ]+", " ", str(reply or "").lower()).strip()
+    t = re.sub(r"\s+", " ", t)
+    for phrase, answer in _FORK_ALIASES:
+        if t == phrase or t.startswith(phrase):
+            return answer
+    return None
+
+
+def failure_concerns(result):
+    """The song judge's NAMED concerns for a take that did not pass, as plain
+    lines. Empty when every gate passed."""
+    r = result if isinstance(result, dict) else {}
+    judged = r.get("receipt") if isinstance(r.get("receipt"), dict) else None
+    if not judged or "gates" not in judged:
+        recs = [x for x in (r.get("receipts") or []) if isinstance(x, dict)]
+        judged = recs[-1] if recs else {}
+    out = []
+    for name in sorted(judged.get("gates") or {}):
+        g = (judged.get("gates") or {})[name]
+        v = (g or {}).get("verdict") if isinstance(g, dict) else g
+        if str(v or "").strip().upper() == "PASS":
+            continue
+        detail = ((g or {}).get("detail") if isinstance(g, dict) else "") or ""
+        out.append("%s: %s%s" % (name, str(v or "").strip().upper() or "UNKNOWN",
+                                 (" - " + str(detail)) if detail else ""))
+    return out
+
+
+def failure_fork_message(results):
+    """The one client message when any take failed the judge: the concerns in
+    plain words, the client's freedom to say a take is fine, and the ONE
+    question. No jargon, no second question."""
+    failed = [r for r in results or [] if str(r.get("status") or "").upper() == "FAILED"]
+    msg = ["I listened through your song options and checked them carefully.", ""]
+    for r in failed:
+        concerns = r.get("concerns") or failure_concerns(r)
+        msg.append("Version %d needs work: %s."
+                   % (r.get("n"), "; ".join(concerns) if concerns else "it did not pass my check"))
+    if len(failed) < len(results or []):
+        passed = [r for r in results or [] if r not in failed]
+        msg += ["", "Version %s came through cleanly, and you can still pick one of those."
+                % ", ".join(str(r.get("n")) for r in passed)]
+    msg += ["", "These are my notes, not the final word: you may listen and decide one of "
+                "them is exactly what you want.", FAILURE_FORK]
+    return "\n".join(msg)
+
+
+def record_fork_decision(run_dir, reply, who=None, channel="card", at=None):
+    """Record the client's answer. Authoritative: nothing overrides it and no
+    new paid round runs before it exists. An answer outside the three branches
+    is refused, never guessed."""
+    ans = parse_fork_answer(reply)
+    if ans is None:
+        raise ChoiceError("%r is not one of the three answers; ask again: %s"
+                          % (reply, FAILURE_FORK))
+    rec = {"answer": ans, "reply": str(reply), "who": who, "channel": channel,
+           "at": at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    doc = {}
+    p = _path(run_dir, FORK_FILE)
+    if os.path.exists(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                doc = json.load(f) or {}
+        except (OSError, ValueError):
+            doc = {}                     # unreadable: a fresh doc, never a guess
+    log = doc.get("decisions") if isinstance(doc.get("decisions"), list) else []
+    _write(run_dir, FORK_FILE, dict(doc, decisions=log + [rec]))
+    return rec
+
+
+def fork_decision(run_dir):
+    """The latest recorded client answer, or None when the client has not
+    answered yet."""
+    try:
+        with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
+            doc = json.load(f) or {}
+    except (OSError, ValueError):
+        return None
+    log = doc.get("decisions") or []
+    return log[-1] if log and isinstance(log[-1], dict) else None
+
+
+def client_message(offered, failed=(), recommend=None, concerns=None):
     nums = sorted(int(n) for n in offered)
     rows = ["%d. %s - %s" % (n, offered[str(n)]["label"].split(" - ", 1)[1], offered[str(n)]["duration"])
             for n in nums]
     pick = "%s or %d" % (", ".join(map(str, nums[:-1])), nums[-1]) if len(nums) > 1 else str(nums[0])
     msg = ["Your song is ready in %d versions. They are in the %s folder:" % (len(nums), DIRNAME), ""] + rows
     if failed:
-        msg += ["", "Version %s did not pass my song checks after a second try, so I left it out."
-                % ", ".join(map(str, failed))]
+        msg += ["", "Version %s did not pass all of my song checks, so I have not offered it for "
+                    "your pick." % ", ".join(map(str, failed))]
+        for n in sorted(failed):
+            why = (concerns or {}).get(str(n)) or []
+            if why:
+                msg.append("Version %d: %s." % (n, "; ".join(why)))
+        msg += ["", "You can still keep one of them if it sounds right to you.", FAILURE_FORK]
+        return "\n".join(msg)
     if isinstance(recommend, dict) and recommend.get("n") is not None:
         msg += ["", "I recommend version %d because %s."
                 % (int(recommend["n"]), recommend.get("reason") or "it passed every song check")]
@@ -1208,6 +1377,10 @@ def main(argv=None):
     p = sub.add_parser("pick")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--reply", required=True)
+    fk = sub.add_parser("fork", help="record the client's answer to the song-failure fork")
+    fk.add_argument("--run-dir", required=True)
+    fk.add_argument("--reply", required=True)
+    fk.add_argument("--who", default="")
     sd = sub.add_parser("send")
     sd.add_argument("--run-dir", required=True)
     sd.add_argument("--target", required=True)
@@ -1228,7 +1401,19 @@ def main(argv=None):
         elif a.cmd == "send":
             send_choices(a.run_dir, a.target)
         elif a.cmd == "pick":
-            print("Picked: " + record_pick(a.run_dir, a.reply))
+            try:
+                print("Picked: " + record_pick(a.run_dir, a.reply))
+            except ChoiceError:
+                # SONG-FAILURE VERDICT BELONGS TO THE CLIENT (order 2026-10-21):
+                # the client answered the fork in words, not a number. Record
+                # that answer and re-raise only when it is none of the three.
+                if parse_fork_answer(a.reply) is None:
+                    raise
+                rec = record_fork_decision(a.run_dir, a.reply)
+                print("Fork recorded: " + rec["answer"])
+        elif a.cmd == "fork":
+            rec = record_fork_decision(a.run_dir, a.reply, who=a.who or None)
+            print("Fork recorded: " + rec["answer"])
         elif a.cmd == "generate":
             # The CLI is the command the stage runbook hands agents, so it
             # supplies the REAL transports itself: measurements off the take's
