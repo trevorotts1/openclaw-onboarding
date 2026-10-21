@@ -36,10 +36,11 @@
 #
 # STEP 1 each run is ensure-cc-access.sh (same mode, so --apply only when this job
 # has --apply): it gives every new client's Command Center host its login-gated
-# Access application so step 2 (provision-council-access.sh) finds it. It keeps its
+# Access application so step 2 (provision-council-access.sh) finds it, and adds any
+# missing operator or client email to an existing one (RECONCILED). It keeps its
 # own receipts (cc-access-last-run.json, cc-access-runs.log) in the same state dir.
 # Its outcome is also summarised here as "cc_access" in last-run.json and as
-# cc_needs_email / cc_drift / cc_failed on the runs.log line. NEEDS_EMAIL (no verified
+# cc_reconciled / cc_needs_email / cc_drift / cc_failed on the runs.log line. NEEDS_EMAIL (no verified
 # client email yet), DRIFT (existing app differs), a refusal or any failure of this
 # step is reported but NEVER fails the run; the next run retries it.
 #
@@ -122,14 +123,15 @@ if jq -e 'type == "array"' "$CCOUT" >/dev/null 2>&1; then
     | {ran:true, exit:$rc,
        created:([$r[] | select(.status == "CREATED")] | length),
        planned:([$r[] | select(.status == "PLANNED")] | length),
+       reconciled:([$r[] | select(.status == "RECONCILED")] | length),
        already:([$r[] | select(.status == "ALREADY_PRESENT")] | length),
        needs_email:[$r[] | select(.status == "NEEDS_EMAIL") | .host],
        drift:[$r[] | select(.status == "DRIFT") | .host],
        failed:[$r[] | select(.status == "FAILED") | .host]}' "$CCOUT")"
 else
-  CC="$(jq -cn --argjson rc "$CC_RC" '{ran:false, exit:$rc, created:0, planned:0, already:0, needs_email:[], drift:[], failed:[]}')"
+  CC="$(jq -cn --argjson rc "$CC_RC" '{ran:false, exit:$rc, created:0, planned:0, reconciled:0, already:0, needs_email:[], drift:[], failed:[]}')"
 fi
-CC_LINE="$(jq -r '" cc_exit=\(.exit) cc_created=\(.created) cc_needs_email=\(.needs_email|length) cc_drift=\(.drift|length) cc_failed=\(.failed|length)"' <<<"$CC")"
+CC_LINE="$(jq -r '" cc_exit=\(.exit) cc_created=\(.created) cc_reconciled=\(.reconciled) cc_needs_email=\(.needs_email|length) cc_drift=\(.drift|length) cc_failed=\(.failed|length)"' <<<"$CC")"
 ARGS="--all --json"; [ "$MODE" = apply ] && ARGS="$ARGS --apply"
 # shellcheck disable=SC2086
 "$PROVISION" $ARGS >"$OUT" 2>"$ERR"; RC=$?
