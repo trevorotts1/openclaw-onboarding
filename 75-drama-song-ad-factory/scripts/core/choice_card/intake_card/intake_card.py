@@ -982,14 +982,20 @@ def _book_block(book_plan, notes=()):
 
 
 def format_questions(texts):
-    """Plain question strings -> numbered, blank-line separated message.
+    """Plain question strings -> a message.
 
-    Used by intake / intake_book for their ``question_message`` so those
-    questions get the same layout (one per line group, blank line between).
+    ONE question is ONE message (Trevor 2026-10-21): a single text is sent as
+    its own message, unnumbered, so the client answers it before the next
+    question is asked. Several texts keep the numbered, blank-line separated
+    layout for callers that legitimately send a whole batch.
+
+    Used by intake / intake_book for their ``question_message``.
     """
     texts = [t for t in texts if t]
     if not texts:
         return None
+    if len(texts) == 1:
+        return texts[0] + "\n\nReply with your answer."
     blocks = ["Question %d of %d\n%s" % (i, len(texts), t)
               for i, t in enumerate(texts, 1)]
     return "\n\n".join(blocks + ["Reply with one answer per question, in order."])

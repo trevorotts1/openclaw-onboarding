@@ -9,8 +9,10 @@ fi
 # ensure-cc-access.sh [--apply] [--json]
 #
 # Council of Wise Elders (skill 77) - OPERATOR-SIDE. Makes sure every Command
-# Center host in the zone has a Cloudflare Access application, so a NEW fleet
-# client gets a login-gated address with no human running setup-access-app.sh.
+# Center host in the zone has a Cloudflare Access application (its login page),
+# so a NEW fleet client gets a login-gated address with no human running
+# setup-access-app.sh, and that EVERY login page, new or old, lets in the operator
+# emails and every verified client email (RECONCILE, below).
 # provision-council-access.sh refuses (NOT_PROVISIONED) any host with no Command
 # Center Access app, so this runs just before it. The settings below mirror
 # blackceo-command-center scripts/cloudflare/setup-access-app.sh (read, not run):
@@ -24,26 +26,55 @@ fi
 # COUNCIL_ACCESS_EXCLUDE list), then kept only with POSITIVE proof it is a Command
 # Center: its tunnel is remote-managed and has an ingress rule for that exact host
 # on :4000. rescue-<slug>, <slug>-gw, webhook hosts and locally managed tunnels are
-# SKIPPED (zero writes): gating a non-Command-Center host could break it.
+# SKIPPED (zero writes): gating a non-Command-Center host could break it. A host whose
+# tunnel or tunnel configuration no longer exists (HTTP 404, "Configuration for tunnel
+# not found") is an orphan record: SKIPPED_ORPHAN, zero writes, exit 0, named in the
+# receipt. A transient read error (5xx, timeout, auth) stays FAILED, and so does a
+# healthy, not-deleted tunnel whose configuration is missing: a live tunnel is never
+# an orphan.
 #
-# WHO MAY LOG IN. Exactly: the operator emails + the client's verified owner
-# email(s). Never everyone, never a service token. Sources, in order:
+# WHO MAY LOG IN. The operator emails + the client's verified email(s). Never
+# everyone, never a service token. The emails file (COUNCIL_CC_EMAILS_FILE, default
+# $HOME/.claude/state/council-elders/cc-access-emails.json) has the shape
+#     {"operator":["a@x"],"clients":{"<slug>":["b@y"]},"ghl":{"location_id":"<id>"}}
+# (every key optional).
 #   operator   COUNCIL_CC_OPERATOR_EMAILS (comma list) and/or "operator" in the emails file
-#   client     "clients"."<slug>" in the emails file (COUNCIL_CC_EMAILS_FILE, default
-#              $HOME/.claude/state/council-elders/cc-access-emails.json), shape
-#                {"operator":["a@x"],"clients":{"<slug>":["b@y"]}}
-#              else the emails already on that client's own rescue-<slug> Access app
-#              (the fleet onboarding doc puts the client's own email there next to the
-#              operator emails): the allow-list emails minus the operator emails, only
-#              when that leaves 1 or 2 addresses (otherwise ambiguous) and only when
-#              that app's allow rules are emails alone (otherwise unverified).
-#   No verified client email -> NEEDS_EMAIL, zero writes, retried every run.
+#   client     the union of, in this order:
+#              1. "clients"."<slug>" in the emails file;
+#              2. the non-operator emails already on that client's own Command Center
+#                 Access app (an existing login page), and on its rescue-<slug> Access
+#                 app (the fleet onboarding doc puts the client's own email there): for
+#                 the rescue app only when that leaves 1 or 2 addresses (otherwise
+#                 ambiguous) and only when its allow rules are emails alone (otherwise
+#                 unverified). The rescue app is matched by the EXACT slug;
+#              3. GoHighLevel (Convert and Flow), READ ONLY, via ghl-client-emails.py:
+#                 contacts of the Black CEO LLC location that carry one of the emails
+#                 above, or whose company name IS the slug read as a business name
+#                 (eddie-otts-trading = "Eddie Otts Trading LLC"), plus the same person's
+#                 duplicate contacts (same full name AND same phone). Strict: never a
+#                 first or full name alone (no one-word slug, no company that is only the
+#                 contact's own name), never fuzzy; two different people matched =
+#                 "ambiguous", nothing added. Skipped silently (one counts line) when
+#                 GOHIGHLEVEL_API_KEY or the location id is not configured. Location id:
+#                 COUNCIL_GHL_LOCATION_ID, else "ghl"."location_id" in the emails file
+#                 (the GHL location variables in the env files name another location).
+#   No verified client email and no app -> NEEDS_EMAIL, zero writes, retried every run.
 #   Placeholder addresses (pending+...) and malformed addresses never count.
 # Emails are NEVER printed, logged or put in receipts (counts only).
 #
+# RECONCILE. A host whose app already exists gets every missing operator and client
+# email ADDED to its app-scoped allow policy (the lowest precedence one): the live
+# policy is read, every existing include rule is kept untouched and in order
+# (emails, service tokens, anything else), one {"email":{"email":...}} rule is
+# appended per missing address (case-insensitive compare), the full policy minus
+# read-only fields is PUT, and it is read back to prove only that include list grew.
+# Nothing is ever removed or reordered. Nothing to add -> ALREADY_PRESENT, zero
+# writes. Never edited, reported as DRIFT instead: an app with no allow policy, an
+# allow policy that admits everyone, or an allow policy that is a reusable (shared)
+# policy; non_identity, bypass and deny policies are never touched.
+#
 # MODES. Dry-run (GET only) is the default; --apply is the only way a write leaves
-# this script. A host whose app already exists is never modified: matching rules ->
-# ALREADY_PRESENT, different rules -> DRIFT (reported, not overwritten).
+# this script. Dry-run prints what --apply would create or add (counts only).
 #
 # ENV (token and account id never printed):
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   required (else BOTH read from
@@ -52,12 +83,15 @@ fi
 #   CF_API_BASE, COUNCIL_ZONE_NAME, COUNCIL_ACCESS_EXCLUDE   as provision-council-access.sh
 #   COUNCIL_ACCESS_STATE_DIR   receipts dir, same as the autoprovision job
 #                              (default $HOME/.claude/state/council-elders/access-provision)
-#   COUNCIL_CC_EMAILS_FILE, COUNCIL_CC_OPERATOR_EMAILS   see above
+#   COUNCIL_CC_EMAILS_FILE, COUNCIL_CC_OPERATOR_EMAILS, COUNCIL_GHL_LOCATION_ID   see above
+#   COUNCIL_GHL_ENV_FILE, COUNCIL_GHL_API_BASE   GoHighLevel token file and API base
+#                              (tests; see ghl-client-emails.py). The token is never printed.
 #
 # OUTPUT: one line per host: CC_ACCESS: <host> <STATUS> [detail]  (SKIPPED hosts are
 #   counted in the summary line and listed only in --json)
-#   STATUS = CREATED | PLANNED (dry-run) | ALREADY_PRESENT | NEEDS_EMAIL | DRIFT |
-#            FAILED | SKIPPED
+#   STATUS = CREATED | RECONCILED | PLANNED (dry-run) | ALREADY_PRESENT | NEEDS_EMAIL |
+#            DRIFT | FAILED | SKIPPED | SKIPPED_ORPHAN
+#   then the summary line, then one GoHighLevel counts line ("ghl: ...").
 # RECEIPTS in the state dir: cc-access-last-run.json (replaced) and
 #   cc-access-runs.log (append-only, one line per run).
 # EXIT: 0 unless a host is FAILED (1); 2 usage; 3 missing env/tool/operator email; 4 zone.
@@ -129,6 +163,10 @@ if [ "$(jq 'length' <<<"$OP_JSON")" = "0" ]; then
   exit 3
 fi
 
+# GoHighLevel location (Black CEO LLC): the env override, else the emails file. No id = lookup skipped.
+GHL_LOC="${COUNCIL_GHL_LOCATION_ID:-$(jq -r '(.ghl.location_id? // "") | strings' <<<"$FILE_JSON" 2>/dev/null)}"
+GHL_OK=0; GHL_NONE=0; GHL_AMBIG=0; GHL_ERR=0; GHL_SKIP=0; GHL_EMAILS=0
+
 # ---- Cloudflare plumbing (same token handling as provision-council-access.sh)
 umask 077
 CURL_CFG="$(mktemp "${TMPDIR:-/tmp}/cc-access-curl.XXXXXX")" || { echo "cannot create temp file" >&2; exit 3; }
@@ -137,14 +175,27 @@ trap 'exit 130' INT TERM HUP
 printf 'header = "Authorization: Bearer %s"\n' "$CLOUDFLARE_API_TOKEN" > "$CURL_CFG"
 
 cf() {  # METHOD PATH [JSON] -> response body (synthetic failure body when none)
-  local m="$1" p="$2" d="${3:-}" out
+  local m="$1" p="$2" d="${3:-}" out code
   if [ -n "$d" ]; then
-    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -H 'Content-Type: application/json' --data "$d" "$API$p" 2>/dev/null)" || out=""
+    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -H 'Content-Type: application/json' --data "$d" -w '\n%{http_code}' "$API$p" 2>/dev/null)"
   else
-    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" "$API$p" 2>/dev/null)" || out=""
+    out="$(curl -sS --max-time 30 -K "$CURL_CFG" -X "$m" -w '\n%{http_code}' "$API$p" 2>/dev/null)"
   fi
-  [ -n "$out" ] || out='{"success":false,"errors":[{"message":"no response from the API"}]}'
+  # The HTTP status rides along as ._http (a string, "000" = no response) so gone_of can tell
+  # a tunnel that no longer exists (404) from a transient error (5xx, timeout, auth).
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  [ "$code" != "$out" ] || out=""
+  out="$(printf '%s' "$out" | jq -c --arg c "$code" 'if type == "object" then . + {_http:$c} else error end' 2>/dev/null)" || out=""
+  [ -n "$out" ] || out="$(jq -cn --arg c "${code:-000}" '{success:false, errors:[{message:"no response from the API"}], _http:$c}')"
   printf '%s' "$out"
+}
+# gone_of RESPONSE -> 0 when a tunnel read says the tunnel or its configuration no longer
+# exists: HTTP 404 (not a "No route" URL error), or another 4xx (not 401/403/429) whose error
+# says "not found". A 5xx, a timeout ("000") or an auth error is never "gone".
+gone_of() {
+  jq -e '(._http // "") as $c | [.errors[]?.message // "" | strings] as $m
+         | ($c == "404" and ($m | any(test("no route"; "i")) | not))
+           or (($c | test("^4[0-9][0-9]$")) and ($c | IN("401","403","429") | not) and ($m | any(test("not found"; "i"))))' <<<"$1" >/dev/null 2>&1
 }
 ok_of()  { printf '%s' "$1" | jq -r '.success // false' 2>/dev/null; }
 err_of() { printf '%s' "$1" | jq -c '[.errors[]?.message // empty]' 2>/dev/null || printf '[unparseable response]'; }
@@ -181,7 +232,7 @@ finish() {  # HOST STATUS DETAIL
   local host="$1" status="$2" detail="${3:-}"
   [ "$status" != FAILED ] || ANY_BAD=1
   [ "$status" = SKIPPED ] || say "CC_ACCESS: $host $status${detail:+ $detail}"
-  RESULTS="$(jq -c --arg h "$host" --arg s "$status" --arg d "$detail" '. + [{host:$h, status:$s, detail:$d}]' <<<"$RESULTS")"
+  RESULTS="$(jq -c --arg h "$host" --arg s "$status" --arg d "$detail" --arg g "${GHL_STATE:-}" '. + [{host:$h, status:$s, detail:$d} + (if $g == "" then {} else {ghl:$g} end)]' <<<"$RESULTS")"
 }
 
 # ---- zone, hosts, shared lists
@@ -204,35 +255,62 @@ done < <(jq -r '.[] | select((.content // "") | endswith(".cfargotunnel.com")) |
 app_for() {  # HOST -> the Access app (JSON) whose domain is HOST, or empty
   jq -c --arg h "$1" '[.[] | select(.domain == $h or ((.self_hosted_domains // []) | index($h)))][0] // empty' <<<"$APPS"
 }
-allow_emails() {  # POLICIES_RESPONSE -> {n, emails, other}: allow policies, email includes, other include kinds
+allow_emails() {  # POLICIES_RESPONSE -> {n, emails, other, open, target}
+  # allow policies only (never non_identity/bypass/deny); target = the app-scoped (not reusable)
+  # allow policy with the lowest precedence, the one RECONCILE may append to; null when none.
   jq -c '[.result[]? | select(.decision == "allow")] as $p
          | {n: ($p | length),
-            emails: ([$p[].include[]? | select(has("email")) | .email.email] | map(ascii_downcase) | unique),
-            other: ([$p[].include[]? | select(has("email") | not)] | length)}' <<<"$1"
+            emails: ([$p[].include[]? | select(has("email")) | .email.email | strings] | map(ascii_downcase) | unique),
+            other: ([$p[].include[]? | select(has("email") | not)] | length),
+            open: ([$p[].include[]? | select(has("everyone"))] | length),
+            target: ([$p[] | select(.reusable != true)] | sort_by(.precedence // 0) | .[0] // null)}' <<<"$1"
 }
 
 declare -A CFG      # tunnel id -> configuration response (several hosts can share a tunnel)
 IDPS=""; IDPS_OK=   # allowed_idps JSON array + 0/1 result, resolved once and only when an app must be created
 
-CLIENT_JSON="[]"; CLIENT_SRC=""
-resolve_client_emails() {  # SLUG -> sets CLIENT_JSON (array) and CLIENT_SRC (file|rescue-app|none|ambiguous|unverified|error)
-  local slug="$1" rapp rpol info
-  CLIENT_SRC=none
-  CLIENT_JSON="$(jq -c --arg s "$slug" "((\$f.clients[\$s] // []) | if type == \"array\" then . else [.] end) | $CLEAN" --argjson f "$FILE_JSON" <<<"null")"
-  if [ "$(jq 'length' <<<"$CLIENT_JSON")" != "0" ]; then CLIENT_SRC="file"; return; fi
+CLIENT_JSON="[]"; CLIENT_SRC=""; RESC_STATE=""; GHL_STATE=""
+resolve_client_emails() {  # SLUG [OWN_APP_EMAILS_JSON] -> CLIENT_JSON (union), CLIENT_SRC (sources joined by +, or none),
+                           # RESC_STATE (rescue-app|none|ambiguous|unverified|error), GHL_STATE (helper status)
+  local slug="$1" own="${2:-[]}" file rescue="[]" ghl="[]" rapp rpol info g n
+  file="$(jq -c --arg s "$slug" "((\$f.clients[\$s]? // []) | if type == \"array\" then . else [.] end) | $CLEAN" --argjson f "$FILE_JSON" <<<"null")"
+  own="$(jq -c --argjson op "$OP_JSON" "($CLEAN) - \$op" <<<"$own")"
+  RESC_STATE=none
   rapp="$(app_for "rescue-${slug}.${ZONE_NAME}")"
-  [ -n "$rapp" ] || return
-  rpol="$(cf GET "/accounts/${ACCT}/access/apps/$(jq -r '.id' <<<"$rapp")/policies")"
-  [ "$(ok_of "$rpol")" = "true" ] || { CLIENT_SRC=error; return; }
-  info="$(allow_emails "$rpol")"
-  # An allow-list that also admits non-email rules (everyone, a domain, a token) is not a verified list.
-  [ "$(jq -r '.other' <<<"$info")" = "0" ] || { CLIENT_SRC=unverified; return; }
-  CLIENT_JSON="$(jq -c --argjson op "$OP_JSON" "(.emails | $CLEAN) - \$op" <<<"$info")"
-  case "$(jq 'length' <<<"$CLIENT_JSON")" in
-    0) CLIENT_JSON="[]" ;;
-    *) if [ "$(jq 'length' <<<"$CLIENT_JSON")" -le "$RESCUE_MAX_CLIENT_EMAILS" ]; then CLIENT_SRC=rescue-app
-       else CLIENT_JSON="[]"; CLIENT_SRC=ambiguous; fi ;;
+  if [ -n "$rapp" ]; then
+    rpol="$(cf GET "/accounts/${ACCT}/access/apps/$(jq -r '.id' <<<"$rapp")/policies")"
+    if [ "$(ok_of "$rpol")" != "true" ]; then RESC_STATE=error
+    else
+      info="$(allow_emails "$rpol")"
+      # An allow-list that also admits non-email rules (everyone, a domain, a token) is not a verified list.
+      if [ "$(jq -r '.other' <<<"$info")" != "0" ]; then RESC_STATE=unverified
+      else
+        rescue="$(jq -c --argjson op "$OP_JSON" "(.emails | $CLEAN) - \$op" <<<"$info")"; n="$(jq 'length' <<<"$rescue")"
+        if [ "$n" = 0 ]; then :
+        elif [ "$n" -le "$RESCUE_MAX_CLIENT_EMAILS" ]; then RESC_STATE=rescue-app
+        else rescue="[]"; RESC_STATE=ambiguous; fi
+      fi
+    fi
+  fi
+  GHL_STATE=skipped
+  if [ -n "$GHL_LOC" ]; then
+    # stdin carries the emails (never a command line); stdout carries emails back (captured, never printed)
+    g="$(jq -cn --arg s "$slug" --argjson a "$file" --argjson b "$own" --argjson c "$rescue" --argjson op "$OP_JSON" --arg l "$GHL_LOC" \
+         '{slug:$s, seeds:($a + $b + $c | unique), operator:$op, location_id:$l}' | python3 -I "$HERE/ghl-client-emails.py" 2>/dev/null)"
+    GHL_STATE="$(jq -r '.status // "error"' <<<"$g" 2>/dev/null)" || GHL_STATE=error
+    [ -n "$GHL_STATE" ] || GHL_STATE=error
+    [ "$GHL_STATE" != ok ] || ghl="$(jq -c --argjson op "$OP_JSON" "(.emails | $CLEAN) - \$op" <<<"$g")"
+  fi
+  case "$GHL_STATE" in
+    ok) GHL_OK=$((GHL_OK + 1)); GHL_EMAILS=$((GHL_EMAILS + $(jq 'length' <<<"$ghl"))) ;;
+    none) GHL_NONE=$((GHL_NONE + 1)) ;; ambiguous) GHL_AMBIG=$((GHL_AMBIG + 1)) ;;
+    skipped) GHL_SKIP=$((GHL_SKIP + 1)) ;; *) GHL_STATE=error; GHL_ERR=$((GHL_ERR + 1)) ;;
   esac
+  CLIENT_JSON="$(jq -cn --argjson a "$file" --argjson b "$own" --argjson c "$rescue" --argjson d "$ghl" '$a + $b + $c + $d | unique')"
+  CLIENT_SRC="$(jq -rn --argjson a "$file" --argjson b "$own" --argjson c "$rescue" --argjson d "$ghl" \
+    '[(if ($a|length) > 0 then "file" else empty end), (if ($b|length) > 0 then "cc-app" else empty end),
+      (if ($c|length) > 0 then "rescue-app" else empty end), (if ($d|length) > 0 then "ghl" else empty end)]
+     | if length == 0 then "none" else join("+") end')"
 }
 
 resolve_idps() {  # sets IDPS (One-Time PIN, plus Google when present) and IDPS_OK; fails without One-Time PIN
@@ -247,49 +325,85 @@ resolve_idps() {  # sets IDPS (One-Time PIN, plus Google when present) and IDPS_
 
 ensure_host() {
   local h="$1" slug="${1%%.*}" tid cfgr src svc port
+  GHL_STATE=""
   tid="$(jq -r --arg h "$h" '[.[] | select(.name == $h)][0].content // empty | sub("\\.cfargotunnel\\.com$"; "")' <<<"$RECS")"
   [ -n "$tid" ] || { finish "$h" SKIPPED "no tunnel CNAME"; return; }
 
   # positive proof this is a Command Center: remote-managed tunnel, this host on :4000
   if [ -z "${CFG[$tid]+x}" ]; then CFG[$tid]="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}/configurations")"; fi
   cfgr="${CFG[$tid]}"
-  [ "$(ok_of "$cfgr")" = "true" ] || { finish "$h" FAILED "could not read tunnel configuration for $tid: $(err_of "$cfgr")"; return; }
+  if [ "$(ok_of "$cfgr")" != "true" ]; then
+    local tr=""
+    gone_of "$cfgr" && tr="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}")"
+    # a live (healthy, not deleted) tunnel is never an orphan, whatever its configuration says
+    if [ -n "$tr" ] && [ "$(ok_of "$tr")" = "true" ] && [ -z "$(jq -r '.result.deleted_at // empty' <<<"$tr")" ] \
+       && [ "$(jq -r '.result.status // ""' <<<"$tr")" = "healthy" ]; then
+      finish "$h" FAILED "could not read tunnel configuration for $tid (HTTP $(jq -r '._http' <<<"$cfgr")), but the tunnel is healthy: not an orphan"
+    elif [ -n "$tr" ] && { [ "$(ok_of "$tr")" = "true" ] || gone_of "$tr"; }; then
+      finish "$h" SKIPPED_ORPHAN "the CNAME points at tunnel $tid, whose configuration no longer exists (HTTP $(jq -r '._http' <<<"$cfgr") $(err_of "$cfgr")); an orphan record. Zero writes; nothing deleted"
+    else
+      finish "$h" FAILED "could not read tunnel configuration for $tid (HTTP $(jq -r '._http // "?"' <<<"$cfgr")): $(err_of "$cfgr")"
+    fi
+    return
+  fi
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfgr")"
   [ "$src" = "cloudflare" ] || { finish "$h" SKIPPED "tunnel is locally managed; cannot confirm this is the Command Center host"; return; }
   svc="$(cc_ingress_service_for_host "$cfgr" "$h")"; port="$(cc_ingress_port_of "$svc")"
   [ "$port" = "$CC_INGRESS_PORT" ] || { finish "$h" SKIPPED "not a Command Center host (no :${CC_INGRESS_PORT} ingress rule)"; return; }
 
-  resolve_client_emails "$slug"
-  local have_client=0; [ "$(jq 'length' <<<"$CLIENT_JSON")" != "0" ] && have_client=1
-  local exp; exp="$(jq -cn --argjson o "$OP_JSON" --argjson c "$CLIENT_JSON" '$o + $c | unique')"
-
-  local app; app="$(app_for "$h")"
+  local app info="" present="[]"; app="$(app_for "$h")"
   if [ -n "$app" ]; then
-    local aid pol info n other missing extra
+    local aid pol
     aid="$(jq -r '.id' <<<"$app")"
     pol="$(cf GET "/accounts/${ACCT}/access/apps/${aid}/policies")"
     [ "$(ok_of "$pol")" = "true" ] || { finish "$h" FAILED "could not read the Access app policies: $(err_of "$pol")"; return; }
     info="$(allow_emails "$pol")"
-    n="$(jq -r '.n' <<<"$info")"; other="$(jq -r '.other' <<<"$info")"
-    if [ "$other" != "0" ]; then finish "$h" DRIFT "existing Access app has $other non-email allow rule(s) (open or custom); not modified"; return; fi
-    if [ "$n" = "0" ] || [ "$(jq '.emails | length' <<<"$info")" = "0" ]; then finish "$h" DRIFT "existing Access app has no email allow rule; not modified"; return; fi
-    if [ "$have_client" = "1" ]; then
-      missing="$(jq --argjson e "$exp" '$e - .emails | length' <<<"$info")"; extra="$(jq --argjson e "$exp" '.emails - $e | length' <<<"$info")"
-      if [ "$missing" != "0" ] || [ "$extra" != "0" ]; then
-        finish "$h" DRIFT "existing Access app allow-list differs from the expected one ($missing expected email(s) missing, $extra unexpected); not modified"; return
-      fi
-      finish "$h" ALREADY_PRESENT; return
+    if [ "$(jq -r '.n' <<<"$info")" = "0" ]; then finish "$h" DRIFT "existing Access app has no allow policy; not modified"; return; fi
+    if [ "$(jq -r '.open' <<<"$info")" != "0" ]; then finish "$h" DRIFT "existing Access app admits everyone (non-email allow rule); not modified"; return; fi
+    if [ "$(jq -r '.target == null' <<<"$info")" = "true" ]; then
+      finish "$h" DRIFT "existing Access app's allow policy is a reusable (shared) policy; not modified, add the emails in the Access dashboard"; return
     fi
-    finish "$h" ALREADY_PRESENT "allow rules not compared: no verified client email on file"; return
+    present="$(jq -c '.emails' <<<"$info")"
+  fi
+
+  resolve_client_emails "$slug" "$present"
+  local have_client=0; [ "$(jq 'length' <<<"$CLIENT_JSON")" != "0" ] && have_client=1
+  local exp; exp="$(jq -cn --argjson o "$OP_JSON" --argjson c "$CLIENT_JSON" '$o + $c | unique')"
+
+  if [ -n "$app" ]; then
+    local miss m mo add pid body r back
+    miss="$(jq -cn --argjson e "$exp" --argjson p "$present" '$e - $p')"; m="$(jq 'length' <<<"$miss")"
+    [ "$m" != "0" ] || { finish "$h" ALREADY_PRESENT; return; }
+    mo="$(jq -n --argjson x "$miss" --argjson o "$OP_JSON" '[$x[] | select(. as $e | $o | index($e))] | length')"
+    local what="$m email(s) ($mo operator, $((m - mo)) client; client source: $CLIENT_SRC)"
+    if [ "$APPLY" != "1" ]; then
+      finish "$h" PLANNED "dry-run: would add $what to the existing allow policy, removing nothing; pass --apply"; return
+    fi
+    add="$(jq -c 'map({email:{email:.}})' <<<"$miss")"
+    pid="$(jq -r '.target.id' <<<"$info")"
+    body="$(jq -c --argjson add "$add" '.target | del(.id, .created_at, .updated_at, .reusable, .app_count, .uid)
+                                         | .include = ((.include // []) + $add)' <<<"$info")"
+    r="$(cf PUT "/accounts/${ACCT}/access/apps/${aid}/policies/${pid}" "$body")"
+    [ "$(ok_of "$r")" = "true" ] || { finish "$h" FAILED "allow policy update failed (nothing changed): $(err_of "$r")"; return; }
+    back="$(cf GET "/accounts/${ACCT}/access/apps/${aid}/policies")"
+    # Proof: every policy reads back exactly as before, except the target's include list grew by $add at its end.
+    if [ "$(ok_of "$back")" = "true" ] && [ "$(jq -n --argjson b "$pol" --argjson a "$back" --arg pid "$pid" --argjson add "$add" '
+          def norm: [.result[]? | del(.created_at, .updated_at)] | sort_by(.id);
+          ($b | norm | map(if .id == $pid then .include = ((.include // []) + $add) else . end)) == ($a | norm)')" = "true" ]; then
+      finish "$h" RECONCILED "added $what to the existing allow policy; nothing removed"
+    else
+      finish "$h" FAILED "allow policy updated but the read-back is not the additive change; check it in the Access dashboard"
+    fi
+    return
   fi
 
   # no app: create one, only with a verified client email
   if [ "$have_client" = "0" ]; then
-    case "$CLIENT_SRC" in
+    case "$RESC_STATE" in
       ambiguous) finish "$h" NEEDS_EMAIL "rescue-${slug} Access app lists more than $RESCUE_MAX_CLIENT_EMAILS non-operator emails; add \"$slug\" to the emails file. No app created" ;;
       unverified) finish "$h" NEEDS_EMAIL "rescue-${slug} Access app admits non-email rules, so its emails are not a verified list; add \"$slug\" to the emails file. No app created" ;;
       error)     finish "$h" NEEDS_EMAIL "could not read the rescue-${slug} Access app; no verified client email. No app created" ;;
-      *)         finish "$h" NEEDS_EMAIL "no verified client email for $slug (emails file or rescue-${slug} Access app). No app created" ;;
+      *)         finish "$h" NEEDS_EMAIL "no verified client email for $slug (emails file, rescue-${slug} Access app or GoHighLevel: $GHL_STATE). No app created" ;;
     esac
     return
   fi
@@ -319,17 +433,25 @@ say "ensure-cc-access: zone=$ZONE_NAME ($ZONE_ID) hosts=${#HOSTS[@]} mode=$MODE"
 for h in ${HOSTS[@]+"${HOSTS[@]}"}; do ensure_host "$h"; done
 
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson bad "$ANY_BAD" '
+GHL_SUM="$(jq -cn --argjson ok "$GHL_OK" --argjson none "$GHL_NONE" --argjson amb "$GHL_AMBIG" --argjson err "$GHL_ERR" \
+  --argjson skip "$GHL_SKIP" --argjson em "$GHL_EMAILS" \
+  'if ($ok + $none + $amb + $err) == 0 then {skipped:true}
+   else {skipped:false, matched:$ok, none:$none, ambiguous:$amb, errors:$err, skipped_hosts:$skip, emails:$em} end')"
+RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson bad "$ANY_BAD" --argjson ghl "$GHL_SUM" '
   . as $r
-  | (reduce ("CREATED","PLANNED","ALREADY_PRESENT","NEEDS_EMAIL","DRIFT","FAILED","SKIPPED") as $s
+  | (reduce ("CREATED","RECONCILED","PLANNED","ALREADY_PRESENT","NEEDS_EMAIL","DRIFT","FAILED","SKIPPED","SKIPPED_ORPHAN") as $s
        ({}; .[$s] = ([$r[] | select(.status == $s)] | length))) as $c
-  | {timestamp:$t, mode:$m, exit:$bad, total:($r | length), counts:$c,
+  | {timestamp:$t, mode:$m, exit:$bad, total:($r | length), counts:$c, ghl:$ghl,
      needs_email:[$r[] | select(.status == "NEEDS_EMAIL") | .host],
      drift:[$r[] | select(.status == "DRIFT") | .host],
+     orphans:[$r[] | select(.status == "SKIPPED_ORPHAN") | {host:.host, detail:.detail}],
      failed:[$r[] | select(.status == "FAILED") | {host:.host, detail:.detail}],
-     created:[$r[] | select(.status == "CREATED") | .host]}' <<<"$RESULTS")"
-LINE="$(jq -r '"\(.timestamp) cc-access mode=\(.mode) exit=\(.exit) created=\(.counts.CREATED) planned=\(.counts.PLANNED) already=\(.counts.ALREADY_PRESENT) needs_email=\(.counts.NEEDS_EMAIL) drift=\(.counts.DRIFT) failed=\(.counts.FAILED) skipped=\(.counts.SKIPPED)"' <<<"$RECEIPT")"
+     created:[$r[] | select(.status == "CREATED") | .host],
+     reconciled:[$r[] | select(.status == "RECONCILED") | .host]}' <<<"$RESULTS")"
+LINE="$(jq -r '"\(.timestamp) cc-access mode=\(.mode) exit=\(.exit) created=\(.counts.CREATED) reconciled=\(.counts.RECONCILED) planned=\(.counts.PLANNED) already=\(.counts.ALREADY_PRESENT) needs_email=\(.counts.NEEDS_EMAIL) drift=\(.counts.DRIFT) failed=\(.counts.FAILED) skipped=\(.counts.SKIPPED) orphans=\(.counts.SKIPPED_ORPHAN) " + (if .ghl.skipped then "ghl=skipped" else "ghl_matched=\(.ghl.matched) ghl_ambiguous=\(.ghl.ambiguous) ghl_errors=\(.ghl.errors)" end)' <<<"$RECEIPT")"
+GHL_LINE="$(jq -r 'if .ghl.skipped then "ghl: skipped (no credentials/location)"
+  else "ghl: matched=\(.ghl.matched) none=\(.ghl.none) ambiguous=\(.ghl.ambiguous) errors=\(.ghl.errors) skipped=\(.ghl.skipped_hosts) emails_found=\(.ghl.emails)" end' <<<"$RECEIPT")"
 printf '%s\n' "$RECEIPT" > "$STATE_DIR/.cc-access-last-run.tmp" && mv "$STATE_DIR/.cc-access-last-run.tmp" "$STATE_DIR/cc-access-last-run.json"
 printf '%s\n' "$LINE" >> "$STATE_DIR/cc-access-runs.log"
-if [ "$JSON" = "1" ]; then jq . <<<"$RESULTS"; else say "$LINE"; fi
+if [ "$JSON" = "1" ]; then jq . <<<"$RESULTS"; else say "$LINE"; say "$GHL_LINE"; fi
 [ "$ANY_BAD" = "0" ]

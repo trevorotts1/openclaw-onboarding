@@ -1,5 +1,5 @@
 ---
-version: 1.0.37
+version: 1.0.40
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -60,6 +60,19 @@ send a 127.0.0.1 link (it only works on the box itself). Tell the client
 the Council is running, the result will be shared here, and their private
 Council link is still being set up. Never mention scripts, servers, fleet
 or Cloudflare to the client.
+
+Operator side only (never on a client box): the operator Mac's job
+`scripts/council-access-autoprovision.sh` first runs
+`scripts/ensure-cc-access.sh`, which keeps every client's Command Center
+login page letting in the operator emails and every verified client email.
+It creates a missing login page, adds missing emails to an existing one
+without removing anything (RECONCILED), and finds client emails itself: the
+emails file `~/.claude/state/council-elders/cc-access-emails.json`
+(`{"operator","clients","ghl":{"location_id"}}`), the client's own login and
+rescue pages, and a read-only, strict GoHighLevel lookup. The Council login
+page then follows the Command Center login page's email list, additions and
+removals alike (SYNCED). Details in INSTALL.md, "Client access" and "Command
+Center login pages".
 
 To learn whether this box is usable right now, run
 `bash scripts/verify-council-box.sh` (read-only). Its last line,

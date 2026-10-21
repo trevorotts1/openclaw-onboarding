@@ -123,12 +123,23 @@ def test_format_questions_blank_line_between():
     assert len(msg.split("\n\n")) == 4 and IC.format_questions([]) is None
 
 
+def test_format_questions_one_text_is_one_unnumbered_message():
+    """Trevor 2026-10-21: one question per message, so a single text carries no
+    "Question 1 of 1" counter and no "one answer per question" line."""
+    one = IC.format_questions(["What product?"])
+    assert one.split("\n\n")[0] == "What product?", repr(one)
+    assert "Question " not in one and "per question" not in one, repr(one)
+
+
 def test_intake_question_message_uses_it():
     sys.path.insert(0, os.path.join(CORE, "intake_preflight"))
     import intake as I  # noqa: E402
     r = I.evaluate({}, {}, None, "h9")
     m = r["question_message"]
-    assert m and "\n\n" in m and m.count("Question ") == len(r["questions"])
+    # One question per message: the message IS the one question, unnumbered.
+    assert len(r["questions"]) == 1, repr(r["questions"])
+    assert m and m.startswith(r["questions"][0]["question"]), repr(m)
+    assert "Question 1 of" not in m, repr(m)
 
 
 def test_closing_example_answer_count_matches_question_count():

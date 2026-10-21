@@ -14,7 +14,20 @@ not-ready states when they do not.
   `https://<slug>-council.zerohumanworkforce.com` published behind
   Cloudflare Access automatically, by the operator-side job
   `scripts/council-access-autoprovision.sh` (every 30 minutes). No client
-  or operator step, and no dependence on the AI Workforce Interview.
+  or operator step, and no dependence on the AI Workforce Interview. Its
+  first step, `scripts/ensure-cc-access.sh`, gives every Command Center a
+  login page and adds any missing operator or client email to an existing
+  one (`CREATED` / `RECONCILED`, additive only; `ALREADY_PRESENT`,
+  `NEEDS_EMAIL`, `DRIFT`, `SKIPPED_ORPHAN` are reported). The Council login
+  page then follows the Command Center page's email list, additions and
+  removals alike (`SYNCED`, counts only; the Command Center app is never
+  edited). Client emails come from the emails
+  file `~/.claude/state/council-elders/cc-access-emails.json`
+  (`{"operator":[...],"clients":{"<host-slug>":[...]},"ghl":{"location_id":"<id>"}}`),
+  the client's own login and `rescue-<slug>` pages, and a read-only,
+  strict GoHighLevel lookup (`scripts/ghl-client-emails.py`; skipped with
+  `ghl: skipped (no credentials/location)` when `GOHIGHLEVEL_API_KEY` or
+  the location id is not configured).
 - **Managed visual mode (optional):** compatible Command Center,
   authenticated pairing and scope, council migration applied through the
   Command Center, job and event integration, UI assets. The standalone
@@ -43,9 +56,37 @@ runs from the immutable release as
 | Contabo container (fleet-contabo) | pm2 app `council-of-wise-elders` inside the container | The connector today runs on the host, and a host-side connector cannot reach the container's loopback | Service supported; public access pending a connector inside the container. Verifier reports DEGRADED TUNNEL_NOT_IN_CONTAINER |
 | Standalone, no Command Center | Same as the platform above | Same | The supported shape for any box without a council-capable Command Center; managed visual mode is never promised |
 
-**Dedicated Council tunnel (local-managed Command Center tunnels).** A box whose Command Center tunnel is local-managed (it cannot take an API
+**Rescue-tunnel ride, then a dedicated Council tunnel (local-managed Command Center tunnels).** A box whose Command Center tunnel is local-managed first tries to ride the
+client's own rescue tunnel on the same machine, exactly like a remote-managed
+Command Center tunnel (the result line says `rides rescue tunnel <name>`; no
+new tunnel, no token file, no connector delivery). It rides only when all of
+these hold: the Command Center tunnel reports the host at
+`http://localhost:4000` or `http://127.0.0.1:4000` (Contabo containers on
+19003-19005 never match); exactly one tunnel is named `rescue-<slug>` (or
+`rescue-<slug>-...`, the slug as a whole word); that tunnel is healthy,
+remote-managed and has an `ssh://` rule for `rescue-<slug>.<zone>` itself
+(so `rescue-<slug>-x`, another client's tunnel, is never ridden); the active connectors of both
+tunnels report `origin_ip` sets that are non-empty and overlap (the same
+machine); no `<slug>-council` record already points at another tunnel; and
+`COUNCIL_TUNNEL_OVERRIDES` has no entry for the slug (trevor keeps
+`council-desktop`). Otherwise it falls back to the dedicated tunnel below.
+
+A Command Center record whose tunnel, or the tunnel's configuration, no
+longer exists (HTTP 404, `Configuration for tunnel not found`, a deleted
+tunnel) is an orphan: both `ensure-cc-access.sh` and
+`provision-council-access.sh` report `SKIPPED_ORPHAN` (zero writes, exit 0,
+named in the receipts). A transient read error (5xx, timeout, auth) stays
+`FAILED`, and so does a tunnel that is healthy but whose configuration
+cannot be read: a live tunnel is never an orphan.
+
+Failing the ride, a box whose Command Center tunnel is local-managed (it cannot take an API
 ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
-the operator side instead. File contract: the connector token sits at
+the operator side instead. No `<slug>-council` DNS record exists until that
+tunnel has an active connector: the first `--apply` creates the tunnel, its
+route, the Access app and the saved token and ends `CONNECTOR_PENDING` with
+zero DNS writes; the first run that sees the connector creates the record
+(`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
+zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
 token. How it reaches the box is an operator delivery step, never wire.sh,
 which fetches nothing. When the file exists, wire.sh keeps

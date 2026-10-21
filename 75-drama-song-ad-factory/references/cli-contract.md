@@ -34,7 +34,7 @@ runtime adapter stops on a nonzero exit instead of guessing from prose.
 |---:|---|---|
 | 0 | `ok` | continue |
 | 1 | `error` | report `reason_code`; do not improvise |
-| 2 | `waiting` | answer the bundled questions in one reply |
+| 2 | `waiting` | ask the ONE question in the message, wait, run again for the next |
 | 3 | `parked` | resolve the blocking decision / state; never start a fresh run |
 | 4 | `rejected` | stop; policy, trust or authorization refused this action |
 

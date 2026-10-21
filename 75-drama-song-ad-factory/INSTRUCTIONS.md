@@ -99,8 +99,9 @@ guard that already failed.
    change policy, credentials, authorization or QC; record provenance per
    field (provided/extracted/inherited/assumed); ask only genuinely
    missing essentials - offer, audience-action, spending authority - at
-   most three, in one message; a supplied maximum is not an approval
-   receipt for paid work.
+   most three, ONE per message: ask it, wait for the answer, run intake
+   again for the next (never several questions at once); a supplied
+   maximum is not an approval receipt for paid work.
 
 5. **Create the run folder (step 5).** Under the operator-approved
    persistent storage root (`--root`, e.g. `~/Downloads/Drama Song Ads`
@@ -340,8 +341,11 @@ Human price snapshot: `references/price-menu.md`. Stage order, QC, delivery
 and PARKED handling: `SOP--drama-song-ad-pipeline.md`.
 
 **Intake.** Quick mode is the default; Concept mode is for a client with
-their own story. Directive 24.3 still caps intake at three story questions in one
-message (none about money; the card asks it once), and the options are presented as ONE choice card with every default
+their own story. Directive 24.3 still caps intake at three story questions, and
+they are asked ONE per message - send the one question from the envelope, wait
+for the answer, run intake again with that answer to get the next (Trevor
+2026-10-21: never more than one question in a message). None is about money;
+the card asks it once. The options are presented as ONE choice card with every default
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 

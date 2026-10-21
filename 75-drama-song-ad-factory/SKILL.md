@@ -569,9 +569,12 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
 2. Record per field whether it is explicitly provided, extracted, inherited
    or assumed.
 3. Ask only genuinely missing essentials the intake card does not itself
-   ask, bundled into at most one message with at most three questions:
-   offer/audience-action/spending authority. Once the card is on screen it
-   is the whole client load (rule 7); nothing is stacked on top of it.
+   ask: offer/audience-action/spending authority, at most three in the
+   catalog. Ask them ONE at a time - one question per message, then WAIT for
+   the client's answer and run intake again for the next (Trevor
+   2026-10-21). Never send several questions in one message. Once the card
+   is on screen it is the whole client load (rule 7); nothing is stacked on
+   top of it.
 4. Skip questions already answered. Reuse applicable campaign authorization
    only within its scope expiry. A supplied maximum is not automatically an
    approval receipt for paid work.

@@ -293,7 +293,17 @@ The client opens the Roast Room chamber at
 first label of their Command Center address, and signs in with the same
 email addresses that sign in to their Command Center. The address rides the
 box's one existing Cloudflare tunnel behind a Cloudflare Access application
-that copies the Command Center's allow-list.
+that copies the Command Center's allow-list and then follows its email list:
+when an email is added to or removed from the Command Center login page, the
+next run adds it to or removes it from the Council login page (`SYNCED`,
+counts only), editing only the Council app's own allow policy, keeping its
+other rules, and reading it back. The Command Center app is never edited by
+that step. It refuses (`FAILED`, zero writes) when the Council app is not
+`Council - <slug>` on `<slug>-council.<zone>`, when an email to remove sits
+on a reusable or non-allow policy, or when either app's allow rules hold
+something other than emails and service tokens (everyone, an email domain, a
+group), or when the two apps' exclude/require rules differ (a revocation by
+exclude on the Command Center page is never silently missed).
 
 Nobody does anything to get it, for existing clients and for every client
 added later:
@@ -314,6 +324,50 @@ added later:
   <public_origin>/chamber/#session=<id>`: no roll, no `wire.sh` re-run, no
   manual step.
 
+### Command Center login pages (operator side)
+
+Step 1 of that job, `scripts/ensure-cc-access.sh`, keeps every client's
+Command Center login page (its Cloudflare Access application) letting in
+the operator emails and every verified client email, so the client can sign
+in with Google or a one-time PIN:
+
+- A Command Center with no login page gets one (`CREATED`), only once a
+  verified client email is known; otherwise `NEEDS_EMAIL`, retried every run.
+- An existing login page gets each missing operator or client email added
+  to its allow policy (`RECONCILED`). Additive only: every existing rule
+  (emails, service tokens, anything else) is kept in place and in order,
+  nothing is removed, and the policy is read back to prove it. Nothing to
+  add is `ALREADY_PRESENT` with zero writes. A page that admits everyone,
+  has no allow policy, or uses a reusable (shared) allow policy is `DRIFT`:
+  reported, never edited.
+- Client emails are found by the automation, not asked for: the emails
+  file, the non-operator emails already on the client's own login page and
+  on its `rescue-<slug>` page, and a read-only GoHighLevel (Convert and
+  Flow) lookup in the Black CEO LLC location (`scripts/ghl-client-emails.py`):
+  contacts carrying one of those emails, or whose company name is the host
+  name read as a business name, plus the same person's duplicate contacts
+  (same full name and same phone). Never a one-word host name (often a
+  first name) and never a company that is only the contact's own name.
+  Two different people matched, or a nameless contact among several, is
+  `ambiguous` and adds nothing.
+
+The emails file is `~/.claude/state/council-elders/cc-access-emails.json`
+(override `COUNCIL_CC_EMAILS_FILE`), every key optional:
+
+```json
+{"operator": ["<operator email>"],
+ "clients": {"<host-slug>": ["<client email>"]},
+ "ghl": {"location_id": "<Black CEO LLC location id>"}}
+```
+
+The GoHighLevel token is `GOHIGHLEVEL_API_KEY`, parsed (never sourced) from
+`~/.openclaw/secrets/.env`, then `~/.openclaw/.env`. The location id comes
+from `COUNCIL_GHL_LOCATION_ID`, else `ghl.location_id` above; the location
+variables in the env files name a different location, so it is never taken
+from them. With no token or no location id the lookup is skipped and the run
+prints one line, `ghl: skipped (no credentials/location)`. Emails are never
+printed, logged or put in receipts: counts only.
+
 Until then `verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and
 the agent sends no chamber link: it tells the client plainly that the
 Council runs, the result will be shared here, and their private Council
@@ -322,9 +376,37 @@ mentions scripts, fleet or Cloudflare to the client. If the verifier ever
 reports ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as
 a security failure and do not send the link.
 
-A box whose Command Center tunnel is local-managed (it cannot take an API
-ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
-the operator side instead. File contract: the connector token sits at
+A box whose Command Center tunnel is local-managed first tries to ride the
+client's own rescue tunnel on the same machine, exactly like a remote-managed
+Command Center tunnel (the result line says `rides rescue tunnel <name>`; no
+new tunnel, no token file, no connector delivery). It rides only when all of
+these hold: the Command Center tunnel reports the host at
+`http://localhost:4000` or `http://127.0.0.1:4000` (Contabo containers on
+19003-19005 never match); exactly one tunnel is named `rescue-<slug>` (or
+`rescue-<slug>-...`, the slug as a whole word); that tunnel is healthy,
+remote-managed and has an `ssh://` rule for `rescue-<slug>.<zone>` itself
+(so `rescue-<slug>-x`, another client's tunnel, is never ridden); the active connectors of both
+tunnels report `origin_ip` sets that are non-empty and overlap (the same
+machine); no `<slug>-council` record already points at another tunnel; and
+`COUNCIL_TUNNEL_OVERRIDES` has no entry for the slug (trevor keeps
+`council-desktop`). Otherwise it falls back to the dedicated tunnel below.
+
+A Command Center record whose tunnel, or the tunnel's configuration, no
+longer exists (HTTP 404, `Configuration for tunnel not found`, a deleted
+tunnel) is an orphan: both `ensure-cc-access.sh` and
+`provision-council-access.sh` report `SKIPPED_ORPHAN` (zero writes, exit 0,
+named in the receipts). A transient read error (5xx, timeout, auth) stays
+`FAILED`, and so does a tunnel that is healthy but whose configuration
+cannot be read: a live tunnel is never an orphan.
+
+Failing that, a box whose Command Center tunnel is local-managed (it cannot
+take an API ingress rule) gets a dedicated remote-managed tunnel
+`council-<slug>` from the operator side instead. No `<slug>-council` DNS record exists until that
+tunnel has an active connector: the first `--apply` creates the tunnel, its
+route, the Access app and the saved token and ends `CONNECTOR_PENDING` with
+zero DNS writes; the first run that sees the connector creates the record
+(`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
+zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
 token. How it reaches the box is an operator delivery step, never wire.sh,
 which fetches nothing. When the file exists, wire.sh keeps

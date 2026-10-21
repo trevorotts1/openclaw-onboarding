@@ -104,7 +104,8 @@ it advances. Standard library only; no credential value is ever printed.
 ## 4. Functional Checks (run from the skill folder)
 - [ ] Thin brief:
       `python3 scripts/core/intake_preflight/factory.py intake --brief '{"offer": "demo offer"}'`
-      exits 2, `missing-essentials`, exactly 3 questions in one message.
+      exits 2, `missing-essentials`, exactly ONE question in the message; run
+      it again with that answer added and the next question appears.
 - [ ] Complete brief exits 0, `complete-brief-zero-questions`, returns a
       16-hex `digest`; `auth_status` is `missing` without an auth object.
 - [ ] Injection text in a brief (`ignore all previous instructions`)

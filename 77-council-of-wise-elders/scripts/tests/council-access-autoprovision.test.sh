@@ -13,6 +13,7 @@ FAKE="$HERE/fake-cloudflare-api.py"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/council-autoprov-test.XXXXXX")"
 SD="$WORK/state"           # the job's receipt dir
 export COUNCIL_TUNNEL_TOKEN_DIR="$WORK/tunnel-tokens"   # connector tokens: never the real operator store
+export COUNCIL_GHL_ENV_FILE="$WORK/no-ghl.env" COUNCIL_GHL_API_BASE="http://127.0.0.1:9" COUNCIL_GHL_LOCATION_ID=""   # never the real GoHighLevel
 FAKE_PID=""; FAILS=0; N=0
 TOKEN="qc-secret-TOKEN-456"
 Z="zerohumanworkforce.com"
@@ -98,7 +99,7 @@ FIXTURE_OFFSET=0 fixture alpha beta gamma | jq -c --arg z "$Z" --arg g "00000000
 start_fake "$WORK/f.json"
 run_job --apply
 check "apply exit 0 though two hosts are not ready" test "$RC" = 0
-check "7 writes: alpha 3, gamma 4 (app, dedicated council-gamma tunnel, ingress, DNS)" test "$(nonget_count)" = 7
+check "6 writes: alpha 3, gamma 3 (app, dedicated council-gamma tunnel, ingress; no DNS before its connector)" test "$(nonget_count)" = 6
 check "receipt counts: 1 provisioned, 1 not-provisioned, 1 connector-pending" test "$(rcpt '[.mode, .counts.PROVISIONED, .counts.NOT_PROVISIONED, .counts.CONNECTOR_PENDING, .counts.PENDING_LOCAL_TUNNEL, .counts.FAILED]')" = '["apply",1,1,1,0,0]'
 check "receipt names each refusal with host and reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["beta.'$Z'=NOT_PROVISIONED","gamma.'$Z'=CONNECTOR_PENDING"]'
 check "receipt lists alpha as provisioned" test "$(rcpt '.provisioned')" = '["alpha.'$Z'"]'
@@ -141,7 +142,7 @@ check "receipt counts every new code" test "$(rcpt '[.counts.PROVISIONED, .count
 check "receipt names the skipped host with its reason" test "$(rcpt '[.skipped[] | .host + "=" + .reason]')" = '["up-openclawdashboard.'$Z'=SKIPPED_NOT_CC"]'
 check "receipt names each not-ready host with its reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["bridge.'$Z'=ORIGIN_NOT_LOOPBACK","down.'$Z'=TUNNEL_DOWN","loc.'$Z'=CONNECTOR_PENDING"]'
 check "runs.log line carries skipped=1 and each host:REASON" bash -c "l=\"\$(tail -n1 '$SD/runs.log')\"; case \"\$l\" in *skipped=1*down.$Z:TUNNEL_DOWN*) ;; *) exit 1;; esac; case \"\$l\" in *bridge.$Z:ORIGIN_NOT_LOOPBACK*) ;; *) exit 1;; esac; case \"\$l\" in *loc.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac"
-check "writes only for up (3) and loc (4): down and bridge got none" test "$(nonget_count)" = 7
+check "writes only for up (3) and loc (3, no DNS before its connector): down and bridge got none" test "$(nonget_count)" = 6
 
 echo "== 6. a real failure exits 1"
 FIXTURE_OFFSET=0 fixture alpha | jq -c --arg z "$Z" '.dns += [{id:"x1",type:"CNAME",name:("alpha-council."+$z),content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"
@@ -187,7 +188,8 @@ check "cc-access receipts are written in the same state dir" bash -c "test -s '$
 run_job --apply
 check "apply: NEEDS_EMAIL and DRIFT are surfaced but the run exits 0" test "$RC" = 0
 check "apply receipt: newbox app created, noemail needs an email, driftbox drift (not overwritten)" test "$(rcpt '[.cc_access.created, .cc_access.needs_email, .cc_access.drift]')" = '[1,["noemail.'$Z'"],["driftbox.'$Z'"]]'
-check "runs.log line carries cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_needs_email=1 cc_drift=1'"
+check "runs.log line carries cc_reconciled=0 cc_needs_email=1 cc_drift=1" bash -c "tail -n1 '$SD/runs.log' | grep -q 'cc_reconciled=0 cc_needs_email=1 cc_drift=1'"
+check "receipt carries the cc_access reconciled count" test "$(rcpt '.cc_access.reconciled')" = 0
 check "the Access app write for newbox comes before newbox is provisioned" bash -c "
   a=\$(grep -n 'POST .*access/apps' '$LOG' | head -n1 | cut -d: -f1); d=\$(grep -n 'POST .*dns_records' '$LOG' | head -n1 | cut -d: -f1);
   test -n \"\$a\" && test -n \"\$d\" && test \"\$a\" -lt \"\$d\""
@@ -202,6 +204,20 @@ COUNCIL_ACCESS_ENSURE_CC="$WORK/crash.sh" run_job
 check "a crashing Access step never fails the run; its exit shows in the receipt" test "$RC" = 0 -a "$(rcpt '[.cc_access.ran, .cc_access.exit]')" = '[false,9]'
 COUNCIL_ACCESS_ENSURE_CC="$WORK/missing.sh" run_job
 check "a missing Access step script never fails the run" test "$RC" = 0 -a "$(rcpt '.cc_access.exit')" = 127
+
+echo "== 8c. SYNCED and SKIPPED_ORPHAN are carried as non-failures (the live case)"
+FIXTURE_OFFSET=60 fixture alpha orph | jq -c --arg z "$Z" '(.dns[] | select(.name == ("orph."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $o | del(.tunnels[$o])' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_job --apply
+check "orphan host: SKIPPED_ORPHAN counted and named under skipped; alpha provisioned; exit 0" bash -c "test $RC = 0 && test \"\$(jq -c '[.exit, .counts.PROVISIONED, .counts.SKIPPED_ORPHAN, [.skipped[] | .host + \"=\" + .reason]]' '$SD/last-run.json')\" = '[0,1,1,[\"orph.$Z=SKIPPED_ORPHAN\"]]'"
+check "runs.log line carries orphans=1" bash -c "tail -n1 '$SD/runs.log' | grep -q ' orphans=1 '"
+cp "$STATE" "$WORK/after-sync.json"; start_fake "$WORK/after-sync.json"
+printf '{"operator":["ops-sync@example.test"],"clients":{}}\n' > "$WORK/cc-emails-sync.json"
+COUNCIL_CC_EMAILS_FILE="$WORK/cc-emails-sync.json" run_job --apply
+check "step 1 adds the operator to alpha's CC page (RECONCILED) and names the orphan; step 2 SYNCs the Council page; exit 0" bash -c "test $RC = 0 && test \"\$(jq -c '[.exit, .cc_access.reconciled, .cc_access.orphans, .counts.SYNCED, .synced, .counts.FAILED]' '$SD/last-run.json')\" = '[0,1,[\"orph.$Z\"],1,[\"alpha.$Z\"],0]'"
+check "runs.log line carries synced=1 and cc_orphans=1" bash -c "tail -n1 '$SD/runs.log' | grep -q ' synced=1 ' && tail -n1 '$SD/runs.log' | grep -q ' cc_orphans=1 '"
+check "the Council page now lets in exactly the CC page's emails" test "$(jq -c '[.apps[] | select(.domain == "alpha-council.'$Z'") | .id][0] as $c | [.policies[$c][].include[].email.email] | sort' "$STATE")" = "$(jq -c '[.policies["app-cc-alpha"][].include[].email.email] | sort' "$STATE")"
+check "no address in the receipts or the job output" bash -c "! grep -q '@' '$SD/last-run.json' '$SD/runs.log' '$OUT'"
 
 echo "== 9. the token never leaks"
 check "token in no output, receipt or log" bash -c "! grep -rq -e '$TOKEN' '$WORK' --include='out*' --include='*.json' --include='*.log' --exclude='f.json' --exclude='after*' --exclude='delta.json' --exclude='state.*' --exclude='log.*'"
