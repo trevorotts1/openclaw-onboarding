@@ -77,7 +77,7 @@ def test_no_video_submit_before_approval():
 
     req = {"model": VIDEO_MODEL, "request_kind": "video", "input": {"prompt": "p" * 200},
            "card_receipt": {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
-                                        "length": 60, "video_model": "MiniMax H3 768P"},
+                                        "length": 60, "video_model": "Hailuo 02 Standard 768P"},
                             "who": "t", "at": "2026-10-09T09:00:00Z"},
            "storyboard": {"shots": shots, "review": {"outcome": "pass"}}}  # shots still draft
     env = KD.dispatch(model=VIDEO_MODEL, request=req, save_dir="/tmp/sbap-x", ledger_db="/tmp/sbap-x.db",

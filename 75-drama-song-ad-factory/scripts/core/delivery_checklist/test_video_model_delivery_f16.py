@@ -41,8 +41,8 @@ from delivery_checklist.test_delivery_checklist import (  # noqa: E402
 )
 
 LOCKED = ML.DEFAULT_VIDEO_MODEL                  # minimax-h3/*
-GOOD = "minimax-h3/text-to-video"
-GOOD_FAMILY = "minimax-h3/image-to-video"
+GOOD = "hailuo/02-image-to-video-pro"
+GOOD_FAMILY = "hailuo/02-image-to-video-standard"
 OFF_LOCK = "bytedance/seedance-2-mini"
 
 

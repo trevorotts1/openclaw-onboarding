@@ -209,7 +209,7 @@ def test_card_gate_menu_refuses_off_registry_rows():
     try:
         lines = CG.video_model_picks()
         check("live repo: card menu renders (%d rows)" % len(lines),
-              len(lines) == 18, repr(lines[:1]))
+              len(lines) == 17, repr(lines[:1]))
         rec = [m for m in VM.MODELS if m.get("recommended")]
         check("the recommended row is a model the registry carries",
               len(rec) == 1
