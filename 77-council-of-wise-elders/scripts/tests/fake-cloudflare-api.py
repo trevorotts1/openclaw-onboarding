@@ -10,8 +10,11 @@ state is dumped to --state-out. stdlib only; never a real network call.
 Fixture keys (all optional except zone):
   account  expected account id (default qc-acct)    token  expected bearer token
   zone     {id, name}                                dns    [{id,type,name,content,proxied}]
-  tunnels  {tunnel_id: {name, source, config, conns, status, token}}   conns [] = connector down;
-           status defaults to "healthy" (GET cfd_tunnel/<id>); token defaults to qc-tunnel-TOKEN-<id>
+  tunnels  {tunnel_id: {name, source, config, conns, status, token, deleted_at, config_missing}}
+           conns [] = connector down; a conn may carry origin_ip (the connector's public address);
+           status defaults to "healthy" (GET cfd_tunnel/<id>); token defaults to qc-tunnel-TOKEN-<id>;
+           deleted_at set or config_missing true -> GET .../configurations answers 404
+           "Configuration for tunnel not found"; a tunnel id not in the fixture answers 404 everywhere
   apps     [{id,name,domain,session_duration,...}]
   policies {app_id: [policy,...]}                    edge   {host|"default": {status, location}}
   idps     [{id,type,name}]  Access identity providers (ensure-cc-access.sh)
@@ -19,6 +22,9 @@ Fixture keys (all optional except zone):
            {app_create: true}  -> POST access/apps answers 500
            {tunnel_create: true} -> POST cfd_tunnel answers 500
            {policy_update: true} -> PUT access/apps/<id>/policies/<pid> answers 400
+           {tunnel_read: true} -> GET cfd_tunnel/<id> and GET .../configurations answer 503
+           {config_read_after_put: true} -> GET .../configurations answers 503 once that tunnel's
+             configuration has been PUT (a read failing during a rollback)
   PUT access/apps/<id>/policies/<pid> replaces an app-scoped policy (reusable or a
   read-only field in the body -> 400); every PUT body is kept in state put_bodies.
   POST cfd_tunnel creates a remote-managed tunnel with no connector (status "inactive").
@@ -151,10 +157,13 @@ class H(BaseHTTPRequestHandler):
         if m and method == "GET":
             t = S["tunnels"].get(m.group(1))
             if t is None:
-                return self.send(404, env(None, False, [{"message": "tunnel not found"}]))
+                return self.send(404, env(None, False, [{"code": 1003, "message": "tunnel not found"}]))
             if m.group(2):
                 return self.send(200, env(t.get("token", "qc-tunnel-TOKEN-" + m.group(1))))
-            return self.send(200, env({"id": m.group(1), "name": t.get("name", m.group(1)), "status": t.get("status", "healthy")}))
+            if S["fail"].get("tunnel_read"):
+                return self.send(503, env(None, False, [{"message": "service unavailable (injected)"}]))
+            return self.send(200, env({"id": m.group(1), "name": t.get("name", m.group(1)), "status": t.get("status", "healthy"),
+                                       "deleted_at": t.get("deleted_at")}))
         m = re.match(r"^cfd_tunnel/([^/]+)/connections$", rest)
         if m and method == "GET":
             t = S["tunnels"].get(m.group(1))
@@ -170,11 +179,18 @@ class H(BaseHTTPRequestHandler):
             t = S["tunnels"].get(m.group(1))
             if t is None:
                 return self.send(404, env(None, False, [{"message": "tunnel not found"}]))
+            if method == "GET" and (S["fail"].get("tunnel_read") or (S["fail"].get("config_read_after_put") and t.get("_put"))):
+                return self.send(503, env(None, False, [{"message": "service unavailable (injected)"}]))
+            if method == "GET" and (t.get("deleted_at") or t.get("config_missing")):
+                return self.send(404, env(None, False, [{"code": 1003, "message": "Configuration for tunnel not found"}]))
             if method == "GET":
                 return self.send(200, env({"tunnel_id": m.group(1), "version": 1,
                                            "config": t.get("config"), "source": t.get("source", "cloudflare")}))
             if method == "PUT":
-                b = self.body(); t["config"] = b.get("config"); S["put_bodies"].append(b); dump()
+                b = self.body(); t["config"] = b.get("config"); S["put_bodies"].append(b)
+                if S["fail"].get("config_read_after_put"):
+                    t["_put"] = True
+                dump()
                 return self.send(200, env({"tunnel_id": m.group(1), "config": t["config"]}))
         if rest == "access/identity_providers" and method == "GET":
             return self.send(200, env(S["idps"]))

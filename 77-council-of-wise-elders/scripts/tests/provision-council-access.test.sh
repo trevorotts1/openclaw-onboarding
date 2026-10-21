@@ -377,13 +377,175 @@ fixture qcbox | jq -c '.dns += [{id:"x1",type:"CNAME",name:"qcbox-council.'$Z'",
 run_script qcbox.$Z --apply
 check "council CNAME at another tunnel: CONFLICT, zero writes, exit 1" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT'"
 
-fixture qcbox | jq -c '.apps += [{id:"app-old",name:"Council - qcbox",domain:"qcbox-council.'$Z'",type:"self_hosted",session_duration:"24h"}] | .policies["app-old"] = [{id:"po",decision:"allow",include:[{email:{email:"stranger@evil.example"}}]}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
+fixture qcbox | jq -c '.apps += [{id:"app-old",name:"Council - qcbox",domain:"qcbox-council.'$Z'",type:"self_hosted",session_duration:"24h"}] | .policies["app-old"] = [{id:"po",decision:"allow",include:[{email:{email:"stranger@example.test"}}]}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
-check "existing council app with different rules: FAILED before any routing" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED'"
+check "existing council app with a different email list is synced, not FAILED (exit 0, PROVISIONED)" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PROVISIONED .*added 2, removed 1 email(s)'"
+check "...the stranger is gone and the council emails equal the CC emails" test "$(state '.policies["app-old"][0].include | map(.email.email) | sort')" = "$(state '.policies["app-cc-qcbox"][0].include | map(.email.email) | sort')"
 
 fixture qcbox | jq -c '.policies["app-cc-qcbox"][0].include = [{everyone:{}}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "CC app that allows everyone is never copied" bash -c "test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'NOT_PROVISIONED'"
+
+echo "== 6e. the Council login page follows the Command Center login page (SYNCED)"
+# Start from the provisioned state of section 4: Council app 'Council - qcbox' equal to the CC app.
+CAPP="$(jq -r '[.apps[] | select(.domain == "qcbox-council.'$Z'")][0].id' "$WORK/provisioned.json")"
+CPOL="$(jq -r --arg a "$CAPP" '.policies[$a][0].id' "$WORK/provisioned.json")"
+cc_emails() { state '[.policies["app-cc-qcbox"][] | select(.decision=="allow") | .include[] | .email.email // empty] | map(ascii_downcase) | sort'; }
+co_emails() { state '[.policies["'$CAPP'"][] | select(.decision=="allow") | .include[] | .email.email // empty] | map(ascii_downcase) | sort'; }
+only_council_put() { ! grep -Ev '^GET ' "$LOG" | grep -v "^PUT /client/v4/accounts/qc-acct/access/apps/$CAPP/policies/$CPOL\$"; }
+jq -c '.policies["app-cc-qcbox"][0].include += [{email:{email:"new-one@example.test"}},{email:{email:"New-Two@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"; cp "$STATE" "$WORK/orig-state.json"
+run_script qcbox.$Z
+check "sync add (dry-run): GET only, PLANNED, says it would add 2 and remove 0 (counts)" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED .*would add 2 and remove 0 email(s) on the Council login page'"
+run_script qcbox.$Z --apply
+check "sync add (apply): SYNCED, exit 0, exactly 1 write" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 1 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z SYNCED .*added 2, removed 0 email(s)'"
+check "sync add: that write is the PUT of the Council app's own allow policy" only_council_put
+check "sync add: Council emails now equal the CC emails" test "$(co_emails)" = "$(cc_emails)"
+check "sync add: the Command Center app and policy are never written" test "$(state '[.apps[] | select(.id == "app-cc-qcbox")], .policies["app-cc-qcbox"]')" = "$(jq -c '[.apps[] | select(.id == "app-cc-qcbox")], .policies["app-cc-qcbox"]' "$WORK/orig-state.json")"
+check "sync add: no routing write (tunnel config and DNS unchanged)" test "$(state '[.tunnels, .dns]')" = "$(jq -c '[.tunnels, .dns]' "$WORK/orig-state.json")"
+check "sync add: no address in the output" bash -c "! grep -q '@' '$OUT'"
+cp "$STATE" "$WORK/synced.json"; start_fake "$WORK/synced.json"
+run_script qcbox.$Z --apply
+check "after a sync the next run is ALREADY_PROVISIONED with zero writes" bash -c "test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED'"
+
+jq -c '.policies["app-cc-qcbox"][0].include |= map(select(.email.email != "qcbox@client.example"))' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "sync remove (revocation on the CC page): SYNCED, removed 1, 1 write" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 1 && tail -n1 '$OUT' | grep -q 'qcbox.$Z SYNCED .*added 0, removed 1 email(s)'"
+check "sync remove: the revoked email is gone from the Council page" test "$(co_emails)" = '["operator@example.com"]'
+
+jq -c --arg a "$CAPP" '.policies[$a][0].include = [{service_token:{token_id:"st-9"}}] + .policies[$a][0].include
+  | .policies["app-cc-qcbox"][0].include += [{service_token:{token_id:"st-cc"}},{email:{email:"late@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "service-token rules: a CC service token is no refusal; SYNCED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z SYNCED .*added 1, removed 0'"
+check "service-token rule on the Council policy kept first, in place; CC token not copied" test "$(state '.policies["'$CAPP'"][0].include | map(keys[0]) | join(",")')" = '"service_token,email,email,email"' -a "$(state '.policies["'$CAPP'"][0].include[0].service_token.token_id')" = '"st-9"'
+check "service-token case: PUT body carries no read-only field" test "$(state '[.put_bodies[] | keys[] | select(IN("id","created_at","updated_at","reusable","app_count","uid"))] | length')" = 0
+
+jq -c '.policies["app-cc-qcbox"][0].include += [{email_domain:{domain:"example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "CC email-domain rule: FAILED (exit 1), zero writes, reason named" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED .*email_domain rule(s); mirroring'"
+jq -c '.policies["app-cc-qcbox"][0].include += [{group:{id:"g-1"}},{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "CC group rule: FAILED in dry-run too, GET only" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'FAILED .*group rule(s)'"
+
+jq -c --arg a "$CAPP" '(.apps[] | select(.id == $a) | .name) = "Someone else" | .policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "Council app not named 'Council - qcbox': FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q \"qcbox.$Z FAILED the Access app on qcbox-council.$Z is not the one this script makes\""
+jq -c --arg a "$CAPP" '(.apps[] | select(.id == $a)) |= (.domain = "elsewhere.'$Z'" | .self_hosted_domains = ["qcbox-council.'$Z'"]) | .policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "Council app on another domain: FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED the Access app'"
+jq -c --arg a "$CAPP" '.policies[$a][0].reusable = true | .policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "Council allow policy reusable: FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED .*no app-scoped allow policy'"
+jq -c --arg a "$CAPP" '.policies[$a] += [{id:"pby",name:"Bypass",decision:"bypass",include:[{email:{email:"stray@example.test"}}]}] | .policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "email the CC lacks on a non-allow (bypass) policy: FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'FAILED .*policy \"Bypass\" (bypass)'"
+jq -c --arg a "$CAPP" '.policies[$a][0].include += [{everyone:{}}] | .policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "Council app that admits everyone is never left as is: FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'FAILED .*the Council app admits everyone'"
+jq -c '.policies["app-cc-qcbox"][0].exclude = [{email:{email:"qcbox@client.example"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "revocation by an exclude rule on the CC page: FAILED, zero writes (never ALREADY_PROVISIONED)" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED .*exclude/require rules differ'"
+jq -c '.policies["app-cc-qcbox"][0].require = [{geo:{country_code:"US"}}] | .policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}]' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "a require rule on the CC page the Council lacks: FAILED, zero writes, no email synced either" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED .*exclude/require rules differ'"
+jq -c '.policies["app-cc-qcbox"][0].include += [{email:{email:"x@example.test"}}] | .fail.policy_update = true' "$WORK/provisioned.json" > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "refused policy PUT: FAILED, policy unchanged, no routing write" bash -c "test '$RC' = 1 && tail -n1 '$OUT' | grep -q 'FAILED Council allow policy update failed' && test '$(nonget_count)' = 1"
+
+echo "== 6f. orphan records (the CNAME's tunnel or its configuration no longer exists)"
+fixture qcbox | jq -c 'del(.tunnels["'$TID'"])' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "tunnel gone (HTTP 404): SKIPPED_ORPHAN, exit 0, zero writes, names the tunnel" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z SKIPPED_ORPHAN .*tunnel $TID, which no longer exists (HTTP 404'"
+fixture qcbox | jq -c '.tunnels["'$TID'"].config_missing = true' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "'Configuration for tunnel not found' on a HEALTHY tunnel: FAILED, never SKIPPED_ORPHAN, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED could not read tunnel configuration for $TID (HTTP 404)' && ! grep -q SKIPPED_ORPHAN '$OUT'"
+fixture qcbox | jq -c '.tunnels["'$TID'"].deleted_at = "2026-10-01T00:00:00Z" | .tunnels["'$TID'"].status = "down"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "deleted tunnel (dry-run): SKIPPED_ORPHAN, not TUNNEL_DOWN" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z SKIPPED_ORPHAN .*deleted at 2026-10-01'"
+fixture qcbox | jq -c '.fail.tunnel_read = true' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "tunnel read 503 stays FAILED (exit 1), zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED could not read tunnel $TID (HTTP 503)'"
+fixture alpha beta | jq -c --arg z "$Z" '(.dns[] | select(.name == ("alpha."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $a | del(.tunnels[$a])' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script --all --apply
+check "--all: the orphan is SKIPPED_ORPHAN, beta still PROVISIONED, exit 0" bash -c "test '$RC' = 0 && grep -q '^COUNCIL_ACCESS: alpha.$Z SKIPPED_ORPHAN' '$OUT' && grep -q '^COUNCIL_ACCESS: beta.$Z PROVISIONED' '$OUT' && test '$(nonget_count)' = 3"
+run_script --all --json
+check "--json carries the SKIPPED_ORPHAN entry with its detail" bash -c "jq -e '[.[] | select(.status == \"SKIPPED_ORPHAN\" and .cc_host == \"alpha.$Z\" and (.detail | test(\"no longer exists\")))] | length == 1' '$OUT'"
+
+echo "== 6g. local-managed Command Center: ride the rescue tunnel on the same machine"
+RTID="rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+MAC_FIXTURE() {  # the Mac shape: local CC tunnel reporting localhost:4000, remote rescue-qcbox with ssh, same origin address
+  fixture qcbox | jq -c --arg z "$Z" --arg r "$RTID" '
+    .tunnels["'$TID'"] = {name:"command-center",source:"local",
+       config:{ingress:[{hostname:("qcbox."+$z),service:"http://localhost:4000"},{service:"http_status:404"}]},
+       conns:[{id:"c1",is_pending_reconnect:false,origin_ip:"198.51.100.7"}]}
+    | .tunnels[$r] = {name:"rescue-qcbox",source:"cloudflare",
+       config:{ingress:[{hostname:("rescue-qcbox."+$z),service:"ssh://localhost:22"},{service:"http_status:404"}]},
+       conns:[{id:"r1",is_pending_reconnect:false,origin_ip:"198.51.100.7"},{id:"r2",is_pending_reconnect:false,origin_ip:"198.51.100.7"}]}
+    | .dns += [{id:"d-resc",type:"CNAME",name:("rescue-qcbox."+$z),content:($r+".cfargotunnel.com"),proxied:true}]'
+}
+MAC_FIXTURE > "$WORK/f.json"; start_fake "$WORK/f.json"; cp "$STATE" "$WORK/orig-state.json"
+run_script qcbox.$Z
+check "ride (dry-run): PLANNED, GET only, says rides rescue tunnel, plans no new tunnel and no token" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED .*rides rescue tunnel rescue-qcbox' && ! grep -q 'would create tunnel' '$OUT' && ! grep -q 'connector token' '$OUT'"
+check "ride (dry-run): plans the ingress PUT on the rescue tunnel and the DNS write" bash -c "grep -q '\[plan\] PUT /accounts/qc-acct/cfd_tunnel/$RTID/configurations' '$OUT' && grep -q '\[plan\] POST /zones/zone-real/dns_records' '$OUT'"
+run_script qcbox.$Z --apply
+check "ride (apply): PROVISIONED 'rides rescue tunnel rescue-qcbox', exit 0, 3 writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 3 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED rides rescue tunnel rescue-qcbox'"
+check "ride: rescue ingress keeps its ssh rule, gains qcbox-council -> 127.0.0.1:8787 before the catch-all" test "$(state '.tunnels["'$RTID'"].config.ingress')" = '[{"hostname":"rescue-qcbox.'$Z'","service":"ssh://localhost:22"},{"hostname":"qcbox-council.'$Z'","service":"http://127.0.0.1:8787"},{"service":"http_status:404"}]'
+check "ride: proxied CNAME points at the rescue tunnel" test "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | [.content,.proxied] | join("|")')" = '"'$RTID'.cfargotunnel.com|true"'
+check "ride: no tunnel created, the CC tunnel untouched, no connector token fetched" bash -c "test '$(state '.tunnels | length')' = 2 && test '$(state '.tunnels["'$TID'"]')' = '$(jq -c '.tunnels["'$TID'"]' "$WORK/orig-state.json")' && ! grep -q '/token' '$LOG' && ! grep -q 'connector token' '$OUT'"
+check "ride: the Council Access app equals the CC app and the edge gate ran" bash -c "grep -q 'Council Access rules equal the Command Center rules' '$OUT' && grep -q '^GET /edge/qcbox-council.$Z/' '$LOG'"
+cp "$STATE" "$WORK/rode.json"; start_fake "$WORK/rode.json"
+run_script qcbox.$Z --apply
+check "ride: second apply ALREADY_PROVISIONED, zero writes" bash -c "test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED rides rescue tunnel rescue-qcbox'"
+MAC_FIXTURE | jq -c --arg z "$Z" '.tunnels["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"] = {name:"rescue-qcboxer",source:"cloudflare",config:{ingress:[{hostname:("rescue-qcboxer."+$z),service:"ssh://localhost:22"}]}}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "rescue-qcboxer is another word, not a second candidate: still rides" bash -c "tail -n1 '$OUT' | grep -q 'rides rescue tunnel rescue-qcbox\$'"
+fall_back() {  # desc, why-regex : the run planned the dedicated council-qcbox tunnel and said why it did not ride
+  check "$1: falls back to the dedicated council-qcbox tunnel" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q 'would create tunnel council-qcbox' '$OUT' && ! grep -q 'rides rescue tunnel' '$OUT' && grep -q 'not riding a rescue tunnel: .*$2' '$OUT'"
+}
+MAC_FIXTURE | jq -c --arg z "$Z" '.tunnels["ffffffffffffffffffffffffffffffff"] = {name:"rescue-qcbox-2",source:"cloudflare",config:{ingress:[{hostname:("rescue-qcbox-2."+$z),service:"ssh://localhost:22"}]},conns:[{id:"x",origin_ip:"198.51.100.7"}]}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "two rescue-qcbox* candidates" "2 tunnels named rescue-qcbox"
+MAC_FIXTURE | jq -c '.tunnels["'$RTID'"].status = "degraded"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "rescue tunnel not healthy" "is degraded, not healthy"
+MAC_FIXTURE | jq -c '.tunnels["'$RTID'"].config.ingress[0].service = "http://localhost:8080"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "rescue tunnel without an ssh:// rule" "no ssh:// rule"
+MAC_FIXTURE | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://localhost:19003"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "Contabo-style CC rule on :19003" "localhost:19003"
+MAC_FIXTURE | jq -c '.tunnels["'$RTID'"].conns = [{id:"r1",is_pending_reconnect:false,origin_ip:"203.0.113.9"}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "no overlapping connector origin address" "share no origin address"
+MAC_FIXTURE | jq -c '.tunnels["'$TID'"].conns = [{id:"c1",is_pending_reconnect:false}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "CC connector reports no origin address" "share no origin address"
+MAC_FIXTURE | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://172.17.0.2:4000"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "non-loopback CC origin" "172.17.0.2:4000 for qcbox"
+MAC_FIXTURE | jq -c '.tunnels["'$RTID'"].source = "local"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "rescue tunnel locally managed" "is locally managed"
+MAC_FIXTURE | jq -c --arg z "$Z" '.dns += [{id:"xc",type:"CNAME",name:("qcbox-council."+$z),content:"cccccccccccccccccccccccccccccccc.cfargotunnel.com"}] | .tunnels["cccccccccccccccccccccccccccccccc"] = {name:"council-qcbox",source:"cloudflare",config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "a council record already on the dedicated tunnel stays there (no ride, no CONFLICT)" bash -c "test '$RC' = 0 && ! grep -q 'rides rescue tunnel' '$OUT' && grep -q 'not riding a rescue tunnel: qcbox-council.$Z already points at' '$OUT' && ! grep -q CONFLICT '$OUT'"
+MAC_FIXTURE | jq -c --arg z "$Z" '.tunnels["'$RTID'"].name = "rescue-qcbox-two" | .tunnels["'$RTID'"].config.ingress[0].hostname = ("rescue-qcbox-two."+$z)' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z; fall_back "another client's tunnel rescue-qcbox-two (ssh rule for rescue-qcbox-two, same address)" "no ssh:// rule for rescue-qcbox.$Z"
+MAC_FIXTURE | jq -c '.edge["qcbox-council.'$Z'"] = {status:200} | .fail.config_read_after_put = true' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "ride rollback whose configuration re-read fails: no second PUT, ROLLBACK INCOMPLETE, the rescue ssh rule kept" bash -c "test '$RC' = 1 && tail -n1 '$OUT' | grep -q 'ROLLBACK INCOMPLETE' && test \"\$(grep -c '^PUT .*/cfd_tunnel/$RTID/configurations' '$LOG')\" = 1 && test \"\$(jq -c '[.tunnels[\"$RTID\"].config.ingress[] | select(.service == \"ssh://localhost:22\")] | length' '$STATE')\" = 1"
+fixture trevor | jq -c --arg z "$Z" --arg d "$DESK" --arg r "$RTID" '
+  (.dns[] | select(.name == ("trevor."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $t
+  | .tunnels[$t] = {name:"command-center",source:"local",config:{ingress:[{hostname:("trevor."+$z),service:"http://localhost:4000"}]},conns:[{id:"c",origin_ip:"198.51.100.7"}]}
+  | .tunnels[$r] = {name:"rescue-trevor",source:"cloudflare",config:{ingress:[{hostname:("rescue-trevor."+$z),service:"ssh://localhost:22"}]},conns:[{id:"r",origin_ip:"198.51.100.7"}]}
+  | .tunnels[$d] = {name:"council-desktop",source:"cloudflare",config:{ingress:[{hostname:("council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}}' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script trevor.$Z
+check "COUNCIL_TUNNEL_OVERRIDES still wins for trevor over a matching rescue tunnel" bash -c "test '$RC' = 0 && grep -q 'rides its own remote-managed tunnel council-desktop' '$OUT' && ! grep -q 'rides rescue tunnel' '$OUT'"
 
 echo "== 7. --all"
 fixture alpha beta gamma | jq -c --arg z "$Z" '
@@ -482,6 +644,7 @@ check "token appears in no case's stdout or stderr" bash -c "! grep -rq -- '$TOK
 check "no temp file is left in the script's TMPDIR" test -z "$(ls -A "$SCRIPT_TMP")"
 check "token appears in no file in the script's TMPDIR" bash -c "! grep -rq -- '$TOKEN' '$SCRIPT_TMP'"
 check "no connector token appears in any case's stdout or stderr" bash -c "! grep -rq -- 'qc-tunnel-TOKEN' '$WORK/out'"
+check "no email address appears in any case's stdout or stderr (sync reports counts only)" bash -c "! grep -rq '@' '$WORK/out'"
 
 echo
 if [ "$FAILS" = 0 ]; then echo "ALL $N CHECKS PASS"; exit 0; else echo "$FAILS of $N CHECKS FAILED"; exit 1; fi
