@@ -38,6 +38,15 @@ import kie_dispatch.model_lock as ML                             # noqa: E402
 
 FAILS = []
 
+def _res_model_error(e):
+    """Identity-free detection: conftest purges sys.modules between pytest
+    suites, so this test's VM binding and intake_card's lazy inside-function
+    import can hold DIFFERENT video_models module objects -- the test-side
+    `except VM.ModelResolutionError` then misses the very refusal the gate
+    raises. Detect by class name + the reason attribute instead."""
+    return type(e).__name__ == "ModelResolutionError" and hasattr(e, "reason")
+
+
 def check(name, cond, detail=""):
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
                         (" (%s)" % detail) if detail and not cond else ""))
@@ -130,27 +139,30 @@ def test_resolvable_registry_yields_only_listed_models():
             VM.require_choices()
             check("require_choices refuses the defect list", False,
                   "returned instead of raising")
-        except VM.ModelResolutionError as e:
+        except Exception as e:  # noqa: BLE001  (see _res_model_error)
             check("require_choices refuses the defect list",
-                  e.reason == "MODEL_NOT_IN_REGISTRY"
+                  _res_model_error(e)
+                  and e.reason == "MODEL_NOT_IN_REGISTRY"
                   and "Hailuo 02 Standard" in str(e), str(e)[:120])
         # the card question surfaces the same refusal
         try:
             IC._model_question("60 seconds")
             check("card question refuses unresolvable list", False,
                   "rendered anyway")
-        except VM.ModelResolutionError as e:
+        except Exception as e:  # noqa: BLE001  (see _res_model_error)
             check("card question refuses unresolvable list",
-                  "Hailuo 02 Standard" in str(e), str(e)[:140])
+                  _res_model_error(e)
+                  and "Hailuo 02 Standard" in str(e), str(e)[:140])
         # and lock_choice refuses the same row
         db = os.path.join(os.path.dirname(p), "state.sqlite3")
         try:
             VM.lock_choice(db, "r1", 1)
             check("lock_choice refuses off-registry model", False,
                   "lock written")
-        except VM.ModelResolutionError as e:
+        except Exception as e:  # noqa: BLE001  (see _res_model_error)
             check("lock_choice refuses off-registry model",
-                  e.reason == "MODEL_NOT_IN_REGISTRY", str(e)[:120])
+                  _res_model_error(e)
+                  and e.reason == "MODEL_NOT_IN_REGISTRY", str(e)[:120])
         con = sqlite3.connect(db)
         try:
             row = con.execute(
@@ -178,7 +190,7 @@ def test_unreadable_registry_refuses():
             VM.require_choices()
             check("require_choices refuses an unreadable registry", False,
                   "returned")
-        except VM.ModelResolutionError as e:
+        except Exception as e:  # noqa: BLE001  (see _res_model_error)
             check("require_choices refuses an unreadable registry",
                   e.reason == "VIDEO_MODEL_UNRESOLVABLE", str(e)[:120])
     finally:
@@ -224,7 +236,7 @@ def test_lock_and_dispatch_stay_gated_for_off_registry_model():
         try:
             VM.lock_choice(db, "run-x", 1)
             check("lock refused for defect model", False, "lock written")
-        except VM.ModelResolutionError as e:
+        except Exception as e:  # noqa: BLE001  (see _res_model_error)
             check("lock refused for defect model",
                   e.reason == "MODEL_NOT_IN_REGISTRY", str(e)[:120])
         # dispatch-side F14 still fails closed on any unlocked run: the card
