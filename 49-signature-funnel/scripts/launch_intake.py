@@ -153,6 +153,8 @@ def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
     for field_key, entry in _client_intake().to_launch_known(answers).items():
         session["answers"][field_key] = {"value": entry["value"], "state": entry["state"],
                                          "source_ref": entry["source_ref"], "question_id": None}
+        if entry.get("provenance"):  # which question, how the client answered it
+            session["answers"][field_key]["provenance"] = entry["provenance"]
     mode = (session["answers"].get("interview.mode") or {}).get("value")
     if mode in MODES:
         session["mode"] = mode
@@ -162,6 +164,8 @@ def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
         session["brand_hash"] = hashlib.sha256(bf.read_bytes()).hexdigest()
         _set(session, "brand_ref", session["brand_ref"], "verified_existing", "d1_brand", "answers-file")
     session["history"].append({"at": _now(), "event": "answers_file_ingested"})
+    if session["state"] == "approved":
+        invalidate_approval(session, "answers file re-ingested after approval")
     _persist(session)
     return session
 
@@ -184,12 +188,15 @@ def _persist(session: Dict[str, Any]) -> None:
 
 
 def _set(session: Dict[str, Any], field_key: str, value: Any, state: str,
-         question_id: Optional[str], source_ref: str = "") -> None:
+         question_id: Optional[str], source_ref: str = "",
+         provenance: Optional[Dict[str, Any]] = None) -> None:
     if state not in FIELD_STATES:
         raise IntakeError(f"unknown field state {state!r}")
-    session["answers"][field_key] = {"value": value, "state": state,
-                                     "source_ref": source_ref,
-                                     "question_id": question_id}
+    entry = {"value": value, "state": state, "source_ref": source_ref,
+             "question_id": question_id}
+    if provenance:
+        entry["provenance"] = provenance
+    session["answers"][field_key] = entry
 
 
 def _get(session: Dict[str, Any], field_key: str) -> Optional[Dict[str, Any]]:
@@ -199,6 +206,41 @@ def _get(session: Dict[str, Any], field_key: str) -> Optional[Dict[str, Any]]:
 def _answered(session: Dict[str, Any], field_key: str) -> bool:
     e = _get(session, field_key)
     return e is not None and e["state"] != "unknown"
+
+
+# The eight launch answers (calendar, channels, AI, access delivery, payment plans,
+# sender, reply-to, A2P readiness) as typed ledger keys. Published in the versioned
+# session contract and carried on the assembled launch plan for Skill 50 (L06).
+LAUNCH_ANSWER_KEYS = (
+    "launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone",
+    "launch.channels", "launch.conversation_ai", "launch.access_delivery",
+    "launch.payment_plans", "launch.sender_name", "launch.reply_to_email",
+    "launch.a2p_ready",
+)
+
+
+def launch_answers_block(session: Dict[str, Any]) -> Dict[str, Any]:
+    """The typed launch answers with their provenance, exactly as the ledger holds
+    them. Unknown and recommended-but-unapproved entries are kept, never dropped."""
+    return {k: session["answers"][k] for k in LAUNCH_ANSWER_KEYS if k in session["answers"]}
+
+
+def invalidate_approval(session: Dict[str, Any], reason: str) -> Dict[str, Any]:
+    """A changed fact, a changed plan, or a revision request invalidates the client's
+    approval. The plan is kept for inspection but no longer authorized: the session
+    returns to collecting and must be re-assembled, re-presented and re-approved."""
+    approval = session.get("approval") or {}
+    session["approval"] = None
+    session["plan_hash"] = None
+    if session.get("plan"):
+        session["plan"]["plan_approval_ref"] = None
+        session["plan"]["status"] = "collecting"
+    if session["state"] in ("approved", "building"):
+        session["state"] = "collecting"
+    session["history"].append({"at": _now(), "event": "approval_invalidated",
+                               "reason": reason,
+                               "approval_id": approval.get("approval_id")})
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +310,11 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     fields at once. Every answer is saved immediately."""
     if session["state"] == "cancelled":
         raise IntakeError("this intake was cancelled; answers are no longer accepted")
+    if session["state"] == "building":
+        raise IntakeError("this launch is already building on an approved plan; a change "
+                          "must go through request_revision(), which invalidates the "
+                          "approval and returns the session to collecting")
+    was_approved = session["state"] == "approved"
     bank = {q["id"]: q for q in load_question_bank()}
     q = bank.get(question_id)
     if q is None:
@@ -297,6 +344,10 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     session["phase"] = q["phase"]
     session["history"].append({"at": _now(), "event": "answer",
                                "question_id": question_id})
+    if was_approved:
+        # An approved plan no longer matches the ledger: the approval is spent, not
+        # carried over to a plan the client never saw.
+        invalidate_approval(session, f"answer changed after approval ({question_id})")
     if session["state"] == "revision_requested":
         session["state"] = "collecting"
     _persist(session)
@@ -646,6 +697,10 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     product, a known price, or fulfillment — never fills them in. The
     assembled record must ALSO pass the domain validator before it can be
     presented: an invalid plan never consumes a client approval (D2)."""
+    if session["state"] in ("approved", "building") and session.get("approval"):
+        raise IntakeError("this plan is already approved; call request_revision() "
+                          "first, so the client approves the changed plan and the "
+                          "old approval is invalidated")
     missing: List[str] = []
     journey = (_get(session, "journey_mode") or {}).get("value")
     if not journey:
@@ -741,6 +796,11 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         full = lpl.build_from_session(session)
         session["launch_plan"] = full.get("plan")
         session["launch_plan_missing"] = full.get("missing", [])
+        if session["launch_plan"] is not None:
+            # The eight typed launch answers travel WITH the plan for the Skill 50
+            # consumer (L06): sender, reply-to, access delivery and payment plans are
+            # not in the plan schema, so they are carried here, provenance intact.
+            session["launch_plan"]["launch_answers"] = launch_answers_block(session)
     except (lpl.LaunchPlanError, ValueError) as exc:
         # PageSetError / RouteError are ValueErrors; a full-plan defect is named,
         # never allowed to block the page plan that was already validated above.
@@ -890,7 +950,10 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
         session["history"].append({"at": _now(),
                                    "event": "plan_presented_via_approve"})
     if session["state"] != "awaiting_plan_approval" or not session.get("plan"):
-        raise IntakeError("no plan is awaiting approval in this session")
+        raise IntakeError(
+            f"no plan is awaiting approval (session state {session['state']!r}); "
+            "assemble_plan() and present_plan() must run first, and a changed fact "
+            "after approval requires a fresh approval of the new plan")
     violations = vlp.validate_launch(session["plan"])
     if violations:
         raise IntakeError("plan no longer validates; refusing to spend an "
