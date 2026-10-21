@@ -13,6 +13,7 @@ review flagged as C4/C5 live here, on top of schema validation:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import jsonschema
@@ -20,6 +21,7 @@ import jsonschema
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "references" / "checkout.schema.json"
 VERIFIED_STATUSES = {"locally_verified", "installed_test_verified",
                      "ready_for_activation", "live_verified"}
+_REQUIRED_MESSAGE = re.compile(r"^'([^']+)' is a required property$")
 
 
 class CheckoutValidationError(ValueError):
@@ -37,6 +39,90 @@ def _validate_def(name: str, instance) -> None:
         jsonschema.validate(instance, sub)
     except jsonschema.ValidationError as exc:
         raise CheckoutValidationError(f"{name} schema validation failed: {exc.message}") from exc
+
+
+def request_failures(request: dict) -> list[dict]:
+    """Every JSON-Schema failure for one ``checkout_request``, as typed data.
+
+    ``validate_request`` raises on the first failure, which is enough to refuse
+    a document but not enough to say WHY it was refused. A binding probe needs
+    to tell "this launch still has named unknown facts" apart from "this
+    document carries a field the contract does not define". Each failure is::
+
+        {"kind": "<jsonschema keyword>", "path": "bump/price",
+         "missing": "<required property name>" (kind == "required" only),
+         "message": "<contract wording>"}
+
+    ``schema_version`` is deliberately absent from the result: it belongs to
+    the contract's outer envelope and is never a member of this $def.
+    """
+    schema = _schema()
+    sub = {"$schema": schema["$schema"], "$defs": schema["$defs"],
+           "$ref": "#/$defs/checkout_request"}
+    validator = jsonschema.Draft202012Validator(sub)
+    failures = []
+    for error in validator.iter_errors(request):
+        failure = {
+            "kind": error.validator,
+            "path": "/".join(str(part) for part in error.absolute_path),
+            "message": error.message,
+        }
+        if error.validator == "required":
+            match = _REQUIRED_MESSAGE.match(error.message)
+            if match:
+                failure["missing"] = match.group(1)
+        failures.append(failure)
+    return sorted(failures, key=lambda f: (f["path"], f["kind"], f.get("missing", "")))
+
+
+def contract_control() -> dict:
+    """A minimal synthetic request the contract's own schema accepts.
+
+    This is the known-good control for a binding probe: it proves the
+    validator CAN accept, so a rejection of a real document is a fact about
+    that document rather than a broken instrument. Every value is a synthetic
+    test value - no launch fact, no commercial default, no native ID.
+    """
+    return {
+        "tenant_id": "control-tenant",
+        "location_id": "control-location",
+        "launch_id": "control-launch",
+        "launch_revision": 1,
+        "launch_plan_approval_ref": "control-approval",
+        "approved_plan_hash": "0" * 64,
+        "checkout_mode": "combined_single_offer",
+        "main_offer_id": "control-main-offer",
+        "main_price": {
+            "price_choice_id": "control-price",
+            "currency": "USD",
+            "currency_exponent": 2,
+            "amount_minor": 1,
+            "billing_type": "one_time",
+            "native_product_id": None,
+            "native_price_id": None,
+            "approval_status": "test_only",
+            "price_mapping_expires_at": None,
+        },
+        "quantity": 1,
+        "selection_ref": None,
+        "main_entitlement_ids": [],
+        "previously_purchased_entitlement_ids": [],
+        "bump": None,
+        "brand_ref": "control-brand",
+        "brand_revision": "0" * 64,
+        "terms_ref": "control-terms",
+        "native_capability_evidence_ref": "control-capability",
+        "successful_payment_next_route": "thank-you",
+        "fulfillment_mapping_ref": "control-fulfillment",
+        "test_only": True,
+        "consent_ref": "control-consent",
+        "failed_pending_requirements": {
+            "failed_state_copy_ref": "control-failed-copy",
+            "pending_state_copy_ref": "control-pending-copy",
+            "retry_policy": "reconcile_native_records_first",
+            "requires_customer_action_copy_ref": None,
+        },
+    }
 
 
 def _check_mapping_expiry(label: str, expires_at, now: str | None) -> None:

@@ -509,3 +509,287 @@ class TestFormBuilderOrderCarveOut:
                       "label": "Collect Payment"},
                 "/tmp", [0], [], [])
         assert excinfo.value.step == "F5.order-binding"
+
+
+# ── Checkout bindings: single / selection / folded levels ───────────────────
+#
+# The Skill 83 mapping is hand-built here in its published shape so this test
+# never reaches into another skill's package. Every value is synthetic.
+
+def _mapping(*, mode="combined_single_offer", journey="single_simple",
+             offers=(("offer-main-1", 49700),), bump=False,
+             upsells=(), downsells=(), probe="rejected",
+             because="named_unknowns", control="accepted"):
+    state = "resolved" if mode else "contract_gap"
+    return {
+        "journey_mode": journey,
+        "checkout_mode": mode,
+        "checkout_mode_state": state,
+        "route_node": "checkout",
+        "supplied": {
+            "location_id": "loc-test",
+            "bump": ({"offer_id": "offer-bump-1",
+                      "price": {"amount_minor": 2700, "currency": "USD"}}
+                     if bump else None),
+        },
+        "main_offers": [
+            {"offer_id": offer_id,
+             "price": {"amount_minor": amount, "currency": "USD"}}
+            for offer_id, amount in offers],
+        "upsell_offers": [
+            {"offer_id": offer_id, "role": role,
+             "price": {"amount_minor": amount, "currency": "USD"}}
+            for offer_id, role, amount in upsells],
+        "downsell_offers": [
+            {"offer_id": offer_id, "role": role,
+             "price": {"amount_minor": amount, "currency": "USD"}}
+            for offer_id, role, amount in downsells],
+        "validator": {
+            "state": "bound",
+            "control": {"result": control},
+            "probe": {"result": probe, "rejected_because": because,
+                      "error": "synthetic probe refusal"},
+        },
+    }
+
+
+def _native(*offer_ids):
+    return {offer_id: {"native_product_id": f"prod_{offer_id}",
+                       "native_price_id": f"price_{offer_id}"}
+            for offer_id in offer_ids}
+
+
+def _readback(plan, *, product_override=None, price_override=None,
+              checked=False, failed_grants_access=False,
+              granted_on="payment_succeeded"):
+    levels = {}
+    for binding in plan["bindings"]:
+        levels[binding["offer_id"]] = {
+            "selected_product_ref": product_override
+            or binding["native"]["native_product_id"],
+            "selected_price_minor": (price_override
+                                     if price_override is not None
+                                     else binding["selected_price"]["amount_minor"]),
+            "selected_currency": binding["selected_price"]["currency"],
+        }
+    upsell = {}
+    if plan.get("upsells"):
+        upsell = {
+            "present": True,
+            "selected_product_ref": plan["upsells"][0]["native"]["native_product_id"],
+            "decline_destination": "/thank-you",
+        }
+    downsell = {}
+    if plan.get("downsells"):
+        downsell = {
+            "present": True,
+            "selected_product_ref": plan["downsells"][0]["native"]["native_product_id"],
+        }
+    return {
+        "native_form_id": "form_test_0001",
+        "native_page_id": "page_test_0001",
+        "levels": levels,
+        "bump": ({"present": True, "checked": checked,
+                  "native_product_ref": plan["bump"]["native"]["native_product_id"]}
+                 if plan.get("bump") else {}),
+        "upsell": upsell,
+        "downsell": downsell,
+        "success_destination": "/thank-you",
+        "decline_destination": "/thank-you",
+        "error_destination": "/checkout?state=failed",
+        "payment": {
+            "pending_state_copy_ref": "copy-pending",
+            "failed_state_copy_ref": "copy-failed",
+            "retry_policy": "reconcile_native_records_first",
+            "failed_access_granted": failed_grants_access,
+        },
+        "access": {"granted_on": granted_on, "entitlement_ids": ["ent-1"]},
+    }
+
+
+class TestCheckoutBinding:
+    def test_single_simple_binds_the_one_main_offer_natively(self):
+        mapping = _mapping()
+        plan = oe.build_checkout_binding(mapping, native_products=_native("offer-main-1"))
+        assert plan["schema"] == "skill6-checkout-binding/1"
+        assert len(plan["bindings"]) == 1
+        binding = plan["bindings"][0]
+        assert binding["native"] == {"native_product_id": "prod_offer-main-1",
+                                     "native_price_id": "price_offer-main-1"}
+        assert binding["selected_price"] == {"amount_minor": 49700,
+                                             "currency": "USD"}
+        assert plan["selection"] is None
+        assert plan["new_selection_page"] is False
+        assert plan["native_ready"] is False
+        assert any(b.startswith("probe_rejected") for b in plan["blockers"])
+
+    def test_post_selection_binds_the_existing_selection_page(self):
+        mapping = _mapping(mode="post_selection", journey="multiple_options",
+                           offers=(("offer-main-1", 49700),
+                                   ("offer-main-2", 99700)))
+        plan = oe.build_checkout_binding(
+            mapping, native_products=_native("offer-main-1", "offer-main-2"),
+            selection={"selection_ref": "sel-test-1", "selection_revision": 2,
+                       "selected_offer_id": "offer-main-1"})
+        assert plan["selection"] == {"selection_ref": "sel-test-1",
+                                     "selection_revision": 2,
+                                     "selected_offer_id": "offer-main-1"}
+        assert plan["new_selection_page"] is False
+        assert plan["installation"]["selection_surface"].startswith("product_selection_page")
+
+    @pytest.mark.parametrize("selection", [
+        None, {}, {"selection_ref": "sel", "selection_revision": 0},
+        {"selection_ref": "", "selection_revision": 1},
+        {"selection_ref": "sel", "selection_revision": 1},
+        {"selection_ref": "sel", "selection_revision": 1,
+         "selected_offer_id": "offer-not-in-the-mapping"},
+    ])
+    def test_post_selection_without_its_selection_is_refused(self, selection):
+        mapping = _mapping(mode="post_selection", journey="multiple_options",
+                           offers=(("offer-main-1", 49700),
+                                   ("offer-main-2", 99700)))
+        with pytest.raises(oe.CheckoutBindingError):
+            oe.build_checkout_binding(
+                mapping, native_products=_native("offer-main-1", "offer-main-2"),
+                selection=selection)
+
+    def test_folded_levels_bind_every_level_with_no_selection_page(self):
+        mapping = _mapping(mode=None, journey="folded_levels",
+                           offers=(("offer-main-1", 49700),
+                                   ("offer-main-2", 99700),
+                                   ("offer-main-3", 149700)))
+        plan = oe.build_checkout_binding(
+            mapping,
+            native_products=_native("offer-main-1", "offer-main-2", "offer-main-3"))
+        assert [b["offer_id"] for b in plan["bindings"]] == [
+            "offer-main-1", "offer-main-2", "offer-main-3"]
+        assert [b["level_index"] for b in plan["bindings"]] == [0, 1, 2]
+        assert plan["selection"] is None
+        assert plan["new_selection_page"] is False
+        assert plan["installation"]["selection_surface"] == "signature_page_level_control"
+        assert any(b.startswith("contract_gap") for b in plan["blockers"])
+
+    def test_a_selection_is_never_invented_for_folded_levels(self):
+        mapping = _mapping(mode=None, journey="folded_levels",
+                           offers=(("offer-main-1", 49700),
+                                   ("offer-main-2", 99700)))
+        with pytest.raises(oe.CheckoutBindingError):
+            oe.build_checkout_binding(
+                mapping, native_products=_native("offer-main-1", "offer-main-2"),
+                selection={"selection_ref": "sel", "selection_revision": 1})
+
+    def test_an_unread_native_product_is_refused(self):
+        with pytest.raises(oe.CheckoutBindingError):
+            oe.build_checkout_binding(_mapping(),
+                                      native_products={})
+
+    def test_a_rejected_probe_control_blocks_native_ready(self):
+        plan = oe.build_checkout_binding(
+            _mapping(probe="accepted", control="rejected"),
+            native_products=_native("offer-main-1"))
+        assert plan["native_ready"] is False
+        assert any(b.startswith("probe_control_rejected") for b in plan["blockers"])
+
+    def test_an_accepted_probe_on_a_resolved_mode_can_be_native_ready(self):
+        plan = oe.build_checkout_binding(
+            _mapping(probe="accepted"),
+            native_products=_native("offer-main-1"))
+        assert plan["native_ready"] is True and plan["blockers"] == []
+
+
+class TestCheckoutReadbackReceipt:
+    def _plan(self, **kwargs):
+        mapping = _mapping(
+            offers=(("offer-main-1", 49700),),
+            bump=True,
+            upsells=(("offer-up-1", "upsell_1", 19700),),
+            downsells=(("offer-down-1", "downsell_1", 9700),),
+            **kwargs)
+        return oe.build_checkout_binding(
+            mapping,
+            native_products=_native("offer-main-1", "offer-bump-1",
+                                    "offer-up-1", "offer-down-1"))
+
+    def _receipt(self, plan, **kwargs):
+        return oe.checkout_readback_receipt(
+            plan, _readback(plan, **kwargs),
+            producer_id="builder-lane-L05",
+            request_input_hash="a" * 64)
+
+    def test_receipt_covers_price_upsell_decline_payment_and_access(self):
+        plan = self._plan()
+        receipt = self._receipt(plan)
+        assert receipt["schema"] == "skill6-checkout-readback/1"
+        assert all(check["ok"] for check in receipt["checks"]), receipt["known_blockers"]
+        names = {check["check"] for check in receipt["checks"]}
+        for required in ("checkout.selected_price", "upsell.selected_product",
+                         "upsell.decline_path", "checkout.decline_destination",
+                         "payment.pending_state_copy_ref",
+                         "payment.failed_state_copy_ref",
+                         "payment.failed_grants_no_access",
+                         "access.after_payment_only"):
+            assert required in names
+        # The probe gap still blocks native-ready, and the receipt says so.
+        assert receipt["native_ready"] is False
+        assert receipt["status"] == "blocked"
+        assert any(b.startswith("probe_rejected") for b in receipt["known_blockers"])
+
+    def test_receipt_is_never_self_approved(self):
+        receipt = self._receipt(self._plan())
+        assert receipt["reviewer_id"] is None
+        assert receipt["independent_review"] is False
+        assert receipt["producer_id"] == "builder-lane-L05"
+        assert receipt["status"] in oe.UNVERIFIED_RECEIPT_STATUSES
+
+    @pytest.mark.parametrize("kwargs", [
+        {"product_override": "prod_someone_else"},
+        {"price_override": 1},
+        {"checked": True},
+        {"failed_grants_access": True},
+        {"granted_on": "payment_pending"},
+    ])
+    def test_unproven_readback_blocks_the_receipt(self, kwargs):
+        plan = self._plan()
+        receipt = self._receipt(plan, **kwargs)
+        assert receipt["native_ready"] is False
+        assert receipt["status"] == "blocked"
+        assert any(not check["ok"] for check in receipt["checks"])
+
+    def test_folded_levels_receipt_proves_every_level_and_no_selection_page(self):
+        mapping = _mapping(mode=None, journey="folded_levels",
+                           offers=(("offer-main-1", 49700),
+                                   ("offer-main-2", 99700)))
+        plan = oe.build_checkout_binding(
+            mapping, native_products=_native("offer-main-1", "offer-main-2"))
+        receipt = oe.checkout_readback_receipt(
+            plan, _readback(plan), producer_id="builder-lane-L05",
+            request_input_hash="b" * 64)
+        names = {check["check"]: check for check in receipt["checks"]}
+        assert names["level[offer-main-1].selected_product"]["ok"]
+        assert names["level[offer-main-2].selected_price"]["ok"]
+        assert names["folded.no_new_selection_page"]["ok"]
+        assert [level["offer_id"] for level in receipt["levels"]] == [
+            "offer-main-1", "offer-main-2"]
+
+    def test_post_selection_receipt_binds_the_existing_page(self):
+        mapping = _mapping(mode="post_selection", journey="multiple_options",
+                           offers=(("offer-main-1", 49700),
+                                   ("offer-main-2", 99700)),
+                           probe="accepted")
+        plan = oe.build_checkout_binding(
+            mapping, native_products=_native("offer-main-1", "offer-main-2"),
+            selection={"selection_ref": "sel-1", "selection_revision": 1,
+                       "selected_offer_id": "offer-main-2"})
+        receipt = oe.checkout_readback_receipt(
+            plan, _readback(plan), producer_id="builder-lane-L05",
+            request_input_hash="c" * 64)
+        names = {check["check"]: check for check in receipt["checks"]}
+        assert names["selection.bound_to_existing_page"]["ok"]
+        assert names["checkout.selected_product"]["ok"]
+
+    def test_receipt_identity_is_deterministic(self):
+        plan = self._plan()
+        first = self._receipt(plan)
+        second = self._receipt(plan)
+        assert first["receipt_sha256"] == second["receipt_sha256"]
+        assert first["receipt_id"] == f"s06-checkout-{first['receipt_sha256'][:16]}"

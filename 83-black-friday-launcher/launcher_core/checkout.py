@@ -15,6 +15,11 @@ launch shape (`post_selection` after a Product Selection page,
 `combined_single_offer` for one simple offer). `folded_levels` has three main
 offers and no selection page, and the S79 contract expresses neither; that is
 recorded as a contract gap rather than invented into a mode.
+
+The probe calls the real validator on the `checkout_request` instance. The
+contract's `schema_version` is an ENVELOPE field that sits beside `request` in
+the contract document; `checkout_request` is `additionalProperties: false` and
+does not declare it, so it is never sent inside the request instance.
 """
 
 from __future__ import annotations
@@ -136,6 +141,16 @@ def _main_offers(intake: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [o for o in intake["offers"] if o["role"] == "main"]
 
 
+def _price_unknowns(offer: Dict[str, Any], intake: Dict[str, Any]) -> List[str]:
+    """Contract fields this price choice does not carry. Kept OUTSIDE the
+    price object: ``price_choice`` is ``additionalProperties: false``, so a
+    bookkeeping key inside it is an invalid inner schema field."""
+    names = ["currency_exponent", "billing_type", "approval_status"]
+    if intake.get("test_only"):
+        names = [name for name in names if name != "approval_status"]
+    return names
+
+
 def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any]) -> Dict[str, Any]:
     price = offer["price"]
     choice: Dict[str, Any] = {
@@ -146,12 +161,9 @@ def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any]) -> Dict[str, An
         # contract's own way to say "no native mapping supplied".
         "native_product_id": None,
         "native_price_id": None,
-        "unknown": ["currency_exponent", "billing_type", "approval_status"],
     }
     if intake.get("test_only"):
         choice["approval_status"] = "test_only"
-        choice["unknown"] = [name for name in choice["unknown"]
-                             if name != "approval_status"]
     return choice
 
 
@@ -181,18 +193,20 @@ def order_form_mapping(intake: Dict[str, Any], graph: Dict[str, Any]) -> Dict[st
         supplied["main_offer_id"] = mains[0]["offer_id"]
         supplied["main_price"] = _price_choice(mains[0], intake)
     bump = next((o for o in intake["offers"] if o["role"] == "bump"), None)
+    bump_unresolved: List[str] = []
     if bump is not None:
+        # bump_config is additionalProperties: false, so the launcher's own
+        # bookkeeping (what is still missing) stays OUTSIDE the object.
+        bump_unresolved = [
+            "component_id", "component_version", "applicable_main_offer_ids",
+            "entitlement_ids", "headline", "benefit_explanation",
+            "quantity_policy", "fulfillment_rule_ref",
+        ]
         supplied["bump"] = {
             "offer_id": bump["offer_id"],
             "price": _price_choice(bump, intake),
             "default_selected": False,
             "enabled": True,
-            # Everything else the bump_config requires is not in hand.
-            "unresolved": [
-                "component_id", "component_version", "applicable_main_offer_ids",
-                "entitlement_ids", "headline", "benefit_explanation",
-                "quantity_policy", "fulfillment_rule_ref",
-            ],
         }
     else:
         supplied["bump"] = None  # the contract allows an explicit null
@@ -221,17 +235,35 @@ def order_form_mapping(intake: Dict[str, Any], graph: Dict[str, Any]) -> Dict[st
         "contract_modes": modes,
         "dispatch_adapter": False,
         "route_node": "checkout" if "checkout" in route_roles else None,
+        "journey_mode": journey,
         "checkout_mode": mode,
         "checkout_mode_state": "resolved" if mode else "contract_gap",
         "main_offers": [{"offer_id": o["offer_id"],
-                         "price": _price_choice(o, intake)} for o in mains],
+                         "price": _price_choice(o, intake),
+                         "price_unknown": _price_unknowns(o, intake)}
+                        for o in mains],
+        "upsell_offers": [{"offer_id": o["offer_id"], "role": o["role"],
+                           "price": _price_choice(o, intake),
+                           "price_unknown": _price_unknowns(o, intake)}
+                          for o in _role_offers(intake, "upsell_")],
+        "downsell_offers": [{"offer_id": o["offer_id"], "role": o["role"],
+                             "price": _price_choice(o, intake),
+                             "price_unknown": _price_unknowns(o, intake)}
+                            for o in _role_offers(intake, "downsell_")],
+        "bump_unresolved": bump_unresolved,
         "supplied": supplied,
         "unknown": sorted(unknown),
         "operational_defaults": {k: {"value": v, "reason": reason}
                                  for k, (v, reason) in OPERATIONAL_DEFAULTS.items()},
         "notes": notes,
     }
-    mapping["validator"] = _probe_validator(mapping, supplied)
+    known_gaps = set(unknown)
+    if len(mains) == 1:
+        known_gaps |= set(_price_unknowns(mains[0], intake))
+    if bump is not None:
+        known_gaps |= set(bump_unresolved)
+        known_gaps |= set(_price_unknowns(bump, intake))
+    mapping["validator"] = _probe_validator(mapping, supplied, known_gaps)
     return mapping
 
 
@@ -239,9 +271,28 @@ def order_form_mapping(intake: Dict[str, Any], graph: Dict[str, Any]) -> Dict[st
 ADMINISTRABLE = set(SUPPLIED_FIELDS) | set(OPERATIONAL_DEFAULTS)
 
 
-def _probe_validator(mapping: Dict[str, Any],
-                     supplied: Dict[str, Any]) -> Dict[str, Any]:
-    """Call the real Skill 79 validator. The binding is proved, not assumed."""
+def _role_offers(intake: Dict[str, Any], prefix: str) -> List[Dict[str, Any]]:
+    """Offers whose role starts with ``prefix`` (upsell_1, downsell_1, ...)."""
+    return [o for o in intake["offers"] if str(o["role"]).startswith(prefix)]
+
+
+def _probe_validator(mapping: Dict[str, Any], supplied: Dict[str, Any],
+                     known_gaps: Optional[set] = None) -> Dict[str, Any]:
+    """Call the real Skill 79 validator. The binding is proved, not assumed.
+
+    Probe semantics, each recorded as its own fact:
+
+    - ``control``: the validator accepts the contract's own synthetic
+      known-good request. A rejected control means the instrument is broken,
+      so no reading of this probe can be trusted.
+    - ``probe.result`` ``accepted``: the assembled request passed.
+    - ``probe.result`` ``rejected`` with ``rejected_because``:
+      ``named_unknowns`` every failure is a required field this mapping already
+      names as unknown; ``contract_defect`` at least one failure is a field or
+      type the contract does not define; ``cross_field_rule`` the schema shape
+      is fine and a Skill 79 cross-field rule refused it; ``unclassified`` the
+      classifier is absent.
+    """
     module = None
     try:
         module = _load_validator()
@@ -251,20 +302,70 @@ def _probe_validator(mapping: Dict[str, Any],
     if module is None or not callable(getattr(module, "validate_request", None)):
         return {"module": validator_ref(), "state": "unavailable",
                 "error": "validate_request is absent"}
-    request = {"schema_version": mapping.get("contract_schema_version")}
-    request.update(supplied)
+
+    # Envelope metadata is recorded BESIDE the request, never inside it: the
+    # S79 checkout_request $def is additionalProperties: false and does not
+    # declare schema_version.
+    request = dict(supplied)
     for name, (value, _reason) in OPERATIONAL_DEFAULTS.items():
         request[name] = value
-    probe: Dict[str, Any] = {"module": validator_ref(), "state": "bound"}
+    probe: Dict[str, Any] = {
+        "module": validator_ref(),
+        "state": "bound",
+        "envelope": {
+            "schema_version": mapping.get("contract_schema_version"),
+            "request_ref": "#/$defs/checkout_request",
+        },
+        "request_fields": sorted(request),
+    }
+
+    control = getattr(module, "contract_control", None)
+    if callable(control):
+        try:
+            module.validate_request(control())
+            probe["control"] = {"result": "accepted"}
+        except Exception as exc:
+            probe["control"] = {"result": "rejected", "error": str(exc)}
+    else:
+        probe["control"] = {"result": "unavailable",
+                            "error": "contract_control is absent"}
+
     try:
         module.validate_request(request)
         probe["probe"] = {"result": "accepted"}
+        return probe
     except Exception as exc:  # the contract's own typed validation error
+        explain = getattr(module, "request_failures", None)
+        failures = explain(request) if callable(explain) else []
+        gaps = set(known_gaps or ())
+        unexpected = [f for f in failures
+                      if f.get("kind") != "required"
+                      or f.get("missing") not in gaps]
+        if not callable(explain):
+            because = "unclassified"
+        elif failures and unexpected:
+            because = "contract_defect"
+        elif failures:
+            because = "named_unknowns"
+        else:
+            because = "cross_field_rule"
         probe["probe"] = {
             "result": "rejected",
+            "rejected_because": because,
             "error": str(exc),
-            "meaning": ("the Skill 79 contract is bound and names the facts this "
-                        "launch still does not supply; a rejected probe is "
-                        "recorded, never a substituted value"),
+            "failures": failures,
+            "unexpected": unexpected,
+            "meaning": {
+                "named_unknowns": ("the contract is bound and each refusal names "
+                                   "a fact this launch does not supply yet; "
+                                   "nothing was substituted"),
+                "contract_defect": ("the contract refused a field or type it "
+                                    "does not define; this is a binding defect, "
+                                    "not a missing launch fact"),
+                "cross_field_rule": ("the document shape is valid and a Skill 79 "
+                                     "cross-field rule refused it"),
+                "unclassified": ("the validator refused the request and no "
+                                 "failure classifier is available"),
+            }[because],
         }
-    return probe
+        return probe

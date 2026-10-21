@@ -74,6 +74,7 @@ CLI
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from typing import Any, Dict, List, Optional
@@ -416,6 +417,398 @@ def verify_order_render(plan: dict, rendered: dict) -> dict:
     if not elements:
         check("plan_has_elements", False, "the plan carries no elements")
     return {"ok": not reasons, "checks": checks, "reasons": reasons}
+
+
+# ── Checkout bindings - a Skill 83 mapping installed natively ───────────────
+#
+# The order-element layer above plans one native form. A launcher checkout is
+# a JOURNEY: one simple offer, an offer chosen on a Product Selection page, or
+# several levels folded into the signature page with no selection page. These
+# functions turn the Skill 83 checkout mapping into an installation plan for
+# each shape and read the result back into a receipt. They never create a
+# selection page: the selection surface already exists (a Product Selection
+# page, or the signature page's own level control).
+
+CHECKOUT_BINDING_SCHEMA = "skill6-checkout-binding/1"
+CHECKOUT_RECEIPT_SCHEMA = "skill6-checkout-readback/1"
+
+MODE_TO_JOURNEY = {
+    "combined_single_offer": "single_simple",
+    "post_selection": "multiple_options",
+    None: "folded_levels",
+}
+
+#: A builder-produced receipt is never a verified class. S79's verified
+#: statuses require an independent reviewer; self-approval is not offered.
+UNVERIFIED_RECEIPT_STATUSES = ("authored", "blocked")
+
+
+class CheckoutBindingError(ValueError):
+    """Raised when a journey cannot become an honest native installation: no
+    native catalog readback for a bound offer, a selection mode without a
+    selection, or a selection offered to a mode that has no selection page."""
+
+
+def _native_readback(native_products: Any, offer_id: str, element: str) -> dict:
+    """One offer's native product/price IDs, carried verbatim from the catalog
+    readback. Never inferred from an offer ID and never fabricated."""
+    readback = (native_products or {}).get(offer_id)
+    if not isinstance(readback, dict):
+        raise CheckoutBindingError(
+            f"{element}: no native catalog readback for offer {offer_id!r} - "
+            "a native order element is never installed against an unread "
+            "product (fail closed)")
+    product_id = str(readback.get("native_product_id") or "").strip()
+    price_id = str(readback.get("native_price_id") or "").strip()
+    if not product_id or not price_id:
+        raise CheckoutBindingError(
+            f"{element}: offer {offer_id!r} readback carries no native product "
+            "and price id - refusing to bind an incomplete native mapping")
+    return {"native_product_id": product_id, "native_price_id": price_id}
+
+
+def build_checkout_binding(mapping: dict, *, native_products: dict,
+                           selection: Optional[dict] = None) -> dict:
+    """Build the native installation plan for one Skill 83 checkout mapping.
+
+    ``mapping`` is ``launcher_core.checkout.order_form_mapping(...)`` as JSON.
+    ``native_products`` maps ``offer_id -> {native_product_id, native_price_id}``
+    from a native catalog readback (synthetic in tests). ``selection`` is
+    ``{selection_ref, selection_revision}`` and is required for
+    ``post_selection``, forbidden for every other mode.
+
+    ``native_ready`` is False whenever the Skill 79 probe was not accepted or
+    the contract has no mode for the journey shape; the blockers name why.
+    """
+    if not isinstance(mapping, dict):
+        raise CheckoutBindingError(
+            f"checkout mapping must be a mapping, got {type(mapping).__name__}")
+    mode = mapping.get("checkout_mode")
+    journey = mapping.get("journey_mode") or MODE_TO_JOURNEY.get(mode, "unknown")
+    mains = list(mapping.get("main_offers") or [])
+    if not mains:
+        raise CheckoutBindingError(
+            "checkout mapping carries no main offer - nothing native to install")
+
+    if mode == "post_selection":
+        ref = str((selection or {}).get("selection_ref") or "").strip()
+        try:
+            revision = int((selection or {}).get("selection_revision") or 0)
+        except (TypeError, ValueError):
+            revision = 0
+        selected_offer_id = str((selection or {}).get("selected_offer_id")
+                                or "").strip()
+        if not ref or revision < 1:
+            raise CheckoutBindingError(
+                "post_selection: a selection_ref and selection_revision >= 1 "
+                "are required; a checkout after a selection page without the "
+                "selection it follows is refused")
+        if selected_offer_id not in {o["offer_id"] for o in mains}:
+            raise CheckoutBindingError(
+                f"post_selection: selected_offer_id {selected_offer_id!r} is "
+                "not one of the mapping's main offers; the checkout cannot be "
+                "bound to an offer the selection page did not choose")
+        selection_record = {"selection_ref": ref,
+                            "selection_revision": revision,
+                            "selected_offer_id": selected_offer_id}
+    elif selection is not None:
+        raise CheckoutBindingError(
+            f"checkout_mode {mode!r} has no selection surface; a supplied "
+            "selection would invent a page the journey does not have")
+    else:
+        selection_record = None
+
+    folded = mode is None
+    if mode == "combined_single_offer" and len(mains) != 1:
+        raise CheckoutBindingError(
+            f"combined_single_offer carries {len(mains)} main offers; the mode "
+            "describes exactly one")
+
+    bindings: List[dict] = []
+    for index, offer in enumerate(mains):
+        native = _native_readback(native_products, offer["offer_id"],
+                                  "order_form")
+        price = offer.get("price") or {}
+        bindings.append({
+            "element": KIND_ORDER_FORM,
+            "offer_id": offer["offer_id"],
+            "level_index": index if folded else None,
+            "selected_price": {"amount_minor": price.get("amount_minor"),
+                               "currency": price.get("currency")},
+            "native": native,
+            "binding": {"product_ref": native["native_product_id"],
+                        "binding_source": "caller_supplied"},
+            "price_binding": {"price_ref": native["native_price_id"],
+                              "binding_source": "caller_supplied"},
+        })
+
+    bump_record = (mapping.get("supplied") or {}).get("bump")
+    bump = None
+    if isinstance(bump_record, dict):
+        native = _native_readback(native_products, bump_record.get("offer_id"),
+                                  KIND_ORDER_BUMP)
+        bump = {
+            "element": KIND_ORDER_BUMP,
+            "offer_id": bump_record.get("offer_id"),
+            "native": native,
+            "binding": {"product_ref": native["native_product_id"],
+                        "binding_source": "caller_supplied"},
+            "default_checked": BUMP_DEFAULT_CHECKED,
+        }
+
+    def _optional(kind: str, offers: List[dict]) -> List[dict]:
+        result = []
+        for offer in offers or []:
+            native = _native_readback(native_products, offer["offer_id"], kind)
+            price = offer.get("price") or {}
+            result.append({
+                "element": kind,
+                "offer_id": offer["offer_id"],
+                "role": offer.get("role"),
+                "selected_price": {"amount_minor": price.get("amount_minor"),
+                                   "currency": price.get("currency")},
+                "native": native,
+                "binding": {"product_ref": native["native_product_id"],
+                            "binding_source": "caller_supplied"},
+            })
+        return result
+
+    upsells = _optional(KIND_UPSELL, mapping.get("upsell_offers") or [])
+    downsells = _optional(KIND_DOWNSELL, mapping.get("downsell_offers") or [])
+
+    probe = mapping.get("validator") or {}
+    blocker_list: List[str] = []
+    if mapping.get("checkout_mode_state") != "resolved":
+        blocker_list.append(
+            f"contract_gap: journey {journey!r} has no Skill 79 checkout_mode; "
+            "folded levels keep their signature-page selection and no selection "
+            "page or invented mode is added")
+    if probe.get("state") != "bound":
+        blocker_list.append(
+            f"probe_unavailable: {probe.get('error', 'validator not bound')}")
+    else:
+        if (probe.get("control") or {}).get("result") != "accepted":
+            blocker_list.append(
+                "probe_control_rejected: the binding probe's known-good control "
+                f"was refused ({(probe.get('control') or {}).get('error', '')})")
+        result = (probe.get("probe") or {}).get("result")
+        if result != "accepted":
+            blocker_list.append(
+                "probe_rejected: "
+                f"{(probe.get('probe') or {}).get('rejected_because', 'unknown')}"
+                f" ({(probe.get('probe') or {}).get('error', '')})")
+
+    return {
+        "schema": CHECKOUT_BINDING_SCHEMA,
+        "journey_mode": journey,
+        "checkout_mode": mode,
+        "checkout_mode_state": mapping.get("checkout_mode_state"),
+        "route_node": mapping.get("route_node") or "checkout",
+        "location_id": (mapping.get("supplied") or {}).get("location_id"),
+        "selection": selection_record,
+        "new_selection_page": False,
+        "bindings": bindings,
+        "bump": bump,
+        "upsells": upsells,
+        "downsells": downsells,
+        "installation": {
+            "surface": "native Convert and Flow order form (F5 Payments "
+                       "Quick-Add through ghl_form_builder)",
+            "tiles": [TILE_ORDER_FORM, TILE_COLLECT_PAYMENT],
+            "forms": ["order_form"] if not folded else
+                     [f"order_form[{b['offer_id']}]" for b in bindings],
+            "selection_surface": ("product_selection_page (already planned by "
+                                  "Skill 78)" if mode == "post_selection" else
+                                  "signature_page_level_control" if folded else
+                                  "none"),
+        },
+        "native_ready": not blocker_list,
+        "blockers": blocker_list,
+    }
+
+
+def _canonical_sha256(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def checkout_readback_receipt(plan: dict, readback: dict, *, producer_id: str,
+                              request_input_hash: str) -> dict:
+    """Verify a native installation readback and seal one receipt.
+
+    ``readback`` is read from the installed native surface, never from stored
+    autosave bytes::
+
+        {"native_form_id", "native_page_id",
+         "levels": {offer_id: {"selected_product_ref",
+                               "selected_price_minor", "selected_currency"}},
+         "bump": {"present", "checked", "native_product_ref"},
+         "upsell": {"present", "selected_product_ref", "decline_destination"},
+         "downsell": {...},
+         "success_destination", "decline_destination", "error_destination",
+         "payment": {"pending_state_copy_ref", "failed_state_copy_ref",
+                     "retry_policy", "failed_access_granted"},
+         "access": {"granted_on", "entitlement_ids"}}
+
+    The receipt covers the selected price, upsell/decline paths, pending and
+    failed payment, and access. A failed or pending payment that grants access
+    fails. Status is only ``authored`` or ``blocked``: verification needs an
+    independent reviewer and this layer never self-approves.
+    """
+    checks: List[dict] = []
+    reasons: List[str] = []
+
+    def check(name: str, ok: bool, detail: str) -> None:
+        checks.append({"check": name, "ok": bool(ok), "detail": detail})
+        if not ok:
+            reasons.append(f"{name}: {detail}")
+
+    readback = readback or {}
+    check("native_form_installed", bool(readback.get("native_form_id")),
+          "the installed native form id must be read back")
+    check("native_page_installed", bool(readback.get("native_page_id")),
+          "the installed native page id must be read back")
+
+    levels = readback.get("levels") or {}
+    selected_offer_id = (plan.get("selection") or {}).get("selected_offer_id")
+    if plan.get("checkout_mode") == "post_selection":
+        receipt_bindings = [b for b in plan.get("bindings") or []
+                            if b["offer_id"] == selected_offer_id]
+    else:
+        receipt_bindings = list(plan.get("bindings") or [])
+    for binding in receipt_bindings:
+        offer_id = binding["offer_id"]
+        label = f"level[{offer_id}]" if plan.get("checkout_mode") is None \
+            else "checkout"
+        observed = levels.get(offer_id) or {}
+        price = binding.get("selected_price") or {}
+        check(f"{label}.selected_product",
+              observed.get("selected_product_ref")
+              == binding["native"]["native_product_id"],
+              f"selected product read back as "
+              f"{observed.get('selected_product_ref')!r}; the binding requires "
+              f"{binding['native']['native_product_id']!r}")
+        check(f"{label}.selected_price",
+              observed.get("selected_price_minor") == price.get("amount_minor")
+              and observed.get("selected_currency") == price.get("currency"),
+              f"selected price read back as "
+              f"{observed.get('selected_price_minor')!r} "
+              f"{observed.get('selected_currency')!r}; the mapping states "
+              f"{price.get('amount_minor')!r} {price.get('currency')!r}")
+
+    bump = plan.get("bump")
+    bump_read = readback.get("bump") or {}
+    if bump:
+        check("bump.present", bool(bump_read.get("present")),
+              "the bump offer must be present on the native form")
+        check("bump.default_unchecked", bump_read.get("checked") is False,
+              "the bump's read-back default state must be UNCHECKED "
+              f"(observed: {bump_read.get('checked')!r})")
+        check("bump.selected_product",
+              bump_read.get("native_product_ref")
+              == bump["native"]["native_product_id"],
+              f"bump product read back as "
+              f"{bump_read.get('native_product_ref')!r}; the binding requires "
+              f"{bump['native']['native_product_id']!r}")
+    else:
+        check("bump.not_planned", True, "no bump offer was planned")
+
+    for element, key in ((KIND_UPSELL, "upsell"), (KIND_DOWNSELL, "downsell")):
+        planned = plan.get(element + "s") or []
+        observed = readback.get(key) or {}
+        if not planned:
+            check(f"{key}.not_planned", True, f"no {key} was planned")
+            continue
+        check(f"{key}.present", bool(observed.get("present")),
+              f"the {key} step must be present after checkout")
+        check(f"{key}.selected_product",
+              observed.get("selected_product_ref")
+              == planned[0]["native"]["native_product_id"],
+              f"{key} product read back as "
+              f"{observed.get('selected_product_ref')!r}; the binding requires "
+              f"{planned[0]['native']['native_product_id']!r}")
+    upsell_read = readback.get("upsell") or {}
+    if plan.get("upsells"):
+        check("upsell.decline_path",
+              bool(upsell_read.get("decline_destination")),
+              "an explicit decline destination must be read back")
+    check("checkout.decline_destination",
+          bool(readback.get("decline_destination")),
+          "checkout must carry a decline destination")
+    check("checkout.error_destination",
+          bool(readback.get("error_destination")),
+          "checkout must carry a payment-error destination")
+    check("checkout.success_destination",
+          bool(readback.get("success_destination")),
+          "checkout must carry a success destination")
+
+    payment = readback.get("payment") or {}
+    for field in ("pending_state_copy_ref", "failed_state_copy_ref",
+                  "retry_policy"):
+        check(f"payment.{field}", bool(payment.get(field)),
+              f"{field} must be supplied for pending/failed payment states")
+    check("payment.failed_grants_no_access",
+          payment.get("failed_access_granted") is False,
+          "a failed payment must never grant access")
+    access = readback.get("access") or {}
+    check("access.after_payment_only",
+          access.get("granted_on") in ("payment_succeeded",
+                                       "test_payment_succeeded"),
+          "access is granted only by a succeeded payment; read back "
+          f"{access.get('granted_on')!r}")
+
+    if plan.get("checkout_mode") is None:
+        check("folded.no_new_selection_page",
+              plan.get("new_selection_page") is False
+              and plan.get("selection") is None,
+              "folded levels keep the signature page's own level control; no "
+              "selection page is installed and no selection is invented")
+    if plan.get("checkout_mode") == "post_selection":
+        check("selection.bound_to_existing_page",
+              bool((plan.get("selection") or {}).get("selection_ref"))
+              and plan.get("new_selection_page") is False,
+              "the checkout binds to the existing Product Selection page")
+
+    blockers = list(plan.get("blockers") or []) + reasons
+    body = {
+        "schema": CHECKOUT_RECEIPT_SCHEMA,
+        "contract": "s79/checkout.schema.json#checkout_result",
+        "journey_mode": plan.get("journey_mode"),
+        "checkout_mode": plan.get("checkout_mode"),
+        "request_input_hash": request_input_hash,
+        "producer_id": producer_id,
+        "reviewer_id": None,
+        "independent_review": False,
+        "status": "blocked" if blockers else "authored",
+        "test_record_refs": [f"local-fixture:{_canonical_sha256(plan)[:32]}"],
+        "known_blockers": blockers,
+        "native_form_id": readback.get("native_form_id"),
+        "native_page_id": readback.get("native_page_id"),
+        "native_product_id": (receipt_bindings[0]["native"]["native_product_id"]
+                              if len(receipt_bindings) == 1 else None),
+        "native_price_id": (receipt_bindings[0]["native"]["native_price_id"]
+                            if len(receipt_bindings) == 1 else None),
+        "bump_binding": ({"component_id": bump["offer_id"],
+                          "default_selected": bump["default_checked"],
+                          "native_product_id": bump["native"]["native_product_id"],
+                          "native_price_id": bump["native"]["native_price_id"]}
+                         if bump else None),
+        "expected_success_destination": readback.get("success_destination"),
+        "expected_decline_destination": readback.get("decline_destination"),
+        "expected_error_destination": readback.get("error_destination"),
+        "levels": [{"offer_id": b["offer_id"],
+                    "native_product_id": b["native"]["native_product_id"],
+                    "native_price_id": b["native"]["native_price_id"],
+                    "selected_price": b.get("selected_price")}
+                   for b in receipt_bindings],
+        "checks": checks,
+        "native_ready": not blockers,
+        "artifact_hashes": [_canonical_sha256(plan),
+                            _canonical_sha256(readback)],
+    }
+    body["receipt_sha256"] = _canonical_sha256(body)
+    body["receipt_id"] = f"s06-checkout-{body['receipt_sha256'][:16]}"
+    return body
 
 
 # ── Self-test - no network, no browser ───────────────────────────────────────

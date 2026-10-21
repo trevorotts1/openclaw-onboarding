@@ -272,10 +272,14 @@ class CheckoutMappingTests(unittest.TestCase):
         self.assertNotIn("main_price", mapping["unknown"])
 
     def test_native_ids_are_explicit_null_not_invented(self):
-        price = self.mapping("single_simple")["supplied"]["main_price"]
+        mapping = self.mapping("single_simple")
+        price = mapping["supplied"]["main_price"]
         self.assertIsNone(price["native_product_id"])
         self.assertIsNone(price["native_price_id"])
-        self.assertIn("currency_exponent", price["unknown"])
+        # Bookkeeping stays OUTSIDE the contract object: price_choice is
+        # additionalProperties: false.
+        self.assertNotIn("unknown", price)
+        self.assertIn("currency_exponent", mapping["main_offers"][0]["price_unknown"])
 
     def test_the_real_s79_validator_is_bound_when_its_dependency_is_present(self):
         mapping = self.mapping("single_simple")
@@ -300,6 +304,110 @@ class CheckoutMappingTests(unittest.TestCase):
         mapping = self.mapping("single_simple")
         self.assertIs(mapping["dispatch_adapter"], False)
         self.assertEqual(mapping["route_node"], "checkout")
+
+    def test_every_supplied_field_is_declared_by_the_contract(self):
+        # Runs without jsonschema: catches the invalid-inner-field class
+        # (schema_version inside the request, bookkeeping keys inside a
+        # price_choice or bump_config) by reading the contract's own
+        # additionalProperties: false declarations.
+        contract = checkout.load_contract()
+        defs = contract["$defs"]
+        request_declared = (set(defs["checkout_request"]["properties"])
+                            | set(checkout.OPERATIONAL_DEFAULTS))
+        price_declared = set(defs["price_choice"]["properties"])
+        bump_declared = set(defs["bump_config"]["properties"])
+        payload = base_intake()
+        payload["offers"].append({
+            "offer_id": "bump-1", "name": "Bump", "role": "bump",
+            "price": {"amount_minor": 2700, "currency": "USD"}})
+        normalized = intake.validate(payload)
+        mapping = checkout.order_form_mapping(
+            normalized, route.compile_route(normalized))
+        self.assertTrue(set(mapping["supplied"]) <= request_declared,
+                        set(mapping["supplied"]) - request_declared)
+        self.assertNotIn("schema_version", mapping["supplied"])
+        self.assertTrue(set(mapping["supplied"]["main_price"]) <= price_declared,
+                        set(mapping["supplied"]["main_price"]) - price_declared)
+        bump = mapping["supplied"]["bump"]
+        if bump is not None:
+            self.assertTrue(set(bump) <= bump_declared, set(bump) - bump_declared)
+            self.assertTrue(set(bump["price"]) <= price_declared)
+
+    def _validator(self, mode):
+        mapping = self.mapping(mode)
+        validator = mapping["validator"]
+        if validator["state"] != "bound":
+            self.skipTest("jsonschema is unavailable in this interpreter")
+        return mapping, validator
+
+    def test_the_envelope_schema_version_is_not_sent_inside_the_request(self):
+        # checkout_request is additionalProperties: false and does not declare
+        # schema_version; sending it inside the request rejected every probe
+        # for a reason that was not about the launch's facts.
+        _, validator = self._validator("single_simple")
+        self.assertNotIn("schema_version", validator["request_fields"])
+        self.assertEqual(validator["envelope"]["schema_version"], "0.2-draft")
+
+    def test_the_probe_runs_a_known_good_control(self):
+        # Negative-result contract: prove the instrument can accept before
+        # believing any rejection it reports.
+        _, validator = self._validator("single_simple")
+        self.assertEqual(validator["control"]["result"], "accepted",
+                         validator["control"].get("error"))
+
+    def test_a_complete_request_is_accepted(self):
+        _, _ = self._validator("single_simple")
+        module = checkout._load_validator()
+        probe = checkout._probe_validator(
+            {"contract_schema_version": "0.2-draft"},
+            module.contract_control(), set())
+        self.assertEqual(probe["probe"]["result"], "accepted",
+                         probe["probe"].get("error"))
+
+    def test_a_partial_launch_rejects_only_for_named_unknowns(self):
+        mapping, validator = self._validator("single_simple")
+        probe = validator["probe"]
+        self.assertEqual(probe["result"], "rejected")
+        self.assertEqual(probe["rejected_because"], "named_unknowns")
+        self.assertEqual(probe["unexpected"], [])
+        self.assertTrue(all(f["kind"] == "required" for f in probe["failures"]))
+        named = set(mapping["unknown"]) | {"currency_exponent", "billing_type"}
+        self.assertTrue({f.get("missing") for f in probe["failures"]} <= named)
+
+    def test_an_undeclared_inner_field_is_a_contract_defect(self):
+        mapping, _ = self._validator("single_simple")
+        supplied = dict(mapping["supplied"])
+        supplied["schema_version"] = mapping["contract_schema_version"]
+        probe = checkout._probe_validator(mapping, supplied,
+                                          set(mapping["unknown"]))
+        self.assertEqual(probe["probe"]["rejected_because"], "contract_defect")
+        self.assertIn("additionalProperties",
+                      {f["kind"] for f in probe["probe"]["unexpected"]})
+
+    def test_folded_levels_probe_names_the_contract_gap(self):
+        _, validator = self._validator("folded_levels")
+        probe = validator["probe"]
+        self.assertEqual(probe["rejected_because"], "named_unknowns")
+        self.assertEqual(probe["unexpected"], [])
+        missing = {f.get("missing") for f in probe["failures"]}
+        self.assertLessEqual({"checkout_mode", "main_offer_id", "main_price"},
+                             missing)
+
+    def test_upsell_and_downsell_offers_are_carried_for_native_binding(self):
+        payload = base_intake()
+        payload["offers"] += [
+            {"offer_id": "u1", "name": "Upsell", "role": "upsell_1",
+             "price": {"amount_minor": 19700, "currency": "USD"}},
+            {"offer_id": "d1", "name": "Downsell", "role": "downsell_1",
+             "price": {"amount_minor": 9700, "currency": "USD"}},
+        ]
+        normalized = intake.validate(payload)
+        mapping = checkout.order_form_mapping(
+            normalized, route.compile_route(normalized))
+        self.assertEqual(mapping["journey_mode"], "single_simple")
+        self.assertEqual([o["offer_id"] for o in mapping["upsell_offers"]], ["u1"])
+        self.assertEqual([o["offer_id"] for o in mapping["downsell_offers"]],
+                         ["d1"])
 
 
 class OfferFactTests(unittest.TestCase):
