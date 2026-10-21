@@ -9,8 +9,10 @@
 #
 # Hosts are rediscovered from the Cloudflare zone on EVERY run, so a client whose
 # Command Center appears later is simply picked up by the next run. A host that is
-# not ready yet (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL) is reported in the receipt
-# and retried next run; it does not fail the run. Nothing here depends on a box,
+# not ready yet (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL, TUNNEL_DOWN, CONNECTOR_DOWN,
+# CONNECTOR_PENDING, ORIGIN_NOT_LOOPBACK) is reported in the receipt under
+# "refused" and retried next run; it does not fail the run. A host that is not a
+# Command Center (SKIPPED_NOT_CC) is named under "skipped" and never fails the run. Nothing here depends on a box,
 # the AI Workforce Interview, or .workforce-build-state.json.
 #
 # Dry-run (GET only) is the default. --apply is the only way a write can happen.
@@ -29,7 +31,8 @@
 #   (every provision-council-access.sh variable passes through unchanged)
 #
 # RECEIPTS in the state dir: last-run.json (overwritten) and runs.log (append-only,
-# one line per run) with the time, mode, counts, and every refusal as host:REASON.
+# one line per run) with the time, mode, counts, and every refusal as host:REASON
+# (skipped hosts are counted on the line and named in last-run.json).
 #
 # STEP 1 each run is ensure-cc-access.sh (same mode, so --apply only when this job
 # has --apply): it gives every new client's Command Center host its login-gated
@@ -40,9 +43,10 @@
 # client email yet), DRIFT (existing app differs), a refusal or any failure of this
 # step is reported but NEVER fails the run; the next run retries it.
 #
-# EXIT: 0 when every host is provisioned, already provisioned, or merely not ready
-#       yet (also 0 when another run holds the lock); 1 on a real failure (API
-#       error, FAILED, CONFLICT); 2 usage; 3 credentials or tools missing.
+# EXIT: 0 when every host is provisioned, already provisioned, skipped as not a
+#       Command Center, or merely not ready yet (also 0 when another run holds the
+#       lock); 1 on a real failure (API error, FAILED, CONFLICT); 2 usage; 3
+#       credentials or tools missing.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -133,15 +137,17 @@ ARGS="--all --json"; [ "$MODE" = apply ] && ARGS="$ARGS --apply"
 if jq -e 'type == "array"' "$OUT" >/dev/null 2>&1; then
   RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson rc "$RC" --argjson cc "$CC" '
     . as $r
-    | (reduce ("PROVISIONED","ALREADY_PROVISIONED","PLANNED","NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","CONFLICT","FAILED") as $s
+    | ["NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","TUNNEL_DOWN","CONNECTOR_DOWN","CONNECTOR_PENDING","ORIGIN_NOT_LOOPBACK","CONFLICT","FAILED"] as $refusals
+    | (reduce (["PROVISIONED","ALREADY_PROVISIONED","PLANNED","SKIPPED_NOT_CC"] + $refusals)[] as $s
          ({}; .[$s] = ([$r[] | select(.status == $s)] | length))) as $c
     | ($c.CONFLICT + $c.FAILED) as $bad
     | {timestamp:$t, mode:$m, exit:(if $bad > 0 or $rc != 0 then 1 else 0 end), total:($r | length),
        counts:$c, cc_access:$cc,
-       refused:   [$r[] | select(.status | IN("NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","CONFLICT","FAILED")) | {host:.cc_host, reason:.status, detail:.detail}],
+       refused:   [$r[] | select(.status | IN($refusals[])) | {host:.cc_host, reason:.status, detail:.detail}],
+       skipped:   [$r[] | select(.status == "SKIPPED_NOT_CC") | {host:.cc_host, reason:.status, detail:.detail}],
        provisioned:[$r[] | select(.status == "PROVISIONED") | .cc_host]}' "$OUT")"
   EXIT="$(jq -r .exit <<<"$RECEIPT")"
-  LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) planned=\(.counts.PLANNED) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")$CC_LINE"
+  LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) planned=\(.counts.PLANNED) skipped=\(.counts.SKIPPED_NOT_CC) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")$CC_LINE"
 else
   # No host report at all: API/zone failure, or a missing tool. A real failure.
   EXIT=1; [ "$RC" = 3 ] && EXIT=3
