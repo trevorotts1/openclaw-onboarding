@@ -8,7 +8,8 @@
  * It never picks a model itself: the service resolves the route.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { CliIo } from './dispatcher.js';
 import { CouncilError, invalidInput, usageError, type CouncilErrorCode } from './errors.js';
 
@@ -37,6 +38,8 @@ export function detectHarness(env: NodeJS.ProcessEnv): Harness {
 
 export interface ConveneOpts {
   fetchImpl?: typeof fetch;
+  /** Hard cap on the convene-time public-link probe (default 5000 ms). */
+  probeTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   io: CliIo;
 }
@@ -112,6 +115,141 @@ function resolvePublicOrigin(p: Parsed, env: NodeJS.ProcessEnv): string | null {
     throw invalidInput(`The public origin "${raw}" must be an https origin with no path, query or login, like https://name.example.com.`);
   }
   return url.origin;
+}
+
+const PROBE_TIMEOUT_MS = 5_000;
+
+// A candidate is only ever probed when it is a plain https origin on a real
+// DNS name: never an IP literal, localhost, a path or a login.
+function parseCandidate(raw: string | undefined): URL | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const h = u.hostname;
+    if (u.protocol !== 'https:' || u.pathname !== '/' || u.search || u.hash || u.username || u.password) return null;
+    if (h.startsWith('[') || /^[0-9.]+$/.test(h) || h === 'localhost' || h.endsWith('.localhost') || !h.includes('.')) return null;
+    return u;
+  } catch {
+    return null;
+  }
+}
+
+// Hostname rule (same as wire.sh section 6): a Command Center host
+// <slug>.<domain> maps to the Council host https://<slug>-council.<domain>.
+// Null for anything that is not a real DNS name (IP literal, localhost, none).
+function councilOriginFor(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  try {
+    const h = new URL(raw.includes('://') ? raw : `https://${raw}`).hostname;
+    const dot = h.indexOf('.');
+    if (dot < 1 || h.startsWith('[') || /^[0-9.]+$/.test(h) || h === 'localhost' || h.endsWith('.localhost')) return null;
+    return `https://${h.slice(0, dot)}-council.${h.slice(dot + 1)}`;
+  } catch {
+    return null;
+  }
+}
+
+function envFileValue(path: string, key: string): string | undefined {
+  try {
+    let value: string | undefined;
+    for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+      if (m && m[1] === key) value = m[2].trim().replace(/^(["'])(.*)\1$/, '$2');
+    }
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Candidate Council addresses, best first, re-derived at convene time from
+// every Command Center host source that exists from install time (none of
+// them needs the AI Workforce Interview): the process env, the Command Center
+// app's own .env.local, and the launch state's seeded commandCenterUrl. The
+// address baked in by wire.sh is the last resort. Duplicates are dropped.
+export function conveneCandidates(env: NodeJS.ProcessEnv): string[] {
+  // Files are read only when the env says where they live (the shim always has HOME).
+  const home = env.HOME;
+  const app = env.CC_APP_DIR || (home ? join(home, 'projects', 'command-center') : undefined);
+  const oc =
+    env.OPENCLAW_ROOT ||
+    env.WISE_ELDERS_OPENCLAW_ROOT ||
+    (home ? (existsSync('/data/.openclaw') ? '/data/.openclaw' : join(home, '.openclaw')) : undefined);
+  let stateUrl: string | undefined;
+  try {
+    if (oc) {
+      const st = JSON.parse(readFileSync(join(oc, 'workspace', '.workforce-build-state.json'), 'utf8')) as Record<string, unknown>;
+      if (typeof st.commandCenterUrl === 'string') stateUrl = st.commandCenterUrl;
+    }
+  } catch {
+    /* no launch state yet */
+  }
+  const envFile = app ? join(app, '.env.local') : undefined;
+  const hosts = [
+    env.CC_PUBLIC_URL,
+    env.MC_TENANT_PUBLIC_URL,
+    envFile && envFileValue(envFile, 'CC_PUBLIC_URL'),
+    envFile && envFileValue(envFile, 'MC_TENANT_PUBLIC_URL'),
+    stateUrl,
+  ] as Array<string | undefined>;
+  const out = hosts.map(councilOriginFor).filter((o): o is string => o !== null);
+  if (env.WISE_ELDERS_PUBLIC_CANDIDATE) out.push(env.WISE_ELDERS_PUBLIC_CANDIDATE);
+  return [...new Set(out)];
+}
+
+// Convene-time public link: the candidate address is kept only when its
+// /status answers like a Cloudflare Access login (302/303 whose Location host
+// is a subdomain of cloudflareaccess.com). Never throws, never follows a
+// redirect, never takes longer than timeoutMs. Null means "no link yet".
+export async function probePublicCandidate(
+  raw: string | undefined,
+  fetchImpl: typeof fetch,
+  timeoutMs: number = PROBE_TIMEOUT_MS,
+): Promise<string | null> {
+  const cand = parseCandidate(raw);
+  if (cand === null) return null;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const ac = new AbortController();
+    const limit = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        ac.abort();
+        resolve(null);
+      }, timeoutMs);
+      timer.unref();
+    });
+    const ask = fetchImpl(`${cand.origin}/status`, { method: 'GET', redirect: 'manual', signal: ac.signal }).then(
+      (res) => {
+        if (res.status !== 302 && res.status !== 303) return null;
+        const loc = res.headers.get('location');
+        if (!loc) return null;
+        const to = new URL(loc, cand);
+        return to.protocol === 'https:' && to.hostname.endsWith('.cloudflareaccess.com') ? cand.origin : null;
+      },
+      () => null,
+    );
+    return await Promise.race([ask, limit]);
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+// Best effort: record the verified address in service.json so the box
+// verifier and later runs see it. Atomic, never fatal.
+function persistPublicOrigin(path: string | undefined, origin: string): void {
+  if (!path) return;
+  try {
+    const o = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    if (o.public_origin === origin) return;
+    o.public_origin = origin;
+    const tmp = `${path}.tmp.${process.pid}`;
+    writeFileSync(tmp, `${JSON.stringify(o, null, 2)}\n`);
+    renameSync(tmp, path);
+  } catch {
+    /* link still works for this run */
+  }
 }
 
 // The service speaks its own refusal codes (COMPOSITION_NOT_READY, ...), which
@@ -258,7 +396,14 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
       throw usageError(`--harness must be one of ${CHOOSABLE_HARNESSES.join(', ')}.`);
     }
     const origin = resolveOrigin(p, env);
-    const publicOrigin = resolvePublicOrigin(p, env);
+    let publicOrigin = resolvePublicOrigin(p, env);
+    // No fixed origin: resolve the link now, in parallel with the convene call.
+    const probe =
+      publicOrigin === null
+        ? Promise.all(
+            conveneCandidates(env).map((c) => probePublicCandidate(c, opts.fetchImpl ?? fetch, opts.probeTimeoutMs)),
+          ).then((r) => r.find((o) => o !== null) ?? null)
+        : null;
 
     const body: Record<string, unknown> = {};
     if (sample) body.sample = true;
@@ -278,6 +423,10 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
     if (factsPath !== null) body.fresh_facts = readFreshFacts(factsPath);
 
     const res = await callService(origin, '/api/council/convene', { method: 'POST', body }, opts.fetchImpl ?? fetch);
+    if (probe !== null) {
+      publicOrigin = await probe;
+      if (publicOrigin !== null) persistPublicOrigin(env.WISE_ELDERS_SERVICE_JSON, publicOrigin);
+    }
     const sessionId = String(res.session_id);
     const sessionUrl = `${origin}${typeof res.session_path === 'string' ? res.session_path : `/council/${sessionId}`}`;
     const eventsUrl = `${origin}${typeof res.events_path === 'string' ? res.events_path : `/api/council/sessions/${sessionId}/events`}`;
