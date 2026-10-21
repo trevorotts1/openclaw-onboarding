@@ -1,3 +1,7 @@
+## [v27.1.56]  -  2026-10-21  -  Council (Skill 77) v1.0.35: The client Council link is now fully automatic for every client, new and existing
+
+- In plain English: The client Council link is now fully automatic for every client, new and existing.
+
 ## [v27.1.55]  -  2026-10-20  -  Council (Skill 77) v1.0.34: Clients only get a Council link that actually opens
 
 - In plain English: Clients only get a Council link that actually opens.

@@ -113,6 +113,9 @@ else NPM="$(command -v npm 2>/dev/null || true)"; fi
 jget() { # <file> <key>
   "$NODE" -e 'try{const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[process.argv[2]];if(v!=null)process.stdout.write(String(v))}catch(e){}' "$1" "$2" 2>/dev/null
 }
+envget() { # <env file> <KEY> : the value of one key only (never prints other lines)
+  "$NODE" -e 'try{let r="";for(const l of require("fs").readFileSync(process.argv[1],"utf8").split(/\r?\n/)){const m=l.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);if(m&&m[1]===process.argv[2])r=m[2].trim().replace(/^(["\x27])(.*)\1$/,"$2")}process.stdout.write(r)}catch(e){}' "$1" "$2" 2>/dev/null
+}
 sha_file() {
   "$NODE" -e 'const c=require("crypto"),f=require("fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$1"
 }
@@ -196,16 +199,26 @@ CHANGED=0
 [ "$REL_ID" != "$PREV_REL" ] && CHANGED=1
 
 # ---------------------------------------------- 6. public origin (hostname rule)
+# Every source below is populated at INSTALL time (the Command Center ships first,
+# locked to /interview, so the interview never gates the link): the process env,
+# the Command Center app's own .env.local (written by interview-launch.py), then
+# the launch state's seeded commandCenterUrl. First non-empty wins.
+CC_APP="${CC_APP_DIR:-$HOME/projects/command-center}"
 CC_URL="${CC_PUBLIC_URL:-${MC_TENANT_PUBLIC_URL:-}}"
+if [ -z "$CC_URL" ]; then CC_URL="$(envget "$CC_APP/.env.local" CC_PUBLIC_URL)"; fi
+if [ -z "$CC_URL" ]; then CC_URL="$(envget "$CC_APP/.env.local" MC_TENANT_PUBLIC_URL)"; fi
 if [ -z "$CC_URL" ]; then CC_URL="$(jget "$OC/workspace/.workforce-build-state.json" commandCenterUrl)"; fi
 PUBLIC=""
 if [ -n "$CC_URL" ]; then
   _h="${CC_URL#*://}"; _h="${_h%%/*}"; _h="${_h%%:*}"
   case "$_h" in
-    *.*) PUBLIC="https://${_h%%.*}-council.${_h#*.}" ;;
+    ''|localhost|localhost.*|'['*) ;;          # never localhost or an IPv6 literal
+    *[!0-9.]*) case "$_h" in *.*) PUBLIC="https://${_h%%.*}-council.${_h#*.}" ;; esac ;;  # not an IPv4 literal
   esac
 fi
 if [ -z "$PUBLIC" ]; then PUBLIC="$(jget "$P/service.json" public_origin)"; fi
+# The candidate is always baked into the shim; the CLI re-checks it at convene time.
+CANDIDATE="$PUBLIC"
 # Keep the candidate only if it answers like a Cloudflare Access login (302/303 to
 # *.cloudflareaccess.com); otherwise a dead link would reach clients as chamber_url.
 if [ -n "$PUBLIC" ] && [ "${COUNCIL_PUBLIC_ORIGIN_SKIP_PROBE:-0}" != 1 ]; then
@@ -236,6 +249,9 @@ SHIM="$P/bin/blackceo-council"
 {
   printf '#!/bin/sh\n# %s\n' "$MARK"
   printf 'WISE_ELDERS_SERVICE_ORIGIN=%s; export WISE_ELDERS_SERVICE_ORIGIN\n' "$(sq "$ORIGIN")"
+  printf 'WISE_ELDERS_SERVICE_JSON=%s; export WISE_ELDERS_SERVICE_JSON\n' "$(sq "$P/service.json")"
+  printf 'WISE_ELDERS_OPENCLAW_ROOT=%s; export WISE_ELDERS_OPENCLAW_ROOT\n' "$(sq "$OC")"
+  [ -n "$CANDIDATE" ] && printf 'WISE_ELDERS_PUBLIC_CANDIDATE=%s; export WISE_ELDERS_PUBLIC_CANDIDATE\n' "$(sq "$CANDIDATE")"
   [ -n "$PUBLIC" ] && printf 'WISE_ELDERS_PUBLIC_ORIGIN=%s; export WISE_ELDERS_PUBLIC_ORIGIN\n' "$(sq "$PUBLIC")"
   printf 'exec %s %s "$@"\n' "$(sq "$NODE_EXE")" "$(sq "$REL_PATH/dist/blackceo-council.mjs")"
 } >"$SHIM.tmp.$$" && chmod 755 "$SHIM.tmp.$$" && mv -f "$SHIM.tmp.$$" "$SHIM"
