@@ -1,5 +1,5 @@
 ---
-version: 1.0.35
+version: 1.0.36
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
