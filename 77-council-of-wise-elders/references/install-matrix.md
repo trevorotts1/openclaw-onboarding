@@ -43,6 +43,21 @@ runs from the immutable release as
 | Contabo container (fleet-contabo) | pm2 app `council-of-wise-elders` inside the container | The connector today runs on the host, and a host-side connector cannot reach the container's loopback | Service supported; public access pending a connector inside the container. Verifier reports DEGRADED TUNNEL_NOT_IN_CONTAINER |
 | Standalone, no Command Center | Same as the platform above | Same | The supported shape for any box without a council-capable Command Center; managed visual mode is never promised |
 
+**Dedicated Council tunnel (local-managed Command Center tunnels).** A box whose Command Center tunnel is local-managed (it cannot take an API
+ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
+the operator side instead. File contract: the connector token sits at
+`$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
+token. How it reaches the box is an operator delivery step, never wire.sh,
+which fetches nothing. When the file exists, wire.sh keeps
+`cloudflared tunnel run --token-file <file>` running (Mac LaunchAgent
+`ai.blackceo.council-tunnel`, VPS pm2 app `cloudflared-council`), restarts
+it only when the file changes, never touches the Command Center connector,
+never prints the token, and prints one `COUNCIL_CONNECTOR:` line
+(`READY`, `NOOP`, `DEFERRED_NO_GUI`, or `NOT_READY` with `TOKEN_UNREADABLE`,
+`NO_CLOUDFLARED` or `CONNECTOR_START_FAILED`). With no file it does nothing.
+The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
+when it is not running).
+
 ## COUNCIL_WIRE codes (printed by wire.sh during the roll)
 
 Result lines:
@@ -86,7 +101,8 @@ read-only and checks, in this order:
 | `CLI_SHIM_MISSING` | DEGRADED | `blackceo-council` on PATH, else `council-runtime/bin/blackceo-council` | Re-roll; meanwhile call the absolute path |
 | `PUBLIC_ORIGIN_UNSET` | DEGRADED | `public_origin` in `service.json` is not null | Nothing to run: the address is published automatically within about 30 minutes of the Command Center existing, and the next council carries the link (no re-roll). Until then tell the client the private Council link is still being set up; never send a 127.0.0.1 link. If it is still unset more than an hour after the Command Center existed, report the `COUNCIL_BOX:` line to the operator |
 | `ACCESS_GATE_MISSING` | DEGRADED | `GET <public_origin>/status` is a 3xx to `*.cloudflareaccess.com` | The address did not answer or redirects elsewhere: operator checks the tunnel route and Access app, re-runs `provision-council-access.sh --apply` |
-| `TUNNEL_NOT_IN_CONTAINER` | DEGRADED | VPS only: `pm2 jlist` lists a cloudflared app | A host-side connector cannot reach the container's loopback. Run the connector inside the container as a pm2 app named cloudflared (Contabo: pending) |
+| `TUNNEL_NOT_IN_CONTAINER` | DEGRADED | VPS only: `pm2 jlist` lists a cloudflared app (`cloudflared-council` counts) | A host-side connector cannot reach the container's loopback. Run the connector inside the container as a pm2 app named cloudflared (Contabo: pending) |
+| `COUNCIL_CONNECTOR_DOWN` | DEGRADED | Only when `secrets/tunnel-council.token` exists: `launchctl print gui/<uid>/ai.blackceo.council-tunnel` shows running, or `pm2 jlist` shows `cloudflared-council` online | Re-roll and read the `COUNCIL_CONNECTOR:` line; never restart the Command Center connector to fix it |
 
 ## Precise not-ready states (use these words)
 

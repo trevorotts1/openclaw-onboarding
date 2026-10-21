@@ -12,6 +12,7 @@ TEMPLATE="$SCRIPTS/../launchd/ai.blackceo.council-access-autoprovision.plist.tem
 FAKE="$HERE/fake-cloudflare-api.py"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/council-autoprov-test.XXXXXX")"
 SD="$WORK/state"           # the job's receipt dir
+export COUNCIL_TUNNEL_TOKEN_DIR="$WORK/tunnel-tokens"   # connector tokens: never the real operator store
 FAKE_PID=""; FAILS=0; N=0
 TOKEN="qc-secret-TOKEN-456"
 Z="zerohumanworkforce.com"
@@ -48,7 +49,7 @@ start_fake() {  # <fixture-file> : sets PORT LOG STATE
   local pf="$WORK/port.$RANDOM"
   python3 -I "$FAKE" --fixture "$1" --log "$LOG" --port-file "$pf" --state-out "$STATE" &
   FAKE_PID=$!
-  local i; for i in $(seq 1 100); do [ -s "$pf" ] && break; sleep 0.05; done
+  local i; for i in $(seq 1 400); do [ -s "$pf" ] && break; sleep 0.05; done
   PORT="$(cat "$pf")"
 }
 
@@ -97,11 +98,12 @@ FIXTURE_OFFSET=0 fixture alpha beta gamma | jq -c --arg z "$Z" --arg g "00000000
 start_fake "$WORK/f.json"
 run_job --apply
 check "apply exit 0 though two hosts are not ready" test "$RC" = 0
-check "alpha provisioned: 3 writes" test "$(nonget_count)" = 3
-check "receipt counts: 1 provisioned, 1 not-provisioned, 1 pending-local" test "$(rcpt '[.mode, .counts.PROVISIONED, .counts.NOT_PROVISIONED, .counts.PENDING_LOCAL_TUNNEL, .counts.FAILED]')" = '["apply",1,1,1,0]'
-check "receipt names each refusal with host and reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["beta.'$Z'=NOT_PROVISIONED","gamma.'$Z'=PENDING_LOCAL_TUNNEL"]'
+check "7 writes: alpha 3, gamma 4 (app, dedicated council-gamma tunnel, ingress, DNS)" test "$(nonget_count)" = 7
+check "receipt counts: 1 provisioned, 1 not-provisioned, 1 connector-pending" test "$(rcpt '[.mode, .counts.PROVISIONED, .counts.NOT_PROVISIONED, .counts.CONNECTOR_PENDING, .counts.PENDING_LOCAL_TUNNEL, .counts.FAILED]')" = '["apply",1,1,1,0,0]'
+check "receipt names each refusal with host and reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["beta.'$Z'=NOT_PROVISIONED","gamma.'$Z'=CONNECTOR_PENDING"]'
 check "receipt lists alpha as provisioned" test "$(rcpt '.provisioned')" = '["alpha.'$Z'"]'
-check "runs.log line carries host:REASON" bash -c "tail -n1 '$SD/runs.log' | grep -q 'beta.$Z:NOT_PROVISIONED' && tail -n1 '$SD/runs.log' | grep -q 'gamma.$Z:PENDING_LOCAL_TUNNEL'"
+check "runs.log line carries host:REASON" bash -c "tail -n1 '$SD/runs.log' | grep -q 'beta.$Z:NOT_PROVISIONED' && tail -n1 '$SD/runs.log' | grep -q 'gamma.$Z:CONNECTOR_PENDING'"
+check "gamma's connector token is in the test token dir, mode 600, never in output" bash -c "test \"\$(stat -f %Lp '$COUNCIL_TUNNEL_TOKEN_DIR/council-gamma.token')\" = 600 && ! grep -q 'qc-tunnel-TOKEN' '$OUT' '$SD/last-run.json' '$SD/runs.log'"
 
 echo "== 4. second apply is a no-op"
 cp "$STATE" "$WORK/after1.json"; start_fake "$WORK/after1.json"
@@ -120,6 +122,26 @@ start_fake "$WORK/f.json"
 run_job --apply
 check "delta provisioned automatically, alpha untouched" test "$(rcpt '[.provisioned, .counts.ALREADY_PROVISIONED]')" = '[["delta.'$Z'"],1]'
 check "exactly 3 writes (delta only)" test "$(nonget_count)" = 3
+
+echo "== 5b. new reason codes are carried, named, and never fail the run"
+FIXTURE_OFFSET=30 fixture up down bridge loc | jq -c --arg z "$Z" '
+  (.dns[] | select(.name == ("up."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $u
+  | (.dns[] | select(.name == ("down."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $d
+  | (.dns[] | select(.name == ("bridge."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $b
+  | (.dns[] | select(.name == ("loc."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $l
+  | .dns += [{id:"x-od",type:"CNAME",name:("up-openclawdashboard."+$z),content:($u+".cfargotunnel.com"),proxied:true}]
+  | .tunnels[$u].config.ingress = [{hostname:("up-openclawdashboard."+$z),service:"http://127.0.0.1:18789"}] + .tunnels[$u].config.ingress
+  | .tunnels[$d].status = "down"
+  | .tunnels[$b].config.ingress[0].service = "http://172.16.1.2:4000"
+  | .tunnels[$l] = {source:"local",config:null}' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_job --apply
+check "SKIPPED_NOT_CC + TUNNEL_DOWN + ORIGIN_NOT_LOOPBACK + CONNECTOR_PENDING: exit 0" test "$RC" = 0 -a "$(rcpt '.exit')" = 0
+check "receipt counts every new code" test "$(rcpt '[.counts.PROVISIONED, .counts.SKIPPED_NOT_CC, .counts.TUNNEL_DOWN, .counts.ORIGIN_NOT_LOOPBACK, .counts.CONNECTOR_PENDING]')" = '[1,1,1,1,1]'
+check "receipt names the skipped host with its reason" test "$(rcpt '[.skipped[] | .host + "=" + .reason]')" = '["up-openclawdashboard.'$Z'=SKIPPED_NOT_CC"]'
+check "receipt names each not-ready host with its reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["bridge.'$Z'=ORIGIN_NOT_LOOPBACK","down.'$Z'=TUNNEL_DOWN","loc.'$Z'=CONNECTOR_PENDING"]'
+check "runs.log line carries skipped=1 and each host:REASON" bash -c "l=\"\$(tail -n1 '$SD/runs.log')\"; case \"\$l\" in *skipped=1*down.$Z:TUNNEL_DOWN*) ;; *) exit 1;; esac; case \"\$l\" in *bridge.$Z:ORIGIN_NOT_LOOPBACK*) ;; *) exit 1;; esac; case \"\$l\" in *loc.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac"
+check "writes only for up (3) and loc (4): down and bridge got none" test "$(nonget_count)" = 7
 
 echo "== 6. a real failure exits 1"
 FIXTURE_OFFSET=0 fixture alpha | jq -c --arg z "$Z" '.dns += [{id:"x1",type:"CNAME",name:("alpha-council."+$z),content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"
