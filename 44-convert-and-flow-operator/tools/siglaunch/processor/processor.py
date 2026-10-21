@@ -20,10 +20,29 @@ in-memory stand-ins replaced by the S44-05 durable store:
   visible outstanding work, never silently done;
 - suppression (A21) is the store's authority check: active entitlement
   state, rechecked at dispatch time, never at enqueue time.
+
+Execution ownership and rights reconciliation (audit lane L08):
+
+- grants are claimed per entitlement: the durable right key carries the
+  entitlement identity, so a line with several entitlements records each
+  one instead of collapsing onto the line's first;
+- a replay of an already-processed bundle reconciles the event's expected
+  rights against the book — a right the claim says was granted but the
+  book never recorded is recorded now; a revoked right is never
+  resurrected, and a parked (unknown) right is left visible;
+- every external effect (tag application, fulfillment execution) runs
+  under the store's durable lease with a fencing token rechecked at the
+  moment of the write, so two workers cannot produce two effects;
+- a lost acknowledgement parks the action; it is retried only after a
+  reconciler confirms the remote effect did not happen, and a confirmed
+  remote success is marked done without executing again.
 """
 from __future__ import annotations
 
 import json
+import os
+import threading
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -113,13 +132,54 @@ def _action_key(event: dict, line: dict, action_type: str,
             action_type, version)
 
 
+def _right_key(event: dict, line: dict, action_type: str,
+               entitlement: str) -> tuple:
+    """The durable per-entitlement right key. Entitlement identity is
+    part of the key, so a line carrying several entitlements records one
+    claim per entitlement instead of collapsing onto the line's first."""
+    txn = event.get("native_transaction_ref") or event["native_order_ref"]
+    return (event["tenant_id"], txn, line["native_line_ref"],
+            action_type, entitlement)
+
+
 class DurableProcessor:
     def __init__(self, store, tag_applier: Optional[Callable] = None,
-                 purchase_tag: Optional[str] = None, version: str = "v1"):
+                 purchase_tag: Optional[str] = None, version: str = "v1",
+                 holder: Optional[str] = None,
+                 tag_reconciler: Optional[Callable] = None,
+                 lease_ttl_seconds: float = 60.0):
         self.store = store
         self.tag_applier = tag_applier
         self.purchase_tag = purchase_tag  # verbatim Phase-A string
         self.version = version
+        # Execution ownership: every side effect runs under a durable
+        # lease, and the fencing token it carries is rechecked at the
+        # moment of the write. The holder identity is per instance, so a
+        # second worker (thread, process or box) can never act as us.
+        self.holder = holder or (
+            f"processor-{os.getpid()}-{uuid.uuid4().hex[:12]}")
+        self.tag_reconciler = tag_reconciler
+        self.lease_ttl_seconds = lease_ttl_seconds
+
+    # ── execution ownership (durable lease + fencing) ───────────────────
+    def _holder(self) -> str:
+        """Per-thread holder identity. A lease held by one thread is
+        never silently renewed for another thread of the same processor,
+        so same-process concurrency is excluded exactly like another
+        box's worker would be."""
+        return f"{self.holder}:t{threading.get_ident()}"
+
+    def _lease(self, tenant: str, resource: str):
+        return self.store.acquire_lease(
+            tenant, resource, self._holder(),
+            ttl_seconds=self.lease_ttl_seconds)
+
+    def _still_owner(self, tenant: str, resource: str, token: int) -> bool:
+        return self.store.check_fencing(tenant, resource, self._holder(),
+                                        token)
+
+    def _release(self, tenant: str, resource: str, token: int) -> None:
+        self.store.release_lease(tenant, resource, self._holder(), token)
 
     def process(self, event: dict,
                 contact_ref: Optional[str] = None) -> dict:
@@ -129,29 +189,59 @@ class DurableProcessor:
         events ingest accepted, so a redelivery can never reach it."""
         validate_event(event)
         tenant = event["tenant_id"]
+        txn = event.get("native_transaction_ref") or event["native_order_ref"]
         if event["event_type"] == "refund_observed" or \
                 event["payment_status"] in ("refunded",
                                              "partially_refunded"):
-            for line in event["line_items"]:
-                for ent in line["entitlement_ids"]:
-                    self.store.revoke_entitlement(
-                        tenant, line["native_line_ref"], ent)
-            return {"result": "refund_applied", "actions_created": 0}
+            return self._apply_refund(event, tenant, txn)
         if event["payment_status"] != "succeeded":
             return {"result": f"no_grant:{event['payment_status']}",
                     "actions_created": 0}
         created = 0
+        reconciled = 0
+        pending = 0
+        unresolved_lines = set()
         for line in event["line_items"]:
-            for ent in line["entitlement_ids"]:
-                key = _action_key(event, line, "grant_access",
-                                  self.version)
-                if self.store.claim_action(
-                        key, {"entitlement": ent}) is None:
-                    self.store.grant_entitlement(
-                        tenant, line["native_line_ref"], ent)
-                    self.store.mark_action(key, "done",
-                                           evidence_ref=event["evidence_ref"])
+            line_ref = line["native_line_ref"]
+            expected = list(line["entitlement_ids"])
+            for ent in expected:
+                rkey = _right_key(event, line, "grant_access", ent)
+                record = self.store.claim_right(rkey)
+                if record is None:
+                    # first owner of this right: record it
+                    self.store.grant_entitlement(tenant, line_ref, ent)
+                    self.store.mark_right(
+                        rkey, "done", evidence_ref=event["evidence_ref"])
                     created += 1
+                    continue
+                if record["state"] == "unknown":
+                    # an earlier grant outcome is unresolved: visible,
+                    # never blindly repeated
+                    pending += 1
+                    unresolved_lines.add(line_ref)
+                    continue
+                # already-processed claim: reconcile the expected rights
+                # against what the book actually records (a crash between
+                # claim and grant leaves this bundle incomplete)
+                if self.store.entitlement_state(tenant, line_ref, ent) is None:
+                    self.store.grant_entitlement(tenant, line_ref, ent)
+                    reconciled += 1
+                # a recorded 'revoked' row is a refund's outcome and is
+                # never resurrected by a replay of the purchase event
+                if record["state"] == "claimed":
+                    self.store.mark_right(
+                        rkey, "done", evidence_ref=event["evidence_ref"])
+            # line-level grant action (unchanged surface: one row per
+            # line, done once every expected right is recorded)
+            gkey = _action_key(event, line, "grant_access", self.version)
+            if self.store.claim_action(
+                    gkey, {"entitlements": expected}) is None:
+                created += 1
+            if line_ref not in unresolved_lines:
+                current = self.store.get_action(gkey)
+                if current is not None and current["state"] == "claimed":
+                    self.store.mark_action(
+                        gkey, "done", evidence_ref=event["evidence_ref"])
             fkey = _action_key(event, line, "initiate_fulfillment",
                                self.version)
             if self.store.claim_action(
@@ -159,44 +249,169 @@ class DurableProcessor:
                 created += 1  # stays 'claimed' for the fulfillment worker
             if contact_ref:
                 self.store.add_buyer(tenant, event["launch_id"],
-                                     contact_ref, line["native_line_ref"])
+                                     contact_ref, line_ref)
         # verified-purchase tag: the handler workflow's entry seam
+        tag_state = None
         if self.purchase_tag:
-            tkey = (tenant, event.get("native_transaction_ref")
-                    or event["native_order_ref"], "*",
+            tkey = (tenant, txn, "*",
                     "apply_verified_purchase_tag", self.version)
-            if self.store.claim_action(
-                    tkey, {"tag": self.purchase_tag}) is None:
+            record = self.store.claim_action(
+                tkey, {"tag": self.purchase_tag})
+            if record is None:
                 created += 1
                 if self.tag_applier is not None and contact_ref:
-                    try:
-                        self.tag_applier(contact_ref, self.purchase_tag)
-                        self.store.mark_action(
-                            tkey, "done",
-                            evidence_ref=event["evidence_ref"])
-                    except Exception:
-                        # outcome unknown: park, never claim success
-                        self.store.mark_action(tkey, "unknown")
-        return {"result": "processed", "actions_created": created}
+                    tag_state = self._run_tag_effect(tkey, event,
+                                                     contact_ref)
+                else:
+                    tag_state = "claimed"  # visible outstanding work
+            else:
+                tag_state = record["state"]
+                if tag_state == "claimed":
+                    # incomplete bundle: a worker claimed the effect and
+                    # never recorded an outcome. Finish it under the
+                    # lease; a live owner's lease makes this a no-op.
+                    if self.tag_applier is not None and contact_ref:
+                        tag_state = self._run_tag_effect(
+                            tkey, event, contact_ref)
+                elif tag_state == "unknown":
+                    # lost acknowledgement: reconcile remote state before
+                    # any retry
+                    tag_state = self._reconcile_tag(tkey, event,
+                                                    contact_ref)
+        return {"result": "processed", "actions_created": created,
+                "rights_reconciled": reconciled, "pending_rights": pending,
+                "tag_state": tag_state}
 
-    def fulfill(self, key: tuple, executor: Callable[[dict], None]) -> str:
-        """Run one claimed fulfillment action. Executor success marks it
-        done; an exception parks it as unknown (visible review), never a
-        silent retry."""
+    def _apply_refund(self, event: dict, tenant: str, txn: str) -> dict:
+        """Line-scoped revocation. Only the entitlements named on the
+        refund's lines are removed; every other right is untouched. Each
+        entitlement carries a durable revoke claim, so a replay completes
+        an interrupted refund without repeating an unresolved one."""
+        revoked = 0
+        pending = 0
+        for line in event["line_items"]:
+            line_ref = line["native_line_ref"]
+            for ent in line["entitlement_ids"]:
+                rkey = (tenant, txn, line_ref, "revoke_access", ent)
+                record = self.store.claim_right(rkey)
+                if record is not None and record["state"] == "unknown":
+                    pending += 1
+                    continue
+                self.store.revoke_entitlement(tenant, line_ref, ent)
+                self.store.mark_right(
+                    rkey, "done", evidence_ref=event.get("evidence_ref"))
+                revoked += 1
+        return {"result": "refund_applied", "actions_created": 0,
+                "rights_revoked": revoked, "pending_rights": pending}
+
+    def _run_tag_effect(self, key: tuple, event: dict,
+                        contact_ref: str) -> str:
+        """Apply the verified-purchase tag as the leased owner. The
+        action state is re-read under the lease, so a worker that lost
+        the race — or resumed after the owner already parked or
+        completed the effect — never repeats it."""
+        tenant, txn = event["tenant_id"], key[1]
+        resource = f"effect:apply_verified_purchase_tag:{txn}"
+        token = self._lease(tenant, resource)
+        if token is None:
+            return "held_elsewhere"
+        try:
+            if not self._still_owner(tenant, resource, token):
+                return "fenced_out"
+            current = self.store.get_action(key)
+            if current is None:
+                return "not_found"
+            if current["state"] == "done":
+                return "already_done"
+            if current["state"] == "unknown":
+                return "parked_unknown"
+            try:
+                self.tag_applier(contact_ref, self.purchase_tag)
+            except Exception:
+                # outcome unknown: park, never claim success
+                self.store.mark_action(key, "unknown")
+                return "parked_unknown"
+            self.store.mark_action(key, "done",
+                                   evidence_ref=event["evidence_ref"])
+            return "done"
+        finally:
+            self._release(tenant, resource, token)
+
+    def _reconcile_tag(self, key: tuple, event: dict,
+                       contact_ref: Optional[str]) -> str:
+        """Reconcile a parked tag action against remote state BEFORE any
+        retry: a confirmed remote success is marked done without a second
+        application; a confirmed absence reopens exactly one fenced
+        retry; a failed or absent reconciliation leaves the park
+        visible."""
+        if self.tag_reconciler is None or not contact_ref:
+            return "unknown"
+        try:
+            present = self.tag_reconciler(contact_ref, self.purchase_tag)
+        except Exception:
+            return "unknown"
+        if present:
+            self.store.mark_action(key, "done",
+                                   evidence_ref=event["evidence_ref"])
+            return "reconciled_done"
+        if not self.store.reopen_action(key):
+            current = self.store.get_action(key)
+            return current["state"] if current else "not_found"
+        return self._run_tag_effect(key, event, contact_ref)
+
+    def fulfill(self, key: tuple, executor: Callable[[dict], None],
+                reconcile: Optional[Callable[[dict], bool]] = None) -> str:
+        """Run one claimed fulfillment action as the leased owner.
+
+        Executor success marks it done; an exception parks it as unknown
+        (visible review), never a silent retry. A parked action is only
+        retried after `reconcile(payload)` confirms the remote effect did
+        NOT happen (exactly one fenced retry); a confirmed success marks
+        it done without executing again. Without a reconciler the park
+        stands."""
         action = self.store.get_action(key)
         if action is None:
             return "not_found"
         if action["state"] == "done":
             return "already_done"
         if action["state"] == "unknown":
-            return "parked_unknown"
+            if reconcile is None:
+                return "parked_unknown"
+            try:
+                remote_done = reconcile(action["payload"])
+            except Exception:
+                return "parked_unknown"
+            if remote_done:
+                self.store.mark_action(
+                    key, "done", evidence_ref="reconciled/remote-confirmed")
+                return "reconciled_done"
+            if not self.store.reopen_action(key):
+                current = self.store.get_action(key)
+                return current["state"] if current else "not_found"
+        tenant, txn_ref, line_ref, action_type, _version = key
+        resource = f"effect:{action_type}:{txn_ref}:{line_ref}"
+        token = self._lease(tenant, resource)
+        if token is None:
+            return "held_elsewhere"
         try:
-            executor(action["payload"])
-        except Exception:
-            self.store.mark_action(key, "unknown")
-            return "parked_unknown"
-        self.store.mark_action(key, "done")
-        return "done"
+            if not self._still_owner(tenant, resource, token):
+                return "fenced_out"
+            current = self.store.get_action(key)
+            if current is None:
+                return "not_found"
+            if current["state"] == "done":
+                return "already_done"
+            if current["state"] == "unknown":
+                return "parked_unknown"
+            try:
+                executor(current["payload"])
+            except Exception:
+                self.store.mark_action(key, "unknown")
+                return "parked_unknown"
+            self.store.mark_action(key, "done")
+            return "done"
+        finally:
+            self._release(tenant, resource, token)
 
     def is_suppressed(self, tenant: str, launch: str,
                       contact_ref: str) -> bool:
