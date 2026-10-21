@@ -200,5 +200,30 @@ printf '#!/bin/sh\necho "[]"\n' > "$F11/bin/pm2"
 run "$F11"
 expect "pm2 app absent -> NOT_READY SERVICE_NOT_REGISTERED" "COUNCIL_BOX: NOT_READY SERVICE_NOT_REGISTERED TUNNEL_NOT_IN_CONTAINER" 1
 
+# 14. Council connector (token file present; the verifier only test -f's it)
+mkdir -p "$F11/root/secrets"; printf 'x' > "$F11/root/secrets/tunnel-council.token"; chmod 600 "$F11/root/secrets/tunnel-council.token"
+printf '#!/bin/sh\necho '"'"'[{"name":"council-of-wise-elders","pm2_env":{"status":"online"}},{"name":"cloudflared-council","pm2_env":{"status":"online"}}]'"'"'\n' > "$F11/bin/pm2"
+run "$F11"
+expect "pm2 + cloudflared-council online -> READY (relieves TUNNEL_NOT_IN_CONTAINER)" "COUNCIL_BOX: READY" 0
+case "$OUT" in *"PASS tunnel: pm2 jlist lists cloudflared-council"*"PASS council-connector"*) pass "tunnel and council-connector lines name cloudflared-council" ;; *) fail "tunnel and council-connector lines name cloudflared-council"; echo "$OUT" ;; esac
+printf '#!/bin/sh\necho '"'"'[{"name":"council-of-wise-elders","pm2_env":{"status":"online"}},{"name":"cloudflared","pm2_env":{"status":"online"}}]'"'"'\n' > "$F11/bin/pm2"
+run "$F11"
+expect "token present, cloudflared-council absent -> DEGRADED COUNCIL_CONNECTOR_DOWN" "COUNCIL_BOX: DEGRADED COUNCIL_CONNECTOR_DOWN" 0
+printf '#!/bin/sh\necho '"'"'[{"name":"council-of-wise-elders","pm2_env":{"status":"online"}},{"name":"cloudflared-council","pm2_env":{"status":"stopped"}}]'"'"'\n' > "$F11/bin/pm2"
+run "$F11"
+expect "cloudflared-council stopped -> DEGRADED TUNNEL_NOT_IN_CONTAINER COUNCIL_CONNECTOR_DOWN" "COUNCIL_BOX: DEGRADED TUNNEL_NOT_IN_CONTAINER COUNCIL_CONNECTOR_DOWN" 0
+
+# 15. launchd: service running, Council connector label checked separately
+mkdir -p "$F10/root/secrets"; printf 'x' > "$F10/root/secrets/tunnel-council.token"
+printf '#!/bin/sh\ncase "$2" in */ai.blackceo.council-tunnel) echo "state = waiting" ;; *) echo "state = running" ;; esac\n' > "$F10/bin/launchctl"
+run "$F10"
+expect "launchd service up, council-tunnel not running -> DEGRADED COUNCIL_CONNECTOR_DOWN" "COUNCIL_BOX: DEGRADED COUNCIL_CONNECTOR_DOWN" 0
+printf '#!/bin/sh\necho "state = running"\n' > "$F10/bin/launchctl"
+run "$F10"
+expect "launchd service and council-tunnel running -> READY" "COUNCIL_BOX: READY" 0
+rm -rf "$F10/root/secrets"
+run "$F10"
+case "$OUT" in *"SKIP council-connector"*) pass "absent token file -> council-connector SKIP" ;; *) fail "absent token file -> council-connector SKIP"; echo "$OUT" ;; esac
+
 if [ "$FAILS" -eq 0 ]; then echo "verify-council-box tests: PASS"; exit 0; fi
 echo "verify-council-box tests: $FAILS FAILED"; exit 1
