@@ -83,6 +83,27 @@ Never invented: discounts, bonuses, dates, guarantees, or outcomes the offer doe
 - CampaignBuilder writes **drafts** only; `CAF_DRAFT_ONLY` keeps triggers inactive. Nothing goes live from this lane.
 - Pre-write snapshots are mandatory before `update` / `patch-email` / `patch-trigger`.
 
+## RUNTIME OWNER, ENROLLMENT AND COMPLETION PROOF
+Exactly one reply owner answers this thread.
+
+- **`openclaw_inbound` (default, full Skill 38 route).** The existing OpenClaw inbound path owns replies; Skill 38's channel playbooks and the launch playbooks govern content. The GHL Conversation AI node is not a second responder.
+- **`native_ghl` (narrower mode).** Allowed only with an operator-approved prompt/knowledge translation: `translation_approved: true` plus a named playbook and offer-knowledge version. No approval, no equivalent proof.
+
+Both routes require:
+
+| Requirement | Rule |
+|---|---|
+| Enrollment | launch, location and contact all enrolled, with matching launch and location ids |
+| State | namespaced `launch-ai/<tenant>/<location>/<launch>/` — never shared across launches |
+| Channel consent | `granted: true` per planned channel (`sms`, `chat`), with source and captured-at; no consent for a channel not in the plan |
+| Human fallback | bounded (`max_turns` 1–10, `timeout_minutes` 1–1440), named owner, triggers, closure path |
+| Offer knowledge | versioned per offer, `update_rule: operator_published_only`, `unknown_policy: escalate`, `invention_guard: true` |
+| Evidence | saved graph readback **and** registered bot receipt for the exact tenant, location, workflow, launch revision and playbook |
+
+A registry hygiene pass (row exists, files exist) never satisfies requested-bot completion. Contract and offline gate: `38-conversational-ai-system/launch/conversation-runtime-contract.md`, `qc-launch-conversation-ai.sh`.
+
+Staging buyer-journey and channel tests run only under a separately authorized account. Without one, record `result: "blocked"` with the precise reason; never bypass.
+
 ## QUALITY GATE
 ```bash
 caf workflows get <workflow-id> --json
@@ -92,6 +113,7 @@ qc-built-workflow.sh <workflow-id> --conversational [--fab]
 - **WF-19 is a hard gate:** `--conversational` runs Skill 38's `qc-trinity-registry.sh`. Skill 38's registry must hold the playbook row **and** the Build-with-AI prompt. A playbook with no prompt (or an orphan prompt) fails WF-19.
 - `--fab` adds the FAB-QC overlay, gate ≥ 8.5.
 - Read-back must show: all three branches, the correct agent id, the keyword node, and the re-entry tag.
+- Run `bash 38-conversational-ai-system/launch/qc-launch-conversation-ai.sh --bundle <evidence.json>` for the exact target. Global registry evidence alone fails by design.
 
 ## FLEXIBILITY
 Overridable at every level: channels, keyword, nudge timing and copy, whether a timed-out contact is nudged at all, and whether the bot books, sends checkout, or only answers.
