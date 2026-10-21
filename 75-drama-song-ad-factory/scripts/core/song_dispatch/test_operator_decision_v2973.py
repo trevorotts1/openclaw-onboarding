@@ -278,17 +278,34 @@ def main():
           % (measured["measured_evidence_digest"][:8], fresh[:8]))
     check("evidence change is detectable", fresh != measured["measured_evidence_digest"])
 
-    # 5. no decision file + a produced take still REFUSES the stage (unchanged).
+    # 5. no decision file + a produced take: the stage WAITS ON THE CLIENT
+    # (order 2026-10-21: the song-failure verdict belongs to the client). It
+    # never regenerates and never loops; the measured boundary stays shut.
     run5 = new_run(tmp)
     F.music_stage(run5, OWNER, "start")
     r5 = F.music_stage(run5, OWNER, "complete", qc=_qc())
     print("  no decision -> outcome=%r code=%r state=%r"
           % (r5["outcome"], r5["reason_code"], (r5["row"] or {}).get("state")))
-    check("no decision still blocks",
-          r5["outcome"] == "rejected" and (r5["row"] or {}).get("state") == "FAILED_BLOCKED", r5)
-    check("the block keeps ACCEPTANCE_NOT_PROVEN",
-          "ACCEPTANCE_NOT_PROVEN" in (r5["reason_code"] or "")
-          or (r5["row"] or {}).get("reason", "").find("ACCEPTANCE") >= 0, r5)
+    check("no decision waits on the client fork",
+          r5["outcome"] == "waiting"
+          and r5["reason_code"] == "SONG_FAILURE_AWAITING_CLIENT"
+          and (r5["row"] or {}).get("state") == "WAITING_APPROVAL", r5)
+    check("the wait carries the one fork question",
+          "redo all of them" in (r5["detail"] or "")
+          and "generate three new options" in (r5["detail"] or ""), r5.get("detail"))
+    from song_choices import song_choices as SC      # noqa: E402,PLC0415
+    check("no fork decision is recorded yet", SC.fork_decision(run5) is None)
+    # the client's answer is authoritative: a recorded redo reopens the music
+    # row for a round the CLIENT asked for -- it never writes a PASS.
+    SC.record_fork_decision(run5, "redo all of them", who="client")
+    r5b = F.music_stage(run5, OWNER, "complete", qc=_qc())
+    print("  client redo -> outcome=%r code=%r state=%r"
+          % (r5b["outcome"], r5b["reason_code"], (r5b["row"] or {}).get("state")))
+    check("client redo reopens the music row",
+          r5b["outcome"] == "ok" and r5b["reason_code"] == "music-client-redo"
+          and (r5b["row"] or {}).get("state") == "RUNNING", r5b)
+    chk5 = SD.acceptance_from_run(run5)
+    check("the measured boundary is still shut", not chk5.get("allowed"), chk5)
 
     print("checks: %d, failures: %d" % (len(checks), len(fails)))
     for f in fails:

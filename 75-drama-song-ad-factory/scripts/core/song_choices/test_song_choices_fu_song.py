@@ -215,22 +215,68 @@ def test_yes_path_three_labelled_files_titles_readme_and_parallel():
         assert "Reply 1, 2 or 3 to pick your song." in msg
 
 
-def test_failed_version_regenerated_once_then_reported():
+def test_failed_version_is_presented_and_never_regenerated():
+    """ORDER 2026-10-21: the song-failure verdict belongs to the client.
+
+    A take the judge fails is NOT regenerated (no second call, no loop); it is
+    returned with the judge's named concerns, presented for listening, and the
+    client is asked the ONE fork. Its paid file is preserved.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         res, calls, _ = _pipeline(tmp, bad_first=("warm-live-band",), bad_always=("cinematic-strings",))
         by = {r["variant"]["id"]: r for r in res}
-        assert calls["warm-live-band"] == 2 and by["warm-live-band"]["status"] != "FAILED"
-        assert calls["cinematic-strings"] == 2 and by["cinematic-strings"]["status"] == "FAILED"
+        # NO autonomous retry: one generation per variant, always.
+        assert calls["warm-live-band"] == 1 and calls["cinematic-strings"] == 1, calls
+        assert by["warm-live-band"]["status"] == "FAILED"
+        assert by["warm-live-band"]["concerns"], by["warm-live-band"]
+        assert by["warm-live-band"]["take"] is None          # never offered for a pick
+        assert by["warm-live-band"]["heard"]["audio_path"]   # but kept for listening
+        assert by["polished-modern"]["status"] != "FAILED"
         msg = SC.deliver_choices(res, os.path.join(tmp, "D"), os.path.join(tmp, "run"))
-        assert "Reply 1 or 2 to pick" in msg and "Version 3 did not pass" in msg
-        assert len([f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.endswith(".mp3")]) == 2
-        all_bad = [dict(r, status="FAILED", take=None) for r in res]
+        assert "Let me" not in msg and "second try" not in msg
+        assert SC.FAILURE_FORK in msg
+        assert "You can still keep one of them if it sounds right to you." in msg
+        assert "you may listen and decide one of them is exactly what you want" not in msg
+        files = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.endswith(".mp3"))
+        listen = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES", SC.FOR_LISTENING))
+                        if f.endswith(".mp3"))
+        # the offer surface carries accepted takes only; failed ones are in
+        # their own listening folder, labelled NOT PASSED.
+        assert len(files) == 1 and "NOT PASSED" not in files[0], files
+        assert len(listen) == 2 and all("NOT PASSED" in f for f in listen), listen
+        st = SC._state(os.path.join(tmp, "run"))
+        assert list(st["offered"]) == ["1"], st["offered"]  # only the passing take is offerable
+        assert st["failure_fork"] is True
+        # the client's answer is authoritative and recorded in the run state
+        rec = SC.record_fork_decision(os.path.join(tmp, "run"), "redo all of them", who="client")
+        assert rec["answer"] == "redo_all"
+        assert SC.fork_decision(os.path.join(tmp, "run"))["answer"] == "redo_all"
+        second = SC.record_fork_decision(os.path.join(tmp, "run"), "generate three new options")
+        assert second["answer"] == "new_three"
+        assert [d["answer"] for d in json.load(open(SC._path(os.path.join(tmp, "run"), SC.FORK_FILE)))["decisions"]] \
+            == ["redo_all", "new_three"]
         try:
-            SC.deliver_choices(all_bad, os.path.join(tmp, "D2"), os.path.join(tmp, "run"))
+            SC.record_fork_decision(os.path.join(tmp, "run"), "do whatever you think")
         except SC.ChoiceError:
             pass
         else:
-            raise AssertionError("zero good versions must fail closed")
+            raise AssertionError("an answer outside the three branches must be refused, never guessed")
+
+def test_all_failed_versions_are_presented_with_the_one_fork():
+    with tempfile.TemporaryDirectory() as tmp:
+        res, calls, _ = _pipeline(tmp, bad_always=("polished-modern", "warm-live-band", "cinematic-strings"))
+        assert sorted(calls.values()) == [1, 1, 1], calls
+        msg = SC.deliver_choices(res, os.path.join(tmp, "D"), os.path.join(tmp, "run"))
+        assert SC.FAILURE_FORK in msg and "Version" in msg
+        files = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.endswith(".mp3"))
+        listen = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES", SC.FOR_LISTENING))
+                        if f.endswith(".mp3"))
+        assert files == [] and len(listen) == 3, (files, listen)
+        assert all("NOT PASSED" in f for f in listen), listen
+        st = SC._state(os.path.join(tmp, "run"))
+        assert st["offered"] == {}          # nothing is offered for a pick
+        # every later stage stays held until the client answers
+        assert SC.refusal(os.path.join(tmp, "run")) is not None
 
 
 def _stage_run(tmp, music_done=True):

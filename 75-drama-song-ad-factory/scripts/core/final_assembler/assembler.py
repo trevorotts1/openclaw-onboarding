@@ -1366,6 +1366,10 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             return _fail("MASTER_LENGTH_BAD", next_action=str(exc), evidence={})
         mc = master_length.check_master(chosen, plan["total_dur"])
         ec = plan.get("endcard_start_s")
+        if mc.get("warning"):
+            # Order 2026-10-21: an overshoot is a FLAG, never a stop; the
+            # client decides whether to redo. The named code reaches the receipt.
+            _loud("warn", mc["warning"].get("code"), mc["warning"].get("detail"))
         if mc["outcome"] != "ok" or (
                 ec is not None and ec >= mp["end_card_end_s"]):
             return _fail(mc["reason_code"] if mc["outcome"] != "ok"
@@ -1548,6 +1552,8 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      evidence=evid)
     if chosen is not None:  # I4: the measured file, not only the plan
         mc = master_length.check_master(chosen, vdur)
+        if mc.get("warning"):
+            _loud("warn", mc["warning"].get("code"), mc["warning"].get("detail"))
         if mc["outcome"] != "ok":
             return _fail(mc["reason_code"], next_action=mc["detail"],
                          evidence=dict(evid, master=mc))

@@ -188,7 +188,7 @@ schema violation all refuse the stage (exit 5).
 | Song QC | 17.2 | `song`, `lyrics` (critical) | all required lyrics present, no omitted sales lines, no meaning-damaging ad-libs, understandable + correct product pronunciation, singer/persona continuity, genre/style and tempo continuity, no clipping, no broken transitions, sufficient master duration |
 | Storyboard QC | 17.3 | `storyboard` | lyric match, emotional expression, character reference correctness, wardrobe, location, product timing, composition, visual variety, generatability, adjacent-shot continuity |
 | Video QC | 17.4 | `video`, `continuity` | MULTIPLE frames inspected (not frame zero only): correct character, face/body continuity, wardrobe, location, product appearance, physical plausibility, motion coherence, camera intent, no unwanted text, no warped hands/faces/objects, no temporal artifacts, lyric match, start/end continuity, no accidental lip movement in non-speaking shots |
-| Final edit QC | 17.5 | `final_edit`, `export`, `timeline`, `audio`, `text_product` (critical) | audio/video duration vs profile, master no longer than chosen length minus 2 seconds (`core/master_length`, reason `MASTER_TOO_LONG`), sync to lyric timing, no gaps/frozen/black frames, no missing assets, caption correctness when enabled, packshot correctness, CTA readability, audio levels, final format/resolution, required aspect ratio, complete manifest/receipts |
+| Final edit QC | 17.5 | `final_edit`, `export`, `timeline`, `audio`, `text_product` (critical) | audio/video duration vs profile, master checked against chosen length minus 2 seconds (`core/master_length`): at or under is clean, an overshoot up to +10 s is a PASS with the named warning `QC_DURATION_OVERSHOOT`, an overshoot past +10 s is a PASS with `QC_DURATION_OVERSHOOT_SEVERE` naming the exact seconds over — an overshoot NEVER stops the run (the client decides whether to redo), sync to lyric timing, no gaps/frozen/black frames, no missing assets, caption correctness when enabled, packshot correctness, CTA readability, audio levels, final format/resolution, required aspect ratio, complete manifest/receipts |
 | Product connection (FU-U13) | 17.5 | `final_edit`, `delivery` | story arc rule: struggle -> what changed -> the product is why -> get the product; the product is named in the lyrics AND on screen (cover, title, link), never only on an end card. `delivery_checklist.measure_product_connection` reports the measured seconds and percent of runtime connecting story to product (row `PRODUCT_CONNECTION` in the checklist output). 10-15% of runtime is a TARGET: inside is PASS, outside is FLAG with the measured numbers, never a blocker by itself and never a repair directive. |
 | Independent verifier law | 17.6 | all | reviewer identity differs from the maker binding; `reviewer.session` and `reviewer.authority` present; same records re-submitted unchanged cannot pass (`MAKER_SELF_REVIEW` observed exit 5) |
 | Targeted repair | 17.7 | failing check only | gate returns `repair_scope` naming only the failed `check_id`s; repair runs with new attempt ids; approved assets stand; repair cost travels through the ledger `repair-cap`, and once the configured budget is spent the run PARKS - never an unbounded retry loop |
@@ -204,6 +204,19 @@ schema violation all refuse the stage (exit 5).
 - [ ] Every production run publishes its `acceptance-profile.json` BEFORE
       generation; a campaign target may deviate only with a documented
       alternative recorded in the profile.
+- [ ] The song length gate (`song_dispatch.judge_take`, gate `length`) judges
+      the delivered seconds with the SAME overshoot rule: at or under is
+      clean, +10 s or less is `QC_DURATION_OVERSHOOT`, past +10 s is
+      `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds over, and neither
+      stops the take. An undershoot keeps the 5/10 band (past 10 points is
+      still FAIL).
+- [ ] A take the song judge FAILS is never regenerated automatically. It keeps
+      the judge's named concerns, is presented for listening only
+      (`SONG-CHOICES/FOR-LISTENING/`), and the client answers ONE fork
+      (`song_choices.FAILURE_FORK`). The answer is recorded in
+      `song-choices/fork-decision.json`; `redo_all` / `new_three` reopen the
+      music row, and `keep_one` never writes a PASS — the WW-18 / WW-21
+      measured gates still hold.
 
 ### 5.1 Master provenance (Part H H12)
 

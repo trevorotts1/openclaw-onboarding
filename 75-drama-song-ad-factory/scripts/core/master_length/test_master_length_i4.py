@@ -20,12 +20,27 @@ class T(unittest.TestCase):
             self.assertEqual({p["song_target_s"], p["shot_plan_end_s"], p["end_card_end_s"]}, {want})
             self.assertEqual(check_master(L, want)["outcome"], "ok")      # at the line passes
             self.assertEqual(check_master(L, want - 1.5)["outcome"], "ok")  # shorter passes
-            bad = check_master(L, want + 0.04)                              # one frame over fails
-            self.assertEqual((bad["outcome"], bad["reason_code"]), ("rejected", "MASTER_TOO_LONG"))
-            self.assertEqual(check_master(L, L)["outcome"], "rejected")     # the full length now fails
+            # ORDER 2026-10-21: an overshoot within the 10 s allowance is a FLAG,
+            # never a stop. The warning is named and carries the plain detail.
+            flag = check_master(L, want + 0.04)
+            self.assertEqual(flag["outcome"], "ok")
+            self.assertEqual(flag["reason_code"], "MASTER_LENGTH_OVERSHOOT")
+            self.assertEqual(flag["warning"]["code"], "QC_DURATION_OVERSHOOT")
+            self.assertIn("%gs of %gs" % (want + 0.04, L), flag["detail"])
+            self.assertEqual(check_master(L, L)["outcome"], "ok")        # the full length flags
 
-    def test_one_minute_two_fails(self):
-        self.assertEqual(check_master(60, 62)["reason_code"], "MASTER_TOO_LONG")
+    def test_one_minute_two_is_a_flag_not_a_stop(self):
+        r = check_master(60, 62)
+        self.assertEqual((r["outcome"], r["reason_code"]), ("ok", "MASTER_LENGTH_OVERSHOOT"))
+        self.assertEqual(r["warning"]["code"], "QC_DURATION_OVERSHOOT")
+        self.assertIn("62s of 60s", r["detail"])
+        self.assertIn("within the 10-second allowance", r["detail"])
+        # past the allowance it still does not stop: the warning is louder and
+        # names the exact seconds over.
+        hard = check_master(60, 71)
+        self.assertEqual(hard["outcome"], "ok")
+        self.assertEqual(hard["warning"]["code"], "QC_DURATION_OVERSHOOT_SEVERE")
+        self.assertIn("3s over the 10-second allowance", hard["detail"])
 
     def test_bad_input(self):
         for bad in (None, "60", True, 2, 0, -5, float("nan")):
@@ -41,10 +56,14 @@ class T(unittest.TestCase):
         self.assertIsNone(I.summarize({"target_length_s": None})[0]["master_max_s"])
 
     def test_qc_record_is_gate_valid(self):
-        ok, no = to_qc_record(60, 58, REV, "r1"), to_qc_record(60, 61, REV, "r1")
+        ok, over = to_qc_record(60, 58, REV, "r1"), to_qc_record(60, 61, REV, "r1")
+        bad = to_qc_record(60, None, REV, "r1")
         self.assertIsNone(qc_gate.validate_record(ok))
-        self.assertIsNone(qc_gate.validate_record(no))
-        self.assertEqual((ok["verdict"], no["verdict"]), ("PASS", "FAIL"))
+        self.assertIsNone(qc_gate.validate_record(over))
+        self.assertIsNone(qc_gate.validate_record(bad))
+        self.assertEqual((ok["verdict"], over["verdict"], bad["verdict"]),
+                         ("PASS", "PASS", "FAIL"))
+        self.assertEqual(over["warnings"][0]["code"], "QC_DURATION_OVERSHOOT")
 
 
 class Wired(unittest.TestCase):
@@ -56,33 +75,38 @@ class Wired(unittest.TestCase):
                                 ["final_edit"],
                                 master={"chosen_length_s": chosen, "measured_s": measured})
 
-    def test_gate_fails_62s_on_60s_video(self):
+    def test_gate_flags_62s_on_60s_video_without_stopping(self):
         g = self._gate(60, 62)
-        self.assertEqual(g["gate"], "FAIL")
-        self.assertIn("MASTER_TOO_LONG", g["reason_code"])
+        self.assertEqual(g["gate"], "PASS")
+        codes = [w["code"] for w in g.get("warnings") or []]
+        self.assertEqual(codes, ["QC_DURATION_OVERSHOOT"])
         self.assertEqual(self._gate(60, 58)["gate"], "PASS")
+        # past the allowance it still advances; the warning is louder
+        self.assertEqual(self._gate(60, 71)["gate"], "PASS")
+        self.assertEqual([w["code"] for w in self._gate(60, 71)["warnings"]],
+                         ["QC_DURATION_OVERSHOOT_SEVERE"])
 
     def test_gate_each_length_and_missing_master(self):
         for L in (30, 60, 90, 120):
             self.assertEqual(self._gate(L, L - 2)["gate"], "PASS")
-            self.assertEqual(self._gate(L, L)["gate"], "FAIL")
+            self.assertEqual(self._gate(L, L)["gate"], "PASS")   # 2 s over: flag, no stop
         rec = to_qc_record(60, 58, REV, "r1", stage="final-qc")
         g = qc_gate.evaluate("r1", "final-qc", [rec], {rec["check_id"]: "maker"}, ["final_edit"])
         self.assertEqual(g["gate"], "BLOCKED")  # no master supplied never passes
 
-    def test_assembler_refuses_62s_timeline(self):
+    def test_assembler_keeps_a_flagging_timeline_moving(self):
         import json, tempfile
         import final_assembler.assembler as A
         d = tempfile.mkdtemp()
         open(os.path.join(d, "c.mp4"), "wb").close()
-        for dur, want in ((62.0, "MASTER_TOO_LONG"), (58.0, "other")):
+        for dur, want in ((62.0, "other"), (58.0, "other"), (75.0, "other")):
             tl = os.path.join(d, "t.json")
             with open(tl, "w") as fh:
                 json.dump({"schema_version": A.TIMELINE_SCHEMA, "fps": 30, "song_path": None,
                            "transition": "none", "chosen_length_s": 60,
                            "segments": [{"src": "c.mp4", "dur": dur}]}, fh)
             r = A.assemble(tl, os.path.join(d, "o.mp4"), dry_run=True)
-            # 58 s clears the I4 check (other unrelated gates may still speak)
+            # an overshoot never stops the assembly (other gates may still speak)
             self.assertEqual(r["reason_code"] == "MASTER_TOO_LONG", want != "other", r)
 
     def test_planner_ends_at_l_minus_2(self):
