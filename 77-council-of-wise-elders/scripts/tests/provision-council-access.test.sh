@@ -10,6 +10,8 @@ FAKE="$HERE/fake-cloudflare-api.py"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/council-access-test.XXXXXX")"
 SCRIPT_TMP="$WORK/script-tmp"; mkdir -p "$SCRIPT_TMP" "$WORK/out"
 TOKEN="qc-secret-TOKEN-123"
+TOKDIR="$WORK/tunnel-tokens"   # the script's connector-token store; never the real one
+export COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR"   # also covers every direct call below
 FAKE_PID=""
 FAILS=0; N=0
 
@@ -55,7 +57,7 @@ start_fake() {
   local pf="$WORK/port.$RANDOM"
   python3 -I "$FAKE" --fixture "$1" --log "$LOG" --port-file "$pf" --state-out "$STATE" &
   FAKE_PID=$!
-  local i; for i in $(seq 1 100); do [ -s "$pf" ] && break; sleep 0.05; done
+  local i; for i in $(seq 1 400); do [ -s "$pf" ] && break; sleep 0.05; done
   PORT="$(cat "$pf")"
 }
 
@@ -67,6 +69,7 @@ run_script() {
       COUNCIL_EDGE_URL_TEMPLATE="http://127.0.0.1:$PORT/edge/%s/" \
       COUNCIL_EDGE_TRIES=2 COUNCIL_EDGE_SLEEP=0 \
       CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct CLOUDFLARE_ZONE_ID=wrong-zone \
+      COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR" \
       TMPDIR="$SCRIPT_TMP" "$SCRIPT" "$@" >"$OUT" 2>&1
   RC=$?
 }
@@ -149,12 +152,93 @@ fixture qcbox | jq -c '.dns = []' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "no CC CNAME: NOT_PROVISIONED, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z NOT_PROVISIONED'"
 
-fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+fixture qcbox | jq -c '.tunnels["'$TID'"].status = "down"' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
-check "local tunnel: PENDING_LOCAL_TUNNEL, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PENDING_LOCAL_TUNNEL'"
-check "local tunnel: names the tunnel, says local-managed and to migrate to remote-managed" bash -c "grep -q '$TID' '$OUT' && grep -q 'locally managed' '$OUT' && grep -q 'migrate that tunnel to remote-managed' '$OUT'"
-check "local tunnel: prints NO ingress lines and no instruction aimed at the box" bash -c "! grep -Eq 'hostname: |service: http|On the box|on the box|add the ingress' '$OUT'"
-check "local tunnel: no council app or CNAME was created" test "$(state '[.apps[]|select(.domain|test("-council."))]|length')" = 0 -a "$(state '[.dns[]|select(.name|test("-council."))]|length')" = 0
+check "down tunnel (apply): TUNNEL_DOWN, zero writes, exit 0" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z TUNNEL_DOWN'"
+check "down tunnel: names the tunnel and its status" bash -c "tail -n1 '$OUT' | grep -q 'tunnel $TID for qcbox.$Z is down'"
+check "down tunnel: no council app, CNAME or ingress written" test "$(state '[.apps[]|select(.domain|test("-council."))]|length')" = 0 -a "$(state '.put_bodies|length')" = 0
+run_script qcbox.$Z
+check "down tunnel (dry-run): TUNNEL_DOWN, not PLANNED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z TUNNEL_DOWN'"
+fixture qcbox | jq -c '.tunnels["'$TID'"].status = "inactive"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "inactive tunnel: TUNNEL_DOWN, zero writes" bash -c "test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z TUNNEL_DOWN'"
+
+fixture qcbox | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://172.16.1.2:4000"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "docker-bridge CC origin: ORIGIN_NOT_LOOPBACK, zero writes, exit 0" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z ORIGIN_NOT_LOOPBACK.*172.16.1.2:4000'"
+fixture qcbox | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://127.0.0.1:4000"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "127.0.0.1 CC origin is loopback: PLANNED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
+
+fixture qcbox | jq -c --arg z "$Z" '.tunnels["'$TID'"].config.ingress = [
+    {hostname:("qcbox."+$z),path:"^/hooks",service:"http://127.0.0.1:18789"},
+    {hostname:("qcbox."+$z),path:"/zhc-cohort*",service:"http://localhost:3457"}] + .tunnels["'$TID'"].config.ingress' > "$WORK/f.json"
+start_fake "$WORK/f.json"; cp "$STATE" "$WORK/orig-state.json"
+run_script qcbox.$Z --apply
+check "path-scoped CC rules listed first: PROVISIONED, not FAILED" bash -c "test '$RC' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
+check "path-scoped CC rules first: PUT keeps all three CC rules in order" test "$(state '.put_bodies[0].config.ingress[0:3]')" = "$(jq -c '.tunnels["'$TID'"].config.ingress[0:3]' "$WORK/orig-state.json")"
+
+echo "== 6b. local-managed Command Center tunnel: a dedicated council-<slug> tunnel"
+fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+cp "$STATE" "$WORK/orig-state.json"
+run_script qcbox.$Z
+check "local tunnel (dry-run): exit 0, GET only, PLANNED" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
+check "local tunnel (dry-run): prints 'would create tunnel council-qcbox' and the token save" bash -c "grep -q 'would create tunnel council-qcbox' '$OUT' && grep -q 'would save the connector token for council-qcbox' '$OUT'"
+check "local tunnel (dry-run): plan lists app, tunnel, ingress and DNS writes" bash -c "grep -q '\[plan\] POST /accounts/qc-acct/access/apps' '$OUT' && grep -q '\[plan\] POST /accounts/qc-acct/cfd_tunnel\$' '$OUT' && grep -q '\[plan\] PUT .*configurations' '$OUT' && grep -q '\[plan\] POST /zones/zone-real/dns_records' '$OUT'"
+check "local tunnel (dry-run): no tunnel created, no token file" bash -c "test '$(state '.tunnels | length')' = 1 && test ! -e '$TOKDIR/council-qcbox.token'"
+run_script qcbox.$Z --apply
+check "local tunnel (apply): exit 0, CONNECTOR_PENDING" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+check "local tunnel (apply): exactly 4 writes (app, tunnel, ingress, DNS)" test "$(nonget_count)" = 4
+NEWT="$(state '[.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .key][0]' | tr -d '"')"
+check "a remote-managed tunnel named council-qcbox was created" test -n "$NEWT" -a "$NEWT" != null -a "$(state '.tunnels["'$NEWT'"].source')" = '"cloudflare"'
+check "council-qcbox ingress: qcbox-council -> http://127.0.0.1:8787, then 404" test "$(state '.tunnels["'$NEWT'"].config.ingress')" = '[{"hostname":"qcbox-council.'$Z'","service":"http://127.0.0.1:8787"},{"service":"http_status:404"}]'
+check "proxied CNAME points at the new council tunnel" test "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | [.content,.proxied] | join("|")')" = '"'$NEWT'.cfargotunnel.com|true"'
+check "the local Command Center tunnel was not touched" test "$(state '.tunnels["'$TID'"]')" = "$(jq -c '.tunnels["'$TID'"]' "$WORK/orig-state.json")"
+check "token file saved with mode 600 in a mode 700 dir" bash -c "test \"\$(stat -f %Lp '$TOKDIR/council-qcbox.token')\" = 600 && test \"\$(stat -f %Lp '$TOKDIR')\" = 700"
+check "token file holds the connector token" test "$(cat "$TOKDIR/council-qcbox.token")" = "qc-tunnel-TOKEN-$NEWT"
+check "connector token value appears in no output" bash -c "! grep -rq -- 'qc-tunnel-TOKEN' '$WORK/out'"
+cp "$STATE" "$WORK/ded.json"; start_fake "$WORK/ded.json"
+run_script qcbox.$Z --apply
+check "second apply: zero writes, still CONNECTOR_PENDING (retried every run)" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+jq -c '(.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .key) as $k | .tunnels[$k].conns = [{id:"c1",is_pending_reconnect:false}]' "$WORK/ded.json" > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "connector up: ALREADY_PROVISIONED, zero writes" bash -c "test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED'"
+fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null} | .tunnels["cccccccccccccccccccccccccccccccc"] = {name:"council-qcbox",source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "council tunnel itself local-managed: PENDING_LOCAL_TUNNEL, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PENDING_LOCAL_TUNNEL.*council-qcbox'"
+check "council tunnel local-managed: no ingress lines and no instruction aimed at the box" bash -c "! grep -Eq 'hostname: |service: http|On the box|on the box|add the ingress' '$OUT'"
+fixture qcbox | jq -c --arg z "$Z" '.tunnels["'$TID'"] = {source:"local",config:null} | .dns += [{id:"x9",type:"CNAME",name:("qcbox-council."+$z),content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com"}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "local tunnel with a stray council CNAME: CONFLICT, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT'"
+
+echo "== 6c. COUNCIL_TUNNEL_OVERRIDES maps trevor to council-desktop"
+DESK="dddddddddddddddddddddddddddddddd"
+fixture trevor | jq -c --arg z "$Z" --arg d "$DESK" '
+  (.dns[] | select(.name == ("trevor."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $t
+  | .tunnels[$t] = {name:"command-center",source:"local",config:null}
+  | .tunnels[$d] = {name:"council-desktop",source:"cloudflare",config:{ingress:[{hostname:("council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}}' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script trevor.$Z
+check "default override: dry-run plans no new tunnel for trevor" bash -c "test '$RC' = 0 && ! grep -q 'would create tunnel' '$OUT' && grep -q 'rides its own remote-managed tunnel council-desktop' '$OUT'"
+run_script trevor.$Z --apply
+check "override: PROVISIONED on council-desktop with 3 writes (app, ingress, DNS)" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 3 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: trevor.$Z PROVISIONED'"
+check "override: no tunnel named council-trevor exists" test "$(state '[.tunnels[] | select(.name == "council-trevor")] | length')" = 0
+check "override: council-desktop keeps council.$Z and gains trevor-council" test "$(state '.tunnels["'$DESK'"].config.ingress | map(.hostname // "*") | join(",")')" = '"council.'$Z',trevor-council.'$Z',*"'
+check "override: CNAME points at council-desktop" test "$(state '.dns[] | select(.name=="trevor-council.'$Z'") | .content')" = '"'$DESK'.cfargotunnel.com"'
+check "override: token saved as council-desktop.token, mode 600" test "$(stat -f %Lp "$TOKDIR/council-desktop.token")" = 600
+start_fake "$WORK/f.json"
+OUT="$WORK/out/case.ovr"; env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct \
+  COUNCIL_TUNNEL_OVERRIDES="" COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR" TMPDIR="$SCRIPT_TMP" "$SCRIPT" trevor.$Z >"$OUT" 2>&1
+check "empty COUNCIL_TUNNEL_OVERRIDES: trevor would get council-trevor" grep -q 'would create tunnel council-trevor' "$OUT"
+
+echo "== 6d. hostname length boundary (a DNS label is 63 characters at most)"
+S55="$(printf 'a%.0s' $(seq 1 55))"; S56="$(printf 'b%.0s' $(seq 1 56))"
+fixture "$S55" "$S56" > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script "$S55.$Z"
+check "55-character slug (council label = 63): PLANNED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: $S55.$Z PLANNED'"
+check "55-character slug: council label is exactly 63 characters" test "$(printf '%s' "${S55}-council" | wc -c | tr -d ' ')" = 63
+run_script "$S56.$Z" --apply
+check "56-character slug (council label = 64): FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: $S56.$Z FAILED.*63-character'"
 
 fixture qcbox | jq -c '.tunnels["'$TID'"].conns = []' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
@@ -215,16 +299,59 @@ done
 check "skipped hosts are never provisioned or planned" bash -c "! grep -E '^COUNCIL_ACCESS: (rescue-alpha|alpha-gw|alpha-webhook|weird|norule)\.[^ ]* (PLANNED|PROVISIONED|FAILED)' '$OUT'"
 check "the 2 real Command Centers are still PLANNED" test "$(grep -c '^COUNCIL_ACCESS: .* PLANNED' "$OUT")" = 2
 check "skip reason names the wrong target" bash -c "grep -q 'weird.$Z SKIPPED_NOT_CC.*http://localhost:3000' '$OUT' && grep -q 'norule.$Z SKIPPED_NOT_CC.*no ingress rule' '$OUT'"
+check "rescue host skip names its ssh:// service" bash -c "grep -q 'rescue-alpha.$Z SKIPPED_NOT_CC.*ssh://localhost:22' '$OUT'"
 run_script --all --apply
 check "--all --apply: only the 2 real Command Centers are written (6 writes)" test "$(nonget_count)" = 6
 check "--all --apply: final exit 0 and no -council record for a skipped host" bash -c "test '$RC' = 0 && test '$(state '[.dns[]|select(.name|test("^(rescue-alpha|alpha-gw|alpha-webhook|weird|norule)-council"))]|length')' = 0"
 run_script --all --json
 check "--json carries SKIPPED_NOT_CC entries" bash -c "jq -e '[.[]|select(.status==\"SKIPPED_NOT_CC\")]|length == 5' '$OUT'"
 fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script --all
+check "--all: a local-managed Command Center gets a dedicated tunnel plan, not skipped" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q 'qcbox.$Z PLANNED' '$OUT' && grep -q 'would create tunnel council-qcbox' '$OUT'"
+
+echo "== 7c. --all classifies by service and names every skip"
+ATID="$(printf '%032x' "$((0x0123456789abcdef + 1))")"; BTID="$(printf '%032x' "$((0x0123456789abcdef + 2))")"
+LTID="llllllllllllllllllllllllllllllll"
+fixture alpha beta monique convoplay | jq -c --arg z "$Z" --arg t "$ATID" --arg l "$LTID" '
+  .dns += ([ "alpha-openclawdashboard", "flows", "n8n-star-bobatoon", "audio", "emptyhost" ] | map({id:("x-"+.),type:"CNAME",name:(.+"."+$z),content:($t+".cfargotunnel.com"),proxied:true}))
+  | .dns += [{id:"x-lod",type:"CNAME",name:("beta-openclawdashboard."+$z),content:($l+".cfargotunnel.com"),proxied:true}]
+  | .tunnels[$l] = {source:"local",config:null}
+  | .tunnels[$t].config.ingress = ([
+      {hostname:("alpha-openclawdashboard."+$z),service:"http://127.0.0.1:18789"},
+      {hostname:("flows."+$z),service:"http://localhost:5678"},
+      {hostname:("n8n-star-bobatoon."+$z),service:"http://localhost:5678"},
+      {hostname:("audio."+$z),service:"http://localhost:8080"}] + .tunnels[$t].config.ingress)
+  | (.dns[] | select(.name == ("monique."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $m
+  | .tunnels[$m].config.ingress[0].service = "http://172.16.1.2:4000"
+  | (.dns[] | select(.name == ("convoplay."+$z)) | .content | sub("\\.cfargotunnel\\.com$"; "")) as $c
+  | .tunnels[$c].config.ingress = [{hostname:("convoplay."+$z),path:"^/hooks",service:"http://127.0.0.1:18789"}] + .tunnels[$c].config.ingress' > "$WORK/f.json"
+start_fake "$WORK/f.json"
 run_script --all --apply
-check "--all: a local-managed Command Center is still reported PENDING_LOCAL_TUNNEL, not skipped" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q 'qcbox.$Z PENDING_LOCAL_TUNNEL' '$OUT'"
+for h in alpha-openclawdashboard flows n8n-star-bobatoon audio emptyhost beta-openclawdashboard; do
+  check "$h is SKIPPED_NOT_CC and named in the output" bash -c "grep -q '^COUNCIL_ACCESS: $h.$Z SKIPPED_NOT_CC' '$OUT'"
+done
+check "skip reasons name the service (n8n :5678, empty ingress)" bash -c "grep -q 'flows.$Z SKIPPED_NOT_CC.*http://localhost:5678' '$OUT' && grep -q 'emptyhost.$Z SKIPPED_NOT_CC.*no ingress rule' '$OUT'"
+check "an -openclawdashboard host on a local-managed tunnel is skipped, never given a tunnel" bash -c "grep -q 'beta-openclawdashboard.$Z SKIPPED_NOT_CC' '$OUT' && ! grep -q 'council-beta-openclawdashboard' '$OUT'"
+check "no <x>-openclawdashboard-council record or council tunnel is ever created" test "$(state '[(.dns[] | select(.name|test("openclawdashboard-council"))), (.tunnels[] | select((.name // "")|test("openclawdashboard")))] | length')" = 0
+check "monique (docker-bridge origin) reaches provisioning and is ORIGIN_NOT_LOOPBACK" bash -c "grep -q '^COUNCIL_ACCESS: monique.$Z ORIGIN_NOT_LOOPBACK' '$OUT'"
+check "convoplay (path rule first) is PROVISIONED" bash -c "grep -q '^COUNCIL_ACCESS: convoplay.$Z PROVISIONED' '$OUT'"
+check "alpha and beta PROVISIONED; exit 0" bash -c "test '$RC' = 0 && grep -q '^COUNCIL_ACCESS: alpha.$Z PROVISIONED' '$OUT' && grep -q '^COUNCIL_ACCESS: beta.$Z PROVISIONED' '$OUT'"
+check "exactly 9 writes (3 hosts x 3)" test "$(nonget_count)" = 9
+
+echo "== 7d. default excludes skip the test tenants"
+fixture alpha acme-dental-c436 smoke probe > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script --all
+check "default: only alpha is considered" test "$(grep '^COUNCIL_ACCESS:' "$OUT" | sed -E 's/^COUNCIL_ACCESS: ([^ ]+) .*/\1/' | tr '\n' ' ')" = "alpha.$Z "
+run_script --all --json
+check "default excludes never reach the JSON report" bash -c "jq -e 'map(.cc_host) == [\"alpha.$Z\"]' '$OUT'"
+start_fake "$WORK/f.json"
+OUT="$WORK/out/case.excl"; env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct \
+  COUNCIL_ACCESS_EXCLUDE="council.$Z" COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR" TMPDIR="$SCRIPT_TMP" "$SCRIPT" --all >"$OUT" 2>&1
+check "COUNCIL_ACCESS_EXCLUDE overrides the default" test "$(grep -c '^COUNCIL_ACCESS: .* PLANNED' "$OUT")" = 4
 run_script rescue-alpha.$Z
 check "explicit rescue- host is refused (exit 2)" test "$RC" = 2
+run_script alpha-openclawdashboard.$Z
+check "explicit -openclawdashboard host is refused (exit 2)" test "$RC" = 2
 
 echo "== 8. zone is resolved by name, never from CLOUDFLARE_ZONE_ID"
 fixture qcbox > "$WORK/f.json"; start_fake "$WORK/f.json"
@@ -237,6 +364,7 @@ echo "== 9. the token never leaks"
 check "token appears in no case's stdout or stderr" bash -c "! grep -rq -- '$TOKEN' '$WORK/out'"
 check "no temp file is left in the script's TMPDIR" test -z "$(ls -A "$SCRIPT_TMP")"
 check "token appears in no file in the script's TMPDIR" bash -c "! grep -rq -- '$TOKEN' '$SCRIPT_TMP'"
+check "no connector token appears in any case's stdout or stderr" bash -c "! grep -rq -- 'qc-tunnel-TOKEN' '$WORK/out'"
 
 echo
 if [ "$FAILS" = 0 ]; then echo "ALL $N CHECKS PASS"; exit 0; else echo "$FAILS of $N CHECKS FAILED"; exit 1; fi
