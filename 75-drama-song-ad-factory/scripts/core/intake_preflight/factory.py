@@ -534,16 +534,28 @@ def _music_audio(run_dir):
 
 
 def _song_hold(run_dir):
-    """The existing song-pick / acceptance / constituent gate; fail closed."""
+    """The existing song-pick / acceptance / constituent gate; fail closed.
+    L2 (WW-21): a recorded, well-formed OPERATOR DECISION does not open the
+    WW-21 acceptance hold by ITSELF — the decision is recorded at complete
+    time (before the hold), and the hold is still evaluated on the take
+    records; only a relabel-shaped MANUAL_RELABEL refusal stays absolute."""
     try:
         sc = _core_mod("song_choices")
-        return sc.refusal(str(run_dir)) or sc.constituent_hold(str(run_dir))
+        ref = sc.refusal(str(run_dir))
+        if ref is not None and ref.get("reason_code") == "ACCEPTANCE_NOT_PROVEN":
+            sd = _core_mod("song_dispatch")
+            dec = sd.read_operator_decision(str(run_dir))
+            if dec is not None:
+                dec, rs = sd.decision_applies(str(run_dir), dec=dec)
+                if dec is not None and not rs:
+                    return None            # recorded decision + honest record; the hold opens
+        return ref or sc.constituent_hold(str(run_dir))
     except Exception as exc:  # noqa: BLE001 - a broken gate never opens
         return {"reason_code": "SONG_GATE_BROKEN", "detail": repr(exc)[:200]}
 
 
 def music_stage(run_dir, owner, action, run_id=None, reason=None,
-                retryable=False, qc=None, lease_s=3600):
+                retryable=False, qc=None, lease_s=3600, operator_decision=None):
     """One guarded lifecycle step on the music row. Returns _mres(...).
 
     Idempotent: COMPLETE answers with the existing row; the live owner calling
@@ -551,6 +563,11 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
     refused; an expired RUNNING lease is reclaimed by state_store.claim. Every
     write is a version-predicated state_store call, so TRANSITIONS is the law.
     qc = {"records": [...], "makers": {...}, "required": [...]} for complete.
+    operator_decision = the L2 (WW-21) recorded operator-decision doc for
+    complete: NEVER a PASS for a measured gate -- the WW-21 boundary still
+    applies and the stage holds at ACCEPTANCE_NOT_PROVEN until every gate is
+    proven OR the operator has explicitly accepted the named gates as NOT
+    proven (a decision is not a relabel; `_MANUAL_SOURCES` refusals stand).
     """
     core = str(Path(__file__).resolve().parent.parent)
     if core not in sys.path:
@@ -626,6 +643,22 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
                               expected_version=row["version"], reason="%s: %s" % (code, why)[:500])
             return _mres("rejected", code, why, r)
 
+        # L2 (WW-21): the operator decision, when supplied, is validated and
+        # recorded BEFORE the hold, so `_song_hold` can honour it. It never
+        # opens the WW-21 boundary by itself (a measured gate is never
+        # re-labelled PASS) and never rewrites a take record; it says the run
+        # may advance with the named gates NOT PROVEN -- and a relabel-shaped
+        # MANUAL_RELABEL refusal is never decided around.
+        if operator_decision is not None:
+            sd = _core_mod("song_dispatch")
+            try:
+                sd.record_operator_decision(str(run_dir), operator_decision,
+                                            required=None)
+            except Exception as e:  # noqa: BLE001 - a bad decision writes nothing
+                why = str(e)
+                return block("OPERATOR_DECISION_REJECTED",
+                             why[why.find("OPERATOR_DECISION_REJECTED:"):]
+                             if "OPERATOR_DECISION_REJECTED:" in why else why[:500])
         hold = _song_hold(run_dir)
         if hold:
             code, why = hold["reason_code"], hold.get("detail") or hold.get("next_action", "")
@@ -667,6 +700,7 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
 def cmd_music(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
     qc = None
+    od = None
     if a.action == "complete":
         try:
             qc = {"records": _load(a.records) if a.records else [],
@@ -674,8 +708,18 @@ def cmd_music(a):
                   "required": [c.strip() for c in (a.required or "").split(",") if c.strip()]}
         except (OSError, ValueError) as e:
             return envelope("music", run_dir.name or "run", "error", "qc-input-unreadable", str(e)[:200])
+        # L2 (WW-21): the documented operator decision rides `complete`. Missing
+        # file = None; unreadable file = a loud refusal (never a silent pass).
+        if a.operator_decision:
+            try:
+                od = _load(a.operator_decision)
+            except (OSError, ValueError) as e:
+                return envelope("music", run_dir.name or "run", "error",
+                                "OPERATOR_DECISION_UNREADABLE",
+                                "%s: %s" % (a.operator_decision, str(e)[:200]))
     r = music_stage(run_dir, a.owner, a.action, run_id=a.run_id, reason=a.reason,
-                    retryable=a.retryable, qc=qc, lease_s=a.lease_s)
+                    retryable=a.retryable, qc=qc, lease_s=a.lease_s,
+                    operator_decision=od)
     return envelope("music", run_dir.name or "run", r["outcome"], r["reason_code"],
                     r["detail"], data={"stage": MUSIC, "row": r["row"]})
 
@@ -690,7 +734,12 @@ def _music_lifecycle():
             "complete": base + "complete --records \"$RUN/music/qc-records.json\" "
                         "--makers \"$RUN/music/makers.json\" --required <required-checks>",
             "note": "Claim music BEFORE any generation, complete it after the pick and "
-                    "independent QC; continuity-bible is never eligible until then."}
+                    "independent QC; continuity-bible is never eligible until then. "
+                    "When the WW-21 gates fail on MEASURED evidence and the run owner "
+                    "accepts them unproven, complete with --operator-decision <path> "
+                    "(music/acceptance/operator-decision.json: decision ACCEPTED_RISK, "
+                    "operator, at_utc, gates_not_proven, measured_evidence_digest, "
+                    "reason) -- it never writes a PASS for a measured gate."}
 
 
 # ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
@@ -1332,6 +1381,10 @@ def main(argv=None):
     m.add_argument("--records", default=None, help="complete: qc-schema records JSON.")
     m.add_argument("--makers", default=None, help="complete: check_id -> maker JSON.")
     m.add_argument("--required", default=None, help="complete: required checks, comma list.")
+    m.add_argument("--operator-decision", default=None,
+                   help="complete (L2/WW-21): operator-decision JSON -- {decision, operator, "
+                        "at_utc, gates_not_proven, measured_evidence_digest, reason}; never a "
+                        "PASS for a measured gate, never a relabel.")
     sr = sub.add_parser("script-reply", help="The client's reply to the script message "
                                              "(SCRIPT APPROVAL): approve, or an edit.")
     sr.add_argument("--run-dir", required=True)
