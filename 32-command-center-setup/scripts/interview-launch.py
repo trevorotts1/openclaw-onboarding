@@ -39,6 +39,10 @@ def initialize(path, slug, name, email, env):
     # it. Never invent a sign-in identity to satisfy this check.
     if not name.strip(): raise ValueError('explicit installation owner name is required')
     email = str(email or '').strip()
+    # A supplied address that is not one syntactically valid email is treated
+    # as not supplied (pending), never stored; the pending+ path is unchanged.
+    if email and not email.startswith('pending+') and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
+        email = ''
     def mutate(s):
         for key in ('companySlug', 'clientSlug'):
             if s.get(key) and s[key] != slug: raise ValueError('existing company slug conflicts; refusing identity replacement')

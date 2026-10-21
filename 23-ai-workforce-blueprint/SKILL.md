@@ -24,7 +24,7 @@ triggers:
   - "my interview link expired"
   - "resume my interview"
   - "can the interview start"
-version: 27.1.56
+version: 27.1.57
 ---
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
