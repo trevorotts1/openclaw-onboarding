@@ -309,14 +309,14 @@
       "label": "VIDEO MODEL",
       "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
       "price": "Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
-      "example": "\"MiniMax H3. Good quality at a fair price.\"",
+      "example": "\"Hailuo 02 Standard. Good quality at a fair price.\"",
       "typed": false,
       "options": [
         {
           "n": 1,
-          "text": "MiniMax H3",
-          "detail": "great quality, best value - about $3.22",
-          "price": "$3.22",
+          "text": "Hailuo 02 Standard",
+          "detail": "great quality, best value - about $2.28",
+          "price": "$2.28",
           "recommended": true
         },
         {
