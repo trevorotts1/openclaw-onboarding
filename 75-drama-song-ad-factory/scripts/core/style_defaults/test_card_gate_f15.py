@@ -137,7 +137,7 @@ def test_intake_complete_brief_still_waits_on_card():
     # is about the story questions; the card comes at approval)
     thin = I.evaluate({"offer": "A candle shop"}, {})
     ids = [q["id"] for q in thin.get("questions") or []]
-    check("thin brief still asked the bundled questions",
+    check("thin brief still asked its story question (one per turn)",
           thin.get("reason_code") == "missing-essentials" and ids,
           "%s/%s %s" % (thin.get("outcome"), thin.get("reason_code"), ids))
 

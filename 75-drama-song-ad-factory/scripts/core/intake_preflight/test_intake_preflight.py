@@ -196,12 +196,38 @@ def test_thin_brief_asks_no_money_question():
           not _MONEY.search(r.get("question_message") or ""), repr(r.get("question_message")))
 
 
-def test_freed_slot_goes_to_next_question():
-    """The slot the money question used to take is given to the next needed one."""
-    r = I.evaluate({"offer": "my book at example.com"}, {})
-    ids = [q["id"] for q in r.get("questions") or []]
-    check("audience, website and placement fill the three slots",
-          ids == ["audience_action", "website", "placement"], repr(ids))
+def test_questions_come_one_at_a_time_in_order():
+    """Trevor 2026-10-21: ONE question per message, the answer comes back, then
+    the next. The catalog order and text are unchanged (audience -> website ->
+    placement); only the pacing is."""
+    brief = {"offer": "my book at example.com"}
+    order, answers = [], {
+        "audience_action": [("audience", "Women 35-55 who want a second income"),
+                            ("action", "register for my free masterclass")],
+        "website": [("website", "example.com")],
+        "placement": [("placement", "9:16 vertical")],
+    }
+    r = I.evaluate(brief, {})
+    turns = 0
+    while r.get("reason_code") == "missing-essentials" and turns < 6:
+        turns += 1
+        qs = r.get("questions") or []
+        check("exactly one question per turn", len(qs) == 1, repr(qs))
+        if len(qs) != 1:
+            return
+        q = qs[0]
+        order.append(q["id"])
+        if q["id"] not in answers:
+            break
+        for key, value in answers[q["id"]]:
+            brief[key] = value
+        r = I.evaluate(brief, {})
+    check("questions arrive in catalog order, one per turn (no batching)",
+          order == ["audience_action", "website", "placement"], repr(order))
+    check("the message carries only the question that was asked",
+          "What placement/format" not in (I.evaluate(
+              {"offer": "my book at example.com"}, {}).get("question_message") or ""),
+          repr(I.evaluate({"offer": "my book at example.com"}, {}).get("question_message")))
 
 
 def _aud_q(brief):
@@ -266,7 +292,7 @@ TESTS = [
     test_default_profile_known,
     test_cli_done_when,
     test_thin_brief_asks_no_money_question,
-    test_freed_slot_goes_to_next_question,
+    test_questions_come_one_at_a_time_in_order,
     test_audience_action_question_variants,
     test_answer_parses_into_audience_and_action,
     test_credits_still_accepted,

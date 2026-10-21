@@ -192,23 +192,15 @@ def missing_fields(brief):
 
 
 def questions(brief):
-    """One bundled intake question for every missing character part, or [].
+    """ONE intake question per missing character part, in intake order, or [].
 
     Same shape as ``missing_essentials`` (``{"id", "question"}``), so intake can
-    hand it straight to the envelope. A complete character asks nothing.
+    hand it straight to the envelope. The parts are asked one at a time: intake
+    emits only the first, and the next part is asked after the client answers
+    (Trevor 2026-10-21). A complete character asks nothing.
     """
-    miss = missing_fields(brief)
-    if not miss:
-        return []
-    parts = [ph for _k, ph in miss]
-    if len(parts) == 1:
-        body = parts[0]
-    elif len(parts) == 2:
-        body = parts[0] + " and " + parts[1]
-    else:
-        body = ", ".join(parts[:-1]) + ", and " + parts[-1]
-    return [{"id": "character",
-             "question": QUESTION_LEAD + body + "."}]
+    return [{"id": "character", "question": QUESTION_LEAD + ph + "."}
+            for _k, ph in missing_fields(brief)]
 
 
 def record(brief, voice_notes="", reference_images=None):
